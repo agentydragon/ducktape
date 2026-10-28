@@ -13,7 +13,6 @@ use crate::analysis_inputs::{
     AnalysisInputs, NativeIntegrity, NativeIntrinsic as IntrinsicRoot, ResolvedBindingValueInput,
     SelectedBindingValueInput, ValueInputEvidence, ValueInputRef,
 };
-use crate::facts::LocalClassConstructionProof;
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
 };
@@ -25,6 +24,7 @@ use crate::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness, StatementFacts,
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin};
+use crate::facts::{LocalClassConstructionProof, LocalClassConstructionShapes};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePrototypeMutation,
@@ -1119,7 +1119,7 @@ fn safe_constructor_assignment(
 
 fn local_constructor(
     class: &Class,
-    construction_proof: &LocalClassConstructionProof,
+    construction_proof: &LocalClassConstructionShapes,
 ) -> Option<LocalConstructor> {
     if class.super_class.is_some() || !class.decorators.is_empty() {
         return None;
@@ -2569,6 +2569,7 @@ struct ExecutionIndex {
     inline_callback_entries: BTreeMap<u32, callback_arguments::InlineCallbackEntry>,
     native_guarded_regions: Vec<callback_arguments::GuardedRegion>,
     local_constructors: BTreeMap<u32, LocalConstructor>,
+    local_class_construction_shapes: LocalClassConstructionShapes,
     local_class_construction_proof: LocalClassConstructionProof,
     class_values: BTreeMap<u32, ClassValueFacts>,
     class_owners: BTreeMap<u32, SourceUnitOrdinal>,
@@ -2712,6 +2713,7 @@ impl Default for ExecutionIndex {
             inline_callback_entries: BTreeMap::new(),
             native_guarded_regions: Vec::new(),
             local_constructors: BTreeMap::new(),
+            local_class_construction_shapes: LocalClassConstructionShapes::default(),
             local_class_construction_proof: LocalClassConstructionProof::default(),
             class_values: BTreeMap::new(),
             class_owners: BTreeMap::new(),
@@ -3187,7 +3189,7 @@ impl ExecutionIndex {
         hints: &AnalysisInputs,
         flow: Option<&ChunkValueFlow>,
         plain_array_bindings: &BTreeSet<String>,
-        construction_proof: &LocalClassConstructionProof,
+        construction_proof: &LocalClassConstructionShapes,
     ) -> Self {
         let host_operations =
             hints
@@ -3202,7 +3204,7 @@ impl ExecutionIndex {
             || !hints.assumptions.non_reentrant_global_membership.is_empty();
         let mut index = Self {
             global_guards_requested,
-            local_class_construction_proof: construction_proof.clone(),
+            local_class_construction_shapes: construction_proof.clone(),
             top_calls: vec![Vec::new(); body.len()],
             owner_callable_prefix_reads: vec![None; body.len()],
             top_property_writes: vec![Vec::new(); body.len()],
@@ -4558,11 +4560,6 @@ impl ExecutionIndex {
         }
     }
 
-    fn set_iterable_intrinsics_are_unmodified(&self) -> bool {
-        self.collection_intrinsic_is_unmodified("Set")
-            && !self.mutated_intrinsic_roots.contains(&IntrinsicRoot::Array)
-    }
-
     fn global_receiver_exposed(
         &self,
         first_publication: SourceUnitOrdinal,
@@ -5078,7 +5075,7 @@ impl Visit for ExecutionIndex {
         self.class_owners.insert(class.span.lo.0, self.owner);
         self.class_values
             .insert(class.span.lo.0, collect_class_value_facts(class));
-        if let Some(constructor) = local_constructor(class, &self.local_class_construction_proof) {
+        if let Some(constructor) = local_constructor(class, &self.local_class_construction_shapes) {
             self.local_constructors.insert(class.span.lo.0, constructor);
         }
         class.visit_children_with(self);
@@ -7202,7 +7199,7 @@ pub(crate) fn prepare_callable_capabilities(
             },
             flow.as_ref(),
             &BTreeSet::new(),
-            &LocalClassConstructionProof::default(),
+            &LocalClassConstructionShapes::default(),
         ),
         exported_locals,
         flow,

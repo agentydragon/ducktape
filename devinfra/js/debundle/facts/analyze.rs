@@ -176,7 +176,7 @@ where
     let plain_data_bindings =
         crate::purity::collect_plain_data_bindings(&body, &shadowed, &value_flow);
     let dynamic_scope = DynamicScopeFact::analyze(&body);
-    let set_iterable_proof = SetIterableProof::analyze(
+    let set_iterable_proof = SetIterableShapes::analyze(
         &body,
         &shadowed,
         &value_flow,
@@ -184,13 +184,13 @@ where
         dynamic_scope,
     );
     let local_class_construction_proof =
-        LocalClassConstructionProof::analyze(&body, &shadowed, &value_flow, dynamic_scope);
+        LocalClassConstructionShapes::analyze(&body, &shadowed, &value_flow, dynamic_scope);
     StructuralChunkAnalysis {
         body,
         imported_bindings,
         value_flow,
-        set_iterable_proof,
-        local_class_construction_proof,
+        set_iterable_shapes: set_iterable_proof,
+        local_class_shapes: local_class_construction_proof,
         plain_data_bindings,
         shadowed,
         per_statement,
@@ -246,8 +246,8 @@ where
         body,
         imported_bindings,
         value_flow,
-        set_iterable_proof,
-        local_class_construction_proof,
+        set_iterable_shapes,
+        local_class_shapes,
         plain_data_bindings,
         shadowed,
         per_statement,
@@ -260,7 +260,8 @@ where
             &value_flow,
             hints,
             &plain_array_bindings,
-            &local_class_construction_proof,
+            &local_class_shapes,
+            set_iterable_shapes,
             &shadowed,
         );
     prepared_sync_index.locate_native_integrity_witnesses(|span| {
@@ -275,7 +276,7 @@ where
     });
     let local_class_construction_proof =
         prepared_sync_index.local_class_construction_proof().clone();
-    let set_iterable_proof = prepared_sync_index.validate_set_iterable_proof(set_iterable_proof);
+    let set_iterable_proof = prepared_sync_index.set_iterable_proof().clone();
     let graph = {
         let mut locate = |span| {
             let source_path = source_path?;

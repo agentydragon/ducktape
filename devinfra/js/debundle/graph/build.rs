@@ -114,6 +114,7 @@ pub fn build_dependency_graph_with(
                         .native_prototype_property_checks
                         .clone(),
                     native_integrity_uses: calls.native_integrity_uses.clone(),
+                    inference_uses: calls.inference_uses.clone(),
                     precision_losses: calls.precision_losses.clone(),
                     callback_factory_uses: Vec::new(),
                     returned_record_uses: Vec::new(),

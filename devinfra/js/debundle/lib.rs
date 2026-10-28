@@ -23,6 +23,7 @@ pub mod cross_module_purity;
 pub mod facts;
 pub mod graph;
 pub mod ids;
+mod inference;
 pub mod module_assignment;
 pub mod purity;
 pub mod reports;

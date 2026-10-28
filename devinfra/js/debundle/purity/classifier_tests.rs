@@ -83,14 +83,37 @@ fn graph_with_conditioned_set_proof(
     let flow = ChunkValueFlow::analyze(&views);
     let plain_data = collect_plain_data_bindings(&views, &shadowed, &flow);
     let plain_arrays = collect_plain_array_bindings(&views, &shadowed);
-    let set_proof = SetIterableProof::analyze(
+    let dynamic_scope = DynamicScopeFact::analyze(&views);
+    let set_shapes = crate::facts::SetIterableShapes::analyze(
         &views,
         &shadowed,
         &flow,
         &plain_data,
-        DynamicScopeFact::analyze(&views),
-    )
-    .with_dependencies(dependencies.clone());
+        dynamic_scope,
+    );
+    let class_shapes = crate::facts::LocalClassConstructionShapes::analyze(
+        &views,
+        &shadowed,
+        &flow,
+        dynamic_scope,
+    );
+    let prepared =
+        crate::facts::sync_effects::execution_index::interpreter::prepare_synchronous_call_index(
+            &views,
+            &flow,
+            &crate::analysis_inputs::AnalysisInputs {
+                native_integrity: Some(crate::analysis_inputs::NativeIntegrity {
+                    consumed_value_inputs: dependencies.value_inputs.clone(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            &plain_arrays,
+            &class_shapes,
+            set_shapes,
+            &shadowed,
+        );
+    let set_proof = prepared.set_iterable_proof();
     ChunkCodeGraph::build_full_with_prepared_plain_data(
         &views,
         &shadowed,
@@ -99,7 +122,7 @@ fn graph_with_conditioned_set_proof(
         &BTreeMap::new(),
         &BTreeMap::new(),
         &BTreeSet::new(),
-        &set_proof,
+        set_proof,
         &LocalClassConstructionProof::default(),
         &plain_data,
         &plain_arrays,
@@ -1538,13 +1561,29 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
     let plain_data = collect_plain_data_bindings(&views, &shadowed, &flow);
     let plain_arrays = collect_plain_array_bindings(&views, &shadowed);
     let dependencies = value_input_dependencies("static/provider.js", 2);
-    let class_proof = LocalClassConstructionProof::analyze(
+    let class_shapes = crate::facts::LocalClassConstructionShapes::analyze(
         &views,
         &shadowed,
         &flow,
         DynamicScopeFact::analyze(&views),
-    )
-    .with_native_dependencies(|_| Some(dependencies.clone()));
+    );
+    let prepared =
+        crate::facts::sync_effects::execution_index::interpreter::prepare_synchronous_call_index(
+            &views,
+            &flow,
+            &crate::analysis_inputs::AnalysisInputs {
+                native_integrity: Some(crate::analysis_inputs::NativeIntegrity {
+                    consumed_value_inputs: dependencies.value_inputs.clone(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            &plain_arrays,
+            &class_shapes,
+            crate::facts::SetIterableShapes::default(),
+            &shadowed,
+        );
+    let class_proof = prepared.local_class_construction_proof();
     let graph = ChunkCodeGraph::build_full_with_prepared_plain_data(
         &views,
         &shadowed,
@@ -1554,7 +1593,7 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
         &BTreeMap::new(),
         &BTreeSet::new(),
         &SetIterableProof::default(),
-        &class_proof,
+        class_proof,
         &plain_data,
         &plain_arrays,
         None,

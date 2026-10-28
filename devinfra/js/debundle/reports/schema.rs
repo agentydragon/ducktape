@@ -417,9 +417,30 @@ pub struct NativeIntegrityUse {
     pub value_input_refs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
 }
 
+/// Positive rules participating in a consumed construction certificate.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InferenceRule {
+    NativeIntegrity,
+    EmptyCollectionConstruction,
+    LocalClassConstruction,
+    PrimitiveSetIteration,
+}
+
+/// A purpose-specific certificate actually used by synchronous execution.
+/// Internal derivations share premise IDs; reports expand only rule names.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct InferenceUse {
+    pub conclusion: InferenceRule,
+    pub derivation_rules: BTreeSet<InferenceRule>,
+    pub value_input_refs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
+}
+
 /// Completeness of the existing synchronous-effect inference, independent of purity.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SynchronousExecutionReport {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inference_uses: Vec<InferenceUse>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub local_record_factory_uses: Vec<LocalRecordFactoryUse>,
     /// Evaluated premises which failed; other eligibility conditions may also fail.

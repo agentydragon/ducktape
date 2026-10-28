@@ -692,8 +692,9 @@ reads keep their own checks. The synchronous interpreter consumes the same
 class certificate and retains its separate binding-identity and deferred-body
 checks. Unsupported shapes and uncertain identities keep the conservative
 paths. Before any semantic consumer uses this composed certificate, its native
-field identities must pass the canonical execution index's source-derived
-integrity guard. Purity and synchronous execution share that validated result;
+field identities must pass the shared native-integrity and empty-collection
+rules over the canonical execution index's completed census. Purity,
+synchronous execution and heap ordering share that validated result;
 recognized native replacement invalidates both. This uses the existing local
 and whole-program native census and does not change the catalogue's A11
 assumption for other whitelist admissions.
@@ -1597,6 +1598,16 @@ checks still apply. Extra arguments and unsupported decorator/key expressions
 remain conservative. Earlier effects retain their existing accepted shapes.
 
 ## Synchronous execution diagnostics
+
+`synchronous_execution.inference_uses` records construction certificates
+actually consumed by timing analysis. Each entry has a typed `conclusion`, the
+`derivation_rules` involved in its proof, and the exact `value_input_refs`.
+The local-class chain includes `native_integrity`,
+`empty_collection_construction` and `local_class_construction` when native
+fields are present; a source-only class has no unrelated native premises.
+Primitive Set iteration composes `native_integrity` with
+`primitive_set_iteration`. These diagnostics do not replace the purity or heap
+dependency fields. Internal context and scheduling: <docs/inference.md>.
 
 Dependency-graph source units carry `synchronous_execution` when synchronous
 analysis ran. `complete` is the analyzer's existing effect-completeness verdict,

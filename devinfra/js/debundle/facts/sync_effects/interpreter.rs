@@ -11,6 +11,7 @@ use super::{
 };
 use crate::analysis_inputs::AnalysisInputs;
 use crate::facts::ExportReentryPolicy;
+use crate::facts::construction_inference::{ConstructionFacts, ConstructionRules};
 use crate::facts::fresh_receiver::fresh_mutation_callables;
 use crate::facts::item_views::TopLevelItemView;
 use crate::facts::local_effect_targets::MetadataDecorateCall;
@@ -20,7 +21,10 @@ use crate::facts::statement_facts::{
     ReturnedRecordUseFact, StatementFacts, StatementKind, SynchronousCalls,
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin, Values as FlowValues};
-use crate::facts::{LocalClassConstructionProof, set_iterables::SetIterableProof};
+use crate::facts::{
+    LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableShapes,
+    set_iterables::SetIterableProof,
+};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     CallbackFactoryUseKind, ExecutionOperation, ExecutionPrecisionLoss,
@@ -192,6 +196,7 @@ struct Executor<'a> {
     host_runtime: Option<&'a spec::HostNoReentryRuntime>,
     author_host_contract_uses: Vec<crate::reports::schema::HostNoReentryUse>,
     native_integrity_uses: RefCell<BTreeSet<crate::reports::schema::NativeIntegrityUse>>,
+    inference_uses: RefCell<BTreeSet<crate::reports::schema::InferenceUse>>,
     index: &'a ExecutionIndex,
     graph: &'a ChunkCodeGraph,
     facts: &'a [StatementFacts],
@@ -454,6 +459,22 @@ impl Executor<'_> {
                 },
             );
         }
+    }
+
+    fn record_inference_use(
+        &self,
+        guard: NativeIntegrityGuard,
+        proof: crate::reports::schema::InferenceUse,
+    ) {
+        if !proof.value_input_refs.is_empty() {
+            self.native_integrity_uses.borrow_mut().insert(
+                crate::reports::schema::NativeIntegrityUse {
+                    guard,
+                    value_input_refs: proof.value_input_refs.clone(),
+                },
+            );
+        }
+        self.inference_uses.borrow_mut().insert(proof);
     }
 
     /// Descriptor records need the whole ordinary prototype premise; private
@@ -3104,15 +3125,12 @@ impl Executor<'_> {
                 return None;
             }
         }
-        if let Some(dependencies) = self
+        if let Some(proof) = self
             .index
             .local_class_construction_proof
-            .dependencies_for_class(key)
+            .inference_use_for_class(key)
         {
-            self.record_proof_dependencies(
-                NativeIntegrityGuard::LocalClassConstruction,
-                dependencies,
-            );
+            self.record_inference_use(NativeIntegrityGuard::LocalClassConstruction, proof);
         }
         let outcome = constructor.key.map_or_else(
             || Outcome {
@@ -4967,12 +4985,11 @@ impl Executor<'_> {
         // can be retained by the Set and invoked by a later opaque consumer.
         if call.kind == CallKind::New
             && call.caller.is_none()
-            && let Some(dependencies) = self
+            && let Some(proof) = self
                 .set_iterable_proof
-                .dependencies_for_constructor(call.span)
-            && self.index.set_iterable_intrinsics_are_unmodified()
+                .inference_use_for_constructor(call.span)
         {
-            self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, dependencies);
+            self.record_inference_use(NativeIntegrityGuard::SetIterable, proof);
             return;
         }
         let targets = self.evaluate(&call.callee, env, captures);
@@ -5396,6 +5413,7 @@ pub(crate) struct SynchronousCallProofs<'a> {
 
 pub(crate) struct PreparedSynchronousCallIndex {
     index: ExecutionIndex,
+    set_iterable_proof: SetIterableProof,
 }
 
 impl PreparedSynchronousCallIndex {
@@ -5406,14 +5424,8 @@ impl PreparedSynchronousCallIndex {
         self.index.locate_native_integrity_witnesses(locate);
     }
 
-    pub(crate) fn validate_set_iterable_proof(&self, proof: SetIterableProof) -> SetIterableProof {
-        if self.index.set_iterable_intrinsics_are_unmodified() {
-            proof.with_dependencies(crate::analysis_inputs::ProofDependencies {
-                value_inputs: self.index.native_integrity_value_input_refs.clone(),
-            })
-        } else {
-            SetIterableProof::default()
-        }
+    pub(crate) fn set_iterable_proof(&self) -> &SetIterableProof {
+        &self.set_iterable_proof
     }
 
     pub(crate) fn local_class_construction_proof(&self) -> &LocalClassConstructionProof {
@@ -5421,11 +5433,7 @@ impl PreparedSynchronousCallIndex {
     }
 
     pub(crate) fn local_class_heap_proof(&self) -> crate::facts::LocalClassHeapProof {
-        self.index.local_class_construction_proof.heap_proof(|id| {
-            native_call_model(id.0.as_ref(), None, CallKind::New).is_some_and(|model| {
-                model.heap_effect == super::native_calls::NativeHeapEffect::FreshAllocation
-            })
-        })
+        self.index.local_class_construction_proof.heap_proof()
     }
 }
 
@@ -5434,7 +5442,8 @@ pub(crate) fn prepare_synchronous_call_index(
     flow: &ChunkValueFlow,
     hints: &AnalysisInputs,
     plain_array_bindings: &BTreeSet<String>,
-    local_class_construction: &LocalClassConstructionProof,
+    local_class_construction: &LocalClassConstructionShapes,
+    set_iterable_shapes: SetIterableShapes,
     shadowed: &BTreeSet<&'static str>,
 ) -> PreparedSynchronousCallIndex {
     let mut index = ExecutionIndex::collect(
@@ -5444,19 +5453,41 @@ pub(crate) fn prepare_synchronous_call_index(
         plain_array_bindings,
         local_class_construction,
     );
-    index.local_class_construction_proof =
-        local_class_construction.with_native_dependencies(|id| {
-            index
-                .empty_collection_constructor_is_unmodified(id, flow, shadowed)
-                .then(|| crate::analysis_inputs::ProofDependencies {
-                    value_inputs: index.native_integrity_value_input_refs.clone(),
-                })
-        });
+    // The census is now complete. Publish it into a single immutable rule
+    // context, with binding identity separated from native mutation premises.
+    let classes = std::mem::take(&mut index.local_class_construction_shapes);
+    let collection_bindings = classes
+        .classes
+        .values()
+        .flatten()
+        .filter_map(|id| {
+            let model = native_call_model(id.0.as_ref(), None, CallKind::New)?;
+            (model.heap_effect == super::native_calls::NativeHeapEffect::FreshAllocation
+                && !flow.is_declared(id)
+                && !shadowed.contains(id.0.as_ref()))
+            .then(|| (id.clone(), model.intrinsic))
+        })
+        .collect();
+    let facts = Arc::new(ConstructionFacts::solve(ConstructionRules {
+        classes,
+        sets: set_iterable_shapes,
+        collection_bindings,
+        mutated_intrinsics: index.mutated_intrinsic_roots.clone(),
+        dynamic_scope: !index.dynamic_scope_owners.is_empty(),
+        native_dependencies: crate::analysis_inputs::ProofDependencies {
+            value_inputs: index.native_integrity_value_input_refs.clone(),
+        },
+    }));
+    index.local_class_construction_proof = LocalClassConstructionProof::new(Arc::clone(&facts));
+    let set_iterable_proof = SetIterableProof::new(facts);
     index.local_constructors.retain(|key, constructor| {
         !constructor.checked_default_fields
             || index.local_class_construction_proof.contains_class(*key)
     });
-    PreparedSynchronousCallIndex { index }
+    PreparedSynchronousCallIndex {
+        index,
+        set_iterable_proof,
+    }
 }
 
 /// Finalize enum own-key candidates with the already collected binding-write
@@ -5710,6 +5741,7 @@ pub(crate) fn annotate_synchronous_calls(
             .map(|policy| &policy.runtime),
         author_host_contract_uses: Vec::new(),
         native_integrity_uses: RefCell::default(),
+        inference_uses: RefCell::default(),
         index: &index,
         graph: proofs.graph,
         facts,
@@ -5814,6 +5846,7 @@ pub(crate) fn annotate_synchronous_calls(
             .borrow_mut()
             .clear();
         executor.native_integrity_uses.borrow_mut().clear();
+        executor.inference_uses.borrow_mut().clear();
         executor.current_top_owner = Some(fact.ordinal);
         executor.proof_uses.clear();
         // Cache keys include this owner; previous statement snapshots cannot
@@ -6117,6 +6150,9 @@ pub(crate) fn annotate_synchronous_calls(
             std::mem::take(executor.native_integrity_uses.get_mut())
                 .into_iter()
                 .collect();
+        outcome.effects.inference_uses = std::mem::take(executor.inference_uses.get_mut())
+            .into_iter()
+            .collect();
         outcome.effects.native_integrity_witnesses = index.native_integrity_witnesses.clone();
         outcome.effects.native_receiver_certificates = index.native_receiver_certificates.clone();
         effects.push(outcome.effects);

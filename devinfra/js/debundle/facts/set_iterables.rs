@@ -6,14 +6,15 @@
 
 use super::*;
 use crate::analysis_inputs::ProofDependencies;
+use crate::facts::construction_inference::{ConstructionFacts, ConstructionKey};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct SetIterableProof {
-    constructor_starts: BTreeSet<u32>,
-    dependencies: ProofDependencies,
+pub(crate) struct SetIterableShapes {
+    pub(super) constructor_starts: BTreeSet<u32>,
 }
 
-impl SetIterableProof {
+impl SetIterableShapes {
     pub(crate) fn analyze(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
@@ -78,24 +79,31 @@ impl SetIterableProof {
             flow,
             plain_data_bindings,
         ));
-        Self {
-            constructor_starts,
-            dependencies: ProofDependencies::default(),
-        }
+        Self { constructor_starts }
     }
+}
 
-    pub(crate) fn contains_constructor(&self, span: Span) -> bool {
-        self.constructor_starts.contains(&span.lo.0)
-    }
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SetIterableProof {
+    facts: Arc<ConstructionFacts>,
+}
 
-    pub(crate) fn with_dependencies(mut self, dependencies: ProofDependencies) -> Self {
-        self.dependencies = dependencies;
-        self
+impl SetIterableProof {
+    pub(super) fn new(facts: Arc<ConstructionFacts>) -> Self {
+        Self { facts }
     }
 
     pub(crate) fn dependencies_for_constructor(&self, span: Span) -> Option<&ProofDependencies> {
-        self.contains_constructor(span)
-            .then_some(&self.dependencies)
+        self.facts
+            .dependencies(&ConstructionKey::PrimitiveSetIteration(span.lo.0))
+    }
+
+    pub(crate) fn inference_use_for_constructor(
+        &self,
+        span: Span,
+    ) -> Option<crate::reports::schema::InferenceUse> {
+        self.facts
+            .explain(&ConstructionKey::PrimitiveSetIteration(span.lo.0))
     }
 }
 
@@ -365,7 +373,7 @@ mod tests {
         let shadowed = compute_shadowed_globals(&body);
         let flow = ChunkValueFlow::analyze(&body);
         let plain_data = collect_plain_data_bindings(&body, &shadowed, &flow);
-        let proof = SetIterableProof::analyze(
+        let proof = SetIterableShapes::analyze(
             &body,
             &shadowed,
             &flow,
@@ -385,7 +393,7 @@ mod tests {
         let mut spans = NewSpans(Vec::new());
         module.visit_with(&mut spans);
         assert_eq!(spans.0.len(), 1, "fixture needs one constructor");
-        proof.contains_constructor(spans.0[0])
+        proof.constructor_starts.contains(&spans.0[0].lo.0)
     }
 
     #[test]

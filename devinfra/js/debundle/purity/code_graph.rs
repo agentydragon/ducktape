@@ -1,5 +1,8 @@
 use super::*;
-use crate::facts::{DynamicScopeFact, LocalClassConstructionProof, SetIterableProof};
+use crate::facts::{
+    DynamicScopeFact, LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableProof,
+    SetIterableShapes,
+};
 use std::sync::Arc;
 
 /// Chunk-wide code graph: indexes top-level bindings and answers
@@ -176,7 +179,14 @@ impl ChunkCodeGraph {
         let plain_array_bindings = collect_plain_array_bindings(body, shadowed);
         let dynamic_scope = DynamicScopeFact::analyze(body);
         let local_class_construction_proof =
-            LocalClassConstructionProof::analyze(body, shadowed, &value_flow, dynamic_scope);
+            LocalClassConstructionShapes::analyze(body, shadowed, &value_flow, dynamic_scope);
+        let set_iterable_proof = SetIterableShapes::analyze(
+            body,
+            shadowed,
+            &value_flow,
+            &plain_data_bindings,
+            dynamic_scope,
+        );
         let prepared_sync_index =
             crate::facts::sync_effects::execution_index::interpreter::prepare_synchronous_call_index(
                 body,
@@ -184,19 +194,12 @@ impl ChunkCodeGraph {
                 &crate::analysis_inputs::AnalysisInputs::default(),
                 &plain_array_bindings,
                 &local_class_construction_proof,
+                set_iterable_proof,
                 shadowed,
             );
         let local_class_construction_proof =
             prepared_sync_index.local_class_construction_proof().clone();
-        let set_iterable_proof = SetIterableProof::analyze(
-            body,
-            shadowed,
-            &value_flow,
-            &plain_data_bindings,
-            dynamic_scope,
-        );
-        let set_iterable_proof =
-            prepared_sync_index.validate_set_iterable_proof(set_iterable_proof);
+        let set_iterable_proof = prepared_sync_index.set_iterable_proof().clone();
         Self::build_full_with_prepared_plain_data(
             body,
             shadowed,

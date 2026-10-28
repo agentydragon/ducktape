@@ -326,6 +326,8 @@ debundle_e2e_test(
     deps = [
         "//devinfra/js/debundle:analysis",
         "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:sha2",
     ],
 )
 

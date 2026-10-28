@@ -1,7 +1,15 @@
 //! A checked implicit constructor can be reordered without executing its
 //! deferred methods or field callbacks during module initialization.
 
+use analysis::Purity;
+use analysis::analysis_inputs::{ProofDependencies, ValueInputRef};
+use analysis::reports::schema::{
+    DependencyGraphReport, InferenceRule, InferenceUse, NativeIntegrityGuard, NativeIntegrityUse,
+    SourceUnitReport,
+};
 use debundle_e2e_support::*;
+use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 
 const REGISTRY_SOURCE: &str = r#"globalThis.events = [];
 const a = (() => 1)();
@@ -389,4 +397,293 @@ fn certified_construction_retains_deferred_field_and_getter_captures() {
         let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
         assert_preserved_entry_output(&fixture, "ReferenceError 0\n");
     }
+}
+
+const CAPTURE_PROVIDER: &str = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { get touched() { globalThis.runtimeSettings.events.push('getter'); return true; } });\nexport const ready = true;\n";
+const OPAQUE_SETUP: &str = "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { value: 'ready', child: new Map() }; } };\n";
+const CAPTURE_CHUNKS: &[(&str, &str)] = &[("static/peer", CAPTURE_PROVIDER)];
+const OPAQUE_FILES: &[(&str, &str)] = &[
+    ("static/opaque.js", OPAQUE_SETUP),
+    ("static/app/opaque.js", OPAQUE_SETUP),
+];
+const SET_MUTATION: &str = "Set.prototype.add = function (value) { globalThis.runtimeSettings.events.push('mutated'); return this; };";
+const REBOUND_REGISTRY: &str = "Registry = class Registry { #values = new Set(); readLater = () => later; get size() { return this.#values.size; } };";
+const COMPOSITION_SOURCE: &str = r#"import './opaque.js';
+import { ready } from './peer.js';
+const seed = (() => 1)();
+const unique = new Set(['a', 'b']);
+class Registry {
+  #values = new Set();
+  readLater = () => later;
+  get size() { return this.#values.size; }
+}
+const registry = new Registry();
+class PlainRegistry { ready = 0; }
+const plain = new PlainRegistry();
+const total = seed + unique.size + registry.size;
+const later = 40;
+console.log(ready, total, registry.readLater(), plain.ready, globalThis.runtimeSettings.events.join(','));
+export { Registry, registry, unique, PlainRegistry, plain };
+"#;
+const COMPOSITION_OUTPUT: &str = "true 3 40 0 capture,getter\n";
+
+fn source_hash(source: &str) -> String {
+    Sha256::digest(source.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn captured_input() -> ValueInputContract {
+    ValueInputContract {
+        source_match: serde_yaml::from_str(&format!(
+            "match: {:?}\nbindings: [captured]\n",
+            "var captured = globalThis.runtimeSettings.state;"
+        ))
+        .expect("valid captured declaration match"),
+        value: CapturedValueContract {
+            kind: CapturedValueKind::OrdinaryObject,
+        },
+        audited_source_sha256: source_hash(CAPTURE_PROVIDER),
+        expected_export: None,
+        note: Some("Neutral fixture audits this captured object.".to_string()),
+    }
+}
+
+fn composition_options<'a>(source: &'a str, anonymous: &'a [&'a str]) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "registry",
+            &[
+                Member::new("Registry"),
+                Member::new("registry"),
+                Member::new("unique"),
+            ],
+            anonymous,
+        )],
+    )
+    .with_extra_chunks(CAPTURE_CHUNKS)
+    .with_extra_files(OPAQUE_FILES)
+    .with_value_inputs("static/peer", vec![captured_input()])
+}
+
+fn source_unit<'a>(graph: &'a DependencyGraphReport, binding: &str) -> &'a SourceUnitReport {
+    graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|candidate| candidate.binding == binding)
+        })
+        .unwrap_or_else(|| panic!("source unit for {binding} missing"))
+}
+
+fn inference_use(node: &SourceUnitReport, conclusion: InferenceRule) -> &InferenceUse {
+    node.synchronous_execution
+        .as_ref()
+        .expect("synchronous execution report")
+        .inference_uses
+        .iter()
+        .find(|usage| usage.conclusion == conclusion)
+        .unwrap_or_else(|| panic!("{conclusion:?} inference missing from {node:?}"))
+}
+
+fn captured_input_ref() -> ValueInputRef {
+    ValueInputRef {
+        defining_chunk: "static/peer".to_string(),
+        input_index: 0,
+    }
+}
+
+fn captured_input_refs() -> BTreeSet<ValueInputRef> {
+    BTreeSet::from([captured_input_ref()])
+}
+
+fn expected_purity(value_inputs: BTreeSet<ValueInputRef>) -> Purity {
+    Purity::Pure {
+        dependencies: ProofDependencies { value_inputs },
+    }
+}
+
+#[test]
+fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
+    let fixture = assert_pure_cycle_break_with_opts(
+        composition_options(COMPOSITION_SOURCE, &[]),
+        "registry",
+        &[
+            "const unique = new Set",
+            "class Registry",
+            "const registry = new Registry",
+        ],
+        &["const seed", "const later"],
+        COMPOSITION_OUTPUT,
+    );
+    assert_preserved_entry_output(&fixture, COMPOSITION_OUTPUT);
+
+    let graph = fixture.dependency_graph();
+    let unique = source_unit(&graph, "unique");
+    assert_eq!(unique.purity, expected_purity(captured_input_refs()));
+    let primitive_set = inference_use(unique, InferenceRule::PrimitiveSetIteration);
+    assert_eq!(
+        primitive_set,
+        &InferenceUse {
+            conclusion: InferenceRule::PrimitiveSetIteration,
+            derivation_rules: BTreeSet::from([
+                InferenceRule::NativeIntegrity,
+                InferenceRule::PrimitiveSetIteration,
+            ]),
+            value_input_refs: captured_input_refs(),
+        }
+    );
+    let unique_execution = unique
+        .synchronous_execution
+        .as_ref()
+        .expect("primitive Set execution report");
+    assert_eq!(
+        unique_execution
+            .native_integrity_uses
+            .iter()
+            .filter(|usage| usage.guard == NativeIntegrityGuard::SetIterable)
+            .collect::<Vec<_>>(),
+        vec![&NativeIntegrityUse {
+            guard: NativeIntegrityGuard::SetIterable,
+            value_input_refs: captured_input_refs(),
+        }]
+    );
+
+    let registry = source_unit(&graph, "registry");
+    assert_eq!(registry.purity, expected_purity(captured_input_refs()));
+    let local_class = inference_use(registry, InferenceRule::LocalClassConstruction);
+    assert_eq!(
+        local_class,
+        &InferenceUse {
+            conclusion: InferenceRule::LocalClassConstruction,
+            derivation_rules: BTreeSet::from([
+                InferenceRule::NativeIntegrity,
+                InferenceRule::EmptyCollectionConstruction,
+                InferenceRule::LocalClassConstruction,
+            ]),
+            value_input_refs: captured_input_refs(),
+        }
+    );
+    assert_eq!(
+        registry.heap_native_integrity_uses,
+        vec![NativeIntegrityUse {
+            guard: NativeIntegrityGuard::LocalClassConstruction,
+            value_input_refs: captured_input_refs(),
+        }]
+    );
+
+    let plain = source_unit(&graph, "plain");
+    assert_eq!(plain.purity, expected_purity(BTreeSet::new()));
+    let plain_class = inference_use(plain, InferenceRule::LocalClassConstruction);
+    assert_eq!(
+        plain_class,
+        &InferenceUse {
+            conclusion: InferenceRule::LocalClassConstruction,
+            derivation_rules: BTreeSet::from([InferenceRule::LocalClassConstruction]),
+            value_input_refs: BTreeSet::new(),
+        }
+    );
+    assert!(plain.heap_native_integrity_uses.is_empty());
+}
+
+#[test]
+fn composed_proofs_reject_native_set_mutation_and_unsafe_field_initializers() {
+    let mutated = COMPOSITION_SOURCE.replace(
+        "const unique = new Set(['a', 'b']);",
+        &format!("{SET_MUTATION}\nconst unique = new Set(['a', 'b']);"),
+    );
+    let mutated_fixture = run_fixture(
+        FixtureOpts::new(&mutated, vec![])
+            .with_extra_chunks(CAPTURE_CHUNKS)
+            .with_extra_files(OPAQUE_FILES)
+            .with_value_inputs("static/peer", vec![captured_input()]),
+    );
+    assert_preserved_entry_output(
+        &mutated_fixture,
+        "true 1 40 0 capture,getter,mutated,mutated\n",
+    );
+    expect_atomic_conflict_rejection(
+        composition_options(&mutated, &[SET_MUTATION]),
+        &["registry", "residual"],
+        &[],
+    );
+
+    let unsafe_field = COMPOSITION_SOURCE.replace(
+        "#values = new Set();",
+        "#values = (globalThis.runtimeSettings.events.push('field'), new Set());",
+    );
+    let unsafe_fixture = run_fixture(
+        FixtureOpts::new(&unsafe_field, vec![])
+            .with_extra_chunks(CAPTURE_CHUNKS)
+            .with_extra_files(OPAQUE_FILES)
+            .with_value_inputs("static/peer", vec![captured_input()]),
+    );
+    assert_preserved_entry_output(&unsafe_fixture, "true 3 40 0 capture,getter,field\n");
+    expect_atomic_conflict_rejection(
+        composition_options(&unsafe_field, &[]),
+        &["registry", "residual"],
+        &[],
+    );
+}
+
+#[test]
+fn composed_proof_rejects_rebound_class_bindings() {
+    let source = COMPOSITION_SOURCE.replace(
+        "const registry = new Registry();",
+        &format!("{REBOUND_REGISTRY}\nconst registry = new Registry();"),
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, vec![])
+            .with_extra_chunks(CAPTURE_CHUNKS)
+            .with_extra_files(OPAQUE_FILES)
+            .with_value_inputs("static/peer", vec![captured_input()]),
+    );
+    assert_preserved_entry_output(&fixture, COMPOSITION_OUTPUT);
+
+    let rejected = run_rejection_fixture(composition_options(&source, &[REBOUND_REGISTRY]));
+    let graph = rejected.dependency_graph();
+    let construction = source_unit(&graph, "registry");
+    let Purity::NotPure { reasons } = &construction.purity else {
+        panic!("a rebound class must not retain the implicit-construction proof: {construction:?}");
+    };
+    assert!(
+        reasons
+            .iter()
+            .any(|reason| reason.rule == analysis::PurityRule::UnknownNew)
+    );
+}
+
+#[test]
+fn callback_invoked_by_a_field_initializer_keeps_the_real_tdz_rejection() {
+    let source = r#"globalThis.saved = () => later;
+function invoke(callback) { return callback(); }
+class Registry { value = invoke(globalThis.saved); }
+let registry;
+try { registry = new Registry(); } catch (error) { registry = error.name; }
+const later = 40;
+console.log(registry);
+export { Registry, registry, later };
+"#;
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "ReferenceError\n");
+
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "registry",
+                    &[Member::new("Registry"), Member::new("registry")],
+                    &["globalThis.saved = () => later;"],
+                ),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &["registry", "value"],
+        &[],
+    );
 }

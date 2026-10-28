@@ -221,6 +221,7 @@ pub(crate) struct SynchronousCalls {
     pub native_prototype_mutations:
         std::sync::Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,
     pub native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
+    pub inference_uses: Vec<crate::reports::schema::InferenceUse>,
     pub native_integrity_witnesses:
         std::sync::Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
     pub native_receiver_certificates:
@@ -425,8 +426,8 @@ pub struct StructuralChunkAnalysis<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
     pub(crate) imported_bindings: BTreeSet<Id>,
     pub(crate) value_flow: super::ChunkValueFlow,
-    pub(crate) set_iterable_proof: super::SetIterableProof,
-    pub(crate) local_class_construction_proof: super::LocalClassConstructionProof,
+    pub(crate) set_iterable_shapes: super::SetIterableShapes,
+    pub(crate) local_class_shapes: super::LocalClassConstructionShapes,
     pub(crate) plain_data_bindings: Vec<String>,
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,

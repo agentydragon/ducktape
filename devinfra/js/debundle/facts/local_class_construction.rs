@@ -7,16 +7,17 @@
 
 use super::*;
 use crate::analysis_inputs::ProofDependencies;
+use crate::facts::construction_inference::{ConstructionFacts, ConstructionKey};
 use crate::purity::PURE_BUILTIN_NEW_NO_ARGS;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct LocalClassConstructionProof {
-    classes: BTreeMap<u32, BTreeSet<Id>>,
-    dependencies: BTreeMap<u32, ProofDependencies>,
-    constructions: BTreeMap<u32, u32>,
+pub(crate) struct LocalClassConstructionShapes {
+    pub(super) classes: BTreeMap<u32, BTreeSet<Id>>,
+    pub(super) constructions: BTreeMap<u32, u32>,
 }
 
-impl LocalClassConstructionProof {
+impl LocalClassConstructionShapes {
     pub(crate) fn analyze(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
@@ -43,7 +44,6 @@ impl LocalClassConstructionProof {
             if safe_implicit_class(&class.class, shadowed, &mut native_fields) {
                 let key = class.class.span.lo.0;
                 proof.classes.insert(key, native_fields);
-                proof.dependencies.insert(key, ProofDependencies::default());
                 declarations.insert(class.ident.to_id(), (key, ordinal));
             }
         }
@@ -92,80 +92,60 @@ impl LocalClassConstructionProof {
     pub(crate) fn contains_class(&self, class: u32) -> bool {
         self.classes.contains_key(&class)
     }
+}
+
+/// Validated class judgments shared by purity, execution and heap ordering.
+/// Structural shapes alone never construct this type.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct LocalClassConstructionProof {
+    facts: Arc<ConstructionFacts>,
+}
+
+impl LocalClassConstructionProof {
+    pub(super) fn new(facts: Arc<ConstructionFacts>) -> Self {
+        Self { facts }
+    }
+
+    pub(crate) fn contains_class(&self, class: u32) -> bool {
+        self.dependencies_for_class(class).is_some()
+    }
 
     pub(crate) fn dependencies_for_class(&self, class: u32) -> Option<&ProofDependencies> {
-        self.dependencies.get(&class)
+        self.facts.dependencies(&ConstructionKey::LocalClass(class))
     }
 
     pub(crate) fn dependencies_for_construction(&self, span: Span) -> Option<&ProofDependencies> {
-        self.constructions
-            .get(&span.lo.0)
-            .and_then(|class| self.dependencies_for_class(*class))
+        self.facts
+            .class_for_construction(span)
+            .and_then(|class| self.dependencies_for_class(class))
     }
 
-    pub(crate) fn with_native_dependencies(
+    pub(crate) fn inference_use_for_class(
         &self,
-        native_constructor_dependencies: impl Fn(&Id) -> Option<ProofDependencies>,
-    ) -> Self {
-        let mut classes = BTreeMap::new();
-        let mut dependencies = BTreeMap::new();
-        for (class, fields) in &self.classes {
-            let mut required = ProofDependencies::default();
-            let mut valid = true;
-            for field in fields {
-                let Some(field_dependencies) = native_constructor_dependencies(field) else {
-                    valid = false;
-                    break;
-                };
-                required.extend(&field_dependencies);
-            }
-            if valid {
-                classes.insert(*class, fields.clone());
-                dependencies.insert(*class, required);
-            }
-        }
-        Self {
-            constructions: self
-                .constructions
-                .iter()
-                .filter(|(_, class)| classes.contains_key(class))
-                .map(|(span, class)| (*span, *class))
-                .collect(),
-            classes,
-            dependencies,
-        }
+        class: u32,
+    ) -> Option<crate::reports::schema::InferenceUse> {
+        self.facts.explain(&ConstructionKey::LocalClass(class))
     }
-    pub(crate) fn heap_proof(
-        &self,
-        native_constructor_is_heap_local: impl Fn(&Id) -> bool,
-    ) -> LocalClassHeapProof {
-        let classes: BTreeSet<_> = self
-            .classes
-            .iter()
-            .filter(|(_, fields)| fields.iter().all(&native_constructor_is_heap_local))
-            .map(|(class, _)| *class)
-            .collect();
+
+    pub(crate) fn heap_proof(&self) -> LocalClassHeapProof {
         LocalClassHeapProof {
-            constructions: self
-                .constructions
-                .iter()
-                .filter(|(_, class)| classes.contains(class))
-                .map(|(span, class)| (*span, self.dependencies[class].clone()))
-                .collect(),
+            facts: Arc::clone(&self.facts),
         }
     }
 }
 
 /// Exact stable construction sites whose initialization only creates fresh
-/// state. Callee and argument evaluation are separate effects.
+/// state. The same derivation validates their field allocations; callee and
+/// argument evaluation remain separate effects.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct LocalClassHeapProof {
-    constructions: BTreeMap<u32, ProofDependencies>,
+    facts: Arc<ConstructionFacts>,
 }
 
 impl LocalClassHeapProof {
     pub(crate) fn dependencies_for_construction(&self, span: Span) -> Option<&ProofDependencies> {
-        self.constructions.get(&span.lo.0)
+        let class = self.facts.class_for_construction(span)?;
+        self.facts.dependencies(&ConstructionKey::LocalClass(class))
     }
 }
 
@@ -265,97 +245,5 @@ fn safe_field_value(
             safe
         }
         _ => false,
-    }
-}
-
-#[cfg(test)]
-mod heap_dependency_tests {
-    use super::*;
-    use crate::analysis_inputs::{ProofDependencies, ValueInputRef};
-    use crate::reports::schema::NativeIntegrityGuard;
-
-    fn heap_fact(
-        source: &str,
-        binding: &str,
-        dependencies_for_set: Option<ProofDependencies>,
-    ) -> crate::facts::StatementFacts {
-        let module = raw_js_test_support::parse(source);
-        let body = top_level_item_views(&module.body);
-        let flow = ChunkValueFlow::analyze(&body);
-        let shadowed = compute_shadowed_globals(&body);
-        let construction_proof = LocalClassConstructionProof::analyze(
-            &body,
-            &shadowed,
-            &flow,
-            DynamicScopeFact::analyze(&body),
-        )
-        .with_native_dependencies(|field| {
-            if field.0.as_ref() == "Set" {
-                dependencies_for_set.clone()
-            } else {
-                Some(ProofDependencies::default())
-            }
-        });
-        let heap_proof = construction_proof.heap_proof(|field| field.0.as_ref() == "Set");
-        let mut facts = analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None).facts;
-        super::super::array_content_effects::annotate_array_content_effects(
-            &body,
-            &flow,
-            &heap_proof,
-            &mut facts,
-        );
-        facts
-            .into_iter()
-            .find(|fact| {
-                fact.declared
-                    .iter()
-                    .any(|declared| declared.0.as_ref() == binding)
-            })
-            .unwrap_or_else(|| panic!("expected a source unit declaring {binding}"))
-    }
-
-    #[test]
-    fn local_class_heap_dependency_is_reported_only_when_consumed() {
-        let dependency = ValueInputRef {
-            defining_chunk: "static/provider".to_string(),
-            input_index: 2,
-        };
-        let dependencies = ProofDependencies {
-            value_inputs: BTreeSet::from([dependency.clone()]),
-        };
-        let native_backed = heap_fact(
-            "class Registry { entries = new Set(); } const instance = new Registry();",
-            "instance",
-            Some(dependencies),
-        );
-        assert!(!native_backed.array_contents.opaque.eager);
-        assert_eq!(
-            native_backed.heap_native_integrity_uses,
-            vec![crate::reports::schema::NativeIntegrityUse {
-                guard: NativeIntegrityGuard::LocalClassConstruction,
-                value_input_refs: BTreeSet::from([dependency]),
-            }]
-        );
-
-        let source_only = heap_fact(
-            "class PlainStore { ready = 0; } const plainStore = new PlainStore();",
-            "plainStore",
-            Some(ProofDependencies {
-                value_inputs: BTreeSet::from([ValueInputRef {
-                    defining_chunk: "static/provider".to_string(),
-                    input_index: 2,
-                }]),
-            }),
-        );
-        assert!(!source_only.array_contents.opaque.eager);
-        assert!(source_only.heap_native_integrity_uses.is_empty());
-
-        let unchecked_native = heap_fact(
-            "class UncheckedStore { entries = new Set(); } const uncheckedStore = new UncheckedStore();",
-            "uncheckedStore",
-            None,
-        );
-        assert!(unchecked_native.array_contents.opaque.eager);
-        assert!(unchecked_native.heap_native_integrity_uses.is_empty());
     }
 }

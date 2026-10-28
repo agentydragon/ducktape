@@ -47,6 +47,7 @@ mod analyze;
 mod array_content_effects;
 mod at_init_fallback;
 mod collector;
+mod construction_inference;
 mod dynamic_scope;
 mod fresh_receiver;
 mod global_object;
@@ -74,10 +75,14 @@ pub(crate) use dynamic_scope::DynamicScopeFact;
 pub(crate) use global_object::*;
 pub(crate) use item_views::*;
 pub(crate) use lazy_boundary::*;
-pub(crate) use local_class_construction::{LocalClassConstructionProof, LocalClassHeapProof};
+pub(crate) use local_class_construction::{
+    LocalClassConstructionProof, LocalClassConstructionShapes, LocalClassHeapProof,
+};
 pub(crate) use local_effect_targets::*;
 pub(crate) use purity_classification::*;
-pub(crate) use set_iterables::{SetIterableProof, primitive_literal_property_keys};
+pub(crate) use set_iterables::{
+    SetIterableProof, SetIterableShapes, primitive_literal_property_keys,
+};
 pub(crate) use source_unit_read_closure::SourceUnitReadClosure;
 pub(crate) use statement_facts::{ArrayContentEffects, ConstructorFacts};
 pub use statement_facts::{

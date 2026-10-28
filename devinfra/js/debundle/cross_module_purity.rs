@@ -96,14 +96,14 @@ impl<'a> ModulePurityFacts<'a> {
         let plain_data_bindings = collect_plain_data_bindings(&views, &shadowed, &value_flow);
         let plain_array_bindings = collect_plain_array_bindings(&views, &shadowed);
         let dynamic_scope = crate::facts::DynamicScopeFact::analyze(&views);
-        let set_iterable_proof = crate::facts::SetIterableProof::analyze(
+        let set_iterable_proof = crate::facts::SetIterableShapes::analyze(
             &views,
             &shadowed,
             &value_flow,
             &plain_data_bindings,
             dynamic_scope,
         );
-        let local_class_construction_proof = crate::facts::LocalClassConstructionProof::analyze(
+        let local_class_construction_proof = crate::facts::LocalClassConstructionShapes::analyze(
             &views,
             &shadowed,
             &value_flow,
@@ -116,12 +116,12 @@ impl<'a> ModulePurityFacts<'a> {
                 inputs,
                 &plain_array_bindings,
                 &local_class_construction_proof,
+                set_iterable_proof,
                 &shadowed,
             );
         let local_class_construction_proof =
             prepared_sync_index.local_class_construction_proof().clone();
-        let set_iterable_proof =
-            prepared_sync_index.validate_set_iterable_proof(set_iterable_proof);
+        let set_iterable_proof = prepared_sync_index.set_iterable_proof().clone();
         PreparedModulePurityFacts {
             views,
             shadowed,
@@ -992,9 +992,10 @@ mod tests {
         module.visit_with(&mut constructors);
         assert_eq!(constructors.0.len(), 1, "fixture needs one Set constructor");
         assert!(
-            !prepared
+            prepared
                 .set_iterable_proof
-                .contains_constructor(constructors.0[0]),
+                .dependencies_for_constructor(constructors.0[0])
+                .is_none(),
             "cross-module purity preparation must honor the canonical intrinsic census"
         );
     }
