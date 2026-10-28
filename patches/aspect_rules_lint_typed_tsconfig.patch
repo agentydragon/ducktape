@@ -1,20 +1,6 @@
 --- a/lint/eslint.bzl
 +++ b/lint/eslint.bzl
-@@ -68,6 +68,13 @@
-     # Linting of ts targets often requires the tsconfig
-     if hasattr(ctx.rule.attr, "tsconfig"):
-         js_inputs.append(ctx.rule.attr.tsconfig)
-+
-+    if ctx.attr._use_tsconfig and hasattr(ctx.rule.attr, "tsconfig"):
-+        # A generated tsconfig is a plain file target, so the JsInfo gather below
-+        # cannot supply it. The extended ts_config does provide a JsInfo closure.
-+        inputs += ctx.rule.files.tsconfig
-+        if hasattr(ctx.rule.attr, "extends") and ctx.rule.attr.extends:
-+            js_inputs.append(ctx.rule.attr.extends)
- 
-     # Add the config file along with any deps it has on npm packages
-     if "gather_files_from_js_providers" in dir(js_lib_helpers):
-@@ -192,14 +199,20 @@
+@@ -192,14 +192,20 @@
          return []
  
      files_to_lint = filter_srcs(ctx.rule)
@@ -37,7 +23,7 @@
  
      if len(files_to_lint) == 0:
          noop_lint_action(ctx, outputs)
-@@ -219,8 +232,8 @@
+@@ -219,8 +225,8 @@
      )
  
      # TODO(alex): if we run with --fix, this will report the issues that were fixed. Does a machine reader want to know about them?
@@ -48,7 +34,7 @@
  
      # We could probably use https://www.npmjs.com/package/@microsoft/eslint-formatter-sarif instead.
      # However it probably requires the user to install this and pass it to us.
-@@ -229,7 +242,7 @@
+@@ -229,7 +235,7 @@
  
      return [info]
  
@@ -57,16 +43,16 @@
      """A factory function to create a linter aspect.
  
      Args:
-@@ -242,6 +255,8 @@
+@@ -242,6 +248,8 @@
          configs: label(s) of the eslint config file(s)
          rule_kinds: which [kinds](https://bazel.build/query/language#kind) of rules should be visited by the aspect
          args: additional command-line arguments to pass to eslint
-+        use_tsconfig: Supply the target's tsconfig and extends inputs, and expose
-+            its path in BAZEL_ESLINT_TSCONFIG for a type-aware ESLint config.
++        use_tsconfig: Expose the target's tsconfig path in BAZEL_ESLINT_TSCONFIG
++            for a type-aware ESLint config.
      """
  
      # syntax-sugar: allow a single config file in addition to a list
-@@ -281,6 +296,7 @@
+@@ -281,6 +289,7 @@
              "_rule_kinds": attr.string_list(
                  default = rule_kinds,
              ),

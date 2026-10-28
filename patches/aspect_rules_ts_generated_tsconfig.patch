@@ -1,0 +1,21 @@
+--- a/ts/defs.bzl
++++ b/ts/defs.bzl
+@@ -331,9 +331,15 @@
+             **common_kwargs
+         )
+ 
+-        # From here, tsconfig becomes a file, the same as if the
+-        # user supplied a tsconfig.json InputArtifact
+-        tsconfig = "tsconfig_%s.json" % name
++        # Preserve the config closure through the same providers as a supplied
++        # ts_config, so consumers such as lint aspects can gather it via JsInfo.
++        _ts_config(
++            name = "_tsconfig_%s" % name,
++            src = "tsconfig_%s.json" % name,
++            deps = [extends] if extends else [],
++            **common_kwargs
++        )
++        tsconfig = ":_tsconfig_%s" % name
+     elif srcs == None:
+         # Default sources based on macro attributes
+         srcs = _default_srcs(
