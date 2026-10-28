@@ -148,11 +148,11 @@ def _quantities(**values: str) -> dict[str, k8s.Quantity]:
     return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
 
 
-def _settings_config_map(scope: Construct, name: str, content: BaseModel | dict[str, object]) -> k8s.KubeConfigMap:
-    return k8s.KubeConfigMap(
+def _settings_config_map(scope: Construct, name: str, content: BaseModel | dict[str, object]) -> ConfigMap:
+    return ConfigMap(
         scope,
         name,
-        metadata=k8s.ObjectMeta(name=name, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
         data={"settings.yaml": yaml_config(content)},
     )
 
