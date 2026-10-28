@@ -19,6 +19,10 @@ export type SessionSummary = {
   parent_link_kind: string | null;
   parent_native_session_id: string | null;
   identity_inferred: boolean;
+  native_session_id_conflict?: boolean;
+  native_session_id_candidates?: string[];
+  parent_native_session_id_conflict?: boolean;
+  parent_native_session_id_candidates?: string[];
 };
 
 export type SessionVersion = {
