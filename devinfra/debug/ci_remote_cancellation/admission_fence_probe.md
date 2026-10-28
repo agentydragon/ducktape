@@ -54,8 +54,7 @@ on `tail -f /dev/null`, with `timeout 120s` as a resource guard.
   reported `COMPLETED`, status code 1, `invocation cancelled`.
 - Outer invocation
   [1528b11e-756c-4cdd-99e7-a0c06666b8a9](https://app.buildbuddy.io/invocation/1528b11e-756c-4cdd-99e7-a0c06666b8a9)
-  was also subsequently observed `COMPLETED`, status code 1, `invocation
-cancelled`. Both invocation records were disconnected.
+  was also subsequently observed `COMPLETED`, status code 1, `invocation cancelled`. Both invocation records were disconnected.
 
 The CLI had not printed its outer invocation URL when the signal arrived.
 Identity was recovered from this child's BES `buildMetadata` field
@@ -110,16 +109,12 @@ server revision or exact source mapping for CLI 5.0.466.
   count tracks submitted executions, not remaining live subscribers:
   [sharing check](https://github.com/buildbuddy-io/buildbuddy/blob/a04caa741548187c77dc991c8d8384c6788e24a9/enterprise/server/remote_execution/action_merger/action_merger.go#L150-L185).
 
-## Next implementation boundary
+## Interpretation
 
-A reliable sequence needs an acknowledgment that the remote producer can no
-longer submit work, followed by cancellation of its owned child executions; or
-an invocation-scoped server fence that rejects later submissions. A successful
-CancelExecutions call, local `bb` exit, or terminal execution record alone does
-not provide that acknowledgment. Simply moving the child cancellation request
-after local CLI exit cannot establish the missing guarantee.
-
-Keep the current child cancellation for active work. Before replacing it,
-obtain a producer/admission-stop contract from the service or add independently
-observable remote shutdown acknowledgment. Preserve shared-action ownership;
-canceling one invocation must not kill an action still needed by another.
+This probe deliberately cancels the inner invocation while allowing Bazel to
+continue. It establishes the API's behavior without claiming that normal outer
+runner cancellation was ignored or that the missing future-submission fence
+caused a historical incident. The [active investigation](investigation.md)
+contains the verified continued-action case, competing explanations, and the
+remote-stop/ownership evidence needed before selecting a change. Keep the
+current cancellation of submitted child work while that diagnosis is open.

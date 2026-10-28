@@ -1,9 +1,9 @@
 # CI cancellation propagation
 
-The [2026-10-28 hosted probe](admission_fence_probe.md) reconfirmed cancellation
-of submitted work and proved that a successful cancellation response does not
-prevent later submissions under the same invocation ID. It records the current
-ownership boundary and the missing admission/remote-stop acknowledgment.
+The [active investigation](investigation.md) tracks remote action work after
+cancellation, the unconfirmed hosted lease duration, competing explanations, and
+the next evidence to collect. The [2026-10-28 protocol probe](admission_fence_probe.md)
+is a separate control of the cancellation API's scope.
 
 ## Original signal-forwarding investigation (2026-10-10)
 

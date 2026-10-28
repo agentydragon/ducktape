@@ -1,0 +1,96 @@
+{
+  "verified_on_utc": "2026-10-28",
+  "github_job": {
+    "id": 122438855995,
+    "run_id": 40574978735,
+    "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40574978735/job/122438855995",
+    "conclusion": "cancelled",
+    "started_at": "2026-10-27T20:09:48Z",
+    "completed_at": "2026-10-27T20:28:40Z"
+  },
+  "source_commit": "4c32178e900aaea1126be5030c79373a0114eeca",
+  "cancellation_log_events": [
+    {
+      "at_utc": "2026-10-27T20:28:34.7980764Z",
+      "event": "entry forwarded cancellation to bb"
+    },
+    {
+      "at_utc": "2026-10-27T20:28:35.7112732Z",
+      "event": "child cancellation request failed",
+      "invocation_id": "032e2e64-5350-5787-980a-8fcb756fa4d3"
+    },
+    {
+      "at_utc": "2026-10-27T20:28:35.9036531Z",
+      "event": "child cancellation request acknowledged",
+      "invocation_id": "e5650420-cea1-5cc0-9029-b6cad3c77625"
+    }
+  ],
+  "test_invocation": {
+    "id": "e5650420-cea1-5cc0-9029-b6cad3c77625",
+    "parent_invocation_id": "33509de5-4603-4149-ab15-8f8132fba13e",
+    "parent_identity_source": "child BES buildMetadata PARENT_INVOCATION_ID",
+    "status": "DISCONNECTED_INVOCATION_STATUS"
+  },
+  "continued_execution": {
+    "id": "/uploads/35b6d1b3-e937-49c9-9d12-762a5c7f42b0/blobs/feee7670f67fe76b916e21396551bcd9cac9fd7ee513b114da49dc5ecb019b12/534",
+    "action_digest": {
+      "hash": "feee7670f67fe76b916e21396551bcd9cac9fd7ee513b114da49dc5ecb019b12",
+      "sizeBytes": "534"
+    },
+    "target": "//agentplane/system_tests:test_vm_sandbox_vm",
+    "link_type": "NEW",
+    "link_source": "saved GetExecution snapshot; fresh GetExecution returned an empty response",
+    "cached_response_status_code": 0,
+    "exit_code": 0,
+    "worker_timestamps": {
+      "queuedTimestamp": "2026-10-27T20:28:44.544168049Z",
+      "workerStartTimestamp": "2026-10-27T20:28:44.625580943Z",
+      "workerCompletedTimestamp": "2026-10-27T20:37:32.655645252Z",
+      "inputFetchStartTimestamp": "2026-10-27T20:28:46.367378594Z",
+      "inputFetchCompletedTimestamp": "2026-10-27T20:28:54.552236669Z",
+      "executionStartTimestamp": "2026-10-27T20:28:54.552237029Z",
+      "executionCompletedTimestamp": "2026-10-27T20:37:27.559353994Z",
+      "outputUploadStartTimestamp": "2026-10-27T20:37:27.559354434Z",
+      "outputUploadCompletedTimestamp": "2026-10-27T20:37:32.655644832Z"
+    }
+  },
+  "canceled_execution_same_digest": {
+    "id": "/uploads/ebd18a98-19ec-4a65-873b-9e071fd93095/blobs/feee7670f67fe76b916e21396551bcd9cac9fd7ee513b114da49dc5ecb019b12/534",
+    "link_type": "NEW",
+    "status": {
+      "code": 1,
+      "message": "invocation cancelled"
+    },
+    "worker_timestamps": "epoch zero in saved GetExecution snapshot"
+  },
+  "test_xml": {
+    "digest": {
+      "hash": "e4e26d5681e873852c425ad0abdcc7c8bbbca95897da712da01f36d4e2bed10f",
+      "sizeBytes": "643"
+    },
+    "suites": [
+      {
+        "name": "pytest",
+        "tests": "3",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "478.454"
+      }
+    ],
+    "cases": [
+      {
+        "name": "test_a_vm_sandbox_runs_a_turn[claude]",
+        "time": "226.699"
+      },
+      {
+        "name": "test_a_vm_sandbox_runs_a_turn[codex]",
+        "time": "104.516"
+      },
+      {
+        "name": "test_codex_tool_oom_preserves_runner_and_app_server[codex]",
+        "time": "147.029"
+      }
+    ]
+  }
+}
