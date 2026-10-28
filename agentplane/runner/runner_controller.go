@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"go.uber.org/zap"
@@ -13,7 +14,7 @@ type runnerLifecycleController struct{ l *lifecycle }
 func (*runnerLifecycleController) Name() string { return runnerControllerName }
 func (*runnerLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{runnerDesiredStateType, runnerInputType, sessionInputType, sessionRuntimeType, operationResultType, journalSealType, ingressAckType, codexExecServerRuntimeType, codexAppServerRuntimeType, bootstrapRuntimeType, processDesiredStateType, processStatusType} {
+	for _, kind := range []string{runnerDesiredStateType, runnerInputType, sessionInputType, sessionRuntimeType, operationResultType, journalSealType, ingressAckType, codexExecServerRuntimeType, codexAppServerRuntimeType, bootstrapRuntimeType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: lifecycleNamespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -145,12 +146,12 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 	// Owner-level completion cannot substitute for the native cleanup barrier.
 	// Include scripts and workspace helpers, and preserve a failed fence even if
 	// a protocol reader already reported the leader's exit.
-	processes, err := r.List(ctx, resource.NewMetadata(lifecycleNamespace, processDesiredStateType, "", resource.VersionUndefined))
+	processes, err := r.List(ctx, resource.NewMetadata(lifecycleNamespace, supervision.DesiredStateType, "", resource.VersionUndefined))
 	if err != nil {
 		return err
 	}
 	for _, process := range processes.Items {
-		status, found, err := lifecycleRead[processStatusSpec](ctx, r, process.Metadata().ID())
+		status, found, err := supervision.ReadStatus(ctx, r, lifecycleNamespace, process.Metadata().ID())
 		if err != nil {
 			return err
 		}
@@ -158,7 +159,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			current.Error = status.StopError
 			return write()
 		}
-		if !found || status.Phase != processExited || !process.Metadata().Finalizers().Empty() {
+		if !found || status.Phase != supervision.Exited || !process.Metadata().Finalizers().Empty() {
 			return write()
 		}
 	}

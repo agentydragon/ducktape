@@ -36,7 +36,7 @@ func (a frameTestAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sequ
 	return a.onFrame(ctx, raw, sequence)
 }
 
-func frameTestSession(t *testing.T, command []string) (*Session, *managedProcess) {
+func frameTestSession(t *testing.T, command []string) (*Session, *supervision.ManagedProcess) {
 	t.Helper()
 	r, err := New(Config{StateDir: t.TempDir()})
 	if err != nil {

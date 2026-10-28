@@ -28,11 +28,11 @@ func TestManagedProcessWaitCleansUpAfterNaturalExit(t *testing.T) {
 	if !process.Running() || process.PID() == 0 {
 		t.Fatalf("launched process running=%t pid=%d", process.Running(), process.PID())
 	}
-	status, found, err := lifecycleRead[processStatusSpec](ctx, r.lifecycle.state, process.id)
-	if err != nil || !found || status.Phase != processRunning || status.Owner != "managed-process-test" || status.PID != process.PID() {
+	status, found, err := supervision.ReadStatus(ctx, r.lifecycle.state, lifecycleNamespace, process.ID())
+	if err != nil || !found || status.Phase != supervision.Running || status.Owner != "managed-process-test" || status.PID != process.PID() {
 		t.Fatalf("live process status = %+v found=%t err=%v", status, found, err)
 	}
-	assertManagedProcessFinalizer(t, ctx, process, true)
+	assertManagedProcessFinalizer(t, ctx, r, process, true)
 
 	if err := process.WriteLine(ctx, "exit"); err != nil {
 		t.Fatal(err)
@@ -52,7 +52,7 @@ func TestManagedProcessWaitCleansUpAfterNaturalExit(t *testing.T) {
 	if err != nil || string(stderr) != "stderr" {
 		t.Fatalf("stderr = %q, err=%v", stderr, err)
 	}
-	assertManagedProcessAbsent(t, ctx, process)
+	assertManagedProcessAbsent(t, ctx, r, process)
 }
 
 func TestManagedProcessCanceledWaitRetainsOwnershipUntilStop(t *testing.T) {
@@ -68,7 +68,7 @@ func TestManagedProcessCanceledWaitRetainsOwnershipUntilStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	stopManagedProcessOnCleanup(t, process)
-	assertManagedProcessFinalizer(t, ctx, process, true)
+	assertManagedProcessFinalizer(t, ctx, r, process, true)
 
 	waitCtx, cancelWait := context.WithCancel(ctx)
 	waitStarted := make(chan struct{})
@@ -96,11 +96,11 @@ func TestManagedProcessCanceledWaitRetainsOwnershipUntilStop(t *testing.T) {
 	if !process.Running() {
 		t.Fatal("canceled Wait stopped the native process")
 	}
-	status, found, err := lifecycleRead[processStatusSpec](ctx, r.lifecycle.state, process.id)
-	if err != nil || !found || status.Phase != processRunning {
+	status, found, err := supervision.ReadStatus(ctx, r.lifecycle.state, lifecycleNamespace, process.ID())
+	if err != nil || !found || status.Phase != supervision.Running {
 		t.Fatalf("process status after canceled Wait = %+v found=%t err=%v", status, found, err)
 	}
-	assertManagedProcessFinalizer(t, ctx, process, true)
+	assertManagedProcessFinalizer(t, ctx, r, process, true)
 
 	if err := process.Stop(ctx); err != nil {
 		t.Fatalf("Stop() after canceled Wait: %v", err)
@@ -108,7 +108,7 @@ func TestManagedProcessCanceledWaitRetainsOwnershipUntilStop(t *testing.T) {
 	if process.Running() {
 		t.Fatal("process remained running after Stop")
 	}
-	assertManagedProcessAbsent(t, ctx, process)
+	assertManagedProcessAbsent(t, ctx, r, process)
 }
 
 func TestManagedProcessBlocksCloseUntilFence(t *testing.T) {
@@ -189,31 +189,31 @@ func newManagedProcessTestRunner(t *testing.T) *Runner {
 	return r
 }
 
-func assertManagedProcessFinalizer(t *testing.T, ctx context.Context, process *managedProcess, want bool) {
+func assertManagedProcessFinalizer(t *testing.T, ctx context.Context, r *Runner, process *supervision.ManagedProcess, want bool) {
 	t.Helper()
-	desired, err := process.l.state.Get(ctx, process.pointer())
+	desired, err := r.lifecycle.state.Get(ctx, process.Pointer())
 	if err != nil {
 		t.Fatalf("read process desired state: %v", err)
 	}
-	got := desired.Metadata().Finalizers().Has(processControllerName)
+	got := desired.Metadata().Finalizers().Has(supervision.ControllerName)
 	if got != want {
 		t.Fatalf("process finalizer present=%t, want %t", got, want)
 	}
 }
 
-func assertManagedProcessAbsent(t *testing.T, ctx context.Context, process *managedProcess) {
+func assertManagedProcessAbsent(t *testing.T, ctx context.Context, r *Runner, process *supervision.ManagedProcess) {
 	t.Helper()
-	_, err := process.l.state.Get(ctx, process.pointer())
+	_, err := r.lifecycle.state.Get(ctx, process.Pointer())
 	if !state.IsNotFoundError(err) {
 		t.Fatalf("process desired state after cleanup: err=%v, want not found", err)
 	}
-	status := resource.NewMetadata(lifecycleNamespace, processStatusType, process.id, resource.VersionUndefined)
-	if _, err := process.l.state.WatchFor(ctx, status, state.WithEventTypes(state.Destroyed)); err != nil {
+	status := resource.NewMetadata(lifecycleNamespace, supervision.StatusType, process.ID(), resource.VersionUndefined)
+	if _, err := r.lifecycle.state.WatchFor(ctx, status, state.WithEventTypes(state.Destroyed)); err != nil {
 		t.Fatalf("wait for managed process status cleanup: %v", err)
 	}
 }
 
-func stopManagedProcessOnCleanup(t *testing.T, process *managedProcess) {
+func stopManagedProcessOnCleanup(t *testing.T, process *supervision.ManagedProcess) {
 	t.Helper()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)

@@ -19,7 +19,7 @@ import (
 
 func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
 	var starts, stops atomic.Int32
-	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*processInstance, error) {
+	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*supervision.Instance, error) {
 		if starts.Add(1) == 1 {
 			return nil, errors.New("temporary executor startup failure")
 		}
@@ -91,7 +91,7 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		entered := make(chan struct{})
 		var enteredOnce sync.Once
-		r := newCodexSynctestRunner(t, stateDir, func(ctx context.Context) (*processInstance, error) {
+		r := newCodexSynctestRunner(t, stateDir, func(ctx context.Context) (*supervision.Instance, error) {
 			enteredOnce.Do(func() { close(entered) })
 			<-ctx.Done()
 			return nil, ctx.Err()
@@ -166,7 +166,7 @@ func TestCodexFailedDrainBlocksRunnerFencing(t *testing.T) {
 	r.codexAppServer.mu.Lock()
 	server := r.codexAppServer.current
 	r.codexAppServer.mu.Unlock()
-	if server == nil || server.process.id != ready.ProcessID {
+	if server == nil || server.process.ID() != ready.ProcessID {
 		t.Fatalf("Codex app-server process = %+v, want runtime ID %q", server, ready.ProcessID)
 	}
 
@@ -289,7 +289,7 @@ func codexAppServerTestLaunch(t *testing.T) harness.LaunchConfig {
 	return harness.LaunchConfig{Binary: binary, BaseURL: "https://codex.example.invalid/v1", Token: "codex-test-token"}
 }
 
-func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(context.Context) (*processInstance, error)) *Runner {
+func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(context.Context) (*supervision.Instance, error)) *Runner {
 	t.Helper()
 	owner, err := OpenStateOwner(stateDir)
 	if err != nil {
@@ -451,7 +451,7 @@ func sessionIDs(sessions []*Session) []string {
 	return ids
 }
 
-func newManagedTestProcess(t *testing.T, r *Runner) *managedProcess {
+func newManagedTestProcess(t *testing.T, r *Runner) *supervision.ManagedProcess {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()

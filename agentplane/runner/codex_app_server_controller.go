@@ -128,7 +128,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 			server.mu.Unlock()
 			if live && desiredState.Mode == runnerRunning && generation == desiredState.Generation {
 				current.Phase = codexAppServerReady
-				current.ProcessID = p.process.id
+				current.ProcessID = p.process.ID()
 				current.Attempt = input.Demand
 				current.Error = ""
 				current.StopError = ""
@@ -137,7 +137,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 				// Initialization admitted under an older RunnerDesiredState may finish physically, but cannot
 				// publish readiness. Shutdown will drain it after every Session has halted.
 				current.Phase = codexAppServerInitializing
-				current.ProcessID = p.process.id
+				current.ProcessID = p.process.ID()
 			} else {
 				current.Phase = codexAppServerStopped
 				current.ProcessID = ""
@@ -220,7 +220,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 		if draining != nil {
 			current.Phase = codexAppServerDraining
 			if p != nil {
-				current.ProcessID = p.process.id
+				current.ProcessID = p.process.ID()
 			}
 			return write()
 		}
@@ -236,7 +236,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 			return write()
 		}
 		current.Phase = codexAppServerDraining
-		current.ProcessID = p.process.id
+		current.ProcessID = p.process.ID()
 		if err := write(); err != nil {
 			return err
 		}
@@ -254,7 +254,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 	}
 	if p != nil {
 		if p.process.Running() {
-			if current.Phase == codexAppServerReady && current.ProcessID == p.process.id {
+			if current.Phase == codexAppServerReady && current.ProcessID == p.process.ID() {
 				if current.Attempt < input.Demand {
 					current.Attempt = input.Demand
 				}

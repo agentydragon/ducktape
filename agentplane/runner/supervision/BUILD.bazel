@@ -6,7 +6,11 @@ go_library(
     name = "supervision",
     srcs = [
         "backend.go",
+        "controller.go",
+        "host.go",
+        "managed_process.go",
         "process.go",
+        "process_resources.go",
         "resources.go",
         "subprocess.go",
         "supervisor.go",
@@ -16,8 +20,15 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/supervision",
     deps = [
         "@com_github_coreos_go_systemd_v22//dbus",
+        "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/resource/meta/spec",
+        "@com_github_cosi_project_runtime//pkg/resource/typed",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
         "@com_github_godbus_dbus_v5//:dbus",
         "@com_github_google_uuid//:uuid",
+        "@com_github_siderolabs_gen//optional",
         "@org_golang_x_sys//unix",
         "@org_uber_go_zap//:zap",
     ],
@@ -32,7 +43,19 @@ go_test(
     embed = [":supervision"],
     exec_properties = {"test.dockerUser": "0:0"},
     race = "on",
-    deps = ["@org_golang_x_sys//unix"],
+    deps = [
+        "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/controller/runtime",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/resource/typed",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
+        "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
+        "@com_github_siderolabs_gen//optional",
+        "@org_golang_x_sys//unix",
+        "@org_uber_go_zap//:zap",
+    ],
 )
 
 go_test(

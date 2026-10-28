@@ -1,7 +1,8 @@
 # Runner lifecycle ownership
 
-This describes the lifecycle controllers and their native operation hosts in this package. COSI Runtime schedules in-process work; the existing Session store, journals, ingress
-acknowledgements, and state-owner lock remain the durable authorities.
+This describes the Runner lifecycle controllers and their native operation hosts. COSI Runtime
+schedules Runner work and the shared process-supervision controller in one engine; the existing
+Session store, journals, ingress acknowledgements, and state-owner lock remain the durable authorities.
 
 ## State and owners
 
@@ -10,24 +11,24 @@ logger, configured by the executable for JSON on stderr. Its resources contain c
 and progress values. They do not contain process handles, adapters, cancellation functions, journal
 connections, or other native state.
 
-| Resource or effect                       | Publisher or owner                             | Meaning                                                                                                 |
-| ---------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Runner desired state and input           | Runner host                                    | Lifecycle mode, incarnation seal UID, generation, and active admission count.                           |
-| Runner runtime                           | Runner lifecycle controller                    | Runner-wide stage and terminal controller error.                                                        |
-| Session input                            | Runner/Session host                            | Demand and snapshots of journal cursor, setup, process, active turn, and queued or running inspections. |
-| Session runtime                          | Session QController                            | Execution phase, attempt, resume flag, process incarnation, and desired-state generation.               |
-| Codex exec-server input and runtime      | Exec-server host and QController               | Demand, process intent, readiness/health deadlines, restart backoff and stop outcome.                   |
-| Process desired state                    | Requesting controller or Runner process host   | Immutable owner, generation, start deadline and cleanup timeout for one launch.                         |
-| Process status                           | Process QController                            | Launch, native exit, stopping and completed cleanup; a finalizer protects each execution domain.        |
-| Process input                            | Process host                                   | Revision-only wakeups for asynchronous launch, exit and stop observations.                              |
-| Codex app-server input and runtime       | App-server host and QController                | Shared app-server demand, exec-server dependency deadline, process incarnation and stop outcome.        |
-| Bootstrap input and runtime              | Runner host and Bootstrap QController          | Accepted one-shot bootstrap demand and its running or terminal outcome.                                 |
-| Operation result                         | Runner/Session host                            | Wakes the owning controller when an asynchronous host operation completes.                              |
-| Journal seal and ingress acknowledgement | Runner/transport host                          | In-memory mirrors of the durable journal seal and persisted ingress acknowledgement.                    |
-| Native process effects                   | Process QController and native host            | Start, observe and fence every Runner-managed native execution domain.                                  |
-| Protocol and journal effects             | Runner, Session, Codex app-server, and journal | Handshake, frame routing, dispatch, interruption, inspection, sealing, and persistence.                 |
+| Resource or effect                       | Publisher or owner                              | Meaning                                                                                                 |
+| ---------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Runner desired state and input           | Runner host                                     | Lifecycle mode, incarnation seal UID, generation, and active admission count.                           |
+| Runner runtime                           | Runner lifecycle controller                     | Runner-wide stage and terminal controller error.                                                        |
+| Session input                            | Runner/Session host                             | Demand and snapshots of journal cursor, setup, process, active turn, and queued or running inspections. |
+| Session runtime                          | Session QController                             | Execution phase, attempt, resume flag, process incarnation, and desired-state generation.               |
+| Codex exec-server input and runtime      | Exec-server host and QController                | Demand, process intent, readiness/health deadlines, restart backoff and stop outcome.                   |
+| Process desired state                    | Requesting controller or `supervision.Host`     | Immutable owner, generation, start deadline and cleanup timeout for one launch.                         |
+| Process status                           | `supervision.Controller`                        | Launch, native exit, stopping and completed cleanup; a finalizer protects each execution domain.        |
+| Process input                            | `supervision.Host` (`supervision-host`)         | Revision-only wakeups for asynchronous launch, exit and stop observations.                              |
+| Codex app-server input and runtime       | App-server host and QController                 | Shared app-server demand, exec-server dependency deadline, process incarnation and stop outcome.        |
+| Bootstrap input and runtime              | Runner host and Bootstrap QController           | Accepted one-shot bootstrap demand and its running or terminal outcome.                                 |
+| Operation result                         | Runner/Session host                             | Wakes the owning controller when an asynchronous host operation completes.                              |
+| Journal seal and ingress acknowledgement | Runner/transport host                           | In-memory mirrors of the durable journal seal and persisted ingress acknowledgement.                    |
+| Native process effects                   | `supervision.Controller` and `supervision.Host` | Start, observe and fence every Runner-managed native execution domain.                                  |
+| Protocol and journal effects             | Runner, Session, Codex app-server, and journal  | Handshake, frame routing, dispatch, interruption, inspection, sealing, and persistence.                 |
 
-Controller roles cover Runner, Session, native process lifetime, Codex exec-server, Codex app-server, and Sandbox bootstrap.
+Controller roles cover Runner, Session, native process lifetime, Codex exec-server, Codex app-server, and Sandbox bootstrap. The reusable process-lifetime controller is supplied by `supervision/` and registered in the Runner's lifecycle engine.
 The renamed resource kinds are `RunnerDesiredStates.agentplane`,
 `CodexExecServerInputs.agentplane`, `CodexExecServerRuntimes.agentplane`,
 `CodexAppServerInputs.agentplane`, and `CodexAppServerRuntimes.agentplane`.
@@ -35,7 +36,8 @@ The process controller names are `codex-exec-server-lifecycle` and
 `codex-app-server-lifecycle`, matching the upstream `codex exec-server` and
 `codex app-server` commands. Each controller exclusively writes its own runtime or status resource.
 Requesting controllers share the process desired-state output kind; protocol/setup workers publish
-their attempts through the explicit `runner-host` owner. The Session QController can reconcile up to
+their process intents through the supervision host as `supervision-host`. Runner-specific lifecycle
+input publication continues to use the explicit `runner-host` owner. The Session QController can reconcile up to
 `session_reconcile_concurrency` Sessions at once (default 16); this controls reconcile workers,
 not how many Sessions can be admitted or stored. Shared service controllers use one reconcile worker;
 process attempts are keyed independently. Hosts publish input changes, process observations and
@@ -54,25 +56,29 @@ the native execution domain is fenced. Failed fencing retains the finalizer and 
 
 ## COSI conventions and package structure
 
-The package keeps runtime wiring, typed resources, host input publication, and asynchronous
-operation ownership in `lifecycle_runtime.go`, `lifecycle_resources.go`, `lifecycle_inputs.go`,
-and `operations.go`. Controllers have their own `*_controller.go` files, including resource specs
-where specific to that controller. `process_controller.go` and `process_host.go` own one-shot
-native lifetime and its asynchronous observations. Launch callbacks and native handles stay in the
-host registry; COSI resources contain no streams or environment values. `managed_process.go` lets
-protocol/setup workers request native execution and observe it through that same controller. It
-exposes streams, not a second backend lifecycle. Completed attempts are released through resource
-teardown; canceling an observation does not stop execution. Admission and status have
-separate files.
+Runner runtime wiring, Runner-specific typed resources, host input publication, and asynchronous
+operation ownership stay in `lifecycle_runtime.go`, `lifecycle_resources.go`, `lifecycle_inputs.go`,
+and `operations.go`. Runner controllers have their own `*_controller.go` files, including resource
+specs specific to each controller. The generic native-process controller, its resources, host registry,
+and `ManagedProcess` wrapper live in `supervision/controller.go`, `process_resources.go`, `host.go`,
+and `managed_process.go`. The host keeps launch callbacks and native handles; COSI resources contain
+only comparable lifecycle values, never streams or environment values. Runner's `process_launch.go`
+captures the admitted owner and generation before calling `Host.Launch`. `lifecycle_runtime.go`
+registers that host's controller in the same engine as Runner's other lifecycle controllers. There is
+one runtime, with one process-lifetime owner. The `ManagedProcess` API lets protocol and setup
+workers publish intent, use streams, and wait on the same controller. Completed attempts are released
+through resource teardown; canceling an observation does not stop execution. Admission and status
+have separate files.
 
-Resources use upstream [`typed.Resource`](https://github.com/cosi-project/runtime/blob/v1.16.2/pkg/resource/typed/typed_resource.go).
+Process resources use upstream [`typed.Resource`](https://github.com/cosi-project/runtime/blob/v1.16.2/pkg/resource/typed/typed_resource.go).
 Their Go spec determines their resource kind and namespace, so reads and writes cannot accidentally
 pair a spec with another kind. Specs contain only comparable values; `DeepCopy` is a value copy.
 The upstream [`safe` helpers](https://github.com/cosi-project/runtime/tree/v1.16.2/pkg/safe)
 provide typed reads, conflict-safe modification, and resource watches. Controller writes go through
-the controller runtime to enforce exclusive output ownership. Host input publication uses the
-explicit `runner-host` owner. Resource-only waits use COSI watches; predicates spanning native
-handles and journals retain the Runner observation notification.
+the controller runtime to enforce exclusive output ownership. Runner-specific host input publication
+uses `runner-host`; process intent and input revisions published by `supervision.Host` use
+`supervision-host`. Process status waits use COSI watches; predicates spanning native handles and
+journals retain the Runner observation notification.
 
 QControllers declare primary inputs, mapped dependencies, exclusive outputs, and concurrency.
 Deadlines use COSI requeue scheduling rather than sleeping inside reconciliation. Operation results
@@ -175,8 +181,9 @@ incarnation's ingress acknowledgement.
 
 ## Validation and rollback
 
-The primary automated target is `bbr test //agentplane/runner:runner_test`, which runs with the race
-detector and contains the lifecycle controller cases. Validate public quiesce and status behavior
+`bbr test //agentplane/runner/supervision:supervision_test` runs the generic process-controller cases
+against an in-memory COSI engine. `bbr test //agentplane/runner:runner_test` runs with the race
+detector and covers Runner lifecycle behavior and the `process_launch.go` integration. Validate public quiesce and status behavior
 with `bbr test //agentplane/sandbox_controller:sandbox_controller_test`. For native recovery and
 shared-process behavior, use `bbr test` with the affected runner targets: `//agentplane/runner:test_restart`,
 `//agentplane/runner:test_turns`, `//agentplane/runner:test_initialize`,

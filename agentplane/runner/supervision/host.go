@@ -1,4 +1,4 @@
-package runner
+package supervision
 
 import (
 	"context"
@@ -7,23 +7,26 @@ import (
 	"sync"
 
 	"github.com/cosi-project/runtime/pkg/controller"
-	"github.com/cosi-project/runtime/pkg/resource/typed"
-	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
-// processInstance is the generic handle for one native execution domain. It
+// Instance is the generic handle for one native execution domain. It
 // deliberately contains no resource or backend-specific data.
-type processInstance struct {
-	done <-chan error
-	stop func(context.Context) error
-	pid  int
+type Instance struct {
+	Done <-chan error
+	Stop func(context.Context) error
+	PID  int
 }
 
-type processLaunch func(context.Context) (*processInstance, error)
+type Launch func(context.Context) (*Instance, error)
 
-type processHost struct {
-	l *lifecycle
+type Host struct {
+	ctx       context.Context
+	state     state.State
+	namespace resource.Namespace
+	workers   *sync.WaitGroup
+	onError   func(error)
 
 	mu      sync.Mutex
 	entries map[string]*processHostEntry
@@ -43,7 +46,7 @@ type processStartSlot struct {
 	cancel   context.CancelFunc
 	done     chan struct{}
 	result   processStartResult
-	instance *processInstance
+	instance *Instance
 }
 
 type processExitObservation struct {
@@ -60,8 +63,8 @@ type processStopSlot struct {
 
 type processHostEntry struct {
 	id     string
-	spec   processDesiredStateSpec
-	launch processLaunch
+	spec   DesiredState
+	launch Launch
 
 	start *processStartSlot
 	exit  *processExitObservation
@@ -87,39 +90,39 @@ type processHostSnapshot struct {
 	fenced      bool
 }
 
-func newProcessHost(l *lifecycle) *processHost {
-	return &processHost{
-		l:       l,
-		entries: make(map[string]*processHostEntry),
-		retired: make(map[string]struct{}),
+// NewHost binds generic supervision to the caller's state, lifetime and worker barrier.
+func NewHost(ctx context.Context, store state.State, namespace resource.Namespace, workers *sync.WaitGroup, onError func(error)) *Host {
+	return &Host{
+		ctx: ctx, state: store, namespace: namespace, workers: workers, onError: onError,
+		entries: make(map[string]*processHostEntry), retired: make(map[string]struct{}),
 	}
 }
 
-// request records the callback before publishing desired state. The callback
+// Controller is registered in the caller's existing COSI runtime.
+func (h *Host) Controller() controller.QController { return &Controller{host: h} }
+
+// Request records the callback before publishing desired state. The callback
 // is immutable for an ID, even if a controller retries with a fresh closure.
-func (h *processHost) request(ctx context.Context, r controller.QRuntime, id string, spec processDesiredStateSpec, launch processLaunch) error {
+func (h *Host) Request(ctx context.Context, r controller.QRuntime, id string, spec DesiredState, launch Launch) error {
 	if r == nil {
 		return errors.New("process desired-state writer is not configured")
 	}
 	return h.register(ctx, r, id, spec, launch, func() error {
-		_, err := lifecycleWrite(ctx, r, id, spec)
+		_, err := writeResource(ctx, r, h.namespace, id, spec)
 		return err
 	})
 }
 
 // Native protocol/setup workers publish their intent through the host boundary.
 // They wait for the same controller as callers which publish from reconciliation.
-func (h *processHost) requestNative(ctx context.Context, id string, spec processDesiredStateSpec, launch processLaunch) error {
-	return h.register(ctx, h.l.state, id, spec, launch, func() error {
-		return safe.StateModify(ctx, h.l.state, lifecycleResourceFor(id, spec), func(r *typed.Resource[processDesiredStateSpec, lifecycleExtension[processDesiredStateSpec]]) error {
-			*r.TypedSpec() = spec
-			return nil
-		}, state.WithUpdateOwner("runner-host"))
+func (h *Host) requestNative(ctx context.Context, id string, spec DesiredState, launch Launch) error {
+	return h.register(ctx, h.state, id, spec, launch, func() error {
+		return publishResource(ctx, h.state, h.namespace, id, spec)
 	})
 }
 
-func (h *processHost) register(ctx context.Context, reader controller.Reader, id string, spec processDesiredStateSpec, launch processLaunch, publish func() error) error {
-	if h == nil || h.l == nil {
+func (h *Host) register(ctx context.Context, reader controller.Reader, id string, spec DesiredState, launch Launch, publish func() error) error {
+	if h == nil {
 		return errors.New("process host is not configured")
 	}
 	if id == "" {
@@ -146,7 +149,7 @@ func (h *processHost) register(ctx context.Context, reader controller.Reader, id
 		return fmt.Errorf("process %q desired state is immutable", id)
 	}
 
-	current, found, err := lifecycleRead[processDesiredStateSpec](ctx, reader, id)
+	current, found, err := readResource[DesiredState](ctx, reader, h.namespace, id)
 	if err != nil {
 		if newEntry {
 			delete(h.entries, id)
@@ -175,7 +178,7 @@ func (h *processHost) register(ctx context.Context, reader controller.Reader, id
 	return nil
 }
 
-func (h *processHost) snapshot(id string) (processHostSnapshot, bool) {
+func (h *Host) snapshot(id string) (processHostSnapshot, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	entry := h.entries[id]
@@ -213,7 +216,7 @@ func (h *processHost) snapshot(id string) (processHostSnapshot, bool) {
 	return snapshot, true
 }
 
-func (h *processHost) start(id string) error {
+func (h *Host) start(id string) error {
 	h.mu.Lock()
 	entry := h.entries[id]
 	if entry == nil {
@@ -226,22 +229,22 @@ func (h *processHost) start(id string) error {
 	}
 	start := &processStartSlot{done: make(chan struct{})}
 	entry.start = start
-	h.l.workers.Add(1)
+	h.workers.Add(1)
 	h.mu.Unlock()
 
 	go h.runStart(entry, start)
 	return nil
 }
 
-func (h *processHost) runStart(entry *processHostEntry, start *processStartSlot) {
-	defer h.l.workers.Done()
+func (h *Host) runStart(entry *processHostEntry, start *processStartSlot) {
+	defer h.workers.Done()
 
 	var ctx context.Context
 	var cancel context.CancelFunc
 	if entry.spec.StartDeadline.IsZero() {
-		ctx, cancel = context.WithCancel(h.l.runner.ctx)
+		ctx, cancel = context.WithCancel(h.ctx)
 	} else {
-		ctx, cancel = context.WithDeadline(h.l.runner.ctx, entry.spec.StartDeadline)
+		ctx, cancel = context.WithDeadline(h.ctx, entry.spec.StartDeadline)
 	}
 
 	h.mu.Lock()
@@ -272,9 +275,9 @@ func (h *processHost) runStart(entry *processHostEntry, start *processStartSlot)
 		h.mu.Unlock()
 		// Retirement cannot normally pass an unfinished start slot. Keep a
 		// defensive fence here in case a future caller violates that contract.
-		if instance != nil && instance.stop != nil {
-			stopCtx, stopCancel := context.WithTimeout(h.l.runner.ctx, entry.spec.StopTimeout)
-			_ = instance.stop(stopCtx)
+		if instance != nil && instance.Stop != nil {
+			stopCtx, stopCancel := context.WithTimeout(h.ctx, entry.spec.StopTimeout)
+			_ = instance.Stop(stopCtx)
 			stopCancel()
 		}
 		return
@@ -284,7 +287,7 @@ func (h *processHost) runStart(entry *processHostEntry, start *processStartSlot)
 	start.result = processStartResult{err: startErr}
 	if instance != nil {
 		start.result.started = true
-		start.result.pid = instance.pid
+		start.result.pid = instance.PID
 		start.instance = instance
 		h.startObserverLocked(entry, instance)
 	}
@@ -303,24 +306,24 @@ func (h *processHost) runStart(entry *processHostEntry, start *processStartSlot)
 	}
 }
 
-func (h *processHost) startObserverLocked(entry *processHostEntry, instance *processInstance) {
+func (h *Host) startObserverLocked(entry *processHostEntry, instance *Instance) {
 	if entry.exit != nil {
 		return
 	}
-	ctx, cancel := context.WithCancel(h.l.runner.ctx)
+	ctx, cancel := context.WithCancel(h.ctx)
 	exit := &processExitObservation{cancel: cancel, done: make(chan struct{})}
 	entry.exit = exit
-	h.l.workers.Add(1)
+	h.workers.Add(1)
 	go h.observe(ctx, entry, instance, exit)
 }
 
-func (h *processHost) observe(ctx context.Context, entry *processHostEntry, instance *processInstance, exit *processExitObservation) {
-	defer h.l.workers.Done()
+func (h *Host) observe(ctx context.Context, entry *processHostEntry, instance *Instance, exit *processExitObservation) {
+	defer h.workers.Done()
 
 	var exitErr error
 	observed := false
 	select {
-	case exitErr, _ = <-instance.done:
+	case exitErr, _ = <-instance.Done:
 		observed = true
 	case <-ctx.Done():
 	}
@@ -342,7 +345,7 @@ func (h *processHost) observe(ctx context.Context, entry *processHostEntry, inst
 
 // requestStop installs the only stop slot and cancels a launch that is still
 // resolving. The stop worker joins the launch before fencing a late instance.
-func (h *processHost) requestStop(id string) error {
+func (h *Host) requestStop(id string) error {
 	h.mu.Lock()
 	entry := h.entries[id]
 	if entry == nil {
@@ -362,7 +365,7 @@ func (h *processHost) requestStop(id string) error {
 	stop := &processStopSlot{done: make(chan struct{})}
 	entry.stop = stop
 	startCancel := start.cancel
-	h.l.workers.Add(1)
+	h.workers.Add(1)
 	h.mu.Unlock()
 
 	if startCancel != nil {
@@ -372,13 +375,13 @@ func (h *processHost) requestStop(id string) error {
 	return nil
 }
 
-func (h *processHost) runStop(entry *processHostEntry, start *processStartSlot, stop *processStopSlot) {
-	defer h.l.workers.Done()
+func (h *Host) runStop(entry *processHostEntry, start *processStartSlot, stop *processStopSlot) {
+	defer h.workers.Done()
 
 	<-start.done
 
 	h.mu.Lock()
-	var instance *processInstance
+	var instance *Instance
 	if h.entries[entry.id] == entry && entry.start == start {
 		instance = start.instance
 	}
@@ -386,11 +389,11 @@ func (h *processHost) runStop(entry *processHostEntry, start *processStartSlot, 
 
 	var stopErr error
 	if instance != nil {
-		stopFn := instance.stop
+		stopFn := instance.Stop
 		if stopFn == nil {
 			stopErr = errors.New("process instance has no stop callback")
 		} else {
-			ctx, cancel := context.WithTimeout(h.l.runner.ctx, entry.spec.StopTimeout)
+			ctx, cancel := context.WithTimeout(h.ctx, entry.spec.StopTimeout)
 			stopErr = stopFn(ctx)
 			cancel()
 		}
@@ -430,10 +433,10 @@ func (h *processHost) runStop(entry *processHostEntry, start *processStartSlot, 
 // retire removes callbacks and handles only after every operation and exit
 // observation is settled. A small ID marker prevents a stale owner retry from
 // replaying a destroyed identity.
-func (h *processHost) retire(ctx context.Context, r controller.QRuntime, id string) (bool, error) {
+func (h *Host) retire(ctx context.Context, r controller.QRuntime, id string) (bool, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if _, found, err := lifecycleRead[processDesiredStateSpec](ctx, r, id); err != nil {
+	if _, found, err := readResource[DesiredState](ctx, r, h.namespace, id); err != nil {
 		return false, err
 	} else if found {
 		return false, nil
@@ -478,20 +481,16 @@ func processSlotDone(done <-chan struct{}) bool {
 	}
 }
 
-func (h *processHost) publishInputLocked(entry *processHostEntry) error {
+func (h *Host) publishInputLocked(entry *processHostEntry) error {
 	if h.entries[entry.id] != entry {
 		return nil
 	}
 	entry.revision++
-	return publishLifecycle(h.l, entry.id, processInputSpec{Revision: entry.revision})
+	return publishResource(h.ctx, h.state, h.namespace, entry.id, inputSpec{Revision: entry.revision})
 }
 
-func (h *processHost) notify(err error) {
-	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			h.l.runner.fail(fmt.Errorf("publish process lifecycle input: %w", err))
-		}
-		return
+func (h *Host) notify(err error) {
+	if err != nil && !errors.Is(err, context.Canceled) {
+		h.onError(fmt.Errorf("publish process lifecycle input: %w", err))
 	}
-	h.l.runner.changed()
 }

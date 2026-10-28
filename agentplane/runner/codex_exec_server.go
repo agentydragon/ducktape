@@ -75,7 +75,7 @@ type codexExecServer struct {
 	mu     sync.Mutex
 
 	probeOp     *operation
-	startEffect func(context.Context) (*processInstance, error)
+	startEffect func(context.Context) (*supervision.Instance, error)
 	probeEffect func(context.Context) error
 }
 
@@ -115,7 +115,7 @@ func (e *codexExecServer) requestLocked() error {
 	return publishLifecycle(l, codexExecServerResourceID, input)
 }
 
-func (e *codexExecServer) start(ctx context.Context) (*processInstance, error) {
+func (e *codexExecServer) start(ctx context.Context) (*supervision.Instance, error) {
 	env := maps.Clone(e.runner.config.HarnessEnvironment)
 	// The executor needs tool routing and identity, not model authentication.
 	for _, name := range []string{"OPENAI_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_BASE_URL", "CODEX_HOME"} {
@@ -153,11 +153,11 @@ func (e *codexExecServer) start(ctx context.Context) (*processInstance, error) {
 		code, err := p.Wait(context.Background())
 		done <- errors.Join(fmt.Errorf("Codex exec-server exited: code=%d; %s", code, p.ExitDescription()), err)
 	}()
-	return &processInstance{pid: p.PID(), done: done, stop: func(ctx context.Context) error { return p.Stop(ctx, stopGrace) }}, nil
+	return &supervision.Instance{PID: p.PID(), Done: done, Stop: func(ctx context.Context) error { return p.Stop(ctx, stopGrace) }}, nil
 }
 
-func (e *codexExecServer) startProcess(ctx context.Context) (*processInstance, error) {
-	var instance *processInstance
+func (e *codexExecServer) startProcess(ctx context.Context) (*supervision.Instance, error) {
+	var instance *supervision.Instance
 	var err error
 	if e.startEffect != nil {
 		instance, err = e.startEffect(ctx)
@@ -166,7 +166,7 @@ func (e *codexExecServer) startProcess(ctx context.Context) (*processInstance, e
 	}
 	var refusal codexExecServerRefusal
 	if errors.As(err, &refusal) {
-		err = &processLaunchRefusal{reason: refusal.reason, cause: err}
+		err = &supervision.LaunchRefusal{Reason: refusal.reason, Cause: err}
 	}
 	return instance, err
 }
@@ -263,7 +263,7 @@ func fenceCodexExecServerContainer(ctx context.Context, socket, previous string)
 	})
 }
 
-func claimCodexExecServerContainer(ctx context.Context, socket string, env map[string]string) (*processInstance, error) {
+func claimCodexExecServerContainer(ctx context.Context, socket string, env map[string]string) (*supervision.Instance, error) {
 	c, status, err := executorcontrol.Connect(ctx, socket, executorcontrol.Request{Operation: "claim", Environment: env})
 	if err != nil {
 		return nil, err
@@ -280,7 +280,7 @@ func claimCodexExecServerContainer(ctx context.Context, socket string, env map[s
 		_, err := io.Copy(io.Discard, c)
 		done <- errors.Join(errors.New("executor container ownership connection lost"), err)
 	}()
-	return &processInstance{done: done, stop: func(ctx context.Context) error {
+	return &supervision.Instance{Done: done, Stop: func(ctx context.Context) error {
 		_ = c.Close()
 		return fenceCodexExecServerContainer(ctx, socket, status.Generation)
 	}}, nil

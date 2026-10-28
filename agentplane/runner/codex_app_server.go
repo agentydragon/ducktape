@@ -45,7 +45,7 @@ type codexAppServer struct {
 
 // codexAppServerProcess is one incarnation of the shared app-server.
 type codexAppServerProcess struct {
-	process     *managedProcess
+	process     *supervision.ManagedProcess
 	router      *codex.Router[*Session]
 	hostingMu   sync.Mutex
 	exiting     bool
@@ -98,7 +98,7 @@ func (c *codexAppServer) host(ctx context.Context, s *Session) (*codexAppServerP
 		if runtime.Phase == codexAppServerReady {
 			c.mu.Lock()
 			p := c.current
-			if p != nil && p.process.id == runtime.ProcessID && p.host(s) {
+			if p != nil && p.process.ID() == runtime.ProcessID && p.host(s) {
 				ready = p
 				c.mu.Unlock()
 				return true, nil
@@ -247,7 +247,7 @@ func (c *codexAppServer) initialize(ctx context.Context, owner *Session) error {
 // delivered its remaining diagnostics. The app lifecycle controller waits for this before fencing Runner.
 func (c *codexAppServer) waitReaders(p *codexAppServerProcess) {
 	p.readers.Wait()
-	cleanupErr := p.process.waitStopped(c.runner.ctx)
+	cleanupErr := p.process.WaitStopped(c.runner.ctx)
 	if cleanupErr != nil {
 		p.recordReadError(cleanupErr)
 		c.runner.fail(cleanupErr)
@@ -272,7 +272,7 @@ func (c *codexAppServer) publishExit(p *codexAppServerProcess) {
 	}
 	if err == nil {
 		input.ExitGeneration++
-		input.ExitProcessID = p.process.id
+		input.ExitProcessID = p.process.ID()
 		if readerErr := p.readError(); readerErr != nil {
 			input.ExitError = readerErr.Error()
 		} else {
@@ -411,7 +411,7 @@ func (c *codexAppServer) readStderr(p *codexAppServerProcess) {
 			text := string(bytes.ToValidUTF8(buffer[:n], []byte("�")))
 			hosts := p.router.Hosts()
 			if len(hosts) == 0 {
-				zap.L().Info("Codex app-server stderr", zap.String("process", p.process.id), zap.String("text", text))
+				zap.L().Info("Codex app-server stderr", zap.String("process", p.process.ID()), zap.String("text", text))
 			}
 			for _, s := range hosts {
 				if e := s.Emit(c.runner.ctx, observation(&eventpb.HarnessStderr{Text: text}), nil); e != nil {
@@ -480,13 +480,13 @@ func (c *codexAppServer) status() *runnerpb.HarnessProcessStatus {
 		state = runnerpb.ProcessState_PROCESS_STATE_STOPPING
 	}
 	status := &runnerpb.HarnessProcessStatus{ProcessId: runtime.ProcessID, Harness: runnerpb.Harness_HARNESS_CODEX, State: state}
-	if p != nil && p.process.id == runtime.ProcessID {
+	if p != nil && p.process.ID() == runtime.ProcessID {
 		for _, s := range p.router.Hosts() {
 			status.AssignedSessionIds = append(status.AssignedSessionIds, s.id)
 		}
 	}
 	slices.Sort(status.AssignedSessionIds)
-	if p != nil && p.process.id == runtime.ProcessID && p.process.Running() {
+	if p != nil && p.process.ID() == runtime.ProcessID && p.process.Running() {
 		pid := int64(p.process.PID())
 		status.Pid = &pid
 	}

@@ -93,7 +93,7 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 	s.mu.Lock()
 	s.process = process
 	s.adapter = adapter
-	s.processID = process.id
+	s.processID = process.ID()
 	s.nativeStop = stopNone
 	s.mu.Unlock()
 	s.readers.Add(2)
@@ -136,7 +136,7 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 	s.mu.Lock()
 	s.process = p.process
 	s.codexAppServer = p
-	s.processID = p.process.id
+	s.processID = p.process.ID()
 	s.mu.Unlock()
 	server.handshakeMu.Lock()
 	err = s.prepare(ctx, adapter, p.process.PID())
@@ -455,7 +455,7 @@ func (s *Session) deliverReplies() {
 	}
 }
 
-func (s *Session) readStdout(process *managedProcess, adapter harness.Adapter) {
+func (s *Session) readStdout(process *supervision.ManagedProcess, adapter harness.Adapter) {
 	defer s.readers.Done()
 	buffer := make([]byte, 64*1024)
 	var pending []byte
@@ -521,7 +521,7 @@ func (s *Session) readStdout(process *managedProcess, adapter harness.Adapter) {
 	}
 }
 
-func (s *Session) readStderr(process *managedProcess) {
+func (s *Session) readStderr(process *supervision.ManagedProcess) {
 	defer s.readers.Done()
 	buffer := make([]byte, 4096)
 	for {

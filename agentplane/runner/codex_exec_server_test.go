@@ -108,7 +108,7 @@ func TestExecutorConfigurationRejectsPartialOrOverlappingIsolation(t *testing.T)
 }
 
 func TestExecutorEnsureReturnsTypedCompanionRefusal(t *testing.T) {
-	r := newExecutorLifecycleRunner(t, func(context.Context) (*processInstance, error) {
+	r := newExecutorLifecycleRunner(t, func(context.Context) (*supervision.Instance, error) {
 		return nil, codexExecServerRefusal{reason: "Codex binary is unavailable"}
 	}, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), codexExecServerTestTimeout)
@@ -124,7 +124,7 @@ func TestExecutorConcurrentStartupPublishesOneProcessAndClosesThroughCOSI(t *tes
 	entered := make(chan struct{}, 2)
 	release := make(chan struct{})
 	var starts, stops atomic.Int32
-	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*processInstance, error) {
+	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*supervision.Instance, error) {
 		starts.Add(1)
 		entered <- struct{}{}
 		select {
@@ -176,7 +176,7 @@ func TestExecutorConcurrentStartupPublishesOneProcessAndClosesThroughCOSI(t *tes
 func TestExecutorHealthToleratesFailuresResetsAndFencesBeforeSuccessor(t *testing.T) {
 	var starts, stops atomic.Int32
 	var probes atomic.Int32
-	r := newExecutorLifecycleRunner(t, func(context.Context) (*processInstance, error) {
+	r := newExecutorLifecycleRunner(t, func(context.Context) (*supervision.Instance, error) {
 		starts.Add(1)
 		return newTestExecutorInstance(&stops), nil
 	}, func(context.Context) error {
@@ -228,14 +228,14 @@ func TestExecutorFailedFenceRetainsOwnershipAndBlocksSuccessor(t *testing.T) {
 		var starts, stops atomic.Int32
 		fenceFailure := errors.New("executor container could not prove fencing")
 		done := make(chan error, 1)
-		instance := &processInstance{
-			done: done,
-			stop: func(context.Context) error {
+		instance := &supervision.Instance{
+			Done: done,
+			Stop: func(context.Context) error {
 				stops.Add(1)
 				return fenceFailure
 			},
 		}
-		r := newCodexSynctestRunner(t, stateDir, func(context.Context) (*processInstance, error) {
+		r := newCodexSynctestRunner(t, stateDir, func(context.Context) (*supervision.Instance, error) {
 			if starts.Add(1) == 1 {
 				return instance, nil
 			}
@@ -260,14 +260,14 @@ func TestExecutorFailedFenceRetainsOwnershipAndBlocksSuccessor(t *testing.T) {
 		if failed.Phase != codexExecServerStopped || failed.Generation != ready.Generation {
 			t.Fatalf("executor runtime after failed fence = %+v, want stopped generation %d", failed, ready.Generation)
 		}
-		desired, err := r.lifecycle.state.Get(r.ctx, resource.NewMetadata(lifecycleNamespace, processDesiredStateType, failed.ProcessID, resource.VersionUndefined))
+		desired, err := r.lifecycle.state.Get(r.ctx, resource.NewMetadata(lifecycleNamespace, supervision.DesiredStateType, failed.ProcessID, resource.VersionUndefined))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !desired.Metadata().Finalizers().Has(processControllerName) {
+		if !desired.Metadata().Finalizers().Has(supervision.ControllerName) {
 			t.Fatal("failed executor fence released the process finalizer")
 		}
-		process, found, err := lifecycleRead[processStatusSpec](r.ctx, r.lifecycle.state, failed.ProcessID)
+		process, found, err := supervision.ReadStatus(r.ctx, r.lifecycle.state, lifecycleNamespace, failed.ProcessID)
 		if err != nil || !found || process.StopError == "" {
 			t.Fatalf("process after failed fence = %+v, found=%v err=%v", process, found, err)
 		}
@@ -294,7 +294,7 @@ func TestExecutorFailedFenceRetainsOwnershipAndBlocksSuccessor(t *testing.T) {
 func TestExecutorCloseCancelsConcurrentStartupWithoutRestart(t *testing.T) {
 	entered := make(chan struct{}, 1)
 	var starts, stops atomic.Int32
-	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*processInstance, error) {
+	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*supervision.Instance, error) {
 		starts.Add(1)
 		entered <- struct{}{}
 		<-ctx.Done()
@@ -333,7 +333,7 @@ func TestExecutorCloseCancelsConcurrentStartupWithoutRestart(t *testing.T) {
 	}
 }
 
-func newExecutorLifecycleRunner(t *testing.T, start func(context.Context) (*processInstance, error), probe func(context.Context) error) *Runner {
+func newExecutorLifecycleRunner(t *testing.T, start func(context.Context) (*supervision.Instance, error), probe func(context.Context) error) *Runner {
 	t.Helper()
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "executor-control.sock")
@@ -376,12 +376,12 @@ func newExecutorLifecycleRunner(t *testing.T, start func(context.Context) (*proc
 	return r
 }
 
-func newTestExecutorInstance(stops *atomic.Int32) *processInstance {
+func newTestExecutorInstance(stops *atomic.Int32) *supervision.Instance {
 	done := make(chan error, 1)
 	var once sync.Once
-	return &processInstance{
-		done: done,
-		stop: func(context.Context) error {
+	return &supervision.Instance{
+		Done: done,
+		Stop: func(context.Context) error {
 			stops.Add(1)
 			once.Do(func() { done <- errors.New("test executor was fenced") })
 			return nil

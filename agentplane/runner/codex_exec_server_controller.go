@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -71,12 +72,12 @@ func (*codexExecServerLifecycleController) Settings() controller.QSettings {
 			{Namespace: lifecycleNamespace, Type: runnerRuntimeType, Kind: controller.InputQMapped},
 			{Namespace: lifecycleNamespace, Type: runnerInputType, Kind: controller.InputQMapped},
 			{Namespace: lifecycleNamespace, Type: operationResultType, Kind: controller.InputQMapped},
-			{Namespace: lifecycleNamespace, Type: processDesiredStateType, Kind: controller.InputQMapped},
-			{Namespace: lifecycleNamespace, Type: processStatusType, Kind: controller.InputQMapped},
+			{Namespace: lifecycleNamespace, Type: supervision.DesiredStateType, Kind: controller.InputQMapped},
+			{Namespace: lifecycleNamespace, Type: supervision.StatusType, Kind: controller.InputQMapped},
 		},
 		Outputs: []controller.Output{
 			{Type: codexExecServerRuntimeType, Kind: controller.OutputExclusive},
-			{Type: processDesiredStateType, Kind: controller.OutputShared},
+			{Type: supervision.DesiredStateType, Kind: controller.OutputShared},
 		},
 		Concurrency: optional.Some(uint(1)),
 	}
@@ -87,17 +88,17 @@ func (c *codexExecServerLifecycleController) MapInput(ctx context.Context, _ *za
 	switch ptr.Type() {
 	case codexExecServerInputType, runnerDesiredStateType, runnerRuntimeType, runnerInputType:
 		return []resource.Pointer{input}, nil
-	case processDesiredStateType, processStatusType:
+	case supervision.DesiredStateType, supervision.StatusType:
 		var owner string
 		var found bool
 		var err error
-		if ptr.Type() == processDesiredStateType {
-			var desired processDesiredStateSpec
-			desired, found, err = lifecycleRead[processDesiredStateSpec](ctx, r, ptr.ID())
+		if ptr.Type() == supervision.DesiredStateType {
+			var desired supervision.DesiredState
+			desired, found, err = supervision.ReadDesiredState(ctx, r, lifecycleNamespace, ptr.ID())
 			owner = desired.Owner
 		} else {
-			var status processStatusSpec
-			status, found, err = lifecycleRead[processStatusSpec](ctx, r, ptr.ID())
+			var status supervision.Status
+			status, found, err = supervision.ReadStatus(ctx, r, lifecycleNamespace, ptr.ID())
 			owner = status.Owner
 		}
 		if err != nil {
@@ -157,10 +158,10 @@ func (c *codexExecServerLifecycleController) Reconcile(ctx context.Context, _ *z
 	}
 
 	probeResult, probeDone := c.l.takeHostOperation(&e.mu, &e.probeOp)
-	var process processStatusSpec
+	var process supervision.Status
 	var processFound bool
 	if current.ProcessID != "" {
-		process, processFound, err = lifecycleRead[processStatusSpec](ctx, r, current.ProcessID)
+		process, processFound, err = supervision.ReadStatus(ctx, r, lifecycleNamespace, current.ProcessID)
 		if err != nil {
 			return err
 		}
@@ -181,11 +182,11 @@ func (c *codexExecServerLifecycleController) Reconcile(ctx context.Context, _ *z
 		return fatal
 	}
 	if current.Phase == codexExecServerStarting && processFound {
-		if process.Phase == processRunning {
+		if process.Phase == supervision.Running {
 			current.Refusal, current.Error = "", ""
 			current.Phase = codexExecServerProbing
 			current.NextProbe = now
-		} else if process.Phase == processExited || process.Phase == processStopping {
+		} else if process.Phase == supervision.Exited || process.Phase == supervision.Stopping {
 			current.Refusal = process.StartRefusal
 			current.Error = process.StartError
 			if current.Error == "" {
@@ -201,7 +202,7 @@ func (c *codexExecServerLifecycleController) Reconcile(ctx context.Context, _ *z
 			return err
 		}
 	}
-	if (current.Phase == codexExecServerProbing || current.Phase == codexExecServerReady) && processFound && process.Phase != processRunning {
+	if (current.Phase == codexExecServerProbing || current.Phase == codexExecServerReady) && processFound && process.Phase != supervision.Running {
 		current.Error = process.ExitError
 		if current.Error == "" {
 			current.Error = "Codex exec-server exited"
@@ -383,7 +384,7 @@ func (c *codexExecServerLifecycleController) ensureProcessIntent(ctx context.Con
 	if latest != desired || latest.Mode != runnerRunning {
 		return nil
 	}
-	return c.l.processes.request(ctx, r, current.ProcessID, processDesiredStateSpec{
+	return c.l.processes.Request(ctx, r, current.ProcessID, supervision.DesiredState{
 		Owner: codexExecServerControllerName, Generation: current.Generation,
 		StartDeadline: current.ReadyDeadline, StopTimeout: codexExecServerFenceDeadline,
 	}, e.startProcess)
@@ -395,7 +396,7 @@ func (c *codexExecServerLifecycleController) reconcileStop(ctx context.Context, 
 		return write()
 	}
 	if current.ProcessID != "" {
-		ptr := resource.NewMetadata(lifecycleNamespace, processDesiredStateType, current.ProcessID, resource.VersionUndefined)
+		ptr := resource.NewMetadata(lifecycleNamespace, supervision.DesiredStateType, current.ProcessID, resource.VersionUndefined)
 		ready, err := r.Teardown(ctx, ptr)
 		if err != nil && !state.IsNotFoundError(err) {
 			return err
