@@ -21,6 +21,14 @@ js_library(
     ],
 )
 
+# Retained for legacy `js_openapi_zod` callers until the JSON layer migrates SSH.
+js_binary(
+    name = "strip_ts_types",
+    data = ["//:node_modules/typescript"],
+    entry_point = "strip_ts_types.mjs",
+    visibility = ["//visibility:public"],
+)
+
 js_binary(
     name = "openapi_typescript_codegen",
     data = [
