@@ -198,8 +198,10 @@ func summarize(cursor int64, event model.EventIdentity, payload []byte, createdA
 
 func summarizeStored(cursor int64, event model.EventIdentity, githubPayload []byte, content entryContentStorage, createdAt time.Time) (EntrySummary, error) {
 	if message, ok := event.(model.MessageEvent); ok {
-		return EntrySummary{Cursor: cursor, CreatedAt: createdAt.UTC(), Provider: EntryFromMessage,
-			Summary: fmt.Sprintf("Message from %s/%s", message.Sender.Namespace, message.Sender.Name)}, nil
+		return EntrySummary{
+			Cursor: cursor, CreatedAt: createdAt.UTC(), Provider: EntryFromMessage,
+			Summary: fmt.Sprintf("Message from %s/%s", message.Sender.Namespace, message.Sender.Name),
+		}, nil
 	}
 	payload, err := entryPayloadFromRead(event, githubPayload, content)
 	if err != nil {
