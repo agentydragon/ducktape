@@ -3,7 +3,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary"
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
-load("//devinfra/js:json_schema_typescript.bzl", "json_schema_typescript")
+load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
 load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
@@ -97,7 +97,7 @@ openapi_js_library(
 # The exact input schemas advertised by the in-process MCP servers. Keep both the generated
 # TypeScript declarations and their source JSON: :mcp_tool_schema turns each catalog entry into
 # a runtime Zod validator derived from FastMCP's advertised structural contract.
-json_schema_typescript(
+json_schema_js_library(
     name = "mcp_tool_arguments_types",
     out = "api/mcp_tool_arguments.d.ts",
     schema = "//haku/console/mcp:tool_arguments_schema",
@@ -120,7 +120,7 @@ js_library(
 # so per-tool result widgets validate against FastMCP's advertised output contract rather than
 # restating it. grocy-sf contributes its reflected batch and read tools; its OpenAPI tool widgets
 # stay hand-authored.
-json_schema_typescript(
+json_schema_js_library(
     name = "mcp_tool_results_types",
     out = "api/mcp_tool_results.d.ts",
     schema = "//haku/console/mcp:tool_results_schema",
@@ -163,7 +163,7 @@ ts_library(
 
 # The shared ToolCallRecord wire model. No Console route serves it, so it is not in :schema; the
 # renderer-only state and preview targets consume it directly.
-json_schema_typescript(
+json_schema_js_library(
     name = "tool_call_record",
     out = "api/tool_call_record.d.ts",
     schema = "//haku/console:tool_call_record_schema",

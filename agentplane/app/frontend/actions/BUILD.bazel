@@ -1,6 +1,6 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
-load("//devinfra/js:json_schema_typescript.bzl", "json_schema_typescript")
+load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
@@ -39,13 +39,13 @@ js_library(
     srcs = [":ssh_action_schema_json_files"],
 )
 
-json_schema_typescript(
+json_schema_js_library(
     name = "ssh_action_arguments_types",
     out = "schemas/ssh/exec.arguments.d.ts",
     schema = "//ssh_mcp_server:exec.arguments.schema.json",
 )
 
-json_schema_typescript(
+json_schema_js_library(
     name = "ssh_action_result_types",
     out = "schemas/ssh/exec.result.d.ts",
     schema = "//ssh_mcp_server:exec.result.schema.json",

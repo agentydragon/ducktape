@@ -2,7 +2,7 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
-load("//devinfra/js:json_schema_typescript.bzl", "json_schema_typescript")
+load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
@@ -52,7 +52,7 @@ ts_config(
     src = "tsconfig.json",
 )
 
-json_schema_typescript(
+json_schema_js_library(
     name = "types",
     out = "types.d.ts",
     schema = "//airlock:types_schema",

@@ -2,7 +2,7 @@
 
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 
-def json_schema_typescript(name, schema, out, schema_files = [], visibility = None):
+def json_schema_js_library(name, schema, out, schema_files = [], visibility = None):
     """Generate declarations from a declared JSON Schema file.
 
     `schema_files` declares each file reached by a relative local `$ref`.

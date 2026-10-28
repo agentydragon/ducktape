@@ -5,7 +5,6 @@ declaration file and packages it in a `js_library` under the requested target na
 produces the artifact; the converter does not invoke a backend exporter.
 
 ```starlark
-load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
@@ -81,14 +80,14 @@ schema reference; such payloads are not claimed as supported by this conversion 
 
 ## Standalone JSON Schema declarations
 
-The `json_schema_typescript` macro converts one declared JSON Schema file without invoking its
+The `json_schema_js_library` macro converts one declared JSON Schema file without invoking its
 producer and packages the declaration in a `js_library` under the requested target name. It has the
 same file-input shape as `openapi_js_library`:
 
 ```starlark
-load("//devinfra/js:json_schema_typescript.bzl", "json_schema_typescript")
+load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
 
-json_schema_typescript(
+json_schema_js_library(
     name = "types",
     schema = "//my/api:types_schema",
     schema_files = ["//my/api:shared_definitions"],
@@ -106,10 +105,10 @@ library:
 
 ```starlark
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
-load("//devinfra/js:json_schema_typescript.bzl", "json_schema_typescript")
+load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 
-json_schema_typescript(
+json_schema_js_library(
     name = "tool_arguments_types",
     schema = ":types_schema",
     out = "api/types.d.ts",
