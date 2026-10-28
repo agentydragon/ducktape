@@ -552,6 +552,7 @@ console.log(later, holder.run(), holder.tag);
 fn record_writes_without_closed_own_field_ownership_keep_the_cycle() {
     for body in [
         "const result = { get run() { return callback(); } }; result.run = callback; return result;",
+        "const result = { set run(value) { value(); } }; result.run = callback; return result;",
         "const result = {}; result.run = callback; return result;",
         "const result = { run: null }; globalThis.saved = result; result.run = callback; return result;",
         "const result = { run: null }; const alias = result; alias.run = callback; return result;",
