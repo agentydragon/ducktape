@@ -51,6 +51,40 @@ BuildBuddy's flake statistics are useful leads. Report the service's heuristic
 separately from independently verified recoveries and document its sample window.
 Unavailable historical logs limit diagnosis; they do not erase recorded outcomes.
 
+### Verify cache exposure and physical executions
+
+Do not infer an uncached test run from target-history `startTime` versus invocation
+creation time. A cached result can be indexed with a start time after the current
+invocation was created. Query the exact target in each child Bazel invocation:
+
+```bash
+bbapi target "$INVOCATION_ID" --label "$TARGET_LABEL" --json > target.json
+bbapi execution "$INVOCATION_ID" --json > executions.json
+```
+
+In the target response, inspect
+`targetGroups[].targets[].testSummary.totalRunCount` and
+`totalNumCached`, along with `testResultEvents[].testResult.executionInfo.strategy`.
+When the summary is present, report cached runs and non-cached runs separately;
+the latter is `totalRunCount - totalNumCached`. A missing target, summary, or
+cache field is unknown unless another response field confirms the cache result.
+The protobuf JSON encoder omits scalar `totalNumCached` when it has the default
+value of zero. For example, when `totalRunCount` is present and every matching
+test-result event has strategy `remote`, record the omitted cache count as zero
+and cite the strategy as confirmation; do not mark it unknown solely because
+the zero-valued field is absent. Conversely, do not silently coerce an absent
+field to zero when result-event coverage or strategy is incomplete. Never infer
+cache state from timestamps.
+
+Keep three counts distinct: target verdicts, cached versus non-cached test runs,
+and unique physical RBE execution IDs. A non-cached run is not automatically a
+unique physical execution: action sharing or merging can link work across
+invocations. Match exact target labels and deduplicate the execution IDs returned
+by `bbapi execution`; leave physical exposure unknown when no matching execution
+row exists. A cached pass is a recorded result, not a fresh execution or a same-
+source recovery. Preserve the invocation ID, target, tested SHA, configuration,
+cache fields, and execution IDs with the evidence.
+
 ## Quantify without overstating
 
 For each ranked target or failure signature, show counts, exposure, time range,
