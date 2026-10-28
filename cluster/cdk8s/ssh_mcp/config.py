@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from ipaddress import IPv4Address
+from pathlib import Path
 
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from ssh_mcp_server.server import SshSettings
+from ssh_mcp_server.server import SshSettings, TargetConfig
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "ssh-mcp"
@@ -65,8 +66,8 @@ class Target:
     user: str
     identity_file: str
 
-    def ssh_settings(self) -> dict[str, str]:
-        return {"host": self.destination.host, "user": self.user, "identity_file": self.identity_file}
+    def ssh_settings(self) -> TargetConfig:
+        return TargetConfig(host=self.destination.host, user=self.user, identity_file=Path(self.identity_file))
 
 
 @dataclass(frozen=True)
@@ -125,20 +126,22 @@ def _host_key(relative: str) -> str:
 def load() -> SshMcpConfig:
     """Read canonical host and identity keys and build the validated SSH target roster."""
     targets = _targets()
-    settings: dict[str, object] = {
-        "known_hosts_file": f"{CONFIG_DIR}/known_hosts",
-        "command_timeout_seconds": 300,
-        "connect_timeout_seconds": 10,
-        "output_limit_bytes": 65536,
-        "max_concurrent_executions": 4,
-        "targets": [target.ssh_settings() for target in targets],
-    }
-    SshSettings.model_validate(settings)
+    settings = SshSettings(
+        known_hosts_file=Path(CONFIG_DIR) / "known_hosts",
+        command_timeout_seconds=300,
+        connect_timeout_seconds=10,
+        output_limit_bytes=65536,
+        max_concurrent_executions=4,
+        targets=[target.ssh_settings() for target in targets],
+    )
     destinations = _ordered_destinations(targets)
     known_hosts = "".join(
         f"{destination.host} {_host_key(destination.host_key_file)}\n" for destination in destinations
     )
     switch_agent_public_key = " ".join(_read_input(SWITCH_AGENT_PUBLIC_KEY).split()[:2])
     return SshMcpConfig(
-        targets=targets, settings=settings, known_hosts=known_hosts, switch_agent_public_key=switch_agent_public_key
+        targets=targets,
+        settings=settings.model_dump(mode="json", exclude_unset=True),
+        known_hosts=known_hosts,
+        switch_agent_public_key=switch_agent_public_key,
     )
