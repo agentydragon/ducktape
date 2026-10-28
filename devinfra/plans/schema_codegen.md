@@ -31,164 +31,286 @@ Database migrations, ordinary serialization, UI rendering, and bundling are outs
 | [Operator-authored argument policies](../../agentplane/action_service/policies/argument_schema.py)                                                                                                                                                                                                                             | JSON Schema supplied as policy data                                                                         | Python checks the declared schema dialect; [Go policy evaluation](../../agentplane/action_service/policies/argument_schema.go) compiles and validates with `santhosh-tekuri/jsonschema/v6`                               | Action argument authorization; no language-model generation or frontend code generation             |
 | [Augur rollout vocabulary](../../finance/augur/frontend/export_rollout_event_vocabulary.py)                                                                                                                                                                                                                                    | Backend ordering plus Pydantic discriminator variants                                                       | Component-owned exporter → TS literal tuple and union                                                                                                                                                                    | Frontend ordering and exhaustive vocabulary types                                                   |
 
-### Current conversion paths
+### Whole-repository state before
 
-These diagrams group the owners above by the path their current build or runtime uses. In
-production, `js_openapi_schema`, `js_openapi_zod`, and `js_json_schema` take owner generator
-binaries and run export plus conversion inside their macros. The spike's file-input helpers
-(`openapi_types_from_file`, `openapi_zod_from_file`, and `json_schema_types_from_file`) are
-fixture tools; the proposed named converter interfaces in the next section are not production
-APIs or a shared intermediate representation.
+This is one map of the current production paths in the inventory, including the independent
+native and runtime paths. Blue boxes are producers, gray boxes are intermediate/output formats,
+amber boxes name converters, and green boxes are consumers or checks. Orange boxes identify
+the current export/conversion coupling, handwritten aliases, synthetic HTTP wrapper, and
+type-stripping path that the proposal changes.
 
-#### HTTP schemas and typed consumers
-
-```mermaid
-flowchart TB
-  api_models["FastAPI and Pydantic owners<br/>Agentplane, Props, Haku, Augur, Study Casino"]
-  api_models -->|"js_openapi_schema invokes the owner generator"| openapi_types["Private OpenAPI JSON<br/>for this macro invocation"]
-  openapi_types -->|"js_openapi_schema runs openapi-typescript"| declarations["OpenAPI .d.ts<br/>paths and components"]
-  declarations -->|"ts_library / openapi-fetch"| typed_http["Frontend types and typed HTTP clients"]
-  api_models -->|"js_openapi_zod invokes the owner generator"| openapi_zod["Separate private OpenAPI JSON<br/>for this macro invocation"]
-  openapi_zod -->|"js_openapi_zod runs Hey API Zod plugin with .ts output"| zod_ts["Generated Zod .ts"]
-  zod_ts -->|"Normal ts_library compilation"| typed_zod["Augur TypeScript validation consumers"]
-  openapi_zod -->|"js_openapi_zod runs Hey API Zod plugin with .mjs output"| zod_ts_js["Generated Zod TypeScript"]
-  zod_ts_js -->|"strip_ts_types emits JavaScript"| zod_mjs["Zod .mjs"]
-  zod_mjs -->|"js_library import"| plain_js["Study Casino JavaScript validation consumers"]
-  ssh_tools["SSH FastMCP tool signatures"] -->|"export_frontend_schema.py"| ssh_openapi["Synthetic OpenAPI 3.1 JSON"]
-  ssh_openapi -->|"js_openapi_zod and Hey API Zod plugin"| ssh_zod["Generated Zod module"]
-  ssh_zod -->|"Agentplane SSH action renderer imports"| ssh_consumer["SSH action rendering"]
-```
-
-The OpenAPI declaration and Zod branches are distinct macro invocations today; this diagram does
-not imply that they share one intermediate artifact.
-
-#### Standalone JSON Schema publication and reverse export
-
-```mermaid
-flowchart TB
-  py_models["Pydantic model owners<br/>Airlock and Haku"] -->|"js_json_schema invokes owner exporter"| model_schema["Standalone JSON Schema"]
-  model_schema -->|"json-schema-to-typescript via js_json_schema"| model_types["Generated .d.ts"]
-  model_types -->|"ts_library imports"| model_consumers["Frontend wire and renderer types"]
-  model_schema -->|"js_json_schema schema_out retains JSON"| retained_schema["Runtime .schema.json"]
-  retained_schema -->|"Haku adapters call z.fromJSONSchema"| runtime_zod["Runtime tool argument and result validators"]
-  claude_zod["Extracted Claude hook Zod modules"] -->|"export_json_schema.mjs calls z.toJSONSchema"| reverse_schema["Draft 2020-12 JSON Schema"]
-  reverse_schema -->|"Python Pydantic/Zod schema-equivalence tests"| reverse_consumer["Schema-equivalence tests"]
-```
-
-#### JSON Schema to Go and runtime policy validation
-
-```mermaid
-flowchart TB
-  codex_cli["Pinned Codex protocol CLI"] -->|"CLI schema-export target"| codex_schema["Codex protocol JSON Schema"]
-  codex_schema -->|"protocol/generate.mjs / quicktype-core"| codex_go["Generated Go models"]
-  codex_go -->|"go_library / runner imports"| codex_consumer["Runner JSON-RPC implementation"]
-  widget_schema["widget.schema.json<br/>bounded spike fixture"] -->|"quicktype/generate.mjs / quicktype-core"| widget_go["Generated Go model"]
-  widget_go -->|"go_library / compiled fixture consumer"| widget_consumer["Quicktype Go consumer test"]
-  widget_schema -->|"Fixture go_test compiles santhosh-tekuri/jsonschema/v6"| schema_validator["Native Go JSON Schema validator"]
-  schema_validator -->|"Positive and negative runtime checks"| validator_test["Constraint validation test"]
-```
-
-#### Runtime validation of authored policy schemas
-
-```mermaid
-flowchart TB
-  policy_schema["Operator-authored policy JSON Schema"] -->|"Python argument_schema.py dialect checker"| py_policy["Python schema policy check"]
-  policy_schema -->|"Go argument_schema.go / jsonschema v6"| go_policy["Action argument validation"]
-```
-
-#### Runtime Pydantic tool and provider schemas
-
-```mermaid
-flowchart TB
-  provider_models["Pydantic structured-output models"] -->|"openai_json_schema: anyOf conversion and strict required fields"| provider_schema["Provider-restricted JSON Schema"]
-  provider_schema -->|"OpenAI-compatible request construction"| provider_boundary["Structured-output request boundary"]
-  question_models["Loom question and nested answer models"] -->|"question_schema / model_json_schema"| nested_schema["JSON Schema with local references"]
-  nested_schema -->|"_inline_refs"| inline_schema["Reference-inlined tool input JSON Schema"]
-  inline_schema -->|"Loom Inspect/Anthropic tool registration"| model_tool["Inspect and Anthropic tool calls"]
-```
-
-The OpenAI-compatible path covers schema publication only; it does not claim live provider
-acceptance. Fixture-specific converter names identify spike code, while the production owners and
-rules remain those in the inventory table.
-
-#### Backend vocabulary to TypeScript
-
-```mermaid
-flowchart TB
-  vocabulary["Augur RolloutEvent variants and backend ordering"] -->|"export_rollout_event_vocabulary.py"| vocabulary_ts["TypeScript literal tuple and union"]
-  vocabulary_ts -->|"ts_library"| vocabulary_consumer["Augur frontend exhaustive types"]
-```
-
-#### Native protobuf message bindings
-
-```mermaid
-flowchart TB
-  proto_sources["Agentplane .proto files<br/>and imports"] -->|"proto_library"| proto_graph["ProtoInfo source graph<br/>and descriptors"]
-  proto_graph -->|"ts_proto_library<br/>protoc-gen-es"| ts_proto["Protobuf-ES modules<br/>JavaScript and declarations"]
-  ts_proto -->|"ts_library / protobuf codecs"| ts_proto_users["TypeScript consumers"]
-  proto_graph -->|"go_proto_library<br/>protoc-gen-go"| go_proto["Go message source"]
-  go_proto -->|"go_library / protobuf codecs"| go_proto_users["Go consumers"]
-  proto_graph -->|"py_proto_library_with_mypy_stubs<br/>protoc and mypy-protobuf"| py_proto["Python messages<br/>.py and .pyi"]
-  py_proto -->|"py_library / mypy"| py_proto_users["Python consumers"]
-```
-
-The imported-closure spike uses a local protobuf_es rule invoking protoc-gen-es to emit JS and
-declarations directly; its normal TS consumer tests the generated native codecs.
+B means build/export time; R means runtime. Boxes describe repository boundary formats, including
+in-memory schema/tool objects. R outputs are runtime schemas or objects unless labeled as files.
+Generator-internal ASTs and ordinary application payload serialization are outside this map.
+Reused format boxes represent separate owner documents unless explicitly labeled as a shared artifact.
+The spike-only generators belong to the proof matrix, not this production-before graph.
 
 ```mermaid
 flowchart LR
-  ortools_proto["Pinned OR-Tools<br/>.proto files"] -->|"rust_prost_library<br/>protoc-gen-prost"| rust_proto["Rust prost source"]
-  rust_proto -->|"rust_library"| rust_users["Rust solver and<br/>C API consumers"]
+    python_models["Python / Pydantic models<br/>owned by each component"]:::producer
+    fastmcp_signatures["FastMCP tool signatures<br/>SSH and Haku owners"]:::producer
+  subgraph frontend["HTTP, model and tool schemas: generation and frontend consumption"]
+    http_export_types["B: js_openapi_schema<br/>invokes owner export_schema.py<br/>app.openapi and owner additions"]:::legacy
+    http_types_json["Private OpenAPI 3 JSON<br/>declaration macro invocation"]:::legacy
+    http_export_zod["B: js_openapi_zod<br/>invokes owner export_schema.py<br/>app.openapi and owner additions"]:::legacy
+    http_zod_json["Separate private OpenAPI 3 JSON<br/>Zod macro invocation"]:::legacy
+    api_typegen["B: js_openapi_schema<br/>openapi-typescript"]:::legacy
+    api_types["API .d.ts<br/>paths, operations, components"]:::artifact
+    model_aliases["Maintained .ts model aliases<br/>components.schemas indexed types"]:::legacy
+    zod_gen["B: js_openapi_zod<br/>Hey API Zod 4 plugin"]:::legacy
+    python_models --> http_export_types
+    http_export_types --> http_types_json
+    http_types_json --> api_typegen
+    api_typegen --> api_types
+    api_types -->|"handwritten aliases"| model_aliases
+    python_models --> http_export_zod
+    http_export_zod --> http_zod_json
+    http_zod_json --> zod_gen
+    ssh_reflect["B: SSH tool reflection"]:::converter
+    ssh_json["Tool input/output JSON Schemas<br/>in memory"]:::artifact
+    ssh_wrap["B: export_frontend_schema.py<br/>invent /exec HTTP operation"]:::legacy
+    ssh_openapi["Synthetic OpenAPI 3.1 JSON"]:::legacy
+    fastmcp_signatures --> ssh_reflect
+    ssh_reflect --> ssh_json
+    ssh_json --> ssh_wrap
+    ssh_wrap --> ssh_openapi
+    ssh_openapi --> zod_gen
+    model_export["B: js_json_schema<br/>invokes owner Pydantic exporter<br/>Airlock / Haku serialization mode"]:::legacy
+    model_json["Private model JSON Schema"]:::artifact
+    tool_export["B: js_json_schema<br/>export_tool_schemas.py<br/>FastMCP catalog selection"]:::legacy
+    tool_json["Haku catalog JSON Schemas<br/>Draft 2020-12<br/>arguments and structured results"]:::artifact
+    json_typegen["B: js_json_schema<br/>json-schema-to-typescript"]:::legacy
+    python_models --> model_export
+    model_export --> model_json
+    fastmcp_signatures --> tool_export
+    tool_export --> tool_json
+    model_json --> json_typegen
+    tool_json --> json_typegen
+    retained_json["Retained catalog .schema.json<br/>js_json_schema schema_out option"]:::artifact
+    tool_json -->|"retain for runtime"| retained_json
+    zod_compile["B: ts_library / tsc<br/>inside js_openapi_zod<br/>for .ts output"]:::legacy
+    strip_ts["B: strip_ts_types<br/>inside js_openapi_zod<br/>for .mjs output"]:::legacy
+    zod_mjs["Generated Zod .mjs<br/>no generated declarations"]:::artifact
+    js_validation["Study Casino plain-JS<br/>fetch and WebSocket validation"]:::consumer
+    zod_ts -->|"Study Casino"| strip_ts
+    strip_ts --> zod_mjs
+    zod_mjs -->|"js_library / import"| js_validation
+    zod_ts["Generated Zod .ts"]:::artifact
+    zod_modules["Compiled Zod ES modules<br/>.js and .d.ts"]:::artifact
+    zod_validation["Runtime request / response validation<br/>Augur; SSH renderer"]:::consumer
+    model_types["Model / catalog .d.ts"]:::artifact
+    typed_models["Frontend wire / renderer model types<br/>checked with ts_library / tsc"]:::consumer
+    http_clients["Typed HTTP clients<br/>openapi-fetch and operation types"]:::consumer
+    json_runtime["R: ordinary TS adapter<br/>z.fromJSONSchema"]:::converter
+    runtime_zod["Runtime Zod schema objects"]:::artifact
+    tool_consumers["Haku tool previews and validation"]:::consumer
+    zod_gen --> zod_ts
+    zod_ts -->|"TS output"| zod_compile
+    zod_compile --> zod_modules
+    zod_modules -->|"import / safeParse"| zod_validation
+    json_typegen --> model_types
+    model_types -->|"js_library; type-only import"| typed_models
+    api_types -->|"paths / operations"| http_clients
+    model_aliases -->|"type-only import"| typed_models
+    retained_json --> json_runtime
+    json_runtime --> runtime_zod
+    runtime_zod -->|"safeParse at tested boundary"| tool_consumers
+  end
+  subgraph native["Native protobuf: unchanged format family"]
+    proto_sources["Agentplane .proto source graph<br/>messages; HTTP-annotated services"]:::producer
+    proto_export["B: proto_library"]:::converter
+    proto_info["ProtoInfo imported source closure<br/>and FileDescriptorSet artifacts"]:::artifact
+    proto_es["B: ts_proto_library<br/>protoc-gen-es target=js+dts"]:::converter
+    proto_js["Protobuf-ES .js + .d.ts<br/>native message and service schemas"]:::artifact
+    proto_go["B: go_proto_library<br/>protoc-gen-go<br/>go_grpc_v2 / protoc-gen-go-grpc<br/>grpc_gateway / protoc-gen-grpc-gateway"]:::converter
+    proto_go_src["Go .go sources<br/>messages, gRPC services, HTTP gateway"]:::artifact
+    proto_py["B: py_proto_library_with_mypy_stubs<br/>protoc --python_out / --pyi_out<br/>py_grpc_service_library<br/>gRPC + protoc-gen-mypy_grpc"]:::converter
+    proto_py_src["Python .py + .pyi<br/>messages and gRPC services"]:::artifact
+    native_apps["TS / Go / Python apps and services<br/>native protobuf bytes and ProtoJSON codecs"]:::consumer
+    proto_docs["B: proto_openapi<br/>protoc-gen-openapiv2"]:::converter
+    swagger["Swagger / OpenAPI 2 JSON<br/>HTTP description; not ProtoJSON parity"]:::artifact
+    published_docs["Embedded / published API references<br/>Action, notification and egress APIs"]:::consumer
+    ortools["Pinned OR-Tools .proto sources"]:::producer
+    ortools_export["B: proto_library"]:::converter
+    ortools_info["OR-Tools ProtoInfo source closure<br/>and FileDescriptorSet artifacts"]:::artifact
+    prost["B: rust_prost_library<br/>protoc-gen-prost"]:::converter
+    rust_src["Rust prost .rs bindings"]:::artifact
+    rust_app["Rust solver and C API consumers"]:::consumer
+    proto_sources --> proto_export
+    proto_export --> proto_info
+    proto_info --> proto_es
+    proto_es --> proto_js
+    proto_info --> proto_go
+    proto_go --> proto_go_src
+    proto_info --> proto_py
+    proto_py --> proto_py_src
+    proto_info --> proto_docs
+    proto_docs --> swagger
+    ortools --> ortools_export
+    ortools_export --> ortools_info
+    ortools_info --> prost
+    prost --> rust_src
+    proto_js -->|"js_library; TS typecheck / runtime imports"| native_apps
+    proto_go_src -->|"go_library"| native_apps
+    proto_py_src -->|"py_library / mypy"| native_apps
+    swagger -->|"copy_file; Go embedsrcs"| published_docs
+    rust_src -->|"rust_library / Clippy"| rust_app
+  end
+  subgraph kubernetes["Go API schemas and CRD imports: unchanged format family"]
+    go_api["Go Kubernetes API types<br/>kubebuilder markers"]:::producer
+    authored_go_path["GoPath copied source closure<br/>authored doc.go and types.go"]:::artifact
+    deepcopy["B: controller_deepcopy<br/>controller-gen object"]:::converter
+    deepcopy_go["zz_generated.deepcopy.go"]:::artifact
+    go_api_package["Go API package / GoPath closure<br/>authored types plus generated methods"]:::artifact
+    clientgen["B: kubernetes_clients<br/>applyconfiguration-gen / client-gen<br/>lister-gen / informer-gen"]:::converter
+    go_clients["Go client / apply / lister / informer sources"]:::artifact
+    controllers["Typed Go controller consumers"]:::consumer
+    crdgen["B: controller_crds<br/>controller-gen crd"]:::converter
+    generated_crd["Generated structural CRD YAML"]:::artifact
+    crd_publish["B: agentplane/crds/generate.py<br/>normalization and schema projection"]:::converter
+    published_crd["Published / committed CRD YAML<br/>Agentplane manifests"]:::artifact
+    upstream_crds["Pinned upstream CRD YAML / bundles<br/>or Go-embedded schemas"]:::producer
+    crd_extract["B: extract_crd<br/>select / unwrap / wrap schema<br/>owner-specific removal policy"]:::converter
+    selected_crd["Selected CRD YAML<br/>openAPIV3Schema"]:::artifact
+    cdk_import["B: cdk8s_import<br/>cdk8s import / jsii"]:::converter
+    cdk_package["Typed Python .py + py.typed<br/>JSII .jsii.tgz runtime package"]:::artifact
+    synth["B: Python charts / cdk8s synth<br/>mypy checks construct usage"]:::converter
+    manifest_yaml["Synthesized Kubernetes YAML"]:::artifact
+    cluster["Typed cluster configuration<br/>Flux / Kubernetes consumers"]:::consumer
+    go_api -->|"go_path mode=copy"| authored_go_path
+    authored_go_path --> deepcopy
+    deepcopy --> deepcopy_go
+    go_api --> go_api_package
+    deepcopy_go --> go_api_package
+    go_api_package --> clientgen
+    clientgen --> go_clients
+    authored_go_path --> crdgen
+    crdgen --> generated_crd
+    generated_crd --> crd_publish
+    crd_publish --> published_crd
+    published_crd --> cdk_import
+    upstream_crds --> crd_extract
+    crd_extract --> selected_crd
+    selected_crd --> cdk_import
+    cdk_import --> cdk_package
+    cdk_package --> synth
+    synth --> manifest_yaml
+    manifest_yaml --> cluster
+    go_clients -->|"go_library"| controllers
+    published_crd -->|"CRD installation"| cluster
+    upstream_crds -->|"already a single importable CRD"| cdk_import
+  end
+  subgraph owners["Owner-specific schema publication and runtime adapters: unchanged"]
+    hook_zod["Extracted Claude hook Zod source"]:::producer
+    zod_export["B: export_json_schema.mjs<br/>z.toJSONSchema"]:::converter
+    hook_json["Draft 2020-12 JSON Schema"]:::artifact
+    schema_eq["Python Pydantic / Zod<br/>structural-equivalence checks"]:::consumer
+    hook_zod --> zod_export
+    zod_export --> hook_json
+    hook_json --> schema_eq
+    codex_cli["Pinned Codex protocol CLI"]:::producer
+    codex_export["B: CLI JSON Schema export"]:::converter
+    codex_json["Protocol + JSON-RPC transport<br/>JSON Schema documents"]:::artifact
+    codex_select["B: protocol/generate.mjs<br/>select consumed roots / transport adapter"]:::converter
+    selected_json["Selected JSON Schema root graph"]:::artifact
+    quicktype["B: quicktype-core"]:::converter
+    quicktype_go["Generated Go model source"]:::artifact
+    runner["Go runner JSON-RPC implementation<br/>model decoding is not schema validation"]:::consumer
+    codex_cli --> codex_export
+    codex_export --> codex_json
+    codex_json --> codex_select
+    codex_select --> selected_json
+    selected_json --> quicktype
+    quicktype --> quicktype_go
+    quicktype_go -->|"go_library"| runner
+    openai_export["R: openai_json_schema<br/>shared OpenAICompatibleSchema<br/>strict fields / unions / ref siblings"]:::converter
+    gmail_export["R: Gmail-local<br/>OpenAICompatibleSchema"]:::converter
+    provider_json["Provider-restricted JSON Schemas<br/>separate owner documents / profiles"]:::artifact
+    structured_requests["OpenAI-compatible structured requests<br/>schema publication is not live acceptance"]:::consumer
+    python_models --> openai_export
+    python_models --> gmail_export
+    openai_export --> provider_json
+    gmail_export --> provider_json
+    provider_json --> structured_requests
+    runtime_pydantic["R: model_json_schema<br/>owner Pydantic model"]:::converter
+    runtime_model_json["Ordinary validation JSON Schema<br/>per owner; may contain local refs"]:::artifact
+    ollama["Ollama format schema requests"]:::consumer
+    props_adapter["R: Props direct_tool<br/>FunctionTool input_model schema<br/>model_validate at invocation"]:::converter
+    props_tools["MAF function tools / typed arguments"]:::consumer
+    loom_inline["R: Loom question_schema<br/>_inline_refs"]:::converter
+    inline_json["Reference-inlined JSON Schema"]:::artifact
+    loom_tools["Inspect / Anthropic tools<br/>Pydantic answer validation"]:::consumer
+    python_models --> runtime_pydantic
+    runtime_pydantic --> runtime_model_json
+    runtime_model_json --> ollama
+    runtime_model_json --> props_adapter
+    props_adapter --> props_tools
+    runtime_model_json --> loom_inline
+    loom_inline --> inline_json
+    inline_json --> loom_tools
+    vocabulary["Augur Pydantic discriminator variants<br/>and explicit backend order"]:::producer
+    vocabulary_export["B: export_rollout_event_vocabulary.py<br/>inspect TypeAdapter schema / check order"]:::converter
+    vocabulary_ts["TS literal tuple + union source"]:::artifact
+    vocabulary_use["Augur ordering and exhaustive types"]:::consumer
+    vocabulary --> vocabulary_export
+    vocabulary_export --> vocabulary_ts
+    vocabulary_ts -->|"ts_library / tsc"| vocabulary_use
+    policy_json["Operator-authored JSON Schema<br/>declared dialect"]:::producer
+    policy_python["R: Python argument_schema.py<br/>jsonschema dialect / schema check"]:::converter
+    policy_admission["Policy schema admission"]:::consumer
+    policy_go["R: Go argument_schema.go<br/>santhosh-tekuri/jsonschema/v6 compiler"]:::converter
+    compiled_policy["Compiled Go schema validator"]:::artifact
+    authorization["Action argument authorization"]:::consumer
+    policy_json --> policy_python
+    policy_python --> policy_admission
+    policy_json --> policy_go
+    policy_go --> compiled_policy
+    compiled_policy -->|"validate action arguments"| authorization
+  end
+  subgraph mcp_imports["External schema imports to runtime MCP tools: unchanged"]
+    google_wheel["Pinned google-api-python-client wheel"]:::producer
+    discovery_load["R: _load_doc<br/>importlib.resources"]:::converter
+    discovery_json["Google Discovery JSON<br/>legacy schema dialect + Google extensions"]:::artifact
+    gentool_specs["GenTool expose / pin / method specs"]:::producer
+    discovery_map["R: build_generated_tools<br/>_to_json_schema / input / output mapping<br/>cycles elided; int64 stays string"]:::converter
+    google_tool_objects["FastMCP GeneratedGoogleTool objects<br/>input and result JSON Schemas"]:::artifact
+    grocy_raw["Pinned Grocy OpenAPI 3.1 JSON"]:::producer
+    grocy_repair["B: grocy_openapi_fixed<br/>fix_openapi_spec.py"]:::converter
+    grocy_fixed["Grocy-repaired OpenAPI 3.1 JSON"]:::artifact
+    grocy_provider["R: FastMCP OpenAPIProvider<br/>server.build_mcp"]:::converter
+    grocy_objects["Generated OpenAPI-backed tool objects"]:::artifact
+    grocy_customize["R: Grocy owner customization<br/>names / descriptions / drop output schemas"]:::converter
+    grocy_input_tools["Grocy tool objects<br/>input schema only"]:::artifact
+    scope_clients["R: RequestScopedOpenAPIClients<br/>bind caller HTTP client per invocation"]:::converter
+    grocy_http["Grocy HTTP tool execution"]:::consumer
+    advertise["R: FastMCP tool advertisement"]:::converter
+    advertised_json["MCP tool descriptors in JSON<br/>input schemas; output schemas if retained"]:::artifact
+    mcp_clients["Google / Grocy MCP clients"]:::consumer
+    google_wheel --> discovery_load
+    discovery_load --> discovery_json
+    discovery_json --> discovery_map
+    gentool_specs --> discovery_map
+    discovery_map --> google_tool_objects
+    google_tool_objects --> advertise
+    grocy_raw --> grocy_repair
+    grocy_repair --> grocy_fixed
+    grocy_fixed --> grocy_provider
+    grocy_provider --> grocy_objects
+    grocy_objects --> grocy_customize
+    grocy_customize --> grocy_input_tools
+    grocy_input_tools --> advertise
+    grocy_input_tools --> scope_clients
+    scope_clients --> grocy_http
+    advertise --> advertised_json
+    advertised_json --> mcp_clients
+  end
+  classDef producer fill:#dbeafe,stroke:#2563eb,color:#172554
+  classDef artifact fill:#f1f5f9,stroke:#64748b,color:#0f172a
+  classDef converter fill:#fef3c7,stroke:#b45309,color:#451a03
+  classDef consumer fill:#dcfce7,stroke:#15803d,color:#052e16
+  classDef legacy fill:#ffedd5,stroke:#c2410c,color:#431407
+  classDef proposed fill:#f3e8ff,stroke:#9333ea,color:#3b0764
 ```
-
-#### Protobuf services and HTTP documentation
-
-```mermaid
-flowchart TB
-  service_proto["Service .proto import graph<br/>with google.api.http annotations"]
-  service_proto -->|"go_grpc_v2 / protoc-gen-go-grpc<br/>grpc_gateway / protoc-gen-grpc-gateway"| go_services["Go gRPC and<br/>HTTP gateway source"]
-  go_services -->|"go_library"| go_service_users["Go service implementations"]
-  service_proto -->|"py_grpc_service_library<br/>gRPC + protoc-gen-mypy_grpc"| py_services["Python service code<br/>.py and .pyi"]
-  py_services -->|"py_library / mypy"| py_service_users["Python service implementations"]
-  service_proto -->|"proto_openapi<br/>protoc-gen-openapiv2"| swagger["Swagger / OpenAPI 2 JSON"]
-  swagger -->|"copy_file; go_library embedsrcs"| swagger_consumer["Published HTTP API reference<br/>for example /openapi.json"]
-```
-
-#### Kubernetes artifacts
-
-```mermaid
-flowchart TB
-  go_api["Go Kubernetes API types and kubebuilder markers"] -->|"controller_deepcopy runs controller-gen object"| deepcopy_go["Generated zz_generated.deepcopy.go"]
-  deepcopy_go -->|"API go_library"| api_package["Typed Kubernetes API package"]
-  go_api -->|"kubernetes_clients<br/>applyconfiguration-gen / client-gen<br/>lister-gen / informer-gen"| go_clients["Go clients, apply configurations, listers, informers"]
-  go_clients -->|"Generated Go libraries"| controller_clients["Controller client packages"]
-  api_package -->|"Go dependency"| controller_clients
-  go_api -->|"controller_crds runs controller-gen crd"| crd_yaml["Generated CRD YAML"]
-  upstream_bundle["Pinned upstream CRD bundle or Go-embedded schema"] -->|"extract_crd selects / wraps the schema"| upstream_crd["Extracted CRD YAML"]
-  crd_yaml -->|"cdk8s_import runs cdk8s import"| python_jsii["Python/jsii typed constructs"]
-  upstream_crd -->|"cdk8s_import runs cdk8s import"| python_jsii
-  python_jsii -->|"py_library, mypy, cdk8s synthesis test"| cluster_consumer["Typed cluster configuration and synthesized object"]
-```
-
-#### Runtime MCP imports
-
-```mermaid
-flowchart TB
-  discovery_doc["Discovery JSON bundled in pinned<br/>google-api-python-client wheel"] -->|"Runtime _load_doc<br/>and build_generated_tools"| discovery_tool["FastMCP GeneratedGoogleTool schemas"]
-  discovery_tool -->|"FastMCP advertisement / schema fixture test"| discovery_mcp["Google MCP clients<br/>and tool schema consumers"]
-```
-
-```mermaid
-flowchart TB
-  grocy_spec["Pinned Grocy OpenAPI 3.1 JSON"] -->|"grocy_openapi_fixed / fix_openapi_spec.py"| grocy_fixed["Grocy-repaired OpenAPI JSON"]
-  grocy_fixed -->|"server.build_mcp / FastMCP OpenAPIProvider"| grocy_provider["Generated Grocy MCP components"]
-  grocy_provider -->|"RequestScopedOpenAPIClients / FastMCP advertisement"| grocy_tools["Grocy HTTP tools and input schemas<br/>output schemas are stripped"]
-  grocy_tools -->|"Grocy fixture invokes tool through MockTransport"| grocy_test["Local HTTP request and schema checks"]
-```
-
-The Discovery and Grocy tests exercise their real runtime adapters with small local documents; they
-make no Google network calls. The Grocy fixture checks the owner builder and request-scoped adapter,
-but does not exercise the production data-specific OpenAPI repair stage.
 
 The separate runtime-validator work in [PR #12273](https://github.com/agentydragon/ducktape/pull/12273)
 adds OpenAPI → Zod consumers in Agentplane, AIQuota, and Spend. The protobuf stack starting at
@@ -197,6 +319,264 @@ and ProtoJSON declaration types for notification/dispatch decoding. These are pr
 this inventory, not prerequisites for running this spike.
 
 ## Proposed end state
+
+### Whole-repository state after
+
+This is the complete proposed end state, with every native and owner-specific path retained.
+Purple boxes mark proposed file-input converters, explicit schema artifacts, named model exports,
+and ordinary compilation of generated Zod. The unchanged paths are repeated in full so this map
+stands on its own. It introduces no universal schema IR: OpenAPI 3, standalone JSON Schema,
+protobuf descriptors, Swagger 2, Discovery, and Kubernetes structural schemas stay distinct.
+
+The HTTP owner exports one named OpenAPI artifact for both declarations and Zod. Model/tool owners
+export standalone JSON Schema directly, including SSH; the synthetic HTTP operation disappears.
+Generated named imports replace maintained model aliases where naming checks pass. Both TS and
+plain-JS validation consumers use Zod modules emitted by normal TypeScript compilation.
+
+```mermaid
+flowchart LR
+    python_models["Python / Pydantic models<br/>owned by each component"]:::producer
+    fastmcp_signatures["FastMCP tool signatures<br/>SSH and Haku owners"]:::producer
+  subgraph frontend["HTTP, model and tool schemas: generation and frontend consumption"]
+    http_export["B: owner export target<br/>export_schema.py / app.openapi<br/>and owner CSV or WebSocket additions"]:::proposed
+    http_json["Declared OpenAPI 3 JSON<br/>one shared artifact per HTTP owner"]:::proposed
+    api_typegen["B: openapi_typescript(src, out)<br/>openapi-typescript + root-type flags"]:::proposed
+    api_types["API .d.ts<br/>paths, operations, components<br/>and direct named model exports"]:::proposed
+    zod_gen["B: openapi_zod(src, out, config)<br/>Hey API Zod 4 plugin"]:::proposed
+    python_models --> http_export
+    http_export --> http_json
+    http_json --> api_typegen
+    api_typegen --> api_types
+    http_json --> zod_gen
+    model_export["B: owner model export target<br/>Pydantic / TypeAdapter<br/>explicit serialization or validation mode"]:::proposed
+    model_json["Declared model JSON Schema<br/>mode and dialect are explicit"]:::proposed
+    tool_export["B: owner tool-schema export target<br/>FastMCP reflection / catalog selection"]:::proposed
+    tool_json["Declared tool JSON Schemas<br/>SSH input/output; Haku catalogs<br/>arguments and structured results"]:::proposed
+    json_typegen["B: json_schema_typescript(src, out)<br/>json-schema-to-typescript"]:::proposed
+    python_models --> model_export
+    model_export --> model_json
+    fastmcp_signatures --> tool_export
+    tool_export --> tool_json
+    model_json --> json_typegen
+    tool_json --> json_typegen
+    zod_compile["B: ordinary ts_library / tsc<br/>compile generated Zod source"]:::proposed
+    zod_ts["Generated Zod .ts"]:::artifact
+    zod_modules["Compiled Zod ES modules<br/>.js and .d.ts"]:::artifact
+    zod_validation["Runtime request / response validation<br/>Augur and Study Casino<br/>TS and plain-JS consumers"]:::consumer
+    model_types["Model / catalog .d.ts"]:::artifact
+    typed_models["Frontend wire / renderer model types<br/>checked with ts_library / tsc"]:::consumer
+    http_clients["Typed HTTP clients<br/>openapi-fetch and operation types"]:::consumer
+    json_runtime["R: ordinary TS adapter<br/>z.fromJSONSchema"]:::converter
+    runtime_zod["Runtime Zod schema objects"]:::artifact
+    tool_consumers["Haku tool previews and validation<br/>SSH action rendering"]:::consumer
+    zod_gen --> zod_ts
+    zod_ts -->|"TS output"| zod_compile
+    zod_compile --> zod_modules
+    zod_modules -->|"import / safeParse"| zod_validation
+    json_typegen --> model_types
+    model_types -->|"js_library; type-only import"| typed_models
+    api_types -->|"paths / operations"| http_clients
+    api_types -->|"direct named imports; no alias module"| typed_models
+    tool_json -->|"retained source artifact"| json_runtime
+    model_json -->|"where runtime validation is needed"| json_runtime
+    json_runtime --> runtime_zod
+    runtime_zod -->|"safeParse at tested boundary"| tool_consumers
+  end
+  subgraph native["Native protobuf: unchanged format family"]
+    proto_sources["Agentplane .proto source graph<br/>messages; HTTP-annotated services"]:::producer
+    proto_export["B: proto_library"]:::converter
+    proto_info["ProtoInfo imported source closure<br/>and FileDescriptorSet artifacts"]:::artifact
+    proto_es["B: ts_proto_library<br/>protoc-gen-es target=js+dts"]:::converter
+    proto_js["Protobuf-ES .js + .d.ts<br/>native message and service schemas"]:::artifact
+    proto_go["B: go_proto_library<br/>protoc-gen-go<br/>go_grpc_v2 / protoc-gen-go-grpc<br/>grpc_gateway / protoc-gen-grpc-gateway"]:::converter
+    proto_go_src["Go .go sources<br/>messages, gRPC services, HTTP gateway"]:::artifact
+    proto_py["B: py_proto_library_with_mypy_stubs<br/>protoc --python_out / --pyi_out<br/>py_grpc_service_library<br/>gRPC + protoc-gen-mypy_grpc"]:::converter
+    proto_py_src["Python .py + .pyi<br/>messages and gRPC services"]:::artifact
+    native_apps["TS / Go / Python apps and services<br/>native protobuf bytes and ProtoJSON codecs"]:::consumer
+    proto_docs["B: proto_openapi<br/>protoc-gen-openapiv2"]:::converter
+    swagger["Swagger / OpenAPI 2 JSON<br/>HTTP description; not ProtoJSON parity"]:::artifact
+    published_docs["Embedded / published API references<br/>Action, notification and egress APIs"]:::consumer
+    ortools["Pinned OR-Tools .proto sources"]:::producer
+    ortools_export["B: proto_library"]:::converter
+    ortools_info["OR-Tools ProtoInfo source closure<br/>and FileDescriptorSet artifacts"]:::artifact
+    prost["B: rust_prost_library<br/>protoc-gen-prost"]:::converter
+    rust_src["Rust prost .rs bindings"]:::artifact
+    rust_app["Rust solver and C API consumers"]:::consumer
+    proto_sources --> proto_export
+    proto_export --> proto_info
+    proto_info --> proto_es
+    proto_es --> proto_js
+    proto_info --> proto_go
+    proto_go --> proto_go_src
+    proto_info --> proto_py
+    proto_py --> proto_py_src
+    proto_info --> proto_docs
+    proto_docs --> swagger
+    ortools --> ortools_export
+    ortools_export --> ortools_info
+    ortools_info --> prost
+    prost --> rust_src
+    proto_js -->|"js_library; TS typecheck / runtime imports"| native_apps
+    proto_go_src -->|"go_library"| native_apps
+    proto_py_src -->|"py_library / mypy"| native_apps
+    swagger -->|"copy_file; Go embedsrcs"| published_docs
+    rust_src -->|"rust_library / Clippy"| rust_app
+  end
+  subgraph kubernetes["Go API schemas and CRD imports: unchanged format family"]
+    go_api["Go Kubernetes API types<br/>kubebuilder markers"]:::producer
+    authored_go_path["GoPath copied source closure<br/>authored doc.go and types.go"]:::artifact
+    deepcopy["B: controller_deepcopy<br/>controller-gen object"]:::converter
+    deepcopy_go["zz_generated.deepcopy.go"]:::artifact
+    go_api_package["Go API package / GoPath closure<br/>authored types plus generated methods"]:::artifact
+    clientgen["B: kubernetes_clients<br/>applyconfiguration-gen / client-gen<br/>lister-gen / informer-gen"]:::converter
+    go_clients["Go client / apply / lister / informer sources"]:::artifact
+    controllers["Typed Go controller consumers"]:::consumer
+    crdgen["B: controller_crds<br/>controller-gen crd"]:::converter
+    generated_crd["Generated structural CRD YAML"]:::artifact
+    crd_publish["B: agentplane/crds/generate.py<br/>normalization and schema projection"]:::converter
+    published_crd["Published / committed CRD YAML<br/>Agentplane manifests"]:::artifact
+    upstream_crds["Pinned upstream CRD YAML / bundles<br/>or Go-embedded schemas"]:::producer
+    crd_extract["B: extract_crd<br/>select / unwrap / wrap schema<br/>owner-specific removal policy"]:::converter
+    selected_crd["Selected CRD YAML<br/>openAPIV3Schema"]:::artifact
+    cdk_import["B: cdk8s_import<br/>cdk8s import / jsii"]:::converter
+    cdk_package["Typed Python .py + py.typed<br/>JSII .jsii.tgz runtime package"]:::artifact
+    synth["B: Python charts / cdk8s synth<br/>mypy checks construct usage"]:::converter
+    manifest_yaml["Synthesized Kubernetes YAML"]:::artifact
+    cluster["Typed cluster configuration<br/>Flux / Kubernetes consumers"]:::consumer
+    go_api -->|"go_path mode=copy"| authored_go_path
+    authored_go_path --> deepcopy
+    deepcopy --> deepcopy_go
+    go_api --> go_api_package
+    deepcopy_go --> go_api_package
+    go_api_package --> clientgen
+    clientgen --> go_clients
+    authored_go_path --> crdgen
+    crdgen --> generated_crd
+    generated_crd --> crd_publish
+    crd_publish --> published_crd
+    published_crd --> cdk_import
+    upstream_crds --> crd_extract
+    crd_extract --> selected_crd
+    selected_crd --> cdk_import
+    cdk_import --> cdk_package
+    cdk_package --> synth
+    synth --> manifest_yaml
+    manifest_yaml --> cluster
+    go_clients -->|"go_library"| controllers
+    published_crd -->|"CRD installation"| cluster
+    upstream_crds -->|"already a single importable CRD"| cdk_import
+  end
+  subgraph owners["Owner-specific schema publication and runtime adapters: unchanged"]
+    hook_zod["Extracted Claude hook Zod source"]:::producer
+    zod_export["B: export_json_schema.mjs<br/>z.toJSONSchema"]:::converter
+    hook_json["Draft 2020-12 JSON Schema"]:::artifact
+    schema_eq["Python Pydantic / Zod<br/>structural-equivalence checks"]:::consumer
+    hook_zod --> zod_export
+    zod_export --> hook_json
+    hook_json --> schema_eq
+    codex_cli["Pinned Codex protocol CLI"]:::producer
+    codex_export["B: CLI JSON Schema export"]:::converter
+    codex_json["Protocol + JSON-RPC transport<br/>JSON Schema documents"]:::artifact
+    codex_select["B: protocol/generate.mjs<br/>select consumed roots / transport adapter"]:::converter
+    selected_json["Selected JSON Schema root graph"]:::artifact
+    quicktype["B: quicktype-core"]:::converter
+    quicktype_go["Generated Go model source"]:::artifact
+    runner["Go runner JSON-RPC implementation<br/>model decoding is not schema validation"]:::consumer
+    codex_cli --> codex_export
+    codex_export --> codex_json
+    codex_json --> codex_select
+    codex_select --> selected_json
+    selected_json --> quicktype
+    quicktype --> quicktype_go
+    quicktype_go -->|"go_library"| runner
+    openai_export["R: openai_json_schema<br/>shared OpenAICompatibleSchema<br/>strict fields / unions / ref siblings"]:::converter
+    gmail_export["R: Gmail-local<br/>OpenAICompatibleSchema"]:::converter
+    provider_json["Provider-restricted JSON Schemas<br/>separate owner documents / profiles"]:::artifact
+    structured_requests["OpenAI-compatible structured requests<br/>schema publication is not live acceptance"]:::consumer
+    python_models --> openai_export
+    python_models --> gmail_export
+    openai_export --> provider_json
+    gmail_export --> provider_json
+    provider_json --> structured_requests
+    runtime_pydantic["R: model_json_schema<br/>owner Pydantic model"]:::converter
+    runtime_model_json["Ordinary validation JSON Schema<br/>per owner; may contain local refs"]:::artifact
+    ollama["Ollama format schema requests"]:::consumer
+    props_adapter["R: Props direct_tool<br/>FunctionTool input_model schema<br/>model_validate at invocation"]:::converter
+    props_tools["MAF function tools / typed arguments"]:::consumer
+    loom_inline["R: Loom question_schema<br/>_inline_refs"]:::converter
+    inline_json["Reference-inlined JSON Schema"]:::artifact
+    loom_tools["Inspect / Anthropic tools<br/>Pydantic answer validation"]:::consumer
+    python_models --> runtime_pydantic
+    runtime_pydantic --> runtime_model_json
+    runtime_model_json --> ollama
+    runtime_model_json --> props_adapter
+    props_adapter --> props_tools
+    runtime_model_json --> loom_inline
+    loom_inline --> inline_json
+    inline_json --> loom_tools
+    vocabulary["Augur Pydantic discriminator variants<br/>and explicit backend order"]:::producer
+    vocabulary_export["B: export_rollout_event_vocabulary.py<br/>inspect TypeAdapter schema / check order"]:::converter
+    vocabulary_ts["TS literal tuple + union source"]:::artifact
+    vocabulary_use["Augur ordering and exhaustive types"]:::consumer
+    vocabulary --> vocabulary_export
+    vocabulary_export --> vocabulary_ts
+    vocabulary_ts -->|"ts_library / tsc"| vocabulary_use
+    policy_json["Operator-authored JSON Schema<br/>declared dialect"]:::producer
+    policy_python["R: Python argument_schema.py<br/>jsonschema dialect / schema check"]:::converter
+    policy_admission["Policy schema admission"]:::consumer
+    policy_go["R: Go argument_schema.go<br/>santhosh-tekuri/jsonschema/v6 compiler"]:::converter
+    compiled_policy["Compiled Go schema validator"]:::artifact
+    authorization["Action argument authorization"]:::consumer
+    policy_json --> policy_python
+    policy_python --> policy_admission
+    policy_json --> policy_go
+    policy_go --> compiled_policy
+    compiled_policy -->|"validate action arguments"| authorization
+  end
+  subgraph mcp_imports["External schema imports to runtime MCP tools: unchanged"]
+    google_wheel["Pinned google-api-python-client wheel"]:::producer
+    discovery_load["R: _load_doc<br/>importlib.resources"]:::converter
+    discovery_json["Google Discovery JSON<br/>legacy schema dialect + Google extensions"]:::artifact
+    gentool_specs["GenTool expose / pin / method specs"]:::producer
+    discovery_map["R: build_generated_tools<br/>_to_json_schema / input / output mapping<br/>cycles elided; int64 stays string"]:::converter
+    google_tool_objects["FastMCP GeneratedGoogleTool objects<br/>input and result JSON Schemas"]:::artifact
+    grocy_raw["Pinned Grocy OpenAPI 3.1 JSON"]:::producer
+    grocy_repair["B: grocy_openapi_fixed<br/>fix_openapi_spec.py"]:::converter
+    grocy_fixed["Grocy-repaired OpenAPI 3.1 JSON"]:::artifact
+    grocy_provider["R: FastMCP OpenAPIProvider<br/>server.build_mcp"]:::converter
+    grocy_objects["Generated OpenAPI-backed tool objects"]:::artifact
+    grocy_customize["R: Grocy owner customization<br/>names / descriptions / drop output schemas"]:::converter
+    grocy_input_tools["Grocy tool objects<br/>input schema only"]:::artifact
+    scope_clients["R: RequestScopedOpenAPIClients<br/>bind caller HTTP client per invocation"]:::converter
+    grocy_http["Grocy HTTP tool execution"]:::consumer
+    advertise["R: FastMCP tool advertisement"]:::converter
+    advertised_json["MCP tool descriptors in JSON<br/>input schemas; output schemas if retained"]:::artifact
+    mcp_clients["Google / Grocy MCP clients"]:::consumer
+    google_wheel --> discovery_load
+    discovery_load --> discovery_json
+    discovery_json --> discovery_map
+    gentool_specs --> discovery_map
+    discovery_map --> google_tool_objects
+    google_tool_objects --> advertise
+    grocy_raw --> grocy_repair
+    grocy_repair --> grocy_fixed
+    grocy_fixed --> grocy_provider
+    grocy_provider --> grocy_objects
+    grocy_objects --> grocy_customize
+    grocy_customize --> grocy_input_tools
+    grocy_input_tools --> advertise
+    grocy_input_tools --> scope_clients
+    scope_clients --> grocy_http
+    advertise --> advertised_json
+    advertised_json --> mcp_clients
+  end
+  classDef producer fill:#dbeafe,stroke:#2563eb,color:#172554
+  classDef artifact fill:#f1f5f9,stroke:#64748b,color:#0f172a
+  classDef converter fill:#fef3c7,stroke:#b45309,color:#451a03
+  classDef consumer fill:#dcfce7,stroke:#15803d,color:#052e16
+  classDef legacy fill:#ffedd5,stroke:#c2410c,color:#431407
+  classDef proposed fill:#f3e8ff,stroke:#9333ea,color:#3b0764
+```
 
 ### Export once, using the owner's real contract
 
@@ -224,35 +604,6 @@ The proposed interfaces below describe conversion only. Spike-local helpers demo
 interfaces; production macros remain unchanged until the migration gates below pass. The TS
 prototype accepts same-package direct file labels; promotion also needs arbitrary file-target and
 cross-package input checks. Its filename handling is not a general Bazel file-label resolver.
-
-#### Proposed file-input routing (design only)
-
-One owner export supplies a declared OpenAPI artifact to both converters. Production macros still
-export and convert independently, as shown above. Labels below name proposed interfaces and their
-underlying generators; the fixture helpers demonstrate the boundaries without exporting new
-production APIs.
-
-```mermaid
-flowchart TB
-  http_owner["FastAPI/Pydantic HTTP source"] -->|"Owner exporter / genrule"| openapi_file["One shared OpenAPI JSON artifact"]
-  openapi_file -->|"openapi_typescript (proposed)<br/>openapi-typescript + root exports"| api_types["Generated .d.ts<br/>paths and named model exports"]
-  api_types -->|"js_library; type-only imports<br/>ts_library / tsc"| http_consumer["Typed HTTP and model consumers"]
-  openapi_file -->|"openapi_zod (proposed)<br/>Hey API Zod plugin"| zod_source["Generated Zod .ts"]
-  zod_source -->|"Normal ts_library / tsc"| zod_modules["ES module .js + .d.ts"]
-  zod_modules -->|"Imports and safeParse"| zod_consumer["TypeScript and plain-JS<br/>validation consumers"]
-```
-
-Model and tool schemas use their own file artifact. They enter neither the OpenAPI operation map
-nor a synthetic HTTP endpoint.
-
-```mermaid
-flowchart TB
-  model_owner["Pydantic / FastMCP source"] -->|"Owner schema exporter / genrule"| json_schema_file["Declared standalone JSON Schema"]
-  json_schema_file -->|"json_schema_typescript (proposed)<br/>json-schema-to-typescript"| model_types["Generated model .d.ts"]
-  model_types -->|"js_library; type-only imports<br/>ts_library / tsc"| model_consumer["Typed model consumers"]
-  json_schema_file -->|"Retained JSON + ordinary adapter<br/>z.fromJSONSchema"| runtime_schema["Runtime Zod validator"]
-  runtime_schema -->|"safeParse at tested boundary"| tool_consumer["Tool and renderer consumers"]
-```
 
 | Conversion                             | Proposed rule or mechanism                                                                         | Output and next stage                                                                                                                      |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
