@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from typing import Any
 
 import pytest
@@ -89,6 +90,7 @@ async def _command(
             request = await model.request()
             # Emit the nested result, including its exit status, through the actual code-mode tool.
             script = (
+                '// @exec: {"yield_time_ms": 1}\n'
                 f"let result = await tools.exec_command({json.dumps({'cmd': command, 'yield_time_ms': 1000})});\n"
                 "while (result.session_id != null) {\n"
                 "  const next = await tools.write_stdin({session_id: result.session_id, chars: '', yield_time_ms: 1000});\n"
@@ -103,13 +105,32 @@ async def _command(
                         [responses_sse.CustomToolCall(call_id, "exec", script)], model=model.model
                     ).events
                 )
-            result = await model.request()
+            output_call_id = call_id
+            blocks: list[str] = []
+            waits = 0
+            while True:
+                result = await model.request()
+                (output,) = [output for output in result.tool_outputs if output.call_id == output_call_id]
+                blocks.extend(output.blocks)
+                running = re.search(r"^Script running with cell ID (\S+)", "\n".join(output.blocks), re.MULTILINE)
+                if running is None:
+                    break
+                waits += 1
+                output_call_id = f"{call_id}-wait-{waits}"
+                async with result._exchange as exchange:
+                    await exchange.send(
+                        *responses_sse.response_stream(
+                            [
+                                responses_sse.FunctionCall(
+                                    output_call_id, "wait", {"cell_id": running[1], "yield_time_ms": 1000}
+                                )
+                            ],
+                            model=model.model,
+                        ).events
+                    )
             await model.reply(result, Text("Command observed."))
-        (output,) = [output for output in result.tool_outputs if output.call_id == call_id]
-        reports = [
-            block.removeprefix("VM_EXEC_RESULT ") for block in output.blocks if block.startswith("VM_EXEC_RESULT ")
-        ]
-        assert len(reports) == 1, output
+        reports = [block.removeprefix("VM_EXEC_RESULT ") for block in blocks if block.startswith("VM_EXEC_RESULT ")]
+        assert len(reports) == 1, blocks
         executed = _ExecResult.model_validate_json(reports[0])
         assert executed.exit_code == exit_code, output
         return turn.result(), executed
