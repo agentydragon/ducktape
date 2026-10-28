@@ -199,6 +199,8 @@ pkg_tar(
         "lib64": "usr/lib64",
         "sbin": "usr/sbin",
         "usr/bin/sh": "busybox",
+        "var/lock": "/run/lock",
+        "var/run": "/run",
     },
     deps = [
         ":root_acpi",

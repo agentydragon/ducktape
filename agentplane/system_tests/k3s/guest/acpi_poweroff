@@ -1,4 +1,4 @@
 #!/usr/bin/busybox sh
 set -eu
 echo "AGENTPLANE_GUEST_SHUTDOWN_REQUESTED"
-exec /usr/bin/systemctl --no-block poweroff
+exec /usr/bin/systemctl --no-block start poweroff.target
