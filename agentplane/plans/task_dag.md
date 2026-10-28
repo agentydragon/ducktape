@@ -257,10 +257,29 @@ monitoring for the ordinary freshness interval merely because GitHub initially r
 non-null answer. Persist the required follow-up across worker restarts, preserve access/error
 backoff and generation fences, and source revision labels from the actual relevant refs rather than
 assuming the PR response's base SHA is the current branch tip. Keep pending/settling observations
-separate from source failures, and do not emit a transition for an obsolete pair of revisions.
+separate from source failures, and fence observations overtaken by known head/base changes.
+
+For an open PR reporting `MERGEABLE`, retain REST `merge_commit_sha`, fetch that test merge
+commit and validate both parents against the expected base and head revisions. GitHub documents
+that successful-check artifact in [Get a pull request](https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request);
+GraphQL exposes the corresponding `potentialMergeCommit`. A missing/unavailable test commit or
+mismatched parent pair leaves the observation pending for a durable recheck, with normal source
+failure/rate-limit backoff preserved. Persist the test commit and its actual parent revisions with
+the accepted observation and event, under the existing invalidation/access fences. Read the current
+base tip through its branch ref; PR `.base.sha` / `baseRefOid` alone does not prove either the
+current tip or which pair was evaluated. Do not equate that current-ref read with proof of a result.
+
+`CONFLICTING` needs a separate freshness rule: a successful test merge commit may not exist, and
+no documented general field was found binding a negative result to an evaluated base/head pair.
+Establish the available evidence and document the negative-result recheck/emission policy and its
+limits before implementing it. Neither an absent merge commit nor the accompanying PR ref fields
+proves a fresh conflict calculation. Keep the distinction between a validated positive result and
+an observed negative result explicit; a fixed delay alone is not evidence of the evaluated pair.
 
 Exit: controlled GitHub responses cover a stale definite answer followed by the current answer,
-lagging PR base metadata, duplicate/reordered invalidations and durable follow-up. Repeat the
+a test merge with the right head but an old base, a wrong head, unavailable test-commit evidence,
+a negative result without pair evidence, lagging PR base metadata, ref changes during parent
+validation, duplicate/reordered invalidations and durable follow-up. Repeat the
 bounded base-only conflict/resolution and late-subscriber live exercise with current SHA labels;
 record its actual latency and harness receipt. This repairs the shipped mergeability contract;
 it does not select a broader GitHub replay/reminder mechanism.
