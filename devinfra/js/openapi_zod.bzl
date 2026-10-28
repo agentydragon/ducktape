@@ -2,12 +2,14 @@
 
 load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 
-def openapi_zod(name, schema, config, out, schema_files = [], visibility = None):
+def openapi_zod(name, schema, config, out, schema_files = [], config_files = [], config_deps = [], visibility = None):
     """Generate Zod TypeScript from declared OpenAPI and Hey API config files.
 
     The schema, config, and every relative-local-reference target are action
-    inputs. `$(location)` supplies their execroot paths without parsing labels.
-    TypeScript compilation belongs to a separate `ts_library` target.
+    inputs. `config_files` declares local modules imported by the config;
+    `config_deps` declares runtime package dependencies used by it. `$(location)`
+    supplies the primary files' execroot paths without parsing labels. TypeScript
+    compilation belongs to a separate `ts_library` target.
     """
     schema_label = str(schema)
     config_label = str(config)
@@ -20,7 +22,7 @@ def openapi_zod(name, schema, config, out, schema_files = [], visibility = None)
 
     js_run_binary(
         name = "_{}_generate".format(name),
-        srcs = [schema, config] + schema_files,
+        srcs = [schema, config] + schema_files + config_files + config_deps,
         outs = [generated_ts],
         args = [
             "$(location {})".format(schema_label),

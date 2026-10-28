@@ -28,16 +28,12 @@ async def _producer_payload() -> dict[str, Any]:
             targets=[TargetConfig(host="fixture.example", user="runner", identity_file=identity_file)],
             command_timeout_seconds=30,
         )
-        call_arguments = json.loads(
-            json.dumps(
-                {
-                    "host": "fixture.example",
-                    "user": "runner",
-                    "command": "printf producer-fixture",
-                    "timeout_seconds": 5,
-                }
-            )
-        )
+        call_arguments = {
+            "host": "fixture.example",
+            "user": "runner",
+            "command": "printf producer-fixture",
+            "timeout_seconds": 5,
+        }
         with patch.object(ssh_server, "_run_ssh", return_value=(("producer-fixture\n", False), ("", False), 0)):
             async with Client(build_mcp(settings)) as client:
                 result = await client.call_tool("exec", call_arguments)

@@ -1,6 +1,6 @@
 {
   "openapi": "3.1.0",
-  "info": {"title": "External reference fixture", "version": "1.0.0"},
+  "info": { "title": "External reference fixture", "version": "1.0.0" },
   "paths": {
     "/fixture": {
       "get": {
@@ -10,7 +10,7 @@
             "description": "Fixture response",
             "content": {
               "application/json": {
-                "schema": {"$ref": "./external_model.json#/$defs/ExternalResult"}
+                "schema": { "$ref": "./external_model.json#/$defs/ExternalResult" }
               }
             }
           }

@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -15,13 +14,7 @@ if (RUNFILES_DIRECTORY === undefined) {
 }
 
 function converter(name) {
-  const packageDirectory = join(RUNFILES_DIRECTORY, RUNFILES_WORKSPACE, "devinfra", "js");
-  const candidates = [join(packageDirectory, name), join(packageDirectory, `${name}_`, name)];
-  const executable = candidates.find((candidate) => existsSync(candidate));
-  if (executable === undefined) {
-    throw new Error(`Bazel runfiles do not contain converter ${name}: ${candidates.join(", ")}`);
-  }
-  return executable;
+  return join(RUNFILES_DIRECTORY, RUNFILES_WORKSPACE, "devinfra", "js", `${name}_`, name);
 }
 
 let requests = 0;
