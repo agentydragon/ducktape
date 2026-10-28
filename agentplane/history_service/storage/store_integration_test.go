@@ -689,3 +689,12 @@ func TestDefaultStoreKeepsEveryEntry(t *testing.T) {
 		t.Fatalf("entries %d, settled %v", len(page.Entries), settledRanges(page))
 	}
 }
+
+func TestReadSequencesBoundsRequests(t *testing.T) {
+	sequences := make([]uint64, maxSequenceReadPage+1)
+	for i := range sequences {
+		sequences[i] = uint64(i + 1)
+	}
+	_, err := NewStore(nil, false).ReadSequences(t.Context(), uuid.New(), sequences)
+	assertError(t, err, ErrInvalidArgument)
+}

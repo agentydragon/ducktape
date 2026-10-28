@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/history_service/settledcursors"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
@@ -118,29 +117,22 @@ func (r *Reader) ReadNativeFrames(ctx context.Context, request *historypb.ReadNa
 	if len(sequences) == 0 {
 		return response, nil
 	}
-	retained, err := r.History.ReadPage(ctx, sessionID, 0, 1)
+	retained, err := r.History.ReadSequences(ctx, sessionID, sequences)
 	if err != nil {
 		return nil, err
 	}
-	for _, sequence := range sequences {
+	for _, read := range retained.Reads {
+		sequence := read.Sequence
 		frame := &historypb.NativeFrame{SourceSequence: sequence}
 		response.Frames = append(response.Frames, frame)
 		// A link can name a sequence beyond the retained prefix; that frame is unavailable.
-		if sequence > retained.GetLastCursor() {
+		if sequence > retained.LastCursor || read.Unstored {
 			continue
 		}
-		page, err := r.History.ReadPage(ctx, sessionID, sequence-1, 1)
-		if err != nil {
-			return nil, err
-		}
-		// Settlement may remove a linked delta frame before the fold forgets the link.
-		if settledcursors.NextStored(sequence-1, settledcursors.Unstored(page)) != sequence {
+		if read.NextEntry == nil {
 			continue
 		}
-		if len(page.GetEntries()) == 0 {
-			continue
-		}
-		entry := page.GetEntries()[0]
+		entry := read.NextEntry
 		if entry.GetCursor() != sequence || entry.GetOrigin().GetSourceId() != sourceID {
 			return nil, fmt.Errorf("retained history of Session %s does not match the folded native link at %d", sessionID, sequence)
 		}

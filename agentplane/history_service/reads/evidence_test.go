@@ -2,11 +2,13 @@ package reads
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
+	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
@@ -142,6 +144,22 @@ func TestANativeFrameBeyondTheRetainedHistoryIsUnavailable(t *testing.T) {
 	}
 }
 
+func TestANativeFrameWithAnUnsettledMissingEntryIsNotServed(t *testing.T) {
+	f := newFixture(t)
+	sessionID := f.session(t, f.history, sandboxName("missing-frame-"), native(1, firstFrame), native(2, secondFrame), replyStarted(3, 2))
+	f.fold(t, sessionID)
+	if _, err := f.db.Exec("DELETE FROM session_event WHERE session_id = $1 AND cursor = 2", sessionID); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := f.reader.ReadNativeFrames(t.Context(), &historypb.ReadNativeFramesRequest{
+		SessionId: sessionID.String(), ProjectionEpoch: testEpoch, Entity: reply, ObservationCursor: 3, Limit: 10,
+	})
+	if err == nil {
+		t.Fatal("native frame with an unexplained gap was served")
+	}
+}
+
 func TestEvidenceNamesOnlyWhatTheFoldHolds(t *testing.T) {
 	f := newFixture(t)
 	sessionID := foldedFrames(t, f)
@@ -217,6 +235,41 @@ func TestEvidencePagesAreBounded(t *testing.T) {
 		if !errors.Is(evidenceErr, storage.ErrInvalidArgument) || !errors.Is(framesErr, storage.ErrInvalidArgument) {
 			t.Errorf("limit %d: evidence %v, frames %v; want ErrInvalidArgument", limit, evidenceErr, framesErr)
 		}
+	}
+}
+
+func TestNativeFramePagesReadAtMostTwoHundredLinks(t *testing.T) {
+	f := newFixture(t)
+	sequences := make([]uint64, maxEvidencePage+1)
+	entries := make([]*eventlogpb.EventEntry, 0, len(sequences)+1)
+	for i := range sequences {
+		sequence := uint64(i + 1)
+		sequences[i] = sequence
+		entries = append(entries, native(sequence, fmt.Sprintf("native frame %d", sequence)))
+	}
+	entries = append(entries, replyStarted(uint64(len(entries)+1), sequences...))
+	sessionID := f.session(t, f.history, sandboxName("maximum-evidence-page-"), entries...)
+	f.fold(t, sessionID)
+
+	request := &historypb.ReadNativeFramesRequest{
+		SessionId: sessionID.String(), ProjectionEpoch: testEpoch,
+		Entity: reply, ObservationCursor: uint64(len(entries)), Limit: maxEvidencePage,
+	}
+	first := nativeFrames(t, f, request)
+	if len(first.Frames) != maxEvidencePage || first.NextAfterSequence == nil || *first.NextAfterSequence != maxEvidencePage {
+		t.Fatalf("first page has %d frames and next sequence %v, want 200 frames and 200", len(first.Frames), first.NextAfterSequence)
+	}
+	for i, frame := range first.Frames {
+		want := uint64(i + 1)
+		if frame.GetSourceSequence() != want || frame.GetEntry().GetEvent().GetNative().GetLine() != fmt.Sprintf("native frame %d", want) {
+			t.Fatalf("frame %d = %v, want native sequence %d", i, frame, want)
+		}
+	}
+
+	request.AfterSequence = *first.NextAfterSequence
+	last := nativeFrames(t, f, request)
+	if len(last.Frames) != 1 || last.Frames[0].GetSourceSequence() != uint64(maxEvidencePage+1) || last.NextAfterSequence != nil {
+		t.Fatalf("last page = %v, want only sequence 201 without a continuation", last)
 	}
 }
 
