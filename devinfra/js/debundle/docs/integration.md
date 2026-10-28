@@ -4,6 +4,8 @@ Use the [adapter contract](../skills/shared/workflow.md#adapter-contract) and
 [execution evidence](../skills/shared/workflow.md#execution-evidence).
 Use dedicated isolated integration state at the selected receiving revision.
 The adapter supplies the expected conflict policy and whether pushing is allowed.
+Record the intended final target ref separately from temporary integration and
+PR base refs; they can differ.
 
 1. Before applying a worker patch, verify that receiving graph, source, spec,
    and engine identity match the worker's starting snapshot. A mismatch requires
@@ -15,8 +17,15 @@ The adapter supplies the expected conflict policy and whether pushing is allowed
 3. Validate the combined pipeline, gate, selector uniqueness, and applicable
    runtime checks. Green individual workers do not prove the combined result.
 4. If green, commit the combined result if required. Push only when explicitly
-   requested. Report the receiving/final SHA, per-branch landed/failed/skipped
-   disposition, conflict resolutions, diagnostics, and follow-up assignments.
+   requested. Report the receiving/final SHA, per-branch validation results,
+   conflict resolutions, diagnostics, and follow-up assignments.
+5. Before reporting work as landed, fetch the intended final target and verify
+   that the accepted YAML and generated output are present there. A merged
+   worker PR establishes a merge into its recorded base, which may be a
+   temporary branch. Recheck a child PR's live base after its parent merges;
+   retarget and rebase when it still points at the temporary branch. Compare
+   target-tree content or patch equivalence when squash or cherry-pick changes
+   commit IDs. Revalidate changed receiving inputs through the checks above.
 
 If the combined result fails, restore the pre-train isolated integration state,
 apply patches individually or by halves, and run the same checks to isolate
