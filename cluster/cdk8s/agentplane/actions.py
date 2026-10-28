@@ -71,6 +71,7 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 MCP_OAUTH_DIR = "/etc/agentplane-mcp"
 # The orchestration_v1 group's key, which its launcher grants' rules name.
 ORCHESTRATION_GROUP = "orchestration_v1"
+SANDBOX_GROUP = "sandbox"
 _PEER_TOKEN_DIR = "/var/run/secrets/actions"
 # The orchestration_v1 executor and its admission policy both name launcher grants `<sandbox>.launcher`.
 _LAUNCHER_SUFFIX = ".launcher"

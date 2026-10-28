@@ -19,10 +19,10 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from agentplane.action_service.policies.resources import CALLER_LABEL, parse_action_rule
-from agentplane.action_service.sandbox.contract.actions import SANDBOX_GROUP, SandboxAction
+from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import agent_access_profiles as access, external_creds
-from cluster.cdk8s.agentplane.actions import ORCHESTRATION_GROUP
+from cluster.cdk8s.agentplane.actions import ORCHESTRATION_GROUP, SANDBOX_GROUP
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
@@ -757,7 +757,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 )
             },
         ),
-        rules=[AutoApproveIf.exact_actions(actions={SANDBOX_GROUP: sorted(SandboxAction)})],
+        rules=[AutoApproveIf.exact_actions(actions={SANDBOX_GROUP: sorted(action.value for action in Action)})],
     )
 
     # Home Assistant's read-only surface (see _HOME_ASSISTANT_READS_ACTIONS above for the

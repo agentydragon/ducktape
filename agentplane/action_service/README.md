@@ -340,7 +340,12 @@ Keep Action names, wire input structs, constraints and metadata in the group's l
 and `Decode` returns that same type after schema validation. Use `json`/`jsonschema` field tags for
 presence, nullability and constraints, and `catalog.Integer` for exact JSON integers. A deployment
 constraint belongs in the contract builder's schema configuration, applied to a fresh schema.
-Do not maintain a parallel JSON document, decoder destination map, or Python model for these inputs.
+Do not maintain a parallel argument-schema document, decoder destination map, or Python model for these inputs.
+
+The shared Sandbox Action vocabulary lives in [action.schema.json](sandbox/contract/action.schema.json).
+The pinned `quicktype-core` generates both language enums: Go uses `just-types-and-package` with
+`package=contract`; Python uses `just-types`. Python callers read the standard `Enum` members'
+`.value` strings. Deployment-owned group keys stay in cdk8s configuration.
 
 ```mermaid
 flowchart LR
@@ -350,8 +355,9 @@ flowchart LR
     schema --> advertise["Executor.Actions → catalog<br/>admission and discovery"]
     schema --> compile["catalog.CompileSchema<br/>santhosh-tekuri/jsonschema"]
     compile --> decode["Input[T].Decode → typed handler"]
-    go --> export["Bazel Go exporter → Python StrEnum"]
-    export --> cdk8s["cdk8s staging and policies"]
+    names["JSON Schema Action-name enum"] --> gen["quicktype_codegen → quicktype-core<br/>Go and Python enum renderers"]
+    gen --> go
+    gen --> cdk8s["cdk8s staging and policies"]
 ```
 
 Sandbox builds admission and execution profiles for exec from the same type. Admission uses current

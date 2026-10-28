@@ -25,7 +25,7 @@ from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
-from agentplane.action_service.sandbox.contract.actions import SandboxAction
+from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
 from agentplane.runner.configuration import GuestResources, ResourceLimits
@@ -260,7 +260,7 @@ _ACTION_GROUPS = {
             config={"transport": "streamable-http", "url": _GROCY_SF_MCP_URL, "server_id": "grocy_sf", "auth": "oauth"},
         ),
     ),
-    "sandbox": ActionGroup(
+    actions.SANDBOX_GROUP: ActionGroup(
         title="Sandbox",
         description=(
             "Sandboxes that run as the calling ServiceAccount, and bounded commands in them. A "
@@ -275,7 +275,7 @@ _ACTION_GROUPS = {
         ),
         # claude.ai and Claude Code reach these as MCP tools of their own, where `sandbox-self`
         # auto-approves them for the Connection's claude-ai account.
-        direct_tools=frozenset(SandboxAction),
+        direct_tools=frozenset(action.value for action in Action),
     ),
     "ssh": ActionGroup(
         title="SSH",

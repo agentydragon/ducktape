@@ -24,7 +24,7 @@ accepts the stable hard ceilings (3600 seconds and 1,000,000 bytes), then clips 
 deployment maxima. This lets an already-admitted request execute across a settings change that
 lowers those maxima. Both profiles derive from the same typed input contract.
 
-The Python Sandbox Action names used by cdk8s are generated from the Go roster. Externally
+Go and Python Sandbox Action names are generated from a shared JSON Schema enum. Externally
 supplied MCP schemas and policy-authored argument schemas retain their own JSON Schema contracts.
 
 ## Caller admission and Connection authority

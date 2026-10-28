@@ -50,6 +50,17 @@ js_binary(
     visibility = ["//visibility:public"],
 )
 
+# Standard quicktype renderers for JSON Schema consumers outside TypeScript.
+js_binary(
+    name = "quicktype_codegen",
+    data = [
+        ":schema_remote_fetch_guard",
+        "//:node_modules/quicktype-core",
+    ],
+    entry_point = "quicktype_codegen.mjs",
+    visibility = ["//visibility:public"],
+)
+
 js_library(
     name = "schema_remote_fetch_guard",
     srcs = ["schema_remote_fetch_guard.mjs"],

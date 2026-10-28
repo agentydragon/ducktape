@@ -10,30 +10,6 @@ import (
 	"github.com/invopop/jsonschema"
 )
 
-// GroupName is the catalog group that owns these Actions.
-const GroupName = "sandbox"
-
-// Action is one Action name in the Sandbox roster.
-type Action string
-
-const (
-	Create      Action = "create"
-	GetTemplate Action = "get_template"
-	Exec        Action = "exec"
-	List        Action = "list"
-	Get         Action = "get"
-	Dispose     Action = "dispose"
-)
-
-// Roster returns the Actions this group offers in its stable presentation order.
-func Roster() []Action {
-	inputs, err := Bind(catalog.PodBinding{MaxTimeoutSeconds: maxTimeoutSeconds, MaxOutputBytes: maxOutputBytes})
-	if err != nil {
-		panic(fmt.Errorf("bind Sandbox Action roster: %w", err))
-	}
-	return inputs.Roster()
-}
-
 const (
 	ReadyCondition      = "Ready"
 	maxTimeoutSeconds   = 3600
@@ -103,15 +79,6 @@ type actionDefinition interface {
 
 func (inputs Inputs) actionInputs() []actionDefinition {
 	return []actionDefinition{inputs.Create, inputs.GetTemplate, inputs.Exec, inputs.List, inputs.Get, inputs.Dispose}
-}
-
-// Roster lists these inputs in the order they are presented to clients.
-func (inputs Inputs) Roster() []Action {
-	roster := make([]Action, 0, len(inputs.actionInputs()))
-	for _, input := range inputs.actionInputs() {
-		roster = append(roster, Action(input.Name()))
-	}
-	return roster
 }
 
 // Bind builds every schema from its typed input and binds exec's advertised maxima to this deployment.

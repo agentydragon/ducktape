@@ -29,7 +29,7 @@ func (f fixture) attempt(t *testing.T, caller store.ServiceAccount, action, argu
 		t.Fatal(err)
 	}
 	outcome, err := executor.attempt(t.Context(), store.ExecutionRequest{
-		RequestID: uuid.New(), Action: store.ActionIdentity{Group: contract.GroupName, Name: action},
+		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: action},
 		Arguments: json.RawMessage(arguments), Caller: caller,
 	})
 	return attempted{t, outcome, err}
@@ -109,7 +109,7 @@ func TestACallerFromAnotherNamespaceIsRefused(t *testing.T) {
 	}
 	// The refusal comes before any lease is held, so it needs none.
 	outcome, err := executor.Execute(t.Context(), store.ExecutionRequest{
-		RequestID: uuid.New(), Action: store.ActionIdentity{Group: contract.GroupName, Name: string(contract.Create)},
+		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: string(contract.Create)},
 		Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`), Caller: elsewhere,
 	}, nil)
 	if kind := (attempted{t, outcome, err}).failure(); kind != "caller_not_local" {

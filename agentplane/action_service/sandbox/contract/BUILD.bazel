@@ -1,9 +1,44 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("//devinfra/python:defs.bzl", "py_library")
+
+js_run_binary(
+    name = "_action_go",
+    srcs = ["action.schema.json"],
+    outs = ["action.gen.go"],
+    args = [
+        "Action",
+        "go",
+        "action.schema.json",
+        "action.gen.go",
+        "--just-types-and-package",
+        "--package=contract",
+    ],
+    chdir = package_name(),
+    tool = "//devinfra/js:quicktype_codegen",
+)
+
+js_run_binary(
+    name = "_action_python",
+    srcs = ["action.schema.json"],
+    outs = ["actions.py"],
+    args = [
+        "Action",
+        "python",
+        "action.schema.json",
+        "actions.py",
+        "--just-types",
+    ],
+    chdir = package_name(),
+    tool = "//devinfra/js:quicktype_codegen",
+)
 
 go_library(
     name = "contract",
-    srcs = ["contract.go"],
+    srcs = [
+        "contract.go",
+        ":_action_go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract",
     visibility = ["//agentplane/action_service:__subpackages__"],
     deps = [
@@ -12,15 +47,15 @@ go_library(
     ],
 )
 
-genrule(
-    name = "actions_py",
-    outs = ["actions.py"],
-    cmd = "$(location //agentplane/action_service/sandbox/contract/cmd/export_python:export_python) > $@",
-    tools = ["//agentplane/action_service/sandbox/contract/cmd/export_python"],
+go_test(
+    name = "contract_test",
+    srcs = ["vocabulary_test.go"],
+    embed = [":contract"],
+    embedsrcs = ["action.schema.json"],
 )
 
 py_library(
     name = "actions",
-    srcs = [":actions_py"],
+    srcs = [":_action_python"],
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
 )
