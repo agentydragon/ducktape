@@ -240,6 +240,7 @@ py_test(
     name = "test_gmail_inbox",
     srcs = ["test_gmail_inbox.py"],
     deps = [
+        ":gmail_api_models",
         ":gmail_client",
         ":inbox",
         ":models",
