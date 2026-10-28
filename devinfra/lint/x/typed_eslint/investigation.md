@@ -1,8 +1,9 @@
 # Target-local typed ESLint aspect spike
 
-Date: 2026-10-27 (America/Los_Angeles). Implementation tested at
-`b111c348ef6d95f252218b4a5f83d6e768f3f9da`, based on devel `1696fd6d3b`.
-Subsequent changes only update this report and the spike README.
+Date: 2026-10-27 (America/Los_Angeles), based on devel `1696fd6d3b`.
+Relocated fixtures validated at `f171a5928ee4a127feb4e81c6a69e3bf47ab1f82`;
+the real-library and cost sample below was collected at `b111c348ef6d95f252218b4a5f83d6e768f3f9da`.
+Subsequent changes only update this write-up and the spike README.
 
 ## Finding
 
@@ -51,7 +52,9 @@ See the upstream [parser options](https://typescript-eslint.io/packages/parser/)
 
 All five fixtures in `devinfra/lint/x/typed_eslint/fixtures` are ordinary library targets. The three
 negative targets are `manual` so wildcard builds do not fail on intentionally bad specimens.
-The generated dependency contract is produced by a Bazel write action.
+The generated dependency contract is produced by a Bazel write action. The compiler fixtures
+sit outside the product frontend globs; the experimental config supplies their TypeScript
+parser, and their compiler checks identifiers.
 
 | Target         | What it proves                                                        | Default config | Typed config               |
 | -------------- | --------------------------------------------------------------------- | -------------- | -------------------------- |
@@ -79,12 +82,12 @@ bbr build //devinfra/lint/x/typed_eslint/fixtures:good //devinfra/lint/x/typed_e
 ```
 
 RBE invocations:
-[baseline: pass](https://app.buildbuddy.io/invocation/2cff3232-a62a-4b9c-8fd4-a40d929f2f4c),
-[typed positive and negative proof](https://app.buildbuddy.io/invocation/c002bb71-33aa-400b-8616-b866107edfe5).
+[baseline: pass](https://app.buildbuddy.io/invocation/13c62f37-6b1e-429c-a602-417a69600791),
+[typed positive and negative proof](https://app.buildbuddy.io/invocation/06436f36-5e27-4af5-92ba-3b4740582e55).
 
 ## Human and machine reporting
 
-A separate [report-capture run](https://app.buildbuddy.io/invocation/b12f5c0b-14f5-4808-b8b6-fd4fbbd885b8)
+A separate [report-capture run](https://app.buildbuddy.io/invocation/edd128c8-c4d9-443e-870a-ccc0692cfdbd)
 requested both `rules_lint_human` and `rules_lint_machine`. It used
 `--@aspect_rules_lint//lint:fail_on_violation=false` only to retain diagnostic files and exit codes;
 the enforcement run above used the default fail-on-violation setting.
@@ -96,7 +99,7 @@ Downloaded artifacts confirmed, for every fixture in the typed run:
 
 Reproduce with the five-target command above, adding
 `--output_groups=+rules_lint_human,+rules_lint_machine --@aspect_rules_lint//lint:fail_on_violation=false`.
-Inspect artifacts with `bbapi artifact list b12f5c0b-14f5-4808-b8b6-fd4fbbd885b8 --kind build` and
+Inspect artifacts with `bbapi artifact list edd128c8-c4d9-443e-870a-ccc0692cfdbd --kind build` and
 `bbapi artifact cat <invocation> <report-path>`. Reports and exit-code artifacts use the
 standard `AspectRulesLintESLint` names.
 
