@@ -123,11 +123,9 @@ spec:
               # TODO(vpa-memory-audit): 1Gi -> 1.5Gi. VPA observed a 933Mi
               # request / 1004Mi upper bound — right at the old ceiling.
               memory: 1.5Gi
-          # Startup work (alembic migrations + specimen sync + executor build)
-          # runs in a background task on the event loop; meanwhile /health
-          # responds immediately so kubelet doesn't kill the pod. /readyz
-          # only flips to 200 once that background task completes.
-          # startupProbe gives 10min for the slow path before liveness kicks in.
+          # The HTTP server binds after migrations, specimen sync, executor
+          # construction, and supervisor startup. Allow 10 minutes for this
+          # work before liveness and readiness probes begin.
           startupProbe:
             httpGet:
               path: /readyz

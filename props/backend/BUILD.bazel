@@ -334,3 +334,21 @@ oci_load(
     image = ":image",
     repo_tags = ["props-backend:latest"],
 )
+
+py_test(
+    name = "test_app",
+    srcs = ["test_app.py"],
+    deps = [
+        ":app",
+        ":conftest",
+        "//:conftest",
+        "//props:config",
+        "//props:conftest",
+        "//props/core:oci_utils",
+        "//util/testing:asgi",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

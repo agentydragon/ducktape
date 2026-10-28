@@ -419,3 +419,10 @@ Terminal states determined by host scaffold from exit code:
 - List snapshots with metadata
 - Fetch new snapshots from git
 - View file tree for snapshot
+
+## Backend Startup
+
+The backend completes database setup, specimen and model metadata sync, registry
+construction, and grader supervisor startup before it accepts HTTP requests.
+Startup errors fail the ASGI lifespan. The server schedules the initial grader
+reconcile after its socket is bound, so graders can call back into the backend.

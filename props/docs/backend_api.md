@@ -14,10 +14,9 @@ backend_url = os.environ.get("PROPS_BACKEND_URL", "http://props-backend:8000")
 auth = (os.environ["PGUSER"], os.environ["PGPASSWORD"])
 ```
 
-For the deployed Kubernetes backend, wait for `/readyz` before starting runs. The
-HTTP server binds before slow startup finishes; until readiness is `200`, the
-run API may be reachable but orchestration state such as `app.state.registry`
-is not initialized yet.
+For the deployed Kubernetes backend, wait for `/readyz` before starting runs.
+The HTTP server starts accepting requests after migrations, specimen sync,
+registry construction, and supervisor startup succeed.
 
 ## Running a Critic
 

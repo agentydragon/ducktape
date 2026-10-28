@@ -19,7 +19,7 @@ import logging
 import os
 import traceback
 from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -101,122 +101,88 @@ def _sync_all_specimens(db: Database) -> None:
 def _make_lifespan(deps: BackendDeps):
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        # Fast path: bind the HTTP server immediately so kubelet probes can reach
-        # /health and /readyz. All the slow startup work (alembic migrations,
-        # specimen sync, executor + registry construction, grader supervisor)
-        # runs in a background task. Readiness is gated on `startup_complete`
-        # so the Service won't route traffic until the slow work has finished.
-        logger.info("Starting props backend (fast lifespan; slow init backgrounded)...")
+        logger.info("Starting props backend...")
         app.state.startup_complete = False
         app.state.grader_supervisor = None
         app.state.registry = None
         app.state.admin_db = None
         db_config = DatabaseConfig()
         app.state.config = deps.config
-        shutdown_requested = asyncio.Event()
-
-        async def _initialize(resources: AsyncExitStack, db: Database) -> None:
-            if deps.config.auto_migrate:
-                await asyncio.to_thread(upgrade_database, db.engine)
-            await asyncio.to_thread(ensure_evaluator_role, db_config)
-
-            def _sync_metadata() -> None:
-                with db.session() as session:
-                    stats = sync_model_metadata_with_session(session, deps.config)
-                    if stats.added or stats.deleted:
-                        logger.info(f"Model metadata synced: +{stats.added} added, -{stats.deleted} deleted")
-
-            await asyncio.to_thread(_sync_metadata)
-
-            if deps.config.auto_sync_specimens:
-                await asyncio.to_thread(_sync_all_specimens, db)
-
-            # Agents reach the LLM only through props/llm_proxy (the backend dropped
-            # its own /v1 mount in #1894), so this must be configured.
-            llm_proxy_url = deps.config.llm_proxy_url
-            if llm_proxy_url is None:
-                raise RuntimeError("config.llm_proxy_url must be set for agent runs")
-            executor = await create_executor(deps.config.executor, db_config)
-            logger.info("Using %s executor", deps.config.executor.type)
-            model_parallelism_limits = {
-                m.name: m.max_parallel_agents for m in deps.config.models if m.max_parallel_agents is not None
-            }
-            registry = AgentRegistry(
-                executor=executor,
-                db=db,
-                db_config=db_config,
-                backend_url=deps.backend_url,
-                agent_base_env=deps.config.agent_env,
-                registry_config=deps.registry_proxy_config,
-                model_parallelism_limits=model_parallelism_limits,
-                llm_base_url=llm_proxy_url,
-                agent_registry_url=deps.registry_proxy_config.proxy_url,
-            )
-            await resources.enter_async_context(registry)
-            app.state.registry = registry
-
-            if deps.grader_model:
-                supervisor = GraderSupervisor(registry=registry, db_config=db_config, model=deps.grader_model, db=db)
-                await resources.enter_async_context(supervisor.lifespan())
-                app.state.grader_supervisor = supervisor
-                logger.info(f"Grader supervisor started (model: {deps.grader_model})")
-            else:
-                logger.info("Grader supervisor disabled (grader_model not set in config)")
-
-            # The admin token is a credential; k8s log access is broader than
-            # admin access, so only surface it under an explicit dev-mode flag
-            # (off in the cluster deployment).
-            if deps.config.dev_mode:
-                admin_token = db_config.basic_auth_token
-                protocol = "https" if deps.port == 443 else "http"
-                logger.info(f"Admin token: {admin_token}")
-                logger.info(f"Admin URL: {protocol}://{deps.host}:{deps.port}/?token={admin_token}")
-            logger.info("Props backend ready")
-            app.state.startup_complete = True
-
-        async def _slow_startup() -> None:
-            try:
-                async with AsyncExitStack() as resources:
-                    db = Database(db_config)
-                    resources.callback(db.dispose)
-                    app.state.admin_db = db
-                    await _initialize(resources, db)
-                    # Keep the startup task, and all resources it owns, alive
-                    # until the server asks the lifespan to shut down.
-                    await shutdown_requested.wait()
-            finally:
-                app.state.startup_complete = False
-                app.state.grader_supervisor = None
-                app.state.registry = None
-                app.state.admin_db = None
-
-        startup_task = asyncio.create_task(_slow_startup())
-
-        # If the slow-startup task raises, asyncio will only log the unhandled
-        # exception by default — the server keeps running NotReady forever.
-        # That's worse than crashing: a stuck-NotReady pod silently fails any
-        # rollout and obscures the underlying bug. Re-raise via os._exit so
-        # kubelet restarts us and the failure is loud (matches the pre-change
-        # behaviour where lifespan exceptions crashed the worker).
-        def _on_startup_done(task: asyncio.Task[None]) -> None:
-            if task.cancelled():
-                return
-            exc = task.exception()
-            if exc is not None:
-                logger.error("Background startup failed; exiting to trigger restart", exc_info=exc)
-                os._exit(1)
-
-        startup_task.add_done_callback(_on_startup_done)
 
         try:
-            yield
+            async with AsyncExitStack() as resources:
+                db = Database(db_config)
+                resources.callback(db.dispose)
+                app.state.admin_db = db
+                if deps.config.auto_migrate:
+                    await asyncio.to_thread(upgrade_database, db.engine)
+                await asyncio.to_thread(ensure_evaluator_role, db_config)
+
+                def _sync_metadata() -> None:
+                    with db.session() as session:
+                        stats = sync_model_metadata_with_session(session, deps.config)
+                        if stats.added or stats.deleted:
+                            logger.info(f"Model metadata synced: +{stats.added} added, -{stats.deleted} deleted")
+
+                await asyncio.to_thread(_sync_metadata)
+
+                if deps.config.auto_sync_specimens:
+                    await asyncio.to_thread(_sync_all_specimens, db)
+
+                # Agents reach the LLM only through props/llm_proxy (the backend dropped
+                # its own /v1 mount in #1894), so this must be configured.
+                llm_proxy_url = deps.config.llm_proxy_url
+                if llm_proxy_url is None:
+                    raise RuntimeError("config.llm_proxy_url must be set for agent runs")
+                executor = await create_executor(deps.config.executor, db_config)
+                logger.info("Using %s executor", deps.config.executor.type)
+                model_parallelism_limits = {
+                    m.name: m.max_parallel_agents for m in deps.config.models if m.max_parallel_agents is not None
+                }
+                registry = AgentRegistry(
+                    executor=executor,
+                    db=db,
+                    db_config=db_config,
+                    backend_url=deps.backend_url,
+                    agent_base_env=deps.config.agent_env,
+                    registry_config=deps.registry_proxy_config,
+                    model_parallelism_limits=model_parallelism_limits,
+                    llm_base_url=llm_proxy_url,
+                    agent_registry_url=deps.registry_proxy_config.proxy_url,
+                )
+                await resources.enter_async_context(registry)
+                app.state.registry = registry
+
+                if deps.grader_model:
+                    supervisor = GraderSupervisor(
+                        registry=registry, db_config=db_config, model=deps.grader_model, db=db
+                    )
+                    await resources.enter_async_context(supervisor.lifespan())
+                    app.state.grader_supervisor = supervisor
+                    logger.info(f"Grader supervisor started (model: {deps.grader_model})")
+                else:
+                    logger.info("Grader supervisor disabled (grader_model not set in config)")
+
+                # The admin token is a credential; k8s log access is broader than
+                # admin access, so only surface it under an explicit dev-mode flag
+                # (off in the cluster deployment).
+                if deps.config.dev_mode:
+                    admin_token = db_config.basic_auth_token
+                    protocol = "https" if deps.port == 443 else "http"
+                    logger.info(f"Admin token: {admin_token}")
+                    logger.info(f"Admin URL: {protocol}://{deps.host}:{deps.port}/?token={admin_token}")
+                logger.info("Props backend ready")
+                app.state.startup_complete = True
+                try:
+                    yield
+                finally:
+                    app.state.startup_complete = False
+                    logger.info("Shutting down props backend...")
         finally:
-            logger.info("Shutting down props backend...")
-            shutdown_requested.set()
-            if not startup_task.done() and not app.state.startup_complete:
-                startup_task.cancel()
-            with suppress(asyncio.CancelledError, Exception):
-                await startup_task
+            app.state.startup_complete = False
+            app.state.grader_supervisor = None
+            app.state.registry = None
+            app.state.admin_db = None
             logger.info("Props backend stopped")
 
     return lifespan
@@ -230,6 +196,7 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
         lifespan=_make_lifespan(deps),
         debug=True,
     )
+    app.state.startup_complete = False
 
     cors_origins = os.environ.get(ENV_CORS_ORIGINS, DEFAULT_CORS_ORIGINS)
     app.add_middleware(
@@ -268,20 +235,12 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
 
     @app.get("/health")
     def health() -> dict[str, str]:
-        # Liveness: the HTTP server is up and the event loop is responsive.
-        # Returns 200 even during the backgrounded slow-startup window
-        # (alembic migrations, specimen sync, registry construction) so that
-        # kubelet doesn't kill the pod mid-init. Readiness — "is this pod
-        # ready to receive Service traffic?" — lives at /readyz below.
+        # Liveness begins only after the startup probe succeeds.
         return {"status": "ok"}
 
     @app.get("/readyz")
     def readyz(response: Response) -> dict[str, str]:
-        # Readiness: backgrounded startup task has finished (specimens synced,
-        # registry built, grader supervisor up). Backed by kubelet's
-        # readinessProbe in deployment.yaml; the Service won't route traffic
-        # to the pod until this returns 200.
-        if getattr(app.state, "startup_complete", False):
+        if app.state.startup_complete:
             return {"status": "ready"}
         response.status_code = 503
         return {"status": "starting"}

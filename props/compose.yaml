@@ -73,10 +73,11 @@ services:
       registry:
         condition: service_started
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 10m
 
   # LLM proxy data plane — agents reach the LLM through here (auth + budget +
   # cost + upstream routing), split out of the backend so the API can roll
