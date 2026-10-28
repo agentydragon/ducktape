@@ -1,4 +1,4 @@
-"""Fake OpenAI HTTP server for e2e testing.
+"""Fake OpenAI Responses API app for e2e testing.
 
 Implements the OpenAI Responses API (/v1/responses) backed by mock objects
 like SubprocessExecMock or StepRunner. Used in e2e tests where containers talk to
@@ -7,20 +7,16 @@ a real LLM proxy, which forwards to this fake upstream.
 Requests are routed by the `model` field in the request body to the
 corresponding mock in the dict.
 
-Usage:
-    mocks = {"optimizer-model": opt_mock, "critic-model": crit_mock}
-    async with FakeOpenAIServer(mocks) as server:
-        ...
+Serve `create_app()` with `util.testing.asgi.bind_http_server()` and call
+`check_errors()` after the serving context exits so mock exceptions fail the test
+after server cleanup.
 """
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 from typing import Any
 
-import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from openai.types.responses import (
@@ -109,34 +105,17 @@ def result_to_sdk_response(result: ResponsesResult, *, model: str = DEFAULT_TEST
 
 
 class FakeOpenAIServer:
-    """Fake OpenAI Responses API server for e2e testing.
+    """Fake OpenAI Responses API app for e2e testing.
 
     Routes requests to the mock matching the request's `model` field.
 
     Implements fail-fast error handling: exceptions from mocks are captured
-    and re-raised when the server is stopped or when check_errors() is called.
+    and re-raised when the caller invokes `check_errors()` after server cleanup.
     """
 
-    def __init__(self, mocks: dict[str, OpenAIModelProto], host: str = "127.0.0.1", port: int = 0) -> None:
+    def __init__(self, mocks: dict[str, OpenAIModelProto]) -> None:
         self._mocks = mocks
-        self._host = host
-        self._port = port
-        self._server: uvicorn.Server | None = None
-        self._task: asyncio.Task[None] | None = None
-        self._actual_port: int | None = None
         self._captured_error: BaseException | None = None
-
-    @property
-    def url(self) -> str:
-        if self._actual_port is None:
-            raise RuntimeError("Server not started")
-        return f"http://{self._host}:{self._actual_port}"
-
-    @property
-    def port(self) -> int:
-        if self._actual_port is None:
-            raise RuntimeError("Server not started")
-        return self._actual_port
 
     def _capture_error(self, error: BaseException) -> None:
         """Capture an error for later re-raising. Only captures the first error."""
@@ -159,9 +138,8 @@ class FakeOpenAIServer:
             raise HTTPException(status_code=400, detail=f"No mock for model '{model}'. Available: {available}")
         return mock
 
-    def _create_app(self) -> FastAPI:
+    def create_app(self) -> FastAPI:
         app = FastAPI(title="Fake OpenAI Server")
-        server_self = self
 
         @app.post("/v1/responses")
         async def responses(request: Request) -> JSONResponse:
@@ -170,7 +148,7 @@ class FakeOpenAIServer:
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
 
-            mock = server_self._resolve_mock(body)
+            mock = self._resolve_mock(body)
 
             try:
                 req = ResponsesRequest.model_validate(body)
@@ -182,53 +160,10 @@ class FakeOpenAIServer:
                 result = await mock.responses_create(req)
             except Exception as e:
                 logger.exception("Mock raised exception")
-                server_self._capture_error(e)
+                self._capture_error(e)
                 raise HTTPException(status_code=500, detail=f"Mock error: {e}")
 
             sdk_response = result_to_sdk_response(result, model=body["model"])
             return JSONResponse(content=sdk_response.model_dump(mode="json"))
 
         return app
-
-    async def start(self) -> None:
-        app = self._create_app()
-        config = uvicorn.Config(app, host=self._host, port=self._port, log_level="warning")
-        self._server = uvicorn.Server(config)
-        self._task = asyncio.create_task(self._server.serve())
-
-        while not self._server.started:
-            await asyncio.sleep(0.01)
-            if self._task.done():
-                exc = self._task.exception()
-                raise RuntimeError(f"Server failed to start: {exc}")
-
-        for server in self._server.servers:
-            for socket in server.sockets:
-                self._actual_port = socket.getsockname()[1]
-                break
-            break
-
-        logger.info("FakeOpenAIServer started on %s", self.url)
-
-    async def stop(self) -> None:
-        if self._server is not None:
-            self._server.should_exit = True
-            if self._task is not None:
-                try:
-                    await asyncio.wait_for(self._task, timeout=5.0)
-                except TimeoutError:
-                    self._task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await self._task
-            logger.info("FakeOpenAIServer stopped")
-        # Re-raise any captured mock errors so tests fail visibly
-        self.check_errors()
-
-    async def __aenter__(self) -> FakeOpenAIServer:
-        await self.start()
-        return self
-
-    async def __aexit__(
-        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object
-    ) -> None:
-        await self.stop()

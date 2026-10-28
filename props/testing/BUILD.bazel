@@ -1,6 +1,6 @@
 """Props test infrastructure package."""
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_testonly = True)
 
@@ -47,6 +47,20 @@ py_library(
         "@pypi//fastapi",
         "@pypi//openai",
         "@pypi//pydantic",
-        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_fake_openai_server",
+    srcs = ["test_fake_openai_server.py"],
+    deps = [
+        ":fake_openai_server",
+        "//:conftest",
+        "//openai_utils:model",
+        "//props:conftest",
+        "//util/testing:asgi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

@@ -158,12 +158,11 @@ async def _make_stack(
     models: Sequence[str],
     images: Sequence[BazelImage] = (),
 ) -> AsyncIterator[E2EStack]:
-    """Shared stack setup: start fake OpenAI, backend, proxies, registry, push images."""
-    await fake_openai.start()
-
+    """Shared stack setup: serve fake OpenAI, backend and proxies, then push images."""
     try:
         _set_backend_env(monkeypatch, db.config, e2e_registry_url)
         with ExitStack() as bound_servers:
+            fake_openai_server = bound_servers.enter_context(bind_http_server())
             backend_server = bound_servers.enter_context(bind_http_server("0.0.0.0", advertised_host=E2E_HOST_HOSTNAME))
             llm_proxy_server = bound_servers.enter_context(
                 bind_http_server("0.0.0.0", advertised_host=E2E_HOST_HOSTNAME)
@@ -185,7 +184,9 @@ async def _make_stack(
                 executor=DockerExecutorConfig(extra_hosts=HOST_GATEWAY),
                 llm_proxy_url=llm_proxy_url,
                 upstreams={
-                    "fake-openai": UpstreamConfig(url=f"{fake_openai.url}/v1", api_key_env="FAKE_OPENAI_API_KEY")
+                    "fake-openai": UpstreamConfig(
+                        url=f"{fake_openai_server.origin}/v1", api_key_env="FAKE_OPENAI_API_KEY"
+                    )
                 },
                 models=[
                     CustomModelConfig(
@@ -203,6 +204,7 @@ async def _make_stack(
             deps = BackendDeps(config=config, registry_proxy_config=registry_proxy_config, backend_url=backend_url)
 
             async with (
+                fake_openai_server.serve_in_loop(fake_openai.create_app()),
                 ensure_agent_network(async_docker_client),
                 backend_server.serve_in_loop(create_app(deps=deps)),
                 llm_proxy_server.serve_in_loop(create_llm_proxy_app(db=db, config=config)),
@@ -243,7 +245,7 @@ async def _make_stack(
                     await registry.close()
 
     finally:
-        await fake_openai.stop()
+        fake_openai.check_errors()
 
 
 @pytest_asyncio.fixture
@@ -277,7 +279,7 @@ async def e2e_stack(
     async def _factory(
         mocks: Mapping[str, OpenAIModelProto], model: str = DEFAULT_TEST_MODEL, *, images: Sequence[BazelImage] = ()
     ) -> AsyncIterator[E2EStack]:
-        fake_openai = FakeOpenAIServer(dict(mocks), host="0.0.0.0", port=0)
+        fake_openai = FakeOpenAIServer(dict(mocks))
         async with _make_stack(
             fake_openai,
             synced_db,
