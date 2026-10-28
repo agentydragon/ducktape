@@ -806,6 +806,7 @@ pub fn resolve_imported_callable_summaries(
                     local: local.clone(),
                     source_location,
                     inference: wrapper.inference.clone(),
+                    dependencies: wrapper.dependencies.clone(),
                 }),
                 wrapper.dependencies.clone(),
             );

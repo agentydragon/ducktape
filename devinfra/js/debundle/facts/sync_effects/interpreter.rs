@@ -7,7 +7,7 @@ use super::super::value_model::{
 use super::native_calls::{CallInputs, CallReturn, NativeCallModel};
 use super::runtime_callbacks::{CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
-use super::runtime_inference::{RuntimeOperation, RuntimeQueries, RuntimeValue};
+use super::runtime_inference::{ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue};
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, IntrinsicRoot, LocalConstructor,
     RetainedCallbackCall,
@@ -254,7 +254,7 @@ impl ExecutionInputs<'_> {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub(super) struct ExecutionState {
     native_integrity_checks: RefCell<BTreeSet<NativeIntegrityCheck>>,
     native_prototype_property_checks: RefCell<BTreeMap<String, NativePrototypePropertyCheck>>,
@@ -313,7 +313,8 @@ pub(super) struct ExecutionState {
     capture_contexts: OrdMap<Arc<Context>, usize>,
     callback_sets: OrdMap<Arc<Values>, usize>,
     active: BTreeSet<ActiveInvocation>,
-    cache: OrdMap<InvocationSignature, Outcome>,
+    /// Context lookup only; completed outcomes live in the shared fact store.
+    invocation_memos: OrdMap<InvocationSignature, ProgramPoint>,
 }
 
 pub(super) struct Executor<'source, 'rule> {
@@ -366,6 +367,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             unreachable!("callback operations produce callback results");
         };
         result
+    }
+
+    fn remember_invocation(&mut self, signature: InvocationSignature, outcome: &Outcome) {
+        let point = self.queries.publish_invocation_memo(outcome);
+        if let Some(previous) = self.state.invocation_memos.insert(signature, point.clone())
+            && previous != point
+        {
+            self.queries.retire_invocation_memo(previous);
+        }
+    }
+
+    fn clear_invocation_memos(&mut self) {
+        for (_, point) in std::mem::take(&mut self.state.invocation_memos) {
+            self.queries.retire_invocation_memo(point);
+        }
     }
 
     /// The abstract callback-factory value also represents namespace members
@@ -3633,10 +3649,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn promote_raw_callbacks(&mut self, values: &Values, outcome: &mut Outcome) {
-        let outcome = std::mem::take(outcome);
+        let prior_outcome = std::mem::take(outcome);
         let result = self.request_callback_operation(CallbackOperation::PromoteRaw {
             values: values.clone(),
-            outcome: Box::new(outcome),
+            outcome: Box::new(prior_outcome),
         });
         let CallbackResult::Outcome(result) = result else {
             unreachable!("raw callback promotion returns its updated outcome");
@@ -3731,10 +3747,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn promote_deferred_callbacks(&mut self, captured: &Values, outcome: &mut Outcome) {
-        let outcome = std::mem::take(outcome);
+        let prior_outcome = std::mem::take(outcome);
         let result = self.request_callback_operation(CallbackOperation::PromoteDeferred {
             captured: captured.clone(),
-            outcome: Box::new(outcome),
+            outcome: Box::new(prior_outcome),
         });
         let CallbackResult::Outcome(result) = result else {
             unreachable!("deferred callback promotion returns its updated outcome");
@@ -4051,11 +4067,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         no_sync_arguments: bool,
         outcome: &mut Outcome,
     ) {
-        let outcome = std::mem::take(outcome);
+        let prior_outcome = std::mem::take(outcome);
         let result = self.request_callback_operation(CallbackOperation::InvokePossible {
             arguments: args.to_vec(),
             no_sync_arguments,
-            outcome: Box::new(outcome),
+            outcome: Box::new(prior_outcome),
         });
         let CallbackResult::Outcome(result) = result else {
             unreachable!("possible callback invocation returns its updated outcome");
@@ -5118,9 +5134,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             top_owner: self.state.current_top_owner,
         };
         if self.state.array_iteration_depth == 0
-            && let Some(cached) = self.state.cache.get(&signature)
+            && let Some(point) = self.state.invocation_memos.get(&signature)
         {
-            return cached.clone();
+            return self.queries.invocation_memo(point);
         }
         let active_invocation = ActiveInvocation {
             callable: key,
@@ -5221,7 +5237,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             );
             self.state.active.remove(&active_invocation);
             self.state.invocation_depth -= 1;
-            self.state.cache.insert(signature, outcome.clone());
+            self.remember_invocation(signature, &outcome);
             return outcome;
         }
         if callable.opaque {
@@ -5343,7 +5359,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         self.state.active.remove(&active_invocation);
         self.state.invocation_depth -= 1;
-        self.state.cache.insert(signature, outcome.clone());
+        self.remember_invocation(signature, &outcome);
         outcome
     }
 
@@ -6546,7 +6562,7 @@ pub(crate) fn annotate_synchronous_calls(
         capture_contexts: OrdMap::new(),
         callback_sets: OrdMap::new(),
         active: BTreeSet::new(),
-        cache: OrdMap::new(),
+        invocation_memos: OrdMap::new(),
     };
     let effects =
         super::runtime_inference::infer_synchronous_execution(&inputs, state, facts.len());
@@ -6578,7 +6594,7 @@ impl Executor<'_, '_> {
         self.state.proof_uses.clear();
         // Cache keys include this owner; previous statement snapshots cannot
         // be reused and should not consume this statement's bounded budget.
-        self.state.cache.clear();
+        self.clear_invocation_memos();
         self.state.invocation_count = 0;
         self.state.fallback_outcome = Outcome::default();
         self.state.fallback_callback_sizes = None;
@@ -6900,7 +6916,7 @@ impl Executor<'_, '_> {
         outcome.effects.native_receiver_certificates = index.native_receiver_certificates.clone();
         self.state.top_env = top_env;
         self.state.top_captures = top_captures;
-        self.state.cache.clear();
+        self.clear_invocation_memos();
         self.state.invocation_count = 0;
         self.state.fallback_outcome = Outcome::default();
         self.state.fallback_callback_sizes = None;

@@ -43,19 +43,33 @@ Use isolated worktrees, independent PRs and native stacks for real dependencies.
 
 ## Transfer requests
 
-The initial runtime adapter registers one producer per source owner. This is an
-intermediate scaffold; the remaining ports introduce named expression, call,
-heap and callback operations on the same store. A request identifies its source
-owner and parent operation plus a child occurrence, carries a settled input state
-and explicit argument/capture environments, and produces a settled output state
-and typed value/effect result. Child occurrence numbers describe execution order,
-not opcodes. Rule and fact families use named enums, including scheduler fixtures.
+Source-prefix producers discover named expression, call, heap, callback and model
+transfers on the same fact context. A request identifies its source owner and
+parent operation plus a child occurrence, carries a settled input state and
+explicit argument/capture environments, and produces a settled output state and
+typed value/effect result. Occurrence numbers describe execution order, not
+opcodes. Rule and fact families use named enums, including scheduler fixtures.
 
-Requests are deterministic from a settled prefix. A suspended parent cannot
-publish its result or schedule later children using a provisional child result.
-Retrying restores its input snapshot and reuses settled children; admission
-counts and cache revisions therefore advance only in semantic output state.
-Parent/child completion must retain the current active-recursion fallback.
+These execution transitions form an acyclic graph: a result can affect its
+parent's continuation, never the immutable predecessor supplied to that child.
+Current active-recursion and expansion fallbacks remain terminal results; this
+migration does not infer recursive call summaries. The graph can therefore be
+evaluated eagerly in dependency order on the common context. No pending child is
+substituted with an unknown value. Admission counts/revisions advance once in
+semantic output state, independent of scheduler passes.
+
+Completed single-consumer requests/results use `FactContext::take_final` to move
+their state and retire obsolete payloads while retaining typed proof dependencies.
+Growing facts never use this operation. There can be no future producer or reader
+of a retired key. Source-prefix payloads retire after the successor consumes them;
+reports retain their existing source and typed proof evidence.
+
+A measured prototype instead suspended and replayed each parent while retaining
+all intermediate snapshots. The 1,024-callback control hit a 45-second cutoff
+(baseline about 0.17 seconds), and the cached-fallback control retained about
+5 GiB. A real `perf` recording attributed about 48% of sampled CPU to cloning
+binding/owner sets. That prototype is rejected; merely sharing persistent value
+sets is insufficient if complete execution states are repeatedly cloned.
 
 ## Acceptance
 

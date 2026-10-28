@@ -22,6 +22,7 @@ enum RuntimeKey {
     Result(ProgramPoint),
     OwnPropertyRequest(ProgramPoint),
     OwnPropertyResult(ProgramPoint),
+    InvocationMemo(ProgramPoint),
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -38,12 +39,13 @@ enum RuntimeFact {
     Result(Box<RuntimeResult>),
     OwnPropertyRequest(Box<OwnPropertyQuery>),
     OwnPropertyResult(Option<Box<OwnPropertyProof>>),
+    InvocationMemo(Box<Outcome>),
 }
 
 /// The path identifies an occurrence within its parent's transfer, rather than
 /// conflating repeated evaluation of the same expression in different contexts.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct ProgramPoint {
+pub(super) struct ProgramPoint {
     owner: SourceUnitOrdinal,
     path: Vec<(OperationKind, usize)>,
 }
@@ -113,6 +115,33 @@ pub(super) struct RuntimeQueries<'source, 'query> {
 }
 
 impl RuntimeQueries<'_, '_> {
+    pub(super) fn invocation_memo(&self, point: &ProgramPoint) -> Outcome {
+        let mut context = self.context.borrow_mut();
+        let Some(RuntimeFact::InvocationMemo(outcome)) =
+            context.read(RuntimeKey::InvocationMemo(point.clone()))
+        else {
+            unreachable!("a live invocation memo points to its completed outcome");
+        };
+        outcome.as_ref().clone()
+    }
+
+    pub(super) fn publish_invocation_memo(&self, outcome: &Outcome) -> ProgramPoint {
+        self.context.borrow_mut().propose(
+            RuntimeKey::InvocationMemo(self.point.clone()),
+            RuntimeFact::InvocationMemo(Box::new(outcome.clone())),
+        );
+        self.point.clone()
+    }
+
+    pub(super) fn retire_invocation_memo(&self, point: ProgramPoint) {
+        assert!(matches!(
+            self.context
+                .borrow_mut()
+                .take_final(RuntimeKey::InvocationMemo(point)),
+            Some(RuntimeFact::InvocationMemo(_))
+        ));
+    }
+
     pub(super) fn assume(&self, dependencies: &ProofDependencies) {
         self.context.borrow_mut().assume(dependencies);
     }
@@ -132,11 +161,7 @@ impl RuntimeQueries<'_, '_> {
             RuntimeKey::OwnPropertyRequest(point.clone()),
             RuntimeFact::OwnPropertyRequest(Box::new(query)),
         );
-        RuntimeRules {
-            inputs: self.inputs,
-            owner_count: 0,
-        }
-        .project_own_property(&point, &mut **context);
+        RuntimeRules::project_own_property(self.inputs, &point, &mut **context);
         let Some(RuntimeFact::OwnPropertyResult(proof)) =
             context.take_final(RuntimeKey::OwnPropertyResult(point))
         else {
@@ -164,11 +189,7 @@ impl RuntimeQueries<'_, '_> {
             RuntimeKey::Request(point.clone()),
             RuntimeFact::Request(Box::new(RuntimeRequest { state, operation })),
         );
-        RuntimeRules {
-            inputs: self.inputs,
-            owner_count: 0,
-        }
-        .transfer(&point, &mut **context);
+        RuntimeRules::transfer(self.inputs, &point, &mut **context);
         let Some(RuntimeFact::Result(result)) = context.take_final(RuntimeKey::Result(point))
         else {
             unreachable!("a transfer with settled inputs produces a terminal result");
@@ -197,7 +218,8 @@ impl IterativeRules for RuntimeRules<'_, '_> {
             RuntimeKey::Prefix(_)
             | RuntimeKey::Effects(_)
             | RuntimeKey::Result(_)
-            | RuntimeKey::OwnPropertyResult(_) => Vec::new(),
+            | RuntimeKey::OwnPropertyResult(_)
+            | RuntimeKey::InvocationMemo(_) => Vec::new(),
         }
     }
 
@@ -208,8 +230,10 @@ impl IterativeRules for RuntimeRules<'_, '_> {
     ) {
         match rule {
             RuntimeRule::ExecuteOwner(owner) => self.execute_owner(*owner, context),
-            RuntimeRule::Transfer(point) => self.transfer(point, context),
-            RuntimeRule::OwnProperty(point) => self.project_own_property(point, context),
+            RuntimeRule::Transfer(point) => Self::transfer(self.inputs, point, context),
+            RuntimeRule::OwnProperty(point) => {
+                Self::project_own_property(self.inputs, point, context)
+            }
         }
     }
 
@@ -242,6 +266,10 @@ impl IterativeRules for RuntimeRules<'_, '_> {
                 RuntimeKey::OwnPropertyResult(_),
                 RuntimeFact::OwnPropertyResult(_),
                 RuntimeFact::OwnPropertyResult(_)
+            ) | (
+                RuntimeKey::InvocationMemo(_),
+                RuntimeFact::InvocationMemo(_),
+                RuntimeFact::InvocationMemo(_)
             )
         ));
         false
@@ -250,7 +278,7 @@ impl IterativeRules for RuntimeRules<'_, '_> {
 
 impl RuntimeRules<'_, '_> {
     fn project_own_property(
-        &self,
+        inputs: &ExecutionInputs<'_>,
         point: &ProgramPoint,
         context: &mut dyn FactContext<RuntimeKey, RuntimeFact>,
     ) {
@@ -259,7 +287,7 @@ impl RuntimeRules<'_, '_> {
         else {
             return;
         };
-        let proof = self.inputs.project_own_property(*query);
+        let proof = inputs.project_own_property(*query);
         if let Some(proof) = &proof {
             context.assume(&proof.dependencies);
         }
@@ -300,7 +328,7 @@ impl RuntimeRules<'_, '_> {
     }
 
     fn transfer(
-        &self,
+        inputs: &ExecutionInputs<'_>,
         point: &ProgramPoint,
         context: &mut dyn FactContext<RuntimeKey, RuntimeFact>,
     ) {
@@ -311,12 +339,12 @@ impl RuntimeRules<'_, '_> {
         };
         let RuntimeRequest { state, operation } = *request;
         let queries = RuntimeQueries {
-            inputs: self.inputs,
+            inputs: inputs,
             point: point.clone(),
             next_child: Cell::new(0),
             context: RefCell::new(context),
         };
-        let mut executor = Executor::new(self.inputs, state, queries);
+        let mut executor = Executor::new(inputs, state, queries);
         let value = match operation {
             RuntimeOperation::Heap(operation) => {
                 RuntimeValue::Heap(operation.execute(&mut executor))

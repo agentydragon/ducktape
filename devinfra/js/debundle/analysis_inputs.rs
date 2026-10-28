@@ -89,6 +89,9 @@ pub struct NamespaceWrapperSummary {
     pub local: String,
     pub source_location: Option<SourceLocation>,
     pub inference: crate::reports::schema::InferenceUse,
+    /// Trusted provider judgment; deliberately absent from report JSON.
+    #[serde(skip)]
+    pub(crate) dependencies: ProofDependencies,
 }
 
 /// Source-only wrapper proof: direct callback uses receive these ordinary
