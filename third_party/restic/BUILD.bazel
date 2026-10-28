@@ -9,5 +9,8 @@ genrule(
         "@platforms//os:linux",
     ],
     tools = ["@bzip2"],
-    visibility = ["//nix/home/services:__pkg__"],
+    visibility = [
+        "//nix/home/services:__pkg__",
+        "//x/ai_session_archive:__pkg__",
+    ],
 )
