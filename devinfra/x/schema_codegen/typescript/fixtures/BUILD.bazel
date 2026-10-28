@@ -27,3 +27,10 @@ genrule(
     outs = ["generated/openapi-ts.config.mjs"],
     cmd = "mkdir -p $(RULEDIR)/generated && cp $(location openapi-ts.config.mjs) $(RULEDIR)/generated/openapi-ts.config.mjs",
 )
+
+genrule(
+    name = "openapi_config_helper_artifact",
+    srcs = ["openapi-config-helper.mjs"],
+    outs = ["generated/openapi-config-helper.mjs"],
+    cmd = "mkdir -p $(RULEDIR)/generated && cp $(location openapi-config-helper.mjs) $(RULEDIR)/generated/openapi-config-helper.mjs",
+)

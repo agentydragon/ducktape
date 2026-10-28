@@ -9,12 +9,13 @@ if (!inputArgument || !outputArgument || !configArgument) {
 }
 
 const configPath = resolve(configArgument);
-const configModule = await import(pathToFileURL(configPath).href);
-if (!configModule.default || typeof configModule.default !== "object" || Array.isArray(configModule.default)) {
-  throw new Error("OpenAPI Zod config must default-export one configuration object");
-}
 
 await withRemoteReferencesDisabled(async () => {
+  const configModule = await import(pathToFileURL(configPath).href);
+  if (!configModule.default || typeof configModule.default !== "object" || Array.isArray(configModule.default)) {
+    throw new Error("OpenAPI Zod config must default-export one configuration object");
+  }
+
   await createClient({
     configFile: configPath,
     input: resolve(inputArgument),

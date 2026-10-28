@@ -1,3 +1,5 @@
+import { dateOptions } from "./openapi-config-helper.mjs";
+
 export default {
-  plugins: [{ name: "zod", dates: { offset: true } }],
+  plugins: [{ name: "zod", dates: dateOptions }],
 };

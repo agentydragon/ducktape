@@ -1,10 +1,10 @@
 /** Run one schema conversion while preventing remote references from reaching the network. */
-export async function withRemoteReferencesDisabled(operation, onRemoteReference = () => undefined) {
+export async function withRemoteReferencesDisabled(operation) {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input) => {
-    const url = String(input);
-    onRemoteReference(url);
-    return new Response(`Remote schema references are disabled: ${url}`, {
+  // Return an HTTP error rather than reject: the pinned Hey resolver clears its
+  // abort timer only after fetch resolves, so a rejection leaves a live 60s timer.
+  globalThis.fetch = async () => {
+    return new Response("Remote schema references are disabled during code generation", {
       status: 400,
       statusText: "Remote references disabled",
     });
