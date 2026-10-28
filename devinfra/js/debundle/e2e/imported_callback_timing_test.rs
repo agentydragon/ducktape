@@ -747,6 +747,28 @@ fn inferred_two_parameter_module_factory_defers_initializer() {
 }
 
 #[test]
+fn inferred_factory_accepts_assignment_valued_fresh_member_argument() {
+    let provider =
+        "export var factory = (callback, cache) => () => callback((cache = { value: 1 }).value);\n";
+    let source = "import { factory } from './peer.js';\n\
+                  const wrapped = factory((value) => later + value);\n\
+                  const later = 42;\n\
+                  console.log(wrapped());\n\
+                  export { wrapped, later };\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", provider)]),
+    );
+    assert_preserved_entry_output(&fixture, "43\n");
+}
+
+#[test]
 fn inferred_module_factory_rejects_extra_callback_roots_and_mutable_exports() {
     let app = "import { factory } from './peer.js';\n\
                const wrapped = factory(() => later);\n\
@@ -763,6 +785,8 @@ fn inferred_module_factory_rejects_extra_callback_roots_and_mutable_exports() {
         "export var factory = (callback, cache) => () => { cache = {}; return cache.constructor; };\n",
         "export var factory = (callback, cache) => () => { const other = () => globalThis.saved(); return callback(); };\n",
         "export var factory = (callback, cache) => () => { cache = { exports: {} }; return cache['exports']; };\n",
+        "export var factory = (callback, cache) => () => callback((cache = { get value() { return globalThis.saved(); } }).value);\n",
+        "export var factory = (callback, cache) => () => callback((cache = { value: 1 })['value']);\n",
         "export var factory = (callback, cache) => () => this;\n",
         "export var factory = (callback = () => 0, cache) => () => callback();\n",
         "export var factory = ({ callback }, cache) => () => callback();\n",

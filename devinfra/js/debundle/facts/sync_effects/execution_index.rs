@@ -4705,30 +4705,43 @@ fn returned_callback_factory(index: &ExecutionIndex, key: u32) -> bool {
         .filter(|id| *id != callback)
         .cloned()
         .collect();
+    let has_fresh_own_data_property = |value: &ValueExpr, property: &str| {
+        matches!(value, ValueExpr::ObjectLiteral(object, fields)
+            if index.plain_data_objects.contains(object)
+                && fields.iter().any(|(name, _)| name.as_deref() == Some(property)))
+    };
     inner.reads.is_subset(&allowed)
         && inner.rebinds.is_subset(&local_receivers)
         && inner
             .local_assignments
             .iter()
             .all(|(id, _)| local_receivers.contains(id))
-        && inner.calls.iter().all(|call| match (&call.kind, &call.callee) {
-            (CallKind::Call, ValueExpr::Binding(id)) => id == callback && !call.has_spread,
-            (CallKind::LocalMemberRead, ValueExpr::Member(receiver, Some(property), true)) => {
-                matches!(receiver.as_ref(), ValueExpr::Binding(id)
-                    if local_receivers.contains(id)
-                        && inner.local_assignments.iter().any(|(assigned, value)| {
-                            assigned == id
-                                && matches!(value, ValueExpr::ObjectLiteral(object, fields)
-                                    if index.plain_data_objects.contains(object)
-                                        && fields.iter().any(|(name, _)| name.as_ref() == Some(property)))
-                        })
-                        && inner.local_assignments.iter().filter(|(assigned, _)| assigned == id)
-                            .all(|(_, value)| matches!(value, ValueExpr::ObjectLiteral(object, fields)
-                                if index.plain_data_objects.contains(object)
-                                    && fields.iter().any(|(name, _)| name.as_ref() == Some(property)))))
-            }
-            _ => false,
-        })
+        && inner
+            .calls
+            .iter()
+            .all(|call| match (&call.kind, &call.callee) {
+                (CallKind::Call, ValueExpr::Binding(id)) => id == callback && !call.has_spread,
+                (CallKind::LocalMemberRead, ValueExpr::Member(receiver, Some(property), true)) => {
+                    match receiver.as_ref() {
+                        ValueExpr::Binding(id) if local_receivers.contains(id) => {
+                            inner.local_assignments.iter().any(|(assigned, value)| {
+                                assigned == id && has_fresh_own_data_property(value, property)
+                            }) && inner
+                                .local_assignments
+                                .iter()
+                                .filter(|(assigned, _)| assigned == id)
+                                .all(|(_, value)| has_fresh_own_data_property(value, property))
+                        }
+                        // ValueExpr reduces an assignment expression to its RHS.
+                        // The indexed member receiver is still this fresh literal.
+                        value @ ValueExpr::ObjectLiteral(..) => {
+                            has_fresh_own_data_property(value, property)
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            })
 }
 
 pub(crate) fn infer_returned_callback_factories(
