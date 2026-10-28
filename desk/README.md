@@ -32,7 +32,7 @@ keyboard, camera and underdesk hub downstream of the KVM.
   that seat; per-title `gamescope -f -- %command%` gives direct scanout. DP audio via `01:00.1`
   passthrough (PipeWire → FV43U speakers). Sunshine/Moonlight available but software-encode
   only. Open: session-teardown hardening. See
-  `nix/debug/wyrm2/direct_display_bringup/README.md`.
+  `nix/docs/wyrm2_display.md`.
 
 ## Devices on hand
 

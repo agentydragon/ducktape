@@ -1,4 +1,10 @@
-# Remote desktop to wyrm2 — investigation (2026-07-18)
+# Remote desktop to wyrm2 — July 2026 investigation
+
+Current configuration and acceptance boundary: [display guide](../../docs/wyrm2_display.md).
+On 2026-10-28 xrdp has a listener, but a fresh client login has not been verified.
+The working-session claims below describe July observations. For GRD, the later
+[readiness investigation](grd_listener_forensics/README.md) corrects the early
+claim that `grdctl`’s `EROFS` error itself blocks listener startup.
 
 Goal: graphical remote access to **wyrm2** (NixOS VM on atlas/Proxmox; the gaming
 seat, 2x RTX 5090) from **rugged** and the other laptops, over the Nebula mesh.
