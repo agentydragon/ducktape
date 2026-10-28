@@ -151,6 +151,7 @@ pub enum NativeIntrinsic {
     /// A global slot may hold any native value; descendants retain this root.
     UnknownGlobalValue,
     Error,
+    FinalizationRegistry,
     Object,
     Array,
     Math,

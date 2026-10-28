@@ -834,6 +834,32 @@ This first primitive excludes aliases, computed/spread/prototype forms and
 native replacement. Descriptor application and imported-body specialization
 remain outside its contract.
 
+## Inferred FinalizationRegistry callback retention
+
+A direct `new FinalizationRegistry(cleanup)` or
+`new globalThis.FinalizationRegistry(cleanup)` may use the native call model
+when `cleanup` evaluates to exactly one known ordinary function origin or
+closure. The constructor retains that callback in its new registry; it does
+not invoke it during construction. The successful result is opaque and retains
+the callback and its captures. Later use or opaque consumption promotes those
+callbacks through the ordinary retained-value analysis.
+
+The bare global and `globalThis` binding must be undeclared and unshadowed.
+`globalThis` support is limited to direct static dot-member callees, including
+existing modeled calls such as `new globalThis.Map()` and
+`globalThis.Object.freeze(record)`. Local aliases, computed or optional
+namespace access, spreads, unknown or mixed callback values, and noncallable
+inputs remain on the conservative path. Dynamic scope, or any visible write to
+the global object or the target intrinsic in any analyzed module, disables the
+model. Callee and argument evaluation, throws, and at-init ordering remain
+represented. The constructor remains impure and opaque for heap ordering; this
+is not a purity, throw-freedom, fresh-allocation, registration or method model.
+
+The [FinalizationRegistry constructor](https://tc39.es/ecma262/2025/multipage/managing-memory.html#sec-finalization-registry-constructor)
+checks callability, creates registry state and stores the callback through
+[`HostMakeJobCallback`](https://tc39.es/ecma262/2025/multipage/executable-code-and-execution-contexts.html#sec-hostmakejobcallback).
+The default non-browser host operation records the callback for later jobs.
+
 ## Inferred returned-record construction timing
 
 For a stable directly exported hoisted zero-argument function declaration that allocates one fresh

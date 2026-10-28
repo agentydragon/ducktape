@@ -262,9 +262,29 @@ opaque, and syntax/type errors remain observable. The existing fresh-record
 `Object.freeze` proof below uses this same model projection, returning argument
 zero without losing its object identity or callbacks.
 
+Direct construction of an unmodified `FinalizationRegistry` with exactly one
+known ordinary function origin or closure stores that callback through
+[`HostMakeJobCallback`](https://tc39.es/ecma262/2025/multipage/executable-code-and-execution-contexts.html#sec-hostmakejobcallback)
+and returns an opaque value retaining its callback graph. The
+[constructor algorithm](https://tc39.es/ecma262/2025/multipage/managing-memory.html#sec-finalization-registry-constructor)
+checks callability and does not invoke the cleanup callback. The default host
+operation for non-browser runtimes records the callback. Later access or opaque
+consumption continues through the existing retained-value callback analysis.
+The call remains impure and uses `NativeHeapEffect::Opaque`; this supplies no
+purity, throw-freedom, or heap-locality claim.
+
+Direct static dot callees rooted at the unshadowed builtin `globalThis` use the
+same native identity and mutation guard as bare builtin callees. This includes
+qualified constructors and one-method namespace chains such as
+`globalThis.Object.freeze`. Local aliases, computed and optional access,
+dynamic scope, and visible writes to `GlobalObject` or the target intrinsic
+remain conservative. The canonical global-object index provides the root and
+write facts; this path does not perform a second syntax scan.
+
 `native_call_summary_test` covers all six numeric methods followed by another
 conversion, both RegExp call forms, object coercion, global-constructor
-replacement, Symbol calls/coercion, and syntax errors. `math_round_timing_test` retains effectful
+replacement, Symbol calls/coercion, FinalizationRegistry retention, qualified
+native callees, and syntax errors. `math_round_timing_test` retains effectful
 argument, shadowing, aliased method mutation, and getter controls;
 `fresh_freeze_callback_timing_test` retains its identity/publication controls.
 

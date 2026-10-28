@@ -127,7 +127,10 @@ debundle_e2e_test(name = "fresh_freeze_callback_timing_test")
 
 debundle_e2e_test(name = "math_round_timing_test")
 
-debundle_e2e_test(name = "native_call_summary_test")
+debundle_e2e_test(
+    name = "native_call_summary_test",
+    deps = ["@crates//:serde_json"],
+)
 
 debundle_e2e_test(
     name = "host_no_reentry_test",

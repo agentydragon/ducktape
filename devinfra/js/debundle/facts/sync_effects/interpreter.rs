@@ -327,22 +327,35 @@ impl Executor<'_> {
         expressions: &[ValueExpr],
         args: &[Values],
     ) -> Option<CallReturn> {
-        let (binding, member) = match callee {
-            ValueExpr::Binding(binding) => (binding, None),
-            ValueExpr::Member(receiver, Some(member), true) => {
-                let ValueExpr::Binding(binding) = receiver.as_ref() else {
-                    return None;
-                };
-                (binding, Some(member.as_str()))
-            }
+        let (binding, receiver, member, global_this_qualified) = match callee {
+            ValueExpr::Binding(binding) => (binding, binding.0.as_ref(), None, false),
+            ValueExpr::Member(receiver, Some(member), true) => match receiver.as_ref() {
+                ValueExpr::Binding(binding) if binding.0.as_ref() == "globalThis" => {
+                    (binding, member.as_str(), None, true)
+                }
+                ValueExpr::Binding(binding) => {
+                    (binding, binding.0.as_ref(), Some(member.as_str()), false)
+                }
+                ValueExpr::Member(global, Some(receiver), true) => {
+                    let ValueExpr::Binding(binding) = global.as_ref() else {
+                        return None;
+                    };
+                    if binding.0.as_ref() != "globalThis" {
+                        return None;
+                    }
+                    (binding, receiver.as_str(), Some(member.as_str()), true)
+                }
+                _ => return None,
+            },
             _ => return None,
         };
-        let model = native_call_model(binding.0.as_ref(), member, kind)?;
+        let model = native_call_model(receiver, member, kind)?;
         if !self.index.native_call_identity_is_unmodified(
             binding,
             model.intrinsic,
             self.flow,
             self.shadowed,
+            global_this_qualified,
         ) {
             return None;
         }
@@ -368,6 +381,15 @@ impl Executor<'_> {
                     if self.index.own_descriptor_literal_inputs.contains(object)
                         && !self.tainted_objects.contains(object)
                         && values == &BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(*object))]))
+            }
+            CallInputs::OrdinaryCallable => {
+                matches!(args, [values]
+                if values.len() == 1
+                    && values.iter().next().is_some_and(|value| matches!(
+                        value,
+                        AbstractValue::Origin(ValueOrigin::Function(_))
+                            | AbstractValue::Closure(_, _)
+                    )))
             }
         };
         admitted.then_some(model.returns)

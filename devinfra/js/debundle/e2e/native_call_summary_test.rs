@@ -13,6 +13,97 @@ fn split_opts<'a>(source: &'a str, members: &[Member], anonymous: &[&str]) -> Fi
 }
 
 #[test]
+fn finalization_registry_retains_cleanup_without_invoking_it() {
+    let source = r#"const registry = new globalThis.FinalizationRegistry(() => Later);
+class Later {}
+console.log(typeof registry);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module("registry/value", &[Member::new("registry")]),
+            logical_module("registry/later", &[Member::new("Later")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "object\n");
+
+    let graph = fixture.dependency_graph();
+    let registry_id = source_unit_for_binding(&graph, "registry");
+    let registry = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == registry_id)
+        .expect("registry source unit");
+    let purity = serde_json::to_value(&registry.purity).unwrap();
+    assert_eq!(purity["kind"], "not_pure");
+}
+
+#[test]
+fn finalization_registry_result_retains_callbacks_for_opaque_consumers() {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "const registry = new globalThis.FinalizationRegistry(() => Later);\nconsume(registry);\nclass Later {}\n",
+            vec![
+                logical_module("registry/value", &[Member::new("registry")]),
+                logical_module("registry/later", &[Member::new("Later")]),
+            ],
+        ),
+        &["anon_residual_sentinel", "registry/later"],
+        &["eager_use"],
+    );
+}
+
+#[test]
+fn global_qualified_native_callees_share_builtin_identity_guards() {
+    let source = r#"globalThis.saved = () => Later;
+const values = new globalThis.Map();
+const frozen = globalThis.Object.freeze({ callback: () => Later });
+class Later {}
+console.log(typeof values, typeof frozen.callback);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "native/value",
+                &[Member::new("values"), Member::new("frozen")],
+                &["globalThis.saved = () => Later;"],
+            ),
+            logical_module("native/later", &[Member::new("Later")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "object function\n");
+}
+
+#[test]
+fn finalization_registry_guards_keep_unsupported_calls_conservative() {
+    for source in [
+        "globalThis.FinalizationRegistry = function(callback) {};\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
+        "const host = globalThis;\nhost.FinalizationRegistry = function(callback) {};\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
+        "Object.defineProperty(globalThis, 'FinalizationRegistry', { configurable: true, get() { return function(callback) {}; } });\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
+        "const globalThis = { FinalizationRegistry: function(callback) {} };\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
+        "const FinalizationRegistry = function(callback) {};\nconst registry = new FinalizationRegistry(() => Later);\nclass Later {}\n",
+        "const host = globalThis;\nconst registry = new host.FinalizationRegistry(() => Later);\nclass Later {}\n",
+        "const registry = new globalThis['FinalizationRegistry'](() => Later);\nclass Later {}\n",
+        "const registry = new (globalThis?.FinalizationRegistry)(() => Later);\nclass Later {}\n",
+        "const registry = new globalThis.FinalizationRegistry(...[() => Later]);\nclass Later {}\n",
+        "const registry = new globalThis.FinalizationRegistry({ cleanup: () => Later });\nclass Later {}\n",
+    ] {
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                source,
+                vec![
+                    logical_module("registry/value", &[Member::new("registry")]),
+                    logical_module("registry/later", &[Member::new("Later")]),
+                ],
+            ),
+            &["registry/value", "registry/later"],
+            &[],
+        );
+    }
+}
+
+#[test]
 fn unary_math_summaries_compose_with_later_primitive_conversion() {
     for (method, expected) in [
         ("round", "2"),

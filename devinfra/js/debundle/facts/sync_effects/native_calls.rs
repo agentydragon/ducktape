@@ -21,6 +21,7 @@ pub(super) enum CallInputs {
     Primitives { min: usize, max: usize },
     FreshDataRecord,
     OwnDescriptorLiteral,
+    OrdinaryCallable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,6 +57,12 @@ pub(super) fn native_call_model(
             inputs: CallInputs::Primitives { min: 0, max: 0 },
             returns: CallReturn::Unknown,
             heap_effect: NativeHeapEffect::FreshAllocation,
+        }),
+        ("FinalizationRegistry", None, CallKind::New) => Some(NativeCallModel {
+            intrinsic: IntrinsicRoot::FinalizationRegistry,
+            inputs: CallInputs::OrdinaryCallable,
+            returns: CallReturn::DeferredArgument(0),
+            heap_effect: NativeHeapEffect::Opaque,
         }),
         ("Math", Some("round" | "floor" | "ceil" | "trunc" | "abs" | "sign"), CallKind::Call) => {
             Some(NativeCallModel {

@@ -1280,6 +1280,7 @@ fn named_global_intrinsic(property: &str) -> Option<IntrinsicRoot> {
         "Set" => Some(IntrinsicRoot::Set),
         "WeakMap" => Some(IntrinsicRoot::WeakMap),
         "WeakSet" => Some(IntrinsicRoot::WeakSet),
+        "FinalizationRegistry" => Some(IntrinsicRoot::FinalizationRegistry),
         "globalThis" | "window" | "self" | "frames" | "top" => Some(IntrinsicRoot::GlobalObject),
         _ => None,
     }
@@ -1372,6 +1373,9 @@ fn intrinsic_roots(
         ValueExpr::Binding(id) if id.0.as_ref() == "WeakSet" => {
             BTreeSet::from([IntrinsicRoot::WeakSet])
         }
+        ValueExpr::Binding(id) if id.0.as_ref() == "FinalizationRegistry" => {
+            BTreeSet::from([IntrinsicRoot::FinalizationRegistry])
+        }
         ValueExpr::Binding(id) if globals.contains(id.0.as_ref()) => {
             BTreeSet::from([IntrinsicRoot::GlobalObject])
         }
@@ -1414,7 +1418,8 @@ fn intrinsic_roots(
                     | IntrinsicRoot::Map
                     | IntrinsicRoot::Set
                     | IntrinsicRoot::WeakMap
-                    | IntrinsicRoot::WeakSet => {
+                    | IntrinsicRoot::WeakSet
+                    | IntrinsicRoot::FinalizationRegistry => {
                         out.insert(root);
                     }
                 }
@@ -2770,6 +2775,9 @@ impl ExecutionIndex {
                     "WeakSet" => {
                         mutated_intrinsics.insert(IntrinsicRoot::WeakSet);
                     }
+                    "FinalizationRegistry" => {
+                        mutated_intrinsics.insert(IntrinsicRoot::FinalizationRegistry);
+                    }
                     _ => {}
                 }
                 if let Some(root) = named_global_intrinsic(id.0.as_ref())
@@ -3530,9 +3538,13 @@ impl ExecutionIndex {
         intrinsic: IntrinsicRoot,
         flow: &ChunkValueFlow,
         shadowed: &BTreeSet<&'static str>,
+        global_this_qualified: bool,
     ) -> bool {
         !flow.is_declared(id)
             && !shadowed.contains(id.0.as_ref())
+            && (!global_this_qualified
+                || (id.0.as_ref() == "globalThis"
+                    && self.global_object_names.contains("globalThis")))
             && self.dynamic_scope_owners.is_empty()
             && !self
                 .mutated_intrinsic_roots
@@ -3548,7 +3560,13 @@ impl ExecutionIndex {
     ) -> bool {
         native_calls::native_call_model(id.0.as_ref(), None, CallKind::New).is_some_and(|model| {
             model.heap_effect == native_calls::NativeHeapEffect::FreshAllocation
-                && self.native_call_identity_is_unmodified(id, model.intrinsic, flow, shadowed)
+                && self.native_call_identity_is_unmodified(
+                    id,
+                    model.intrinsic,
+                    flow,
+                    shadowed,
+                    false,
+                )
         })
     }
 
@@ -5282,7 +5300,7 @@ impl Visit for ExecutionIndex {
             self.member_write_sites.insert(member.span.into());
         }
 
-        if matches!(expression.arg.unwrap_parens(), Expr::Ident(id) if matches!(id.sym.as_ref(), "Error" | "Object" | "Array" | "Math" | "RegExp" | "Symbol" | "Promise" | "Map" | "Set" | "WeakMap" | "WeakSet"))
+        if matches!(expression.arg.unwrap_parens(), Expr::Ident(id) if matches!(id.sym.as_ref(), "Error" | "Object" | "Array" | "Math" | "RegExp" | "Symbol" | "Promise" | "Map" | "Set" | "WeakMap" | "WeakSet" | "FinalizationRegistry"))
         {
             self.intrinsic_writes.push(IntrinsicWriteTarget {
                 owner: self.owner,
