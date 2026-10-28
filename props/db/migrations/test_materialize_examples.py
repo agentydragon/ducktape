@@ -1,5 +1,6 @@
-"""PG 18 restricts search_path during CREATE MATERIALIZED VIEW, which the materialize_examples migration works
-around (root cause: props/debug/pg18_matview_inlining.md).
+"""PG 18 restricts `search_path` during CREATE MATERIALIZED VIEW.
+
+This module verifies the function-level workaround used by the migration.
 """
 
 from collections.abc import Generator
