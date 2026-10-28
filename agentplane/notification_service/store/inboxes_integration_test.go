@@ -21,7 +21,7 @@ func actionsEvents(request uuid.UUID, count int) []model.ActionsEvent {
 }
 
 func payloadOf(event model.ActionsEvent) string {
-	return fmt.Sprintf(`{"sequence": %d, "state": "decision_pending"}`, event.Sequence)
+	return fmt.Sprintf(`{"sequence": %d, "state": "decision_pending", "at": "2026-01-01T00:00:00Z", "actor": null}`, event.Sequence)
 }
 
 func TestOverlappingSubscriptionsCommitOnePrefixAndReadDoesNotAcknowledge(t *testing.T) {
@@ -125,7 +125,7 @@ func TestConcurrentSourcesAllocateOneCommittedPrefix(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			event := model.ActionsEvent{RequestID: requests[i], Sequence: 1}
-			if err := f.appendEvent(subscription.InboxID, subscription.ID, event, `{}`); err != nil {
+			if err := f.appendEvent(subscription.InboxID, subscription.ID, event, payloadOf(event)); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -221,6 +221,9 @@ func TestRetentionGapIsVisibleAndReplayKeepsTheTombstone(t *testing.T) {
 	for _, event := range events {
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 	}
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND action_at IS NOT NULL`, subscription.InboxID); got != 3 {
+		t.Fatalf("%d entries have native Action content before expiry, want 3", got)
+	}
 	f.exec(t, `UPDATE entry SET created_at = now() - interval '31 days' WHERE inbox_id = $1`, subscription.InboxID)
 	f.cleanAll(t)
 
@@ -230,6 +233,9 @@ func TestRetentionGapIsVisibleAndReplayKeepsTheTombstone(t *testing.T) {
 	}
 	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND payload IS NULL`, subscription.InboxID); got != 3 {
 		t.Fatalf("%d entries without a payload, want 3", got)
+	}
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND action_at IS NULL AND action_state IS NULL`, subscription.InboxID); got != 3 {
+		t.Fatalf("%d entries without native Action content after expiry, want 3", got)
 	}
 	// A late overlapping subscription replaying the expired events finds their identities and adds none.
 	late := creation
@@ -268,7 +274,8 @@ func TestInboxesRetiredLongAgoAreDeletedWithTheirRows(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	creation := body("first")
 	subscription := f.subscribe(t, creation)
-	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}, `{}`)
+	event := model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 	recent := f.subscribe(t, func() model.Subscribe { other := creation; other.SessionID = "recently-retired"; return other }())
 
 	for _, inboxID := range []uuid.UUID{subscription.InboxID, recent.InboxID} {

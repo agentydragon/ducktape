@@ -195,7 +195,7 @@ func TestMessagesDoNotCountTowardsTheInboxsEntryLimit(t *testing.T) {
 	f.send(t, f.message(sender, "second", "test body"))
 	f.addEvents(t, subscription, 1, 1)
 	requireQuota(t, f.appendEvent(subscription.InboxID, subscription.ID,
-		model.ActionsEvent{RequestID: subscription.Source.(model.ActionsSource).RequestID, Sequence: 2}, `{}`), EntriesPerInbox, 1)
+		model.ActionsEvent{RequestID: subscription.Source.(model.ActionsSource).RequestID, Sequence: 2}, payloadOf(model.ActionsEvent{Sequence: 2})), EntriesPerInbox, 1)
 }
 
 func TestTheDatabaseHoldsNoBodyBeyondTheCeiling(t *testing.T) {
@@ -203,7 +203,7 @@ func TestTheDatabaseHoldsNoBodyBeyondTheCeiling(t *testing.T) {
 	f.openInbox(t)
 	f.send(t, f.message(newOwner(), "at-ceiling", strings.Repeat("é", MessageBodyCeiling/2)))
 	_, err := f.Send(t.Context(), f.message(newOwner(), "beyond-ceiling", strings.Repeat("é", MessageBodyCeiling/2)+"x"))
-	if refused := (*pq.Error)(nil); !errors.As(err, &refused) || refused.Constraint != "entry_message_body_ceiling" {
-		t.Fatalf("error = %v, want the body ceiling's constraint", err)
+	if refused := (*pq.Error)(nil); !errors.As(err, &refused) || refused.Constraint != "entry_message_body_bytes" {
+		t.Fatalf("error = %v, want the native body ceiling's constraint", err)
 	}
 }

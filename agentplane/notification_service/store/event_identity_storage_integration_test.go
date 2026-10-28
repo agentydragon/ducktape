@@ -1,0 +1,237 @@
+package store
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+
+	"github.com/google/uuid"
+	"github.com/lib/pq"
+)
+
+func TestNewRowsKeepLegacyCopiesReadableAcrossTheRollout(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	body := body("legacy-rollout-copies")
+	subscription := f.subscribe(t, body)
+	events := []model.EventIdentity{
+		model.ActionsEvent{RequestID: uuid.New(), Sequence: 1},
+		model.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 1},
+		model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "account"}},
+	}
+	for _, event := range events {
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
+	}
+	var destination, creation []byte
+	if err := f.db.QueryRowContext(t.Context(), `SELECT i.destination_ref, s.creation
+		FROM subscription s JOIN inbox i ON i.id = s.inbox_id WHERE s.id = $1`, subscription.ID).
+		Scan(&destination, &creation); err != nil {
+		t.Fatal(err)
+	}
+	var decodedDestination model.DestinationRef
+	var decodedCreation model.Subscribe
+	if err := json.Unmarshal(destination, &decodedDestination); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(creation, &decodedCreation); err != nil {
+		t.Fatal(err)
+	}
+	if decodedDestination != body.DestinationRef || !model.SourcesEqual(decodedCreation.Source, body.Source) {
+		t.Fatalf("legacy destination or creation changed: %+v, %+v", decodedDestination, decodedCreation)
+	}
+	rows, err := f.db.QueryContext(t.Context(), `SELECT event, payload,
+		identity_provider IS NOT NULL,
+		CASE WHEN identity_provider = 'actions' THEN action_at IS NOT NULL
+			WHEN identity_provider = 'github_mergeability' THEN mergeability_observed_at IS NOT NULL
+			WHEN identity_provider = 'message' THEN message_body IS NOT NULL END
+		FROM entry WHERE inbox_id = $1 ORDER BY cursor`, subscription.InboxID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		i := count
+		count++
+		if i >= len(events) {
+			t.Fatal("more entries than appended")
+		}
+		var legacyEvent, legacyPayload []byte
+		var hasIdentity, hasContent bool
+		if err := rows.Scan(&legacyEvent, &legacyPayload, &hasIdentity, &hasContent); err != nil {
+			t.Fatal(err)
+		}
+		decodedEvent, err := model.DecodeEventIdentity(legacyEvent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		requireEqual(t, decodedEvent, events[i])
+		if !json.Valid(legacyPayload) || !hasIdentity || !hasContent {
+			t.Fatalf("entry %d lacks a readable legacy copy or native fields", i+1)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if count != len(events) {
+		t.Fatalf("stored %d entries, want %d", count, len(events))
+	}
+	if page := f.read(t, subscription.InboxID, 0); len(page.Entries) != len(events) {
+		t.Fatalf("read %d entries, want %d", len(page.Entries), len(events))
+	}
+}
+
+func TestNativeEntryContentRejectsIncompleteAndWrongSourceRows(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, body("native-content-shape"))
+	action := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
+	mergeability := model.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 1}
+	message := model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "account"}}
+	for _, event := range []model.EventIdentity{action, mergeability, message} {
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
+	}
+	checks := []struct {
+		name, update, constraint string
+		cursor                   int
+	}{
+		{"null provider with content", `UPDATE entry SET identity_provider = NULL WHERE inbox_id = $1 AND cursor = $2`, "", 1},
+		{"wrong source", `UPDATE entry SET message_body = 'hello' WHERE inbox_id = $1 AND cursor = $2`, "entry_message_content_source", 1},
+		{"null actor kind", `UPDATE entry SET action_actor_kind = NULL, action_actor_namespace = 'ns', action_actor_name = 'name', action_actor_issuer = NULL, action_actor_subject = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_action_content_shape", 1},
+		{"empty caller namespace", `UPDATE entry SET action_actor_kind = 'caller', action_actor_namespace = '', action_actor_name = 'name', action_actor_issuer = NULL, action_actor_subject = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_action_actor_length", 1},
+		{"null mergeability residual", `UPDATE entry SET mergeability_observed_at_submicro_nanos = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_mergeability_content_shape", 2},
+		{"null mergeability state", `UPDATE entry SET mergeability_previous = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_mergeability_content_shape", 2},
+		{"partial merge commit", `UPDATE entry SET merge_commit_sha = 'sha' WHERE inbox_id = $1 AND cursor = $2`, "entry_mergeability_content_shape", 2},
+		{"oversize message", `UPDATE entry SET message_body = repeat('x', 262145) WHERE inbox_id = $1 AND cursor = $2`, "entry_message_body_bytes", 3},
+		{"long source session", `UPDATE entry SET message_from_session = repeat('x', 201) WHERE inbox_id = $1 AND cursor = $2`, "entry_message_from_session_length", 3},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			_, err := f.db.ExecContext(t.Context(), check.update, subscription.InboxID, check.cursor)
+			var refused *pq.Error
+			if !errors.As(err, &refused) || string(refused.Code) != "23514" || (check.constraint != "" && string(refused.Constraint) != check.constraint) {
+				t.Fatalf("update error = %v, want constraint %s", err, check.constraint)
+			}
+		})
+	}
+}
+
+func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, body("identity-columns"))
+	requestID := uuid.New()
+	deliveryID := uuid.New()
+	messageID := uuid.New()
+	empty := ""
+	opened := "opened"
+	events := []model.EventIdentity{
+		model.ActionsEvent{RequestID: requestID, Sequence: 17},
+		model.GitHubEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: model.EventPullRequest},
+		model.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: model.EventPullRequest, Action: &empty},
+		model.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: model.EventPullRequest, Action: &opened},
+		model.GitHubObservationEvent{AppID: 1, RepositoryID: 2, Event: model.EventCheckRun, Sequence: 3},
+		model.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 4},
+		model.GitHubMergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 5},
+		model.MessageEvent{MessageID: messageID, Sender: model.ServiceAccount{Namespace: "sender-ns", Name: "sender"}},
+	}
+	for _, event := range events {
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
+	}
+	rows, err := f.db.QueryContext(t.Context(), `SELECT identity_provider,
+		actions_request_id::text, actions_sequence,
+		github_app_id, github_delivery_id::text, github_repository_id, github_event,
+		github_action, github_pull_request_number,
+		github_mergeability_sequence, github_snapshot_version, github_observation_sequence,
+		message_id::text, message_sender_namespace, message_sender_name
+		FROM entry WHERE inbox_id = $1 ORDER BY cursor`, subscription.InboxID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	type identityColumns struct {
+		provider                                                                                                               string
+		actionsSequence, githubAppID, githubRepositoryID, prNumber, mergeabilitySequence, snapshotVersion, observationSequence sql.NullInt64
+		actionsRequestID, githubDeliveryID, githubEvent, githubAction                                                          sql.NullString
+		messageID, messageSenderNamespace, messageSenderName                                                                   sql.NullString
+	}
+	var got []identityColumns
+	for rows.Next() {
+		var row identityColumns
+		if err := rows.Scan(&row.provider, &row.actionsRequestID, &row.actionsSequence,
+			&row.githubAppID, &row.githubDeliveryID, &row.githubRepositoryID, &row.githubEvent,
+			&row.githubAction, &row.prNumber,
+			&row.mergeabilitySequence, &row.snapshotVersion, &row.observationSequence,
+			&row.messageID, &row.messageSenderNamespace, &row.messageSenderName); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(events) {
+		t.Fatalf("stored identities = %d, want %d", len(got), len(events))
+	}
+	if got[0].provider != "actions" || !got[0].actionsRequestID.Valid || got[0].actionsRequestID.String != requestID.String() ||
+		got[0].actionsSequence.Int64 != 17 || !got[0].actionsSequence.Valid {
+		t.Errorf("Actions identity columns = %+v", got[0])
+	}
+	for i, wantAction := range []sql.NullString{{}, {String: "", Valid: true}, {String: "opened", Valid: true}} {
+		row := got[i+1]
+		if row.provider != "github" || row.githubAction.Valid != wantAction.Valid || row.githubAction.String != wantAction.String {
+			t.Errorf("GitHub identity %d columns = %+v", i, row)
+		}
+	}
+	if got[4].provider != "github_observation" || got[4].githubAppID.Int64 != 1 ||
+		got[4].githubRepositoryID.Int64 != 2 || got[4].githubEvent.String != string(model.EventCheckRun) ||
+		got[4].observationSequence.Int64 != 3 || got[4].githubDeliveryID.Valid {
+		t.Errorf("GitHub observation identity columns = %+v", got[4])
+	}
+	if got[5].provider != "github_mergeability" || got[5].githubAppID.Int64 != 1 ||
+		got[5].githubRepositoryID.Int64 != 2 || got[5].prNumber.Int64 != 3 || got[5].mergeabilitySequence.Int64 != 4 ||
+		got[5].snapshotVersion.Valid {
+		t.Errorf("mergeability sequence columns = %+v", got[5])
+	}
+	if got[6].provider != "github_mergeability" || got[6].githubAppID.Int64 != 1 ||
+		got[6].githubRepositoryID.Int64 != 2 || got[6].prNumber.Int64 != 3 || got[6].snapshotVersion.Int64 != 5 ||
+		got[6].mergeabilitySequence.Valid {
+		t.Errorf("mergeability snapshot columns = %+v", got[6])
+	}
+	if got[7].provider != "message" || got[7].messageID.String != messageID.String() ||
+		got[7].messageSenderNamespace.String != "sender-ns" || got[7].messageSenderName.String != "sender" {
+		t.Errorf("message identity columns = %+v", got[7])
+	}
+	for i, wantNull := range []bool{false, true, true, true, true, false, false, false} {
+		var content entryContentStorage
+		if err := f.db.QueryRowContext(t.Context(), `SELECT `+entryContentReadColumns+`
+			FROM entry WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1).Scan(content.destinations()...); err != nil {
+			t.Fatal(err)
+		}
+		if wantNull {
+			if content.actionAt != nil || content.mergeabilityObservedAt != nil || content.messageBody != nil {
+				t.Errorf("event %d unexpectedly has native content: %+v", i, content)
+			}
+			continue
+		}
+		switch events[i].(type) {
+		case model.ActionsEvent:
+			if content.actionAt == nil || content.actionActorKind == nil || *content.actionActorKind != "operator" ||
+				content.actionActorIssuer == nil || *content.actionActorIssuer != "https://issuer.example" {
+				t.Errorf("Action native content = %+v", content)
+			}
+		case model.GitHubMergeabilityEvent, model.GitHubMergeabilitySnapshotEvent:
+			if content.mergeabilityRepository == nil || *content.mergeabilityRepository != "owner/repository" ||
+				content.mergeabilityPrevious == nil || *content.mergeabilityPrevious != "UNKNOWN" ||
+				content.mergeabilityCurrent == nil || *content.mergeabilityCurrent != "CONFLICTING" {
+				t.Errorf("mergeability native content = %+v", content)
+			}
+		case model.MessageEvent:
+			if content.messageBody == nil || *content.messageBody != "stored message" || content.messageFromSession == nil || *content.messageFromSession != "sender-session" {
+				t.Errorf("message native content = %+v", content)
+			}
+		default:
+			t.Fatalf("unexpected event in native content test: %T", events[i])
+		}
+	}
+}

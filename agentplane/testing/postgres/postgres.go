@@ -111,6 +111,14 @@ func (db *Database) Close() error {
 	return errors.Join(closeAdmin, terminate(db.container))
 }
 
+// PrepareCloneTemplate snapshots the migrated database before tests can write to it.
+// Clone also prepares the template lazily for packages that do not use a shared database.
+func (db *Database) PrepareCloneTemplate(ctx context.Context) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	return db.prepareCloneTemplateLocked(ctx)
+}
+
 // Clone returns the URL of a database of the test's own, copied from the migrated one, which the test's cleanup
 // drops: it starts with the schema and no rows, so queries that span every row see only the test's, and its NOTIFY
 // channels reach only its own connections. A test package that clones connects to the migrated database only
@@ -119,12 +127,8 @@ func (db *Database) Clone(t testing.TB) string {
 	t.Helper()
 	db.mu.Lock()
 	defer db.mu.Unlock()
-	if db.admin == nil {
-		admin, err := db.createTemplate(t.Context())
-		if err != nil {
-			t.Fatal(err)
-		}
-		db.admin = admin
+	if err := db.prepareCloneTemplateLocked(t.Context()); err != nil {
+		t.Fatal(err)
 	}
 	db.clones++
 	name := fmt.Sprintf("test_%d", db.clones)
@@ -137,6 +141,19 @@ func (db *Database) Clone(t testing.TB) string {
 		}
 	})
 	return db.databaseURL(name)
+}
+
+// prepareCloneTemplateLocked initializes the clone source while db.mu is held.
+func (db *Database) prepareCloneTemplateLocked(ctx context.Context) error {
+	if db.admin != nil {
+		return nil
+	}
+	admin, err := db.createTemplate(ctx)
+	if err != nil {
+		return err
+	}
+	db.admin = admin
+	return nil
 }
 
 func (db *Database) databaseURL(name string) string {

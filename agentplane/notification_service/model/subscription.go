@@ -96,7 +96,8 @@ type EventFilter struct {
 	Actions []string
 }
 
-func (r DestinationRef) validate() error {
+// Validate checks the destination reference's namespace, name and UID bounds.
+func (r DestinationRef) Validate() error {
 	return errors.Join(
 		CheckText("destination_ref.namespace", r.Namespace, 1, 63),
 		CheckText("destination_ref.name", r.Name, 1, 63),
@@ -107,7 +108,7 @@ func (r DestinationRef) validate() error {
 // Validate checks the bounds and patterns of the creation.
 func (s Subscribe) Validate() error {
 	if err := errors.Join(
-		s.DestinationRef.validate(),
+		s.DestinationRef.Validate(),
 		CheckText("session_id", s.SessionID, 1, 200),
 		CheckText("idempotency_key", s.IdempotencyKey, 1, 200),
 	); err != nil {
@@ -168,7 +169,7 @@ func (s GitHubSource) validate() error {
 			return Invalid("an event filter's actions must hold at least one action")
 		}
 	}
-	filters := normalizeFilters(s.Events)
+	filters := NormalizeFilters(s.Events)
 	if len(filters) < 1 || len(filters) > 32 {
 		return Invalid("events must hold 1 to 32 filters")
 	}
@@ -197,9 +198,8 @@ func (s GitHubSource) validate() error {
 	return nil
 }
 
-// normalizeFilters is the filters as a set in the order they are stored: by event name, then by actions,
-// each filter's actions sorted and without repeats.
-func normalizeFilters(filters []EventFilter) []EventFilter {
+// NormalizeFilters orders the filter set by event name and then actions, sorting and deduplicating each action set.
+func NormalizeFilters(filters []EventFilter) []EventFilter {
 	normalized := make([]EventFilter, len(filters))
 	for i, filter := range filters {
 		normalized[i] = EventFilter{Event: filter.Event, Actions: normalizeActions(filter.Actions)}
@@ -240,7 +240,7 @@ func SourcesEqual(a, b Source) bool {
 		if !ok || a.Repository != b.Repository || a.Subject != b.Subject || (a.Events == nil) != (b.Events == nil) {
 			return false
 		}
-		return slices.EqualFunc(normalizeFilters(a.Events), normalizeFilters(b.Events), func(x, y EventFilter) bool {
+		return slices.EqualFunc(NormalizeFilters(a.Events), NormalizeFilters(b.Events), func(x, y EventFilter) bool {
 			return x.Event == y.Event && (x.Actions == nil) == (y.Actions == nil) && slices.Equal(x.Actions, y.Actions)
 		})
 	default:
@@ -275,7 +275,7 @@ func (s GitHubSource) MarshalJSON() ([]byte, error) {
 	var events []filterJSON
 	if s.Events != nil {
 		events = []filterJSON{}
-		for _, filter := range normalizeFilters(s.Events) {
+		for _, filter := range NormalizeFilters(s.Events) {
 			events = append(events, filterJSON{filter.Event, filter.Actions})
 		}
 	}

@@ -52,6 +52,88 @@ Do not overlap old GitHub workers with recovery writers during rollout. If rolli
 disable the GitHub provider until a recovery-capable image is restored, while retaining inbox reads and delivery.
 Never roll back to an older decoder or run a down migration that discards retained notifications.
 
+Entry storage rolls out in four releases. Action state, actor and timestamp; mergeability
+repository, refs, states, commit and timestamp; and message body and optional source Session use
+native columns. GitHub webhook and observation payloads remain JSONB. Subscription
+`creation_proto` and notice `runner_entry` remain binary protobuf snapshots.
+
+Every offline command runs against **each Notification database**, using the image for its release
+and `AGENTPLANE_NOTIFICATIONS_DATABASE_URL`. Backfills, retained-row validation and cleanup run
+outside Pod init and serving readiness. Use the earlier image before the next release retires its
+commands; the final image contains only the normal migrator. Landed migrations `00001`–`00008`
+remain unchanged.
+
+1. **Expand and backfill (PR #12370, migrations `00009`–`00014`).** Add all destination,
+   subscription-creation, event-identity and owned-content fields together. All writers preserve
+   the old JSON and fill the new fields; readers and deduplication remain compatible with old
+   writers. Expiry clears both physical content copies atomically. Drain every writer and cleanup
+   worker that predates this release, then run these commands from its image:
+
+   ```sh
+   bb run //agentplane/notification_service/storage_backfill/cmd:notification-destination-backfill -- --writer-gate=notification-destination-dual-write-v1
+   bb run //agentplane/notification_service/storage_backfill/subscription_creation_cmd:notification-subscription-creation-backfill -- --writer-gate=notification-subscription-creation-dual-write-v1
+   bb run //agentplane/notification_service/migrations/cmd:notifications-migrate -- backfill-event-identities --writer-gate=notification-event-identity-dual-write-v1
+   bb run //agentplane/notification_service/migrations/cmd:notifications-migrate -- backfill-entry-content --writer-gate=notification-entry-native-content-dual-write-v1
+   ```
+
+   Complete identity backfill/index creation **before** content backfill, which uses normalized
+   identities. These resumable jobs use short transactions and native primary-key cursors. Entry
+   scans bound both rows and serialized bytes, avoid loading GitHub webhook bodies and use bulk
+   updates. Identity collisions stop with exact inbox/cursor groups for explicit resolution;
+   no entry is discarded. Require destination and creation completion markers, identity phase
+   `indexed` with all six valid natural-key indexes, and content phase `backfilled` before release 2. Run the jobs even on fresh empty databases. The content backfill also clears native fields
+   where an older expiry worker cleared only JSON and checks the expired inbox prefix.
+
+2. **Switch readers (PR #12417, migrations `00015`–`00016`).** Read destinations, original
+   subscription snapshots, event identities and owned content only from the new fields; deduplicate
+   by relational keys. Message status summaries read identity without fetching or decoding bodies.
+   Continue **all** legacy JSON writes so release 1 readers remain safe throughout the rollout.
+   The migrations gate completed destination/creation backfills and prepare constraints; they do
+   not drop legacy columns. Drain release 1 readers before release 3 stops writing JSON.
+3. **Switch writers, then clean (PR #12438).** Pod init applies only through `00018`: it checks
+   completed entry backfills/indexes, fences the unsafe content-backfill job and permits native-only
+   writes. All new destinations, subscriptions and event identities stop writing their JSON
+   copies; owned entry payloads use only native columns. GitHub payload JSON stays. Release 2
+   writers can coexist while this rollout drains; no JSON-rejecting guard is enabled in Pod init.
+
+   After **every writer and cleanup worker runs release 3**, stop all earlier backfill jobs and run
+   these commands from the release 3 image:
+
+   ```sh
+   bb run //agentplane/notification_service/storage_backfill/storage_validate_cmd:notification-storage-validate -- --proof=inbox-destination --writer-gate=notification-destination-typed-only-v1
+   bb run //agentplane/notification_service/storage_backfill/storage_validate_cmd:notification-storage-validate -- --proof=subscription-creation --writer-gate=notification-subscription-creation-typed-only-v1
+   bb run //agentplane/notification_service/storage_backfill/event_identity_validate_cmd:notification-event-identity-validate -- --writer-gate=notification-event-identity-writer-only-v1
+   bb run //agentplane/notification_service/migrations/cmd:notifications-migrate -- cleanup-entry-legacy-content --writer-gate=notification-entry-native-content-writer-only-v1
+   ```
+
+   The explicit cleanup command first applies authored migration `00019` under the normal Goose
+   lock. This enables the owned-JSON-absent guard and creates its checkpoint **after old writers
+   drain**, then removes duplicate owned JSON in bounded keyset batches with set-based updates.
+   It preserves GitHub JSON, refuses to clear the only copy of missing native content and checks
+   native presence/absence against each inbox's expired prefix. It validates the nine native
+   source/shape/bounds checks and the legacy-absence check before publishing phase `cleaned`.
+   The identity validator publishes phase `writer_only`; destination and creation validators
+   publish durable catalog proofs. Finish all four commands before release 4.
+
+4. **Contract (PR #12467, migrations `00020`–`00023`).** Consume completed offline/catalog
+   proofs before dropping destination, subscription-creation and event-identity JSON, old indexes,
+   checkpoints and retired jobs/codecs. Populated databases use metadata proofs in Pod init,
+   without retained-table validation scans; fresh empty databases have a bounded validation path.
+   Keep relational natural-key indexes and permanent native checks, including Message UTF-8 byte
+   and optional source-Session limits. Keep `entry.payload` for native GitHub JSON and retain both
+   protobuf snapshots. The cleanup command's first-read checkpoint is dropped to fence stale jobs.
+
+The four releases have operational gates between them; merging the PR stack does not perform the
+rollout or offline jobs. Retain additive schema, checkpoints and indexes during application
+rollback. Before release 2, rolling back to an older writer invalidates the all-writer gate: drain
+it and rerun the relevant backfills before switching readers. Between release 2 and offline cleanup,
+release 2 is the rollback floor; it reads every native-only row and continues legacy writes.
+After `00019` enables the absence guard, roll back only to a release 3 native-only writer image.
+After the final contracts, that image remains the application rollback floor, while its retired
+jobs must not run. Verify readiness, inbox authorization, reads, writes, expiry and replay
+deduplication after rollback. Never run a Down migration that discards retained notifications or
+recreates an unsafe checkpoint.
+
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
 flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,
 and `watch_lease_s` (default 300) is how long a watch lasts before it ends with `reconnect_required`.
