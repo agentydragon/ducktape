@@ -1,10 +1,10 @@
 # Credential proxy — decision record
 
-How `public-coder-agent` gets the power of its GitHub token without ever
-possessing it. The shipped design is
-[iron-proxy](https://github.com/ironsh/iron-proxy) in `replace` mode
-(`iron.yaml` in <../../cluster/cdk8s/public_coder/proxy.py>) behind a
-NetworkPolicy that makes the proxy the pod's only route out. Measurements: F15,
+This records the former Public Coder Iron proxy decision and its tradeoffs.
+Public Coder now uses Agentplane egress and is paused; its current deployment
+status and credential path are in <../../cluster/parked/public-coder-agent/README.md>.
+The remaining Haku sandbox and CI proxy disposition is tracked in
+[#5140](https://github.com/agentydragon/ducktape/issues/5140). Measurements: F15,
 F16 in [findings/egress_and_tls.md](findings/egress_and_tls.md); F7, F10 in
 [findings/credentials.md](findings/credentials.md).
 
@@ -63,13 +63,10 @@ Kept to rejections a future author might plausibly re-try; the full survey and
 candidate table are in git history (`credential_proxy_options.md`, which this
 file distills).
 
-One direction is rejected only as today's fence, not as an end state: an HTTP
-egress control plane where **haku-console makes the per-request decision** and
-a proxy merely enforces it (a mitmproxy-style addon was one candidate engine)
-is an in-progress track —
-[#4670](https://github.com/agentydragon/ducktape/issues/4670). Its current
-contract is <../../haku/egress/SPEC.md>; research and alternatives remain in
-<../../cluster/docs/plans/agent_egress_proxy_options.md>.
+The later Console-controlled egress adapter investigation is historical; its
+requirements and change of direction are recorded in
+[#5306](https://github.com/agentydragon/ducktape/issues/5306). The Agentplane
+egress contract lives in <../../agentplane/egress/SPEC.md>.
 
 - **Our mitmproxy addon** — worked and was smaller; lost narrowly because
   iron-proxy expresses the same host+method+path policy as YAML from a

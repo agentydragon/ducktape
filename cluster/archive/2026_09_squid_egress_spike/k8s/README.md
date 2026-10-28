@@ -6,7 +6,7 @@ configuration.
 
 Throwaway spike deciding whether **one Squid per fence** can replace the
 iron-proxy + cache split as Haku's egress fence. Rationale, alternatives and the
-earlier 3.5 results: <../../../docs/plans/agent_egress_proxy_options.md>.
+earlier 3.5 results: [historical egress research](https://github.com/agentydragon/ducktape/blob/52e1bfa5a1/cluster/docs/plans/agent_egress_proxy_options.md).
 
 **Holds no real credentials.** Every value in `app/fake-credentials.yaml` is
 fake, deliberately a ConfigMap rather than a Secret, because the spike proves a
