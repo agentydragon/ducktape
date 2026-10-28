@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Widget",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "replicas", "labels"],
+  "properties": {
+    "name": { "type": "string" },
+    "replicas": { "type": "integer", "minimum": 1 },
+    "labels": { "type": "array", "items": { "type": "string" } }
+  }
+}

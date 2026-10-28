@@ -1,0 +1,337 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load(":schema_codegen.bzl", "json_schema_types_from_file", "literal_types_from_file", "openapi_types_from_file", "openapi_zod_from_file")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//devinfra/x/schema_codegen:__pkg__"],
+)
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+vitest_config(
+    name = "vitest_config",
+    environment = "node",
+)
+
+py_library(
+    name = "schema_models",
+    srcs = ["schema_models.py"],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "export_openapi",
+    srcs = ["export_openapi.py"],
+    deps = [":schema_models"],
+)
+
+py_binary(
+    name = "export_openapi_bin",
+    main_module = "devinfra.x.schema_codegen.typescript.export_openapi",
+    deps = [":export_openapi"],
+)
+
+py_library(
+    name = "export_invoice_response",
+    srcs = ["export_invoice_response.py"],
+    deps = [":schema_models"],
+)
+
+py_binary(
+    name = "export_invoice_response_bin",
+    main_module = "devinfra.x.schema_codegen.typescript.export_invoice_response",
+    deps = [":export_invoice_response"],
+)
+
+genrule(
+    name = "openapi_json",
+    outs = ["openapi.json"],
+    cmd = "$(location :export_openapi_bin) > $@",
+    tools = [":export_openapi_bin"],
+)
+
+genrule(
+    name = "invoice_response_json",
+    outs = ["invoice_response.json"],
+    cmd = "$(location :export_invoice_response_bin) > $@",
+    tools = [":export_invoice_response_bin"],
+)
+
+openapi_types_from_file(
+    name = "openapi_types_codegen",
+    out = "openapi_types.d.ts",
+    schema = ":openapi.json",
+)
+
+js_library(
+    name = "openapi_types",
+    srcs = [":openapi_types_codegen"],
+    tags = ["no-lint"],
+)
+
+openapi_types_from_file(
+    name = "openapi_types_naming_default_codegen",
+    out = "openapi_types_naming_default.d.ts",
+    schema = ":openapi_types_naming.schema.json",
+)
+
+js_library(
+    name = "openapi_types_naming_default",
+    srcs = [":openapi_types_naming_default_codegen"],
+    tags = ["no-lint"],
+)
+
+openapi_types_from_file(
+    name = "openapi_types_naming_keep_casing_codegen",
+    out = "openapi_types_naming_keep_casing.d.ts",
+    keep_casing = True,
+    schema = ":openapi_types_naming.schema.json",
+)
+
+js_library(
+    name = "openapi_types_naming_keep_casing",
+    srcs = [":openapi_types_naming_keep_casing_codegen"],
+    tags = ["no-lint"],
+)
+
+js_library(
+    name = "invoice_response_fixture",
+    srcs = [":invoice_response_json"],
+    tags = ["no-lint"],
+)
+
+openapi_zod_from_file(
+    name = "openapi_zod_codegen",
+    out = "openapi_zod.ts",
+    config = "openapi-ts.config.mjs",
+    schema = ":openapi.json",
+)
+
+ts_library(
+    name = "openapi_zod",
+    srcs = [":openapi_zod_codegen"],
+    tsconfig = ":tsconfig",
+    deps = ["//:node_modules/zod"],
+)
+
+ts_library(
+    name = "openapi_consumer",
+    srcs = ["openapi_consumer.ts"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":openapi_types",
+        ":openapi_zod",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "typed_response_fixture",
+    srcs = ["typed_response_fixture.ts"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":invoice_response_fixture",
+        ":openapi_types",
+    ],
+)
+
+js_test(
+    name = "openapi_plain_js_consumer_test",
+    data = [
+        ":invoice_response_fixture",
+        ":openapi_zod",
+    ],
+    entry_point = "openapi_plain_js_consumer.test.mjs",
+)
+
+js_test(
+    name = "openapi_types_naming_edges_test",
+    data = [
+        ":openapi_types_naming_default",
+        ":openapi_types_naming_keep_casing",
+        "//:node_modules/typescript",
+    ],
+    entry_point = "openapi_types_naming_edges.test.mjs",
+)
+
+vitest_test(
+    name = "openapi_consumers_test",
+    srcs = ["openapi_consumers.test.ts"],
+    config = ":vitest_config",
+    tsconfig = ":tsconfig",
+    deps = [
+        ":openapi_consumer",
+        ":openapi_types",
+        ":typed_response_fixture",
+        "//:node_modules/vitest",
+    ],
+)
+
+py_library(
+    name = "standalone_models",
+    srcs = ["standalone_models.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "export_standalone",
+    srcs = ["export_standalone.py"],
+    deps = [":standalone_models"],
+)
+
+py_binary(
+    name = "export_standalone_bin",
+    main_module = "devinfra.x.schema_codegen.typescript.export_standalone",
+    deps = [":export_standalone"],
+)
+
+genrule(
+    name = "standalone_schema_json",
+    outs = ["standalone.schema.json"],
+    cmd = "$(location :export_standalone_bin) > $@",
+    tools = [":export_standalone_bin"],
+)
+
+json_schema_types_from_file(
+    name = "standalone_types_codegen",
+    out = "standalone_types.d.ts",
+    schema = ":standalone.schema.json",
+)
+
+js_library(
+    name = "standalone_types",
+    srcs = [
+        ":standalone_schema_json",
+        ":standalone_types_codegen",
+    ],
+    tags = ["no-lint"],
+)
+
+ts_library(
+    name = "standalone_runtime",
+    srcs = ["standalone_runtime.ts"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":standalone_types",
+        "//:node_modules/zod",
+    ],
+)
+
+vitest_test(
+    name = "standalone_consumers_test",
+    srcs = ["standalone_consumers.test.ts"],
+    config = ":vitest_config",
+    tsconfig = ":tsconfig",
+    deps = [
+        ":standalone_runtime",
+        "//:node_modules/vitest",
+    ],
+)
+
+py_library(
+    name = "export_policy_mode",
+    srcs = ["export_policy_mode.py"],
+    deps = [
+        ":standalone_models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "export_policy_mode_bin",
+    main_module = "devinfra.x.schema_codegen.typescript.export_policy_mode",
+    deps = [":export_policy_mode"],
+)
+
+genrule(
+    name = "policy_mode_schema_json",
+    outs = ["policy_mode.schema.json"],
+    cmd = "$(location :export_policy_mode_bin) > $@",
+    tools = [":export_policy_mode_bin"],
+)
+
+js_binary(
+    name = "literal_codegen_bin",
+    entry_point = "literal_codegen.mjs",
+)
+
+literal_types_from_file(
+    name = "policy_mode_codegen",
+    out = "policy_mode.generated.ts",
+    schema = ":policy_mode.schema.json",
+)
+
+ts_library(
+    name = "policy_mode_types",
+    srcs = [":policy_mode_codegen"],
+    tsconfig = ":tsconfig",
+)
+
+ts_library(
+    name = "policy_mode_consumer",
+    srcs = ["policy_mode_consumer.ts"],
+    tsconfig = ":tsconfig",
+    deps = [":policy_mode_types"],
+)
+
+vitest_test(
+    name = "policy_vocabulary_test",
+    srcs = ["policy_vocabulary.test.ts"],
+    config = ":vitest_config",
+    tsconfig = ":tsconfig",
+    deps = [
+        ":policy_mode_consumer",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "zod_model",
+    srcs = ["zod_model.ts"],
+    tsconfig = ":tsconfig",
+    deps = ["//:node_modules/zod"],
+)
+
+js_binary(
+    name = "export_zod_schema_bin",
+    data = [
+        ":zod_model",
+        "//:node_modules/zod",
+    ],
+    entry_point = "export_zod_schema.mjs",
+)
+
+js_run_binary(
+    name = "zod_schema_json",
+    srcs = [":zod_model"],
+    outs = ["zod.schema.json"],
+    args = ["zod.schema.json"],
+    chdir = package_name(),
+    tool = ":export_zod_schema_bin",
+)
+
+py_test(
+    name = "zod_python_schema_test",
+    srcs = ["test_zod_schema.py"],
+    data = [":zod_schema_json"],
+    main = "test_zod_schema.py",
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//jsonschema",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//referencing",
+    ],
+)
+
+check_vitest_specs()

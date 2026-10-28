@@ -1,0 +1,92 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Schema codegen fixture API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://fixture.example.test/api"
+    }
+  ],
+  "paths": {
+    "/widgets/{widgetId}": {
+      "post": {
+        "operationId": "updateWidget",
+        "summary": "Update one widget",
+        "parameters": [
+          {
+            "name": "widgetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WidgetUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated widget",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WidgetResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "WidgetUpdate": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": ["label", "enabled"],
+        "additionalProperties": false
+      },
+      "WidgetResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "preview": {
+            "type": "boolean"
+          }
+        },
+        "required": ["id", "preview"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

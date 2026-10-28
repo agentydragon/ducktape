@@ -185,6 +185,23 @@ py_test(
 )
 
 py_test(
+    name = "test_schema_codegen",
+    srcs = ["test_schema_codegen.py"],
+    visibility = ["//devinfra/x/schema_codegen:__pkg__"],
+    deps = [
+        ":baseline_llm",
+        ":scoring",
+        ":task",
+        "//:conftest",
+        "@pypi//jsonschema",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        # keep: jsonschema validator signatures reference referencing types
+        "@pypi//referencing",
+    ],
+)
+
+py_test(
     name = "test_market_seed_tasks",
     srcs = ["test_market_seed_tasks.py"],
     data = ["//finance/scraper:market-roster.yaml"],

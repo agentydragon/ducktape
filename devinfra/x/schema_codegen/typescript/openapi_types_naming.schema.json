@@ -1,0 +1,13 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Root Type Naming", "version": "1.0.0" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "HTTPTrace": { "type": "object", "properties": { "request_id": { "type": "string" } } },
+      "HttpTrace": { "type": "object", "properties": { "request_id": { "type": "string" } } },
+      "InvoiceLine-Input": { "type": "object", "properties": { "unit_price": { "type": "number" } } },
+      "InvoiceLine-Output": { "type": "object", "properties": { "unit_price": { "type": "string" } } }
+    }
+  }
+}

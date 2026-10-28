@@ -1,0 +1,42 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//devinfra/x/schema_codegen:__pkg__"],
+)
+
+js_binary(
+    name = "generate",
+    data = ["//:node_modules/quicktype-core"],
+    entry_point = "generate.mjs",
+)
+
+js_run_binary(
+    name = "generate_models",
+    srcs = ["widget.schema.json"],
+    outs = ["widget.gen.go"],
+    args = [
+        "widget.schema.json",
+        "widget.gen.go",
+    ],
+    chdir = package_name(),
+    tool = ":generate",
+)
+
+go_library(
+    name = "models",
+    srcs = [":generate_models"],
+    importpath = "github.com/agentydragon/ducktape/devinfra/x/schema_codegen/infrastructure/quicktype",
+)
+
+go_test(
+    name = "test_models",
+    srcs = ["consumer_test.go"],
+    embedsrcs = ["widget.schema.json"],
+    importpath = "github.com/agentydragon/ducktape/devinfra/x/schema_codegen/infrastructure/quicktype/consumer_test",
+    deps = [
+        ":models",
+        "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",
+    ],
+)
