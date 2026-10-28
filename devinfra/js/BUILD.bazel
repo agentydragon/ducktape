@@ -28,6 +28,27 @@ js_binary(
     visibility = ["//visibility:public"],
 )
 
+js_binary(
+    name = "openapi_typescript_codegen",
+    entry_point = "openapi_typescript_codegen.mjs",
+    data = ["//:node_modules/openapi-typescript"],
+    visibility = ["//visibility:public"],
+)
+
+js_binary(
+    name = "json_schema_typescript_codegen",
+    entry_point = "json_schema_typescript_codegen.mjs",
+    data = ["//:node_modules/json-schema-to-typescript"],
+    visibility = ["//visibility:public"],
+)
+
+js_binary(
+    name = "openapi_zod_codegen",
+    entry_point = "openapi_zod_codegen.mjs",
+    data = ["//:node_modules/@hey-api/openapi-ts"],
+    visibility = ["//visibility:public"],
+)
+
 py_library(
     name = "spa_fingerprint",
     srcs = ["spa_fingerprint.py"],
