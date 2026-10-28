@@ -4,6 +4,7 @@ import type { EventRecord, Machine, MachineImportProgress, SessionSummary, Sessi
 const machines: Machine[] = [
   { id: "thinkpad", display_name: "ThinkPad" },
   { id: "atlas", display_name: "Atlas" },
+  { id: "rugged", display_name: "Rugged" },
 ];
 
 const importProgress: MachineImportProgress[] = [
@@ -30,6 +31,18 @@ const importProgress: MachineImportProgress[] = [
     processed_file_count: 11,
     pending_file_count: 0,
     failed_file_count: 1,
+  },
+  {
+    machine_id: "rugged",
+    display_name: "Rugged",
+    known_snapshot_count: 8,
+    completed_snapshot_count: 4,
+    failed_snapshot_count: 1,
+    oldest_unfinished_snapshot_at: "2026-10-26T18:00:00Z",
+    oldest_unfinished_snapshot_state: "inventory_pending",
+    processed_file_count: 42,
+    pending_file_count: 9,
+    failed_file_count: 2,
   },
 ];
 

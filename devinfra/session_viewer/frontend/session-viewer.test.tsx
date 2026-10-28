@@ -69,7 +69,9 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   expect(view.textContent).toContain("27 processed · 4 pending · 0 failed");
   expect(view.textContent).toContain("File processing failed");
   expect(view.textContent).toContain("11 processed · 0 pending · 1 failed");
-  expect(view.textContent).toContain("Counts include registered snapshots");
+  expect(view.textContent).toContain("Snapshot counts include registered snapshots");
+  expect(view.textContent).toContain("can grow as more are discovered");
+  expect(view.textContent).toContain("File counts cover entries inventoried so far");
   expect(view.textContent).toContain("Compare two captured versions");
   expect(view.textContent).toContain("I found two snapshots for this session.");
   expect(view.textContent).toContain("Latest captured");

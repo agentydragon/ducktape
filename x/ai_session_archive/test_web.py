@@ -39,6 +39,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
     with make_session_factory(engine)() as db:
         db.add(MachineRow(id="fake-host", display_name="Fake host"))
         db.add(MachineRow(id="idle-host", display_name="Idle host"))
+        db.add(MachineRow(id="progress-host", display_name="Progress host"))
         db.add_all(
             [
                 SessionRow(
@@ -197,7 +198,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
         db.add_all(
             [
                 ResticSnapshotRow(
-                    machine_id="fake-host",
+                    machine_id="progress-host",
                     snapshot_id=snapshot_ids[0],
                     captured_at=datetime(2026, 1, 1, tzinfo=UTC),
                     paths=[],
@@ -205,7 +206,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                     processing_status="complete",
                 ),
                 ResticSnapshotRow(
-                    machine_id="fake-host",
+                    machine_id="progress-host",
                     snapshot_id=snapshot_ids[1],
                     captured_at=datetime(2026, 1, 2, tzinfo=UTC),
                     paths=[],
@@ -213,7 +214,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                     processing_status="failed",
                 ),
                 ResticSnapshotRow(
-                    machine_id="fake-host",
+                    machine_id="progress-host",
                     snapshot_id=snapshot_ids[2],
                     captured_at=datetime(2026, 1, 3, tzinfo=UTC),
                     paths=[],
@@ -221,7 +222,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                     processing_status="pending",
                 ),
                 ResticSnapshotRow(
-                    machine_id="fake-host",
+                    machine_id="progress-host",
                     snapshot_id=snapshot_ids[3],
                     captured_at=datetime(2026, 1, 4, tzinfo=UTC),
                     paths=[],
@@ -232,7 +233,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
         )
         db.add_all(
             SnapshotFileRow(
-                machine_id="fake-host",
+                machine_id="progress-host",
                 snapshot_id=snapshot_ids[0],
                 path=f"/archive/{index}.jsonl",
                 change_kind="added",
@@ -274,7 +275,11 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
     assert machines.status_code == 200
     assert machines.headers["cache-control"] == "no-store"
     assert machines.json() == {
-        "data": [{"id": "fake-host", "display_name": "Fake host"}, {"id": "idle-host", "display_name": "Idle host"}]
+        "data": [
+            {"id": "fake-host", "display_name": "Fake host"},
+            {"id": "idle-host", "display_name": "Idle host"},
+            {"id": "progress-host", "display_name": "Progress host"},
+        ]
     }
     progress = client.get("/api/import-progress")
     assert progress.headers["cache-control"] == "no-store"
@@ -283,12 +288,12 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
             "machine_id": "fake-host",
             "display_name": "Fake host",
             "known_snapshot_count": 4,
-            "completed_snapshot_count": 1,
-            "failed_snapshot_count": 2,
-            "oldest_unfinished_snapshot_at": "2026-01-02T00:00:00",
+            "completed_snapshot_count": 2,
+            "failed_snapshot_count": 1,
+            "oldest_unfinished_snapshot_at": "2026-01-01T00:00:00",
             "oldest_unfinished_snapshot_state": "processing_failed",
-            "processed_file_count": 5,
-            "pending_file_count": 2,
+            "processed_file_count": 2,
+            "pending_file_count": 1,
             "failed_file_count": 1,
         },
         {
@@ -302,6 +307,18 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
             "processed_file_count": 0,
             "pending_file_count": 0,
             "failed_file_count": 0,
+        },
+        {
+            "machine_id": "progress-host",
+            "display_name": "Progress host",
+            "known_snapshot_count": 4,
+            "completed_snapshot_count": 1,
+            "failed_snapshot_count": 2,
+            "oldest_unfinished_snapshot_at": "2026-01-02T00:00:00",
+            "oldest_unfinished_snapshot_state": "processing_failed",
+            "processed_file_count": 5,
+            "pending_file_count": 2,
+            "failed_file_count": 1,
         },
     ]
     assert client.get("/api/sessions", params={"cursor": "invalid!"}).status_code == 400

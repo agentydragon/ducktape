@@ -814,9 +814,9 @@ function MachineImportProgressPanel({
           </Group>
         </Group>
         <Text size="xs" c="dimmed">
-          Counts include registered snapshots, even if Restic later prunes them. Totals stay open until all snapshots
-          are inventoried. File counts cover entries inventoried so far, per snapshot; processed does not mean every
-          entry became a transcript.
+          Snapshot counts include registered snapshots, even if Restic later prunes them, and can grow as more are
+          discovered. File counts cover entries inventoried so far and can grow as snapshots are inventoried; processed
+          means handled, not necessarily imported as a transcript.
         </Text>
         {error !== null && (
           <Text size="xs" c="red">
