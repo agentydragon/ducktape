@@ -9,31 +9,6 @@ Claude.ai is the first client, but nothing here is specific to it: the same Acti
 orchestrator in a Session Sandbox reaches them through the [`agentplane` CLI](../docs/agent_cli.md)
 ([user stories 2 and 3](user_stories.md#2-trusted-orchestrator-untrusted-fleet)).
 
-## The workflow
-
-What an orchestrating caller does:
-
-1. **Pick a configuration.** `orchestration_v1__list_launch_presets` returns the reviewed launch presets as concrete
-   launch and Session fields.
-2. **Launch a worker.** `request_action` for `orchestration_v1/launch_sandbox` with those fields, edited for the task,
-   plus the launcher grants the caller wants on the new Sandbox. The operator approves it on the Action card, which
-   Web Push brings to the phone. The result names the Sandbox and its UID.
-3. **Give it the task.** `orchestration_v1__open_session` with the Sandbox name and UID, a Session ID the caller mints
-   and the Session spec, then `orchestration_v1__submit_input` with the task. The Dispatcher queues both until the
-   Sandbox is Ready.
-4. **Follow it.** `orchestration_v1__get_session` says whether the Session is working or idle and where its queued
-   commands are. `read_turns` returns recent turns and a resume token; `wait_for_turn` waits within the direct-tool
-   budget for the next completion and returns a token for the next call. Read final messages with `read_turns`.
-5. **Answer and steer.** A worker that needs something ends its turn saying so. The caller reads that in step 4 and
-   answers with `orchestration_v1__submit_input`, or stops a turn going wrong with `orchestration_v1__interrupt_turn`.
-6. **Finish.** Launched with idle suspend and wake-on-send, the worker suspends once idle and a later input wakes
-   it. Its work lands where its own grants let it write, such as a branch or a PR. Deleting it stays an operator
-   act, never automatic.
-
-A claude.ai conversation acts only while it has a turn, so following is pull-based; a Claude Code session can also
-schedule its own next check. [External inboxes](task_freezer.md#external_agent_inboxes--inboxes-for-externally-running-agents)
-stay deferred until a worker must reach a caller that has not asked.
-
 ## Shape-matched approval is the v1 expedient
 
 The operator, 2026-10-27 00:03 UTC: auto-approval policies "looking at the structure of the actions to auto-approve
