@@ -77,6 +77,33 @@ fn proposal_results_do_not_enable_proposals_for_later_plain_queries() {
 }
 
 #[test]
+fn batch_preserves_joint_source_matches_and_anonymous_module_claims() {
+    let fixture = GraphFixture::new(
+        "let alpha = 1;\nfunction beta() { alpha = 2; }\nconsole.log(\"task\");\n",
+        &[
+            (
+                "features/state.yaml",
+                "members: [{selector: {binding: {name: beta}}}]\n\
+                 source_matches: [{match: 'let alpha = 1;', bindings: [{local: alpha, name: Alpha}]}]\n",
+            ),
+            (
+                "features/log.yaml",
+                "anonymous_statements: [{match: 'console.log(\"task\");'}]\n",
+            ),
+        ],
+    );
+    let ids = [
+        "features/state",
+        "features/log",
+        "Alpha",
+        "features/state",
+        "unit:2",
+    ];
+    assert_equivalent(&fixture, &ids, &[]);
+    assert_equivalent(&fixture, &ids, &["--limit", "1"]);
+}
+
+#[test]
 fn ndjson_is_one_complete_report_per_requested_id() {
     let fixture = fixture();
     let ids = ["seed", "value", "unit:2"];
