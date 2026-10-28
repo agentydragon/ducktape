@@ -747,6 +747,8 @@ debundle_e2e_test(name = "initializer_placement_test")
 
 debundle_e2e_test(name = "intrinsic_array_iteration_test")
 
+debundle_e2e_test(name = "local_receiver_identity_test")
+
 debundle_e2e_test(
     name = "source_match_coalescing_cli_test",
     deps = [
