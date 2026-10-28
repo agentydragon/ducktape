@@ -30,22 +30,10 @@ export default [
     },
   },
   {
-    files: ["agentplane/app/frontend/connections/*.{ts,tsx}"],
+    files: ["agentplane/app/frontend/connections/**/*.{ts,tsx}"],
     languageOptions: {
       parserOptions: {
         project: ["agentplane/app/frontend/connections/tsconfig.json"],
-      },
-    },
-  },
-  {
-    files: [
-      "agentplane/app/frontend/connections/*.test.tsx",
-      "agentplane/app/frontend/connections/fixture.ts",
-      "agentplane/app/frontend/connections/test_support.ts",
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["agentplane/app/frontend/connections/tsconfig.test.json"],
       },
     },
   },

@@ -5,24 +5,33 @@ Stacked on the stock typed ESLint aspect experiment. Only
 
 ## Build graph
 
-- `:connections` compiles the six production modules with a checked-in `tsconfig.json`.
-- `:testing` compiles the three specs and their two support modules with `tsconfig.test.json`.
-  The spec glob also registers one Vitest target per spec; each runs alone. The visual harness consumes this
-  target for `fixture.js`; that dependency now compiles the specs too.
-- Both configs are normal `ts_config` targets. Production extends the shared browser config;
-  tests extend the local production options and replace its source selection.
-- Consumers use the feature targets without aliases. Source imports and emitted module paths
-  stay the same. CSS remains a normal `js_library` dependency.
+- `:connections` compiles six production modules.
+- `:testing` compiles reusable helpers under `testing/`. The visual harness depends on
+  this target for its fixture, without compiling the specs.
+- `:specs` compiles the three specs. Each has an explicit Vitest target with literal
+  arguments and its own spec path.
+- Each target lists its authored inputs explicitly. The existing whole-program lint
+  source group reuses those lists; no source collection uses `glob` in this BUILD file.
+- All three projects use the same `:tsconfig`, which extends the shared browser config
+  and enables declaration/JavaScript emit. Their compiler options are identical, so
+  separate prod/test configs would only duplicate file selection.
 
-The stock aspect reads `ts_project.tsconfig` through JsInfo. These two projects do not use
-`ts_library`, generated config filenames, or the temporary config dependency adapter.
-The opt-in ESLint config selects the appropriate explicit local config for each source;
-its generated-project discovery remains in use for packages outside this trial.
+The local config has no `files`, `include`, or `exclude`. It inherits the frontend's
+normal source discovery, restricted in each Bazel action to its declared filesystem.
+The compiler also receives dependency declarations, so its discovered program roots
+can include visible `.d.ts` files beyond the authored `srcs`. This is not an exact
+`files = srcs` contract. Imports still resolve through dependency declarations.
+TypeScript inherits relative source patterns relative to their originating config;
+see the [extends documentation](https://www.typescriptlang.org/tsconfig/extends.html).
 
-Checked-in config globs and Bazel `srcs` must agree. This trial uses matching production
-exclusions and a separate test program. Broader adoption still needs a decision about
-source ownership and orphan-spec enforcement; the existing whole-program lint source
-aggregation remains enabled during this experiment.
+The stock aspect reads `ts_project.tsconfig` through JsInfo. None of these projects
+uses `ts_library` or its generated-config adapter. One recursive ESLint source-pattern
+override selects the shared checked-in config for production, helpers, and specs.
+Other packages retain the generated-project discovery from the parent spike.
+
+Separate configs remain appropriate when compiler environments differ, such as DOM
+versus WebWorker libraries or genuinely different ambient types. Vitest's runtime
+environment is configured separately and does not require different tsc options here.
 
 ## Verification
 
@@ -33,6 +42,7 @@ bbr test //agentplane/app/frontend/connections:caller_grants_test \
 bbr build //agentplane/app/frontend:bundle //agentplane/app/frontend:visual_bundle
 bbr build //agentplane/app/frontend/connections:connections \
   //agentplane/app/frontend/connections:testing \
+  //agentplane/app/frontend/connections:specs \
   --//devinfra/lint/x/typed_eslint:enabled
 ```
 
@@ -46,9 +56,10 @@ The first trial run exposed a parser-selection edge:
 Listing production and test configs together made the test lint action parse the production
 config first. Its sandbox contains production declarations rather than production sources,
 so that config had no matching roots and TypeScript reported `TS18003` before ESLint tried
-the test config. Separate source-pattern overrides select production and test programs.
+the test config. That revision used separate source-pattern overrides; the current
+shared config removes this selection entirely.
 
-## Passing trial
+## Earlier split-config evidence
 
 At `3fbe1d76864c10416c169f02f675c9b6da2dff0d`, the
 [corrected run](https://app.buildbuddy.io/invocation/6197f57b-56bf-4c10-b386-8f8e665234e3)
@@ -62,9 +73,10 @@ SARIF reports contained no results. Build artifact digests matched the parent fo
 passed its 178-target affected set against the PR merge commit, including the existing
 whole-program lint check.
 
-## Cost observations
+## Earlier split-config cost observations
 
-These are single RBE samples from different executor processes, not a benchmark or a
+These measurements describe the earlier two-target, split-config revision, not the
+current three-target shared-config layout. These are single RBE samples from different executor processes, not a benchmark or a
 repository-wide speedup claim. Compiler dependencies were largely cached. The first
 trial's two compiler actions ran; the baseline compilers were cached, so there is no
 cold-compiler timing comparison.
@@ -94,7 +106,7 @@ The trial's CSS lint action also missed cache (12.14 CPU seconds) although the s
 was unchanged; it is excluded from the TypeScript columns. The grouped compiler did more
 work for one edit, while fewer lint actions ran. Neither invocation ran tests or bundles.
 
-## Promise-rule proof
+## Earlier promise-rule proof
 
 A temporary exported async function in `connections/models.ts` ignored a Promise,
 assigned an async function to a `() => void` callback, and awaited a number. Its explicit

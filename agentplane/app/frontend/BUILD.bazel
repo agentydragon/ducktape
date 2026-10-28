@@ -901,7 +901,7 @@ ts_library(
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/actions/testing:proto_fixtures",
         "//agentplane/app/frontend/connections:connections",
-        "//agentplane/app/frontend/connections/testing:fixture",
+        "//agentplane/app/frontend/connections/testing:support",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/testing:model_catalog",
