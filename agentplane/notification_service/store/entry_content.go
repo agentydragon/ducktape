@@ -42,19 +42,23 @@ type entryContentStorage struct {
 }
 
 func (c entryContentStorage) args() []any {
-	return []any{c.actionState, c.actionAt,
+	return []any{
+		c.actionState, c.actionAt,
 		c.actionActorKind, c.actionActorNamespace, c.actionActorName, c.actionActorIssuer, c.actionActorSubject,
 		c.mergeabilityRepository, c.mergeabilityBaseRef, c.mergeabilityHeadSHA, c.mergeabilityBaseSHA,
 		c.mergeabilityPrevious, c.mergeabilityCurrent, c.mergeabilityObservedAt, c.mergeabilityObservedAtSubmicroNanos,
-		c.mergeCommitSHA, c.mergeCommitBaseSHA, c.mergeCommitHeadSHA, c.messageBody, c.messageFromSession}
+		c.mergeCommitSHA, c.mergeCommitBaseSHA, c.mergeCommitHeadSHA, c.messageBody, c.messageFromSession,
+	}
 }
 
 func (c *entryContentStorage) destinations() []any {
-	return []any{&c.actionState, &c.actionAt,
+	return []any{
+		&c.actionState, &c.actionAt,
 		&c.actionActorKind, &c.actionActorNamespace, &c.actionActorName, &c.actionActorIssuer, &c.actionActorSubject,
 		&c.mergeabilityRepository, &c.mergeabilityBaseRef, &c.mergeabilityHeadSHA, &c.mergeabilityBaseSHA,
 		&c.mergeabilityPrevious, &c.mergeabilityCurrent, &c.mergeabilityObservedAt, &c.mergeabilityObservedAtSubmicroNanos,
-		&c.mergeCommitSHA, &c.mergeCommitBaseSHA, &c.mergeCommitHeadSHA, &c.messageBody, &c.messageFromSession}
+		&c.mergeCommitSHA, &c.mergeCommitBaseSHA, &c.mergeCommitHeadSHA, &c.messageBody, &c.messageFromSession,
+	}
 }
 
 func contentTimestamp(t time.Time) (*time.Time, *int16) {
