@@ -12,7 +12,7 @@ type runnerLifecycleController struct{ l *lifecycle }
 func (*runnerLifecycleController) Name() string { return runnerControllerName }
 func (*runnerLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{runnerGoalType, runnerInputType, sessionInputType, sessionRuntimeType, operationResultType, journalSealType, ingressAckType, executorRuntimeType, codexRuntimeType, bootstrapRuntimeType} {
+	for _, kind := range []string{runnerDesiredStateType, runnerInputType, sessionInputType, sessionRuntimeType, operationResultType, journalSealType, ingressAckType, codexExecServerRuntimeType, codexAppServerRuntimeType, bootstrapRuntimeType} {
 		inputs = append(inputs, controller.Input{Namespace: lifecycleNamespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -37,7 +37,7 @@ func (c *runnerLifecycleController) Run(ctx context.Context, r controller.Runtim
 }
 
 func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.Runtime) error {
-	goal, _, err := lifecycleRead[runnerGoalSpec](ctx, r, "runner")
+	desiredState, _, err := lifecycleRead[runnerDesiredStateSpec](ctx, r, "runner")
 	if err != nil {
 		return err
 	}
@@ -45,8 +45,8 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 	if err != nil {
 		return err
 	}
-	if current.Generation != goal.Generation {
-		current = runnerRuntimeSpec{Generation: goal.Generation, Stage: stageDraining}
+	if current.Generation != desiredState.Generation {
+		current = runnerRuntimeSpec{Generation: desiredState.Generation, Stage: stageDraining}
 	}
 	write := func() error {
 		changed, err := lifecycleWrite(ctx, r, "runner", current)
@@ -55,7 +55,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		}
 		return err
 	}
-	if goal.Mode == runnerRunning {
+	if desiredState.Mode == runnerRunning {
 		current.Stage = stageRunning
 		return write()
 	}
@@ -108,8 +108,8 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			return write()
 		}
 	}
-	if c.l.runner.codex != nil {
-		runtime, found, err := lifecycleRead[codexRuntimeSpec](ctx, r, "codex")
+	if c.l.runner.codexAppServer != nil {
+		runtime, found, err := lifecycleRead[codexAppServerRuntimeSpec](ctx, r, codexAppServerResourceID)
 		if err != nil {
 			return err
 		}
@@ -117,7 +117,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			current.Error = runtime.StopError
 			return write()
 		}
-		if !found || runtime.Phase != codexStopped {
+		if !found || runtime.Phase != codexAppServerStopped {
 			return write()
 		}
 	}
@@ -125,8 +125,8 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		current.Stage = stageFencing
 		return write()
 	}
-	if c.l.runner.executor != nil {
-		runtime, found, err := lifecycleRead[executorRuntimeSpec](ctx, r, "executor")
+	if c.l.runner.codexExecServer != nil {
+		runtime, found, err := lifecycleRead[codexExecServerRuntimeSpec](ctx, r, codexExecServerResourceID)
 		if err != nil {
 			return err
 		}
@@ -134,7 +134,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			current.Error = runtime.StopError
 			return write()
 		}
-		if !found || runtime.Phase != executorStopped {
+		if !found || runtime.Phase != codexExecServerStopped {
 			return write()
 		}
 	}
@@ -152,7 +152,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			return write()
 		}
 	}
-	if goal.SealUID != "" {
+	if desiredState.SealUID != "" {
 		if current.Stage < stageSealing {
 			current.Stage = stageSealing
 			return write()
@@ -162,12 +162,12 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			if err != nil {
 				return err
 			}
-			if !seal.Present || seal.IncarnationUID != goal.SealUID {
+			if !seal.Present || seal.IncarnationUID != desiredState.SealUID {
 				return write()
 			}
 		}
 	}
-	if goal.Mode == runnerClosing {
+	if desiredState.Mode == runnerClosing {
 		// Closing the final admission window and publishing completion share
 		// the RPC barrier, including late exact-turn controls.
 		c.l.runner.mu.Lock()
@@ -175,8 +175,8 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			c.l.runner.mu.Unlock()
 			return nil
 		}
-		latest := c.l.goal()
-		if latest != goal {
+		latest := c.l.desiredState()
+		if latest != desiredState {
 			c.l.runner.mu.Unlock()
 			return nil
 		}

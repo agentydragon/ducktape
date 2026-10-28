@@ -23,39 +23,39 @@ import (
 
 type Runner struct {
 	runnerservicepb.UnimplementedRunnerServer
-	config      Config
-	ctx         context.Context
-	cancel      context.CancelFunc
-	owner       *StateOwner
-	store       *SessionStore
-	bootID      string
-	mu          sync.Mutex
-	createMu    sync.Mutex
-	loadMu      sync.Mutex
-	bootstrapMu sync.Mutex
-	sessions    map[string]*Session
-	codex       *codexServer
-	executor    *codexExecutor
-	changes     chan struct{}
-	fatal       chan error
-	idleSince   *timestamppb.Timestamp
-	admissions  int
-	lifecycle   *lifecycle
-	closeOnce   sync.Once
-	closeErr    error
-	initLog     *InitializationLog
-	bootstrapOp *operation
+	config          Config
+	ctx             context.Context
+	cancel          context.CancelFunc
+	owner           *StateOwner
+	store           *SessionStore
+	bootID          string
+	mu              sync.Mutex
+	createMu        sync.Mutex
+	loadMu          sync.Mutex
+	bootstrapMu     sync.Mutex
+	sessions        map[string]*Session
+	codexAppServer  *codexAppServer
+	codexExecServer *codexExecServer
+	changes         chan struct{}
+	fatal           chan error
+	idleSince       *timestamppb.Timestamp
+	admissions      int
+	lifecycle       *lifecycle
+	closeOnce       sync.Once
+	closeErr        error
+	initLog         *InitializationLog
+	bootstrapOp     *operation
 }
 
 func New(config Config) (*Runner, error) {
 	if err := config.resolveSessionReconcileConcurrency(); err != nil {
 		return nil, err
 	}
-	if config.CodexExecutor != nil {
+	if config.CodexExecServer != nil {
 		if config.Codex == nil {
-			return nil, errors.New("Codex executor requires a configured Codex harness")
+			return nil, errors.New("Codex exec-server requires a configured Codex harness")
 		}
-		if err := config.CodexExecutor.validate(config.ProcessIsolation); err != nil {
+		if err := config.CodexExecServer.validate(config.ProcessIsolation); err != nil {
 			return nil, err
 		}
 	}
@@ -72,15 +72,15 @@ func New(config Config) (*Runner, error) {
 			return nil, err
 		}
 	}
-	if config.CodexExecutor != nil && config.CodexExecutor.Isolation != nil {
-		if err := config.CodexExecutor.Isolation.Prepare(); err != nil {
+	if config.CodexExecServer != nil && config.CodexExecServer.Isolation != nil {
+		if err := config.CodexExecServer.Isolation.Prepare(); err != nil {
 			_ = owner.Close()
 			return nil, err
 		}
 	}
-	if config.CodexExecutor != nil && config.CodexExecutor.ContainerSocket != "" {
+	if config.CodexExecServer != nil && config.CodexExecServer.ContainerSocket != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		err := fenceExecutorContainer(ctx, config.CodexExecutor.ContainerSocket, "")
+		err := fenceCodexExecServerContainer(ctx, config.CodexExecServer.ContainerSocket, "")
 		cancel()
 		if err != nil {
 			_ = owner.Close()
@@ -94,11 +94,11 @@ func New(config Config) (*Runner, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Runner{config: config, owner: owner, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, sessions: map[string]*Session{}, changes: make(chan struct{}), fatal: make(chan error, 1)}
-	if config.CodexExecutor != nil {
-		r.executor = newCodexExecutor(r, *config.CodexExecutor)
+	if config.CodexExecServer != nil {
+		r.codexExecServer = newCodexExecServer(r, *config.CodexExecServer)
 	}
 	if config.Codex != nil {
-		r.codex = newCodexServer(r, *config.Codex)
+		r.codexAppServer = newCodexAppServer(r, *config.Codex)
 	}
 	lifecycle, err := newLifecycle(r)
 	if err != nil {
@@ -249,15 +249,15 @@ func (r *Runner) adoptIncarnation(ctx context.Context, uid string) error {
 	// ingress acknowledgement belongs to the old incarnation and need not wait.
 	for {
 		r.mu.Lock()
-		goal := r.lifecycle.goal()
-		if goal.Mode == runnerClosing {
+		desiredState := r.lifecycle.desiredState()
+		if desiredState.Mode == runnerClosing {
 			r.mu.Unlock()
 			return errors.New("runner is closing")
 		}
 		previous, known := r.store.IncarnationUID()
 		progress := r.lifecycle.status()
-		if goal.Mode != runnerQuiescing || !known || previous == uid ||
-			(progress.Generation == goal.Generation && progress.Stage >= stageFlushing && progress.Error == "") {
+		if desiredState.Mode != runnerQuiescing || !known || previous == uid ||
+			(progress.Generation == desiredState.Generation && progress.Stage >= stageFlushing && progress.Error == "") {
 			break
 		}
 		r.mu.Unlock()
@@ -273,7 +273,7 @@ func (r *Runner) adoptIncarnation(ctx context.Context, uid string) error {
 	if r.store.Lameduck() {
 		mode, sealUID = runnerQuiescing, uid
 	}
-	err := r.lifecycle.setGoal(mode, sealUID)
+	err := r.lifecycle.setDesiredState(mode, sealUID)
 	r.mu.Unlock()
 	if err != nil {
 		return err
@@ -405,8 +405,8 @@ func (r *Runner) Quiesce(_ context.Context, q *runnerpb.QuiesceRequest) (*runner
 		return nil, rpcError(err)
 	}
 	r.mu.Lock()
-	goal, progress := r.lifecycle.goal(), r.lifecycle.status()
-	if goal.Mode == runnerClosing && progress.Generation == goal.Generation && progress.Stage == stageClosed {
+	desiredState, progress := r.lifecycle.desiredState(), r.lifecycle.status()
+	if desiredState.Mode == runnerClosing && progress.Generation == desiredState.Generation && progress.Stage == stageClosed {
 		r.mu.Unlock()
 		return nil, status.Error(codes.Unavailable, "runner is closed")
 	}
@@ -421,10 +421,10 @@ func (r *Runner) Quiesce(_ context.Context, q *runnerpb.QuiesceRequest) (*runner
 	uid, err := r.store.RequireIncarnationUID()
 	if err == nil {
 		mode := runnerQuiescing
-		if r.lifecycle.goal().Mode == runnerClosing {
+		if r.lifecycle.desiredState().Mode == runnerClosing {
 			mode = runnerClosing
 		}
-		err = r.lifecycle.setGoal(mode, uid)
+		err = r.lifecycle.setDesiredState(mode, uid)
 	}
 	if err != nil {
 		r.mu.Unlock()
@@ -442,7 +442,7 @@ func (r *Runner) Quiesce(_ context.Context, q *runnerpb.QuiesceRequest) (*runner
 func (r *Runner) Close() error {
 	r.closeOnce.Do(func() {
 		r.mu.Lock()
-		err := r.lifecycle.setGoal(runnerClosing, "")
+		err := r.lifecycle.setDesiredState(runnerClosing, "")
 		r.mu.Unlock()
 		r.changed()
 		if err == nil {

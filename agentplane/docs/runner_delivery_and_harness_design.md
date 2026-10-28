@@ -285,7 +285,7 @@ waiting for completion, and subscribing to or cancelling GitHub PR notifications
 
 Each Claude Session runs its own supervised native process, with `CLAUDE_CONFIG_DIR` in the
 Session's state directory. Every Codex Session of a Runner is one thread of the Runner's one Codex
-app-server ([`codex_server.go`](../runner/codex_server.go)), whose `CODEX_HOME` is `<state_dir>/codex`.
+app-server ([`codex_app_server.go`](../runner/codex_app_server.go)), whose `CODEX_HOME` is `<state_dir>/codex`.
 The app-server's command line and `CODEX_HOME` are process-wide. `thread/start` and `thread/resume`
 carry each Session's working directory, model, effort, developer instructions and a thread `config`
 map, whose `shell_environment_policy.set` gives a thread's tools its Session's notification

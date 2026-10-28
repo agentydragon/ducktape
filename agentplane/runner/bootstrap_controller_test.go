@@ -34,7 +34,7 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close() }()
-	waitLifecycle(t, r, func() bool { return r.lifecycle.goal().Mode == runnerClosing }, "runner close request")
+	waitLifecycle(t, r, func() bool { return r.lifecycle.desiredState().Mode == runnerClosing }, "runner close request")
 	select {
 	case err := <-closeDone:
 		t.Fatalf("Close returned while the accepted bootstrap was running: %v", err)

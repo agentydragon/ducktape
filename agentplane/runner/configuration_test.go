@@ -66,7 +66,7 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 				if config.ProcessIsolation.AggregateLimits != resources.Aggregate || config.ProcessIsolation.ProcessLimits != resources.Process {
 					t.Fatal("harness limits differ from VM resource policy")
 				}
-				if resources.Executor != nil && (config.CodexExecutor.Isolation.AggregateLimits != *resources.Executor || config.CodexExecutor.Isolation.ProcessLimits != *resources.Executor) {
+				if resources.Executor != nil && (config.CodexExecServer.Isolation.AggregateLimits != *resources.Executor || config.CodexExecServer.Isolation.ProcessLimits != *resources.Executor) {
 					t.Fatal("executor limits differ from VM resource policy")
 				}
 			}
@@ -89,7 +89,7 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 			if _, err := os.Stat(config.StateDir); !os.IsNotExist(err) {
 				t.Fatalf("configuration opened state: %v", err)
 			}
-			if (config.CodexExecutor == nil) != (kind == "pod-local" || kind == "vm-local") || (config.ProcessIsolation != nil) != (kind == "vm-local" || kind == "vm-executor") {
+			if (config.CodexExecServer == nil) != (kind == "pod-local" || kind == "vm-local") || (config.ProcessIsolation != nil) != (kind == "vm-local" || kind == "vm-executor") {
 				t.Fatalf("incorrect isolation for %s", kind)
 			}
 		})

@@ -41,25 +41,25 @@ func newLifecycle(r *Runner) (*lifecycle, error) {
 		return nil, err
 	}
 	for _, c := range []controller.QController{
-		&executorLifecycleController{l: l, host: r.executor},
-		&codexLifecycleController{l: l, host: r.codex, executor: r.executor},
+		&codexExecServerLifecycleController{l: l, host: r.codexExecServer},
+		&codexAppServerLifecycleController{l: l, host: r.codexAppServer, codexExecServer: r.codexExecServer},
 		&bootstrapLifecycleController{l: l},
 	} {
 		if err := engine.RegisterQController(c); err != nil {
 			return nil, err
 		}
 	}
-	if err := publishLifecycle(l, "executor", executorInputSpec{}); err != nil {
+	if err := publishLifecycle(l, codexExecServerResourceID, codexExecServerInputSpec{}); err != nil {
 		return nil, err
 	}
-	if err := publishLifecycle(l, "codex", codexInputSpec{}); err != nil {
+	if err := publishLifecycle(l, codexAppServerResourceID, codexAppServerInputSpec{}); err != nil {
 		return nil, err
 	}
 	if err := publishLifecycle(l, "bootstrap", bootstrapInputSpec{}); err != nil {
 		return nil, err
 	}
 
-	if err := publishLifecycle(l, "runner", runnerGoalSpec{}); err != nil {
+	if err := publishLifecycle(l, "runner", runnerDesiredStateSpec{}); err != nil {
 		return nil, err
 	}
 	return l, nil
@@ -72,26 +72,26 @@ func (l *lifecycle) run() {
 	}
 }
 
-func (l *lifecycle) goal() runnerGoalSpec {
-	value, _, err := lifecycleRead[runnerGoalSpec](l.runner.ctx, l.state, "runner")
+func (l *lifecycle) desiredState() runnerDesiredStateSpec {
+	value, _, err := lifecycleRead[runnerDesiredStateSpec](l.runner.ctx, l.state, "runner")
 	if err != nil {
 		l.runner.fail(err)
-		return runnerGoalSpec{Mode: runnerClosing}
+		return runnerDesiredStateSpec{Mode: runnerClosing}
 	}
 	return value
 }
 
 // Caller holds Runner.mu, the synchronous admission barrier.
-func (l *lifecycle) setGoal(mode runnerMode, sealUID string) error {
-	goal := l.goal()
-	if goal.Mode == runnerClosing && mode != runnerClosing {
+func (l *lifecycle) setDesiredState(mode runnerMode, sealUID string) error {
+	desiredState := l.desiredState()
+	if desiredState.Mode == runnerClosing && mode != runnerClosing {
 		return errors.New("runner is closing")
 	}
 	if mode == runnerClosing && sealUID == "" {
-		sealUID = goal.SealUID
+		sealUID = desiredState.SealUID
 	}
 	retry := l.status().Error != ""
-	if mode == runnerRunning && goal.Mode != runnerRunning {
+	if mode == runnerRunning && desiredState.Mode != runnerRunning {
 		// Drop old execution requests while admission is still closed. Recovery
 		// publishes fresh demand after eligible journals have reopened.
 		l.publishMu.Lock()
@@ -107,24 +107,24 @@ func (l *lifecycle) setGoal(mode runnerMode, sealUID string) error {
 				return err
 			}
 		}
-		if err := publishLifecycle(l, "codex", codexInputSpec{}); err != nil {
+		if err := publishLifecycle(l, codexAppServerResourceID, codexAppServerInputSpec{}); err != nil {
 			l.publishMu.Unlock()
 			return err
 		}
-		if err := publishLifecycle(l, "executor", executorInputSpec{}); err != nil {
+		if err := publishLifecycle(l, codexExecServerResourceID, codexExecServerInputSpec{}); err != nil {
 			l.publishMu.Unlock()
 			return err
 		}
 		l.publishMu.Unlock()
 	}
-	if goal.Mode != mode || goal.SealUID != sealUID || retry {
-		goal.Mode, goal.SealUID, goal.Generation = mode, sealUID, goal.Generation+1
+	if desiredState.Mode != mode || desiredState.SealUID != sealUID || retry {
+		desiredState.Mode, desiredState.SealUID, desiredState.Generation = mode, sealUID, desiredState.Generation+1
 	}
-	return publishLifecycle(l, "runner", goal)
+	return publishLifecycle(l, "runner", desiredState)
 }
 
 func (l *lifecycle) accepting() bool {
-	return l.goal().Mode == runnerRunning && !l.runner.store.Lameduck()
+	return l.desiredState().Mode == runnerRunning && !l.runner.store.Lameduck()
 }
 
 func (l *lifecycle) status() runnerRuntimeSpec {
@@ -140,6 +140,6 @@ func (l *lifecycle) wait(ctx context.Context, minimum runnerStage) error {
 		if current.Error != "" {
 			return false, errors.New(current.Error)
 		}
-		return current.Generation == l.goal().Generation && current.Stage >= minimum, nil
+		return current.Generation == l.desiredState().Generation && current.Stage >= minimum, nil
 	})
 }

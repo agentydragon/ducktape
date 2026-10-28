@@ -35,10 +35,10 @@ func InternalMode(args []string) (handled bool, exitCode int) {
 		return false, 0
 	}
 	switch args[0] {
-	case executorContainerMode:
-		return true, ExecutorContainerMain(args[1:])
-	case executorContainerHealthMode:
-		return true, ExecutorContainerHealthMain(args[1:])
+	case codexExecServerContainerMode:
+		return true, CodexExecServerContainerMain(args[1:])
+	case codexExecServerContainerHealthMode:
+		return true, CodexExecServerContainerHealthMain(args[1:])
 	case supervisorMode:
 		return true, SupervisorMain(args[1:])
 	case execMode:

@@ -44,7 +44,7 @@ func (s *Session) startHarness(ctx context.Context) error {
 	switch {
 	case harnessKind == runnerpb.Harness_HARNESS_CLAUDE && s.runner.config.Claude != nil:
 		return s.startProcess(ctx, claude.New(s, *s.runner.config.Claude))
-	case harnessKind == runnerpb.Harness_HARNESS_CODEX && s.runner.codex != nil:
+	case harnessKind == runnerpb.Harness_HARNESS_CODEX && s.runner.codexAppServer != nil:
 		return s.startOnCodexServer(ctx)
 	default:
 		return errors.New("this runner is not configured for the selected harness")
@@ -116,7 +116,7 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 	if _, err := s.runner.ensureWorkspace(ctx, s.Session().Cwd); err != nil {
 		return err
 	}
-	server := s.runner.codex
+	server := s.runner.codexAppServer
 	adapter := codex.New(s)
 	if err := recoverAdapter(ctx, adapter); err != nil {
 		return err
@@ -133,7 +133,7 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 	}
 	s.mu.Lock()
 	s.process = p.process
-	s.codex = p
+	s.codexAppServer = p
 	s.processID = p.id
 	s.mu.Unlock()
 	server.handshakeMu.Lock()
@@ -142,8 +142,8 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 	if err != nil {
 		p.router.Release(s)
 		s.mu.Lock()
-		if s.codex == p {
-			s.process, s.codex, s.processID = nil, nil, ""
+		if s.codexAppServer == p {
+			s.process, s.codexAppServer, s.processID = nil, nil, ""
 		}
 		s.mu.Unlock()
 		return fmt.Errorf("harness startup failed: %w", err)
@@ -348,7 +348,7 @@ func (s *Session) SendNative(ctx context.Context, frame json.RawMessage) error {
 	defer s.writeMu.Unlock()
 	s.mu.Lock()
 	process := s.process
-	shared := s.codex
+	shared := s.codexAppServer
 	target, _ := ctx.Value(interruptTargetKey{}).(string)
 	active := s.activeTurn
 	s.mu.Unlock()
@@ -539,7 +539,7 @@ func (s *Session) harnessEnded(ctx context.Context, code int) error {
 	}
 	s.replies = nil
 	stoppedByRunner := s.nativeStop != stopNone
-	s.codex = nil
+	s.codexAppServer = nil
 	s.processID = ""
 	s.processState = runnerpb.ProcessState_PROCESS_STATE_UNSPECIFIED
 	s.mu.Unlock()

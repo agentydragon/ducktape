@@ -126,8 +126,8 @@ func (r *Runner) admit(id string, c *commandpb.Command) (*eventlogpb.EventEntry,
 		return nil, status.Error(codes.InvalidArgument, "interrupt_turn.turn_id is required")
 	}
 	r.mu.Lock()
-	goal, progress := r.lifecycle.goal(), r.lifecycle.status()
-	if goal.Mode == runnerClosing && progress.Generation == goal.Generation && progress.Stage == stageClosed {
+	desiredState, progress := r.lifecycle.desiredState(), r.lifecycle.status()
+	if desiredState.Mode == runnerClosing && progress.Generation == desiredState.Generation && progress.Stage == stageClosed {
 		r.mu.Unlock()
 		return nil, status.Error(codes.Unavailable, "runner is closed")
 	}

@@ -22,13 +22,13 @@ import (
 
 // A nil executor config selects Codex's local execution. ContainerSocket selects
 // the container companion; otherwise Runner supervises a separate cgroup leaf.
-type CodexExecutorConfig struct {
+type CodexExecServerConfig struct {
 	URL             string
 	ContainerSocket string
 	Isolation       *AgentCgroups
 }
 
-func (c CodexExecutorConfig) validate(isolation *AgentCgroups) error {
+func (c CodexExecServerConfig) validate(isolation *AgentCgroups) error {
 	if err := validateExecutorURL(c.URL); err != nil {
 		return err
 	}
@@ -68,27 +68,27 @@ func validateExecutorURL(value string) error {
 	return nil
 }
 
-type codexExecutor struct {
+type codexExecServer struct {
 	runner *Runner
-	config CodexExecutorConfig
+	config CodexExecServerConfig
 	mu     sync.Mutex
 
-	instance           *executorInstance
+	instance           *codexExecServerInstance
 	instanceGeneration uint64
 	startOp            *operation
 	probeOp            *operation
 	fenceOp            *operation
-	startEffect        func(context.Context) (*executorInstance, error)
+	startEffect        func(context.Context) (*codexExecServerInstance, error)
 	probeEffect        func(context.Context) error
 }
 
-func newCodexExecutor(r *Runner, config CodexExecutorConfig) *codexExecutor {
-	return &codexExecutor{runner: r, config: config}
+func newCodexExecServer(r *Runner, config CodexExecServerConfig) *codexExecServer {
+	return &codexExecServer{runner: r, config: config}
 }
 
 // request publishes demand under the Runner admission barrier. COSI converts
 // accepted demand into a process.
-func (e *codexExecutor) request() error {
+func (e *codexExecServer) request() error {
 	e.runner.mu.Lock()
 	defer e.runner.mu.Unlock()
 
@@ -97,52 +97,52 @@ func (e *codexExecutor) request() error {
 
 // requestLocked publishes demand while the caller holds Runner.mu, the
 // synchronous admission barrier shared with Close and Quiesce.
-func (e *codexExecutor) requestLocked() error {
+func (e *codexExecServer) requestLocked() error {
 	l := e.runner.lifecycle
 	if l == nil {
-		return errors.New("Codex executor lifecycle is not initialized")
+		return errors.New("Codex exec-server lifecycle is not initialized")
 	}
 	if !l.accepting() {
-		return errors.New("runner is not accepting new Codex executor demand")
+		return errors.New("runner is not accepting new Codex exec-server demand")
 	}
 	l.publishMu.Lock()
 	defer l.publishMu.Unlock()
-	input, found, err := lifecycleRead[executorInputSpec](e.runner.ctx, l.state, "executor")
+	input, found, err := lifecycleRead[codexExecServerInputSpec](e.runner.ctx, l.state, codexExecServerResourceID)
 	if err != nil {
 		return err
 	}
 	if !found {
-		return errors.New("Codex executor input is not initialized")
+		return errors.New("Codex exec-server input is not initialized")
 	}
 	input.Demand++
-	return publishLifecycle(l, "executor", input)
+	return publishLifecycle(l, codexExecServerResourceID, input)
 }
 
-func (e *codexExecutor) publishExit(generation uint64, err error) {
+func (e *codexExecServer) publishExit(generation uint64, err error) {
 	l := e.runner.lifecycle
 	if l == nil {
-		e.runner.fail(errors.New("Codex executor exited before lifecycle initialization"))
+		e.runner.fail(errors.New("Codex exec-server exited before lifecycle initialization"))
 		return
 	}
 	l.publishMu.Lock()
 	defer l.publishMu.Unlock()
-	input, found, readErr := lifecycleRead[executorInputSpec](e.runner.ctx, l.state, "executor")
+	input, found, readErr := lifecycleRead[codexExecServerInputSpec](e.runner.ctx, l.state, codexExecServerResourceID)
 	if readErr != nil {
 		e.runner.fail(readErr)
 		return
 	}
 	if !found {
-		e.runner.fail(errors.New("Codex executor input disappeared"))
+		e.runner.fail(errors.New("Codex exec-server input disappeared"))
 		return
 	}
 	input.ExitGeneration = generation
 	if err != nil {
 		input.ExitError = err.Error()
 	}
-	e.runner.fail(publishLifecycle(l, "executor", input))
+	e.runner.fail(publishLifecycle(l, codexExecServerResourceID, input))
 }
 
-func (e *codexExecutor) observe(instance *executorInstance, generation uint64) {
+func (e *codexExecServer) observe(instance *codexExecServerInstance, generation uint64) {
 	e.runner.lifecycle.workers.Add(1)
 	go func() {
 		defer e.runner.lifecycle.workers.Done()
@@ -158,20 +158,20 @@ func (e *codexExecutor) observe(instance *executorInstance, generation uint64) {
 	}()
 }
 
-func (e *codexExecutor) install(instance *executorInstance, generation uint64) {
+func (e *codexExecServer) install(instance *codexExecServerInstance, generation uint64) {
 	e.mu.Lock()
 	e.instance, e.instanceGeneration = instance, generation
 	e.mu.Unlock()
 	e.observe(instance, generation)
 }
 
-func (e *codexExecutor) currentInstance() (*executorInstance, uint64) {
+func (e *codexExecServer) currentInstance() (*codexExecServerInstance, uint64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.instance, e.instanceGeneration
 }
 
-func (e *codexExecutor) clearInstance(instance *executorInstance) {
+func (e *codexExecServer) clearInstance(instance *codexExecServerInstance) {
 	e.mu.Lock()
 	if e.instance == instance {
 		e.instance, e.instanceGeneration = nil, 0
@@ -179,19 +179,19 @@ func (e *codexExecutor) clearInstance(instance *executorInstance) {
 	e.mu.Unlock()
 }
 
-type executorInstance struct {
+type codexExecServerInstance struct {
 	done <-chan error
 	stop func(context.Context) error
 }
 
-func (e *codexExecutor) start(ctx context.Context) (*executorInstance, error) {
+func (e *codexExecServer) start(ctx context.Context) (*codexExecServerInstance, error) {
 	env := maps.Clone(e.runner.config.HarnessEnvironment)
 	// The executor needs tool routing and identity, not model authentication.
 	for _, name := range []string{"OPENAI_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_BASE_URL", "CODEX_HOME"} {
 		delete(env, name)
 	}
 	if e.config.ContainerSocket != "" {
-		return claimExecutorContainer(ctx, e.config.ContainerSocket, env)
+		return claimCodexExecServerContainer(ctx, e.config.ContainerSocket, env)
 	}
 	p, err := NewProcess(ProcessConfig{
 		Command: []string{e.runner.config.Codex.Binary, "exec-server", "--listen", e.config.URL},
@@ -211,7 +211,7 @@ func (e *codexExecutor) start(ctx context.Context) (*executorInstance, error) {
 		for {
 			n, err := p.Stderr().Read(buffer)
 			if n > 0 {
-				zap.L().Info("Codex executor stderr", zap.String("text", string(buffer[:n])))
+				zap.L().Info("Codex exec-server stderr", zap.String("text", string(buffer[:n])))
 			}
 			if err != nil {
 				return
@@ -221,28 +221,28 @@ func (e *codexExecutor) start(ctx context.Context) (*executorInstance, error) {
 	done := make(chan error, 1)
 	go func() {
 		code, err := p.Wait(context.Background())
-		done <- errors.Join(fmt.Errorf("Codex executor exited: code=%d; %s", code, p.ExitDescription()), err)
+		done <- errors.Join(fmt.Errorf("Codex exec-server exited: code=%d; %s", code, p.ExitDescription()), err)
 	}()
-	return &executorInstance{done: done, stop: func(ctx context.Context) error { return p.Stop(ctx, stopGrace) }}, nil
+	return &codexExecServerInstance{done: done, stop: func(ctx context.Context) error { return p.Stop(ctx, stopGrace) }}, nil
 }
 
-func (e *codexExecutor) startProcess(ctx context.Context) (*executorInstance, error) {
+func (e *codexExecServer) startProcess(ctx context.Context) (*codexExecServerInstance, error) {
 	if e.startEffect != nil {
 		return e.startEffect(ctx)
 	}
 	return e.start(ctx)
 }
 
-func (e *codexExecutor) probe(ctx context.Context) error {
+func (e *codexExecServer) probe(ctx context.Context) error {
 	if e.probeEffect != nil {
 		return e.probeEffect(ctx)
 	}
-	return probeExecutor(ctx, e.config.URL)
+	return probeCodexExecServer(ctx, e.config.URL)
 }
 
 // Probe the actual exec-server dispatcher, with a deadline on both handshake and
 // response. A listening socket or /readyz alone does not demonstrate RPC progress.
-func probeExecutor(ctx context.Context, endpoint string) error {
+func probeCodexExecServer(ctx context.Context, endpoint string) error {
 	c, _, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{HTTPClient: &http.Client{Transport: &http.Transport{Proxy: nil}}})
 	if err != nil {
 		return err
@@ -293,21 +293,21 @@ func probeExecutor(ctx context.Context, endpoint string) error {
 	return nil
 }
 
-// executorRefusal is a companion's refusal to start Codex at all, with its reason. It describes a
+// codexExecServerRefusal is a companion's refusal to start Codex at all, with its reason. It describes a
 // generation that spawned nothing, so it needs no fencing and repeats until the container is replaced.
-type executorRefusal struct{ reason string }
+type codexExecServerRefusal struct{ reason string }
 
-func (r executorRefusal) Error() string {
+func (r codexExecServerRefusal) Error() string {
 	return "executor companion refused to start Codex: " + r.reason
 }
 
 // All companion control traffic is local to a Pod over an emptyDir Unix socket.
 // A generation identifies a whole container PID namespace, not just exec-server.
-type executorControlRequest struct {
+type codexExecServerControlRequest struct {
 	Operation   string            `json:"operation"`
 	Environment map[string]string `json:"environment,omitempty"`
 }
-type executorControlStatus struct {
+type codexExecServerControlStatus struct {
 	Generation string `json:"generation"`
 	Owned      bool   `json:"owned"`
 	// Error explains a claim that was refused without starting anything, so the reason survives
@@ -316,10 +316,10 @@ type executorControlStatus struct {
 	Error string `json:"error,omitempty"`
 }
 
-func executorControl(ctx context.Context, socket string, request executorControlRequest) (net.Conn, executorControlStatus, error) {
+func codexExecServerControl(ctx context.Context, socket string, request codexExecServerControlRequest) (net.Conn, codexExecServerControlStatus, error) {
 	c, err := (&net.Dialer{}).DialContext(ctx, "unix", socket)
 	if err != nil {
-		return nil, executorControlStatus{}, err
+		return nil, codexExecServerControlStatus{}, err
 	}
 	stop := context.AfterFunc(ctx, func() { _ = c.Close() })
 	defer stop()
@@ -327,9 +327,9 @@ func executorControl(ctx context.Context, socket string, request executorControl
 	_ = c.SetDeadline(deadline)
 	if err := json.NewEncoder(c).Encode(request); err != nil {
 		_ = c.Close()
-		return nil, executorControlStatus{}, err
+		return nil, codexExecServerControlStatus{}, err
 	}
-	var status executorControlStatus
+	var status codexExecServerControlStatus
 	if err := json.NewDecoder(c).Decode(&status); err != nil {
 		_ = c.Close()
 		return nil, status, err
@@ -342,14 +342,14 @@ func executorControl(ctx context.Context, socket string, request executorControl
 	return c, status, nil
 }
 
-// fenceExecutorContainer waits until a fresh, idle container proves the old PID
+// fenceCodexExecServerContainer waits until a fresh, idle container proves the old PID
 // namespace is gone. EOF alone is insufficient: detached descendants can remain
 // alive between the companion exiting and the container runtime finishing cleanup.
-func fenceExecutorContainer(ctx context.Context, socket, previous string) error {
+func fenceCodexExecServerContainer(ctx context.Context, socket, previous string) error {
 	return retry.Do(ctx, retry.NewConstant(200*time.Millisecond), func(ctx context.Context) error {
 		attempt, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-		c, status, err := executorControl(attempt, socket, executorControlRequest{Operation: "inspect"})
+		c, status, err := codexExecServerControl(attempt, socket, codexExecServerControlRequest{Operation: "inspect"})
 		if err != nil {
 			return retry.RetryableError(err)
 		}
@@ -358,7 +358,7 @@ func fenceExecutorContainer(ctx context.Context, socket, previous string) error 
 			return nil
 		}
 		if status.Owned {
-			if err := json.NewEncoder(c).Encode(executorControlRequest{Operation: "fence"}); err != nil {
+			if err := json.NewEncoder(c).Encode(codexExecServerControlRequest{Operation: "fence"}); err != nil {
 				return retry.RetryableError(err)
 			}
 		}
@@ -366,15 +366,15 @@ func fenceExecutorContainer(ctx context.Context, socket, previous string) error 
 	})
 }
 
-func claimExecutorContainer(ctx context.Context, socket string, env map[string]string) (*executorInstance, error) {
-	c, status, err := executorControl(ctx, socket, executorControlRequest{Operation: "claim", Environment: env})
+func claimCodexExecServerContainer(ctx context.Context, socket string, env map[string]string) (*codexExecServerInstance, error) {
+	c, status, err := codexExecServerControl(ctx, socket, codexExecServerControlRequest{Operation: "claim", Environment: env})
 	if err != nil {
 		return nil, err
 	}
 	if !status.Owned {
 		_ = c.Close()
 		if status.Error != "" {
-			return nil, executorRefusal{reason: status.Error}
+			return nil, codexExecServerRefusal{reason: status.Error}
 		}
 		return nil, errors.New("executor companion refused ownership")
 	}
@@ -383,8 +383,8 @@ func claimExecutorContainer(ctx context.Context, socket string, env map[string]s
 		_, err := io.Copy(io.Discard, c)
 		done <- errors.Join(errors.New("executor container ownership connection lost"), err)
 	}()
-	return &executorInstance{done: done, stop: func(ctx context.Context) error {
+	return &codexExecServerInstance{done: done, stop: func(ctx context.Context) error {
 		_ = c.Close()
-		return fenceExecutorContainer(ctx, socket, status.Generation)
+		return fenceCodexExecServerContainer(ctx, socket, status.Generation)
 	}}, nil
 }

@@ -14,17 +14,17 @@ import (
 )
 
 const (
-	lifecycleNamespace    = "runner"
-	runnerGoalType        = "RunnerGoals.agentplane"
-	runnerInputType       = "RunnerInputs.agentplane"
-	runnerRuntimeType     = "RunnerRuntimes.agentplane"
-	sessionInputType      = "SessionInputs.agentplane"
-	sessionRuntimeType    = "SessionRuntimes.agentplane"
-	journalSealType       = "JournalSeals.agentplane"
-	ingressAckType        = "IngressAcks.agentplane"
-	operationResultType   = "NativeOperationResults.agentplane"
-	runnerControllerName  = "runner-lifecycle"
-	sessionControllerName = "session-lifecycle"
+	lifecycleNamespace     = "runner"
+	runnerDesiredStateType = "RunnerDesiredStates.agentplane"
+	runnerInputType        = "RunnerInputs.agentplane"
+	runnerRuntimeType      = "RunnerRuntimes.agentplane"
+	sessionInputType       = "SessionInputs.agentplane"
+	sessionRuntimeType     = "SessionRuntimes.agentplane"
+	journalSealType        = "JournalSeals.agentplane"
+	ingressAckType         = "IngressAcks.agentplane"
+	operationResultType    = "NativeOperationResults.agentplane"
+	runnerControllerName   = "runner-lifecycle"
+	sessionControllerName  = "session-lifecycle"
 )
 
 // Specs contain scalar values and immutable time.Time values; no native handles or mutable references.
@@ -93,7 +93,7 @@ const (
 	stageClosed
 )
 
-type runnerGoalSpec struct {
+type runnerDesiredStateSpec struct {
 	Mode       runnerMode
 	SealUID    string
 	Generation uint64
@@ -155,8 +155,8 @@ type ingressAckSpec struct {
 	Sealed bool
 }
 
-func (runnerGoalSpec) resourceType() resource.Type    { return runnerGoalType }
-func (value runnerGoalSpec) DeepCopy() runnerGoalSpec { return value }
+func (runnerDesiredStateSpec) resourceType() resource.Type            { return runnerDesiredStateType }
+func (value runnerDesiredStateSpec) DeepCopy() runnerDesiredStateSpec { return value }
 
 func (runnerInputSpec) resourceType() resource.Type     { return runnerInputType }
 func (value runnerInputSpec) DeepCopy() runnerInputSpec { return value }

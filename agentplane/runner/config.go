@@ -63,7 +63,7 @@ type Config struct {
 	HarnessEnvironment               map[string]string
 	Claude, Codex                    *harness.LaunchConfig
 	ProcessIsolation                 *AgentCgroups
-	CodexExecutor                    *CodexExecutorConfig
+	CodexExecServer                  *CodexExecServerConfig
 	WorkspaceRoot, InitializationCwd string
 	DebugCheckpoint                  *DebugCheckpointConfig
 	HTTPClient                       *http.Client

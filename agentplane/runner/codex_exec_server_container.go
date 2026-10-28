@@ -21,14 +21,14 @@ import (
 )
 
 const (
-	executorContainerMode       = "--executor-container"
-	executorContainerHealthMode = "--executor-container-health"
+	codexExecServerContainerMode       = "--executor-container"
+	codexExecServerContainerHealthMode = "--executor-container-health"
 )
 
-// ExecutorContainerMain must be PID 1 in a private container PID namespace.
+// CodexExecServerContainerMain must be PID 1 in a private container PID namespace.
 // Returning to main exits that namespace, letting the runtime kill even children
 // that escaped their process group. This mode never runs as an ordinary VM child.
-func ExecutorContainerMain(args []string) int {
+func CodexExecServerContainerMain(args []string) int {
 	flags := flag.NewFlagSet("executor container", flag.ContinueOnError)
 	socket := flags.String("socket", "", "local ownership socket")
 	listen := flags.String("listen", "", "Codex WebSocket endpoint")
@@ -46,20 +46,20 @@ func ExecutorContainerMain(args []string) int {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	if err := serveExecutorContainer(ctx, *socket, *binary, *listen); err != nil {
+	if err := serveCodexExecServerContainer(ctx, *socket, *binary, *listen); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return 0
 }
 
-func ExecutorContainerHealthMain(args []string) int {
+func CodexExecServerContainerHealthMain(args []string) int {
 	if len(args) != 1 {
 		return 64
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	c, _, err := executorControl(ctx, args[0], executorControlRequest{Operation: "inspect"})
+	c, _, err := codexExecServerControl(ctx, args[0], codexExecServerControlRequest{Operation: "inspect"})
 	if err != nil {
 		return 1
 	}
@@ -67,7 +67,7 @@ func ExecutorContainerHealthMain(args []string) int {
 	return 0
 }
 
-func serveExecutorContainer(ctx context.Context, socket, binary, listen string) error {
+func serveCodexExecServerContainer(ctx context.Context, socket, binary, listen string) error {
 	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func serveExecutorContainer(ctx context.Context, socket, binary, listen string) 
 	defer cancel()
 	stop := context.AfterFunc(lifetime, func() { _ = listener.Close() })
 	defer stop()
-	status := executorControlStatus{Generation: uuid.NewString()}
+	status := codexExecServerControlStatus{Generation: uuid.NewString()}
 	var mu sync.Mutex
 	for {
 		connection, err := listener.Accept()
@@ -103,7 +103,7 @@ func serveExecutorContainer(ctx context.Context, socket, binary, listen string) 
 			_ = c.SetDeadline(time.Now().Add(3 * time.Second))
 			decoder := json.NewDecoder(io.LimitReader(c, 1<<20))
 			decoder.DisallowUnknownFields()
-			var request executorControlRequest
+			var request codexExecServerControlRequest
 			if decoder.Decode(&request) != nil {
 				return
 			}
@@ -123,7 +123,7 @@ func serveExecutorContainer(ctx context.Context, socket, binary, listen string) 
 					// with the reason and keep serving: exiting here makes the runtime restart a container
 					// whose next start fails the same way, and a claimant in restart backoff leaves no
 					// socket to fence, so the Runner can neither start nor quiesce.
-					fmt.Fprintln(os.Stderr, "start Codex executor:", err)
+					fmt.Fprintln(os.Stderr, "start Codex exec-server:", err)
 					refused := status
 					refused.Error = err.Error()
 					mu.Unlock()
@@ -131,7 +131,7 @@ func serveExecutorContainer(ctx context.Context, socket, binary, listen string) 
 					return
 				}
 				status.Owned = true
-				go reapExecutorContainer(lifetime, child.Process, cancel)
+				go reapCodexExecServerContainer(lifetime, child.Process, cancel)
 			} else if request.Operation != "inspect" || len(request.Environment) != 0 {
 				mu.Unlock()
 				return
@@ -153,7 +153,7 @@ func serveExecutorContainer(ctx context.Context, socket, binary, listen string) 
 				return
 			}
 			_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
-			var next executorControlRequest
+			var next codexExecServerControlRequest
 			if decoder.Decode(&next) == nil && next.Operation == "fence" {
 				cancel()
 			}
@@ -163,7 +163,7 @@ func serveExecutorContainer(ctx context.Context, socket, binary, listen string) 
 
 // PID 1 also reaps orphaned grandchildren. A single wait4 owner avoids races
 // between os/exec.Wait and a generic orphan reaper consuming the executor status.
-func reapExecutorContainer(ctx context.Context, process *os.Process, exited context.CancelFunc) {
+func reapCodexExecServerContainer(ctx context.Context, process *os.Process, exited context.CancelFunc) {
 	defer process.Release()
 	changed := make(chan os.Signal, 1)
 	signal.Notify(changed, syscall.SIGCHLD)
@@ -175,7 +175,7 @@ func reapExecutorContainer(ctx context.Context, process *os.Process, exited cont
 			var status unix.WaitStatus
 			pid, err := unix.Wait4(-1, &status, unix.WNOHANG, nil)
 			if pid == process.Pid {
-				fmt.Fprintln(os.Stderr, "Codex executor exited:", status)
+				fmt.Fprintln(os.Stderr, "Codex exec-server exited:", status)
 				exited()
 				return
 			}

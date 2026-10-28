@@ -30,9 +30,9 @@ func (r *Runner) requestBootstrap() error {
 	if input.Requested {
 		return nil
 	}
-	goal := r.lifecycle.goal()
-	if goal.Mode != runnerRunning {
-		if goal.Mode == runnerClosing {
+	desiredState := r.lifecycle.desiredState()
+	if desiredState.Mode != runnerRunning {
+		if desiredState.Mode == runnerClosing {
 			return status.Error(codes.Unavailable, "runner is closing")
 		}
 		return status.Error(codes.Aborted, "this Sandbox is quiesced")

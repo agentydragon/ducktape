@@ -18,9 +18,9 @@ const (
 )
 
 func (r *Runner) ListSessions(ctx context.Context, _ *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
-	if goal := r.lifecycle.goal(); goal.Mode != runnerRunning {
+	if desiredState := r.lifecycle.desiredState(); desiredState.Mode != runnerRunning {
 		minimum := stageFlushing
-		if goal.Mode == runnerClosing {
+		if desiredState.Mode == runnerClosing {
 			minimum = stageClosed
 		}
 		if err := r.lifecycle.wait(ctx, minimum); err != nil {
@@ -60,7 +60,7 @@ func (r *Runner) GetStatus(_ context.Context, _ *runnerpb.GetStatusRequest) (*ru
 			id := s.processID
 			row.ProcessId = &id
 		}
-		if s.processID != "" && s.codex == nil {
+		if s.processID != "" && s.codexAppServer == nil {
 			process := &runnerpb.HarnessProcessStatus{ProcessId: s.processID, Harness: s.record.Harness, State: s.processState, AssignedSessionIds: []string{s.id}}
 			if s.process != nil && s.process.Running() {
 				pid := int64(s.process.PID())
@@ -71,8 +71,8 @@ func (r *Runner) GetStatus(_ context.Context, _ *runnerpb.GetStatusRequest) (*ru
 		result.Sessions = append(result.Sessions, row)
 		s.mu.Unlock()
 	}
-	if r.codex != nil {
-		if process := r.codex.status(); process != nil {
+	if r.codexAppServer != nil {
+		if process := r.codexAppServer.status(); process != nil {
 			result.Processes = append(result.Processes, process)
 		}
 	}
@@ -145,8 +145,8 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 	facts.AutosuspendBlockers = blockers
 	if r.store.Lameduck() {
 		facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_DRAINING
-		current, goal := r.lifecycle.status(), r.lifecycle.goal()
-		if current.Generation == goal.Generation && current.Stage >= stageFlushing {
+		current, desiredState := r.lifecycle.status(), r.lifecycle.desiredState()
+		if current.Generation == desiredState.Generation && current.Stage >= stageFlushing {
 			facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_FLUSHING
 			if current.Stage == stageQuiesced {
 				facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_QUIESCED

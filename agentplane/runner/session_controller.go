@@ -20,10 +20,10 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
 			{Namespace: lifecycleNamespace, Type: sessionInputType, Kind: controller.InputQPrimary},
-			{Namespace: lifecycleNamespace, Type: runnerGoalType, Kind: controller.InputQMapped},
+			{Namespace: lifecycleNamespace, Type: runnerDesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: lifecycleNamespace, Type: runnerRuntimeType, Kind: controller.InputQMapped},
 			{Namespace: lifecycleNamespace, Type: bootstrapRuntimeType, Kind: controller.InputQMapped},
-			{Namespace: lifecycleNamespace, Type: codexRuntimeType, Kind: controller.InputQMapped},
+			{Namespace: lifecycleNamespace, Type: codexAppServerRuntimeType, Kind: controller.InputQMapped},
 			{Namespace: lifecycleNamespace, Type: operationResultType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: sessionRuntimeType, Kind: controller.OutputExclusive}},
@@ -65,7 +65,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	if err != nil {
 		return err
 	}
-	goal, _, err := lifecycleRead[runnerGoalSpec](ctx, r, "runner")
+	desiredState, _, err := lifecycleRead[runnerDesiredStateSpec](ctx, r, "runner")
 	if err != nil {
 		return err
 	}
@@ -80,15 +80,15 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		return err
 	}
-	if goal.Mode == runnerRunning && current.Generation != goal.Generation {
+	if desiredState.Mode == runnerRunning && current.Generation != desiredState.Generation {
 		for _, slot := range []**operation{&s.halting, &s.sealing} {
 			if op, done := s.takeOperation(slot); done {
 				c.l.forgetOperation(op)
 			}
 		}
-		current = sessionRuntimeSpec{Generation: goal.Generation, SetupAttempt: current.SetupAttempt}
-	} else if current.Generation != goal.Generation {
-		current.Generation = goal.Generation
+		current = sessionRuntimeSpec{Generation: desiredState.Generation, SetupAttempt: current.SetupAttempt}
+	} else if current.Generation != desiredState.Generation {
+		current.Generation = desiredState.Generation
 		current.Error = ""
 	}
 	if op, done := s.takeOperation(&s.setupJob); done {
@@ -125,12 +125,12 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		processID := s.processID
 		live := s.process != nil && s.process.Running()
 		s.mu.Unlock()
-		if op.err == nil && live && goal.Mode == runnerRunning && current.Phase == executionPreparing {
+		if op.err == nil && live && desiredState.Mode == runnerRunning && current.Phase == executionPreparing {
 			current.Phase, current.ProcessID = executionReady, processID
 			s.mu.Lock()
 			s.processState = runnerpb.ProcessState_PROCESS_STATE_RUNNING
 			s.mu.Unlock()
-		} else if goal.Mode == runnerRunning {
+		} else if desiredState.Mode == runnerRunning {
 			current.Phase = executionDormant
 			s.mu.Lock()
 			pending := len(s.pending)
@@ -179,8 +179,8 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			return err
 		}
 	}
-	if goal.Mode != runnerRunning {
-		if outer.Generation != goal.Generation || outer.Stage < stageHalting {
+	if desiredState.Mode != runnerRunning {
+		if outer.Generation != desiredState.Generation || outer.Stage < stageHalting {
 			return write()
 		}
 		if current.Phase != executionHalted {
@@ -193,7 +193,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			s.mu.Unlock()
 			if halt == nil {
 				reason := stopClose
-				if goal.SealUID != "" {
+				if desiredState.SealUID != "" {
 					reason = stopQuiesce
 				}
 				s.startOperation(&s.halting, func(ctx context.Context) error { s.halt(ctx, reason); return nil })
@@ -222,14 +222,14 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		if current.Phase == executionHalted && outer.Stage >= stageStopping && !current.ProcessStopped {
 			s.mu.Lock()
-			shared := s.runner.codex != nil && s.record.Harness == runnerpb.Harness_HARNESS_CODEX
+			shared := s.runner.codexAppServer != nil && s.record.Harness == runnerpb.Harness_HARNESS_CODEX
 			s.mu.Unlock()
 			if shared {
-				status, found, err := lifecycleRead[codexRuntimeSpec](ctx, r, "codex")
+				status, found, err := lifecycleRead[codexAppServerRuntimeSpec](ctx, r, codexAppServerResourceID)
 				if err != nil {
 					return err
 				}
-				if found && status.Phase == codexStopped {
+				if found && status.Phase == codexAppServerStopped {
 					current.ProcessStopped = true
 				}
 			} else {
@@ -245,7 +245,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		s.mu.Lock()
 		inspected := s.inspection == nil && len(s.reconciliations) == 0
 		s.mu.Unlock()
-		if current.Phase == executionHalted && current.ProcessStopped && inspected && outer.Stage >= stageSealing && goal.SealUID != "" && s.journal.SealState() == nil {
+		if current.Phase == executionHalted && current.ProcessStopped && inspected && outer.Stage >= stageSealing && desiredState.SealUID != "" && s.journal.SealState() == nil {
 			s.startOperation(&s.sealing, func(ctx context.Context) error {
 				if err := s.sealJournal(ctx); err != nil {
 					return err

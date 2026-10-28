@@ -145,7 +145,7 @@ func (v VMEnvironmentConfiguration) cgroups(root string, aggregate, process Reso
 }
 
 // The environment selects resource ownership and executor transport together.
-func (f Configuration) resolveEnvironment() (*AgentCgroups, *CodexExecutorConfig, *VMEnvironmentConfiguration, error) {
+func (f Configuration) resolveEnvironment() (*AgentCgroups, *CodexExecServerConfig, *VMEnvironmentConfiguration, error) {
 	var tag struct {
 		Kind string `json:"kind"`
 	}
@@ -153,7 +153,7 @@ func (f Configuration) resolveEnvironment() (*AgentCgroups, *CodexExecutorConfig
 		return nil, nil, nil, fmt.Errorf("environment is required: %w", err)
 	}
 	var isolation *AgentCgroups
-	var executor *CodexExecutorConfig
+	var executor *CodexExecServerConfig
 	var vm *VMEnvironmentConfiguration
 	switch tag.Kind {
 	case "pod":
@@ -162,7 +162,7 @@ func (f Configuration) resolveEnvironment() (*AgentCgroups, *CodexExecutorConfig
 			return nil, nil, nil, err
 		}
 		if pod.Executor != nil {
-			executor = &CodexExecutorConfig{URL: pod.Executor.URL, ContainerSocket: pod.Executor.Socket}
+			executor = &CodexExecServerConfig{URL: pod.Executor.URL, ContainerSocket: pod.Executor.Socket}
 			if !filepath.IsAbs(pod.Executor.Socket) {
 				return nil, nil, nil, errors.New("container executor socket must be absolute")
 			}
@@ -188,7 +188,7 @@ func (f Configuration) resolveEnvironment() (*AgentCgroups, *CodexExecutorConfig
 			return nil, nil, nil, errors.New("executor endpoint and resource budget must be supplied together")
 		}
 		if vm.Executor != nil {
-			executor = &CodexExecutorConfig{URL: vm.Executor.URL, Isolation: vm.cgroups(vm.Executor.Root, *vm.Resources.Executor, *vm.Resources.Executor)}
+			executor = &CodexExecServerConfig{URL: vm.Executor.URL, Isolation: vm.cgroups(vm.Executor.Root, *vm.Resources.Executor, *vm.Resources.Executor)}
 		}
 	default:
 		return nil, nil, nil, fmt.Errorf("unknown environment kind %q", tag.Kind)
@@ -317,7 +317,7 @@ func (f Configuration) compose(launchPath string) (Config, map[string]string, er
 		Claude:                      claude,
 		Codex:                       codex,
 		ProcessIsolation:            isolation,
-		CodexExecutor:               executor,
+		CodexExecServer:             executor,
 	}
 	if f.WorkspaceRoot != nil {
 		config.WorkspaceRoot = *f.WorkspaceRoot

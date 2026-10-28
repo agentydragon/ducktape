@@ -49,8 +49,8 @@ type Session struct {
 	waiters                                                []*nativeWaiter
 	replies                                                []matchedReply
 
-	// codex is the shared app-server incarnation hosting this Codex Session's thread.
-	codex *codexProcess
+	// codexAppServer is the shared app-server incarnation hosting this Codex Session's thread.
+	codexAppServer *codexAppServerProcess
 }
 
 func newSession(r *Runner, id string, record *SessionRecord, journal *Journal) *Session {
@@ -107,7 +107,7 @@ func (s *Session) ensureReady(ctx context.Context) error {
 		return err
 	}
 	s.mu.Lock()
-	previous, shared := s.process, s.codex != nil
+	previous, shared := s.process, s.codexAppServer != nil
 	s.mu.Unlock()
 	if previous != nil && !shared && !previous.Running() {
 		// The exited process may still be recording frames and clearing its
@@ -278,7 +278,7 @@ func (s *Session) halt(ctx context.Context, reason stopReason) {
 func (s *Session) stopProcess(ctx context.Context) error {
 	s.mu.Lock()
 	process := s.process
-	shared := s.codex != nil
+	shared := s.codexAppServer != nil
 	s.mu.Unlock()
 	if !shared && process != nil && process.Running() {
 		if err := process.Stop(ctx, 5*time.Second); err != nil {

@@ -42,7 +42,7 @@ func waitLifecycle(t *testing.T, r *Runner, predicate func() bool, want string) 
 		select {
 		case <-changed:
 		case <-ctx.Done():
-			t.Fatalf("timed out waiting for %s: goal=%+v runtime=%+v", want, r.lifecycle.goal(), r.lifecycle.status())
+			t.Fatalf("timed out waiting for %s: desired_state=%+v runtime=%+v", want, r.lifecycle.desiredState(), r.lifecycle.status())
 		}
 	}
 }
@@ -155,8 +155,8 @@ func TestCloseAfterQuiescePreservesSealAndWaitsForSetup(t *testing.T) {
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close() }()
 	waitLifecycle(t, r, func() bool {
-		goal := r.lifecycle.goal()
-		return goal.Mode == runnerClosing && goal.SealUID == "test-incarnation" &&
+		desiredState := r.lifecycle.desiredState()
+		return desiredState.Mode == runnerClosing && desiredState.SealUID == "test-incarnation" &&
 			r.lifecycle.status().Stage == stageHalting && s.runtimeState().Phase == executionStopping
 	}, "Close to preserve the accepted seal while setup is running")
 	select {
@@ -251,7 +251,7 @@ func TestPreparationCompletingAfterCloseCannotMakeSessionReady(t *testing.T) {
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close() }()
 	waitLifecycle(t, r, func() bool {
-		return r.lifecycle.goal().Mode == runnerClosing && r.lifecycle.status().Stage == stageHalting && s.runtimeState().Phase == executionStopping
+		return r.lifecycle.desiredState().Mode == runnerClosing && r.lifecycle.status().Stage == stageHalting && s.runtimeState().Phase == executionStopping
 	}, "Close to cancel and join preparation")
 	select {
 	case err := <-closeDone:
@@ -312,9 +312,9 @@ func TestNewIncarnationWaitsForTeardownBeforeResettingDemand(t *testing.T) {
 	// native effect. Adoption must discard it even when the host is dormant.
 	l := r.lifecycle
 	l.publishMu.Lock()
-	err := publishLifecycle(l, "codex", codexInputSpec{Demand: 3})
+	err := publishLifecycle(l, codexAppServerResourceID, codexAppServerInputSpec{Demand: 3})
 	if err == nil {
-		err = publishLifecycle(l, "executor", executorInputSpec{Demand: 4})
+		err = publishLifecycle(l, codexExecServerResourceID, codexExecServerInputSpec{Demand: 4})
 	}
 	l.publishMu.Unlock()
 	if err != nil {
@@ -351,7 +351,7 @@ func TestNewIncarnationWaitsForTeardownBeforeResettingDemand(t *testing.T) {
 		t.Fatalf("adoption overtook accepted setup: %v", err)
 	default:
 	}
-	if r.lifecycle.goal().Mode != runnerQuiescing {
+	if r.lifecycle.desiredState().Mode != runnerQuiescing {
 		t.Fatal("new incarnation reopened execution during teardown")
 	}
 	close(setupDone)
@@ -369,15 +369,15 @@ func TestNewIncarnationWaitsForTeardownBeforeResettingDemand(t *testing.T) {
 	if !r.lifecycle.accepting() {
 		t.Fatal("new incarnation did not reopen admission")
 	}
-	for kind, id := range map[string]string{codexInputType: "codex", executorInputType: "executor"} {
+	for kind, id := range map[string]string{codexAppServerInputType: codexAppServerResourceID, codexExecServerInputType: codexExecServerResourceID} {
 		switch kind {
-		case codexInputType:
-			input, _, err := lifecycleRead[codexInputSpec](r.ctx, r.lifecycle.state, id)
+		case codexAppServerInputType:
+			input, _, err := lifecycleRead[codexAppServerInputSpec](r.ctx, r.lifecycle.state, id)
 			if err != nil || input.Demand != 0 {
 				t.Fatalf("Codex old demand survived adoption: %+v, %v", input, err)
 			}
-		case executorInputType:
-			input, _, err := lifecycleRead[executorInputSpec](r.ctx, r.lifecycle.state, id)
+		case codexExecServerInputType:
+			input, _, err := lifecycleRead[codexExecServerInputSpec](r.ctx, r.lifecycle.state, id)
 			if err != nil || input.Demand != 0 {
 				t.Fatalf("executor old demand survived adoption: %+v, %v", input, err)
 			}
