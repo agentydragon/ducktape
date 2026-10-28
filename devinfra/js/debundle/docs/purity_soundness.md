@@ -82,6 +82,23 @@ or expose callbacks. The CLI cases in `empty_collection_timing_test` cover
 all four empty constructors and real callback reentry through a shadowed
 constructor and a supplied iterator.
 
+## Primitive-argument `Math.round` timing
+
+Synchronous callback analysis excludes a direct `Math.round(value)` call with
+one non-spread argument when retained value flow proves the evaluated argument
+primitive. The receiver must be the undeclared, unshadowed global `Math` binding.
+Dynamic scope or visible writes to the Math/global intrinsic family, including
+aliases and reflective property mutation, disable the proof.
+
+Under A11 intrinsic integrity, [Math.round](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-math.round)
+converts its argument with `ToNumber` and performs numeric operations. A primitive
+argument cannot invoke a user-defined conversion hook. Object and unknown inputs
+retain opaque-call analysis. Argument evaluation keeps its own effects, including
+callbacks in a sequence whose final value is primitive. This is a call-timing
+proof only: it neither classifies the call as pure nor gives its result a known
+shape. `math_round_timing_test` pairs the admitted arithmetic case with coercion,
+effectful argument, shadowing, aliased method mutation, and getter controls.
+
 ## Native `Proxy` construction
 
 `new Proxy(target, handler)` is admitted only when the global `Proxy` name is

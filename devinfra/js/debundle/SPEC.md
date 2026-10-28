@@ -599,6 +599,13 @@ retained lazy closure are included as well, covering an accessor that returns
 another conversion callable. This is callback-effect analysis; it does not
 classify the enclosing operator as pure.
 
+A direct, unshadowed global `Math.round(value)` with one non-spread argument
+also avoids opaque callback promotion when retained values prove that argument
+primitive. Source-visible Math/global intrinsic mutation (including aliases),
+dynamic scope, objects, and unknown arguments disable this inference. Argument
+evaluation retains its own effects. This timing proof does not classify the call
+as pure or change its result's abstract shape.
+
 ## Purity hint diagnostics
 
 The per-chunk `modules.json.redundant_purity_hints` report disables each tested

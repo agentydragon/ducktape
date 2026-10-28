@@ -268,6 +268,32 @@ impl Executor<'_> {
                 .any(|root| matches!(root, IntrinsicRoot::GlobalObject | IntrinsicRoot::Object))
     }
 
+    fn primitive_math_round_call(&self, call: &Call, args: &[Values]) -> bool {
+        let ValueExpr::Member(receiver, Some(property), true) = &call.callee else {
+            return false;
+        };
+        let ValueExpr::Binding(binding) = receiver.as_ref() else {
+            return false;
+        };
+        call.kind == CallKind::Call
+            && !call.has_spread
+            && property == "round"
+            && binding.0.as_ref() == "Math"
+            && !self.flow.is_declared(binding)
+            && !self.shadowed.contains("Math")
+            && self.index.dynamic_scope_owners.is_empty()
+            && !self
+                .index
+                .mutated_intrinsic_roots
+                .iter()
+                .any(|root| matches!(root, IntrinsicRoot::GlobalObject | IntrinsicRoot::Math))
+            && args.len() == 1
+            && !args[0].is_empty()
+            && args[0]
+                .iter()
+                .all(|value| matches!(value, AbstractValue::NonCallable | AbstractValue::Undefined))
+    }
+
     fn standard_object_prototype_property(property: &str) -> bool {
         matches!(
             property,
@@ -4114,6 +4140,12 @@ impl Executor<'_> {
         }
         for values in &mut args {
             values.remove(&AbstractValue::Unavailable);
+        }
+        // Math.round only converts its argument and performs numeric work.
+        // A primitive cannot invoke a conversion hook. Argument evaluation
+        // still contributes its own effects; the result remains unknown.
+        if self.primitive_math_round_call(call, &args) {
+            return;
         }
         if call.kind == CallKind::Call
             && !call.has_spread

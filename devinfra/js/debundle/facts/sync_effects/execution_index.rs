@@ -1197,6 +1197,7 @@ enum IntrinsicRoot {
     Error,
     Object,
     Array,
+    Math,
 }
 
 type IntrinsicRoots = BTreeSet<IntrinsicRoot>;
@@ -1216,6 +1217,7 @@ fn intrinsic_roots(
         ValueExpr::Binding(id) if id.0.as_ref() == "Array" => {
             BTreeSet::from([IntrinsicRoot::Array])
         }
+        ValueExpr::Binding(id) if id.0.as_ref() == "Math" => BTreeSet::from([IntrinsicRoot::Math]),
         ValueExpr::Binding(id) if globals.contains(id.0.as_ref()) => {
             BTreeSet::from([IntrinsicRoot::GlobalObject])
         }
@@ -1243,6 +1245,9 @@ fn intrinsic_roots(
                         Some("Array") => {
                             out.insert(IntrinsicRoot::Array);
                         }
+                        Some("Math") => {
+                            out.insert(IntrinsicRoot::Math);
+                        }
                         Some("globalThis" | "window" | "self" | "frames" | "top") | None => {
                             out.insert(IntrinsicRoot::GlobalObject);
                         }
@@ -1252,7 +1257,10 @@ fn intrinsic_roots(
                     // constructor: Array.prototype.map, Array[Symbol.species],
                     // and Object.fromEntries are mutations of their respective
                     // intrinsic families.
-                    IntrinsicRoot::Error | IntrinsicRoot::Object | IntrinsicRoot::Array => {
+                    IntrinsicRoot::Error
+                    | IntrinsicRoot::Object
+                    | IntrinsicRoot::Array
+                    | IntrinsicRoot::Math => {
                         out.insert(root);
                     }
                 }
@@ -2261,6 +2269,9 @@ impl ExecutionIndex {
                 }
                 "Array" => {
                     mutated_intrinsics.insert(IntrinsicRoot::Array);
+                }
+                "Math" => {
+                    mutated_intrinsics.insert(IntrinsicRoot::Math);
                 }
                 _ => {}
             }
