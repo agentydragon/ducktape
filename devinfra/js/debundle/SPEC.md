@@ -99,6 +99,15 @@ The browser writer materializes those decisions without rediscovering entries.
 
 ## Authoring reports
 
+Each per-chunk `modules.json` may include `imported_callables`, keyed by the
+importer's local binding name. A `callback_factory_evidence` entry names its
+defining module and export, with `origin: author_assertion` for an audited
+contract or `origin: inferred_immutable_wrapper` for a checked wrapper. The
+inferred entry also names the defining local binding and, when available, a
+standard `source_location` (`source_path`, `start_line`, `end_line`,
+`start_column`). This is a return-only callback capability, independent of
+call purity. The field is omitted when no bare imported callable was resolved.
+
 Each `dependency_graph.json` written by `debundle run` carries input provenance:
 SHA-256 of the executable engine and the exact bytes read for the tree config,
 vendor marks, module YAMLs, optional binding patches, JS list, every listed JS
