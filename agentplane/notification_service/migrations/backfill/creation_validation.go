@@ -16,15 +16,13 @@ var subscriptionCreationConstraints = []string{
 
 var inboxDestinationConstraints = []string{"inbox_destination_fields_valid"}
 
-// ValidateSubscriptionCreationConstraints proves the typed storage invariants after every writer has moved to
-// typed-only storage. Each constraint is validated and committed independently so a long scan does not hold a
+// ValidateSubscriptionCreationConstraints proves the typed storage invariants before the final contract. Each constraint is validated and committed independently so a long scan does not hold a
 // transaction open across other proofs. It is safe to rerun after interruption.
 func ValidateSubscriptionCreationConstraints(ctx context.Context, db *sql.DB) error {
 	return validateStorageConstraints(ctx, db, "subscription", subscriptionCreationConstraints)
 }
 
-// ValidateInboxDestinationConstraints proves the normalized destination shape after every writer has moved to
-// typed-only storage. It validates even on an empty table so future writes are covered by a catalog proof.
+// ValidateInboxDestinationConstraints proves the normalized destination shape before the final contract. It validates even on an empty table so future writes are covered by a catalog proof.
 func ValidateInboxDestinationConstraints(ctx context.Context, db *sql.DB) error {
 	return validateStorageConstraints(ctx, db, "inbox", inboxDestinationConstraints)
 }
@@ -55,7 +53,7 @@ func validateStorageConstraint(ctx context.Context, db *sql.DB, table, constrain
 	err = tx.QueryRowContext(ctx, `SELECT convalidated FROM pg_constraint
 		WHERE conrelid = $1::regclass AND conname = $2`, table, constraint).Scan(&validated)
 	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("constraint is missing; apply the typed-only storage migration first")
+		return fmt.Errorf("constraint is missing; native storage expansion must finish first")
 	}
 	if err != nil {
 		return fmt.Errorf("inspect validation state: %w", err)

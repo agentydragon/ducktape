@@ -41,7 +41,7 @@ service-account tokens, Kubernetes read access to Sandboxes, PolicySets and Poli
 PolicyBinding status. Preserve existing staging data. Verify an Action
 subscription through a newly opened harness after rollout. Existing sessions retain their original prompt.
 
-A schema change is a Goose file in `migrations/notifications/`. The baseline, `00001_baseline.sql`, takes over a
+Schema changes are registered Goose migrations. The baseline, `00001_baseline.sql`, takes over a
 database that the retired Alembic history left at revision `0010_drop_write_only_columns` and refuses one behind it;
 the migrator keeps the advisory lock key the Alembic runner took.
 
@@ -50,8 +50,8 @@ writers stop before the init container migrates and the new service starts. This
 Notification and webhook handling for the migration and restart. Inspect and redeliver failed GitHub
 webhooks from this window; GitHub does not retry them automatically. No operator backfill commands,
 writer gates or intervening application releases are required. Goose migrations `00001`–`00008`
-remain byte-for-byte unchanged; `00009`–`00023` are internal, restartable checkpoints of this
-single schema release. The packaging prerequisite must first put `notifications-migrate` in the
+remain byte-for-byte unchanged; version `9` is one Go migration that owns the entire native-storage
+cutover. The packaging prerequisite must first put `notifications-migrate` in the
 currently deployed service image; verify that image is selected before enabling the init command.
 
 The init migrator holds a PostgreSQL advisory session lock across the entire cutover, in addition
@@ -60,8 +60,10 @@ entry content, then copies retained rows in bounded primary-key batches. It buil
 identity indexes, fences new owned JSON writes, cleans old Action, mergeability and Message JSON,
 validates database constraints, and contracts the legacy columns. Each batch commits its data and
 cursor together. If init fails or a Pod restarts, the next init resumes from Goose and backfill
-checkpoints; it does not admit serving writes until the final contract completes. Once version
-`00023` is applied, normal restarts inspect only Goose metadata and perform no retained-row walk.
+checkpoints; it does not admit serving writes until the final contract completes. DDL and internal
+phase checkpoints commit together. One completion row remains so a retry after the final DDL commit
+but before Goose records version `9` skips completed conversion. Once version `9` is applied, normal
+restarts inspect only Goose metadata and perform no retained-row walk.
 A fresh empty database follows the same path automatically.
 
 The final schema stores Action state, actor and timestamp; mergeability repository, refs, states,

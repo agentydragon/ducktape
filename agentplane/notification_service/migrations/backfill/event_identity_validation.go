@@ -32,13 +32,13 @@ func ValidateEventIdentityWriterOnly(ctx context.Context, db *sql.DB) error {
 	var phase string
 	err = tx.QueryRowContext(ctx, `SELECT phase FROM notification_event_identity_backfill WHERE singleton`).Scan(&phase)
 	if errors.Is(err, sql.ErrNoRows) {
-		return errors.New("event identity backfill checkpoint is missing; apply migrations through 00018 before validation")
+		return errors.New("event identity backfill checkpoint is missing; native storage expansion must finish before validation")
 	}
 	if err != nil {
 		return fmt.Errorf("inspect event identity backfill phase: %w", err)
 	}
 	if phase != "indexed" && phase != "writer_only" {
-		return fmt.Errorf("event identity indexes are not ready for writer-only validation (phase %q); complete backfill-event-identities first", phase)
+		return fmt.Errorf("event identity indexes are not ready for writer-only validation (phase %q); complete the identity backfill first", phase)
 	}
 	var validIndexCount int
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM pg_index i
@@ -64,7 +64,7 @@ func ValidateEventIdentityWriterOnly(ctx context.Context, db *sql.DB) error {
 	for _, name := range eventIdentityWriterOnlyConstraints {
 		ok, found := validated[name]
 		if !found {
-			return fmt.Errorf("event identity writer-only proof %s is missing; apply migration 00018 first", name)
+			return fmt.Errorf("event identity writer-only proof %s is missing; native storage expansion must finish first", name)
 		}
 		if !ok {
 			actions = append(actions, "VALIDATE CONSTRAINT "+name)

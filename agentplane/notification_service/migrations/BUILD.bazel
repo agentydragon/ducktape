@@ -2,8 +2,14 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "migrations",
-    srcs = ["migrations.go"],
-    embedsrcs = glob(["notifications/*.sql"]),
+    srcs = [
+        "migrations.go",
+        "native_storage.go",
+    ],
+    embedsrcs = glob([
+        "notifications/*.sql",
+        "phases/*.sql",
+    ]),
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/migrations",
     visibility = ["//agentplane/notification_service:__subpackages__"],
     deps = [

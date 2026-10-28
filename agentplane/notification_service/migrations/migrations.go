@@ -11,13 +11,11 @@ import (
 	"io/fs"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations/backfill"
-
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
 )
 
-//go:embed notifications/*.sql
+//go:embed notifications/*.sql phases/*.sql
 var scripts embed.FS
 
 // Goose takes its lock on a separate connection, so the whole-cutover lock must use a different key.
@@ -69,58 +67,11 @@ func Up(ctx context.Context, db *sql.DB) (retErr error) {
 	if err != nil {
 		return err
 	}
-	version, err := provider.GetDBVersion(ctx)
-	if err != nil {
-		return err
-	}
-	if version >= 20 {
-		// Every proof was durable before 00020; completed init checks Goose metadata only.
-		return UpTo(ctx, db, 23)
-	}
-	if version < 15 {
-		if err := UpTo(ctx, db, 14); err != nil {
-			return err
-		}
-		for _, step := range []struct {
-			name string
-			run  func(context.Context, *sql.DB) error
-		}{
-			{"inbox destinations", backfill.BackfillInboxDestinations},
-			{"subscription creation", backfill.BackfillSubscriptionCreations},
-			{"event identities", func(ctx context.Context, db *sql.DB) error { return backfill.BackfillEventIdentities(ctx, db, 512) }},
-			{"entry content", func(ctx context.Context, db *sql.DB) error { return backfill.BackfillEntryContent(ctx, db, 512) }},
-		} {
-			if err := step.run(ctx, db); err != nil {
-				return fmt.Errorf("backfill %s: %w", step.name, err)
-			}
-		}
-	}
-	if version < 19 {
-		if err := UpTo(ctx, db, 19); err != nil {
-			return err
-		}
-	}
-	// Version 19 installs the write fence and checkpoint before cleanup touches old JSON.
-	if err := backfill.CleanupEntryLegacyContent(ctx, db, 512); err != nil {
-		return fmt.Errorf("clean legacy entry content: %w", err)
-	}
-	for _, step := range []struct {
-		name string
-		run  func(context.Context, *sql.DB) error
-	}{
-		{"inbox destination", backfill.ValidateInboxDestinationConstraints},
-		{"subscription creation", backfill.ValidateSubscriptionCreationConstraints},
-		{"event identity", backfill.ValidateEventIdentityWriterOnly},
-	} {
-		if err := step.run(ctx, db); err != nil {
-			return fmt.Errorf("validate %s: %w", step.name, err)
-		}
-	}
-	return UpTo(ctx, db, 23)
+	_, err = provider.Up(ctx)
+	return err
 }
 
-// UpTo applies authored SQL through version in the same provider used by Up. Integration tests use it to build a
-// predecessor schema and exercise an upgrade against populated rows.
+// UpTo builds historical schemas for integration tests; the storage cutover is version 9.
 func UpTo(ctx context.Context, db *sql.DB, version int64) error {
 	provider, err := newProvider(db)
 	if err != nil {
@@ -142,7 +93,8 @@ func newProvider(db *sql.DB) (*goose.Provider, error) {
 	}
 	provider, err := goose.NewProvider(goose.DialectPostgres, db, files,
 		goose.WithTableName("notification_service_goose_version"), goose.WithSessionLocker(locker),
-		goose.WithDisableGlobalRegistry(true))
+		goose.WithDisableGlobalRegistry(true),
+		goose.WithGoMigrations(goose.NewGoMigration(9, &goose.GoFunc{RunDB: migrateNativeStorage}, nil)))
 	if err != nil {
 		return nil, err
 	}
