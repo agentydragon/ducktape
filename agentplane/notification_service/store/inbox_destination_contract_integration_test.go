@@ -96,28 +96,22 @@ func TestInboxDestinationContractRejectsNullEmptyAndOutOfRangeKeys(t *testing.T)
 
 func TestInboxDestinationContractGatesPopulatedRowsAndPreservesIdentity(t *testing.T) {
 	db, ctx := newStorageIntegrationDatabase(t)
+	if _, err := db.ExecContext(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
+		t.Fatalf("reset cloned test database schema: %v", err)
+	}
+	if err := migrations.UpTo(ctx, db, 12); err != nil {
+		t.Fatalf("build schema through migration 00012: %v", err)
+	}
 	const ownerNamespace = "destination-contract-gate"
 	const ownerName = "owner"
 	const destinationKey = "python-compatible-key"
 	const sessionID = "session-before-contract"
 	inboxID := uuid.New()
 
-	// Recreate the expanded/typed-only schema that precedes this contract migration. The fixture starts at the
-	// latest schema, so reverse only 00013's metadata changes and remove its Goose version before exercising the
-	// production migrations.Up implementation below.
-	for _, query := range []string{
-		`ALTER TABLE inbox ADD COLUMN destination_ref JSONB`,
-		`ALTER TABLE inbox ALTER COLUMN destination_namespace DROP NOT NULL,
-			ALTER COLUMN destination_name DROP NOT NULL, ALTER COLUMN destination_uid DROP NOT NULL`,
-		`ALTER TABLE inbox DROP CONSTRAINT inbox_destination_fields_valid`,
-		`ALTER TABLE notification_storage_backfill_progress
-			ADD COLUMN inbox_destination_last_id UUID,
-			ADD COLUMN inbox_destination_complete BOOLEAN NOT NULL DEFAULT false`,
-		`DELETE FROM notification_service_goose_version WHERE version_id = 13`,
-	} {
-		if _, err := db.ExecContext(ctx, query); err != nil {
-			t.Fatalf("recreate pre-contract schema with %q: %v", query, err)
-		}
+	// The predecessor schema has a NOT VALID proof. Drop it for the missing-proof case, then recreate it without
+	// validation to prove both populated cutover gates against the production migration provider.
+	if _, err := db.ExecContext(ctx, `ALTER TABLE inbox DROP CONSTRAINT inbox_destination_fields_valid`); err != nil {
+		t.Fatalf("remove predecessor proof for missing-proof case: %v", err)
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO inbox (
 		id, owner_namespace, owner_name, destination_key, destination_ref, destination_namespace, destination_name,
@@ -141,6 +135,15 @@ func TestInboxDestinationContractGatesPopulatedRowsAndPreservesIdentity(t *testi
 	if migrationApplied {
 		t.Fatal("failed contract gate marked migration 00013 applied")
 	}
+	var retainedJSON string
+	var retainedKey, retainedSession string
+	if err := db.QueryRowContext(ctx, `SELECT destination_ref::text, destination_key, session_id
+		FROM inbox WHERE id = $1`, inboxID).Scan(&retainedJSON, &retainedKey, &retainedSession); err != nil {
+		t.Fatalf("read retained pre-contract row after missing-proof rejection: %v", err)
+	}
+	if !strings.Contains(retainedJSON, "typed-uid") || retainedKey != destinationKey || retainedSession != sessionID {
+		t.Fatalf("missing-proof rejection changed retained row: JSON=%q key=%q session=%q", retainedJSON, retainedKey, retainedSession)
+	}
 	if _, err := db.ExecContext(ctx, `ALTER TABLE inbox ADD CONSTRAINT inbox_destination_fields_valid CHECK (
 		destination_namespace IS NOT NULL AND char_length(destination_namespace) BETWEEN 1 AND 63 AND
 		destination_name IS NOT NULL AND char_length(destination_name) BETWEEN 1 AND 63 AND
@@ -159,8 +162,6 @@ func TestInboxDestinationContractGatesPopulatedRowsAndPreservesIdentity(t *testi
 	if migrationApplied {
 		t.Fatal("failed populated-row gate marked migration 00013 applied")
 	}
-	var retainedJSON string
-	var retainedKey, retainedSession string
 	if err := db.QueryRowContext(ctx, `SELECT destination_ref::text, destination_key, session_id
 		FROM inbox WHERE id = $1`, inboxID).Scan(&retainedJSON, &retainedKey, &retainedSession); err != nil {
 		t.Fatalf("read retained pre-contract row after rejected migration: %v", err)
