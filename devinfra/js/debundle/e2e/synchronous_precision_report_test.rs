@@ -107,6 +107,31 @@ fn acyclic_call_chain_reports_the_actual_depth_bound() {
 }
 
 #[test]
+fn multichunk_acyclic_call_chain_below_depth_bound_remains_complete() {
+    let depth = 60;
+    let mut source = String::from("const seed = 3;\n");
+    for index in 0..depth {
+        let next = if index + 1 < depth {
+            format!("step{}(value)", index + 1)
+        } else {
+            "value".to_string()
+        };
+        source.push_str(&format!(
+            "function step{index}(value) {{ return {next}; }}\n"
+        ));
+    }
+    source.push_str("const result = step0(seed);\nconsole.log(result);\n");
+    let extra_chunks = [("static/peer", source.as_str())];
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&extra_chunks));
+
+    assert_entry_output(&fixture, "3\n");
+    assert_eq!(
+        execution(&fixture, "result"),
+        serde_json::json!({"complete": true, "precision_losses": []})
+    );
+}
+
+#[test]
 fn finite_recursive_function_reports_cycle_without_changing_runtime_result() {
     let fixture = run_fixture(FixtureOpts::new(
         "function factory(count) { return count ? factory(count - 1) : 3; }\nconst result = factory(2);\nconst following = 4;\nconsole.log(result + following);",
