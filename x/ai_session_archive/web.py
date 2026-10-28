@@ -97,18 +97,6 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
             return page
 
     app.include_router(api)
-    if frontend_dir is None:
-        index = find_path(_FRONTEND_INDEX)
-        if index is not None:
-            frontend_dir = index.parent
-    if frontend_dir is not None:
-        index = frontend_dir / "index.html"
-
-        @app.get("/", include_in_schema=False)
-        def home() -> FileResponse:
-            return FileResponse(index, headers={"Cache-Control": "no-store"})
-
-        app.mount("/", StaticFiles(directory=frontend_dir), name="frontend")
     install_login(
         app,
         LoginConfig(
@@ -125,4 +113,16 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
             allowed_subject=settings.oidc_allowed_subject,
         ),
     )
+    if frontend_dir is None:
+        index = find_path(_FRONTEND_INDEX)
+        if index is not None:
+            frontend_dir = index.parent
+    if frontend_dir is not None:
+        index = frontend_dir / "index.html"
+
+        @app.get("/", include_in_schema=False)
+        def home() -> FileResponse:
+            return FileResponse(index, headers={"Cache-Control": "no-store"})
+
+        app.mount("/", StaticFiles(directory=frontend_dir), name="frontend")
     return app
