@@ -169,9 +169,7 @@ ROTATIONS = Config(
 
 # The content hash in the ConfigMap's name rolls the CronJob's template on a roster change.
 CONFIG_MAP = ConfigMapArgs(
-    name="authentik-jwt-rotations-config",
-    namespace=NAMESPACE,
-    data={_CONFIG_FILE: yaml_config(ROTATIONS.model_dump(mode="json", exclude_unset=True))},
+    name="authentik-jwt-rotations-config", namespace=NAMESPACE, data={_CONFIG_FILE: yaml_config(ROTATIONS)}
 )
 
 

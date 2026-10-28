@@ -113,9 +113,7 @@ def _unique_credentials() -> tuple[_MountedCredential, ...]:
 
 # The content hash in the ConfigMap's name rolls the CronJob's template on a roster change.
 CONFIG_MAP = ConfigMapArgs(
-    name="forgejo-token-rotations-config",
-    namespace=_NAMESPACE,
-    data={_CONFIG_FILE: yaml_config(ROTATIONS.model_dump(mode="json", exclude_unset=True))},
+    name="forgejo-token-rotations-config", namespace=_NAMESPACE, data={_CONFIG_FILE: yaml_config(ROTATIONS)}
 )
 
 

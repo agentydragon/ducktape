@@ -118,12 +118,11 @@ class Console(Construct):
         )
         self._add_rbac(service_account)
         env = self._container_env()
-        config_content = console_config.config().model_dump(mode="json", exclude_unset=True)
         config = SettingsFile(
             self,
             "config",
             metadata=ApiObjectMetadata(name="config", namespace=NAMESPACE),
-            content=yaml_config(config_content),
+            content=yaml_config(console_config.config()),
             path="/etc/haku-console/config/config.yaml",
         )
         self._add_deployment(service_account, env, config)

@@ -142,7 +142,7 @@ _CONFIG_DATA = {
     "public_base_url": "https://airlock.allegedly.works",
     "oidc_issuer": "https://auth.allegedly.works/application/o/airlock-server/",
     "port": SERVICE.port.number,
-    "oauth": OAUTH_CONFIG.model_dump(mode="json", exclude_unset=True),
+    "oauth": OAUTH_CONFIG,
 }
 CONFIG_MAP = ConfigMapArgs(
     name="airlock-config",

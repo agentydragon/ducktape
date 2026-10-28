@@ -73,7 +73,7 @@ class Target:
 @dataclass(frozen=True)
 class SshMcpConfig:
     targets: tuple[Target, ...]
-    settings: dict[str, object]
+    settings: SshSettings
     known_hosts: str
     switch_agent_public_key: str
 
@@ -140,8 +140,5 @@ def load() -> SshMcpConfig:
     )
     switch_agent_public_key = " ".join(_read_input(SWITCH_AGENT_PUBLIC_KEY).split()[:2])
     return SshMcpConfig(
-        targets=targets,
-        settings=settings.model_dump(mode="json", exclude_unset=True),
-        known_hosts=known_hosts,
-        switch_agent_public_key=switch_agent_public_key,
+        targets=targets, settings=settings, known_hosts=known_hosts, switch_agent_public_key=switch_agent_public_key
     )

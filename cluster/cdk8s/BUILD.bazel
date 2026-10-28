@@ -280,7 +280,26 @@ py_library(
         "//agentplane/system_tests/k3s:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
-    deps = ["@pypi//cdk8s"],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_config_format",
+    srcs = ["test_config_format.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":config_format",
+        "//:conftest",
+        "//util:settings_contract",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
 )
 
 py_library(

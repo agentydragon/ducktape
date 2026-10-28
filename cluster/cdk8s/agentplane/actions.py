@@ -311,7 +311,7 @@ class Actions(Construct):
             "token_audience": WORKLOAD_TOKEN_AUDIENCE,
             # CLEANUP(added 2026-10-27): Keep false until the manifest key is removed after this image rolls out.
             "integrated_connection_service": False,
-            "operator_oidc": props.operator_oidc.model_dump(mode="json", exclude_unset=True),
+            "operator_oidc": props.operator_oidc,
             "policy_namespace": env.namespace,
             "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
             "direct_wait_seconds": 30,
@@ -325,10 +325,8 @@ class Actions(Construct):
                 "allowed_push_hosts": list(props.web_push.allowed_push_hosts),
             }
         if props.mcp_client_metadata is not None:
-            content["mcp_client_metadata"] = props.mcp_client_metadata.model_dump(mode="json", exclude_unset=True)
-        content["mcp_servers"] = {
-            key: server.model_dump(mode="json", exclude_unset=True) for key, server in props.mcp_servers.items()
-        }
+            content["mcp_client_metadata"] = props.mcp_client_metadata
+        content["mcp_servers"] = dict(props.mcp_servers)
         groups = dict(props.action_groups)
         if props.orchestration_v1 is not None:
             groups[ORCHESTRATION_GROUP] = _orchestration_group(env, props.orchestration_v1)
@@ -342,9 +340,7 @@ class Actions(Construct):
                 "token_file": f"{_PEER_TOKEN_DIR}/history",
                 "request_timeout_s": _PEER_TIMEOUT_SECONDS,
             }
-        content["action_groups"] = {
-            key: group.model_dump(mode="json", exclude_unset=True) for key, group in groups.items()
-        }
+        content["action_groups"] = groups
         settings = SettingsFile(
             self,
             "settings",

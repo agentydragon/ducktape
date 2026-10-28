@@ -18,6 +18,7 @@ from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from pydantic import BaseModel
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecRestic,
     ReplicationSourceSpecResticCacheCapacity,
@@ -147,7 +148,7 @@ def _quantities(**values: str) -> dict[str, k8s.Quantity]:
     return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
 
 
-def _settings_config_map(scope: Construct, name: str, content: dict[str, object]) -> k8s.KubeConfigMap:
+def _settings_config_map(scope: Construct, name: str, content: BaseModel | dict[str, object]) -> k8s.KubeConfigMap:
     return k8s.KubeConfigMap(
         scope,
         name,
@@ -178,9 +179,7 @@ def _backend_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Pr
 
 def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: ConfigMap) -> None:
     installer_model = components.Config(config_dir=Path(_CONFIG_DIR), components=_COMPONENTS)
-    installer_settings = _settings_config_map(
-        scope, "component-installer", installer_model.model_dump(mode="json", exclude_unset=True)
-    )
+    installer_settings = _settings_config_map(scope, "component-installer", installer_model)
     k8s.KubeDeployment(
         scope,
         "deployment",

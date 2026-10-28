@@ -111,23 +111,21 @@ class Notifications(Construct):
             "namespace": env.namespace,
             "token_audience": TOKEN_AUDIENCE,
             "operator_reader_account": "app",
-            "notice_debounce": NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=120).model_dump(
-                mode="json", exclude_unset=True
-            ),
+            "notice_debounce": NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=120),
             "actions": ActionsSettings(
                 url=AnyHttpUrl(f"http://{actions.fqdn}:{actions.port.number}"),
                 token_file=Path("/var/run/secrets/notifications/actions"),
-            ).model_dump(mode="json", exclude_unset=True),
+            ),
             "runner_gateway": RunnerGatewaySettings(
                 control_target=gateway_control_target, token_file=Path("/var/run/secrets/notifications/gateway")
-            ).model_dump(mode="json", exclude_unset=True),
+            ),
             "history_service": HistoryServiceSettings(
                 target=f"{history.fqdn}:{history.pod_port}", token_file=Path("/var/run/secrets/notifications/history")
-            ).model_dump(mode="json", exclude_unset=True),
+            ),
             "session_dispatcher": SessionDispatcherSettings(
                 target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
                 token_file=Path("/var/run/secrets/notifications/dispatcher"),
-            ).model_dump(mode="json", exclude_unset=True),
+            ),
             "github": {"app_id": github.app_id} if github is not None else None,
         }
         settings = SettingsFile(

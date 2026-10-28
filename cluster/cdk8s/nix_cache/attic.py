@@ -95,9 +95,7 @@ ROTATOR_CONFIG = Config(
 
 SERVER_CONFIG_MAP = ConfigMapArgs(name=_SERVER_CONFIG_MAP, namespace=NAMESPACE, files=["server.toml"])
 ROTATORS_CONFIG_MAP = ConfigMapArgs(
-    name=_ROTATORS_CONFIG_MAP,
-    namespace=NAMESPACE,
-    data={"rotators.yaml": yaml_config(ROTATOR_CONFIG.model_dump(mode="json", exclude_unset=True))},
+    name=_ROTATORS_CONFIG_MAP, namespace=NAMESPACE, data={"rotators.yaml": yaml_config(ROTATOR_CONFIG)}
 )
 
 

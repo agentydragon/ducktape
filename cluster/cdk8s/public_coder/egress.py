@@ -62,7 +62,7 @@ def add_relay_settings(scope: Construct) -> PodWiring:
         scope,
         "egress-sidecar-settings",
         metadata=ApiObjectMetadata(name=_SETTINGS_CONFIG_MAP, namespace=NAMESPACE),
-        content=yaml_config(settings.model_dump(mode="json", exclude_unset=True)),
+        content=yaml_config(settings),
         path=_SETTINGS_PATH,
     ).pod_wiring(volume_name=_SETTINGS_VOLUME, env=sidecar_config.Settings.config_file_env)
 

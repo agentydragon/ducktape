@@ -247,7 +247,7 @@ def add_sidecar_settings(
         scope,
         f"{name}-settings",
         metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-        content=yaml_config(settings.model_dump(mode="json", exclude_unset=True, exclude_none=True)),
+        content=yaml_config(settings, exclude_none=True),
         path=_SIDECAR_SETTINGS_PATH,
     )
 

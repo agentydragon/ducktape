@@ -81,7 +81,7 @@ class McpEdge(Construct):
             "host": "0.0.0.0",
             "port": self.endpoint.pod_port,
             "actions_target": f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
-            "operator_oidc": props.operator_oidc.model_dump(mode="json", exclude_unset=True),
+            "operator_oidc": props.operator_oidc,
             "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
             "mintable_accounts": sorted(f"{account.namespace}/{account.name}" for account in props.mintable_accounts),
         }

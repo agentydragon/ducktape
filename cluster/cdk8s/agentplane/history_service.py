@@ -116,9 +116,7 @@ class HistoryService(Construct):
             )
         )
         content = {
-            "reader_accounts": [
-                reader.model_dump() for reader in sorted(callers, key=lambda reader: (reader.namespace, reader.name))
-            ],
+            "reader_accounts": sorted(callers, key=lambda reader: (reader.namespace, reader.name)),
             "token_audience": TOKEN_AUDIENCE,
             "listen_address": f"0.0.0.0:{endpoint.pod_port}",
             "ingress": {
