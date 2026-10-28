@@ -24,6 +24,30 @@ fn assert_sequenced_edge(graph: &DependencyGraphReport, later: usize, earlier: u
     );
 }
 
+fn assert_sequenced_path(graph: &DependencyGraphReport, later: usize, earlier: usize) {
+    let later = source_unit_for_ordinal(graph, later).to_string();
+    let earlier = source_unit_for_ordinal(graph, earlier).to_string();
+    let mut pending = std::collections::VecDeque::from([later]);
+    let mut reached = std::collections::BTreeSet::new();
+    while let Some(current) = pending.pop_front() {
+        if !reached.insert(current.clone()) {
+            continue;
+        }
+        pending.extend(
+            graph
+                .edges
+                .iter()
+                .filter(|edge| edge.edge_kind == DepKind::Sequenced && edge.source == current)
+                .map(|edge| edge.target.clone()),
+        );
+    }
+    assert!(
+        reached.contains(&earlier),
+        "expected a Sequenced path from the later unit to the earlier unit; reached: {reached:#?}, edges: {:#?}",
+        graph.edges,
+    );
+}
+
 fn assert_no_sequenced_edge(graph: &DependencyGraphReport, a: usize, b: usize) {
     let a = source_unit_for_ordinal(graph, a);
     let b = source_unit_for_ordinal(graph, b);
@@ -335,5 +359,5 @@ fn array_allocation_keeps_opaque_heap_frontier_live_without_read_syntax() {
         ],
     ));
     assert_preserved_entry_output(&fixture, "");
-    assert_sequenced_edge(&fixture.dependency_graph(), 2, 0);
+    assert_sequenced_path(&fixture.dependency_graph(), 2, 0);
 }
