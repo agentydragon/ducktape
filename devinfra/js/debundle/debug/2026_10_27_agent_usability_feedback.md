@@ -2,7 +2,7 @@
 
 Remaining requests from the integrator and structural-ownership,
 selector/contract-authoring, and callback/effect-analysis workers, reviewed
-against Ducktape [`ab74b92342`](https://github.com/agentydragon/ducktape/commit/ab74b9234269dcb5ce19006529b8cfe2f8d95760).
+against Ducktape [`7f8ce44b91`](https://github.com/agentydragon/ducktape/commit/7f8ce44b914250e92cf637ae02ce0c01c51a1999).
 Examples are generic; no private source or diagnostic payload is included.
 
 ## A — Extend causal diagnostics beyond supported write witnesses
@@ -15,6 +15,9 @@ member writes or direct computed-key writes through an imported namespace or
 recognized alias. Other receiver shapes and guard families remain inconclusive;
 the query also does not explain taint or exposure causes. Its deterministic
 write witness does not establish the globally earliest cause.
+`spec audit-contracts` separately probes individual chunk-export contracts only
+after a passing full-pipeline baseline; a failing ownership baseline stops
+before those removal probes, so the audit does not replace this causal trace.
 
 **Acceptance:** extend the supported traces to additional guard and taint
 families. Connect the constraining dependency to the matched contract/signature
