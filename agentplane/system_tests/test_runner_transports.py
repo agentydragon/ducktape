@@ -37,7 +37,7 @@ async def _turn(
     shell_command: str | None = None,
     response: str = "Done.",
 ) -> tuple[Turn, list[event_log_pb2.EventEntry], ModelRequest[Any]]:
-    collecting = asyncio.create_task(agent.next_turn())
+    collecting = asyncio.create_task(agent.next_turn(awaiting_command_id=command_id))
     command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text=prompt))
     admission = await client.submit_input(agent.thread_id, command_id, prompt)
     if isinstance(admission, session_dispatcher_pb2.Dispatch):

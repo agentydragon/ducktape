@@ -163,10 +163,12 @@ class Agent:
             await model.reply(await model.request(), Text("Done."))
         return turn.result()
 
-    async def next_turn(self) -> Turn:
+    async def next_turn(self, *, awaiting_command_id: str | None = None) -> Turn:
         """Collect the next turn after the last one collected, whatever started it: an inbox notice
-        the platform delivered, for one. `accepted` is when collecting began."""
-        return await self._collect(after=self._cursor, awaiting_command_id=None)
+        the platform delivered, for one. Pass a command ID when the caller is about to submit that
+        command; this keeps a retained terminal snapshot from ending the stream before admission.
+        `accepted` is when collecting began."""
+        return await self._collect(after=self._cursor, awaiting_command_id=awaiting_command_id)
 
     async def _collect(self, *, after: int, awaiting_command_id: str | None) -> Turn:
         turn = Turn(accepted=time.monotonic())
