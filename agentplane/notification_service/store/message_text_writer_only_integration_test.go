@@ -42,7 +42,7 @@ func TestMessageTextWriterMigrationRequiresBackfillAndRetiresOldCommand(t *testi
 	if err := migrations.UpTo(ctx, db, 23); err == nil || !strings.Contains(err.Error(), "Message text backfill is incomplete") {
 		t.Fatalf("text-only writer migration error = %v, want incomplete-backfill gate", err)
 	}
-	assertLatestGooseVersion(t, db, 21)
+	assertLatestGooseVersion(t, db, 22)
 	assertTableExists(t, db, "notification_message_text_backfill", true)
 	if after := readMessageWriterSnapshot(t, db, sent.ID); !sameMessageWriterSnapshot(before, after) {
 		t.Fatalf("rejected migration changed retained Message: before %+v, after %+v", before, after)
