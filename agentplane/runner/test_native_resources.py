@@ -14,7 +14,7 @@ from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.testing import events
 from agentplane.runner.testing.config import RunnerTestConfig
-from agentplane.runner.testing.driver import RunnerDriver, running
+from agentplane.runner.testing.driver import RunnerDriver, runner_test_session_id, running
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.testing.scripted_model import ScriptedModel, Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -98,7 +98,7 @@ async def test_native_history_and_resume_resources(
     """
     name = "claude" if harness == runner_pb2.HARNESS_CLAUDE else "codex"
     session_id = "native-resource-profile"
-    directory = config.state_dir / "sessions" / session_id / name
+    directory = config.state_dir / "sessions" / runner_test_session_id(session_id) / name
     inputs = [f"User marker {index}: " + "u" * 2048 for index in range(history_size + 1)]
     outputs = [f"Assistant marker {index}: " + "a" * 2048 for index in range(history_size + 1)]
     artifact = undeclared_outputs_dir() / f"native-{name}-{history_size}-resources.json"

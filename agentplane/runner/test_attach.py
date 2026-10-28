@@ -151,7 +151,7 @@ async def test_seal_stops_the_running_harness_and_ends_live_followers(
     await model.reply(await model.request(), Text("SEED_OK"))
     await first.until(events.turn_completed)
     await driver.quiesce()
-    page = await driver.history.read_session_events("seal-1", limit=1)
+    page = await driver.history.read_session_events(first.attached.session_id, limit=1)
     assert page.HasField("feed_state")
     assert page.feed_state.HasField("sealed")
     seal = page.feed_state.sealed.cursor
@@ -203,7 +203,7 @@ async def test_open_rejects_a_mismatched_spec(driver: RunnerDriver, spec: runner
 
 
 async def test_setup_runs_in_thread_cwd_before_harness_and_replays_output(
-    driver: RunnerDriver, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     gate = Path(spec.cwd) / "release-setup"
     script = 'pwd; printf "setup stderr\\n" >&2; while [ ! -f release-setup ]; do sleep 0.05; done'
@@ -217,6 +217,10 @@ async def test_setup_runs_in_thread_cwd_before_harness_and_replays_output(
     assert finished.event.setup_finished.exit_code == 0
     await first.submit_input("setup-success-input", "Continue after setup.")
     await first.until(events.is_kind("harness_started"))
+    request = await model.request()
+    assert request.user_texts == ["Continue after setup."]
+    await model.reply(request, Text("SETUP_OK"))
+    await first.until(events.turn_completed)
     assert [entry.event.WhichOneof("observation") for entry in first.seen].index("setup_finished") < [
         entry.event.WhichOneof("observation") for entry in first.seen
     ].index("harness_started")
