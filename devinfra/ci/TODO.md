@@ -1,5 +1,21 @@
 # CI TODOs
 
+## Distinguish ordinary and race test status
+
+`BuildBuddy / Bazel tests (live)` watches only the ordinary test invocation; it
+can pass while the later Go race phase is still running or fails. Show the race
+phase separately or make the existing status explicit about its scope. Preserve
+the overall `bazel-ci / Test & Build` job as the authoritative gate, and handle
+skipped race phases, cancellation, and failures without reporting them as passes.
+
+## Consolidate Bazel invocation-role plumbing
+
+`bazel-ci.yml` repeats the test, build, and race roles across ID generation,
+linkage, and environment forwarding. Define their role-to-ID mapping once and
+derive the other representations from it. Preserve all IDs for diagnostics and
+cancellation, while keeping race-configured outputs out of the ordinary test
+and build evidence used by release and image publication.
+
 ## Consider pushing images from the BuildBuddy runner
 
 Today the push job downloads the OCI layout to the GitHub Actions runner and
