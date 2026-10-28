@@ -8,7 +8,7 @@ import { afterEach, expect, it } from "vitest";
 import type { SessionBrowserApi } from "./api";
 import { SessionViewer } from "./session-viewer";
 import { sessionFixtureApi } from "./fixtures/session-data";
-import type { EventPage, EventRecord, SessionPage, SessionSummary } from "./schema";
+import type { EventPage, EventRecord, SessionPage, SessionSummary, SessionVersion } from "./schema";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -91,6 +91,94 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   expect(view.textContent).not.toContain("I found two snapshots for this session.");
 });
 
+it("distinguishes inventory, failed and missing imports from an empty captured version", async () => {
+  function summary(
+    id: string,
+    title: string,
+    transcript_status: SessionSummary["transcript_status"],
+    version_count = 0,
+    latest_version_id: string | null = null,
+    latest_version_record_count: number | null = null
+  ): SessionSummary {
+    return {
+      id,
+      machine_id: "thinkpad",
+      harness: "codex",
+      title,
+      cwd: null,
+      started_at: null,
+      last_activity_at: null,
+      latest_version_id,
+      version_count,
+      latest_version_record_count,
+      transcript_status,
+      parent_session_id: null,
+      parent_link_kind: null,
+      parent_native_session_id: null,
+      identity_inferred: false,
+    };
+  }
+
+  const sessions = [
+    summary("pending", "Inventory-only placeholder", "pending"),
+    summary("failed", "Failed import placeholder", "failed"),
+    summary("unavailable", "Unavailable source placeholder", "unavailable"),
+    summary("empty", "Captured empty transcript", "captured", 1, "empty-version", 0),
+  ];
+  const emptyVersion: SessionVersion = {
+    id: "empty-version",
+    captured_at: "2026-10-28T17:00:00Z",
+    sha256: "a".repeat(64),
+    byte_size: 0,
+    source_path: "/archive/empty.jsonl",
+    complete: true,
+    parse_issue_count: 0,
+    snapshot_id: "empty-snapshot",
+  };
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    listSessions() {
+      return Promise.resolve({ data: sessions, next_cursor: null });
+    },
+    getSession(sessionId) {
+      const session = sessions.find(({ id }) => id === sessionId);
+      if (session === undefined) throw new Error(`Unknown fixture session ${sessionId}`);
+      return Promise.resolve(session);
+    },
+    listVersions(sessionId) {
+      return Promise.resolve(sessionId === "empty" ? [emptyVersion] : []);
+    },
+    listEvents() {
+      return Promise.resolve({ data: [], next_cursor: null });
+    },
+  };
+  const view = await renderViewer(api);
+
+  expect(findButton(view, "Inventory-only placeholder").textContent).toContain("Inventory only");
+  expect(findButton(view, "Failed import placeholder").textContent).toContain("Import failed");
+  expect(findButton(view, "Unavailable source placeholder").textContent).toContain("No captured version");
+  expect(findButton(view, "Captured empty transcript").textContent).toContain("Latest capture empty");
+  expect(view.textContent).toContain("Restic inventory found a file, but no transcript version has been imported yet.");
+
+  await act(async () => {
+    findButton(view, "Failed import placeholder").click();
+    await flush();
+  });
+  expect(view.textContent).toContain("Importing an inventoried file failed, so no transcript version is available.");
+
+  await act(async () => {
+    findButton(view, "Unavailable source placeholder").click();
+    await flush();
+  });
+  expect(view.textContent).toContain("Inventory alone does not establish that a usable file was captured");
+
+  await act(async () => {
+    findButton(view, "Captured empty transcript").click();
+    await flush();
+  });
+  expect(view.textContent).toContain("This captured version contains no JSONL records.");
+});
+
 it("shows inferred subagent links and navigates to a placeholder parent", async () => {
   const view = await renderViewer(sessionFixtureApi);
 
@@ -105,7 +193,7 @@ it("shows inferred subagent links and navigates to a placeholder parent", async 
     findButton(view, "Inferred Claude parent · session 12ab").click();
     await flush();
   });
-  expect(view.textContent).toContain("This path-derived placeholder has no captured transcript yet.");
+  expect(view.textContent).toContain("No transcript version is available. Inventory alone does not establish");
   expect(view.textContent).toContain("Parent inferred from Claude subagent path");
   expect(view.textContent).toContain("Inspect a local transcript");
 
@@ -127,6 +215,8 @@ it("shows unresolved native parent metadata without inventing a session link", a
     last_activity_at: null,
     latest_version_id: null,
     version_count: 0,
+    latest_version_record_count: null,
+    transcript_status: "unavailable",
     parent_session_id: null,
     parent_link_kind: "codex_parent_thread_id_unresolved",
     parent_native_session_id: "thread-parent-123",
@@ -157,6 +247,8 @@ it("shows conflicting Codex native and parent IDs without inventing a parent lin
     last_activity_at: null,
     latest_version_id: null,
     version_count: 0,
+    latest_version_record_count: null,
+    transcript_status: "unavailable",
     parent_session_id: null,
     parent_link_kind: "codex_parent_thread_id_inconsistent",
     parent_native_session_id: null,
@@ -193,6 +285,8 @@ it("labels a resolved Codex parent_thread_id link and navigates to the captured 
     last_activity_at: null,
     latest_version_id: null,
     version_count: 0,
+    latest_version_record_count: null,
+    transcript_status: "unavailable",
     parent_session_id: null,
     parent_link_kind: null,
     parent_native_session_id: null,
@@ -309,6 +403,8 @@ it("does not append a session page after changing the harness filter", async () 
         last_activity_at: null,
         latest_version_id: null,
         version_count: 0,
+        latest_version_record_count: null,
+        transcript_status: "unavailable",
         parent_session_id: null,
         parent_link_kind: null,
         parent_native_session_id: null,

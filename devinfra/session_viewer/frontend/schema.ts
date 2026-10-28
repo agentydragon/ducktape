@@ -1,4 +1,5 @@
 export type Harness = "claude" | "codex";
+export type TranscriptStatus = "captured" | "pending" | "failed" | "unavailable";
 
 export type Machine = {
   id: string;
@@ -15,6 +16,8 @@ export type SessionSummary = {
   last_activity_at: string | null;
   latest_version_id: string | null;
   version_count: number;
+  latest_version_record_count: number | null;
+  transcript_status: TranscriptStatus;
   parent_session_id: string | null;
   parent_link_kind: string | null;
   parent_native_session_id: string | null;

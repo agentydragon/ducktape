@@ -41,6 +41,45 @@ function parentLinkLabel(kind: string | null): string | null {
   }
 }
 
+function transcriptStatusLabel(session: SessionSummary): string {
+  switch (session.transcript_status) {
+    case "captured":
+      return session.latest_version_record_count === 0 ? "Latest capture empty" : "Captured";
+    case "pending":
+      return "Inventory only";
+    case "failed":
+      return "Import failed";
+    case "unavailable":
+      return "No captured version";
+  }
+}
+
+function transcriptStatusColor(session: SessionSummary): string {
+  switch (session.transcript_status) {
+    case "captured":
+      return "green";
+    case "pending":
+      return "yellow";
+    case "failed":
+      return "red";
+    case "unavailable":
+      return "gray";
+  }
+}
+
+function noVersionExplanation(status: SessionSummary["transcript_status"]): string {
+  switch (status) {
+    case "pending":
+      return "Restic inventory found a file, but no transcript version has been imported yet.";
+    case "failed":
+      return "Importing an inventoried file failed, so no transcript version is available.";
+    case "unavailable":
+      return "No transcript version is available. Inventory alone does not establish that a usable file was captured; the source may be absent or unavailable.";
+    case "captured":
+      return "The index reports a captured version, but no version details are available.";
+  }
+}
+
 export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): JSX.Element {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [selectedMachineId, setSelectedMachineId] = useState("");
@@ -483,6 +522,9 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                         Identity inferred
                       </Badge>
                     )}
+                    <Badge color={transcriptStatusColor(selectedSession)} variant="light">
+                      {transcriptStatusLabel(selectedSession)}
+                    </Badge>
                     {selectedSession.native_session_id_conflict && (
                       <Badge color="red" variant="light">
                         Conflicting native session IDs
@@ -501,11 +543,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                     Started {formatDateTime(selectedSession.started_at)} · Last active{" "}
                     {formatDateTime(selectedSession.last_activity_at)}
                   </Text>
-                  {selectedSession.identity_inferred && (
-                    <Text size="xs" c="orange" mt={4}>
-                      This path-derived placeholder has no captured transcript yet.
-                    </Text>
-                  )}
                   {selectedSession.native_session_id_conflict && (
                     <Text size="xs" c="red" mt={4} style={{ overflowWrap: "anywhere" }}>
                       Native session ID candidates:{" "}
@@ -623,9 +660,14 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
               )}
               {selectedVersion === null && !loadingVersions ? (
                 <Center h={180}>
-                  <Text size="sm" c="dimmed">
-                    No captured version is available for this session.
-                  </Text>
+                  <Stack align="center" gap="xs" maw={480}>
+                    <Text size="sm" fw={600}>
+                      {transcriptStatusLabel(selectedSession)}
+                    </Text>
+                    <Text size="sm" c="dimmed" ta="center">
+                      {noVersionExplanation(selectedSession.transcript_status)}
+                    </Text>
+                  </Stack>
                 </Center>
               ) : loadingEvents && events.length === 0 ? (
                 <Center style={{ flex: 1 }}>
@@ -698,9 +740,14 @@ function SessionRow({
           <Text size="xs" c="dimmed">
             {harnessLabel(session.harness)}
           </Text>
-          <Text size="xs" c="dimmed">
-            {session.version_count} {session.version_count === 1 ? "version" : "versions"}
-          </Text>
+          <Group gap={6} wrap="wrap" justify="flex-end">
+            <Badge size="xs" color={transcriptStatusColor(session)} variant="light">
+              {transcriptStatusLabel(session)}
+            </Badge>
+            <Text size="xs" c="dimmed">
+              {session.version_count} {session.version_count === 1 ? "version" : "versions"}
+            </Text>
+          </Group>
         </Group>
       </Stack>
     </Button>

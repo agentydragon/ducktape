@@ -13,6 +13,13 @@ class Harness(StrEnum):
     CODEX = "codex"
 
 
+class TranscriptStatus(StrEnum):
+    CAPTURED = "captured"
+    PENDING = "pending"
+    FAILED = "failed"
+    UNAVAILABLE = "unavailable"
+
+
 class Machine(BaseModel):
     id: str
     display_name: str
@@ -36,6 +43,12 @@ class SessionSummary(BaseModel):
     last_activity_at: datetime | None
     version_count: int
     latest_version_id: UUID | None
+    latest_version_record_count: int | None = Field(
+        description="JSONL records in the latest captured version, or null when no latest version is linked."
+    )
+    transcript_status: TranscriptStatus = Field(
+        description="Availability derived from captured versions and inventoried file processing state."
+    )
 
 
 class SessionVersion(BaseModel):

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from x.ai_session_archive.database import (
@@ -18,7 +18,16 @@ from x.ai_session_archive.database import (
     SessionRow,
     SnapshotFileRow,
 )
-from x.ai_session_archive.models import Event, EventPage, Harness, Machine, SessionPage, SessionSummary, SessionVersion
+from x.ai_session_archive.models import (
+    Event,
+    EventPage,
+    Harness,
+    Machine,
+    SessionPage,
+    SessionSummary,
+    SessionVersion,
+    TranscriptStatus,
+)
 
 MAX_EVENT_PAGE_SIZE = 500
 MAX_DELTA_DEPTH = 63
@@ -47,11 +56,49 @@ def _session_summary_query() -> Any:
         .limit(1)
         .scalar_subquery()
     )
-    return select(SessionRow, version_count.label("version_count"), latest_version_id.label("latest_version_id"))
+    latest_version_record_count = (
+        select(FileVersionRow.record_count)
+        .join(
+            SnapshotFileRow,
+            SnapshotFileRow.file_version_id == FileVersionRow.id,
+        )
+        .join(
+            ResticSnapshotRow,
+            (ResticSnapshotRow.machine_id == SnapshotFileRow.machine_id)
+            & (ResticSnapshotRow.snapshot_id == SnapshotFileRow.snapshot_id),
+        )
+        .where(FileVersionRow.session_id == SessionRow.id)
+        .where(SnapshotFileRow.status.in_(("complete", "partial")))
+        .order_by(ResticSnapshotRow.captured_at.desc(), ResticSnapshotRow.snapshot_id.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    has_pending_file = exists(
+        select(1).where(SnapshotFileRow.session_id == SessionRow.id, SnapshotFileRow.status == "pending")
+    )
+    has_failed_file = exists(
+        select(1).where(SnapshotFileRow.session_id == SessionRow.id, SnapshotFileRow.status == "failed")
+    )
+    return select(
+        SessionRow,
+        version_count.label("version_count"),
+        latest_version_id.label("latest_version_id"),
+        latest_version_record_count.label("latest_version_record_count"),
+        has_pending_file.label("has_pending_file"),
+        has_failed_file.label("has_failed_file"),
+    )
 
 
 def _summary(row: Any) -> SessionSummary:
-    session_row, version_count, latest_version_id = row
+    session_row, version_count, latest_version_id, latest_version_record_count, has_pending_file, has_failed_file = row
+    if version_count > 0:
+        transcript_status = TranscriptStatus.CAPTURED
+    elif has_pending_file:
+        transcript_status = TranscriptStatus.PENDING
+    elif has_failed_file:
+        transcript_status = TranscriptStatus.FAILED
+    else:
+        transcript_status = TranscriptStatus.UNAVAILABLE
     return SessionSummary(
         id=session_row.id,
         machine_id=session_row.machine_id,
@@ -70,6 +117,8 @@ def _summary(row: Any) -> SessionSummary:
         last_activity_at=session_row.last_activity_at,
         version_count=version_count,
         latest_version_id=latest_version_id,
+        latest_version_record_count=latest_version_record_count,
+        transcript_status=transcript_status,
     )
 
 

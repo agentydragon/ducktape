@@ -20,7 +20,9 @@ from x.ai_session_archive.database import (
     FileVersionRow,
     MachineRow,
     RecordPayloadRow,
+    ResticSnapshotRow,
     SessionRow,
+    SnapshotFileRow,
     make_session_factory,
 )
 from x.ai_session_archive.web import create_app
@@ -31,6 +33,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     session_id, child_id, version_id, payload_id = (uuid4() for _ in range(4))
+    empty_session_id, empty_version_id, pending_session_id, failed_session_id = (uuid4() for _ in range(4))
     captured_at = datetime(2026, 1, 1, tzinfo=UTC)
     raw_line = b'{"broken":\xff}\n'
     with make_session_factory(engine)() as db:
@@ -52,6 +55,28 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                     source_relative_path="child.jsonl",
                     parent_session_id=session_id,
                     parent_link_kind="claude_path_inferred",
+                    identity_inferred=True,
+                ),
+                SessionRow(
+                    id=empty_session_id,
+                    machine_id="fake-host",
+                    harness="codex",
+                    source_path="/fake/empty.jsonl",
+                    source_relative_path="empty.jsonl",
+                ),
+                SessionRow(
+                    id=pending_session_id,
+                    machine_id="fake-host",
+                    harness="codex",
+                    source_path="/fake/pending.jsonl",
+                    source_relative_path="pending.jsonl",
+                ),
+                SessionRow(
+                    id=failed_session_id,
+                    machine_id="fake-host",
+                    harness="codex",
+                    source_path="/fake/failed.jsonl",
+                    source_relative_path="failed.jsonl",
                 ),
                 FileVersionRow(
                     id=version_id,
@@ -68,6 +93,94 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                     is_checkpoint=True,
                     delta_depth=0,
                     parser_version="jsonl-v1",
+                ),
+                FileVersionRow(
+                    id=empty_version_id,
+                    session_id=empty_session_id,
+                    sha256="d" * 64,
+                    byte_size=0,
+                    source_path="/fake/empty.jsonl",
+                    first_seen_at=captured_at,
+                    last_seen_at=captured_at,
+                    first_snapshot_id="empty-snapshot",
+                    complete=True,
+                    parse_issue_count=0,
+                    record_count=0,
+                    is_checkpoint=True,
+                    delta_depth=0,
+                    parser_version="jsonl-v1",
+                ),
+                ResticSnapshotRow(
+                    machine_id="fake-host",
+                    snapshot_id="root-snapshot",
+                    captured_at=captured_at,
+                    paths=["/fake"],
+                    inventory_status="complete",
+                    processing_status="complete",
+                ),
+                ResticSnapshotRow(
+                    machine_id="fake-host",
+                    snapshot_id="empty-snapshot",
+                    captured_at=captured_at,
+                    paths=["/fake"],
+                    inventory_status="complete",
+                    processing_status="complete",
+                ),
+                ResticSnapshotRow(
+                    machine_id="fake-host",
+                    snapshot_id="pending-snapshot",
+                    captured_at=captured_at,
+                    paths=["/fake"],
+                    inventory_status="complete",
+                    processing_status="pending",
+                ),
+                ResticSnapshotRow(
+                    machine_id="fake-host",
+                    snapshot_id="failed-snapshot",
+                    captured_at=captured_at,
+                    paths=["/fake"],
+                    inventory_status="complete",
+                    processing_status="failed",
+                ),
+                SnapshotFileRow(
+                    machine_id="fake-host",
+                    snapshot_id="root-snapshot",
+                    path="/fake/root.jsonl",
+                    session_id=session_id,
+                    change_kind="added",
+                    file_type="file",
+                    byte_size=len(raw_line),
+                    status="complete",
+                    file_version_id=version_id,
+                ),
+                SnapshotFileRow(
+                    machine_id="fake-host",
+                    snapshot_id="empty-snapshot",
+                    path="/fake/empty.jsonl",
+                    session_id=empty_session_id,
+                    change_kind="added",
+                    file_type="file",
+                    status="complete",
+                    file_version_id=empty_version_id,
+                ),
+                SnapshotFileRow(
+                    machine_id="fake-host",
+                    snapshot_id="pending-snapshot",
+                    path="/fake/pending.jsonl",
+                    session_id=pending_session_id,
+                    change_kind="added",
+                    file_type="file",
+                    status="pending",
+                ),
+                SnapshotFileRow(
+                    machine_id="fake-host",
+                    snapshot_id="failed-snapshot",
+                    path="/fake/failed.jsonl",
+                    session_id=failed_session_id,
+                    change_kind="added",
+                    file_type="file",
+                    status="failed",
+                    error="sanitized test failure",
                 ),
                 RecordPayloadRow(
                     id=payload_id,
@@ -112,6 +225,15 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
     assert client.get(f"/api/sessions/{session_id}").json()["id"] == str(session_id)
     children = client.get("/api/sessions", params={"parent_session_id": str(session_id)}).json()
     assert [child["id"] for child in children["data"]] == [str(child_id)]
+    session_rows = client.get("/api/sessions", params={"machine_id": "fake-host", "limit": 500}).json()["data"]
+    sessions_by_id = {row["id"]: row for row in session_rows}
+    assert sessions_by_id[str(session_id)]["transcript_status"] == "captured"
+    assert sessions_by_id[str(session_id)]["latest_version_record_count"] == 1
+    assert sessions_by_id[str(child_id)]["transcript_status"] == "unavailable"
+    assert sessions_by_id[str(empty_session_id)]["transcript_status"] == "captured"
+    assert sessions_by_id[str(empty_session_id)]["latest_version_record_count"] == 0
+    assert sessions_by_id[str(pending_session_id)]["transcript_status"] == "pending"
+    assert sessions_by_id[str(failed_session_id)]["transcript_status"] == "failed"
     versions = client.get(f"/api/sessions/{session_id}/versions").json()["data"]
     assert [version["id"] for version in versions] == [str(version_id)]
     events = client.get(f"/api/sessions/{session_id}/versions/{version_id}/events").json()["data"]
