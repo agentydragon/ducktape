@@ -1,9 +1,9 @@
 # Artifact drafts: Haku on a provider-agnostic loop (Runtime C)
 
-Status: **sketches**, not landed code. Companion to
-[runtime_options.md](runtime_options.md) (Runtime C). Framework shown: **Pydantic AI**
-on the in-cluster **LiteLLM**. Graduates into a real `haku/runtime/x/agent_framework/` component once
-chosen. Kwarg/import names marked _(verify)_ move between Pydantic AI 1.x
+Status: **alternative sketches**, not the implemented Runtime C prototype. Companion to
+[runtime_options.md](runtime_options.md) (Runtime C). The existing
+`haku/runtime/x/agent_framework/` prototype uses Microsoft Agent Framework; these sketches
+explore **Pydantic AI** on the in-cluster **LiteLLM** if that alternative is chosen. Kwarg/import names marked _(verify)_ move between Pydantic AI 1.x
 releases — pin a version and check.
 
 **One repo-side path in these sketches has since moved.** They bake Haku's manual and run

@@ -127,8 +127,9 @@ Framework shortlist, all on the LiteLLM keystone:
 - **LangGraph or Microsoft Agent Framework** — durable, resumable sessions
   (checkpointer/threads), heavier abstraction.
 
-Concrete drafts (Pydantic AI agent + supervisor + k8s wiring):
-[runtime_c_artifacts.md](runtime_c_artifacts.md).
+The experimental implementation uses Microsoft Agent Framework in
+<../runtime/x/agent_framework/README.md>. Alternative Pydantic AI drafts are in
+<runtime_c_artifacts.md>.
 
 ## What Runtime C gives up — the Anthropic surfaces
 
