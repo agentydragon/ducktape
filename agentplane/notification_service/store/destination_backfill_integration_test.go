@@ -163,7 +163,7 @@ func TestBackfillInboxDestinationsResumesAfterInvalidRowAndUsesUUIDIndexes(t *te
 		FROM notification_storage_backfill_progress WHERE singleton`).Scan(&lastID, &complete); err != nil {
 		t.Fatal(err)
 	}
-	if !lastID.Valid || lastID.String != "00000000-0000-0000-0000-000000000210" || complete {
+	if !lastID.Valid || lastID.String != "00000000-0000-0000-0000-000000000200" || complete {
 		t.Fatalf("progress cursor = %v, complete = %t; want 512th UUID and incomplete", lastID, complete)
 	}
 	var rewritten int

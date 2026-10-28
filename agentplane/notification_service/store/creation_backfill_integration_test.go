@@ -140,7 +140,7 @@ func TestSubscriptionCreationBackfillResumesAndRepairsCompletedCursor(t *testing
 		FROM notification_storage_backfill_progress WHERE singleton`).Scan(&cursor, &complete); err != nil {
 		t.Fatal(err)
 	}
-	wantCursor := "00000000-0000-0000-0000-000000000210"
+	wantCursor := "00000000-0000-0000-0000-000000000200"
 	if !cursor.Valid || cursor.String != wantCursor || complete {
 		t.Fatalf("backfill progress = (%v, complete %t), want cursor %s and incomplete", cursor, complete, wantCursor)
 	}
@@ -148,8 +148,8 @@ func TestSubscriptionCreationBackfillResumesAndRepairsCompletedCursor(t *testing
 		t.Fatalf("committed typed rows after interruption = %d, want %d", got, subscriptionCreationBackfillBatchSize)
 	}
 
-	badID := "00000000-0000-0000-0000-000000000211"
-	requestID := "12345678-1234-5678-9abc-000000000211"
+	badID := "00000000-0000-0000-0000-000000000201"
+	requestID := "12345678-1234-5678-9abc-000000000201"
 	if _, err := db.ExecContext(ctx, `UPDATE subscription SET creation = jsonb_set(creation,
 		'{source,request_id}', to_jsonb($2::text), true) WHERE id = $1::uuid`, badID, requestID); err != nil {
 		t.Fatal(err)
