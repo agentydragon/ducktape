@@ -203,9 +203,7 @@ def write_manifests(root: Path) -> None:
             resources=[write_charts(root, BASE_DIR, base_chart)],
             components=[posixpath.relpath(PINS_DIR, BASE_DIR)],
             config_map_generator=[
-                ConfigMapArgs(
-                    name=_POLICY_CONFIG_MAP, namespace=None, data={_POLICY_FILE: yaml_config(_POLICY)}
-                )
+                ConfigMapArgs(name=_POLICY_CONFIG_MAP, namespace=None, data={_POLICY_FILE: yaml_config(_POLICY)})
             ],
             namespaced_by_overlay=True,
         ),
