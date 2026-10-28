@@ -12,6 +12,8 @@ The service is parked; see <README.md> for the implemented contract and
   queue timeout from upstream retry/backoff, and input-side fill waits appear in
   `wayback_cache_input_fill_wait_duration_seconds`.
 - Tune filler concurrency if cache-side `503` remains dominant.
+- Repeat an eval after filling the cache and verify previously stored captures
+  are reused without Internet Archive requests for those captures.
 
 ## Hardening
 
