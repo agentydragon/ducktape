@@ -520,6 +520,7 @@ rust_library(
         "graph/tests.rs",
         "ids.rs",
         "inference.rs",
+        "inference/iterative.rs",
         "lib.rs",
         "module_assignment.rs",
         "purity/builtin_calls.rs",

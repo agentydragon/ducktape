@@ -1,0 +1,248 @@
+//! Growing facts over a finite domain. Producers may contribute to the same key;
+//! consumers are revisited whenever its value or proof dependencies grow.
+//!
+//! Only the completed closure is exposed outside an evaluation. Rules must be
+//! monotone in the order defined by `merge`; absence during evaluation is bottom,
+//! not evidence of impossibility. Optimistic or position-sensitive conclusions
+//! require a separate completion boundary before becoming positive certificates.
+
+use super::Judgment;
+use crate::analysis_inputs::ProofDependencies;
+use std::collections::{BTreeMap, BTreeSet};
+
+pub(crate) trait IterativeRules: Sized {
+    type Key: Clone + Ord;
+    type Fact;
+    type Rule: Clone + Ord;
+
+    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>);
+
+    /// Join a contribution into a fact, returning whether its value changed.
+    /// The domain must have finite height; the join is associative, commutative
+    /// and idempotent. Proof dependencies are joined separately by the engine.
+    fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool;
+}
+
+pub(crate) struct IterativeInference<R: IterativeRules> {
+    rules: R,
+    facts: BTreeMap<R::Key, Judgment<R::Key, R::Fact>>,
+}
+
+impl<R: IterativeRules> IterativeInference<R> {
+    pub(crate) fn new(rules: R) -> Self {
+        Self {
+            rules,
+            facts: BTreeMap::new(),
+        }
+    }
+
+    pub(crate) fn seed(&mut self, key: R::Key, value: R::Fact) {
+        let mut context = IterativeContext::<R>::new(&mut self.facts);
+        context.propose(key, value);
+    }
+
+    /// All producers must be supplied. Source-order rounds preserve clients
+    /// whose conservative approximation depends on the initial source sweep.
+    /// A rule reading its own output runs again in the next round when needed.
+    pub(crate) fn solve(
+        self,
+        producers: impl IntoIterator<Item = R::Rule>,
+    ) -> IterativeFacts<R::Key, R::Fact> {
+        let Self { rules, mut facts } = self;
+        let mut pending: BTreeSet<_> = producers.into_iter().map(|rule| (0usize, rule)).collect();
+        let mut scheduled: BTreeMap<_, _> = pending
+            .iter()
+            .map(|(round, rule)| (rule.clone(), *round))
+            .collect();
+        let mut watchers: BTreeMap<R::Key, BTreeSet<R::Rule>> = BTreeMap::new();
+        let mut evaluations = 0usize;
+        while let Some((round, rule)) = pending.pop_first() {
+            scheduled.remove(&rule);
+            let mut context = IterativeContext::<R>::new(&mut facts);
+            rules.evaluate(&rule, &mut context);
+            evaluations += 1;
+            for key in context.reads {
+                watchers.entry(key).or_default().insert(rule.clone());
+            }
+            for key in context.changed {
+                let Some(dependents) = watchers.get(&key) else {
+                    continue;
+                };
+                for dependent in dependents {
+                    let next_round = if dependent > &rule {
+                        round
+                    } else {
+                        round.checked_add(1).expect("inference round overflow")
+                    };
+                    if scheduled
+                        .get(dependent)
+                        .is_some_and(|scheduled| *scheduled <= next_round)
+                    {
+                        continue;
+                    }
+                    if let Some(previous) = scheduled.insert(dependent.clone(), next_round) {
+                        pending.remove(&(previous, dependent.clone()));
+                    }
+                    pending.insert((next_round, dependent.clone()));
+                }
+            }
+        }
+        IterativeFacts { facts, evaluations }
+    }
+}
+
+/// Mutable access is scoped to one monotone producer. Both absent and present
+/// reads install watchers, including reads made before a producer exists.
+pub(crate) struct IterativeContext<'a, R: IterativeRules> {
+    facts: &'a mut BTreeMap<R::Key, Judgment<R::Key, R::Fact>>,
+    reads: BTreeSet<R::Key>,
+    changed: BTreeSet<R::Key>,
+    dependencies: ProofDependencies,
+}
+
+impl<'a, R: IterativeRules> IterativeContext<'a, R> {
+    fn new(facts: &'a mut BTreeMap<R::Key, Judgment<R::Key, R::Fact>>) -> Self {
+        Self {
+            facts,
+            reads: BTreeSet::new(),
+            changed: BTreeSet::new(),
+            dependencies: ProofDependencies::default(),
+        }
+    }
+
+    pub(crate) fn read(&mut self, key: R::Key) -> Option<&R::Fact> {
+        self.reads.insert(key.clone());
+        let fact = self.facts.get(&key)?;
+        self.dependencies.extend(fact.dependencies());
+        Some(fact.value())
+    }
+
+    /// Writes are immediately visible to subsequent reads in this producer.
+    pub(crate) fn propose(&mut self, key: R::Key, contribution: R::Fact) -> bool {
+        use std::collections::btree_map::Entry;
+        let changed = match self.facts.entry(key.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(Judgment {
+                    value: contribution,
+                    dependencies: self.dependencies.clone(),
+                    premises: self.reads.clone(),
+                });
+                true
+            }
+            Entry::Occupied(mut entry) => {
+                let fact = entry.get_mut();
+                let changed = R::merge(&key, &mut fact.value, contribution);
+                let dependencies = fact.dependencies.clone();
+                fact.dependencies.extend(&self.dependencies);
+                fact.premises.extend(self.reads.iter().cloned());
+                changed || fact.dependencies != dependencies
+            }
+        };
+        if changed {
+            self.changed.insert(key);
+        }
+        changed
+    }
+
+    pub(crate) fn assume(&mut self, dependencies: &ProofDependencies) {
+        self.dependencies.extend(dependencies);
+    }
+
+    pub(crate) fn import<'b, Key, Fact>(&mut self, judgment: &'b Judgment<Key, Fact>) -> &'b Fact {
+        self.dependencies.extend(judgment.dependencies());
+        judgment.value()
+    }
+}
+
+/// Immutable results after every supplied producer and its dependents settle.
+pub(crate) struct IterativeFacts<Key, Fact> {
+    facts: BTreeMap<Key, Judgment<Key, Fact>>,
+    evaluations: usize,
+}
+
+impl<Key: Ord, Fact> IterativeFacts<Key, Fact> {
+    pub(crate) fn get(&self, key: &Key) -> Option<&Judgment<Key, Fact>> {
+        self.facts.get(key)
+    }
+
+    pub(crate) fn into_values(self) -> BTreeMap<Key, Fact> {
+        self.facts
+            .into_iter()
+            .map(|(key, judgment)| (key, judgment.value))
+            .collect()
+    }
+
+    pub(crate) fn evaluations(&self) -> usize {
+        self.evaluations
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis_inputs::ValueInputRef;
+
+    struct Rules;
+    impl IterativeRules for Rules {
+        type Key = usize;
+        type Fact = BTreeSet<usize>;
+        type Rule = usize;
+        fn evaluate(&self, rule: &usize, context: &mut IterativeContext<'_, Self>) {
+            match rule {
+                0 => {
+                    if let Some(values) = context.read(2).cloned() {
+                        context.propose(3, values);
+                    }
+                }
+                1 => {
+                    context.propose(2, BTreeSet::from([10]));
+                }
+                2 => {
+                    context.assume(&ProofDependencies {
+                        value_inputs: BTreeSet::from([ValueInputRef {
+                            defining_chunk: "captured".into(),
+                            input_index: 0,
+                        }]),
+                    });
+                    context.propose(2, BTreeSet::from([20]));
+                }
+                3 => {
+                    if let Some(values) = context.read(3).cloned() {
+                        context.propose(2, values);
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+        fn merge(_: &usize, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+            let before = current.len();
+            current.extend(contribution);
+            current.len() != before
+        }
+    }
+
+    #[test]
+    fn shared_producers_and_cycles_converge_with_provenance() {
+        let facts = IterativeInference::new(Rules).solve(0..4);
+        let result = facts.get(&3).unwrap();
+        assert_eq!(result.value(), &BTreeSet::from([10, 20]));
+        assert_eq!(
+            result.dependencies().value_inputs,
+            BTreeSet::from([ValueInputRef {
+                defining_chunk: "captured".into(),
+                input_index: 0
+            }])
+        );
+        assert!(facts.evaluations() < 12);
+        let reversed = IterativeInference::new(Rules).solve((0..4).rev());
+        assert_eq!(facts.into_values(), reversed.into_values());
+    }
+
+    #[test]
+    fn unsupported_cycle_has_no_fact() {
+        let facts = IterativeInference::new(Rules).solve([0, 3]);
+        assert!(facts.get(&2).is_none());
+        assert!(facts.get(&3).is_none());
+        assert_eq!(facts.evaluations(), 2);
+    }
+}

@@ -14,6 +14,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::analysis_inputs::ProofDependencies;
 
+mod iterative;
+pub(crate) use iterative::{IterativeContext, IterativeInference, IterativeRules};
+
 /// Evaluates one keyed family of positive inference rules.
 ///
 /// A rule must only return a fact whose truth is stable once its required
