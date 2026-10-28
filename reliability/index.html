@@ -216,52 +216,674 @@
     <main>
       <header>
         <div class="eyebrow">Ducktape · CI reliability · 28 October 2026</div>
-        <h1>Remote errors and cleanup failures need different responses.</h1>
+        <h1>Readiness waits are shorter; fleet effects need a soak.</h1>
         <p class="lede">
-          The later-window census includes 69 conclusive Bazel job attempts: 57
-          successes and 12 failures. Eleven failures used zero retries; one
-          tested an older default-policy source. Workflow reruns hid seven
-          first-attempt failures from the latest-run summary.
+          All five changes are merged. Natural all-changes CI passes with cached
+          system tests; the separate uncached worker probe is reported on its
+          own. The journal race has a tested fix. Keep measured phase gains
+          separate from whole-PR feedback.
         </p>
         <p class="meta">
-          Run-creation window: 03:06–06:05 UTC, 28 October 2026. Policy merge:
-          04:35:45 UTC. Job collection: 06:06:33–06:09:15 UTC. Pilot source
-          review <code>50bd44b472e3</code>; latest separate devel validation
-          <code>feb464de8093</code>. Outcomes are a collection sweep; some runs
-          completed after the creation-window cutoff. Separate combined-source
-          validation: the 06:15:14 UTC devel run passed at 06:23:36 UTC with MCP
-          cached. A later run executed both suites fresh and passed at 06:32:33
-          UTC; its detailed comparison is retained in the latency report.
+          Natural run-creation census: 28 October 06:05:00–07:14:04 UTC. Tested
+          all-changes devel source <code>2ae990424df7</code>. Earlier 24–28
+          October evidence remains below with its original scopes. No PR-wide
+          reliability census, matched fleet speedup, live rollout, or agent
+          receipt measurement is claimed.
         </p>
         <div class="metrics">
           <div class="metric">
-            <strong>12 / 69</strong
-            ><span>Failed conclusive Bazel job attempts; not a flake rate</span>
-          </div>
-          <div class="metric">
-            <strong>5 / 58</strong
+            <strong>11 / 11</strong
             ><span
-              >Retry-eligible remote errors under verified zero retries</span
+              >Successful assigned devel Bazel jobs; six other jobs canceled
+              before assignment</span
             >
           </div>
           <div class="metric">
-            <strong>3 / 2</strong
+            <strong>66s</strong
             ><span
-              >Affected job attempts / unique cleanup-failure remote
-              executions</span
+              >Less container→PodReady delay across ten MCP cases in the
+              controlled prototype</span
+            >
+          </div>
+          <div class="metric">
+            <strong>2 fresh</strong
+            ><span
+              >Passing natural dispatcher executions after the journal fix;
+              cached passes are separate</span
             >
           </div>
         </div>
         <nav aria-label="Report sections">
-          <a href="#policy">Policy exposures</a
-          ><a href="#culprits">Failure diagnoses</a
-          ><a href="#recoveries">Reruns</a><a href="#actions">Decisions</a
-          ><a href="#methods">Methods</a
+          <a href="#fresh-adoption">Fresh CI</a
+          ><a href="#uncached-probe">Uncached workers</a
+          ><a href="#readiness-followup">Readiness</a
+          ><a href="#journal-followup">Journal fix</a
+          ><a href="#future-measurements">Future-report TODOs</a
+          ><a href="#actions">Recommendations</a
+          ><a href="#policy">Earlier pilot</a
           ><a href="#retained-findings">Retained findings</a
           ><a href="#continuity">Prior work</a>
         </nav>
       </header>
+      <section id="fresh-adoption">
+        <h2>Fresh CI after the landed changes</h2>
+        <p>
+          The complete devel CI run-creation window is
+          <strong>28 October 06:05:00–07:14:04 UTC</strong>: 17 runs, 11
+          successful assigned Bazel jobs, and six canceled before runner
+          assignment. All 11 successful jobs have matching run-head/BES source
+          and canonical <code>remote_retries=0</code>. Whole-workflow states
+          include release/image work and are not substituted for Bazel-job
+          outcomes.
+        </p>
+        <p>
+          The first all-changes job tested <code>2ae990424df7</code>, containing
+          exporter fixes
+          <a href="https://github.com/agentydragon/ducktape/pull/12495"
+            >#12495</a
+          >/<a href="https://github.com/agentydragon/ducktape/pull/12496"
+            >#12496</a
+          >, import overlap
+          <a href="https://github.com/agentydragon/ducktape/pull/12498"
+            >#12498</a
+          >, journal correction
+          <a href="https://github.com/agentydragon/ducktape/pull/12504"
+            >#12504</a
+          >, and shared readiness
+          <a href="https://github.com/agentydragon/ducktape/pull/12513"
+            >#12513</a
+          >. It passed at 07:14:41 UTC in <strong>151s</strong>, after
+          <strong>249s</strong> from job creation to start. Its Bazel command
+          took 78.644s; the profile critical path was 50.71s, dominated by
+          manifest generation.
+          <strong>VM, MCP and dispatcher were cached.</strong> Their retained
+          durations are producer metadata, not fresh work inside this job. The
+          roughly eight-minute historical system-test path did not execute here.
+        </p>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Fresh measurement evidence"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Tested source / job</th>
+                <th scope="col">Created→start / job</th>
+                <th scope="col">Bazel command</th>
+                <th scope="col">Target result metadata</th>
+                <th scope="col">Adoption</th>
+                <th scope="col">Invocation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40648116689/job/122681581665"
+                    >2ae990424d</a
+                  >
+                </td>
+                <td>249s / 151s</td>
+                <td>78.64s</td>
+                <td>
+                  VM: 484.1s cached<br />mcp: 246.8s cached<br />dispatcher:
+                  180.3s cached
+                </td>
+                <td>All five</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/0c0dd5e5-14cc-5a11-b9eb-7ed1335c0863"
+                    >0c0dd5e5</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40647924323/job/122680972122"
+                    >c2f81bf358</a
+                  >
+                </td>
+                <td>104s / 251s</td>
+                <td>181.13s</td>
+                <td>
+                  VM: 427.1s cached<br />mcp: 434.2s cached<br />dispatcher:
+                  198.3s cached
+                </td>
+                <td>Includes journal; before readiness</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/a1ba6382-159c-5a17-ac9b-ade4995a05bd"
+                    >a1ba6382</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40647186406/job/122678631198"
+                    >6c4709e8dd</a
+                  >
+                </td>
+                <td>91s / 164s</td>
+                <td>92.87s</td>
+                <td>
+                  VM: 427.1s cached<br />mcp: 434.2s cached<br />dispatcher:
+                  198.3s cached
+                </td>
+                <td>Includes journal; before readiness</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/31dad601-6970-5f38-977e-f3338024e546"
+                    >31dad601</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40646896530/job/122677693586"
+                    >04b3794be1</a
+                  >
+                </td>
+                <td>46s / 145s</td>
+                <td>72.39s</td>
+                <td>
+                  VM: 427.1s cached<br />mcp: 434.2s cached<br />dispatcher:
+                  198.3s cached
+                </td>
+                <td>Includes journal; before readiness</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/c50b71b8-e8fe-527b-a347-6d9b7762cf32"
+                    >c50b71b8</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40645918930/job/122674578395"
+                    >b15d3d8e82</a
+                  >
+                </td>
+                <td>406s / 132s</td>
+                <td>57.70s</td>
+                <td>
+                  VM: 427.1s cached<br />mcp: 434.2s cached<br />dispatcher:
+                  198.3s cached
+                </td>
+                <td>Includes journal; before readiness</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/fa77c5b9-45c9-5fe0-864a-b51f60c4b78a"
+                    >fa77c5b9</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40645349649/job/122672765598"
+                    >c64ef75e55</a
+                  >
+                </td>
+                <td>96s / 561s</td>
+                <td>489.35s</td>
+                <td>
+                  VM: 427.1s fresh<br />mcp: 434.2s fresh<br />dispatcher:
+                  198.3s fresh
+                </td>
+                <td>Includes journal; before readiness</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/16a0fdee-849c-5a3a-ae8f-989b6127807e"
+                    >16a0fdee</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40644960322/job/122671511419"
+                    >2733586832</a
+                  >
+                </td>
+                <td>24s / 136s</td>
+                <td>57.51s</td>
+                <td>
+                  VM: 412.7s cached<br />mcp: 335.7s cached<br />dispatcher:
+                  177.8s cached
+                </td>
+                <td>Includes journal; before readiness</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/ac48c965-ab06-57b8-840e-7049efd04ca4"
+                    >ac48c965</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40644625915/job/122670440859"
+                    >b392391e87</a
+                  >
+                </td>
+                <td>67s / 98s</td>
+                <td>28.50s</td>
+                <td>
+                  VM: 412.7s cached<br />mcp: 335.7s cached<br />dispatcher:
+                  177.8s cached
+                </td>
+                <td>Includes journal; before readiness</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/0baaed3d-366c-583a-a926-8704a9858a28"
+                    >0baaed3d</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40643895677/job/122668121723"
+                    >1b449f24e5</a
+                  >
+                </td>
+                <td>348s / 147s</td>
+                <td>79.10s</td>
+                <td>
+                  VM: 412.7s cached<br />mcp: 335.7s cached<br />dispatcher:
+                  177.8s cached
+                </td>
+                <td>Includes journal; before readiness</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/1970cba2-05fd-5945-a5c7-13b2fd0a604b"
+                    >1970cba2</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40643511593/job/122666891861"
+                    >feb464de80</a
+                  >
+                </td>
+                <td>61s / 509s</td>
+                <td>443.80s</td>
+                <td>
+                  VM: 412.7s fresh<br />mcp: 335.7s fresh<br />dispatcher:
+                  177.8s fresh
+                </td>
+                <td>Includes journal; before readiness</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/7b0af96d-279b-535a-8349-e239958a4a6e"
+                    >7b0af96d</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40642731109/job/122664380752"
+                    >50bd44b472</a
+                  >
+                </td>
+                <td>7s / 494s</td>
+                <td>422.60s</td>
+                <td>
+                  VM: 407.5s fresh<br />mcp: 317.4s cached<br />dispatcher:
+                  182.2s cached
+                </td>
+                <td>Before journal/readiness</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/79bbe88d-97c9-500b-ba37-e11dfb5395e7"
+                    >79bbe88d</a
+                  >
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">
+          This is a devel-only observational census, not a repository flake rate
+          or matched before/after speedup. The window overlaps earlier report
+          examples; do not add these denominators to the prior pilot. The last
+          pre-readiness fresh devel example (<code>c64ef75e55</code>) had MCP
+          434.2s and VM 427.1s, showing that the older 80s VM lead is
+          source/run-specific. Eight short jobs in this cohort reused both
+          targets. PR class, auto-merge readiness and agent delivery were not
+          resampled.
+        </p>
+      </section>
+      <section id="uncached-probe">
+        <h2>Uncached adopted-source worker measurement</h2>
+        <p>
+          A separately authorized two-target probe pinned to
+          <code>2ae990424df7</code> used the normal RBE configuration plus
+          <code>--config=ci --nocache_test_results</code> and
+          <code>--run_from_commit</code>. No local patches were applied.
+          <a
+            href="https://app.buildbuddy.io/invocation/8886320b-1f9d-44ee-b684-2d5faf2314ee"
+            >Both suites passed fresh</a
+          >: all ten MCP case IDs match the readiness controls, and all three
+          independent VM cases remain.
+        </p>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Uncached probe target timing"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Target</th>
+                <th scope="col">Fresh RBE process</th>
+                <th scope="col">Fixture stack Ready</th>
+                <th scope="col">CPU</th>
+                <th scope="col">Cases</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>VM</td>
+                <td>471.741s</td>
+                <td>115.1s</td>
+                <td>783.3 CPU-s</td>
+                <td>3 passed</td>
+              </tr>
+              <tr>
+                <td>MCP</td>
+                <td>445.265s</td>
+                <td>239.9s</td>
+                <td>1084.6 CPU-s</td>
+                <td>10 passed</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Bazel took 567.653s with a 490.28s critical path. Three originating
+          RBE executions used 1879.6 CPU-s, including one app-layer packaging
+          action. VM finished <strong>18.479s after MCP</strong> on indexed RBE
+          process clocks; MCP began about 8.0s later. This differs from the
+          26.475s target-duration difference because start/fetch clocks differ.
+          Queue-to-worker-start was 0.066s for VM and 0.096s for MCP.
+        </p>
+        <p>
+          VM guest Ready spans totaled <strong>111.822s</strong>; cleanup
+          totaled <strong>36.208s</strong>. Guest-root import was 0.8s, while
+          the MCP fixture imported the runner image in 63.5s and the app image
+          in 31.1s; its stack Ready was 239.9s versus 54.1s in the earlier feb
+          devel run. These observed image/setup differences prevent interpreting
+          the longer fresh action as a regression or using it as a matched
+          control. Ready and cleanup spans are nested inside scenario/case
+          spans.
+        </p>
+        <p class="note">
+          The probe verifies adopted-source execution and current work costs; it
+          is not a GitHub job or PR-feedback measurement. The latest natural
+          all-changes job is cached, and this probe has unequal worker/image
+          state. Keep the 18.479s worker-finish gap and the older 80.39s gap as
+          separate observations. Collect CI-SOAK-1 before claiming a combined
+          speedup or choosing another optimization from those gaps.
+        </p>
+      </section>
+      <section id="readiness-followup">
+        <h2>Readiness: remove the delay without weakening health</h2>
+        <p>
+          <a href="https://github.com/agentydragon/ducktape/pull/12513"
+            >#12513</a
+          >
+          merged at 07:07:58 UTC. Readiness now checks
+          <code>/healthz</code> immediately and every two seconds through the
+          shared template; liveness keeps its five-second initial delay/period.
+          The health predicate and Sandbox Ready condition are unchanged. It
+          replaces the earlier fixture-only prototype; fresh final-form
+          MCP/render/template checks passed in
+          <a
+            href="https://app.buildbuddy.io/invocation/cddc39c2-29a3-41c2-867b-c88c5ea94527"
+            >cddc39c2</a
+          >. The actual PR CI invocation
+          <a
+            href="https://app.buildbuddy.io/invocation/3031d1ac-e76e-560a-bd6c-eb3c14f450e1"
+            >3031d1ac</a
+          >
+          passed, but its system tests reused cached results.
+        </p>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Fresh measurement evidence"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Earlier controlled MCP arm</th>
+                <th scope="col">Container→PodReady sum</th>
+                <th scope="col">Sandbox Ready wait sum</th>
+                <th scope="col">Stack Ready</th>
+                <th scope="col">Cases / invocation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>baseline</td>
+                <td>74s</td>
+                <td>147.866s</td>
+                <td>47.5s</td>
+                <td>
+                  10 /
+                  <a
+                    href="https://app.buildbuddy.io/invocation/58f37f96-871e-42ce-9b3c-434fc9bbdc52"
+                    >58f37f96</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>fast_fixture_readiness</td>
+                <td>8s</td>
+                <td>79.134s</td>
+                <td>48.7s</td>
+                <td>
+                  10 /
+                  <a
+                    href="https://app.buildbuddy.io/invocation/2de59fe1-6b2e-4555-8cda-043934d95410"
+                    >2de59fe1</a
+                  >
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The same ten case IDs passed in both arms on base
+          <code>a9a0f2ae618f</code> plus a temporary observation patch.
+          Container-start→PodReady summed 74→8s; total Ready waits fell
+          147.866→79.134s. Wait-to-container stayed 56.318→57.179s and stack
+          Ready 47.5→48.7s. That supports about 66s less probe-detection delay
+          across this MCP experiment. Condition/container clocks have roughly
+          one-second API resolution. Worker/snapshot and scenario variation
+          remain; full-action differences are not a required-check saving. The
+          temporary observations were not merged.
+        </p>
+      </section>
+      <section id="journal-followup">
+        <h2>Journal cancellation: fix landed, recurrence effect still open</h2>
+        <p>
+          <a href="https://github.com/agentydragon/ducktape/pull/12504"
+            >#12504</a
+          >
+          merged at 06:19:21 UTC. It reproduced a preparation/quiesce race
+          against unchanged code (<a
+            href="https://app.buildbuddy.io/invocation/a5a13662-1281-42a5-af51-edc1e9322f34"
+            >a5a13662</a
+          >), then fixed completed native observations and recovery translation
+          to use the runner lifetime while native I/O remains
+          cancellation-bounded. Both focused regressions (<a
+            href="https://app.buildbuddy.io/invocation/a502bec3-a622-49e3-aeae-28ae1985559f"
+            >a502bec3</a
+          >) and the race-enabled runner suite (<a
+            href="https://app.buildbuddy.io/invocation/cb8062cd-dd9f-4cc3-bbe4-4299108fa4a0"
+            >cb8062cd</a
+          >) passed; PR CI also passed. The former recommendation to reproduce
+          those known interleavings is complete.
+        </p>
+        <p>
+          The fixed devel cohort contains
+          <strong>two fresh passing dispatcher executions</strong> on
+          journal-fixed sources; later cached passes add no fresh exposure. This
+          establishes small-sample source acceptance, not elimination of the
+          cleanup failure. The archived cleanup runs lack the initial canceled
+          operation and journal database, so the exact interleaving in those
+          original failures remains unattributed. Keep real storage errors
+          latched, preserve uncertain admission, and require command settlement,
+          sealing and exact ingress acknowledgement.
+        </p>
+      </section>
+      <section id="future-measurements">
+        <h2>TODOs for future reports: allow natural soaking</h2>
+        <p>
+          These are durable collection tasks for the next reports, not scheduled
+          jobs or a reason to repeat the completed fixes. Reopen them using the
+          source, freshness and denominator rules below. Earliest collection
+          dates are in <code>future_report_todos</code> in the evidence.
+        </p>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Fresh measurement evidence"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Stable ID / topic</th>
+                <th scope="col">When to collect</th>
+                <th scope="col">Required evidence</th>
+                <th scope="col">Decision / completion boundary</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <strong>CI-SOAK-1</strong><br />Fresh adopted-source worker
+                  and PR-feedback distributions
+                </td>
+                <td>
+                  Next report after at least 24 hours of natural post-readiness
+                  CI; extend to 48 hours when exposures are sparse.
+                </td>
+                <td>
+                  Page all CI and trusted-fork job attempts; resolve actual
+                  tested SHA ancestry for #12495/#12496/#12498/#12504/#12513.
+                  Separate fresh/cached VM and MCP results, image pins, case
+                  counts, critical path, job queue/runtime and required-check
+                  clocks by PR class/trust path. Preserve
+                  failed/canceled/incomplete observations.
+                </td>
+                <td>
+                  Whether common required-check feedback and worker cost
+                  improved; which target is the remaining gate. Never subtract
+                  cached result timestamps or sum parallel phase gains.<br />Publish
+                  all denominators and unknowns. If no comparable fresh
+                  exposures exist, keep this TODO open; a successful cached
+                  workflow does not complete it.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <strong>CI-SOAK-2</strong><br />Journal/quiesce recurrence
+                  after #12504
+                </td>
+                <td>
+                  First 24-hour follow-up, then a seven-day review ending
+                  2026-11-04T06:19:21Z.
+                </td>
+                <td>
+                  Collect fresh dispatcher and relevant VM/Pod lifecycle
+                  outcomes on sources containing #12504, including failed
+                  attempts hidden by reruns. Deduplicate shared remote execution
+                  IDs. For any recurrence preserve the initial journal
+                  operation, native receipt/admission IDs, journal database, and
+                  exact drain acknowledgement.
+                </td>
+                <td>
+                  Whether the reproduced cancellation mechanism still occurs;
+                  distinguish new storage or lifecycle defects.<br />Report 0/N
+                  or failures/N with fresh-execution denominator, not
+                  elimination. Archive recurrence evidence before rerunning.
+                  Keep original-incident attribution limit.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <strong>CI-SOAK-3</strong><br />Zero-retry reliability cost
+                  versus cancellation benefit
+                </td>
+                <td>
+                  At least 24–48 hours after policy adoption; retain original
+                  03:06–06:05 pilot separately.
+                </td>
+                <td>
+                  Inspect canonical child options and source config on every
+                  conclusive Bazel attempt across both trust paths. Classify
+                  remote CANCELLED/UNAVAILABLE versus source/test failures. For
+                  reruns verify identical source and fresh formerly failed
+                  target. For cancellations distinguish same-digest replacement,
+                  distinct later work, indexed status and physical process stop.
+                </td>
+                <td>
+                  Retain or change the broad zero-retry mitigation using
+                  measured recovery cost and cancellation evidence.<br />Explicit
+                  comparative limitations; do not infer saved CPU from
+                  acknowledgement or claim automatic retries would have
+                  recovered every remote failure. Physical-stop evidence may
+                  remain unavailable without a hosted operator trace.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <strong>CI-SOAK-4</strong><br />Shared readiness and shutdown
+                  correctness
+                </td>
+                <td>
+                  Next 24–48-hour report; live staging only after the matching
+                  runner disk/template rollout is independently verified.
+                </td>
+                <td>
+                  Preserve ten MCP cases, three independent VM cases, /healthz
+                  semantics, liveness policy, clean guest shutdown/storage
+                  checks, and readiness/restart outcomes. Collect fresh phase
+                  traces with image/snapshot state where available.
+                </td>
+                <td>
+                  Whether faster readiness remains correct across warm/cold
+                  starts and recovery, and whether exporter/import phase gains
+                  recur.<br />Separate CI source acceptance from live deployment
+                  and stability. Do not mark staging rollout complete from
+                  merged source or hermetic tests.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
       <section id="policy">
+        <p class="note">
+          Earlier retry-policy pilot: run creation 28 October 03:06–06:05 UTC.
+          Its denominators and outcome claims are unchanged; the newer
+          devel-only cohort is above.
+        </p>
         <h2>Zero retries has an observed recovery tradeoff</h2>
         <p>
           <strong
@@ -339,6 +961,10 @@
         </p>
       </section>
       <section id="culprits">
+        <p class="small">
+          Retained earlier observation; original sources/windows below. Current
+          adoption, cache distinctions and follow-ups are above.
+        </p>
         <h2>All twelve failed attempts are classified</h2>
         <div
           class="table-wrap"
@@ -645,15 +1271,22 @@
           preserves an earlier exception; it does not fix this stalled state.
         </p>
         <p class="note good">
-          <strong>Next owned probe:</strong> cancel at journal
-          transaction/commit boundaries, reopen the journal, and verify that an
-          admitted command’s identity/cursor remains recoverable and quiesce
-          reaches its terminal state. Preserve uncertain admission; do not drop
-          the blocker, replay the command, increase the timeout or weaken the
-          Stopped assertion.
+          <strong>Completed owned probe:</strong>
+          <a href="https://github.com/agentydragon/ducktape/pull/12504"
+            >#12504</a
+          >
+          reproduced and fixed journal/preparation cancellation boundaries. See
+          <a href="#journal-followup"
+            >regressions and remaining attribution limits</a
+          >; future reports should collect recurrence, not repeat this
+          implementation.
         </p>
       </section>
       <section id="recoveries">
+        <p class="small">
+          Retained earlier observation; original sources/windows below. Current
+          adoption, cache distinctions and follow-ups are above.
+        </p>
         <h2>
           Later workflow recovery is not an automatic-retry counterfactual
         </h2>
@@ -801,6 +1434,10 @@
         </p>
       </section>
       <section id="cancellation">
+        <p class="small">
+          Retained earlier observation; original sources/windows below. Current
+          adoption, cache distinctions and follow-ups are above.
+        </p>
         <h2>Six natural cancellations do not establish saved compute</h2>
         <div
           class="table-wrap"
@@ -915,58 +1552,46 @@
         </p>
       </section>
       <section id="actions">
-        <h2>Concrete next actions</h2>
+        <h2>Current recommendations</h2>
         <ol>
           <li>
             <strong
-              >Reproduce the journal/quiesce failure at its owner
-              boundary.</strong
+              >Collect the soak windows before claiming a fleet speedup.</strong
             >
-            Use controlled transaction cancellation and reopen checks in the
-            runner journal/session lifecycle tests; keep admission identity and
-            exact drain acknowledgment. This targets the cleanup failure seen in
-            three job attempts across two unique remote executions, rather than
-            masking their timeout.
-          </li>
-          <li>
-            <strong>Make the retry-policy tradeoff explicit.</strong> Five of 58
-            known-zero attempts ended in retry-eligible remote errors;
-            cancellation savings remain unmeasured. Decide whether to retain
-            zero with that manual-rerun cost or restore useful retries while
-            accepting the demonstrated cancellation race. A selective
-            cancellation-safe retry policy is preferable in principle, but no
-            supported flag separating these statuses has been established and
-            the Bazel backport was declined. Do not silently change policy from
-            this report.
+            Follow
+            <a href="#future-measurements">CI-SOAK-1 through CI-SOAK-4</a>;
+            preserve cached/fresh and source lineage. The current natural
+            all-changes validation reuses system-test results. The separate
+            uncached probe is not a GitHub PR feedback sample.
           </li>
           <li>
             <strong
-              >Extend the combined-adoption sample before another VM/MCP
-              optimization.</strong
+              >Keep journal recurrence follow-up separate from the completed
+              fix.</strong
             >
-            Two combined-source devel jobs passed, including one with both
-            suites fresh; their latest detailed assessment is retained in the
-            latency report. Collect further completed actual-source runs
-            containing both<a
-              href="https://github.com/agentydragon/ducktape/pull/12495"
-              >#12495</a
+            <a href="https://github.com/agentydragon/ducktape/pull/12504"
+              >#12504</a
             >
-            and<a href="https://github.com/agentydragon/ducktape/pull/12496"
-              >#12496</a
-            >; verify runtime cases and phase spans. Include the later
-            import-order merge<a
-              href="https://github.com/agentydragon/ducktape/pull/12498"
-              >#12498</a
+            has a failing baseline and passing regressions. Preserve initial
+            journal/native evidence if the cleanup signature recurs; do not
+            repeat the known reproduction or weaken the Stopped assertion.
+          </li>
+          <li>
+            <strong
+              >Make the broad retry-policy decision from recovery cost and
+              cancellation evidence.</strong
             >
-            only when actual tested source contains it; keep its
-            import/readiness proof separate from population savings.
+            The prior pilot’s five remote errors among 58 verified zero-retry
+            attempts remain relevant. This small successful devel cohort cannot
+            establish a lower failure rate or saved canceled-work CPU; no retry
+            policy is changed here.
           </li>
         </ol>
         <p>
-          Artifact phase overlap is implemented and sustained. Browser shard
-          reduction remains an optional compute tradeoff; more GitHub/RBE
-          capacity is not justified by these selected process-dominated
-          profiles.
+          Artifact overlap is implemented and sustained. Eight browser shards
+          remain an optional compute tradeoff, with a slower longest shard; more
+          capacity, blanket VM/MCP sharding, and further policy-isolation
+          grouping are not justified by these measurements.
         </p>
       </section>
       <section id="methods">

@@ -1,13 +1,18 @@
 {
-  "source_devel_commit": "feb464de80936d8d612007d60aeb425f7036e374",
+  "source_devel_commit": "2ae990424df7481ead4b5a170ab502934e136a7d",
   "window_start_utc": "2026-10-24T04:00:00Z",
-  "window_end_utc": "2026-10-28T06:05:00Z",
-  "published_at_utc": "2026-10-28T07:02:47.884794+00:00",
+  "window_end_utc": "2026-10-28T07:35:24.349474+00:00",
+  "published_at_utc": "2026-10-28T07:38:04.333434+00:00",
   "attribution": "not collected; retained historical scopes and focused policy/post-merge samples are separate",
   "policy_pilot_window_utc": [
     "2026-10-28T03:06:00Z",
     "2026-10-28T06:05:00Z"
   ],
   "retained_baseline_commit": "f7d6595d1a24ed4f028206c4e854f0d22b139b58",
-  "source_disposition_review": "b15d3d8e82d55f3e2dd6211024563e748e0042e4"
+  "source_disposition_review": "2ae990424df7481ead4b5a170ab502934e136a7d",
+  "natural_devel_run_creation_window_utc": [
+    "2026-10-28T06:05:00Z",
+    "2026-10-28T07:14:04Z"
+  ],
+  "fresh_adoption_baseline_report_commit": "fcc22e0abf741e91ff5a004706fc13d51f63d240"
 }
