@@ -24,8 +24,9 @@ connections, or other native state.
 | Native process and journal effects       | Runner, Session, Codex server, and journal | Startup, dispatch, interruption, process exit, inspection, sealing, and persistence.                    |
 
 There are five controller roles: Runner, Session, Executor, Codex app-server, and Sandbox bootstrap.
-Each exclusively writes its own runtime resource. The Session QController can reconcile up to 16
-Sessions concurrently; the other QControllers each reconcile one shared instance. The host
+Each exclusively writes its own runtime resource. The Session QController can reconcile up to
+`session_reconcile_concurrency` Sessions at once (default 1000); this controls reconcile workers,
+not how many Sessions can be admitted or stored. The other QControllers each reconcile one shared instance. The host
 publishes input changes and operation results, while stdout and transport workers remain independent
 so native replies and ingress acknowledgements can make progress while a controller is waiting.
 Operation slots stay owned until their result is consumed, preventing controller retries from

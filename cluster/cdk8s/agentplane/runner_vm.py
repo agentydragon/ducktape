@@ -82,6 +82,7 @@ class RunnerVmTemplate(Construct):
         workspace_volume: dict[str, Any],
         platform_instructions: str,
         harness_env: Mapping[str, str],
+        session_reconcile_concurrency: int | None = None,
     ) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
@@ -98,6 +99,7 @@ class RunnerVmTemplate(Construct):
         llm_url = llm_ingress.proxied_url(namespace)
         config = Configuration(
             version=2,
+            session_reconcile_concurrency=session_reconcile_concurrency,
             state_dir="/state",
             workspace_root="/state/workspaces",
             initialization_cwd="/state/workspaces",

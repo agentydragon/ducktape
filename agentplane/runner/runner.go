@@ -48,6 +48,9 @@ type Runner struct {
 }
 
 func New(config Config) (*Runner, error) {
+	if err := config.resolveSessionReconcileConcurrency(); err != nil {
+		return nil, err
+	}
 	if config.CodexExecutor != nil {
 		if config.Codex == nil {
 			return nil, errors.New("Codex executor requires a configured Codex harness")

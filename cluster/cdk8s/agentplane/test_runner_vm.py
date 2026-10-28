@@ -20,7 +20,9 @@ from cluster.cdk8s.agentplane import runner_sandbox, runner_vm, staging
 HARNESS_ENV = {"EXAMPLE_SERVICE_URL": "http://service.test"}
 
 
-def _runner_vm_manifests(*, console_autologin: bool) -> dict[str, dict[str, Any]]:
+def _runner_vm_manifests(
+    *, console_autologin: bool, session_reconcile_concurrency: int | None = None
+) -> dict[str, dict[str, Any]]:
     chart = Chart(Cdk8sTesting.app(), "test")
     runner_vm.RunnerVmTemplate(
         chart,
@@ -37,6 +39,7 @@ def _runner_vm_manifests(*, console_autologin: bool) -> dict[str, dict[str, Any]
         ),
         platform_instructions="Test platform guidance.",
         harness_env=HARNESS_ENV,
+        session_reconcile_concurrency=session_reconcile_concurrency,
     )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     config_map = one(
@@ -62,7 +65,14 @@ def test_harness_env_reaches_the_vm_environment() -> None:
     rendered = _runner_vm_manifests(console_autologin=False)
     runner = Configuration.model_validate(rendered["runner"])
     assert all(runner.harness_environment.values[name] == value for name, value in HARNESS_ENV.items())
+    assert runner.session_reconcile_concurrency is None
     assert isinstance(runner.environment, VMEnvironment)
+
+
+def test_session_reconcile_concurrency_reaches_vm_runner_configuration() -> None:
+    rendered = _runner_vm_manifests(console_autologin=False, session_reconcile_concurrency=2048)
+    config = Configuration.model_validate(rendered["runner"])
+    assert config.session_reconcile_concurrency == 2048
 
 
 def test_vm_size_and_runner_configuration_share_resource_policy() -> None:

@@ -25,14 +25,24 @@ def test_runner_configuration_round_trip_preserves_environment_sources() -> None
     config = Configuration.model_validate(_configuration())
     decoded = Configuration.model_validate_json(config.model_dump_json(exclude_none=True))
     assert decoded == config
+    assert decoded.session_reconcile_concurrency is None
     assert decoded.harness_environment.values["HOME"] == "/test/home"
     assert decoded.harness_environment.inherit == ["PATH"]
+
+
+def test_runner_configuration_accepts_explicit_session_reconcile_concurrency() -> None:
+    values = _configuration() | {"session_reconcile_concurrency": 2048}
+    config = Configuration.model_validate(values)
+    decoded = Configuration.model_validate_json(config.model_dump_json(exclude_none=True))
+    assert decoded.session_reconcile_concurrency == 2048
 
 
 @pytest.mark.parametrize(
     "updates",
     [
         {"version": 1},
+        {"session_reconcile_concurrency": 0},
+        {"session_reconcile_concurrency": -1},
         {"state_dir": "relative"},
         {"workspace_root": ""},
         {"harness_environment": {"inherit": ["NAME=value"]}},

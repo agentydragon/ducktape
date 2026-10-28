@@ -16,7 +16,7 @@ import (
 type sessionLifecycleController struct{ l *lifecycle }
 
 func (*sessionLifecycleController) Name() string { return sessionControllerName }
-func (*sessionLifecycleController) Settings() controller.QSettings {
+func (c *sessionLifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
 			{Namespace: lifecycleNamespace, Type: sessionInputType, Kind: controller.InputQPrimary},
@@ -27,7 +27,7 @@ func (*sessionLifecycleController) Settings() controller.QSettings {
 			{Namespace: lifecycleNamespace, Type: operationResultType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: sessionRuntimeType, Kind: controller.OutputExclusive}},
-		Concurrency: optional.Some(uint(16)),
+		Concurrency: optional.Some(uint(c.l.runner.config.SessionReconcileConcurrency)),
 	}
 }
 
