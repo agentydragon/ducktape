@@ -1,5 +1,5 @@
 ---
-name: github-stacks
+name: github_stacks
 description: Create and maintain native GitHub stacks of dependent pull requests, including REST API membership, rebasing, and asynchronous merging. Use when stacking PRs on GitHub.
 ---
 
