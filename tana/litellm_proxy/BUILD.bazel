@@ -159,9 +159,13 @@ py_test(
         ":server_bin",
     ],
     deps = [
+        ":custom_handler",
         ":provider",
         "//:conftest",
         "//util/bazel:runfiles",
+        "//util/testing:asgi",
+        "@pypi//anthropic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi_tana_litellm_proxy//httpx",
         "@pypi_tana_litellm_proxy//litellm",
