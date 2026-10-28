@@ -49,7 +49,7 @@ func (r *Runner) bootstrap(ctx context.Context) error {
 		return err
 	}
 	var outcome bootstrapRuntimeSpec
-	if err := watchLifecycle(ctx, r.lifecycle.state, "bootstrap", func(current bootstrapRuntimeSpec) (bool, error) {
+	if err := watchLifecycle(ctx, r.lifecycle, "bootstrap", func(current bootstrapRuntimeSpec) (bool, error) {
 		outcome = current
 		return isTerminalBootstrapPhase(current.Phase), nil
 	}); err != nil {

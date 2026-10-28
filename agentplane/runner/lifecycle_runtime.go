@@ -133,7 +133,7 @@ func (l *lifecycle) status() runnerRuntimeSpec {
 }
 
 func (l *lifecycle) wait(ctx context.Context, minimum runnerStage) error {
-	return watchLifecycle(ctx, l.state, "runner", func(current runnerRuntimeSpec) (bool, error) {
+	return watchLifecycle(ctx, l, "runner", func(current runnerRuntimeSpec) (bool, error) {
 		if current.Error != "" {
 			return false, errors.New(current.Error)
 		}

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -412,5 +413,21 @@ func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
 	s.mu.Unlock()
 	if preparation != nil {
 		t.Fatal("idle process exit started a successor without new work")
+	}
+}
+
+func TestLifecycleWatchStopsWithRunner(t *testing.T) {
+	runnerCtx, cancelRunner := context.WithCancel(context.Background())
+	defer cancelRunner()
+	l, err := newLifecycle(&Runner{ctx: runnerCtx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelRunner()
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+	defer cancel()
+	err = watchLifecycle(ctx, l, "never-created", func(sessionRuntimeSpec) (bool, error) { return false, nil })
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("watch after runner cancellation = %v, want context.Canceled", err)
 	}
 }
