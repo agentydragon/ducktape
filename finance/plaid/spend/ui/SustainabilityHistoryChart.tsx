@@ -146,9 +146,6 @@ export function SustainabilityHistoryChart({
   const [hiddenWindowDays, setHiddenWindowDays] = useState<Set<number>>(() => new Set());
   const [tooltip, setTooltip] = useState<HistoryTooltip | null>(null);
   const hasRates = effectiveTaxRate != null && portfolioMinorUnits != null && portfolioMinorUnits > 0;
-  const amountPerRate = hasRates
-    ? new Decimal(portfolioMinorUnits).mul(includeTaxes ? 1 : new Decimal(1).minus(effectiveTaxRate ?? 0))
-    : new Decimal(1);
   const amountLabel = includeTaxes ? "Annual funding including taxes" : "Annual spending excluding taxes";
 
   const historyWindows = useMemo(
@@ -240,6 +237,9 @@ export function SustainabilityHistoryChart({
 
   useEffect(() => {
     if (!canvasRef.current || !canPlot) return;
+    const amountPerRate = hasRates
+      ? new Decimal(portfolioMinorUnits).mul(includeTaxes ? 1 : new Decimal(1).minus(effectiveTaxRate ?? 0))
+      : new Decimal(1);
     const instance = new Chart(canvasRef.current, {
       type: "line",
       data: { labels: chart.labels, datasets: chart.datasets },
@@ -323,12 +323,13 @@ export function SustainabilityHistoryChart({
     };
   }, [
     amountLabel,
-    amountPerRate,
     canPlot,
     chart,
     currency,
     dates,
+    effectiveTaxRate,
     hasRates,
+    includeTaxes,
     portfolioMinorUnits,
     referenceDrawRates,
     visibleWindows,

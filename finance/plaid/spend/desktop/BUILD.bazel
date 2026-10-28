@@ -109,6 +109,12 @@ py_package(
     ],
 )
 
+py_package(
+    name = "yaml_decimal_pkg",
+    packages = ["util"],
+    deps = ["//util:yaml_decimal"],
+)
+
 py_wheel(
     name = "plaid_spend_desktop_wheel",
     distribution = "plaid-spend-desktop",
@@ -130,5 +136,8 @@ py_wheel(
     ],
     version = "0.1.0",
     visibility = ["//visibility:public"],
-    deps = [":plaid_spend_desktop_pkg"],
+    deps = [
+        ":plaid_spend_desktop_pkg",
+        ":yaml_decimal_pkg",
+    ],
 )
