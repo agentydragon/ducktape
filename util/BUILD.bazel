@@ -466,3 +466,14 @@ py_library(
     visibility = ["//visibility:public"],
     deps = ["@pypi//protobuf"],
 )
+
+py_test(
+    name = "test_protobuf",
+    srcs = ["test_protobuf.py"],
+    deps = [
+        ":protobuf",
+        "//:conftest",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)

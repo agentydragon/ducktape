@@ -1,5 +1,4 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("//devinfra/python:defs.bzl", "py_test")
 
 go_library(
     name = "runtime",
@@ -50,20 +49,5 @@ go_test(
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//keepalive",
         "@org_golang_google_protobuf//proto",
-    ],
-)
-
-py_test(
-    name = "test_config",
-    srcs = ["test_config.py"],
-    deps = [
-        "//:conftest",
-        "//agentplane/egress:conftest",
-        "//agentplane/egress/sidecar/configpb:config_pb2",
-        "//util:protobuf",
-        "@pypi//protobuf",
-        "@pypi//protovalidate",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
