@@ -56,8 +56,12 @@ def list_import_progress(session: DbSession) -> list[MachineImportProgress]:
             ResticSnapshotRow.codex_metadata_status,
         ).order_by(ResticSnapshotRow.machine_id, ResticSnapshotRow.captured_at, ResticSnapshotRow.snapshot_id)
     ):
+        machine_progress = progress.get(machine_id)
+        if machine_progress is None:
+            # A newly registered machine can commit between these queries under READ COMMITTED.
+            # The next poll will include it in the machine list.
+            continue
         state = _snapshot_import_state(inventory_status, processing_status, codex_metadata_status)
-        machine_progress = progress[machine_id]
         machine_progress.known_snapshot_count += 1
         if (
             inventory_status == "complete"
@@ -91,7 +95,9 @@ def list_import_progress(session: DbSession) -> list[MachineImportProgress]:
         .group_by(SnapshotFileRow.machine_id, SnapshotFileRow.status)
         .order_by(SnapshotFileRow.machine_id, SnapshotFileRow.status)
     ):
-        machine_progress = progress[machine_id]
+        machine_progress = progress.get(machine_id)
+        if machine_progress is None:
+            continue
         if file_status in processed_statuses:
             machine_progress.processed_file_count += count
         elif file_status == "pending":
