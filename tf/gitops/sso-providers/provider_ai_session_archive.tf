@@ -17,7 +17,7 @@ resource "authentik_provider_oauth2" "ai_session_archive" {
   issuer_mode                = "per_provider"
   include_claims_in_id_token = true
   sub_mode                   = "user_id"
-  access_token_validity     = "hours=1"
+  access_token_validity      = "hours=1"
 
   property_mappings = [
     data.authentik_property_mapping_provider_scope.openid.id,
