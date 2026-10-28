@@ -2,10 +2,14 @@
 
 import asyncio
 import json
+import os
+import sqlite3
 import sys
+import tarfile
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import grpc
@@ -22,6 +26,7 @@ from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 from agentplane.system_tests.cluster import api_client, kubectl
 from agentplane.system_tests.conftest import POD_TEMPLATE, namespace
+from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -29,6 +34,8 @@ SERVICE = "session-dispatcher"
 WORKLOAD = "runner-gateway"
 BOUND_SECONDS = 300
 CLEANUP_DIAGNOSTICS_SECONDS = 30
+RUNNER_DATA_CAPTURE_SECONDS = 120
+RUNNER_DATA_MOUNTS = ("/state", "/state/workspaces", "/home/runner", "/tmp")
 type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
 
 
@@ -79,14 +86,142 @@ async def _delete(kind: str, name: str, uid: str) -> None:
     await kubectl("wait", f"{kind}/{name}", "--for=delete", "--timeout=120s")
 
 
+async def _container_mount_sources(name: str, artifact_dir: Path) -> dict[str, Path]:
+    pod = json.loads(await kubectl("get", "pod", name, "-o", "json"))
+    statuses = pod.get("status", {}).get("containerStatuses", [])
+    runner = next((status for status in statuses if status.get("name") == "runner"), None)
+    if runner is None or not runner.get("containerID"):
+        raise RuntimeError("runner container id is unavailable")
+    container_id = runner["containerID"].removeprefix("containerd://")
+    crictl_config = artifact_dir / "crictl.yaml"
+    crictl_config.write_text("runtime-endpoint: unix:///run/k3s/containerd/containerd.sock\ntimeout: 30\n")
+    process = await asyncio.create_subprocess_exec(
+        str(get_required_path(os.environ["K3S_BINARY_RLOCATION"])),
+        "crictl",
+        "--config",
+        str(crictl_config),
+        "inspect",
+        container_id,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        async with asyncio.timeout(CLEANUP_DIAGNOSTICS_SECONDS):
+            stdout, stderr = await process.communicate()
+    except BaseException:
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        raise
+    if process.returncode:
+        raise RuntimeError(f"crictl inspect exited {process.returncode}: {stderr.decode(errors='replace')[-2000:]}")
+    inspected = json.loads(stdout)
+    runtime_spec = inspected.get("info", {}).get("runtimeSpec", {})
+    if isinstance(runtime_spec, str):
+        runtime_spec = json.loads(runtime_spec)
+    mounts = runtime_spec.get("mounts", [])
+    sources: dict[str, Path] = {}
+    for destination in RUNNER_DATA_MOUNTS:
+        mount = next((item for item in mounts if item.get("destination") == destination), None)
+        if mount is None or not mount.get("source"):
+            raise RuntimeError(f"container runtime did not expose source for {destination}")
+        source = Path(mount["source"])
+        if not await asyncio.to_thread(source.exists):
+            raise FileNotFoundError(f"container mount source for {destination} is not visible: {source}")
+        sources[destination] = source
+    return sources
+
+
+async def _archive_runner_data(
+    name: str,
+    session_ids: list[str],
+    artifact_dir: Path,
+    *,
+    mount_sources: dict[str, Path] | None = None,
+    extra_backups: tuple[tuple[str, Path], ...] = (),
+) -> dict[str, object]:
+    sources = mount_sources or await _container_mount_sources(name, artifact_dir)
+    archive = artifact_dir / "runner-data.tar"
+    partial_archive = artifact_dir / "runner-data.tar.partial"
+    journal_dir = artifact_dir / "consistent-journals"
+    state_source = sources["/state"]
+    backups = [
+        {
+            "name": session_id,
+            "source": str(state_source / "sessions" / session_id / "journal.sqlite"),
+            "destination": str(journal_dir / f"session-{session_id}.sqlite"),
+        }
+        for session_id in session_ids
+    ]
+    backups.extend(
+        {"name": name, "source": str(source), "destination": str(journal_dir / f"{name}.sqlite")}
+        for name, source in extra_backups
+    )
+    plan_path = artifact_dir / "archive-plan.json"
+    manifest_path = artifact_dir / "archive-manifest.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "archive": str(archive),
+                "partial_archive": str(partial_archive),
+                "manifest": str(manifest_path),
+                "mounts": [
+                    {"destination": destination, "source": str(sources[destination])}
+                    for destination in RUNNER_DATA_MOUNTS
+                ],
+                "backups": backups,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        str(Path(__file__).with_name("runner_data_archive.py")),
+        str(plan_path),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        async with asyncio.timeout(RUNNER_DATA_CAPTURE_SECONDS):
+            stdout, stderr = await process.communicate()
+    except BaseException as error:
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        if isinstance(error, TimeoutError):
+            (artifact_dir / "archive-timeout.txt").write_text(
+                f"Runner data capture exceeded {RUNNER_DATA_CAPTURE_SECONDS}s; partial files were retained.\n"
+            )
+        raise
+    if not manifest_path.exists():
+        raise RuntimeError(
+            f"runner data archiver exited {process.returncode} without a manifest: "
+            f"{stderr.decode(errors='replace')[-2000:]} {stdout.decode(errors='replace')[-2000:]}"
+        )
+    manifest = json.loads(manifest_path.read_text())
+    manifest["mount_sources"] = {destination: str(source) for destination, source in sources.items()}
+    if process.returncode:
+        manifest["archiver_exit_code"] = process.returncode
+    return manifest
+
+
 async def _capture_cleanup_diagnostics(name: str, session_ids: list[str], command_ids: list[str]) -> None:
     capture_id = uuid4().hex
+    artifact_dir = undeclared_outputs_dir() / f"dispatcher-cleanup-{name}-{capture_id}"
+    artifact_dir.mkdir(parents=True)
     diagnostics: dict[str, object] = {
         "sandbox": name,
         "capture_id": capture_id,
         "session_ids": session_ids,
         "command_ids": command_ids,
     }
+    diagnostic_path = artifact_dir / "diagnostics.json"
+
+    def persist() -> None:
+        diagnostic_path.write_text(json.dumps(diagnostics, indent=2) + "\n")
+
+    persist()
     commands = {
         "sandbox": ("get", "sandbox", name, "-o", "json"),
         "runner_lease": ("get", "lease", f"{name}-runner", "-o", "json"),
@@ -116,35 +251,12 @@ async def _capture_cleanup_diagnostics(name: str, session_ids: list[str], comman
             diagnostics[key] = {"capture_error": type(error).__name__}
 
     await asyncio.gather(*(capture(key, args) for key, args in commands.items()))
-    journal_snapshots: dict[str, object] = {}
-
-    async def capture_journal(session_id: str) -> None:
-        try:
-            arguments = [
-                "exec",
-                f"pod/{name}",
-                "-c",
-                "runner",
-                "--",
-                "/run/agentplane/runner/bin/agentplane-runner",
-                "--agentplane-runner-journal-snapshot",
-                "--session-id",
-                session_id,
-            ]
-            for command_id in command_ids:
-                arguments.extend(("--command-id", command_id))
-            async with asyncio.timeout(CLEANUP_DIAGNOSTICS_SECONDS):
-                value = await kubectl(*arguments)
-            journal_snapshots[session_id] = json.loads(value)
-        except TimeoutError:
-            journal_snapshots[session_id] = {"snapshot_error": "capture_timeout"}
-        except Exception as error:
-            journal_snapshots[session_id] = {"snapshot_error": type(error).__name__}
-
-    await asyncio.gather(*(capture_journal(session_id) for session_id in session_ids))
-    diagnostics["journal_snapshots"] = journal_snapshots
-    artifact = undeclared_outputs_dir() / f"dispatcher-cleanup-{name}-{capture_id}.json"
-    artifact.write_text(json.dumps(diagnostics, indent=2) + "\n")
+    persist()
+    try:
+        diagnostics["runner_data"] = await _archive_runner_data(name, session_ids, artifact_dir)
+    except Exception as error:
+        diagnostics["runner_data_error"] = f"{type(error).__name__}: {error}"
+    persist()
 
 
 async def _cleanup_sandbox(name: str, uid: str, *, session_ids: list[str], command_ids: list[str]) -> None:
@@ -343,14 +455,18 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
         evidence["sandbox_uid"] = uid
         cleaned = False
 
-        async def cleanup() -> None:
+        async def cleanup(error: BaseException | None = None) -> None:
             if not cleaned:
+                if isinstance(error, Exception):
+                    await capture_without_masking(
+                        error, lambda: _capture_cleanup_diagnostics(sandbox, [session], [command])
+                    )
                 await _cleanup_sandbox(sandbox, uid, session_ids=[session], command_ids=[command])
 
         async def cleanup_on_exit(
             _exception_type: type[BaseException] | None, error: BaseException | None, _traceback: object
         ) -> bool:
-            await cleanup_without_masking(error, cleanup)
+            await cleanup_without_masking(error, lambda: cleanup(error))
             return False
 
         stack.push_async_exit(cleanup_on_exit)
@@ -592,9 +708,13 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
     evidence["sandbox_uid"] = uid
     cleaned = False
 
-    async def cleanup() -> None:
+    async def cleanup(error: BaseException | None = None) -> None:
         nonlocal cleaned
         if not cleaned:
+            if isinstance(error, Exception):
+                await capture_without_masking(
+                    error, lambda: _capture_cleanup_diagnostics(sandbox, [session], [command])
+                )
             await _cleanup_sandbox(sandbox, uid, session_ids=[session], command_ids=[command])
             cleaned = True
 
@@ -629,6 +749,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                                 model="chatgpt-sub/oai-responses/gpt-6-luna",
                                 cwd="/state/work",
                                 reasoning_effort="low",
+                                instructions=f"EARLY_DIAGNOSTIC_PAYLOAD_{sandbox}",
                             ),
                         ),
                         metadata=app_authentication.metadata,
@@ -640,7 +761,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                             sandbox_uid=uid,
                             session_id=session,
                             command_id=command,
-                            text="Reply with exactly OK and do not use tools.",
+                            text=f"LATE_DIAGNOSTIC_PAYLOAD_{sandbox} Reply with exactly OK and do not use tools.",
                         ),
                         metadata=notification_authentication.metadata,
                         timeout=15,
@@ -678,7 +799,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                 )
                 assert admitted.command_id == command
                 assert admitted.admission.event.command_admitted.command.submit_input.text == (
-                    "Reply with exactly OK and do not use tools."
+                    f"LATE_DIAGNOSTIC_PAYLOAD_{sandbox} Reply with exactly OK and do not use tools."
                 )
                 deadline = asyncio.get_running_loop().time() + BOUND_SECONDS
                 while True:
@@ -696,12 +817,100 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                     if asyncio.get_running_loop().time() >= deadline:
                         raise AssertionError("Session opening did not reach runner admission")
                     await asyncio.sleep(1)
+
+                capture_id = uuid4().hex
+                archive_dir = undeclared_outputs_dir() / f"dispatcher-data-proof-{sandbox}-{capture_id}"
+                archive_dir.mkdir(parents=True)
+                mount_sources = await _container_mount_sources(sandbox, archive_dir)
+                state_session = mount_sources["/state"] / "sessions" / session
+                early_payload = f"EARLY_ARCHIVE_PAYLOAD_{sandbox}".encode()
+                late_payload = f"LATE_ARCHIVE_PAYLOAD_{sandbox}".encode()
+                early_session_payload = f"EARLY_DIAGNOSTIC_PAYLOAD_{sandbox}".encode()
+                late_session_payload = f"LATE_DIAGNOSTIC_PAYLOAD_{sandbox}".encode()
+                (state_session / "diagnostic-early.bin").write_bytes(early_payload)
+                (mount_sources["/home/runner"] / f"diagnostic-late-{sandbox}.bin").write_bytes(late_payload)
+
+                wal_path = mount_sources["/tmp"] / f"dispatcher-wal-{capture_id}.sqlite"
+                wal_db = sqlite3.connect(wal_path)
+                try:
+                    assert wal_db.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
+                    wal_db.execute("PRAGMA wal_autocheckpoint=0")
+                    wal_db.execute("CREATE TABLE event_entry (cursor INTEGER PRIMARY KEY, payload BLOB NOT NULL)")
+                    wal_db.executemany(
+                        "INSERT INTO event_entry(cursor, payload) VALUES (?, ?)",
+                        [(1, early_payload), (2, late_payload)],
+                    )
+                    wal_db.commit()
+                    wal_file = Path(f"{wal_path}-wal")
+                    assert await asyncio.to_thread(wal_file.is_file)
+                    wal_before = await asyncio.to_thread(wal_file.stat)
+                    assert wal_before.st_size > 32
+                    archive_manifest = await _archive_runner_data(
+                        sandbox,
+                        [session],
+                        archive_dir,
+                        mount_sources=mount_sources,
+                        extra_backups=(("wal_probe", wal_path),),
+                    )
+                    assert archive_manifest["archive"] == "complete", archive_manifest
+                    session_backup = Path(archive_manifest["backups"][session]["path"])
+                    probe_backup = Path(archive_manifest["backups"]["wal_probe"]["path"])
+                    probe = sqlite3.connect(f"file:{probe_backup}?mode=ro", uri=True)
+                    try:
+                        assert probe.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+                        assert probe.execute("SELECT cursor, payload FROM event_entry ORDER BY cursor").fetchall() == [
+                            (1, early_payload),
+                            (2, late_payload),
+                        ]
+                    finally:
+                        probe.close()
+                    # Online backup must leave the WAL untouched and the live writer usable.
+                    wal_after_backup = await asyncio.to_thread(wal_file.stat)
+                    assert wal_after_backup.st_size == wal_before.st_size
+                    assert wal_after_backup.st_mtime_ns == wal_before.st_mtime_ns
+                    wal_db.execute("INSERT INTO event_entry(cursor, payload) VALUES (3, ?)", (b"after-backup",))
+                    wal_db.commit()
+                    session_db = sqlite3.connect(f"file:{session_backup}?mode=ro", uri=True)
+                    try:
+                        journal_payloads = [
+                            value
+                            for (value,) in session_db.execute("SELECT payload FROM event_entry")
+                            if isinstance(value, bytes)
+                        ]
+                        assert any(late_session_payload in value for value in journal_payloads)
+                    finally:
+                        session_db.close()
+                    found_markers: set[str] = set()
+                    expected = {
+                        f"/sessions/{session}/diagnostic-early.bin": early_payload,
+                        f"/sessions/{session}/session.json": early_session_payload,
+                        f"/diagnostic-late-{sandbox}.bin": late_payload,
+                    }
+                    with tarfile.open(archive_manifest["archive_path"], "r|") as runner_archive:
+                        for member in runner_archive:
+                            if not member.isfile():
+                                continue
+                            for suffix, expected_payload in expected.items():
+                                if member.name.endswith(suffix):
+                                    archived_file = runner_archive.extractfile(member)
+                                    assert archived_file is not None
+                                    archived_payload = archived_file.read()
+                                    if suffix.endswith("session.json"):
+                                        assert expected_payload in archived_payload
+                                    else:
+                                        assert archived_payload == expected_payload
+                                    found_markers.add(suffix)
+                    assert found_markers == set(expected)
+                finally:
+                    wal_db.close()
                 evidence.update(
                     {
                         "ready_incarnation": ready_incarnation,
                         "opening_state": pb.DeliveryState.Name(opening.opening.state),
                         "dispatch_state": pb.DeliveryState.Name(admitted.state),
                         "dispatch_admission_cursor": admitted.admission.cursor,
+                        "runner_data_archive": archive_manifest["archive_path"],
+                        "runner_data_manifest": str(archive_dir / "archive-manifest.json"),
                         "passed": True,
                     }
                 )
@@ -710,7 +919,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                 await channel.close()
     finally:
         failure = sys.exception()
-        await cleanup_without_masking(failure, cleanup)
+        await cleanup_without_masking(failure, lambda: cleanup(failure))
     evidence["cleanup_complete"] = True
     path.write_text(json.dumps(evidence, indent=2) + "\n")
 

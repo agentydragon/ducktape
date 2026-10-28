@@ -22,7 +22,6 @@ const (
 	execMode                 = "--agentplane-runner-exec"
 	workspaceMode            = "--agentplane-runner-workspace"
 	vmResourcePropertiesMode = "--vm-resource-properties"
-	journalSnapshotMode      = "--agentplane-runner-journal-snapshot"
 
 	parentLivenessFDDefault = 3
 	nativePIDFDDefault      = 4
@@ -44,8 +43,6 @@ func InternalMode(args []string) (handled bool, exitCode int) {
 		return true, WorkspaceMain(args[1:])
 	case vmResourcePropertiesMode:
 		return true, VMResourcePropertiesMain(args[1:])
-	case journalSnapshotMode:
-		return true, JournalSnapshotMain(args[1:])
 	default:
 		return false, 0
 	}

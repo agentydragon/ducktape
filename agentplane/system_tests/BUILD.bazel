@@ -3,8 +3,8 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # gazelle:exclude test_agent_messaging.py
 # gazelle:exclude test_dcr.py
-# gazelle:exclude test_cleanup_diagnostics.py
 # gazelle:exclude test_dispatcher.py
+# gazelle:exclude runner_data_archive.py
 # gazelle:exclude test_egress.py
 # gazelle:exclude test_launch_presets.py
 # gazelle:exclude test_mcp.py
@@ -487,13 +487,16 @@ py_test(
 
 system_test(
     name = "test_dispatcher",
-    srcs = ["test_dispatcher.py"],
+    srcs = [
+        "runner_data_archive.py",
+        "test_dispatcher.py",
+    ],
     # Opens Codex Sessions, so its runner image carries the harnesses: `model_free` has none, and
     # every activation there fails in the executor companion instead of on the runner path.
     k3s = "scripted",
     deps = [
-        ":cluster",
         ":cleanup_diagnostics",
+        ":cluster",
         ":conftest",
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane:crd_group",
@@ -503,6 +506,7 @@ system_test(
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
         "//util:net",
+        "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
