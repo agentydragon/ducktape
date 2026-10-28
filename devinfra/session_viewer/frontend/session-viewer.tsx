@@ -500,7 +500,8 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                   )}
                   {selectedSession.native_session_id_conflict && (
                     <Text size="xs" c="red" mt={4} style={{ overflowWrap: "anywhere" }}>
-                      Native session ID candidates: {(selectedSession.native_session_id_candidates ?? []).join(", ") || "unavailable"}
+                      Native session ID candidates:{" "}
+                      {(selectedSession.native_session_id_candidates ?? []).join(", ") || "unavailable"}
                     </Text>
                   )}
                 </Box>
@@ -565,9 +566,8 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                         )}
                         {selectedSession.parent_native_session_id_conflict && (
                           <Text size="xs" c="red" style={{ overflowWrap: "anywhere" }}>
-                            Conflicting native parent ID candidates: {(
-                              selectedSession.parent_native_session_id_candidates ?? []
-                            ).join(", ") || "unavailable"}
+                            Conflicting native parent ID candidates:{" "}
+                            {(selectedSession.parent_native_session_id_candidates ?? []).join(", ") || "unavailable"}
                           </Text>
                         )}
                         {parentSession?.identity_inferred && (
