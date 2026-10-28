@@ -74,6 +74,20 @@ subscription or inbox history. These are current-state records, not temporal ver
 [`github_deliveries.go`](../store/github_deliveries.go), and the
 [schema](../migrations/notifications/00001_baseline.sql).
 
+## Recovery acceptance
+
+The [GitHub service acceptance test](../acceptance_github_test.go) runs the configured HTTP API,
+background workers and PostgreSQL store against the shared fake GitHub API and fake Dispatcher and
+History peers. It establishes a quiet PR subscription, changes current GitHub facts without sending
+webhooks, advances persisted repair deadlines while stopped, and restarts the service. The workers
+must recover check-run, commit-status, review and lifecycle entries, dispatch a notice, reconcile its
+History confirmation and serve the agent's contiguous acknowledgement. Later observations of the
+same facts must retain their identities without allocating duplicate inbox entries.
+
+Provider tests retain the resource-specific filter, pagination, permission and race matrix. This
+service test verifies their composition through scheduling and delivery; it does not measure GitHub
+propagation time or assert that Dispatcher acceptance alone proves harness confirmation.
+
 ## Service identities
 
 Workers use rotating, audience-specific projected tokens for Actions, Runner Gateway, Dispatcher

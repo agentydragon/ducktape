@@ -201,6 +201,7 @@ go_test(
     name = "integration_test",
     size = "medium",
     srcs = [
+        "acceptance_github_test.go",
         "acceptance_test.go",
         "integration_testmain_test.go",
         "main_test.go",
@@ -212,6 +213,7 @@ go_test(
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/notification_service/actions",
+        "//agentplane/notification_service/github/testing",
         "//agentplane/notification_service/migrations",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/postgres/go/probes",
