@@ -41,7 +41,7 @@ def config_map(mesh: nebula_mesh.Mesh) -> ConfigMapArgs:
         .replace("@PROXMOX_PORT@", str(_PROXMOX_UI_PORT))
         .replace("@LISTEN_PORT@", str(SERVICE.pod_port))
     )
-    return ConfigMapArgs(name=_CONFIG_MAP_NAME, namespace=NAMESPACE, literals=[f"nginx.conf={nginx_conf}"])
+    return ConfigMapArgs(name=_CONFIG_MAP_NAME, namespace=NAMESPACE, data={"nginx.conf": nginx_conf})
 
 
 def _tcp_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:

@@ -115,7 +115,7 @@ def _unique_credentials() -> tuple[_MountedCredential, ...]:
 CONFIG_MAP = ConfigMapArgs(
     name="forgejo-token-rotations-config",
     namespace=_NAMESPACE,
-    literals=[f"{_CONFIG_FILE}={yaml_config(ROTATIONS.model_dump(mode='json', exclude_unset=True))}"],
+    data={_CONFIG_FILE: yaml_config(ROTATIONS.model_dump(mode="json", exclude_unset=True))},
 )
 
 

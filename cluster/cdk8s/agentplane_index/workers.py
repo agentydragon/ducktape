@@ -56,8 +56,8 @@ _REPOSITORY_MOUNT = "/var/lib/agentplane-index"
 CONFIG_MAP = ConfigMapArgs(
     name=f"{NAME}-config",
     namespace=NAME,
-    literals=[
-        f"{env_name(Settings, field)}={value}"
+    data={
+        env_name(Settings, field): value
         for field, value in {
             "checkout_dir": f"{_REPOSITORY_MOUNT}/repository",
             # libgit2 does not read SSL_CERT_FILE; the bundle comes from the cacerts image layer.
@@ -72,7 +72,7 @@ CONFIG_MAP = ConfigMapArgs(
             ),
             "embedding_timeout_seconds": "120",
         }.items()
-    ],
+    },
 )
 
 

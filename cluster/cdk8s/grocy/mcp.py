@@ -107,7 +107,7 @@ def _config_map(household: str) -> ConfigMapArgs:
         "# k8s Secret), so no single field here is secret.\n"
     )
     return ConfigMapArgs(
-        name=_CONFIG_MAP, namespace=oidc.namespace, literals=[f"{_CONFIG_FILE}={header}{yaml_config(settings)}"]
+        name=_CONFIG_MAP, namespace=oidc.namespace, data={_CONFIG_FILE: header + yaml_config(settings)}
     )
 
 

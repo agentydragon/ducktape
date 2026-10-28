@@ -148,9 +148,7 @@ _CONFIG_DATA = settings_file(
     },
     supplied=[("oidc_client_id",), ("oidc_client_secret",), ("oidc_session_secret",)],
 )
-CONFIG_MAP = ConfigMapArgs(
-    name="airlock-config", namespace=NAME, literals=[f"{_CONFIG_FILE}={yaml_config(_CONFIG_DATA)}"]
-)
+CONFIG_MAP = ConfigMapArgs(name="airlock-config", namespace=NAME, data={_CONFIG_FILE: yaml_config(_CONFIG_DATA)})
 
 
 def _probe(path: str, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:

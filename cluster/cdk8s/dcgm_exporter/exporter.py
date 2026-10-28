@@ -33,11 +33,9 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/dcgm-exporter"
 _LABELS = {"app": NAME}
 _CONFIG_DIR = "/etc/dcgm-exporter-config"
 _COUNTERS_FILE = "counters.csv"
-# A configMapGenerator literal: its hash suffix rewrites the DaemonSet's volume reference and
+# A configMapGenerator entry: its hash suffix rewrites the DaemonSet's volume reference and
 # rolls the pods whenever the counter set changes.
-COUNTERS_CONFIG_MAP = ConfigMapArgs(
-    name="dcgm-counters", namespace=NAMESPACE, literals=[f"{_COUNTERS_FILE}={counters.render()}"]
-)
+COUNTERS_CONFIG_MAP = ConfigMapArgs(name="dcgm-counters", namespace=NAMESPACE, data={_COUNTERS_FILE: counters.render()})
 
 
 def chart(app: App) -> Chart:

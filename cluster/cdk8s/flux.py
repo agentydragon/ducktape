@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import Annotated, cast
 
 import jsii
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart
@@ -37,7 +37,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 from pydantic.alias_generators import to_camel
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -244,9 +244,12 @@ class GeneratorOptions(BaseModel):
     disable_name_suffix_hash: bool | None = None
 
 
+ConfigMapKey = Annotated[str, Field(min_length=1, max_length=253, pattern=r"^[-._a-zA-Z0-9]+$")]
+
+
 class ConfigMapArgs(BaseModel):
     """One `configMapGenerator` entry: a ConfigMap kustomize renders from hand-written files
-    beside the `kustomization.yaml` or from literals, with its content-hash name suffix and
+    beside the `kustomization.yaml` or from inline `data`, with its content-hash name suffix and
     reference rewriting. A construct mounting it references `name`
     (`ConfigMap.from_config_map_name`)."""
 
@@ -260,7 +263,21 @@ class ConfigMapArgs(BaseModel):
     files: list[str] | None = Field(
         default=None, description="File names relative to the directory; each becomes a key of that name."
     )
-    literals: list[str] | None = Field(default=None, description="`KEY=value` entries, split at the first `=`.")
+    data: dict[ConfigMapKey, str] | None = Field(
+        default=None, serialization_alias="literals", description="ConfigMap keys and inline text values."
+    )
+
+    @field_validator("data")
+    @classmethod
+    def validate_data_keys(cls, data: dict[ConfigMapKey, str] | None) -> dict[ConfigMapKey, str] | None:
+        # Match Kubernetes' IsConfigMapKey path-safety checks in addition to its character constraints above.
+        if data is not None and any(key == "." or key.startswith("..") for key in data):
+            raise ValueError("ConfigMap keys must not be '.' or start with '..'")
+        return data
+
+    @field_serializer("data", when_used="unless-none")
+    def serialize_data(self, data: dict[ConfigMapKey, str]) -> list[str]:
+        return [f"{key}={value}" for key, value in data.items()]
 
 
 class PatchFile(BaseModel):

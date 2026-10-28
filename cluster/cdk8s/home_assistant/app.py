@@ -317,9 +317,8 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
 _ONBOARDING_SETTINGS = ConfigMapArgs(
     name=_ONBOARDING,
     namespace=_NAMESPACE,
-    literals=[
-        "settings.yaml="
-        + _settings_yaml(
+    data={
+        "settings.yaml": _settings_yaml(
             onboarding.Settings,
             {
                 "endpoint": _ENDPOINT.model_dump(),
@@ -340,7 +339,7 @@ _ONBOARDING_SETTINGS = ConfigMapArgs(
             },
             supplied=(("owner_password",),),
         )
-    ],
+    },
 )
 
 

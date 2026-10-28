@@ -57,9 +57,7 @@ _CONFIG = {
         }
     },
 }
-CONFIG_MAP = ConfigMapArgs(
-    name="vector-talos-config", namespace=NAMESPACE, literals=[f"{_CONFIG_FILE}={tomli_w.dumps(_CONFIG)}"]
-)
+CONFIG_MAP = ConfigMapArgs(name="vector-talos-config", namespace=NAMESPACE, data={_CONFIG_FILE: tomli_w.dumps(_CONFIG)})
 
 
 def chart(app: App) -> Chart:

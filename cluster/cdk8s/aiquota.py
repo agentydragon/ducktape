@@ -91,9 +91,7 @@ _CONFIG = settings_file(
     },
 )
 CONFIG_CONFIG_MAP = ConfigMapArgs(
-    name="aiquota-api-config",
-    namespace=NAMESPACE,
-    literals=[f"{_CONFIG_PATH.name}={_CONFIG_HEADER}{tomli_w.dumps(_CONFIG)}"],
+    name="aiquota-api-config", namespace=NAMESPACE, data={_CONFIG_PATH.name: _CONFIG_HEADER + tomli_w.dumps(_CONFIG)}
 )
 
 _API_NAME = "aiquota-api"

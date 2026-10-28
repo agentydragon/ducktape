@@ -132,7 +132,8 @@ name suffix and reference rewriting, and the construct mounting it references th
 entry's `name`. The input may instead sit beside its generator module, which copies it
 into the output directory (`generation.copy_source_file`), so the directory can live
 under `cluster/generated` (the Grafana dashboards, `grafana_dashboards.py`). Content
-rendered in Python goes into the same entry as `literals` (aiquota's `config.toml`).
+rendered in Python goes into the same entry as a `data` mapping (aiquota's `config.toml`);
+serialization converts its entries into Kustomize's `literals` list.
 Kustomize rewrites a generated name only into fields it knows; a custom resource's
 reference (`GrafanaDashboard.spec.configMapRef.name`) needs a `nameReference` transformer
 configuration listed under `configurations:`.

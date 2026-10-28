@@ -171,7 +171,7 @@ ROTATIONS = Config(
 CONFIG_MAP = ConfigMapArgs(
     name="authentik-jwt-rotations-config",
     namespace=NAMESPACE,
-    literals=[f"{_CONFIG_FILE}={yaml_config(ROTATIONS.model_dump(mode='json', exclude_unset=True))}"],
+    data={_CONFIG_FILE: yaml_config(ROTATIONS.model_dump(mode="json", exclude_unset=True))},
 )
 
 

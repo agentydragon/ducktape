@@ -17,6 +17,7 @@ from cluster.cdk8s.artifact_generators import artifact
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     ConfigMapArgs,
+    GeneratorOptions,
     RenderedDirectory,
     artifact_directory,
     flux_kustomization,
@@ -104,6 +105,71 @@ def test_generator_entry_placed_in_a_namespace_passes(
         config_map_generator=[ConfigMapArgs(name="test-config", namespace=entry_namespace)],
         namespaced_by_overlay=namespaced_by_overlay,
     )
+
+
+@pytest.mark.parametrize(
+    ("key", "message"),
+    [
+        ("", "at least 1 character"),
+        ("bad=key", "match pattern"),
+        ("with space", "match pattern"),
+        ("line\nbreak", "match pattern"),
+        ("trailing\n", "match pattern"),
+        ("directory/key", "match pattern"),
+        ("bad:key", "match pattern"),
+        ("a" * 254, "at most 253 characters"),
+    ],
+)
+def test_config_map_data_rejects_invalid_keys(key: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        ConfigMapArgs(name="test-config", namespace="test-ns", data={key: "value"})
+
+
+@pytest.mark.parametrize("key", ["config.yaml", "file_name.conf", "UPPER-Case_01", ".env", "a" * 253])
+def test_config_map_data_accepts_valid_file_keys(key: str) -> None:
+    assert ConfigMapArgs(name="test-config", namespace="test-ns", data={key: "value"}).data == {key: "value"}
+
+
+@pytest.mark.parametrize("key", [".", "...", "..anything"])
+def test_config_map_data_rejects_directory_traversal_keys(key: str) -> None:
+    with pytest.raises(ValueError, match="must not be"):
+        ConfigMapArgs(name="test-config", namespace="test-ns", data={key: "value"})
+
+
+def test_config_map_data_serializes_to_kustomize_literals() -> None:
+    data = {"config.yaml": "credentials: user=token==\nnext: true\n", "empty": "", "quoted": '"keep space "'}
+    entry = ConfigMapArgs(
+        name="test-config",
+        namespace="test-ns",
+        data=data,
+        files=["file.conf"],
+        options=GeneratorOptions(disable_name_suffix_hash=True),
+    )
+    rendered = kustomize_kustomization(resources=[], config_map_generator=[entry])
+    assert rendered["configMapGenerator"] == [
+        {
+            "name": "test-config",
+            "namespace": "test-ns",
+            "options": {"disableNameSuffixHash": True},
+            "files": ["file.conf"],
+            "literals": ["config.yaml=credentials: user=token==\nnext: true\n", "empty=", 'quoted="keep space "'],
+        }
+    ]
+    assert entry.data == data
+
+
+def test_file_backed_config_map_omits_literals() -> None:
+    rendered = kustomize_kustomization(
+        resources=[], config_map_generator=[ConfigMapArgs(name="test-config", namespace="test-ns", files=["file.conf"])]
+    )
+    assert rendered["configMapGenerator"] == [{"name": "test-config", "namespace": "test-ns", "files": ["file.conf"]}]
+
+
+def test_empty_config_map_data_serializes_as_empty_literals() -> None:
+    rendered = kustomize_kustomization(
+        resources=[], config_map_generator=[ConfigMapArgs(name="test-config", namespace="test-ns", data={})]
+    )
+    assert rendered["configMapGenerator"] == [{"name": "test-config", "namespace": "test-ns", "literals": []}]
 
 
 if __name__ == "__main__":

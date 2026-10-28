@@ -76,9 +76,7 @@ _CONFIG = {
         }
     }
 }
-CONFIG_MAP = ConfigMapArgs(
-    name=f"{_NAME}-config", namespace=NAMESPACE, literals=[f"{_CONFIG_FILE}={yaml.safe_dump(_CONFIG)}"]
-)
+CONFIG_MAP = ConfigMapArgs(name=f"{_NAME}-config", namespace=NAMESPACE, data={_CONFIG_FILE: yaml.safe_dump(_CONFIG)})
 
 
 def _daemon_set(scope: Chart, nodes: list[str]) -> None:

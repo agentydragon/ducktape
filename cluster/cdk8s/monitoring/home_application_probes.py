@@ -68,9 +68,7 @@ CONFIG = {
         },
     }
 }
-CONFIG_MAP = ConfigMapArgs(
-    name=f"{NAME}-config", namespace=NAMESPACE, literals=[f"{_CONFIG_FILE}={yaml.safe_dump(CONFIG)}"]
-)
+CONFIG_MAP = ConfigMapArgs(name=f"{NAME}-config", namespace=NAMESPACE, data={_CONFIG_FILE: yaml.safe_dump(CONFIG)})
 
 
 def _deployment(chart: Chart, source: str) -> k8s.KubeDeployment:
