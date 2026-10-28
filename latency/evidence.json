@@ -5260,7 +5260,7 @@
       }
     ]
   },
-  "source_devel_commit": "01d15ce5f3d06d9c6554a93329b8c5eb4994b417",
+  "source_devel_commit": "9ab44ab64b6e21c28c71352fbd98eef42b442b24",
   "measurement_source_devel_commit": "f24d1e727184d750f299bbe88b89880fe4865687",
   "profile_cases": [
     {
@@ -39831,10 +39831,9 @@
   "attribution": "not collected",
   "validation": {
     "status": "passed",
-    "prior_snapshot": "766ecb62698c7844a9cf0c4f225ad77abb7396c0",
-    "report_sha256": "9d5bc0eb284faa81614da8c6ce02c818a3803d24a2d2d988af3599ebfbd47345",
+    "report_sha256": "cd70a0b36bb1d49a2af884f1dc8043a9bb0119d0b3c14b4457deea2236e29ac8",
     "browser_review": {
-      "invocation": "7f61b181-6b2a-46cb-884a-7cc031c3c355",
+      "invocation": "801aaac6-64c6-49e7-9337-b92e837a0c52",
       "target": "//devinfra/ci/reports:slow_report_review",
       "result": "PASSED",
       "viewports": [
@@ -39843,14 +39842,15 @@
       ],
       "captures_per_viewport": [
         "overview",
+        "vm-mcp-followup",
         "browser-probe",
         "new-profiles",
         "decisions"
       ],
-      "visual_inspection": "Desktop and mobile overview and browser comparison screenshots inspected; readable layout and table scrolling, no page overflow."
+      "visual_inspection": "Desktop/mobile overview and lifecycle table screenshots inspected: readable layout, table scrolling, no page overflow."
     },
-    "numeric_checks": "Both browser arms have identical 48 unique case IDs; Debundle retains full synthetic dimensions and unchanged Node oracle. Fresh originating execution clocks only in ranking.",
-    "privacy": "Raw execution records, logs, profiles and worker identities excluded from new published evidence; inherited evidence retained."
+    "coverage_checks": "VM control/candidate three case IDs identical; MCP baseline/runner-only/both ten case IDs identical. Image import pair full unchanged three-case target passed.",
+    "privacy": "Raw logs/profiles, trace context and worker identifiers excluded from new published evidence. Sensitive environment values checked."
   },
   "recommendations": [
     {
@@ -44535,6 +44535,829 @@
         "cpu_seconds": 2343.856862
       },
       "limits": "One uncached pair, same source and test arguments, shard count only patch; worker and snapshot state unmatched. Preserve distinction between summed process cost and longest action."
+    }
+  },
+  "prior_profile_snapshot_validation": {
+    "status": "passed",
+    "prior_snapshot": "766ecb62698c7844a9cf0c4f225ad77abb7396c0",
+    "report_sha256": "9d5bc0eb284faa81614da8c6ce02c818a3803d24a2d2d988af3599ebfbd47345",
+    "browser_review": {
+      "invocation": "7f61b181-6b2a-46cb-884a-7cc031c3c355",
+      "target": "//devinfra/ci/reports:slow_report_review",
+      "result": "PASSED",
+      "viewports": [
+        [1280, 900],
+        [390, 844]
+      ],
+      "captures_per_viewport": [
+        "overview",
+        "browser-probe",
+        "new-profiles",
+        "decisions"
+      ],
+      "visual_inspection": "Desktop and mobile overview and browser comparison screenshots inspected; readable layout and table scrolling, no page overflow."
+    },
+    "numeric_checks": "Both browser arms have identical 48 unique case IDs; Debundle retains full synthetic dimensions and unchanged Node oracle. Fresh originating execution clocks only in ranking.",
+    "privacy": "Raw execution records, logs, profiles and worker identities excluded from new published evidence; inherited evidence retained."
+  },
+  "vm_mcp_lifecycle_followup_2026_10_28": {
+    "observed_through_utc": "2026-10-28T05:56:53.556568+00:00",
+    "scope": "Focused source-stratified lifecycle investigation, not a refreshed fleet/feedback census. No combined PR-head measurement.",
+    "source_lineages": [
+      {
+        "invocation_prefix": "71c96926",
+        "run": "push",
+        "tested_sha": "26226bc7dbe5feb95468d4017d878951db03fab5",
+        "pr_head_sha": "26226bc7dbe5feb95468d4017d878951db03fab5",
+        "tested_merge_base_sha": "-",
+        "contains_vm_shutdown_12333": "yes",
+        "contains_mcp_reuse_12380": "yes",
+        "mcp_xml_case_count": "10",
+        "vm_cleanup_s_each": "16.3,16.9,17.1",
+        "classification": "post-both",
+        "classification_basis": "resolved source ancestry corroborated by retained runtime signatures"
+      },
+      {
+        "invocation_prefix": "c23e6191",
+        "run": "PR #12470",
+        "tested_sha": "04bdf72cb24dec6e0ad8f5ead793a13aadf604ee",
+        "pr_head_sha": "ab23c0ccd5dc5ba0d7382c895fcb555d2219e4f6",
+        "tested_merge_base_sha": "4edebe6fc0feedcf2126d814115a4aa079da303e",
+        "contains_vm_shutdown_12333": "ancestry not verified; matching post-fix runtime behavior",
+        "contains_mcp_reuse_12380": "ancestry not verified; matching post-fix runtime behavior",
+        "mcp_xml_case_count": "10",
+        "vm_cleanup_s_each": "16.6,17.5,16.6",
+        "classification": "post-both",
+        "classification_basis": "retained runtime signatures only; synthetic merge history unavailable locally"
+      },
+      {
+        "invocation_prefix": "9894228b",
+        "run": "PR #12459",
+        "tested_sha": "81aa53d5961fa3e0a0ff2c9457d799c6a92c5dc9",
+        "pr_head_sha": "1b977dcbe33f7dad520584afebf4c0af0ffa6ead",
+        "tested_merge_base_sha": "0faa8b7f98332374567d8a1b848e14ea22da093b",
+        "contains_vm_shutdown_12333": "yes",
+        "contains_mcp_reuse_12380": "yes",
+        "mcp_xml_case_count": "10",
+        "vm_cleanup_s_each": "15.9,16.1,15.9",
+        "classification": "post-both",
+        "classification_basis": "resolved source ancestry corroborated by retained runtime signatures"
+      },
+      {
+        "invocation_prefix": "fe1c05b2",
+        "run": "PR #12441",
+        "tested_sha": "e2fdc68af8fe11daaa33bb9fcc84ee6fd83fd725",
+        "pr_head_sha": "da98b31e7b77d3c206df2fa48fb40e5bba92c0c8",
+        "tested_merge_base_sha": "ca93b9045ab22ec750bc9ad926a0dc3c44cc9bc5",
+        "contains_vm_shutdown_12333": "no",
+        "contains_mcp_reuse_12380": "no",
+        "mcp_xml_case_count": "12",
+        "vm_cleanup_s_each": "40.6,40.9,40.1",
+        "classification": "pre-both",
+        "classification_basis": "resolved source ancestry corroborated by retained runtime signatures"
+      },
+      {
+        "invocation_prefix": "d852cea9",
+        "run": "PR #12467",
+        "tested_sha": "aa7ecf58f796049a538f989b1ec7d2fef23647f8",
+        "pr_head_sha": "9498e92ab3e1f5ce51751abf1de26f3b8b486e87",
+        "tested_merge_base_sha": "c9f81ea364fe163f25bc814e6c7499f29b5ab585",
+        "contains_vm_shutdown_12333": "no",
+        "contains_mcp_reuse_12380": "no",
+        "mcp_xml_case_count": "12",
+        "vm_cleanup_s_each": "40.2,40.8,41.6",
+        "classification": "pre-both",
+        "classification_basis": "resolved source ancestry corroborated by retained runtime signatures"
+      },
+      {
+        "invocation_prefix": "27e8bf7f",
+        "run": "PR #12464 (prior head)",
+        "tested_sha": "eb8b72a7ee19615354fb944b7827117fbadd8e39",
+        "pr_head_sha": "5fdacb03b1b9fd7eec090d362622a140e41c4672",
+        "tested_merge_base_sha": "ed29fa7c695086592bdd08ee4a856d79206a1f74",
+        "contains_vm_shutdown_12333": "no",
+        "contains_mcp_reuse_12380": "no",
+        "mcp_xml_case_count": "12",
+        "vm_cleanup_s_each": "39.5,40.0,40.5",
+        "classification": "pre-both",
+        "classification_basis": "resolved source ancestry corroborated by retained runtime signatures"
+      },
+      {
+        "invocation_prefix": "40a39b73",
+        "run": "PR #12456",
+        "tested_sha": "aee3af077bffb3fc5bf5d508bebd704e82f769fc",
+        "pr_head_sha": "ed29fa7c695086592bdd08ee4a856d79206a1f74",
+        "tested_merge_base_sha": "da98b31e7b77d3c206df2fa48fb40e5bba92c0c8",
+        "contains_vm_shutdown_12333": "no",
+        "contains_mcp_reuse_12380": "no",
+        "mcp_xml_case_count": "12",
+        "vm_cleanup_s_each": "40.6,42.2,41.4",
+        "classification": "pre-both",
+        "classification_basis": "resolved source ancestry corroborated by retained runtime signatures"
+      }
+    ],
+    "source_stratified_phases": [
+      {
+        "invocation": "c23e6191-07bd-55e8-a0e8-b01fb197b238",
+        "tested_sha": "04bdf72cb24dec6e0ad8f5ead793a13aadf604ee",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/40632929459",
+        "vm_sandbox_vm": {
+          "process_seconds": 404.382365,
+          "cpu_seconds": 724.654939,
+          "stack_ready_seconds": 131.0,
+          "case_count": 3,
+          "vm.sandbox.ready_seconds": [28.285877, 28.300143, 28.371949],
+          "vm.sandbox.cleanup_seconds": [16.643114, 17.536086, 16.622252],
+          "vm.turn_seconds": [23.325444, 27.344129],
+          "vm.command_seconds": [26.447296, 19.274868, 6.457763]
+        },
+        "mcp": {
+          "process_seconds": 378.941386,
+          "cpu_seconds": 531.500644,
+          "stack_ready_seconds": 46.4,
+          "case_count": 10,
+          "after_first_case_xml_seconds": 281.551
+        }
+      },
+      {
+        "invocation": "fe1c05b2-c1f9-5018-b856-42db6cf271ff",
+        "tested_sha": "e2fdc68af8fe11daaa33bb9fcc84ee6fd83fd725",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/40629276036",
+        "vm_sandbox_vm": {
+          "process_seconds": 517.152304,
+          "cpu_seconds": 885.70183,
+          "stack_ready_seconds": 157.0,
+          "vm.sandbox.ready_seconds": [36.66307, 28.30417, 28.322273],
+          "vm.sandbox.cleanup_seconds": [40.578269, 40.946836, 40.086861],
+          "vm.turn_seconds": [34.293415, 24.001291],
+          "vm.command_seconds": [25.560229, 15.341892, 4.947265]
+        },
+        "mcp": {
+          "process_seconds": 468.786978,
+          "cpu_seconds": 728.904263,
+          "stack_ready_seconds": 76.3,
+          "case_count": 12,
+          "after_first_case_xml_seconds": 339.727
+        }
+      },
+      {
+        "invocation": "d852cea9-cd7d-5cee-9869-8f0f97e8f573",
+        "tested_sha": "aa7ecf58f796049a538f989b1ec7d2fef23647f8",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/40632102197",
+        "vm_sandbox_vm": {
+          "process_seconds": 459.628356,
+          "cpu_seconds": 834.884242,
+          "stack_ready_seconds": 135.4,
+          "vm.sandbox.ready_seconds": [28.357235, 26.260217, 24.244873],
+          "vm.sandbox.cleanup_seconds": [40.20378, 40.760056, 41.555936],
+          "vm.turn_seconds": [21.431172, 23.332389],
+          "vm.command_seconds": [25.181843, 14.244709, 4.210825]
+        },
+        "mcp": {
+          "process_seconds": 479.86788,
+          "cpu_seconds": 695.935351,
+          "stack_ready_seconds": 83.6,
+          "case_count": 12,
+          "after_first_case_xml_seconds": 347.072
+        }
+      },
+      {
+        "invocation": "27e8bf7f-b52f-5517-83fd-b14b71fdfb13",
+        "tested_sha": "eb8b72a7ee19615354fb944b7827117fbadd8e39",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/40630839304",
+        "vm_sandbox_vm": {
+          "process_seconds": 451.270738,
+          "cpu_seconds": 801.480333,
+          "stack_ready_seconds": 118.8,
+          "vm.sandbox.ready_seconds": [26.261798, 26.280052, 26.259799],
+          "vm.sandbox.cleanup_seconds": [39.49524, 40.018503, 40.454693],
+          "vm.turn_seconds": [21.531838, 29.251305],
+          "vm.command_seconds": [21.345976, 13.950278, 4.308728]
+        },
+        "mcp": {
+          "process_seconds": 468.866784,
+          "cpu_seconds": 715.658426,
+          "stack_ready_seconds": 76.0,
+          "case_count": 12,
+          "after_first_case_xml_seconds": 337.695
+        }
+      },
+      {
+        "invocation": "9894228b-e5f2-5450-831a-012f8275b289",
+        "tested_sha": "81aa53d5961fa3e0a0ff2c9457d799c6a92c5dc9",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/40630326535",
+        "vm_sandbox_vm": {
+          "process_seconds": 375.424531,
+          "cpu_seconds": 661.308031,
+          "stack_ready_seconds": 113.8,
+          "vm.sandbox.ready_seconds": [26.247645, 28.283272, 28.366301],
+          "vm.sandbox.cleanup_seconds": [15.881838, 16.095009, 15.942778],
+          "vm.turn_seconds": [19.234708, 24.004059],
+          "vm.command_seconds": [28.107507, 18.396603, 5.641798]
+        },
+        "mcp": {
+          "process_seconds": 382.515893,
+          "cpu_seconds": 530.606312,
+          "stack_ready_seconds": 53.5,
+          "case_count": 10,
+          "after_first_case_xml_seconds": 282.58
+        }
+      },
+      {
+        "invocation": "71c96926-6d39-5290-ad4a-061ec7a03408",
+        "tested_sha": "26226bc7dbe5feb95468d4017d878951db03fab5",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/40620450076",
+        "vm_sandbox_vm": {
+          "process_seconds": 417.677674,
+          "cpu_seconds": 751.604191,
+          "stack_ready_seconds": 121.9,
+          "vm.sandbox.ready_seconds": [30.483686, 28.327795, 32.536167],
+          "vm.sandbox.cleanup_seconds": [16.290839, 16.939176, 17.079831],
+          "vm.turn_seconds": [26.611991, 31.897792],
+          "vm.command_seconds": [29.083758, 18.911635, 7.600081]
+        },
+        "mcp": {
+          "process_seconds": 386.425589,
+          "cpu_seconds": 565.971792,
+          "stack_ready_seconds": 50.7,
+          "case_count": 10,
+          "after_first_case_xml_seconds": 287.64
+        }
+      },
+      {
+        "invocation": "40a39b73-ac2d-5cec-9e31-4f499ac1d150",
+        "tested_sha": "aee3af077bffb3fc5bf5d508bebd704e82f769fc",
+        "run_url": "https://github.com/agentydragon/ducktape/actions/runs/40630020546",
+        "vm_sandbox_vm": {
+          "process_seconds": 687.624465,
+          "cpu_seconds": 1429.279979,
+          "stack_ready_seconds": 267.1,
+          "case_count": 3,
+          "vm.sandbox.ready_seconds": [36.418633, 32.424804, 34.420231],
+          "vm.sandbox.cleanup_seconds": [40.592664, 42.229178, 41.419894],
+          "vm.turn_seconds": [36.969891, 36.933871],
+          "vm.command_seconds": [35.774298, 28.011943, 7.067462]
+        },
+        "mcp": {
+          "process_seconds": 454.137267,
+          "cpu_seconds": 672.31807,
+          "stack_ready_seconds": 72.1,
+          "case_count": 12,
+          "after_first_case_xml_seconds": 334.344
+        }
+      }
+    ],
+    "worker_finish_comparison": [
+      {
+        "invocation": "c23e6191-07bd-55e8-a0e8-b01fb197b238",
+        "source_lineage": "post_12333_and_12380",
+        "clock": "RBE executedActionMetadata.workerCompletedTimestamp",
+        "mcp_worker_completed_utc": "2026-10-28T04:41:52.029537Z",
+        "vm_worker_completed_utc": "2026-10-28T04:42:12.424Z",
+        "mcp_minus_vm_seconds": -20.394
+      },
+      {
+        "invocation": "9894228b-e5f2-5450-831a-012f8275b289",
+        "source_lineage": "post_12333_and_12380",
+        "clock": "RBE executedActionMetadata.workerCompletedTimestamp",
+        "mcp_worker_completed_utc": "2026-10-28T04:16:13.324742Z",
+        "vm_worker_completed_utc": "2026-10-28T04:16:12.954606Z",
+        "mcp_minus_vm_seconds": 0.37
+      },
+      {
+        "invocation": "71c96926-6d39-5290-ad4a-061ec7a03408",
+        "source_lineage": "post_12333_and_12380",
+        "clock": "RBE executedActionMetadata.workerCompletedTimestamp",
+        "mcp_worker_completed_utc": "2026-10-28T02:30:59.456307Z",
+        "vm_worker_completed_utc": "2026-10-28T02:31:30.543367Z",
+        "mcp_minus_vm_seconds": -31.087
+      }
+    ],
+    "vm_guest": {
+      "tested_base_sha": "9ab44ab64b6e21c28c71352fbd98eef42b442b24",
+      "pr_base_sha_at_open": "48f86d84cd2bdc58cec62dd30861c61ab4452ced",
+      "pr_head_sha": "edf1eb7c17e028bfc16d80c54c3b12650bbe2f47",
+      "pr_url": "https://github.com/agentydragon/ducktape/pull/12495",
+      "change": "Set OTEL_SDK_DISABLED=true in the minimal k3s VM test guest before starting Runner; production guest unchanged.",
+      "mechanism": "The control guest has no OTLP collector. Runner observability.Init constructs an exporter and provider.Shutdown waits its 5s deadline. Candidate skips exporter construction, then the same guest drain and poweroff path completes.",
+      "runs": {
+        "control": {
+          "invocation": "d2fff242-2a49-44ba-86f5-d9642c1f8158",
+          "test_action_seconds": 409.7,
+          "stack_ready_after_k3s_seconds": 94.4,
+          "status": "PASSED",
+          "case_count": 3,
+          "cases": {
+            "test_a_vm_sandbox_runs_a_turn[claude]": {
+              "sandbox.ready": 36.417,
+              "session.open": 2.006,
+              "turn": 33.096,
+              "sandbox.cleanup": 16.822,
+              "cleanup_events_seconds": {
+                "suspend.accepted": 0.042,
+                "suspended": 0.233,
+                "delete.accepted": 0.266,
+                "deleted": 16.821
+              },
+              "case": 88.57,
+              "guest_shutdown": {
+                "request_to_runner_drained_seconds": 5.261,
+                "request_to_complete_seconds": 5.395,
+                "otel_shutdown_failure_count": 1,
+                "console_sha256": "98c2fd59c9a0ef66a04cff0364292439eb89bb1a4a698514ef711ef69b78c322"
+              }
+            },
+            "test_a_vm_sandbox_runs_a_turn[codex]": {
+              "sandbox.ready": 28.291,
+              "session.open": 1.088,
+              "turn": 29.39,
+              "sandbox.cleanup": 15.751,
+              "cleanup_events_seconds": {
+                "suspend.accepted": 0.039,
+                "suspended": 0.168,
+                "delete.accepted": 0.193,
+                "deleted": 15.751
+              },
+              "case": 74.603,
+              "guest_shutdown": {
+                "request_to_runner_drained_seconds": 5.199,
+                "request_to_complete_seconds": 5.301,
+                "otel_shutdown_failure_count": 1,
+                "console_sha256": "58ba303a5a560f798761a02c2adea1030fd5351fcd1b5ea663e33041a8712bb2"
+              }
+            },
+            "test_codex_tool_oom_preserves_runner_and_app_server[codex]": {
+              "sandbox.ready": 28.304,
+              "session.open": 1.115,
+              "command.memory-before": 28.237,
+              "command.tool-oom": 29.488,
+              "command.memory-after": 7.682,
+              "sandbox.cleanup": 17.174,
+              "cleanup_events_seconds": {
+                "suspend.accepted": 0.03,
+                "suspended": 0.207,
+                "delete.accepted": 0.253,
+                "deleted": 17.173
+              },
+              "case": 112.267,
+              "guest_shutdown": {
+                "request_to_runner_drained_seconds": 5.075,
+                "request_to_complete_seconds": 5.299,
+                "otel_shutdown_failure_count": 1,
+                "console_sha256": "7476e858cbed262f84cae40f67406e651234bae0a7e52c2954bd1e4f3c28b01b"
+              }
+            }
+          },
+          "totals_seconds": {
+            "case": 275.44,
+            "sandbox.ready": 93.012,
+            "session.open": 4.209,
+            "turn": 62.486,
+            "command.memory-before": 28.237,
+            "command.tool-oom": 29.488,
+            "command.memory-after": 7.682,
+            "sandbox.cleanup": 49.747
+          },
+          "phase_trace_sha256": "785e648566c0ad793d46c4fb520c22d47379d7de931e4c54f852f961542bff1c",
+          "command_profile_sha256": "f3b05e04885850a0b5711b6d4d38df0eb5f19ebddaf22501c39b5a1070007c6f",
+          "k3s_timeline_sha256": "348592f73c73b8cb69a1ad85ab1ff9579298a078a6e99c73588d8b73bf9e0e76"
+        },
+        "candidate": {
+          "invocation": "b3267b8f-9ad6-4524-bb3c-e9871660338e",
+          "test_action_seconds": 415.3,
+          "stack_ready_after_k3s_seconds": 120.2,
+          "status": "PASSED",
+          "case_count": 3,
+          "cases": {
+            "test_a_vm_sandbox_runs_a_turn[claude]": {
+              "sandbox.ready": 38.48,
+              "session.open": 2.27,
+              "turn": 33.932,
+              "sandbox.cleanup": 11.342,
+              "cleanup_events_seconds": {
+                "suspend.accepted": 0.037,
+                "suspended": 0.255,
+                "delete.accepted": 0.281,
+                "deleted": 11.341
+              },
+              "case": 86.541,
+              "guest_shutdown": {
+                "request_to_runner_drained_seconds": 0.312,
+                "request_to_complete_seconds": 0.51,
+                "otel_shutdown_failure_count": 0,
+                "console_sha256": "9c72296949efaf35fe648520b76b91903a13ef3de98cf6241e1d157eb19b24ae"
+              }
+            },
+            "test_a_vm_sandbox_runs_a_turn[codex]": {
+              "sandbox.ready": 30.348,
+              "session.open": 1.095,
+              "turn": 31.13,
+              "sandbox.cleanup": 11.702,
+              "cleanup_events_seconds": {
+                "suspend.accepted": 0.032,
+                "suspended": 0.207,
+                "delete.accepted": 0.232,
+                "deleted": 11.702
+              },
+              "case": 74.375,
+              "guest_shutdown": {
+                "request_to_runner_drained_seconds": 0.2,
+                "request_to_complete_seconds": 0.3,
+                "otel_shutdown_failure_count": 0,
+                "console_sha256": "d435900b5ad2e66a9b36260e4947036ac917665e3c0138efb94953dbcbf9ff75"
+              }
+            },
+            "test_codex_tool_oom_preserves_runner_and_app_server[codex]": {
+              "sandbox.ready": 28.322,
+              "session.open": 1.297,
+              "command.memory-before": 27.856,
+              "command.tool-oom": 22.65,
+              "command.memory-after": 6.263,
+              "sandbox.cleanup": 11.816,
+              "cleanup_events_seconds": {
+                "suspend.accepted": 0.031,
+                "suspended": 0.384,
+                "delete.accepted": 0.418,
+                "deleted": 11.815
+              },
+              "case": 98.504,
+              "guest_shutdown": {
+                "request_to_runner_drained_seconds": 0.205,
+                "request_to_complete_seconds": 0.9,
+                "otel_shutdown_failure_count": 0,
+                "console_sha256": "194dbe1610d232d14ffb7ef25abfd9201a4da8b947c9b1a23591fc0bb5fc1438"
+              }
+            }
+          },
+          "totals_seconds": {
+            "case": 259.42,
+            "sandbox.ready": 97.15,
+            "session.open": 4.662,
+            "turn": 65.062,
+            "command.memory-before": 27.856,
+            "command.tool-oom": 22.65,
+            "command.memory-after": 6.263,
+            "sandbox.cleanup": 34.86
+          },
+          "phase_trace_sha256": "3cc7ac29c983d867796aee2223e2833cc401a5a16e8d44914d1564a1c8dc4570",
+          "command_profile_sha256": "49cc56a06ee17e12220d35d4243e44a7ec804831a0e26f5f6c944cb994f74fb4",
+          "k3s_timeline_sha256": "0fc91ec670a074d3f04002bfaefd7c0dc37a83059461496f9e0e31802d3370c4"
+        }
+      },
+      "paired_cleanup_delta_seconds": 14.887,
+      "observed_ci_limit": "This pair measures VM cleanup only. Full test action candidate was slower because stack readiness and turns varied; CI feedback savings depend on whether VM remains the slowest required action.",
+      "checks": [
+        "bbr test //agentplane/system_tests:test_vm_sandbox_vm --nocache_test_results --test_output=errors: control and candidate each passed 3 cases",
+        "pre-commit run --files agentplane/system_tests/k3s/guest/guest_init: passed",
+        "git diff origin/devel...HEAD --check: passed"
+      ],
+      "older_post_shutdown_reference": {
+        "invocation": "c23e6191-07bd-55e8-a0e8-b01fb197b238",
+        "trace_sha256": "ba8207a1729a62a8a72b8f3e1428153fcfce6bf1cb4fba2494d27f3f532504f2",
+        "cleanup_seconds": [16.643, 17.536, 16.622]
+      },
+      "phase_interpretation": {
+        "ready": "The test waits for the Sandbox Ready condition, which requires a Ready launcher Pod and a connected Runner lease; the fixture polls every 2s. Three independent VM boots are required by the cases. Poll granularity offers at most ~2s per case and the traces do not isolate an actual poll tax.",
+        "native_turn": "Retained c23 native frames show cold first response after thread/start of about 12.1s for Claude and 9.4s/7.8s for the two Codex sessions. This is inside required native-harness coverage; no safe change was identified from these traces alone.",
+        "cleanup": "In the candidate, ACPI shutdown is received 1.6\u20131.9s after cleanup begins; Runner drains 0.2\u20130.3s later; guest shutdown completes by +2.1\u20132.8s; virt-launcher-monitor exits around +10.3\u201310.4s; Sandbox deletion is observed at +11.3\u201311.8s. The remaining monitor/controller tail is real lifecycle work with no established avoidable mechanism.",
+        "old_outlier": "Invocation 40a39b73 used PR #12456 stacked on da98b31e, which does not contain guest-shutdown commit fdcd5e21a0; its ~41s cleanup is a pre-fix lineage and not a current regression."
+      },
+      "pr_ci_at_last_check": {
+        "Pre-commit checks": "PASS",
+        "bazel-ci / Test & Build": "IN_PROGRESS",
+        "Build artifacts + imports check": "IN_PROGRESS",
+        "PR visual review": "PENDING",
+        "BuildBuddy / Bazel tests (live)": "PENDING"
+      }
+    },
+    "mcp_pod": {
+      "measurement": "MCP hermetic k3s fixture OTLP exporter shutdown",
+      "profile_read_command": "python -c 'import gzip,json; print(json.load(gzip.open(\"PROFILE\", \"rt\"))[\"traceEvents\"])'",
+      "source": {
+        "measurement_base_sha": "8a24059ba92dd517dc25c722dafa639e8509ece0",
+        "pr_base_sha_at_rebase": "48f86d84cd2bdc58cec62dd30861c61ab4452ced",
+        "pr_head_sha": "6dd72793fe13f0922d290ef565db30db07856279",
+        "pr_patch_sha256": "2e0020ab1fa7c55c39a618a4a330c4e1c8dc9c8c2eb97aed901693386b812f9c",
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/12496",
+        "trace_probe_committed": false
+      },
+      "checks": {
+        "measured_source_mcp_and_render": "passed; 10 MCP cases; invocation 5cadf03d-4810-4c90-8104-81281a9693d8",
+        "production_manifest_snapshot": "passed; invocation 8f094e85-b604-4600-a1ff-30510496f40f",
+        "affected_library_build": "passed; invocation a97bfa19-1915-4776-831a-a398f9096c1e",
+        "pre_commit": "passed on four changed files"
+      },
+      "arms": [
+        {
+          "arm": "baseline",
+          "invocation_id": "2b0f997c-91f9-41aa-937c-c0cf11a93e63",
+          "measured_source_commit": "8a24059ba92dd517dc25c722dafa639e8509ece0",
+          "start_utc": "2026-10-28T05:27:15.619000Z",
+          "updated_utc": "2026-10-28T05:35:47.619000Z",
+          "invocation_s": 514.475,
+          "test_cases": [
+            "test_agent_executes_mcp_action[claude]",
+            "test_agent_executes_mcp_action[codex]",
+            "test_operator_links_oauth_mcp_server[claude]",
+            "test_operator_links_oauth_mcp_server[codex]",
+            "test_agent_mcp_bff_decision[claude]",
+            "test_agent_mcp_bff_decision[codex]",
+            "test_policy_binding_auto_approves_the_bound_sandbox[claude]",
+            "test_policy_binding_auto_approves_the_bound_sandbox[codex]",
+            "test_launcher_drives_only_the_sandbox_it_launched[claude]",
+            "test_launcher_drives_only_the_sandbox_it_launched[codex]"
+          ],
+          "pytest_total_s": 482.298,
+          "profile_action_processing_s": 505.765,
+          "spans": {
+            "vm.case": {
+              "count": 10,
+              "sum_s": 299.487,
+              "durations_s": null
+            },
+            "vm.sandbox.ready": {
+              "count": 10,
+              "sum_s": 149.725,
+              "durations_s": null
+            },
+            "vm.sandbox.cleanup": {
+              "count": 12,
+              "sum_s": 84.359,
+              "durations_s": [
+                6.818, 8.019, 5.483, 7.812, 6.484, 7.883, 5.898, 7.524, 6.614,
+                6.733, 7.641, 7.448
+              ]
+            },
+            "mcp.operator.login": {
+              "count": 8,
+              "sum_s": 1.14,
+              "durations_s": null
+            },
+            "mcp.operator.federation": {
+              "count": 8,
+              "sum_s": 0.186,
+              "durations_s": null
+            }
+          },
+          "artifacts": {
+            "phases": {
+              "sha256": "3e24a8b55673b0fa629f94dd9b18b9dfe8646c5dfcf203749b4ea9870386dbad"
+            },
+            "xml": {
+              "sha256": "3e06f1e002f39150d04db8bb45f6f8273cdfe7fbebb67ea3e0b2f9b50191cf19"
+            },
+            "bazel_profile": {
+              "sha256": "5003f6267ae00c2212609841efeacdac4bc99a4407fa507f19ca31744a78c82b"
+            }
+          }
+        },
+        {
+          "arm": "runner_only",
+          "invocation_id": "37bb8230-6b2d-4505-a7b0-b1107f353c9b",
+          "measured_source_commit": "8a24059ba92dd517dc25c722dafa639e8509ece0",
+          "start_utc": "2026-10-28T05:37:54.186000Z",
+          "updated_utc": "2026-10-28T05:44:48.912000Z",
+          "invocation_s": 417.332,
+          "test_cases": [
+            "test_agent_executes_mcp_action[claude]",
+            "test_agent_executes_mcp_action[codex]",
+            "test_operator_links_oauth_mcp_server[claude]",
+            "test_operator_links_oauth_mcp_server[codex]",
+            "test_agent_mcp_bff_decision[claude]",
+            "test_agent_mcp_bff_decision[codex]",
+            "test_policy_binding_auto_approves_the_bound_sandbox[claude]",
+            "test_policy_binding_auto_approves_the_bound_sandbox[codex]",
+            "test_launcher_drives_only_the_sandbox_it_launched[claude]",
+            "test_launcher_drives_only_the_sandbox_it_launched[codex]"
+          ],
+          "pytest_total_s": 361.426,
+          "profile_action_processing_s": 386.06,
+          "spans": {
+            "vm.case": {
+              "count": 10,
+              "sum_s": 299.869,
+              "durations_s": null
+            },
+            "vm.sandbox.ready": {
+              "count": 10,
+              "sum_s": 145.716,
+              "durations_s": null
+            },
+            "vm.sandbox.cleanup": {
+              "count": 12,
+              "sum_s": 82.56,
+              "durations_s": [
+                5.8, 7.387, 5.955, 7.693, 6.631, 8.057, 5.598, 7.874, 6.472,
+                5.669, 7.829, 7.595
+              ]
+            },
+            "mcp.operator.login": {
+              "count": 8,
+              "sum_s": 1.075,
+              "durations_s": null
+            },
+            "mcp.operator.federation": {
+              "count": 8,
+              "sum_s": 0.168,
+              "durations_s": null
+            }
+          },
+          "artifacts": {
+            "phases": {
+              "sha256": "a2dc030e79027afbf7ca09dc6ef626e39ab5aa37dbae934cf65d456194941ef4"
+            },
+            "xml": {
+              "sha256": "fb8a82fa063b300c2a5d42c789b6e45d06b8f7a6b31c1c8b9304dc5200fde5bc"
+            },
+            "bazel_profile": {
+              "sha256": "a5036015983df57730c1aa69e3450087729e286305a549ab71e1723c2099b1f5"
+            }
+          }
+        },
+        {
+          "arm": "runner_and_sidecar",
+          "invocation_id": "5cadf03d-4810-4c90-8104-81281a9693d8",
+          "measured_source_commit": "8a24059ba92dd517dc25c722dafa639e8509ece0",
+          "start_utc": "2026-10-28T05:46:01.931000Z",
+          "updated_utc": "2026-10-28T05:51:55.013000Z",
+          "invocation_s": 356.435,
+          "test_cases": [
+            "test_agent_executes_mcp_action[claude]",
+            "test_agent_executes_mcp_action[codex]",
+            "test_operator_links_oauth_mcp_server[claude]",
+            "test_operator_links_oauth_mcp_server[codex]",
+            "test_agent_mcp_bff_decision[claude]",
+            "test_agent_mcp_bff_decision[codex]",
+            "test_policy_binding_auto_approves_the_bound_sandbox[claude]",
+            "test_policy_binding_auto_approves_the_bound_sandbox[codex]",
+            "test_launcher_drives_only_the_sandbox_it_launched[claude]",
+            "test_launcher_drives_only_the_sandbox_it_launched[codex]"
+          ],
+          "pytest_total_s": 298.528,
+          "profile_action_processing_s": 325.158,
+          "spans": {
+            "vm.case": {
+              "count": 10,
+              "sum_s": 241.56,
+              "durations_s": null
+            },
+            "vm.sandbox.ready": {
+              "count": 10,
+              "sum_s": 147.697,
+              "durations_s": null
+            },
+            "vm.sandbox.cleanup": {
+              "count": 12,
+              "sum_s": 23.716,
+              "durations_s": [
+                1.131, 2.533, 0.813, 3.243, 1.237, 2.834, 0.718, 2.833, 1.552,
+                1.712, 2.666, 2.445
+              ]
+            },
+            "mcp.operator.login": {
+              "count": 8,
+              "sum_s": 1.018,
+              "durations_s": null
+            },
+            "mcp.operator.federation": {
+              "count": 8,
+              "sum_s": 0.153,
+              "durations_s": null
+            }
+          },
+          "artifacts": {
+            "phases": {
+              "sha256": "8ad05cdf34e3f2a53ca37d2c36c125230f5a7d22bf519988a0aefff2611e7866"
+            },
+            "xml": {
+              "sha256": "2bc8f18e9c45fd96725c935be671e9ecf64e7c27dd637fac079295a69f920c34"
+            },
+            "bazel_profile": {
+              "sha256": "0cad4cb17a4812a78ce6bfb8e6a8cf798b416143c1a803cb853400ac891769fb"
+            }
+          }
+        }
+      ],
+      "caveat": "Cold-start image import varied; compare within-case cleanup spans, not invocation totals. Required-check timing depends on parallel VM gate; no feedback-time saving is claimed."
+    },
+    "image_import_order": {
+      "source_base": "9ab44ab64b6e21c28c71352fbd98eef42b442b24",
+      "candidate_code_commit": "5520148017",
+      "candidate_code_diff_sha256": "0b06e1f5188b98ac7031b58244a1f4122d41599326248482630a577d806179c0",
+      "command": "bbr test //agentplane/system_tests:test_vm_sandbox_vm --nocache_test_results --test_output=errors",
+      "run_order": ["candidate", "control"],
+      "snapshot_classification": "Same BuildBuddy worker identifier and VM recycling key; Firecracker guest/snapshot identity and pre-import containerd content/unpack state were not captured. Do not infer exact snapshot reuse or a redundant import.",
+      "candidate": {
+        "invocation_id": "b262742f-68dd-40ba-9bf4-17d6333c984f",
+        "runner_invocation_id": "e4112bbc-9d17-4c8a-ae44-c9817c27d57c",
+        "result": "PASSED (3 cases)",
+        "node_ready_s": 11.4,
+        "vm_releases_applied_s": 26.3,
+        "deployment_images_imported_s": 93.9,
+        "manifests_applied_s": 100.1,
+        "guest_root_import_s": 65.1,
+        "guest_root_import_end_s": 165.2,
+        "deployments_available_s": 169.1,
+        "stack_ready_s": 170.3,
+        "test_action_s": 600.4,
+        "cpu_s": 1217.93149,
+        "timeline_sha256": "3126eb3bef7af9fb81ce201a5099f3148f5d1f9c5fb726709c7f4bcdec794a09",
+        "execution_sha256": "98c952100a452985d50d90bb4c7e3020b27015ce978bb7708476a362da3c5914"
+      },
+      "control": {
+        "invocation_id": "6afbeff6-c996-4682-9e8b-291c4ec9cdcf",
+        "runner_invocation_id": "78b00ba4-bb84-484f-9f75-49119c979845",
+        "result": "PASSED (3 cases)",
+        "node_ready_s": 12.8,
+        "vm_releases_applied_s": 30.9,
+        "service_and_guest_boot_images_imported_s": 122.9,
+        "guest_root_import_s": 64.9,
+        "guest_root_import_end_s": 187.8,
+        "manifests_applied_s": 195.1,
+        "deployments_available_s": 220.9,
+        "stack_ready_s": 221.8,
+        "test_action_s": 636.3,
+        "cpu_s": 1261.453752,
+        "timeline_sha256": "de43f04add4eea9f259e050d2b02b821343b4cc5add6c58cd8b6ab1099aac667",
+        "execution_sha256": "cf167f6134ec686ec150a01141f20989a8249abffa7efb1ed6d1c3ff30a0f413"
+      },
+      "observed_differences_candidate_minus_control": {
+        "stack_ready_s": -51.5,
+        "test_action_s": -35.9,
+        "cpu_s": -43.522262
+      },
+      "decision": "Publish narrow import-order candidate: both full VM tests passed; one same-source/same-worker pair shows startup and action improvement. The 51.5s stack difference includes 29s upstream import variation; about 22s of Deployment readiness tail overlapped. No fleet or per-PR feedback savings inferred from one pair. Exact OCI digest/unpacked snapshot fastpath not implemented because redundant state was not proven.",
+      "same_observed_worker_identifier": true,
+      "publication": {
+        "pr_url": "https://github.com/agentydragon/ducktape/pull/12498",
+        "head_sha": "0a45f51da59d241e3ef1427657eb25710f95b7f2"
+      }
+    },
+    "real_bazel_profiles": [
+      {
+        "label": "image control",
+        "invocation": "6afbeff6-c996-4682-9e8b-291c4ec9cdcf",
+        "bytes": 146454,
+        "sha256": "053e216086083daf794e4c0d0906e24364e3c3f7aaa69cc6e9a7b7afe76c6efe",
+        "retrieval": "bbapi tool-log download 6afbeff6-c996-4682-9e8b-291c4ec9cdcf command.profile.gz"
+      },
+      {
+        "label": "image candidate",
+        "invocation": "b262742f-68dd-40ba-9bf4-17d6333c984f",
+        "bytes": 91834,
+        "sha256": "90f1a0f11c3acd6447df7d2a22a7c0bc6662810fe28c883d9332336139c96ea6",
+        "retrieval": "bbapi tool-log download b262742f-68dd-40ba-9bf4-17d6333c984f command.profile.gz"
+      },
+      {
+        "label": "VM control",
+        "invocation": "d2fff242-2a49-44ba-86f5-d9642c1f8158",
+        "bytes": 101435,
+        "sha256": "f3b05e04885850a0b5711b6d4d38df0eb5f19ebddaf22501c39b5a1070007c6f",
+        "retrieval": "bbapi tool-log download d2fff242-2a49-44ba-86f5-d9642c1f8158 command.profile.gz"
+      },
+      {
+        "label": "VM candidate",
+        "invocation": "b3267b8f-9ad6-4524-bb3c-e9871660338e",
+        "bytes": 132378,
+        "sha256": "49cc56a06ee17e12220d35d4243e44a7ec804831a0e26f5f6c944cb994f74fb4",
+        "retrieval": "bbapi tool-log download b3267b8f-9ad6-4524-bb3c-e9871660338e command.profile.gz"
+      },
+      {
+        "label": "MCP baseline",
+        "invocation": "2b0f997c-91f9-41aa-937c-c0cf11a93e63",
+        "bytes": 207356,
+        "sha256": "5003f6267ae00c2212609841efeacdac4bc99a4407fa507f19ca31744a78c82b",
+        "retrieval": "bbapi tool-log download 2b0f997c-91f9-41aa-937c-c0cf11a93e63 command.profile.gz"
+      },
+      {
+        "label": "MCP runner_only",
+        "invocation": "37bb8230-6b2d-4505-a7b0-b1107f353c9b",
+        "bytes": 99856,
+        "sha256": "a5036015983df57730c1aa69e3450087729e286305a549ab71e1723c2099b1f5",
+        "retrieval": "bbapi tool-log download 37bb8230-6b2d-4505-a7b0-b1107f353c9b command.profile.gz"
+      },
+      {
+        "label": "MCP runner_and_sidecar",
+        "invocation": "5cadf03d-4810-4c90-8104-81281a9693d8",
+        "bytes": 66610,
+        "sha256": "0cad4cb17a4812a78ce6bfb8e6a8cf798b416143c1a803cb853400ac891769fb",
+        "retrieval": "bbapi tool-log download 5cadf03d-4810-4c90-8104-81281a9693d8 command.profile.gz"
+      }
+    ],
+    "coverage": "VM retains all three independent Claude/Codex/OOM cases; MCP retains the identical ten case IDs and isolated Sandboxes. No readiness threshold weakened.",
+    "rejected": "No exact-digest import skip without proof of complete reusable state; login reuse negligible; merging basic and OAuth cases weakens exact-policy/independent-start coverage.",
+    "latest_dispositions": {
+      "debundle_scale": "PR12486 merged: value_flow_sharing_scale_test manual; optimized-CLI automatic-CI follow-up superseded for this test.",
+      "skill_recipe": "PR12492 merged: verify tested-source lineage before attributing landed changes."
+    },
+    "publication_state_at_review": {
+      "observed_at_utc": "2026-10-28T05:58:50.652410+00:00",
+      "prs": {
+        "12495": "open; pre-commit and artifact/import checks passed, Bazel pending",
+        "12496": "open; pre-commit and artifact/import checks passed, Bazel pending",
+        "12498": "open; pre-commit and artifact/import checks passed, Bazel pending"
+      },
+      "combined_ci_effect": "not measured"
     }
   }
 }

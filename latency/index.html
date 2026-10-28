@@ -3,9 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>
-      CI latency · slow-test profiles and shard-cost experiment · 28 October
-    </title>
+    <title>CI latency · VM/MCP lifecycle profiles · 28 October 2026</title>
     <style>
       :root {
         --ink: #17303b;
@@ -297,26 +295,162 @@
     <main>
       <header>
         <div class="eyebrow">
-          Ducktape · focused slow-test profiles · 28 October 2026
+          Ducktape · VM/MCP lifecycle profiles · 28 October 2026
         </div>
-        <h1>Separate the longest gate from the most expensive test</h1>
+        <h1>Remove unused exporter shutdown waits; preserve test isolation</h1>
         <p class="lede">
-          VM/MCP still owns the long CI paths in the selected profiles. The
-          thread-browser suite is a different opportunity: 16 short shards
-          repeatedly pay session setup, consuming more aggregate test process
-          time than either system-test target in this sample.
+          Three focused investigations produced separate candidates: about 60
+          seconds less MCP Pod cleanup, 15 seconds less VM guest cleanup, and
+          guest-image import overlapped with service startup. These are measured
+          phases, not additive CI feedback savings.
         </p>
         <p class="small">
-          Pinned source
-          <a
-            href="https://github.com/agentydragon/ducktape/commit/01d15ce5f3d06d9c6554a93329b8c5eb4994b417"
-            ><code>01d15ce5f3d0</code></a
-          >. Selected CI runs created 28 October 02:21:32–04:38:37 UTC. Nineteen
-          usable invocations from 20 selected; one BuildBuddy HTTP 500 persisted
-          after retry. This focused sample does not refresh the older queue or
-          PR-feedback distributions.
+          Lifecycle probes use inspected devel sources
+          <code>8a24059ba92d</code> and <code>9ab44ab64b6e</code>; each
+          experiment records its patch and publication head in
+          <a href="evidence.json">evidence.json</a>. The earlier 19-invocation
+          cost sample covers CI runs created 28 October 02:21:32–04:38:37 UTC at
+          mixed tested sources, not one post-fix cohort.
         </p>
       </header>
+      <section id="vm-mcp-followup">
+        <h2>Lifecycle changes with coverage intact</h2>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                <th>Measured phase result</th>
+                <th>Conditional CI effect</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/pull/12496"
+                    >Pod runner + sidecar exporters</a
+                  >
+                </td>
+                <td>
+                  12 cleanups: 84.36s baseline, 82.56s runner-only, 23.72s both
+                  disabled. Same ten MCP cases.
+                </td>
+                <td>
+                  About 60s less cleanup in this experiment; required-check
+                  saving depends on whether MCP gates completion.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/pull/12495"
+                    >VM guest exporter</a
+                  >
+                </td>
+                <td>
+                  Three cleanups: 49.75s → 34.86s. Same independent Claude,
+                  Codex and OOM cases.
+                </td>
+                <td>
+                  About 15s less cleanup; guest drain and poweroff checks
+                  retained. Whole action was slower in the candidate pair
+                  because other phases varied.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a href="https://github.com/agentydragon/ducktape/pull/12498"
+                    >Guest image import order</a
+                  >
+                </td>
+                <td>
+                  One same-source, same-worker pair: stack Ready 221.8s →
+                  170.3s; action 636.3s → 600.4s.
+                </td>
+                <td>
+                  Roughly 22s of Deployment readiness tail overlapped. The
+                  larger 51.5s stack difference includes 29s upstream import
+                  variation; no fleet estimate.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>MCP: a negative control prevents the wrong conclusion</h3>
+        <p>
+          The fixture routes OTLP toward Alloy, but contains no collector.
+          Disabling only the runner SDK left the sidecar's parallel shutdown
+          wait: case spans stayed 299.49s → 299.87s, despite an apparently 120s
+          faster test action caused by warm image loading. Disabling both SDKs
+          reduced case spans to 241.56s and cleanup to 23.72s, while Ready sums
+          remained 145.72–149.73s. The same ten cases execute with isolated
+          Sandboxes and exact-action policies. Operator login/federation cost
+          only 1.3s in the baseline and is not a worthwhile target. Full MCP,
+          fixture render, changed-library build/lint, and unchanged
+          production-manifest checks passed before publication; trace-only
+          instrumentation was removed.
+        </p>
+        <h3>VM: remove exporter delay, retain real shutdown</h3>
+        <p>
+          In the same-source control, each guest took about 5.1s from shutdown
+          request to Runner drain and logged the exporter deadline failure. With
+          <code>OTEL_SDK_DISABLED=true</code> only in the hermetic guest, drain
+          took 0.2–0.3s; all three guests still completed clean shutdown and
+          poweroff. Remaining cleanup is mainly the KubeVirt monitor/controller
+          tail, not the fixture's readiness poll. Both full three-case runs
+          passed. Control/candidate actions were 409.7s/415.3s and stack Ready
+          94.4s/120.2s, so there is no whole-invocation speedup claim from that
+          pair.
+        </p>
+        <h3>Import order: overlap work without skipping it</h3>
+        <p>
+          Existing imports already omit stored content blobs. No complete
+          reusable unpacked snapshot was proved, so no digest-based skip was
+          implemented. The guest root is not a Deployment image: import service
+          images, apply manifests, then import the guest root while services
+          start; finish before yielding to a test. Both full VM runs passed. The
+          observed worker identifier and recycling key match, but snapshot
+          identity and initial containerd state were not captured. Root import
+          itself stayed about 65s in both arms; the reorder overlaps a portion
+          of the service-ready wait. One pair supports the candidate, not a
+          population saving.
+        </p>
+        <h3>Correct source lineage before attributing effects</h3>
+        <p>
+          The original seven-action VM/MCP aggregates remain valid historical
+          costs, but four runs came from older stacked sources lacking the
+          earlier shutdown and MCP reuse behavior. Three runs have the newer
+          signatures: ten MCP cases and 16–17s VM cleanup; four have twelve MCP
+          cases and roughly 40s cleanup. The highlighted
+          <code>d852cea9</code> MCP critical path is pre-reuse and is not
+          current post-fix cost. Source ancestry is corroborated with runtime
+          signatures; <code>c23e6191</code> uses runtime signatures because its
+          synthetic history is unavailable locally. The complete seven-row table
+          and tested SHAs are in the evidence.
+        </p>
+        <p>
+          On the three post-earlier-fix samples, MCP worker completion relative
+          to VM was −20.4s, +0.4s and −31.1s. MCP-only improvements therefore
+          had almost no direct gate headroom on those exact heads. Improving
+          both can move the parallel bottleneck, but these separate experiments
+          do not establish combined or population required-check savings.
+          Remeasure matched CI heads after adoption. Raw profiles/logs stay
+          local; seven new Bazel profiles have hashes and retrieval commands in
+          the evidence.
+        </p>
+        <p>
+          Further grouping of basic and OAuth MCP scenarios is rejected for now:
+          it would introduce a union of policies and remove independent startup
+          coverage. Ready still requires the actual controller/gateway
+          conditions, not merely Pod Running.
+          <a href="https://github.com/agentydragon/ducktape/pull/12486"
+            >The Debundle scale test is now manual</a
+          >, superseding the optimized-CLI automatic-CI recommendation for that
+          workload.
+          <a href="https://github.com/agentydragon/ducktape/pull/12492"
+            >The source-lineage check recipe is merged</a
+          >.
+        </p>
+      </section>
       <div class="callout">
         <strong>Measured tradeoff:</strong> eight browser shards passed the same
         48 cases with 603 fewer process-seconds and 1,281 fewer CPU-seconds in
@@ -644,21 +778,13 @@
             prior experiment increased worker/CPU cost.
           </li>
           <li>
-            <strong>Evaluate an optimized Debundle CLI for scale tests.</strong>
-            The same 4,096-alternative / 768-property / 512-repeat test passed
-            in 18.7s under opt versus 74.0s under fastbuild. Prefer a narrowly
-            configured CLI binary over changing the entire CI build mode;
-            measure compile/analysis cost and retain the Node output oracle and
-            full scale.
-            <a
-              href="https://app.buildbuddy.io/invocation/7e60b459-3eaf-41d3-b389-852a2f22e3bb"
-              >Control</a
+            <strong>Debundle scale test moved to explicit runs.</strong>
+            <a href="https://github.com/agentydragon/ducktape/pull/12486"
+              >#12486</a
             >
-            ·
-            <a
-              href="https://app.buildbuddy.io/invocation/f7f65f7e-b8fb-42b2-826f-46e28711e0c9"
-              >opt probe</a
-            >. One run each, not a fleet saving.
+            is merged. Full dimensions and Node oracle remain unchanged; the
+            prior optimized-mode pair is historical, and no optimized-CLI change
+            is queued for automatic CI.
           </li>
           <li>
             <strong
