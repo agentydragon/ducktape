@@ -49,6 +49,19 @@ fn batch_preserves_order_duplicates_and_every_selection_kind() {
     ];
     assert_equivalent(&fixture, &ids, &[]);
     assert_equivalent(&fixture, &ids, &["--limit", "1"]);
+    assert_equivalent(&fixture, &ids, &["--all"]);
+    assert_equivalent(
+        &fixture,
+        &ids,
+        &[
+            "--direction",
+            "incoming",
+            "--reason",
+            "eager_use",
+            "--limit",
+            "1",
+        ],
+    );
 }
 
 #[test]
@@ -95,6 +108,8 @@ fn failed_item_returns_only_failure_without_partial_results() {
         assert_eq!(output.status.code(), Some(1));
         let error: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert!(error.get("results").is_none());
+        assert_eq!(error["reason"], "source_unit_not_found");
+        assert!(error["message"].as_str().unwrap().contains("item 2"));
         assert!(String::from_utf8_lossy(&output.stderr).contains("item 2"));
     }
 }
@@ -134,6 +149,13 @@ fn resolved_invocation_replays_the_explicit_batch_file() {
     assert_eq!(record["mode"], "graph_snapshot_read");
     assert_eq!(record["requested_proof"], "graph_snapshot_input");
     assert_eq!(record["will_execute"], false);
+    let batch_argument = record["arguments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|argument| argument["name"] == "batch_file")
+        .unwrap();
+    assert_eq!(batch_argument["value"]["paths"], json!([&path]));
     let argv = record["argv"].as_array().unwrap();
     assert!(
         argv.windows(2)

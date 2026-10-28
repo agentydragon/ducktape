@@ -9,8 +9,8 @@ use peel::propose::DEFAULT_SIZE_CAP_LINES;
 use peel::{
     AtomicGroupsArgs, CommonArgs as PeelCommonArgs, DEFAULT_DESCRIBE_LIMIT, ExplainArgs,
     ExplainDirection, GraphSummaryArgs, OutputFormat, PatchPlanArgs, SelectionKind,
-    SourceSelectionArgs, run_atomic_groups_report, run_graph_summary_report,
-    run_patch_plan_report, run_source_selection_report,
+    SourceSelectionArgs, run_atomic_groups_report, run_graph_summary_report, run_patch_plan_report,
+    run_source_selection_report,
 };
 use selector_codemod::source_input::resolve_chunk_source_file;
 use serde::Serialize;
@@ -290,7 +290,11 @@ pub(super) fn run_describe(args: DescribeArgs, roots: InspectionRoots) -> Result
                 .and_then(|selection| {
                     session.explain(&ExplainArgs {
                         selection,
-                        limit: if args.all { 0 } else { args.limit.unwrap_or(DEFAULT_DESCRIBE_LIMIT) },
+                        limit: if args.all {
+                            0
+                        } else {
+                            args.limit.unwrap_or(DEFAULT_DESCRIBE_LIMIT)
+                        },
                         direction: args.direction,
                         reasons: args.reasons.clone(),
                         include_proposals: args.include_proposals,
