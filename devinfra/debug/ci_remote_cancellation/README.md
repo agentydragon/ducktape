@@ -7,6 +7,9 @@ is a separate control of the cancellation API's scope.
 
 Related evidence in this folder:
 
+- [Retry-disabled comparison](retry_comparison.md): `--remote_retries=0`
+  suppressed a plain-action requeue, but a different action released after
+  cancellation still completed; [selected evidence](retry_comparison.json).
 - [Normal cancellation reproduction](normal_path_reproduction.md): the
   2026-10-28 plain-action and analysis-barrier probes both completed new remote
   work after cancellation; [selected evidence](normal_path_reproduction.json).

@@ -1,0 +1,375 @@
+{
+  "observed_on_utc": "2026-10-28",
+  "source_commit": "9fac91535c6456e889191a51a360ee2a4fc541ec",
+  "bazel_version": "9.2.0",
+  "bb_cli_version": "5.0.466",
+  "probe_source_sha256": {
+    "remote.py": "c9e9343e3fafc6c5ebf277664eb77149044b54174f6bd37e7c4073d5e7f559ae",
+    "controller.py": "ac98fa6f5de38b963a8f5391eddf77e9de45d093d10892c7f5eb35d178b12353",
+    "gate.py": "7b2125c9726826edb01642ab190731d9492ce762f045fc764e2da4305604bc99",
+    "gate.bzl": "b2a27b88e9cd16e5a8256baa73c8a885174c685a8d9f979b55ff34109cbbe5fc"
+  },
+  "runs": [
+    {
+      "case": "ungated",
+      "remote_retries": "0",
+      "child_invocation_id": "49a7ae0d-3995-4bfa-bba9-67b46d664f13",
+      "outer_invocation_id": "dca0ce25-0e5f-41af-a168-c4c58ff47c30",
+      "explicit_remote_retries_in_bes": ["0"],
+      "child_cancellation_log_line": "bb-remote: cancellation requested for 49a7ae0d-3995-4bfa-bba9-67b46d664f13",
+      "outer_canceled_execution": {
+        "executionId": "bb-snapshot/uploads/c77061ea-801c-403c-8f9a-eee49de3f4fc/blobs/blake3/574f5b9f669336fc2c9514200a8f1a587964a16c64e9096f3ab9caea9409091f/149",
+        "stage": "COMPLETED",
+        "status": {
+          "code": 1,
+          "message": "invocation cancelled"
+        }
+      },
+      "original_canceled_executions": [
+        {
+          "executionId": "/uploads/d0933cb4-5b28-4166-89e7-340c969a00f2/blobs/438a99a374dacdf330ca643e6307e299891b3a610d4db7fee35316f6ba73292b/310",
+          "stage": "COMPLETED",
+          "status": {
+            "code": 1,
+            "message": "invocation cancelled"
+          },
+          "actionDigest": {
+            "hash": "438a99a374dacdf330ca643e6307e299891b3a610d4db7fee35316f6ba73292b",
+            "sizeBytes": "310"
+          },
+          "targetLabel": "//:active",
+          "invocationLinkType": 1
+        }
+      ],
+      "timeline": [
+        {
+          "at": "2026-10-28T03:47:19.977691+00:00",
+          "event": "sending_entry_sigterm"
+        },
+        {
+          "at": "2026-10-28T03:47:20.191727+00:00",
+          "event": "entry_exited",
+          "exit_code": 130
+        },
+        {
+          "at": "2026-10-28T03:47:20.322941+00:00",
+          "event": "outer_and_child_cancellation_observed",
+          "outer_invocation_id": "dca0ce25-0e5f-41af-a168-c4c58ff47c30"
+        },
+        {
+          "at": "2026-10-28T03:48:25.594463+00:00",
+          "event": "observation_ended",
+          "duration_seconds": 65.27145613900211,
+          "new_execution_count": 0
+        },
+        {
+          "at": "2026-10-28T03:48:25.810599+00:00",
+          "event": "cleanup_cancel",
+          "invocation_id": "49a7ae0d-3995-4bfa-bba9-67b46d664f13",
+          "http_status": 200
+        },
+        {
+          "at": "2026-10-28T03:48:25.886401+00:00",
+          "event": "cleanup_cancel",
+          "invocation_id": "dca0ce25-0e5f-41af-a168-c4c58ff47c30",
+          "http_status": 200
+        }
+      ],
+      "post_cancel_execution_lookup_audit": {
+        "valid_snapshots": 104,
+        "non_json_error_responses": 0,
+        "snapshots_missing_original_execution": 0
+      },
+      "last_execution_snapshot": [
+        {
+          "executionId": "/uploads/d0933cb4-5b28-4166-89e7-340c969a00f2/blobs/438a99a374dacdf330ca643e6307e299891b3a610d4db7fee35316f6ba73292b/310",
+          "stage": "COMPLETED",
+          "status": {
+            "code": 1,
+            "message": "invocation cancelled"
+          },
+          "actionDigest": {
+            "hash": "438a99a374dacdf330ca643e6307e299891b3a610d4db7fee35316f6ba73292b",
+            "sizeBytes": "310"
+          },
+          "targetLabel": "//:active",
+          "invocationLinkType": 1
+        }
+      ],
+      "completed_new_executions": []
+    },
+    {
+      "case": "ungated",
+      "remote_retries": "default",
+      "child_invocation_id": "a6f9a9a6-29f7-47ca-883e-88e1e085d8c5",
+      "outer_invocation_id": "ccb7b465-4e14-4348-b52c-c7f9f429b7ad",
+      "explicit_remote_retries_in_bes": [],
+      "child_cancellation_log_line": "bb-remote: cancellation requested for a6f9a9a6-29f7-47ca-883e-88e1e085d8c5",
+      "outer_canceled_execution": {
+        "executionId": "bb-snapshot/uploads/b28f9429-1a17-4c7e-ad20-e85cee9892ba/blobs/blake3/45d2e16b9a37bf9a68428ce641bad003b90fdf3bda1b1f7baf487e62f9a38a53/149",
+        "stage": "COMPLETED",
+        "status": {
+          "code": 1,
+          "message": "invocation cancelled"
+        }
+      },
+      "original_canceled_executions": [
+        {
+          "executionId": "/uploads/c732d291-49ab-4e0a-af27-7f9b0cb8ce94/blobs/33574824f06163b61e5c55b973a89b6a21219383a7ab58b9fcfa7c366332d51d/310",
+          "stage": "COMPLETED",
+          "status": {
+            "code": 1,
+            "message": "invocation cancelled"
+          },
+          "actionDigest": {
+            "hash": "33574824f06163b61e5c55b973a89b6a21219383a7ab58b9fcfa7c366332d51d",
+            "sizeBytes": "310"
+          },
+          "targetLabel": "//:active",
+          "invocationLinkType": 1
+        }
+      ],
+      "timeline": [
+        {
+          "at": "2026-10-28T03:48:55.929177+00:00",
+          "event": "sending_entry_sigterm"
+        },
+        {
+          "at": "2026-10-28T03:48:56.093183+00:00",
+          "event": "entry_exited",
+          "exit_code": 130
+        },
+        {
+          "at": "2026-10-28T03:48:56.175877+00:00",
+          "event": "outer_and_child_cancellation_observed",
+          "outer_invocation_id": "ccb7b465-4e14-4348-b52c-c7f9f429b7ad"
+        },
+        {
+          "at": "2026-10-28T03:49:35.097061+00:00",
+          "event": "observation_ended",
+          "duration_seconds": 38.921108027003356,
+          "new_execution_count": 1
+        },
+        {
+          "at": "2026-10-28T03:49:35.731772+00:00",
+          "event": "cleanup_cancel",
+          "invocation_id": "a6f9a9a6-29f7-47ca-883e-88e1e085d8c5",
+          "http_status": 200
+        },
+        {
+          "at": "2026-10-28T03:49:35.804126+00:00",
+          "event": "cleanup_cancel",
+          "invocation_id": "ccb7b465-4e14-4348-b52c-c7f9f429b7ad",
+          "http_status": 200
+        }
+      ],
+      "post_cancel_execution_lookup_audit": {
+        "valid_snapshots": 67,
+        "non_json_error_responses": 0,
+        "snapshots_missing_original_execution": 0
+      },
+      "last_execution_snapshot": [
+        {
+          "executionId": "/uploads/c732d291-49ab-4e0a-af27-7f9b0cb8ce94/blobs/33574824f06163b61e5c55b973a89b6a21219383a7ab58b9fcfa7c366332d51d/310",
+          "stage": "COMPLETED",
+          "status": {
+            "code": 1,
+            "message": "invocation cancelled"
+          },
+          "actionDigest": {
+            "hash": "33574824f06163b61e5c55b973a89b6a21219383a7ab58b9fcfa7c366332d51d",
+            "sizeBytes": "310"
+          },
+          "targetLabel": "//:active",
+          "invocationLinkType": 1
+        },
+        {
+          "executionId": "/uploads/8d1762c7-284f-440a-a991-09dd955d5490/blobs/33574824f06163b61e5c55b973a89b6a21219383a7ab58b9fcfa7c366332d51d/310",
+          "stage": "COMPLETED",
+          "status": {},
+          "actionDigest": {
+            "hash": "33574824f06163b61e5c55b973a89b6a21219383a7ab58b9fcfa7c366332d51d",
+            "sizeBytes": "310"
+          },
+          "targetLabel": "//:active",
+          "invocationLinkType": 1
+        }
+      ],
+      "completed_new_executions": [
+        {
+          "executionId": "/uploads/8d1762c7-284f-440a-a991-09dd955d5490/blobs/33574824f06163b61e5c55b973a89b6a21219383a7ab58b9fcfa7c366332d51d/310",
+          "stage": "COMPLETED",
+          "status": {},
+          "actionDigest": {
+            "hash": "33574824f06163b61e5c55b973a89b6a21219383a7ab58b9fcfa7c366332d51d",
+            "sizeBytes": "310"
+          },
+          "targetLabel": "//:active",
+          "invocationLinkType": 1,
+          "exit_code": 0,
+          "worker_metadata": {
+            "worker": "3e461a47-ed3e-4d87-850b-9768e10d565b",
+            "queuedTimestamp": "2026-10-28T03:49:04.335138153Z",
+            "workerStartTimestamp": "2026-10-28T03:49:04.393999058Z",
+            "workerCompletedTimestamp": "2026-10-28T03:49:34.505130527Z",
+            "inputFetchStartTimestamp": "2026-10-28T03:49:04.394508692Z",
+            "inputFetchCompletedTimestamp": "2026-10-28T03:49:04.431956162Z",
+            "executionStartTimestamp": "2026-10-28T03:49:04.431956362Z",
+            "executionCompletedTimestamp": "2026-10-28T03:49:34.465288169Z",
+            "outputUploadStartTimestamp": "2026-10-28T03:49:34.465288519Z",
+            "outputUploadCompletedTimestamp": "2026-10-28T03:49:34.505130178Z"
+          },
+          "verified_output": "active-action-completed\n",
+          "output_files": [
+            {
+              "path": "bazel-out/k8-fastbuild/bin/active.txt",
+              "digest": {
+                "hash": "0637b4963caff388eeab2f716d4f22d1c5e9249542e82de926d432bf46aa0cf9",
+                "sizeBytes": "24"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case": "gated",
+      "remote_retries": "0",
+      "child_invocation_id": "6bdb45f8-d832-4fd6-b254-da44a7bc3966",
+      "outer_invocation_id": "8db50d25-6e6b-405b-8f31-4d7f43263012",
+      "explicit_remote_retries_in_bes": ["0"],
+      "child_cancellation_log_line": "bb-remote: cancellation requested for 6bdb45f8-d832-4fd6-b254-da44a7bc3966",
+      "outer_canceled_execution": {
+        "executionId": "bb-snapshot/uploads/be09b0fa-2e41-4104-b51f-2e0c3e3ec162/blobs/blake3/bfd590104c6723c544fa0cd1719e668cfbb208689883d1b7e5b8513181e70146/149",
+        "stage": "COMPLETED",
+        "status": {
+          "code": 1,
+          "message": "invocation cancelled"
+        }
+      },
+      "original_canceled_executions": [
+        {
+          "executionId": "/uploads/88e24efd-30a0-4d36-95b5-99c31096292e/blobs/f7c998e384cc696d91383045eee669e68e37073dcd6dc88aa13df9c8ddce8d45/310",
+          "stage": "COMPLETED",
+          "status": {
+            "code": 1,
+            "message": "invocation cancelled"
+          },
+          "actionDigest": {
+            "hash": "f7c998e384cc696d91383045eee669e68e37073dcd6dc88aa13df9c8ddce8d45",
+            "sizeBytes": "310"
+          },
+          "targetLabel": "//:active",
+          "invocationLinkType": 1
+        }
+      ],
+      "timeline": [
+        {
+          "at": "2026-10-28T03:50:09.215928+00:00",
+          "event": "sending_entry_sigterm"
+        },
+        {
+          "at": "2026-10-28T03:50:09.429759+00:00",
+          "event": "entry_exited",
+          "exit_code": 130
+        },
+        {
+          "at": "2026-10-28T03:50:09.544453+00:00",
+          "event": "outer_and_child_cancellation_observed",
+          "outer_invocation_id": "8db50d25-6e6b-405b-8f31-4d7f43263012"
+        },
+        {
+          "at": "2026-10-28T03:50:09.758848+00:00",
+          "event": "release_marker_uploaded",
+          "digest": "9f2e06497679fff16402b13f1c07ab164e9e3d1b47cc1b70c72c87a20f81a6f0/45"
+        },
+        {
+          "at": "2026-10-28T03:50:41.499357+00:00",
+          "event": "observation_ended",
+          "duration_seconds": 31.74042367700895,
+          "new_execution_count": 1
+        },
+        {
+          "at": "2026-10-28T03:50:42.187746+00:00",
+          "event": "cleanup_cancel",
+          "invocation_id": "6bdb45f8-d832-4fd6-b254-da44a7bc3966",
+          "http_status": 200
+        },
+        {
+          "at": "2026-10-28T03:50:42.258079+00:00",
+          "event": "cleanup_cancel",
+          "invocation_id": "8db50d25-6e6b-405b-8f31-4d7f43263012",
+          "http_status": 200
+        }
+      ],
+      "post_cancel_execution_lookup_audit": {
+        "valid_snapshots": 53,
+        "non_json_error_responses": 0,
+        "snapshots_missing_original_execution": 0
+      },
+      "last_execution_snapshot": [
+        {
+          "executionId": "/uploads/88e24efd-30a0-4d36-95b5-99c31096292e/blobs/f7c998e384cc696d91383045eee669e68e37073dcd6dc88aa13df9c8ddce8d45/310",
+          "stage": "COMPLETED",
+          "status": {
+            "code": 1,
+            "message": "invocation cancelled"
+          },
+          "actionDigest": {
+            "hash": "f7c998e384cc696d91383045eee669e68e37073dcd6dc88aa13df9c8ddce8d45",
+            "sizeBytes": "310"
+          },
+          "targetLabel": "//:active",
+          "invocationLinkType": 1
+        },
+        {
+          "executionId": "/uploads/47abbaba-a3f8-433e-b6fb-ada006627b6c/blobs/280f5f2d75b9d0d861d7477291532ab2d0fd3e304fbe6e7b214068e2195966ff/310",
+          "stage": "COMPLETED",
+          "status": {},
+          "actionDigest": {
+            "hash": "280f5f2d75b9d0d861d7477291532ab2d0fd3e304fbe6e7b214068e2195966ff",
+            "sizeBytes": "310"
+          },
+          "targetLabel": "//:late",
+          "invocationLinkType": 1
+        }
+      ],
+      "completed_new_executions": [
+        {
+          "executionId": "/uploads/47abbaba-a3f8-433e-b6fb-ada006627b6c/blobs/280f5f2d75b9d0d861d7477291532ab2d0fd3e304fbe6e7b214068e2195966ff/310",
+          "stage": "COMPLETED",
+          "status": {},
+          "actionDigest": {
+            "hash": "280f5f2d75b9d0d861d7477291532ab2d0fd3e304fbe6e7b214068e2195966ff",
+            "sizeBytes": "310"
+          },
+          "targetLabel": "//:late",
+          "invocationLinkType": 1,
+          "exit_code": 0,
+          "worker_metadata": {
+            "worker": "1276c228-b068-430f-adfd-54c5add993f4",
+            "queuedTimestamp": "2026-10-28T03:50:10.136569923Z",
+            "workerStartTimestamp": "2026-10-28T03:50:10.201010612Z",
+            "workerCompletedTimestamp": "2026-10-28T03:50:41.058032305Z",
+            "inputFetchStartTimestamp": "2026-10-28T03:50:10.867002762Z",
+            "inputFetchCompletedTimestamp": "2026-10-28T03:50:10.914741799Z",
+            "executionStartTimestamp": "2026-10-28T03:50:10.914742210Z",
+            "executionCompletedTimestamp": "2026-10-28T03:50:40.971650801Z",
+            "outputUploadStartTimestamp": "2026-10-28T03:50:40.971651131Z",
+            "outputUploadCompletedTimestamp": "2026-10-28T03:50:41.058031964Z"
+          },
+          "verified_output": "{\"child_invocation_id\": \"6bdb45f8-d832-4fd6-b254-da44a7bc3966\", \"release_digest\": \"9f2e06497679fff16402b13f1c07ab164e9e3d1b47cc1b70c72c87a20f81a6f0/45\", \"release_observed_at\": \"2026-10-28T03:50:09.929510+00:00\"}\nlate-action-completed\n",
+          "output_files": [
+            {
+              "path": "bazel-out/k8-fastbuild/bin/late.txt",
+              "digest": {
+                "hash": "4b5bd3f935893f839c6d45cb8f95399455efb622fe0f1fc4e0019715fc23f956",
+                "sizeBytes": "234"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

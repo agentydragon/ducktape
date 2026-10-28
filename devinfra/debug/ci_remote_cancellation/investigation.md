@@ -24,6 +24,11 @@ change is selected yet.
   executions completed 30-second commands after the wrapper exited 130 and
   cancellation was observed. The barrier case establishes causal ordering;
   neither case measures outer process termination or attributes the requeue.
+- The [retry-disabled comparison](retry_comparison.md) found no replacement in
+  the plain case during 65 seconds with `--remote_retries=0`; a repeated default
+  control requeued and completed the action. However, the barrier case still
+  completed a new 30-second action with retries disabled. Retry suppression
+  alone does not solve continued work after cancellation.
 
 ## Cancellation ownership
 
@@ -150,9 +155,10 @@ attempts separate when interpreting execution indexes.
    continued worker execution using cached results and output. Still missing is
    positive evidence of outer command termination from outside the canceled
    process group. A missing heartbeat alone could be a transport failure; an
-   idle reusable VM or Bazel server is not active build work. Contrast default
-   retries with `--remote_retries=0` and trace the initiating Execute/dispatch to
-   test the newly identified Bazel retry hypothesis. Retain clock uncertainty.
+   idle reusable VM or Bazel server is not active build work. The
+   [retry comparison](retry_comparison.md) supports retries for the plain requeue
+   but leaves new submissions possible. Trace the initiating Execute/dispatch
+   and physical outer stop to separate these mechanisms. Retain clock uncertainty.
 4. **Exercise ownership cases separately.** For two owned consumers of one
    merged action, cancel one and verify the survivor receives its result. Record
    retries/hedges only if they actually occur. Use explicit barriers/releases

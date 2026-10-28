@@ -12,6 +12,11 @@ worker timestamps, observer events, output digests, and downloaded output.
 The [active investigation](investigation.md) tracks attribution and remaining
 observability gaps.
 
+**Follow-up:** the [retry-disabled comparison](retry_comparison.md) suppressed
+the plain-action requeue in one run, but the analysis-barrier case still
+completed new work with `--remote_retries=0`. Disabling retries is therefore not
+a complete solution.
+
 ## Plain action: no barrier or post-cancel submission by the controller
 
 [Child](https://app.buildbuddy.io/invocation/73f2d9b7-9786-4efd-af51-d89fb6914c56),
@@ -153,7 +158,7 @@ A child cancellation response can therefore arrive before outer cancellation
 interrupts Bazel. This source path is compatible with the same-digest requeue;
 the experiment does not establish that it produced it.
 
-Next, contrast the plain probe with `--remote_retries=0` and capture the initiating
-Execute/dispatch reason, while independently observing outer command termination.
-A single contrasting run would be supporting evidence, not complete attribution.
-Do not change CI retry policy on the strength of these two observations alone.
+The [follow-up comparison](retry_comparison.md) exercised `--remote_retries=0`
+against both cases and repeated the plain default control. Still needed are the
+initiating Execute/dispatch reason and independent outer command-stop evidence.
+The contrasting result supports a retry explanation without complete attribution.
