@@ -10,6 +10,7 @@ import (
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/cosi-project/runtime/pkg/state"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -158,7 +159,13 @@ func TestDispatchKeepsUncertainNativeWritePendingAndDoesNotResend(t *testing.T) 
 	s.mu.Lock()
 	s.adapter = adapter
 	s.mu.Unlock()
-	setRuntimeReady(t, s)
+	// This primitive test drives dispatch directly, so it has no Session input
+	// for the controller to reconcile. Seed only its readiness observation.
+	if err := s.runner.lifecycle.state.Create(ctx,
+		lifecycleResourceFor(sessionRuntimeType, s.id, sessionRuntimeSpec{Phase: executionReady}),
+		state.WithCreateOwner(sessionControllerName)); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.dispatch(ctx, command); err != nil {
 		t.Fatal(err)
 	}
