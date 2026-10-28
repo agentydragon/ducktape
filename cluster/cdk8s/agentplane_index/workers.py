@@ -65,10 +65,10 @@ CONFIG_MAP = ConfigMapArgs(
             "embedding_url": "http://ollama.ollama.svc.cluster.local:11434/v1",
             "embedding_model": "qwen3-embedding:4b",
             "embedding_api_key": "ollama",
-            # kustomize strips a literal's surrounding quotes; these keep the trailing space from
-            # the trailing-whitespace hook, which would otherwise trim the rendered block scalar.
+            # The trailing space survives Kustomize's literal parsing and the YAML serializer
+            # quotes the generated scalar, so it survives the trailing-whitespace hook.
             "query_instruction": (
-                '"Instruct: Given a search query, retrieve relevant passages that answer the query\nQuery: "'
+                "Instruct: Given a search query, retrieve relevant passages that answer the query\nQuery: "
             ),
             "embedding_timeout_seconds": "120",
         }.items()

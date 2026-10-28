@@ -277,7 +277,17 @@ class ConfigMapArgs(BaseModel):
 
     @field_serializer("data", when_used="unless-none")
     def serialize_data(self, data: dict[ConfigMapKey, str]) -> list[str]:
-        return [f"{key}={value}" for key, value in data.items()]
+        literals = []
+        for key, value in data.items():
+            # Kustomize treats one matching pair of outer single or double quotes as syntax and
+            # removes it. Wrap in the other quote style when those characters are part of the
+            # actual value, so `configMapGenerator` produces the exact mapping content.
+            serialized_value = value
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                quote = "'" if value[0] == '"' else '"'
+                serialized_value = f"{quote}{value}{quote}"
+            literals.append(f"{key}={serialized_value}")
+        return literals
 
 
 class PatchFile(BaseModel):

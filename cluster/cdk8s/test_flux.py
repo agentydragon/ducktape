@@ -1,5 +1,9 @@
+import subprocess
+from pathlib import Path
+
 import pytest
 import pytest_bazel
+import yaml
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     Kustomization,
@@ -24,6 +28,7 @@ from cluster.cdk8s.flux import (
     kustomizations_chart,
     kustomize_kustomization,
 )
+from util.bazel.runfiles import get_required_path
 
 _HEALTH_CHECKS = [KustomizationSpecHealthChecks(kind="Deployment", name="test-app", namespace="test-ns")]
 
@@ -137,7 +142,12 @@ def test_config_map_data_rejects_directory_traversal_keys(key: str) -> None:
 
 
 def test_config_map_data_serializes_to_kustomize_literals() -> None:
-    data = {"config.yaml": "credentials: user=token==\nnext: true\n", "empty": "", "quoted": '"keep space "'}
+    data = {
+        "config.yaml": "credentials: user=token==\nnext: true\n",
+        "empty": "",
+        "quoted": '"keep space "',
+        "single-quoted": "'literal quotes'",
+    }
     entry = ConfigMapArgs(
         name="test-config",
         namespace="test-ns",
@@ -152,10 +162,45 @@ def test_config_map_data_serializes_to_kustomize_literals() -> None:
             "namespace": "test-ns",
             "options": {"disableNameSuffixHash": True},
             "files": ["file.conf"],
-            "literals": ["config.yaml=credentials: user=token==\nnext: true\n", "empty=", 'quoted="keep space "'],
+            "literals": [
+                "config.yaml=credentials: user=token==\nnext: true\n",
+                "empty=",
+                "quoted='\"keep space \"'",
+                "single-quoted=\"'literal quotes'\"",
+            ],
         }
     ]
     assert entry.data == data
+
+
+def test_config_map_data_preserves_values_through_kustomize(tmp_path: Path) -> None:
+    data = {
+        "config.yaml": "credentials: user=token==\nnext: true\n",
+        "empty": "",
+        "quoted": '"keep space "',
+        "single-quoted": "'literal quotes'",
+        "query_instruction": "Instruct: retrieve relevant passages\nQuery: ",
+    }
+    entry = ConfigMapArgs(
+        name="test-config",
+        namespace="test-ns",
+        data=data,
+        files=["file.conf"],
+        options=GeneratorOptions(disable_name_suffix_hash=True),
+    )
+    (tmp_path / "file.conf").write_text("file-backed content\n")
+    (tmp_path / "kustomization.yaml").write_text(
+        yaml.safe_dump(kustomize_kustomization(resources=[], config_map_generator=[entry]))
+    )
+
+    result = subprocess.run(
+        [str(get_required_path("multitool/tools/kustomize/kustomize")), "build", str(tmp_path)],
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr.decode()
+    [rendered] = yaml.safe_load_all(result.stdout)
+    assert rendered["data"] == {**data, "file.conf": "file-backed content\n"}
 
 
 def test_file_backed_config_map_omits_literals() -> None:
