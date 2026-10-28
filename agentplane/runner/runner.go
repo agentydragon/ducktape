@@ -3,11 +3,8 @@ package runner
 import (
 	"context"
 	"errors"
-	"io"
-	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -17,10 +14,10 @@ import (
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -33,6 +30,7 @@ type Runner struct {
 	cancel              context.CancelFunc
 	owner               *retained.Owner
 	supervisor          *supervision.Supervisor
+	scripts             *scripts.Runner
 	workspaceSupervisor *supervision.Supervisor
 	store               *retained.Store
 	bootID              string
@@ -124,6 +122,17 @@ func newRunner(config Config, adapters *execserver.Adapters) (*Runner, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Runner{config: config, owner: owner, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, sessions: map[string]*Session{}, changes: make(chan struct{}), fatal: make(chan error, 1)}
+	r.scripts, err = scripts.New(scripts.Config{
+		HarnessEnvironment: config.HarnessEnvironment,
+		LaunchProcess: func(ctx context.Context, owner string, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+			return r.launchProcess(ctx, owner, r.supervisor, processConfig)
+		},
+	})
+	if err != nil {
+		cancel()
+		_ = owner.Close()
+		return nil, err
+	}
 	if config.Codex != nil {
 		r.codexAppServer = newCodexAppServer(r, *config.Codex)
 	}
@@ -352,56 +361,6 @@ func (r *Runner) ensureWorkspace(ctx context.Context, cwd string) (string, error
 		return EnsureWorkspace(ctx, cwd, r.config.WorkspaceRoot, nil)
 	}
 	return EnsureWorkspace(ctx, cwd, r.config.WorkspaceRoot, r)
-}
-
-func (r *Runner) runScript(ctx context.Context, owner, script, cwd string, output func(bool, []byte) error) (int, error) {
-	env := map[string]string{}
-	for _, entry := range os.Environ() {
-		key, value, ok := strings.Cut(entry, "=")
-		if ok {
-			env[key] = value
-		}
-	}
-	for key, value := range r.config.HarnessEnvironment {
-		env[key] = value
-	}
-	process, err := r.launchProcess(ctx, owner, r.supervisor, supervision.ProcessConfig{Command: []string{"/bin/sh", "-eu"}, Dir: cwd, Env: env})
-	if err != nil {
-		return 0, err
-	}
-	var readers errgroup.Group
-	for _, stream := range []struct {
-		reader io.Reader
-		stdout bool
-	}{{process.Stdout(), true}, {process.Stderr(), false}} {
-		readers.Go(func() error {
-			buffer := make([]byte, 64*1024)
-			for {
-				n, err := stream.reader.Read(buffer)
-				if n > 0 {
-					if e := output(stream.stdout, append([]byte(nil), buffer[:n]...)); e != nil {
-						return errors.Join(e, process.Stop(context.Background()))
-					}
-				}
-				if err == io.EOF {
-					return nil
-				}
-				if err != nil {
-					return errors.Join(err, process.Stop(context.Background()))
-				}
-			}
-		})
-	}
-	writeErr := process.Write(ctx, []byte(script))
-	if errors.Is(writeErr, os.ErrClosed) || errors.Is(writeErr, io.ErrClosedPipe) {
-		writeErr = nil
-	}
-	closeErr := process.CloseStdin()
-	code, waitErr := process.Wait(ctx)
-	if waitErr != nil {
-		waitErr = errors.Join(waitErr, process.Stop(context.WithoutCancel(ctx)))
-	}
-	return code, errors.Join(writeErr, closeErr, waitErr, readers.Wait())
 }
 
 func (r *Runner) Quiesce(_ context.Context, q *runnerpb.QuiesceRequest) (*runnerpb.QuiesceResponse, error) {

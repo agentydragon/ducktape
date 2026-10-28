@@ -545,11 +545,57 @@ func TestScriptOutputFailureStopsProcessAndReturnsCause(t *testing.T) {
 	failure := fmt.Errorf("bootstrap output storage failed")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, err := r.runScript(ctx, sessionControllerName+"/test-session/setup", "printf output; exec sleep 1000", t.TempDir(), func(bool, []byte) error { return failure })
+	_, err := r.scripts.Run(ctx, sessionControllerName+"/test-session/setup", "printf output; exec sleep 1000", t.TempDir(), func(bool, []byte) error { return failure })
 	if !errors.Is(err, failure) {
 		t.Fatalf("output failure was lost: %v", err)
 	}
 	if ctx.Err() != nil {
 		t.Fatalf("script waited for timeout after output failed: %v", err)
+	}
+}
+
+func TestScriptRunPreservesEnvironmentStreamsAndExitStatus(t *testing.T) {
+	t.Setenv("SCRIPT_RUNNER_INHERITED", "before")
+	t.Setenv("SCRIPT_RUNNER_CONFIG", "ambient")
+	r, err := New(Config{
+		StateDir:           t.TempDir(),
+		HarnessEnvironment: map[string]string{"SCRIPT_RUNNER_CONFIG": "configured"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := r.Close(); err != nil {
+			t.Errorf("close test runner: %v", err)
+		}
+	})
+	t.Setenv("SCRIPT_RUNNER_INHERITED", "after")
+
+	var outputMu sync.Mutex
+	var stdout, stderr strings.Builder
+	script := `printf '%s|%s' "$SCRIPT_RUNNER_CONFIG" "$SCRIPT_RUNNER_INHERITED"; printf 'diagnostic' >&2; exit 23`
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	code, err := r.scripts.Run(ctx, "test-script", script, t.TempDir(), func(isStdout bool, data []byte) error {
+		outputMu.Lock()
+		defer outputMu.Unlock()
+		if isStdout {
+			_, err := stdout.Write(data)
+			return err
+		}
+		_, err := stderr.Write(data)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("run script: %v", err)
+	}
+	if code != 23 {
+		t.Fatalf("script exit code = %d, want 23", code)
+	}
+	outputMu.Lock()
+	gotStdout, gotStderr := stdout.String(), stderr.String()
+	outputMu.Unlock()
+	if gotStdout != "configured|after" || gotStderr != "diagnostic" {
+		t.Fatalf("script output = stdout %q, stderr %q; want stdout %q, stderr %q", gotStdout, gotStderr, "configured|after", "diagnostic")
 	}
 }

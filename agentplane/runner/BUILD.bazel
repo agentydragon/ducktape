@@ -504,6 +504,7 @@ go_library(
         "//agentplane/runner/journal",
         "//agentplane/runner/lifecycle",
         "//agentplane/runner/retained",
+        "//agentplane/runner/scripts",
         "//agentplane/runner/supervision",
         "//agentplane/runner_gateway:runner_control_go_proto",
         "@com_github_cosi_project_runtime//pkg/controller",

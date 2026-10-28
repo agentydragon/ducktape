@@ -27,6 +27,9 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   and `bootstrap_controller.go`: one lifecycle controller per file.
 - `operations.go`: owned asynchronous protocol/setup operations and completion routing.
 - `bootstrap.go`: durable bootstrap selection and the one-shot script effect.
+- `scripts/`: one-shot shell execution over supervised process streams. Each run samples
+  `os.Environ` and overlays the configured harness environment; the caller owns operation admission
+  and process ownership.
 - `runner.go`: Runner construction, durable inventory, incarnation adoption and lifetime.
 - `admission.go` and `status.go`: public admission and status/facts RPCs.
 - `session.go`: Session host state, readiness and recovery; `session_events.go` owns journal-backed
