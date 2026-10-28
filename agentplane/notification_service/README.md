@@ -83,10 +83,22 @@ row”; do not run the backfill command again or roll this migration down. The f
 a marker when `entry` is empty. This writer leaves `entry.payload` NULL for Actions and generated mergeability
 observations while continuing to store GitHub webhook payloads as native JSONB. Messages keep both JSON and
 protobuf during this phase so the existing database CHECK continues to measure the canonical body in UTF-8 bytes;
-a separate storage phase will add canonical text fields and their own bounds before message JSON writes stop. This
-writer still stores relational identity and legacy identity JSON, which a later identity contract retires separately.
+the `00016` Message text expansion adds canonical text fields and their own bounds before message JSON writes stop.
+This writer still stores relational identity and legacy identity JSON, which a later identity contract retires separately.
 
 `00016_message_text_expand.sql` adds nullable `entry.message_body` and `entry.message_from_session` text columns. The dual-write release keeps Message JSON and protobuf intact while also writing the canonical body and optional sender label to text; database checks bound the body by UTF-8 bytes and the label by the existing 1–200 character contract. The old JSON body ceiling remains until identity JSON is retired. Roll back only to a dual-write-capable release while this phase is active; the additive nullable columns preserve old-reader compatibility.
+
+After every Message append, replay, expiry writer and cleanup worker runs the text dual-write release, use the
+backfill-capable image to run
+`bb run //agentplane/notification_service/migrations/cmd:notifications-migrate -- backfill-message-text --writer-gate=notification-message-text-and-cleanup-dual-write-v1`
+once against each Notification database. The resumable command scans all entries in native `(inbox_id, cursor)`
+order, loads only retained Message JSON that still needs text, and commits batches bounded by row count and raw
+serialized JSON bytes (a single larger valid document is processed alone). It clears stale text for expired rows
+even below `expired_through`, verifies every retained Message JSON/text pair, and records progress in
+`notification_message_text_backfill`; it runs outside service startup and readiness. Do not move Message readers to
+typed-only storage until this command reports `backfilled` on every database. Keep the dual-write image as the
+rollback version before the later Message text contract; that contract image will retire the backfill command and
+checkpoint.
 
 Migration `00015` also adds `entry_identity_provider_required` as a `NOT VALID` check. After the relational
 dual-write release is on every writer, run
