@@ -145,10 +145,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 			return &QuotaError{Quota: UnacknowledgedMessagesPerSender, Limit: s.quotas.UnacknowledgedMessagesPerSender}
 		}
 		id = uuid.New()
-		identity, err := json.Marshal(MessageEvent{MessageID: id, Sender: message.Sender})
-		if err != nil {
-			return err
-		}
+		event := MessageEvent{MessageID: id, Sender: message.Sender}
 		accepted, cursor := now(), inbox.LastCursor+1
 		// A worker's release works out when the notice is due, so the inbox is only made due now.
 		if _, err := tx.ExecContext(ctx,
@@ -156,9 +153,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 			inbox.ID, cursor, accepted); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO entry (inbox_id, cursor, event, payload, created_at) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5)`,
-			inbox.ID, cursor, string(identity), string(payload), accepted); err != nil {
+		if err := insertEntry(ctx, tx, inbox.ID, cursor, event, json.RawMessage(payload), accepted); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `

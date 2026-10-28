@@ -45,6 +45,13 @@ A schema change is a Goose file in `migrations/notifications/`. The baseline, `0
 database that the retired Alembic history left at revision `0010_drop_write_only_columns` and refuses one behind it;
 the migrator keeps the advisory lock key the Alembic runner took.
 
+Entry source identities are being moved from JSONB equality to explicit relational natural keys. The first
+expansion migration adds nullable columns and the serving writers dual-write them while the existing JSONB
+unique index continues to deduplicate. A follow-up offline backfill and index build will be rolled out after all
+writers understand these columns; it will not run in Pod init or hold serving readiness during the scan.
+To roll this expansion back, restore the previous service image and leave the additive columns in place; do not
+run the migration's `Down` section while any dual-writing replica remains.
+
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
 flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,
 and `watch_lease_s` (default 300) is how long a watch lasts before it ends with `reconnect_required`.

@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "actions.go",
         "claims.go",
+        "event_identity_storage.go",
         "github_deliveries.go",
         "github_ingest.go",
         "github_mergeability.go",
@@ -56,6 +57,7 @@ go_test(
     srcs = [
         "actions_integration_test.go",
         "claims_integration_test.go",
+        "event_identity_storage_integration_test.go",
         "github_ingest_integration_test.go",
         "github_integration_test.go",
         "github_matching_integration_test.go",

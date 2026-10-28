@@ -345,9 +345,7 @@ func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscripti
 		if _, err := tx.ExecContext(ctx, `UPDATE inbox SET last_cursor = $2 WHERE id = $1`, inboxID, cursor); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO entry (inbox_id, cursor, event, payload, created_at) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5)`,
-			inboxID, cursor, string(identity), string(payload), now()); err != nil {
+		if err := insertEntry(ctx, tx, inboxID, cursor, event, payload, now()); err != nil {
 			return err
 		}
 	} else if err != nil {
