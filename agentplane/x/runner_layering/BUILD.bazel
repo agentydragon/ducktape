@@ -2,7 +2,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
+load(
+    "//agentplane/runner/testing:exec_properties.bzl",
+    "NATIVE_RUNNER_DOCKER_ENV",
+    "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES",
+)
 load("//devinfra/cpio:defs.bzl", "cpio_archive")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
@@ -98,6 +102,7 @@ py_test(
         "//agentplane/runner:main_bin",  # keep: the runner as its own process
         "@agentplane_codex_cli_linux_x64//:files",  # keep: pinned Codex and bwrap
     ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     target_compatible_with = [

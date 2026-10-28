@@ -3,7 +3,11 @@ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//agentplane/runner/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
+load(
+    "//agentplane/runner/testing:exec_properties.bzl",
+    "NATIVE_RUNNER_DOCKER_ENV",
+    "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES",
+)
 load("//devinfra/erofs:defs.bzl", "erofs_image")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
@@ -81,6 +85,7 @@ py_test(
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
     ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     target_compatible_with = [
@@ -112,6 +117,7 @@ py_test(
         "@agentplane_codex_cli_linux_x64//:files",  # keep: actual pinned native harness process
         "@claude_code_cli_linux_x64//:claude",  # keep: actual pinned native harness process
     ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     shard_count = 2,
@@ -146,6 +152,7 @@ py_test(
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
     ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     target_compatible_with = [
@@ -178,6 +185,7 @@ py_test(
     data = [
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harness the runner drives
     ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     target_compatible_with = [
@@ -208,6 +216,7 @@ py_test(
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
     ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     target_compatible_with = [
@@ -237,6 +246,7 @@ py_test(
     data = [
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harness the runner drives
     ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     target_compatible_with = [
@@ -268,6 +278,7 @@ py_test(
     data = [
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harness the runner drives
     ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     target_compatible_with = [
@@ -300,6 +311,7 @@ py_test(
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
     ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     target_compatible_with = [
@@ -329,6 +341,7 @@ py_test(
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
     ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     target_compatible_with = [
@@ -382,6 +395,7 @@ py_test(
         "@agentplane_codex_cli_linux_x64//:files",
         "@claude_code_cli_linux_x64//:claude",
     ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     target_compatible_with = [
@@ -414,7 +428,7 @@ py_test(
         "//agentplane/runner/executor/cmd:agentplane-executor",  # keep: the PID-1 production companion
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned Codex executor
     ],
-    env = {"DOCKER_HOST": "tcp://127.0.0.1:2375"},
+    env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     target_compatible_with = [
@@ -448,7 +462,7 @@ py_test(
         "//agentplane/runner/cmd:agentplane-runner",
         "//agentplane/runner/supervision:runner_pid1_fixture",
     ],
-    env = {"DOCKER_HOST": "tcp://127.0.0.1:2375"},
+    env = NATIVE_RUNNER_DOCKER_ENV,
     exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
     requires_docker = True,
     shard_count = 4,
