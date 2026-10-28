@@ -385,14 +385,14 @@ py_library(
 
 py_binary(
     name = "web_bin",
-    data = ["//devinfra/session_viewer/frontend:bundle"],
+    data = ["//x/ai_session_archive/frontend:bundle"],
     main_module = "x.ai_session_archive.web_main",
     deps = [":web_main"],
 )
 
 aspect_py_binary(
     name = "web_image_bin",
-    data = ["//devinfra/session_viewer/frontend:bundle"],
+    data = ["//x/ai_session_archive/frontend:bundle"],
     main = "web_main.py",
     deps = [":web_main"],
 )
@@ -433,7 +433,7 @@ py_test(
 py_test(
     name = "test_browser",
     srcs = ["test_browser.py"],
-    data = ["//devinfra/session_viewer/frontend:bundle"],
+    data = ["//x/ai_session_archive/frontend:bundle"],
     tags = ["visual"],
     deps = [
         ":database",

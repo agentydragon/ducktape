@@ -9,7 +9,7 @@ load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
 load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
-package(default_visibility = ["//devinfra/session_viewer:__pkg__"])
+package(default_visibility = ["//x/ai_session_archive:__pkg__"])
 
 TSCONFIG = ":tsconfig"
 
@@ -132,10 +132,6 @@ spa_bundle(
     name = "bundle",
     entry_point = "main.tsx",
     jsx = "automatic",
-    visibility = [
-        "//devinfra/session_viewer:__pkg__",
-        "//x/ai_session_archive:__pkg__",
-    ],
     deps = [":main"],
 )
 
@@ -236,7 +232,7 @@ py_visual_test(
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
-    test_module = "devinfra.session_viewer.frontend.test_visual",
+    test_module = "x.ai_session_archive.frontend.test_visual",
     test_srcs = ["test_visual.py"],
     title = "Local workstation sessions",
 )

@@ -26,7 +26,7 @@ from x.ai_session_archive.models import (
 )
 from x.ai_session_archive.web_settings import WebSettings
 
-_FRONTEND_INDEX = "_main/devinfra/session_viewer/frontend/dist/index.html"
+_FRONTEND_INDEX = "_main/x/ai_session_archive/frontend/dist/index.html"
 
 
 class Machines(BaseModel):
