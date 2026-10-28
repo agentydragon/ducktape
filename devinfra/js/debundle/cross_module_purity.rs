@@ -351,10 +351,16 @@ pub fn resolve_imported_callable_summaries(
             }
         }
     }
-    let inferred: BTreeMap<_, _> = modules
+    let mut inferred: BTreeMap<_, _> = modules
         .iter()
+        .filter(|(module, _)| required.iter().any(|(target, _)| target == *module))
         .map(|(module, facts)| {
-            let locals = facts.exports.values().cloned().collect();
+            let locals = facts
+                .exports
+                .iter()
+                .filter(|(export, _)| required.contains(&(module.clone(), (*export).clone())))
+                .map(|(_, local)| local.clone())
+                .collect();
             let views = top_level_item_views(facts.body);
             (
                 module,
@@ -365,7 +371,10 @@ pub fn resolve_imported_callable_summaries(
         })
         .collect();
     for (module, facts) in modules {
-        let callback_factories = &inferred[module].callback_factories;
+        let Some(capabilities) = inferred.get(module) else {
+            continue;
+        };
+        let callback_factories = &capabilities.callback_factories;
         for (export, local) in &facts.exports {
             let key = (module.clone(), export.clone());
             if !required.contains(&key) || factories.contains_key(&key) {
@@ -396,11 +405,32 @@ pub fn resolve_imported_callable_summaries(
                 ));
         }
     }
+    // Only a real record candidate needs the program-wide native premise.
+    // Other chunks contribute their canonical write census without value flow.
+    let needs_map_integrity = inferred
+        .values()
+        .any(|summary| !summary.returned_records.is_empty());
+    if needs_map_integrity {
+        for (module, facts) in modules {
+            if inferred.contains_key(module) {
+                continue;
+            }
+            let views = top_level_item_views(facts.body);
+            inferred.insert(
+                module,
+                crate::facts::sync_effects::execution_index::infer_callable_capabilities(
+                    &views,
+                    &BTreeSet::new(),
+                ),
+            );
+        }
+    }
     // A source-composed native premise must survive every analyzed chunk's
     // canonical intrinsic-write census, including the importing chunk.
-    if inferred
-        .values()
-        .all(|capabilities| capabilities.map_integrity)
+    if needs_map_integrity
+        && inferred
+            .values()
+            .all(|capabilities| capabilities.map_integrity)
     {
         for (module, facts) in modules {
             let records = &inferred[module].returned_records;

@@ -3795,6 +3795,36 @@ fn source_empty_map_record_factory_defers_members_and_getter() {
         summary["members"][2]["captures"],
         serde_json::json!(["readLater"])
     );
+    let graph = fixture.dependency_graph();
+    let certificate = &graph.imported_callable_summaries[0];
+    assert!(certificate.callback_factory_evidence.is_empty());
+    let record = certificate.returned_record.as_ref().unwrap();
+    assert_eq!(record.defining_module, "static/peer");
+    assert_eq!(record.export, "factory");
+    assert_eq!(
+        record.source_location.as_ref().unwrap().source_path,
+        "static/peer.js"
+    );
+    assert!(record.members[2].captures.contains("readLater"));
+    let queue = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "queue")
+        })
+        .unwrap();
+    let execution = queue.synchronous_execution.as_ref().unwrap();
+    assert!(execution.callback_factory_uses.is_empty());
+    let uses = &execution.returned_record_uses;
+    assert!(uses.iter().any(|proof| proof.kind == analysis::reports::schema::ReturnedRecordUseKind::CallTiming));
+    assert!(
+        uses.iter().any(|proof| proof.kind
+            == analysis::reports::schema::ReturnedRecordUseKind::ReturnCapability)
+    );
+    assert!(uses.iter().all(|proof| proof.summary_ref == certificate.id
+        && proof.source_location.as_ref().unwrap().start_line == 3));
 }
 
 #[test]
@@ -3904,4 +3934,64 @@ fn source_record_factory_does_not_cross_reexports() {
         ("static/bridge", "export { factory } from './peer.js';\n"),
         ("static/peer", "import { readLater } from './app.js';\nexport function factory() { let state = new Map(); return { read() { return state.size + readLater().name.length; } }; }\n"),
     ]), &["queue", "later"], &[]);
+}
+
+#[test]
+fn source_record_deferred_live_cell_access_preserves_the_tdz() {
+    let peer = "import { later } from './app.js';\nexport function factory() { let state = new Map; return { read() { return later; }, get value() { return later; }, has(key) { return state.has(key); } }; }\n";
+    for expression in ["queue.value", "queue.read()"] {
+        let source = format!(
+            "import {{ factory }} from './peer.js';\nconst queue = factory();\nconst observed = (() => {{ try {{ return {expression}; }} catch (error) {{ return error.name; }} }})();\nexport const later = 42;\nconsole.log(observed, later);\n"
+        );
+        let peers = [("static/peer", peer)];
+        let together = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "together",
+                    &[
+                        Member::new("queue"),
+                        Member::new("observed"),
+                        Member::new("later"),
+                    ],
+                )],
+            )
+            .with_extra_chunks(&peers),
+        );
+        assert_preserved_entry_output(&together, "ReferenceError 42\n");
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("queue", &[Member::new("queue"), Member::new("observed")]),
+                    logical_module("later", &[Member::new("later")]),
+                ],
+            )
+            .with_extra_chunks(&peers),
+            &["queue", "later"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn unused_or_ineligible_source_record_factory_has_no_graph_proof_use() {
+    let provider = "export function factory() { let state = new Map(); return { get size() { return state.size; } }; }\n";
+    for source in [
+        "import { factory } from './peer.js';\nconsole.log(42);\n",
+        "import { factory } from './peer.js';\nfactory(123);\nconsole.log(42);\n",
+        "import { factory } from './peer.js';\nfunction use(factory) { return factory(); }\nconsole.log(use(() => 42));\n",
+    ] {
+        let fixture = run_fixture(
+            FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+        );
+        assert_preserved_entry_output(&fixture, "42\n");
+        let graph = fixture.dependency_graph();
+        assert!(graph.imported_callable_summaries.is_empty());
+        assert!(graph.nodes.iter().all(|node| {
+            node.synchronous_execution
+                .as_ref()
+                .is_none_or(|execution| execution.returned_record_uses.is_empty())
+        }));
+    }
 }

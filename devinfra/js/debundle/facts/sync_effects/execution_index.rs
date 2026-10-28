@@ -1997,7 +1997,7 @@ struct ExecutionIndex {
     no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
     returned_factory_candidates: BTreeMap<u32, Span>,
     returned_record_candidates: BTreeMap<u32, ReturnedRecordCandidate>,
-    returned_record_imports: BTreeSet<Id>,
+    returned_record_summaries: BTreeMap<Id, crate::analysis_inputs::ReturnedRecordSummary>,
 }
 
 impl Default for ExecutionIndex {
@@ -2102,7 +2102,7 @@ impl Default for ExecutionIndex {
             no_reentry_record_members: BTreeMap::new(),
             returned_factory_candidates: BTreeMap::new(),
             returned_record_candidates: BTreeMap::new(),
-            returned_record_imports: BTreeSet::new(),
+            returned_record_summaries: BTreeMap::new(),
         }
     }
 }
@@ -2268,12 +2268,14 @@ impl ExecutionIndex {
                     {
                         index.host_async_local_storage_imports.insert(local.to_id());
                     }
-                    if hints
+                    if let Some(record) = hints
                         .imported_callables
                         .get(local.sym.as_ref())
-                        .is_some_and(|summary| summary.returned_record.is_some())
+                        .and_then(|summary| summary.returned_record.as_ref())
                     {
-                        index.returned_record_imports.insert(local.to_id());
+                        index
+                            .returned_record_summaries
+                            .insert(local.to_id(), record.clone());
                     }
                     if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
                         && summary.supports_callback_factory()
@@ -5015,20 +5017,38 @@ pub(crate) fn infer_callable_capabilities(
     body: &[TopLevelItemView<'_>],
     exported_locals: &BTreeSet<String>,
 ) -> InferredCallableCapabilities {
-    let flow = ChunkValueFlow::analyze(body);
-    let shadowed = crate::facts::compute_shadowed_globals(body);
     let index = ExecutionIndex::collect(
         body,
         &AnalysisInputs::default(),
-        Some(&flow),
+        None,
         &BTreeSet::new(),
         &LocalClassConstructionProof::default(),
     );
-    InferredCallableCapabilities {
+    let mut result = InferredCallableCapabilities {
         map_integrity: index.collection_intrinsic_is_unmodified("Map"),
-        callback_factories: infer_returned_callback_factories(&index, &flow, exported_locals),
-        returned_records: infer_returned_records(&index, &flow, &shadowed, exported_locals),
+        callback_factories: BTreeMap::new(),
+        returned_records: BTreeMap::new(),
+    };
+    // Most exports are not function factories. Preserve the demand boundary:
+    // namespace-only providers and unsupported bodies need no value-flow graph.
+    let callback_candidate = |id: &Id, key: u32| {
+        exported_locals.contains(id.0.as_ref()) && returned_callback_factory(&index, key)
+    };
+    let has_candidate = index.hoisted_bindings.iter().any(|(id, key)| {
+        callback_candidate(id, *key)
+            || (exported_locals.contains(id.0.as_ref())
+                && index.returned_record_candidates.contains_key(key))
+    }) || index.top_assignments.iter().flatten().any(|(id, value)| {
+        matches!(value, ValueExpr::Origin(ValueOrigin::Function(key)) if callback_candidate(id, *key))
+    });
+    if has_candidate {
+        let flow = ChunkValueFlow::analyze(body);
+        let shadowed = crate::facts::compute_shadowed_globals(body);
+        result.callback_factories =
+            infer_returned_callback_factories(&index, &flow, exported_locals);
+        result.returned_records = infer_returned_records(&index, &flow, &shadowed, exported_locals);
     }
+    result
 }
 
 fn infer_returned_records(

@@ -11,7 +11,7 @@ use swc_ecma_ast::Id;
 use analysis::graph::EdgeRole;
 use analysis::reports::schema::{
     CallbackFactoryCallbackSourceReport, CallbackFactoryUseReport, ImportedCallableSummaryReport,
-    LineRange,
+    LineRange, ReturnedRecordUseReport,
 };
 use analysis::reports::{atomic_group_key, module_id_from_key, module_key, source_unit_key};
 use analysis::{
@@ -62,21 +62,38 @@ pub(crate) fn build_dependency_graph_report(
     let (quotient_nodes, quotient_edges) = quotient_pair;
     let (mut nodes, edges) = nodes_edges;
     let purity_causes = collect_purity_causes(&mut nodes);
-    let mut imported_callable_summaries = BTreeMap::<String, Vec<_>>::new();
+    let mut imported_callable_summaries = BTreeMap::<String, (Vec<_>, Option<_>)>::new();
     for source_unit in assignment_analysis.inputs().dependency_graph().iter_nodes() {
         for proof_use in &source_unit.callback_factory_uses {
-            let previous = imported_callable_summaries
-                .insert(proof_use.imported_local.clone(), proof_use.evidence.clone());
-            assert!(previous.is_none_or(|evidence| evidence == proof_use.evidence));
+            let entry = imported_callable_summaries
+                .entry(proof_use.imported_local.clone())
+                .or_default();
+            assert!(entry.0.is_empty() || entry.0 == proof_use.evidence);
+            entry.0 = proof_use.evidence.clone();
+        }
+        for proof_use in &source_unit.returned_record_uses {
+            let entry = imported_callable_summaries
+                .entry(proof_use.imported_local.clone())
+                .or_default();
+            assert!(
+                entry
+                    .1
+                    .as_ref()
+                    .is_none_or(|evidence| evidence == &proof_use.evidence)
+            );
+            entry.1 = Some(proof_use.evidence.clone());
         }
     }
     let imported_callable_summaries = imported_callable_summaries
         .into_iter()
         .map(
-            |(imported_local, callback_factory_evidence)| ImportedCallableSummaryReport {
-                id: format!("imported_callable:{imported_local}"),
-                imported_local,
-                callback_factory_evidence,
+            |(imported_local, (callback_factory_evidence, returned_record))| {
+                ImportedCallableSummaryReport {
+                    id: format!("imported_callable:{imported_local}"),
+                    imported_local,
+                    callback_factory_evidence,
+                    returned_record,
+                }
             },
         )
         .collect();
@@ -172,6 +189,13 @@ fn build_source_unit_nodes_and_edges(
                         summary_ref: format!("imported_callable:{}", proof_use.imported_local),
                         kind: proof_use.kind,
                         lexical_statement_ordinal: proof_use.lexical_statement_ordinal,
+                        source_location: proof_use.source_location.clone(),
+                    }
+                }).collect();
+                report.returned_record_uses = node.returned_record_uses.iter().map(|proof_use| {
+                    ReturnedRecordUseReport {
+                        summary_ref: format!("imported_callable:{}", proof_use.imported_local),
+                        kind: proof_use.kind, lexical_statement_ordinal: proof_use.lexical_statement_ordinal,
                         source_location: proof_use.source_location.clone(),
                     }
                 }).collect();

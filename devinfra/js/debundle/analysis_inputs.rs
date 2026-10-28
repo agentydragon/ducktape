@@ -56,7 +56,7 @@ pub enum CallbackFactoryEvidence {
 /// A source-derived successful-return capability. Deferred bodies may have
 /// arbitrary effects and exterior captures; consumers must activate the foreign
 /// capability pool when this record is read, invoked, or exposed.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ReturnedRecordSummary {
     pub defining_module: String,
     pub export: String,
@@ -65,7 +65,7 @@ pub struct ReturnedRecordSummary {
     pub members: Vec<DeferredRecordMember>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DeferredRecordMember {
     pub name: String,
     pub source_location: Option<SourceLocation>,

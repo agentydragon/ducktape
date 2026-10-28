@@ -110,7 +110,10 @@ A source-composed returned-record summary is separate from that callback-input
 contract. It certifies only zero-argument construction timing under the shared
 empty-Map integrity guard. The imported summary retains member/capture source
 provenance, and the returned foreign capability activates conservative binding
-and callback obligations when later consumed. See
+and callback obligations when later consumed. Graph `imported_callable_summaries`
+retains used record certificates, referenced separately by each source unit
+through `synchronous_execution.returned_record_uses` for call timing and
+returned-capability construction. See
 [purity soundness](purity_soundness.md#source-composed-returned-records) for the
 exact eager skeleton and fallback boundary.
 

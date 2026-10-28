@@ -3,7 +3,7 @@ use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
 use swc_atoms::Atom;
 
-use crate::analysis_inputs::CallbackFactoryEvidence;
+use crate::analysis_inputs::{CallbackFactoryEvidence, ReturnedRecordSummary};
 use crate::assignment_assembly::AtomicGroupConflict;
 use crate::ids::ModuleId;
 use crate::purity::Purity;
@@ -115,6 +115,8 @@ pub struct ImportedCallableSummaryReport {
     pub id: String,
     pub imported_local: String,
     pub callback_factory_evidence: Vec<CallbackFactoryEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returned_record: Option<ReturnedRecordSummary>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -132,6 +134,22 @@ pub enum CallbackFactoryUseKind {
 pub struct CallbackFactoryUseReport {
     pub summary_ref: String,
     pub kind: CallbackFactoryUseKind,
+    pub lexical_statement_ordinal: SourceUnitOrdinal,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReturnedRecordUseKind {
+    CallTiming,
+    ReturnCapability,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ReturnedRecordUseReport {
+    pub summary_ref: String,
+    pub kind: ReturnedRecordUseKind,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
@@ -236,6 +254,8 @@ pub struct SynchronousExecutionReport {
     pub precision_losses: Vec<ExecutionPrecisionLoss>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub callback_factory_uses: Vec<CallbackFactoryUseReport>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub returned_record_uses: Vec<ReturnedRecordUseReport>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]

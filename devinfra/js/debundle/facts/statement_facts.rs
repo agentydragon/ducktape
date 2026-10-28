@@ -209,6 +209,7 @@ pub(crate) struct SynchronousCalls {
     pub complete: bool,
     pub precision_losses: Vec<crate::reports::schema::ExecutionPrecisionLoss>,
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
+    pub returned_record_uses: Vec<ReturnedRecordUseFact>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -216,6 +217,16 @@ pub struct CallbackFactoryUseFact {
     pub imported_local: String,
     pub evidence: Vec<crate::analysis_inputs::CallbackFactoryEvidence>,
     pub kind: crate::reports::schema::CallbackFactoryUseKind,
+    pub lexical_statement_ordinal: SourceUnitOrdinal,
+    pub source_location: Option<crate::reports::schema::SourceLocation>,
+    pub span: swc_common::Span,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ReturnedRecordUseFact {
+    pub imported_local: String,
+    pub evidence: crate::analysis_inputs::ReturnedRecordSummary,
+    pub kind: crate::reports::schema::ReturnedRecordUseKind,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
     pub source_location: Option<crate::reports::schema::SourceLocation>,
     pub span: swc_common::Span,

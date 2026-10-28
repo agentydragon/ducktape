@@ -28,8 +28,8 @@ pub mod purity;
 pub mod reports;
 
 pub use analysis_inputs::{
-    AnalysisAssumptions, AnalysisInputs, CallableSummary, CallbackFactoryEvidence, KnownEffect,
-    LocalEffectPolicy,
+    AnalysisAssumptions, AnalysisInputs, CallableSummary, CallbackFactoryEvidence,
+    DeferredRecordMember, KnownEffect, LocalEffectPolicy, ReturnedRecordSummary,
 };
 pub use assignment_assembly::{
     AssemblyOutcome, AtomicGroupConflict, ConflictingClaim, assemble_assignment,

@@ -54,6 +54,7 @@ pub struct SourceUnit {
     pub callback_factory_barriers: Vec<CallbackFactoryBarrierFact>,
     pub synchronous_execution: Option<crate::reports::schema::SynchronousExecutionReport>,
     pub callback_factory_uses: Vec<crate::facts::CallbackFactoryUseFact>,
+    pub returned_record_uses: Vec<crate::facts::ReturnedRecordUseFact>,
 }
 
 /// Declaration-based classification, independent of syntax kind and destination.
@@ -180,6 +181,7 @@ impl DependencyGraph {
                 callback_factory_barriers: Vec::new(),
                 synchronous_execution: None,
                 callback_factory_uses: Vec::new(),
+                returned_record_uses: Vec::new(),
             })
             .collect();
 

@@ -75,12 +75,17 @@ pub fn build_dependency_graph_with(
                     complete: calls.complete,
                     precision_losses: calls.precision_losses.clone(),
                     callback_factory_uses: Vec::new(),
+                    returned_record_uses: Vec::new(),
                 }
             }),
             callback_factory_uses: stmt
                 .synchronous_calls
                 .as_ref()
                 .map_or_else(Vec::new, |calls| calls.callback_factory_uses.clone()),
+            returned_record_uses: stmt
+                .synchronous_calls
+                .as_ref()
+                .map_or_else(Vec::new, |calls| calls.returned_record_uses.clone()),
         });
     }
 

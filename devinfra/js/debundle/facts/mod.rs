@@ -82,6 +82,7 @@ pub(crate) use statement_facts::ConstructorFacts;
 pub use statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection,
     CallbackFactoryCallArgumentWitness, CallbackFactoryUseFact, CallbackFactoryWriteWitness,
+    ReturnedRecordUseFact,
 };
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, ValueOrigin};
 

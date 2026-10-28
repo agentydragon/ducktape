@@ -709,6 +709,11 @@ The returned record retains opaque deferred capabilities: later access,
 invocation and opaque consumption conservatively preserve importer live-cell
 reads and callback effects. The summary and provider member/capture provenance
 appear in `modules.json` under `imported_callables.*.returned_record`.
+Used certificates also appear in the dependency graph's
+`imported_callable_summaries.*.returned_record`. A source unit's
+`synchronous_execution.returned_record_uses` separately records `call_timing`
+and `return_capability` consumption with the call-site location and a summary
+reference. Callback-input factory evidence and uses retain their own fields.
 
 ## Audited callback factories
 
