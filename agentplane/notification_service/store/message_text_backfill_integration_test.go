@@ -346,7 +346,7 @@ func TestBackfillMessageTextCompletesAnEmptyFreshDatabase(t *testing.T) {
 
 func newMessageTextBackfillFixture(t *testing.T) fixture {
 	t.Helper()
-	db, ctx := newMessageTextBackfillDatabase(t, 15)
+	db, _ := newMessageTextBackfillDatabase(t, 15)
 	f := fixtureForDatabase(t, db, messageQuotas())
 	f.openInbox(t)
 	return f
