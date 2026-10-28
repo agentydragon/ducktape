@@ -319,8 +319,30 @@ pub(super) struct ExecutionState {
 
 pub(super) struct Executor<'source, 'rule> {
     inputs: &'rule ExecutionInputs<'source>,
-    state: ExecutionState,
+    state: ExecutionStateSlot,
     queries: RuntimeQueries<'source, 'rule>,
+}
+
+/// A suspended transfer has handed its state to its child. Keep the remaining
+/// Rust frame small without allocating an empty state for every child request.
+struct ExecutionStateSlot(Option<Box<ExecutionState>>);
+
+impl std::ops::Deref for ExecutionStateSlot {
+    type Target = ExecutionState;
+
+    fn deref(&self) -> &ExecutionState {
+        self.0
+            .as_deref()
+            .expect("the active transfer owns its state")
+    }
+}
+
+impl std::ops::DerefMut for ExecutionStateSlot {
+    fn deref_mut(&mut self) -> &mut ExecutionState {
+        self.0
+            .as_deref_mut()
+            .expect("the active transfer owns its state")
+    }
 }
 
 /// The source proof selected for one exact factory call. Kept separate from
@@ -339,25 +361,28 @@ pub(super) struct ValidatedMetadataDecoration {
 impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn new(
         inputs: &'rule ExecutionInputs<'source>,
-        state: ExecutionState,
+        state: Box<ExecutionState>,
         queries: RuntimeQueries<'source, 'rule>,
     ) -> Self {
         Self {
             inputs,
-            state,
+            state: ExecutionStateSlot(Some(state)),
             queries,
         }
     }
 
-    pub(super) fn into_state(self) -> ExecutionState {
-        self.state
+    pub(super) fn into_state(self) -> Box<ExecutionState> {
+        self.state.0.expect("the completed transfer owns its state")
     }
 
     fn request(&mut self, operation: RuntimeOperation) -> RuntimeValue {
-        let result = self
-            .queries
-            .request(std::mem::take(&mut self.state), operation);
-        self.state = result.state;
+        let state = self
+            .state
+            .0
+            .take()
+            .expect("the requesting transfer owns its state");
+        let result = self.queries.request(state, operation);
+        self.state.0 = Some(result.state);
         result.value
     }
 
@@ -1190,9 +1215,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn retain_dense_array(&mut self, object: u32, slots: Vec<Values>) {
-        let before = self.state.prefix_object_properties.get(&object).cloned();
-        let dense = self
-            .state
+        let state = &mut *self.state;
+        let before = state.prefix_object_properties.get(&object).cloned();
+        let dense = state
             .dense_arrays
             .entry(object)
             .or_insert_with(|| DenseArray {
@@ -1209,11 +1234,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 current.insert(AbstractValue::Undefined);
             }
         }
-        let properties = self
-            .state
-            .prefix_object_properties
-            .entry(object)
-            .or_default();
+        let properties = state.prefix_object_properties.entry(object).or_default();
         properties
             .entry(Some("length".into()))
             .or_default()
@@ -1229,7 +1250,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .extend(values.iter().cloned());
         }
         if before.as_ref() != Some(properties) {
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+            state.prefix_revision = state.prefix_revision.wrapping_add(1);
         }
     }
 
@@ -1398,9 +1419,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         let source_values = Values::from([AbstractValue::Origin(ValueOrigin::Object(source))]);
         let original_callbacks = self.callback_values(&source_values);
+        let protected_objects = self.reachable_objects(&source_values);
         self.state
             .array_iteration_protected_objects
-            .extend(self.reachable_objects(&source_values));
+            .extend(protected_objects);
         let mut slots = Vec::new();
         for values in &dense.slots {
             let previous_unsupported = self.state.array_iteration_unsupported;
@@ -3826,9 +3848,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .callables
                         .get(key)
                         .is_some_and(|callable| {
-                            self.state
+                            let state = &mut *self.state;
+                            state
                                 .returned_callback_owners
-                                .insert((self.state.reachability.incomplete, callable.owner))
+                                .insert((state.reachability.incomplete, callable.owner))
                         }),
                     // Keep class capability/superclass checks on their existing
                     // path. Other aggregate values have already been expanded by
@@ -4209,9 +4232,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let before = self.state.global_escaped_callbacks.len();
         let values = args.iter().flatten().cloned().collect();
         self.taint_objects(&values);
-        self.state
-            .global_escaped_callbacks
-            .extend(self.callback_values(&values));
+        let callbacks = self.callback_values(&values);
+        self.state.global_escaped_callbacks.extend(callbacks);
         if self.state.global_escaped_callbacks.len() != before {
             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         }
@@ -6805,15 +6827,16 @@ impl Executor<'_, '_> {
             prior_effect_owners.insert(fact.ordinal);
         }
         self.state.prior_effect_owners.extend(prior_effect_owners);
-        if !self.state.reachability.unknown_call_seen
-            && let Some(roots) = &mut self.state.prior_reachability_roots
+        let state = &mut *self.state;
+        if !state.reachability.unknown_call_seen
+            && let Some(roots) = &mut state.prior_reachability_roots
         {
             roots.extend(
                 outcome
                     .executed_owners
                     .iter()
                     .copied()
-                    .filter(|owner| !self.state.private_constructor_result_owners.contains(owner)),
+                    .filter(|owner| !state.private_constructor_result_owners.contains(owner)),
             );
         }
         for (id, expression) in assignments {

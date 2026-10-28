@@ -64,12 +64,9 @@ Growing facts never use this operation. There can be no future producer or reade
 of a retired key. Source-prefix payloads retire after the successor consumes them;
 reports retain their existing source and typed proof evidence.
 
-A measured prototype instead suspended and replayed each parent while retaining
-all intermediate snapshots. The 1,024-callback control hit a 45-second cutoff
-(baseline about 0.17 seconds), and the cached-fallback control retained about
-5 GiB. A real `perf` recording attributed about 48% of sampled CPU to cloning
-binding/owner sets. That prototype is rejected; merely sharing persistent value
-sets is insufficient if complete execution states are repeatedly cloned.
+The rejected parent-replay prototype and the profiling evidence motivating
+single-consumer retirement are recorded in
+[the performance investigation](../debug/runtime_transfers.md).
 
 ## Acceptance
 

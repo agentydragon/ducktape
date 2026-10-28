@@ -93,12 +93,12 @@ pub(super) enum RuntimeValue {
 }
 
 struct RuntimeRequest {
-    state: ExecutionState,
+    state: Box<ExecutionState>,
     operation: RuntimeOperation,
 }
 
 pub(super) struct RuntimeResult {
-    pub(super) state: ExecutionState,
+    pub(super) state: Box<ExecutionState>,
     pub(super) value: RuntimeValue,
 }
 
@@ -172,7 +172,7 @@ impl RuntimeQueries<'_, '_> {
 
     pub(super) fn request(
         &self,
-        state: ExecutionState,
+        state: Box<ExecutionState>,
         operation: RuntimeOperation,
     ) -> RuntimeResult {
         let kind = match &operation {
@@ -314,7 +314,7 @@ impl RuntimeRules<'_, '_> {
             next_child: Cell::new(0),
             context: RefCell::new(context),
         };
-        let mut executor = Executor::new(self.inputs, *state, queries);
+        let mut executor = Executor::new(self.inputs, state, queries);
         let effects = executor.execute_owner(owner);
         let state = executor.into_state();
         context.propose(
@@ -323,7 +323,7 @@ impl RuntimeRules<'_, '_> {
         );
         context.propose(
             RuntimeKey::Prefix(SourceUnitOrdinal(owner.0 + 1)),
-            RuntimeFact::Prefix(Box::new(state)),
+            RuntimeFact::Prefix(state),
         );
     }
 
