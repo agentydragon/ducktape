@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CI latency · focused follow-up through October 28, 2026</title>
+    <title>CI latency · temporary remote-retry mitigation, October 28, 2026</title>
     <style>
       :root {
         --ink: #17303b;
@@ -295,68 +295,68 @@
     <main>
       <header>
         <div class="eyebrow">
-          Ducktape · latency refresh · focused landed-results follow-up through
+          Ducktape · latency refresh · focused remote-retry mitigation follow-up through
           28 October
         </div>
         <h1>
-          Four uncached runs passed;<br />BFF decision cases were about 44s
-          shorter
+          Zero retries suppressed one requeue;<br />later work still ran
         </h1>
         <p class="lede">
-          All four uncached runs passed. Baseline BFF decision-case XML took
-          93.5–95.6s; reuse took 50.3–51.2s. The grouped variant preserves
-          fresh-session denial for both harnesses. Different snapshot/startup
-          states confound total process time, so this does not establish CI or
-          fleet savings. Review the candidate and current checks in
-          <a href="https://github.com/agentydragon/ducktape/pull/12380"
-            >PR #12380</a
-          >. Earlier queue and feedback cohorts retain their original windows.
+          A controlled plain-action comparison found no replacement during
+          65.271s with remote retries disabled; its default-retry control
+          requeued the same action and completed it. A separate RPC trace
+          captured terminal <code>CANCELLED</code> followed by a fresh
+          same-action <code>Execute</code> 105ms later. The zero-retry barrier
+          case still ran a newly enabled action after cancellation. This
+          supports the temporary CI policy in
+          <a href="https://github.com/agentydragon/ducktape/pull/12468"
+            >PR #12468</a
+          >, but does not make cancellation a fence or establish a CI/fleet
+          benefit. Earlier queue and feedback cohorts retain their original
+          windows.
         </p>
         <p class="small">
-          Historical broad sample: 24 October 04:00 → 27 October 06:00 UTC,
-          2026; focused burst queue window: 27 October 19:00–20:30 UTC. Earlier
-          VM/MCP profile: 27 October 19:19–21:09 UTC. New landed-results
-          follow-up recorded through 28 October 01:06:07 UTC against devel
+          The 24 October 04:00 → 27 October 06:00 UTC historical feedback
+          cohort and 27 October burst windows are unchanged. The separate MCP
+          scenario measurement completed at 02:00:23.832 UTC. Cancellation
+          probes ran on 28 October; the evidence is linked below and is not a
+          new population census. The CI policy change is PR #12468 at head
+          <code>88fb88609842</code>, checked against devel
           <a
-            href="https://github.com/agentydragon/ducktape/commit/bf8043f425ea1b2593cbfa914e1ef16388e7a3da"
-            >bf8043f425ea</a
-          >; it adds selected CI and manual cases, not a new population census.
-          The separate four-run MCP scenario measurement completed at
-          02:00:23.832 UTC. Earlier broad-sample source and tested trees remain
-          listed in their original sections.
+            href="https://github.com/agentydragon/ducktape/commit/2045a69341b03ac0003ec5604eaebcc9582a19ef"
+            >2045a69341b0</a
+          >. As of 04:30:16Z, the PR was open and all three required contexts
+          passed. No landing or post-change cancellation effect is claimed.
         </p>
       </header>
       <div class="cards">
         <div class="card">
-          Focused teardown smoke<span class="metric">15.240s</span>delete
-          accepted to absent, with clean guest and KubeVirt shutdown; one
-          focused run.
+          Plain action, retries disabled<span class="metric">65.271s</span>no
+          indexed same-action replacement observed after cancellation; one
+          controlled run.
         </div>
         <div class="card">
-          Guest lifecycle evidence<span class="metric">8 clean / 0 forced</span
-          >three PR CI VM cases plus five guest incarnations across storage and
-          suspend/resume checks.
+          Canceled action RPC to fresh Execute<span class="metric">105ms</span
+          >same digest in the child-only control; replacement passed.
         </div>
         <div class="card">
-          Mean baseline-to-reuse BFF cases<span class="metric"
-            >~44s shorter</span
-          >
-          two uncached runs per variant; this is scenario XML time, not
-          whole-test or CI completion time.
+          New action after cancellation<span class="metric">30.057s</span>barrier
+          control completed distinct work with retries disabled.
         </div>
       </div>
       <div class="callout">
         <strong>Current action:</strong> review
-        <a href="https://github.com/agentydragon/ducktape/pull/12380"
-          >PR #12380</a
-        >
-        and its current checks. It moves the standalone manual ALLOW case after
-        DENY in the same session; fresh-session denial remains for both
-        harnesses. VM phase timing and artifact-phase overlap are complete.
-        Runner capacity remains conditional on recurring bursts, and remote
-        cancellation ownership is operator-deferred this round.
+        <a href="https://github.com/agentydragon/ducktape/pull/12468"
+          >PR #12468</a
+        >, which sets <code>build:ci --remote_retries=0</code> as a temporary
+        CI mitigation. It can suppress the same-action retry path exercised by
+        the plain-action probe. It also disables Bazel remote retries for other
+        transient failures in CI, and the analysis-barrier probe shows that
+        later distinct work can still run. Measure both outcomes after the
+        policy is in use; no feedback or compute saving is currently measured.
       </div>
       <nav aria-label="Report navigation">
+        <a href="#remote-retries">Remote retry mitigation</a>
         <a href="#landed">Landed follow-up</a><a href="#mcp-reuse">MCP reuse</a
         ><a href="#burst">27 Oct burst</a><a href="#feedback">PR feedback</a
         ><a href="#changes">Since the last report</a
@@ -368,6 +368,149 @@
         ><a href="#continuity">Prior-work inventory</a
         ><a href="#method">Methods</a>
       </nav>
+      <section id="remote-retries">
+        <h2>
+          Temporary CI retry mitigation: one path narrowed, cancellation remains
+          open
+        </h2>
+        <p>
+          The focused experiments support setting
+          <code>build:ci --remote_retries=0</code> in
+          <a href="https://github.com/agentydragon/ducktape/pull/12468"
+            >PR #12468</a
+          >. Its head is
+          <a
+            href="https://github.com/agentydragon/ducktape/commit/88fb88609842d9c7f6d4333190d1233f0fd5302a"
+            ><code>88fb88609842</code></a
+          >; the source reviewed for this report is devel
+          <a
+            href="https://github.com/agentydragon/ducktape/commit/2045a69341b03ac0003ec5604eaebcc9582a19ef"
+            ><code>2045a69341b0</code></a
+          >. As of 04:30:16Z, the PR is open and all three required contexts
+          passed. Its CI child BES recorded
+          <code>remote_retries=0</code> in
+          <a
+            href="https://app.buildbuddy.io/invocation/36fc25cf-4c8f-5e5b-a951-9d197d61e4f8"
+            >invocation 36fc25cf</a
+          >. This confirms the config reaches a PR CI invocation; it does not
+          measure cancellation behavior, CI failures, compute use, or feedback
+          latency after adoption.
+        </p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Probe</th>
+                <th scope="col">Observed result</th>
+                <th scope="col">What it establishes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  Plain action, retries <code>0</code>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/dca0ce25-0e5f-41af-a168-c4c58ff47c30"
+                    >outer invocation</a
+                  >
+                </td>
+                <td>
+                  No indexed replacement for 65.271s after cancellation; child
+                  BES recorded <code>remote_retries=0</code>. 104 valid
+                  snapshots retained the original canceled execution.
+                </td>
+                <td>
+                  One tested case without a same-action replacement in the
+                  observation window. Synthetic cancellation metadata does not
+                  prove the original worker physically stopped.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  Plain action, default retries
+                  <a
+                    href="https://app.buildbuddy.io/invocation/ccb7b465-4e14-4348-b52c-c7f9f429b7ad"
+                    >outer invocation</a
+                  >
+                </td>
+                <td>
+                  The same action digest was queued about 8.159s after
+                  cancellation checks, then ran 30.033s and returned the
+                  expected output.
+                </td>
+                <td>
+                  A default-retry control for the plain case. One pair does not
+                  estimate retry frequency or CI savings.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  Analysis barrier, retries <code>0</code>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/8db50d25-6e6b-405b-8f31-4d7f43263012"
+                    >outer invocation</a
+                  >
+                </td>
+                <td>
+                  After cancellation checks, the controller released the
+                  barrier marker. A different newly enabled action then ran
+                  for 30.057s and produced its expected output.
+                </td>
+                <td>
+                  Disabling Bazel retries does not prevent later distinct
+                  submissions from an invocation that remains active.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  Child-only RPC trace
+                  <a
+                    href="https://app.buildbuddy.io/invocation/5c2bf3a3-8200-42a9-9c3c-99b2b6cdfe76"
+                    >outer invocation</a
+                  >
+                </td>
+                <td>
+                  Terminal action status was <code>CANCELLED</code> inside an
+                  RPC with transport status <code>OK</code>. A fresh
+                  same-digest <code>Execute</code> began 105ms after the first
+                  RPC closed and completed successfully.
+                </td>
+                <td>
+                  Directly confirms this retry mechanism in the child-only
+                  control. It did not capture the normal outer cancellation
+                  sequence or the historical CI incident.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The source setting applies to remote retry handling for builds using
+          the CI config; it is not limited to <code>CANCELLED</code>. Its
+          operational cost is weaker recovery from unrelated transient remote
+          errors. Keep the change temporary and evaluate actual CI child BES
+          options, same-digest replacement executions after cancellation, and
+          non-cancellation remote failures once the policy is in use. The
+          focused probe comparison measures neither those rates nor end-to-end
+          PR feedback. Do not treat a terminal cancellation response or a
+          successful cancel RPC as proof that all worker activity stopped.
+        </p>
+        <p class="small">
+          Full experimental conditions and selected evidence:
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/2045a69341b03ac0003ec5604eaebcc9582a19ef/devinfra/debug/ci_remote_cancellation/retry_comparison.md"
+            >retry comparison</a
+          >,
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/2045a69341b03ac0003ec5604eaebcc9582a19ef/devinfra/debug/ci_remote_cancellation/normal_path_reproduction.md"
+            >normal-path reproduction</a
+          >, and
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/2045a69341b03ac0003ec5604eaebcc9582a19ef/devinfra/debug/ci_remote_cancellation/rpc_retry_trace.md"
+            >RPC trace</a
+          >. These focused experiments are not a fleet sample.
+        </p>
+      </section>
       <section id="landed">
         <h2>Landed changes and focused results through 28 October</h2>
         <p>
@@ -570,7 +713,7 @@
         </p>
       </section>
       <section id="mcp-reuse">
-        <h2>MCP scenario reuse: four uncached runs through 02:00:23 UTC</h2>
+        <h2>MCP scenario reuse: historical four-run benchmark through 02:00:23 UTC</h2>
         <p>
           This focused benchmark followed the landed-results window above; it is
           not a new CI population census. The benchmark base was pinned to devel
@@ -579,13 +722,13 @@
             >bf8043f425ea</a
           >; the baseline runs used that source, and the reuse runs added the
           measured test patch. Remote fetch and reverse-patch provenance are in
-          evidence. The measured test change is now in
-          <a href="https://github.com/agentydragon/ducktape/pull/12380"
-            >PR #12380</a
-          >
-          targeting devel. Its source commit also adds README documentation;
-          benchmark execution used the pinned devel tree plus the measured test
-          patch, not that later commit as its exact source.
+          evidence. The test change merged to devel at 2026-10-28T02:14:31Z in
+          <a href="https://github.com/agentydragon/ducktape/commit/992061945204a40b22de67c3f3ac953c2e52a3ec"
+            >commit 992061945204</a
+          >. The source PR commit also adds README documentation; benchmark
+          execution used the pinned devel tree plus the measured test patch,
+          not that later commit as its exact source. These four-run measurements
+          remain historical, and post-landing fleet-effect validation is open.
         </p>
         <p>
           A1/A2 are the 12-item baseline: separate fresh allow and deny
@@ -2076,29 +2219,28 @@
             </thead>
             <tbody>
               <tr>
-                <td>1 · Review MCP scenario-reuse PR</td>
+                <td>1 · Temporary CI remote-retry suppression</td>
                 <td>
                   Review
-                  <a href="https://github.com/agentydragon/ducktape/pull/12380"
-                    >PR #12380</a
-                  >
-                  and its test-source change. It keeps DENY before a distinct
-                  ALLOW request per harness, both verdict branches,
-                  fresh-session denial and the existing policy auto-allow
-                  scenarios. The source commit also adds README documentation;
-                  its test code matches the measured patch but is not the exact
-                  benchmark source SHA.
+                  <a href="https://github.com/agentydragon/ducktape/pull/12468"
+                    >PR #12468</a
+                  >, which sets <code>build:ci --remote_retries=0</code>. The
+                  PR is open at head <code>88fb88609842</code>; its current CI
+                  child BES reports the explicit zero-retry option.
                 </td>
                 <td>
-                  Across two runs per variant, mean BFF decision-case XML time
-                  was 43.796s lower for reuse. Action digests match within each
-                  arm; BFF case XML is a scenario subset, not whole-test
-                  completion.
+                  One plain zero-retry probe had no indexed same-action
+                  replacement for 65.271s, while its default control requeued
+                  and completed. This is targeted mechanism evidence, not
+                  measured CI compute or feedback savings.
                 </td>
                 <td>
-                  Review the exact test diff and current required checks linked
-                  from the PR before adoption; do not claim a whole-action, CI
-                  or fleet saving from this bounded sample.
+                  Temporary and broad: all Bazel remote retries in CI are
+                  disabled, including recovery from unrelated transient remote
+                  failures. The barrier control still ran later distinct work.
+                  After adoption, compare cancellation-linked same-digest
+                  replacements and non-cancellation remote failures; revert if
+                  transient failures materially rise.
                 </td>
               </tr>
               <tr>
@@ -2126,17 +2268,17 @@
           </table>
         </div>
         <p class="small">
-          <strong>Deferred cancellation follow-up:</strong> a later dispatch
-          after cancellation was reproduced during the shutdown probe, but the
-          source and shared helper remain unchanged and record request
-          acknowledgment rather than terminal quiescence, and exact worker
-          physical stop remains unproven. This is the operator-deferred A track
-          for this round. The
+          <strong>Cancellation ownership remains unresolved:</strong> the
+          temporary zero-retry policy targets the same-action retry path, but
+          the barrier control shows later distinct work can still run. The
+          helper records request acknowledgment, not terminal quiescence, and
+          the exact physical worker stop remains unproven. The
           <a href="https://github.com/agentydragon/ducktape/pull/12244"
             >#12244 diagnostics PR</a
           >
-          remains open with green checks; it is not a landed fix. No remote work
-          reclaimed or feedback saving is claimed.
+          remains a separate open diagnostics change. Neither the mitigation
+          nor the earlier probe establishes reclaimed remote work or a
+          feedback saving.
         </p>
       </section>
       <section id="capacity">
@@ -2497,18 +2639,17 @@
               <tr>
                 <td>Remote cancellation quiescence</td>
                 <td>
-                  The earlier
-                  <a
-                    href="https://github.com/agentydragon/ducktape/actions/runs/40574978735/job/122438855995"
-                    >canceled PR job</a
-                  >
-                  had a VM action start after child cancellation was
-                  acknowledged. A later dispatch after cancellation was
-                  reproduced during the shutdown probe, but origin/linked
-                  ownership and physical worker stop remain unproven; the helper
-                  is still acknowledgment-only. This operator-deferred A track
-                  is not assigned to this round. No reclaimed-work or feedback
-                  saving is claimed.
+                  Follow-up reproduced a default same-digest replacement and a
+                  child-only <code>CANCELLED</code>-to-fresh-
+                  <code>Execute</code> trace 105ms apart. In one plain
+                  comparison, <code>--remote_retries=0</code> left no indexed
+                  replacement for 65.271s; a barrier control still ran a later
+                  distinct action. Temporary CI policy is in
+                  <a href="https://github.com/agentydragon/ducktape/pull/12468"
+                    >PR #12468</a
+                  >. Exact producer stop, complete consumer ownership, and
+                  effect on fleet work remain unknown; no saved compute or
+                  feedback benefit is assigned.
                 </td>
               </tr>
               <tr>
@@ -2589,15 +2730,18 @@
                 <td>Scenario grouping</td>
                 <td>
                   The earlier bounded two-shard probe retains a
-                  high-compute-cost rejection. The completed four-run uncached
-                  comparison passed all 44 test executions. BFF decision-case
-                  XML averaged about 44s shorter for reuse, while later runs had
-                  different snapshot/startup state and full-action savings
-                  remain unproven. Review the test change in
+                  high-compute-cost rejection. The four-run uncached comparison
+                  is historical: all 44 test executions passed and BFF
+                  decision-case XML averaged 43.796s shorter for reuse, but
+                  different later snapshot/startup states confound whole-action
+                  effects. The test change merged via
                   <a href="https://github.com/agentydragon/ducktape/pull/12380"
                     >PR #12380</a
-                  >; use the PR for current check status. Preserve VM
-                  independent-boot coverage; shared multi-PR clusters remain
+                  > at commit
+                  <a href="https://github.com/agentydragon/ducktape/commit/992061945204a40b22de67c3f3ac953c2e52a3ec"
+                    >992061945204</a
+                  >. Post-landing CI/fleet effect remains unmeasured. Preserve
+                  VM independent-boot coverage; shared multi-PR clusters remain
                   untested.
                 </td>
               </tr>
@@ -2723,6 +2867,25 @@
           raw queue handling is not used in corrected headline statistics.
           Collection/analysis scripts used at most four parallel readers and
           followed test-result group pagination.
+        </p>
+        <p>
+          The cancellation mitigation follow-up is a separate focused
+          experiment, not a refresh of the historical PR feedback or runner
+          cohorts. The normal-path reproduction used source
+          <code>aa9196b606ac</code>, the retry comparison
+          <code>9fac91535c64</code>, and the child-only RPC trace
+          <code>215af6378b9d</code>; the selected evidence is linked in the
+          <a href="#remote-retries">mitigation section</a>. The inspected
+          devel source is pinned to
+          <a href="https://github.com/agentydragon/ducktape/commit/2045a69341b03ac0003ec5604eaebcc9582a19ef"
+            ><code>2045a69341b0</code></a
+          >, separate from PR #12468 head
+          <code>88fb88609842d9c7f6d4333190d1233f0fd5302a</code>. The PR CI
+          child BES records <code>remote_retries=0</code>; all three required
+          contexts passed by 04:30:16Z. This proves the option reached that validation invocation,
+          not that it changed CI cancellation outcomes. No cancellation-rate,
+          retry-rate, worker-time or PR-feedback cohort was collected for this
+          update.
         </p>
         <p>
           <a

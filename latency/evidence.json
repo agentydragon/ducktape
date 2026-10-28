@@ -5845,7 +5845,7 @@
       }
     ]
   },
-  "source_devel_commit": "bf8043f425ea1b2593cbfa914e1ef16388e7a3da",
+  "source_devel_commit": "2045a69341b03ac0003ec5604eaebcc9582a19ef",
   "measurement_source_devel_commit": "f24d1e727184d750f299bbe88b89880fe4865687",
   "profile_cases": [
     {
@@ -40426,7 +40426,7 @@
   },
   "attribution": "not collected",
   "validation": {
-    "status": "passed numeric, structure and combined desktop/mobile browser review",
+    "status": "passed focused source/numeric integrity checks and exact-byte desktop/mobile browser review",
     "prior_snapshot": {
       "status": "passed and visually reviewed",
       "report_sha256": "d951506dcf5f173519f9fc049152f1486e5a297173db78253efdbc6879e8629d",
@@ -40455,7 +40455,8 @@
       ]
     },
     "numeric_checks": "PR CI action timestamps and gate order; five baseline XML suites reconcile to case totals; isolated grouped XML has 10/10 cases and both harnesses; source pins and counts checked; new HTML anchors unique; fresh 24h core-job and 90m all-workflow run/job counts reconcile; assigned runner and first-step timestamps checked; half-open clipped occupancy/nearest-rank queues verified; four exact-head job clocks and canceled action timestamps linked",
-    "browser_review": {
+    "report_sha256": "2adaec9e684574802964f887c663f6e05a72d9984a6f06fa2af7da196f5d8052",
+    "previous_html_browser_review": {
       "runner_invocation": "84c79de3-acb5-49ae-ae7f-6d9e8721a34d",
       "bazel_invocation": "25416ace-ddcc-4f43-a660-6fc69109b860",
       "viewports": [
@@ -40480,57 +40481,54 @@
         "latency-mobile-actions"
       ]
     },
-    "report_sha256": "4fe7dc358ef56943db66af310c6692ec5f5838d967f19d24a40bb2fe952dafd1"
+    "focused_update_checks": {
+      "report_sha256": "2adaec9e684574802964f887c663f6e05a72d9984a6f06fa2af7da196f5d8052",
+      "historical_collection_and_cohort_fields_unchanged": true,
+      "source_devel_sha_checked_against_origin_devel": "2045a69341b03ac0003ec5604eaebcc9582a19ef",
+      "pr_head_kept_separate_from_devel_source": "88fb88609842d9c7f6d4333190d1233f0fd5302a",
+      "retry_counts_and_durations_cross_checked_against_selected_json": true,
+      "ci_child_option_cross_checked": "remote_retries=0",
+      "visual_review": "passed"
+    },
+    "browser_review": {
+      "runner_invocation": "42f9946d-1ea4-4492-8df1-13e9776c9bcb",
+      "bazel_invocation": "f445d0e1-402b-4ed6-804d-13a26e48f9c7",
+      "report_sha256": "2adaec9e684574802964f887c663f6e05a72d9984a6f06fa2af7da196f5d8052",
+      "viewports": [
+        "1280x900",
+        "390x844"
+      ],
+      "checks": [
+        "exact report bytes copied to RBE browser input",
+        "content readiness and h1 visibility",
+        "no document horizontal overflow; wide tables scroll within their containers",
+        "native disclosure opens and closes",
+        "overview, retry evidence and recommendations screenshots inspected at desktop and mobile"
+      ],
+      "screenshots_inspected": [
+        "latency-desktop-overview",
+        "latency-desktop-remote-retries",
+        "latency-desktop-actions",
+        "latency-mobile-overview",
+        "latency-mobile-remote-retries",
+        "latency-mobile-actions"
+      ]
+    }
   },
   "recommendations": [
     {
       "rank": 1,
-      "track": "review MCP scenario-reuse PR #12380",
+      "track": "temporary CI remote-retry suppression",
       "files": [
-        "agentplane/system_tests/test_mcp.py"
+        ".bazelrc"
       ],
-      "mechanism": "B uses one fresh Sandbox/session per harness for DENY then ALLOW with distinct Action requests, markers and idempotency keys, removing two Sandbox/session lifecycles and two function-scoped operator_bff OIDC logins. The measured candidate retains both verdict branches without changing commands, timeouts or readiness behavior.",
-      "latest_observation": {
-        "source_devel_commit": "bf8043f425ea1b2593cbfa914e1ef16388e7a3da",
-        "remote_fetch_base": "d217f55b90f715223e4e5111b9299465b8bb7a04",
-        "completed_runs": [
-          "A1",
-          "B1",
-          "B2",
-          "A2"
-        ],
-        "A1_B1_bff_xml_delta_seconds_B1_minus_A1": -45.315,
-        "interpretation": "About 44 seconds shorter in BFF decision-case XML across two runs per variant. Later full-action comparison includes different snapshot/startup state; no whole-action/CI or fleet saving is established.",
-        "A2_status": "passed 12/12",
-        "evidence_key": "mcp_reuse_measurement_2026_10_28",
-        "baseline_bff_decision_case_xml_mean_seconds": 94.553,
-        "reuse_bff_decision_case_xml_mean_seconds": 50.757,
-        "reuse_minus_baseline_bff_decision_case_xml_mean_seconds": -43.796,
-        "action_digests_match_within_each_variant": true
-      },
-      "prior_trigger_observation": {
-        "pr": 12333,
-        "head_sha": "ca59df9308955e6d3f03a2a169939933ce24e113",
-        "invocation_url": "https://app.buildbuddy.io/invocation/bcb6aef4-e2b6-5e98-a3fb-82fde9dd63be",
-        "vm_action_end_utc": "2026-10-28T00:48:07.455081480Z",
-        "mcp_action_end_utc": "2026-10-28T00:48:27.071095730Z",
-        "mcp_after_vm_s": 19.616014,
-        "interpretation": "One invocation motivated the follow-up measurement; it is conditional action-level headroom, not a population rate or end-to-end saving."
-      },
-      "prior_compatibility_probe": {
-        "invocation_url": "https://app.buildbuddy.io/invocation/7fb14a28-324e-440d-bb23-7f8d8d8acccb",
-        "pytest_cases": 10,
-        "passed": 10,
-        "interpretation": "One uncached run confirmed compatibility, not causal speedup or isolation equivalence."
-      },
-      "coverage": "The AST diff retained 45 assertion expressions and five explicit failure-call expressions across the DENY/ALLOW branches; both verdict branches were exercised for each harness. Keep fresh-session denial for both harnesses, state isolation, and existing fresh policy auto-allow scenarios.",
-      "validation": "Review the exact test-source diff and current required checks linked from PR #12380 before adoption. Keep the claim bounded to BFF decision-case XML; do not generalize to whole-action, CI or fleet savings.",
-      "source_pr": {
-        "number": 12380,
-        "url": "https://github.com/agentydragon/ducktape/pull/12380",
-        "head_sha": "fe288cd5ac692064a8d82b4a3287596c0ebf9a73",
-        "target": "devel"
-      }
+      "mechanism": "PR #12468 sets build:ci --remote_retries=0. This suppresses Bazel action retries for CI builds, including retries for unrelated transient remote errors; it is not limited to CANCELLED.",
+      "expected_gain": "May suppress a same-action replacement caused by retrying a terminal CANCELLED response. No CI feedback, remote compute, or fleet saving is quantified.",
+      "risk": "All Bazel remote retries in CI are disabled, which weakens recovery from unrelated transient remote errors.",
+      "validation_plan": "After adoption, verify child BES options on CI invocations; inspect cancellation-linked same-digest replacements and non-cancellation remote failures; compare bounded before/after counts and restore retries if transient failures materially increase. Keep the distinct-action barrier counterexample in the acceptance matrix.",
+      "status": "Open source PR with all three required contexts passing; no merge or post-change cancellation outcome claimed.",
+      "evidence_reference": "remote_retry_mitigation",
+      "source_pr_url": "https://github.com/agentydragon/ducktape/pull/12468"
     },
     {
       "rank": 2,
@@ -41616,7 +41614,7 @@
       "A1/B1 share a restored parent lineage. B2 was cold with a fresh VM; A2 restored a different pre-existing snapshot on the same worker/platform/configuration.",
       "No in-memory reuse, whole-action/CI improvement, allocation saving or fleet effect is established; other required gates can cap feedback savings."
     ],
-    "decision": "Review the test-source change and current checks in PR #12380. The measured evidence supports review of this bounded scenario reuse change, not a whole-action/CI/fleet claim. Do not revive the rejected extra Pod runner-recycling key from this result; remote cancellation ownership remains explicitly operator-deferred this round.",
+    "decision": "The scenario-reuse implementation is landed via PR #12380, merged at 2026-10-28T02:14:31Z as commit 992061945204a40b22de67c3f3ac953c2e52a3ec. The four-run benchmark remains historical and supports only a bounded BFF decision-case XML comparison; post-landing whole-action, CI, and fleet effects remain unmeasured. Do not revive the rejected extra Pod runner-recycling key from this result; remote cancellation ownership remains explicitly operator-deferred this round.",
     "client_reported_completion_at_utc": "2026-10-28T02:00:23.832Z",
     "source_pr": {
       "number": 12380,
@@ -41624,7 +41622,10 @@
       "head_sha": "fe288cd5ac692064a8d82b4a3287596c0ebf9a73",
       "target": "devel",
       "source_commit_is_exact_benchmark_tree": false,
-      "source_commit_note": "The PR contains the measured test-code bytes plus README documentation. Benchmark runs used pinned devel bf8043f425ea1b2593cbfa914e1ef16388e7a3da with the recorded reverse patch and, for B, the measured candidate delta."
+      "source_commit_note": "The PR contains the measured test-code bytes plus README documentation. Benchmark runs used pinned devel bf8043f425ea1b2593cbfa914e1ef16388e7a3da with the recorded reverse patch and, for B, the measured candidate delta.",
+      "state": "MERGED",
+      "merged_at_utc": "2026-10-28T02:14:31Z",
+      "merge_commit": "992061945204a40b22de67c3f3ac953c2e52a3ec"
     },
     "action_digest_matches": {
       "baseline_A1_A2": "ec66d89a0de2bfe5c18096d5ab6f58075aaea18f6bc30a6c60dfdc288554c5b2",
@@ -41671,6 +41672,126 @@
         "prior_task_was_B2": false
       },
       "interpretation": "Firecracker snapshot-configuration hashes distinguish the two run pairs; they are runtime metadata, not test-flag differences. A1/B1 share their restored parent lineage. B2 started cold with a new VM, while A2 later restored a different prior snapshot on the same worker/platform/configuration. A2 did not restore a snapshot descended from B2. Full-action comparison across later states is confounded by startup state."
+    }
+  },
+  "historical_report_source_devel_commit": "bf8043f425ea1b2593cbfa914e1ef16388e7a3da",
+  "remote_retry_mitigation": {
+    "recorded_at_utc": "2026-10-28T04:30:16Z",
+    "source_devel_commit": "2045a69341b03ac0003ec5604eaebcc9582a19ef",
+    "historical_cohort_window_unchanged": [
+      "2026-10-24T04:00:00Z",
+      "2026-10-27T06:00:00Z"
+    ],
+    "source_policy": {
+      "file": ".bazelrc",
+      "setting": "build:ci --remote_retries=0",
+      "scope": "All Bazel builds using the CI config; not specific to CANCELLED.",
+      "temporary": true
+    },
+    "source_pr": {
+      "number": 12468,
+      "url": "https://github.com/agentydragon/ducktape/pull/12468",
+      "head_sha": "88fb88609842d9c7f6d4333190d1233f0fd5302a",
+      "target": "devel",
+      "state_as_of_utc": "2026-10-28T04:30:16Z",
+      "state": "OPEN",
+      "merged": false,
+      "required_checks_as_of_utc": "2026-10-28T04:30:16Z",
+      "required_checks": {
+        "Build artifacts + imports check": {
+          "state": "SUCCESS",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40632252060/job/122631100532"
+        },
+        "bazel-ci / Test & Build": {
+          "state": "SUCCESS",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40632252165/job/122631100739"
+        },
+        "Pre-commit checks": {
+          "state": "SUCCESS",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40632252069/job/122631100172"
+        }
+      }
+    },
+    "configured_ci_observation": {
+      "head_sha": "88fb88609842d9c7f6d4333190d1233f0fd5302a",
+      "workflow_run_id": 40632252165,
+      "job_id": 122631100739,
+      "job_url": "https://github.com/agentydragon/ducktape/actions/runs/40632252165/job/122631100739",
+      "invocation_url": "https://app.buildbuddy.io/invocation/36fc25cf-4c8f-5e5b-a951-9d197d61e4f8",
+      "effective_child_bes_option": "remote_retries=0",
+      "invocation_result": "passed",
+      "interpretation": "Confirms the option reaches the PR CI child invocation; this is configuration validation, not a cancellation outcome or regression-rate measurement.",
+      "inspected_source_devel_commit": "2045a69341b03ac0003ec5604eaebcc9582a19ef",
+      "tested_merge_commit": "3e1ff6cc8e41324c2d00f613bc2c4d4717f63781"
+    },
+    "focused_experiments": {
+      "observed_on_utc": "2026-10-28",
+      "probe_source_commits": {
+        "normal_path_reproduction": "aa9196b606ac8f6b60474d114f0fe3c8a00f0bc9",
+        "retry_comparison": "9fac91535c6456e889191a51a360ee2a4fc541ec",
+        "rpc_retry_trace": "215af6378b9ddf23c12ce3d22f1a761f782454e7"
+      },
+      "probes": [
+        {
+          "case": "plain action, zero retries",
+          "child_invocation_url": "https://app.buildbuddy.io/invocation/49a7ae0d-3995-4bfa-bba9-67b46d664f13",
+          "outer_invocation_url": "https://app.buildbuddy.io/invocation/dca0ce25-0e5f-41af-a168-c4c58ff47c30",
+          "effective_child_bes_option": "remote_retries=0",
+          "observation_seconds": 65.271,
+          "valid_execution_snapshots": 104,
+          "indexed_same_digest_replacement_observed": false,
+          "original_worker_physical_stop_proven": false
+        },
+        {
+          "case": "plain action, default-retry control",
+          "child_invocation_url": "https://app.buildbuddy.io/invocation/a6f9a9a6-29f7-47ca-883e-88e1e085d8c5",
+          "outer_invocation_url": "https://app.buildbuddy.io/invocation/ccb7b465-4e14-4348-b52c-c7f9f429b7ad",
+          "same_digest_replacement_observed": true,
+          "replacement_queued_after_cancel_checks_seconds": 8.159,
+          "replacement_command_seconds": 30.033,
+          "replacement_exit_code": 0
+        },
+        {
+          "case": "analysis barrier, zero retries",
+          "child_invocation_url": "https://app.buildbuddy.io/invocation/6bdb45f8-d832-4fd6-b254-da44a7bc3966",
+          "outer_invocation_url": "https://app.buildbuddy.io/invocation/8db50d25-6e6b-405b-8f31-4d7f43263012",
+          "effective_child_bes_option": "remote_retries=0",
+          "distinct_late_action_after_release_marker": true,
+          "late_action_command_seconds": 30.057,
+          "late_action_exit_code": 0
+        },
+        {
+          "case": "child-only RPC retry control",
+          "child_invocation_url": "https://app.buildbuddy.io/invocation/90320f94-9886-4d6c-8998-ee98aa210de0",
+          "outer_invocation_url": "https://app.buildbuddy.io/invocation/5c2bf3a3-8200-42a9-9c3c-99b2b6cdfe76",
+          "first_rpc_transport_status": "OK",
+          "first_action_status": "CANCELLED",
+          "fresh_same_digest_execute_after_rpc_close_ms": 105,
+          "replacement_exit_code": 0
+        }
+      ],
+      "evidence_docs": {
+        "retry_comparison": "https://github.com/agentydragon/ducktape/blob/2045a69341b03ac0003ec5604eaebcc9582a19ef/devinfra/debug/ci_remote_cancellation/retry_comparison.md",
+        "normal_path_reproduction": "https://github.com/agentydragon/ducktape/blob/2045a69341b03ac0003ec5604eaebcc9582a19ef/devinfra/debug/ci_remote_cancellation/normal_path_reproduction.md",
+        "rpc_retry_trace": "https://github.com/agentydragon/ducktape/blob/2045a69341b03ac0003ec5604eaebcc9582a19ef/devinfra/debug/ci_remote_cancellation/rpc_retry_trace.md"
+      },
+      "limits": [
+        "Each treatment/control result is one focused experiment, not a retry probability or fleet rate.",
+        "The zero-retry plain case had no indexed replacement during its bounded observation; synthetic terminal cancellation does not prove physical worker stop.",
+        "The analysis-barrier case proves later distinct work can become runnable after cancellation with retries disabled.",
+        "The child-only RPC trace confirms the same-action retry mechanism in that control, not the normal outer cancellation sequence or the historical CI incident.",
+        "No post-landing cancellation, remote failure, worker-time, compute, or PR-feedback cohort has been measured."
+      ]
+    },
+    "conclusion": "Supports temporary mitigation of one observed same-action retry path. It does not fence later distinct submissions or establish physical stop, saved work, reduced failures, or end-to-end latency benefit.",
+    "historical_ci_observation": {
+      "github_job_url": "https://github.com/agentydragon/ducktape/actions/runs/40574978735/job/122438855995",
+      "test_invocation_url": "https://app.buildbuddy.io/invocation/e5650420-cea1-5cc0-9029-b6cad3c77625",
+      "declared_test_invocation_cancel_acknowledged_utc": "2026-10-27T20:28:35.903Z",
+      "action_execution_started_utc": "2026-10-27T20:28:54.552Z",
+      "action_execution_completed_utc": "2026-10-27T20:37:27.559Z",
+      "action_link_type": "NEW (1); same digest also has synthetic cancelled row",
+      "interpretation": "This historical observation is retained in the existing remote_cancellation_case evidence above. One newly linked same-digest execution started after the declared test invocation cancel request was acknowledged. A hedge or retry remains possible; server reason, exclusive ownership, physical worker stop, test verdict, and population rate are unresolved."
     }
   }
 }
