@@ -130,6 +130,8 @@ an admitted call with a nearby unsupported shape or a later-use case that keeps
 conservative constraints. The same recipe and inputs ship with every Debundle
 skill and run under Bazel; the test harness supplies temporary directories and
 compares original and emitted Node behavior for accepted cases.
+Controls replace `source/main.js` in temporary copies, preserving its import
+paths; run them through the recipe.
 
 | Example                                                                                | Audited YAML                                                                                    | Boundary control                                                                                                                                                     |
 | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
