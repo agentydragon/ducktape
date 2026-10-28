@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -29,7 +30,7 @@ import (
 var testEpoch = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 
 // summaryOf is a summary of a Session that sandbox wrote, first written at first.
-func summaryOf(f fixture, sessionID string, sandbox SandboxRef, first *time.Time) *historypb.SessionSummary {
+func summaryOf(f fixture, sessionID string, sandbox contract.SandboxRef, first *time.Time) *historypb.SessionSummary {
 	summary := &historypb.SessionSummary{
 		SessionId: sessionID,
 		Sandbox:   &historypb.SandboxRef{Namespace: f.namespace, Name: sandbox.Name, Uid: new(string(sandbox.UID))},
@@ -60,7 +61,7 @@ func TestGetSessionReadsTheLaunchedIncarnationsSession(t *testing.T) {
 		State: dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED, CreatedAt: at, UpdatedAt: at,
 	})
 	var commands []string
-	for range recentDispatches + 2 {
+	for range contract.RecentDispatches + 2 {
 		command := uuid.NewString()
 		commands = append(commands, command)
 		f.dispatcher.hold(nil, &dispatcherpb.Dispatch{
@@ -82,7 +83,7 @@ func TestGetSessionReadsTheLaunchedIncarnationsSession(t *testing.T) {
 		return stream.Send(&historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
 	}
 
-	state := resultOf[SessionState](f.attempt(t, f.caller, actionGetSession,
+	state := resultOf[SessionState](f.attempt(t, f.caller, contract.ActionGetSession,
 		fmt.Sprintf(`{"sandbox": {"name": %q, "uid": %q}, "session_id": %q}`, launched.Name, launched.UID, session)))
 	if ready := state.SandboxReady; ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "TestStarting" {
 		t.Errorf("sandbox_ready = %+v, want the Sandbox's Ready condition", ready)
@@ -97,9 +98,9 @@ func TestGetSessionReadsTheLaunchedIncarnationsSession(t *testing.T) {
 	if turn := state.Session.LastTurnStatus; turn == nil || *turn != "TURN_STATUS_COMPLETED" {
 		t.Errorf("session.last_turn_status = %v, want the last turn's", turn)
 	}
-	if len(state.Dispatches) != recentDispatches || state.Dispatches[0].CommandID != commands[len(commands)-1] ||
-		state.Dispatches[recentDispatches-1].CommandID != commands[2] {
-		t.Errorf("dispatches = %+v, want the %d most recent, newest first", state.Dispatches, recentDispatches)
+	if len(state.Dispatches) != contract.RecentDispatches || state.Dispatches[0].CommandID != commands[len(commands)-1] ||
+		state.Dispatches[contract.RecentDispatches-1].CommandID != commands[2] {
+		t.Errorf("dispatches = %+v, want the %d most recent, newest first", state.Dispatches, contract.RecentDispatches)
 	}
 }
 
@@ -108,9 +109,9 @@ func TestGetSessionReadsTheLaunchedIncarnationsSession(t *testing.T) {
 func TestGetSessionRefusesASessionItCannotTieToTheIncarnation(t *testing.T) {
 	f := newFixture(t)
 	launched := f.launch(t, "test-worker")
-	other := SandboxRef{Name: launched.Name, UID: types.UID(uuid.NewString())}
+	other := contract.SandboxRef{Name: launched.Name, UID: types.UID(uuid.NewString())}
 	for name, test := range map[string]struct {
-		opened, written *SandboxRef
+		opened, written *contract.SandboxRef
 		found           bool
 	}{
 		"opened and written here":             {&launched, &launched, true},
@@ -132,7 +133,7 @@ func TestGetSessionRefusesASessionItCannotTieToTheIncarnation(t *testing.T) {
 			if test.written != nil {
 				f.history.hold(summaryOf(f, session, *test.written, nil))
 			}
-			attempt := f.attempt(t, f.caller, actionGetSession,
+			attempt := f.attempt(t, f.caller, contract.ActionGetSession,
 				fmt.Sprintf(`{"sandbox": {"name": %q, "uid": %q}, "session_id": %q}`, launched.Name, launched.UID, session))
 			if !test.found {
 				if kind := attempt.failure(); kind != "session_not_found" {
@@ -158,11 +159,11 @@ func TestListSessionsListsTheIncarnationsSessionsNewestFirst(t *testing.T) {
 	unfolded := uuid.NewString()
 	f.history.hold(
 		summaryOf(f, unfolded, launched, nil),
-		summaryOf(f, uuid.NewString(), SandboxRef{Name: launched.Name, UID: types.UID(uuid.NewString())}, &testEpoch),
+		summaryOf(f, uuid.NewString(), contract.SandboxRef{Name: launched.Name, UID: types.UID(uuid.NewString())}, &testEpoch),
 	)
 
 	sandbox := fmt.Sprintf(`{"sandbox": {"name": %q, "uid": %q}}`, launched.Name, launched.UID)
-	listed := resultOf[SessionList](f.attempt(t, f.caller, actionListSessions, sandbox)).Sessions
+	listed := resultOf[SessionList](f.attempt(t, f.caller, contract.ActionListSessions, sandbox)).Sessions
 	if len(listed) != summaryBatch+1 {
 		t.Fatalf("list_sessions listed %d Sessions, want the incarnation's %d", len(listed), summaryBatch+1)
 	}
@@ -172,7 +173,7 @@ func TestListSessionsListsTheIncarnationsSessionsNewestFirst(t *testing.T) {
 	}
 
 	f.history.refuse(status.Error(codes.Unavailable, "history or authentication unavailable"))
-	if kind := f.attempt(t, f.caller, actionListSessions, sandbox).failure(); kind != "read_failed" {
+	if kind := f.attempt(t, f.caller, contract.ActionListSessions, sandbox).failure(); kind != "read_failed" {
 		t.Errorf("a refused read failed %q, want read_failed", kind)
 	}
 }
@@ -219,7 +220,7 @@ func TestGetSessionReportsHistorySeparatelyFromDispatcherState(t *testing.T) {
 		}
 		return stream.Send(&historypb.FollowSessionResponse{ThroughCursor: 100, Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
 	}
-	state := resultOf[SessionState](f.attempt(t, f.caller, actionGetSession, turnArguments(t, sandbox, session, nil)))
+	state := resultOf[SessionState](f.attempt(t, f.caller, contract.ActionGetSession, turnArguments(t, sandbox, session, nil)))
 	want := map[string]*CommandHistory{
 		ids[0]: {Outcome: "confirmed", TurnID: new("test-turn")},
 		ids[1]: {Outcome: "confirmed", TurnID: new("test-turn")},
@@ -264,7 +265,7 @@ func TestGetSessionHistoryStartCoversListedAdmissionsAndIngestLag(t *testing.T) 
 				}
 				return stream.Send(&historypb.FollowSessionResponse{ThroughCursor: 100, Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
 			}
-			state := resultOf[SessionState](f.attempt(t, f.caller, actionGetSession, turnArguments(t, sandbox, session, nil)))
+			state := resultOf[SessionState](f.attempt(t, f.caller, contract.ActionGetSession, turnArguments(t, sandbox, session, nil)))
 			for _, dispatch := range state.Dispatches {
 				if dispatch.History != nil {
 					t.Errorf("unobserved history = %+v", dispatch.History)
@@ -283,7 +284,7 @@ func TestGetSessionDoesNotMaskHistoryReadFailure(t *testing.T) {
 	f.history.follow = func(_ *historypb.FollowSessionRequest, _ grpc.ServerStreamingServer[historypb.FollowSessionResponse]) error {
 		return status.Error(codes.DeadlineExceeded, "test History read timeout")
 	}
-	if kind := f.attempt(t, f.caller, actionGetSession, turnArguments(t, sandbox, session, nil)).failure(); kind != "read_failed" {
+	if kind := f.attempt(t, f.caller, contract.ActionGetSession, turnArguments(t, sandbox, session, nil)).failure(); kind != "read_failed" {
 		t.Errorf("read failure = %s", kind)
 	}
 }
@@ -294,7 +295,7 @@ func TestGetSessionBeforeHistoryHasArrived(t *testing.T) {
 	session := uuid.NewString()
 	f.dispatcher.hold(&dispatcherpb.SessionOpening{SessionId: session, SandboxUid: string(sandbox.UID)},
 		&dispatcherpb.Dispatch{CommandId: "test-pending-command", SessionId: session, State: dispatcherpb.DeliveryState_DELIVERY_STATE_DELIVERING_TO_RUNNER})
-	state := resultOf[SessionState](f.attempt(t, f.caller, actionGetSession, turnArguments(t, sandbox, session, nil)))
+	state := resultOf[SessionState](f.attempt(t, f.caller, contract.ActionGetSession, turnArguments(t, sandbox, session, nil)))
 	if state.Session != nil || len(state.Dispatches) != 1 || state.Dispatches[0].History != nil || state.Dispatches[0].State != "DELIVERY_STATE_DELIVERING_TO_RUNNER" {
 		t.Fatalf("opening-only Session = %+v", state)
 	}

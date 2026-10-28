@@ -2,17 +2,16 @@ package orchestrationv1
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	"github.com/santhosh-tekuri/jsonschema/v6"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -28,7 +27,7 @@ type Executor struct {
 	kube       client.Client
 	dispatcher dispatcherpb.SessionDispatcherClient
 	history    historypb.HistoryServiceClient
-	arguments  map[string]*jsonschema.Schema
+	inputs     contract.Inputs
 	readBudget time.Duration
 }
 
@@ -42,19 +41,18 @@ func NewExecutor(
 	if err != nil {
 		return nil, err
 	}
-	arguments := map[string]*jsonschema.Schema{}
-	for action, schema := range schemas() {
-		compiled, err := catalog.CompileSchema(schema)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", action, err)
-		}
-		arguments[action] = compiled
+	inputs, err := contract.NewInputs()
+	if err != nil {
+		return nil, err
 	}
 	return &Executor{
 		group: group, binding: binding, presets: presets, kube: kube, dispatcher: dispatcher, history: history,
-		arguments: arguments, readBudget: directWait - time.Second,
+		inputs: inputs, readBudget: directWait - time.Second,
 	}, nil
 }
+
+// Actions are the Actions this executor runs, with the same input contracts it decodes.
+func (e *Executor) Actions() map[string]catalog.ActionDefinition { return e.inputs.Actions() }
 
 // refusal is an attempt refused for a reason its caller can act on, before or without any effect.
 type refusal struct{ kind, message string }
@@ -90,50 +88,68 @@ func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) 
 func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest) (store.ExecutionOutcome, error) {
 	action := request.Action.Name
 	switch action {
-	case actionListLaunchPresets:
-		if err := e.decode(action, request.Arguments, &struct{}{}); err != nil {
+	case contract.ActionListLaunchPresets:
+		if _, err := e.inputs.ListLaunchPresets.Decode(request.Arguments); err != nil {
 			return store.ExecutionOutcome{}, err
 		}
 		return worker.Succeeded(PresetList{Presets: e.presets}, nil)
-	case actionLaunchSandbox:
-		var args launchArgs
-		if err := e.decode(action, request.Arguments, &args); err != nil {
+	case contract.ActionLaunchSandbox:
+		args, err := e.inputs.LaunchSandbox.Decode(request.Arguments)
+		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
 		return worker.Succeeded(e.launch(ctx, request.Caller, args))
-	case actionOpenSession:
-		var args openSessionArgs
-		if err := e.decode(action, request.Arguments, &args); err != nil {
+	case contract.ActionOpenSession:
+		args, err := e.inputs.OpenSession.Decode(request.Arguments)
+		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
 		return worker.Succeeded(e.openSession(ctx, args))
-	case actionSubmitInput, actionInterruptTurn, actionChangeModel, actionChangeReasoningEffort:
-		var args commandArgs
-		if err := e.decode(action, request.Arguments, &args); err != nil {
+	case contract.ActionSubmitInput:
+		args, err := e.inputs.SubmitInput.Decode(request.Arguments)
+		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
-		return worker.Succeeded(e.command(ctx, action, args))
-	case actionReadTurns:
-		var args readTurnsArgs
-		if err := e.decode(action, request.Arguments, &args); err != nil {
+		return worker.Succeeded(e.submitInput(ctx, args))
+	case contract.ActionInterruptTurn:
+		args, err := e.inputs.InterruptTurn.Decode(request.Arguments)
+		if err != nil {
+			return store.ExecutionOutcome{}, err
+		}
+		return worker.Succeeded(e.interruptTurn(ctx, args))
+	case contract.ActionChangeModel:
+		args, err := e.inputs.ChangeModel.Decode(request.Arguments)
+		if err != nil {
+			return store.ExecutionOutcome{}, err
+		}
+		return worker.Succeeded(e.changeModel(ctx, args))
+	case contract.ActionChangeReasoningEffort:
+		args, err := e.inputs.ChangeReasoningEffort.Decode(request.Arguments)
+		if err != nil {
+			return store.ExecutionOutcome{}, err
+		}
+		return worker.Succeeded(e.changeReasoningEffort(ctx, args))
+	case contract.ActionReadTurns:
+		args, err := e.inputs.ReadTurns.Decode(request.Arguments)
+		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
 		return worker.Succeeded(e.readTurns(ctx, args))
-	case actionWaitForTurn:
-		var args waitForTurnArgs
-		if err := e.decode(action, request.Arguments, &args); err != nil {
+	case contract.ActionWaitForTurn:
+		args, err := e.inputs.WaitForTurn.Decode(request.Arguments)
+		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
 		return worker.Succeeded(e.waitForTurn(ctx, args))
-	case actionGetSession:
-		var args getSessionArgs
-		if err := e.decode(action, request.Arguments, &args); err != nil {
+	case contract.ActionGetSession:
+		args, err := e.inputs.GetSession.Decode(request.Arguments)
+		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
 		return worker.Succeeded(e.getSession(ctx, args))
-	case actionListSessions:
-		var args listSessionsArgs
-		if err := e.decode(action, request.Arguments, &args); err != nil {
+	case contract.ActionListSessions:
+		args, err := e.inputs.ListSessions.Decode(request.Arguments)
+		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
 		return worker.Succeeded(e.listSessions(ctx, args))
@@ -141,9 +157,4 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		// The catalog admitted it, so this is a roster that grew without a branch here.
 		return worker.Failed("unknown_action", fmt.Sprintf("this executor has no %q", action)), nil
 	}
-}
-
-// decode reads arguments into args once they match the Action's schema.
-func (e *Executor) decode(action string, arguments json.RawMessage, args any) error {
-	return catalog.DecodeArguments(e.arguments[action], arguments, args)
 }

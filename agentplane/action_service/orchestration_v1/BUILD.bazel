@@ -4,7 +4,6 @@ load("//devinfra/python:defs.bzl", "py_library")
 go_library(
     name = "orchestration_v1",
     srcs = [
-        "actions.go",
         "executor.go",
         "launch.go",
         "presets.go",
@@ -12,11 +11,11 @@ go_library(
         "sessions.go",
         "turns.go",
     ],
-    embedsrcs = ["input_schemas.json"],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1",
     visibility = ["//agentplane/action_service:__subpackages__"],
     deps = [
         "//agentplane/action_service/catalog",
+        "//agentplane/action_service/orchestration_v1/contract",
         "//agentplane/action_service/policies",
         "//agentplane/action_service/store",
         "//agentplane/action_service/worker",
@@ -27,7 +26,6 @@ go_library(
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
-        "@com_github_santhosh_tekuri_jsonschema_v6//:jsonschema",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/api/meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -53,6 +51,7 @@ go_test(
     embed = [":orchestration_v1"],
     deps = [
         "//agentplane/action_service/catalog",
+        "//agentplane/action_service/orchestration_v1/contract",
         "//agentplane/action_service/store",
         "//agentplane/action_service/worker",
         "//agentplane/history_service:history_service_go_proto",

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -19,43 +20,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// sessionSpec is a Session's SessionSpec, its harness by the enum value's name.
-type sessionSpec struct {
-	Harness         string `json:"harness"`
-	Model           string `json:"model"`
-	Cwd             string `json:"cwd"`
-	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-	Instructions    string `json:"instructions,omitempty"`
-}
-
-type openSessionArgs struct {
-	Sandbox     SandboxRef  `json:"sandbox"`
-	SessionID   string      `json:"session_id"`
-	Spec        sessionSpec `json:"spec"`
-	SetupScript *string     `json:"setup_script"`
-}
-
-// commandArgs are the arguments of each Session command, which takes one of the last four by its Action.
-type commandArgs struct {
-	Sandbox   SandboxRef `json:"sandbox"`
-	SessionID string     `json:"session_id"`
-	CommandID string     `json:"command_id"`
-	Text      string     `json:"text"`
-	TurnID    string     `json:"turn_id"`
-	Model     string     `json:"model"`
-	Effort    string     `json:"effort"`
-}
-
 // openSession queues the Session's opening with the Session Dispatcher and answers with it. The app opens Sessions the
 // same way, and as it does, `{session_id}` in the working directory becomes the Session's ID.
-func (e *Executor) openSession(ctx context.Context, args openSessionArgs) (json.RawMessage, error) {
+func (e *Executor) openSession(ctx context.Context, args contract.OpenSessionArgs) (json.RawMessage, error) {
 	if _, err := e.requireSandbox(ctx, args.Sandbox); err != nil {
 		return nil, err
 	}
 	response, err := e.dispatcher.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
 		SessionId: args.SessionID, Sandbox: args.Sandbox.Name, SetupScript: args.SetupScript,
 		Spec: &runnerpb.SessionSpec{
-			Harness: runnerpb.Harness(runnerpb.Harness_value[args.Spec.Harness]), Model: args.Spec.Model,
+			Harness: runnerpb.Harness(runnerpb.Harness_value[string(args.Spec.Harness)]), Model: args.Spec.Model,
 			Cwd:             strings.ReplaceAll(args.Spec.Cwd, "{session_id}", args.SessionID),
 			ReasoningEffort: args.Spec.ReasoningEffort, Instructions: args.Spec.Instructions,
 		},
@@ -66,50 +40,70 @@ func (e *Executor) openSession(ctx context.Context, args openSessionArgs) (json.
 	return protoResult(response.GetOpening())
 }
 
-// command sends the Session command action names and answers with its Dispatch, or the interrupt's outcome.
-func (e *Executor) command(ctx context.Context, action string, args commandArgs) (json.RawMessage, error) {
+// submitInput queues user text for a Session and answers with its Dispatch.
+func (e *Executor) submitInput(ctx context.Context, args contract.SubmitInputArgs) (json.RawMessage, error) {
 	if _, err := e.requireSandbox(ctx, args.Sandbox); err != nil {
 		return nil, err
 	}
-	command, session, sandbox, uid := args.CommandID, args.SessionID, args.Sandbox.Name, string(args.Sandbox.UID)
-	var answer proto.Message
-	var err error
-	switch action {
-	case actionSubmitInput:
-		var response *dispatcherpb.SubmitInputResponse
-		response, err = e.dispatcher.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
-			CommandId: command, SessionId: session, Sandbox: sandbox, SandboxUid: uid, Text: args.Text,
-		})
-		answer = response.GetDispatch()
-	case actionInterruptTurn:
-		answer, err = e.dispatcher.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
-			CommandId: command, SessionId: session, Sandbox: sandbox, SandboxUid: uid, TurnId: args.TurnID,
-		})
-	case actionChangeModel:
-		var response *dispatcherpb.ChangeModelResponse
-		response, err = e.dispatcher.ChangeModel(ctx, &dispatcherpb.ChangeModelRequest{
-			CommandId: command, SessionId: session, Sandbox: sandbox, SandboxUid: uid, Model: args.Model,
-		})
-		answer = response.GetDispatch()
-	case actionChangeReasoningEffort:
-		var response *dispatcherpb.ChangeReasoningEffortResponse
-		response, err = e.dispatcher.ChangeReasoningEffort(ctx, &dispatcherpb.ChangeReasoningEffortRequest{
-			CommandId: command, SessionId: session, Sandbox: sandbox, SandboxUid: uid, Effort: args.Effort,
-		})
-		answer = response.GetDispatch()
-	default:
-		panic(fmt.Sprintf("orchestrationv1: %q is no Session command", action))
+	response, err := e.dispatcher.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
+		CommandId: args.CommandID, SessionId: args.SessionID, Sandbox: args.Sandbox.Name,
+		SandboxUid: string(args.Sandbox.UID), Text: args.Text,
+	})
+	if err != nil {
+		return nil, dispatcherError(err)
 	}
+	return protoResult(response.GetDispatch())
+}
+
+// interruptTurn sends a Session interrupt directly to the runner and answers with the admitted result.
+func (e *Executor) interruptTurn(ctx context.Context, args contract.InterruptTurnArgs) (json.RawMessage, error) {
+	if _, err := e.requireSandbox(ctx, args.Sandbox); err != nil {
+		return nil, err
+	}
+	answer, err := e.dispatcher.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
+		CommandId: args.CommandID, SessionId: args.SessionID, Sandbox: args.Sandbox.Name,
+		SandboxUid: string(args.Sandbox.UID), TurnId: args.TurnID,
+	})
 	if err != nil {
 		return nil, dispatcherError(err)
 	}
 	return protoResult(answer)
 }
 
+// changeModel queues a Session model change and answers with its Dispatch.
+func (e *Executor) changeModel(ctx context.Context, args contract.ChangeModelArgs) (json.RawMessage, error) {
+	if _, err := e.requireSandbox(ctx, args.Sandbox); err != nil {
+		return nil, err
+	}
+	response, err := e.dispatcher.ChangeModel(ctx, &dispatcherpb.ChangeModelRequest{
+		CommandId: args.CommandID, SessionId: args.SessionID, Sandbox: args.Sandbox.Name,
+		SandboxUid: string(args.Sandbox.UID), Model: args.Model,
+	})
+	if err != nil {
+		return nil, dispatcherError(err)
+	}
+	return protoResult(response.GetDispatch())
+}
+
+// changeReasoningEffort queues a Session reasoning-effort change and answers with its Dispatch.
+func (e *Executor) changeReasoningEffort(ctx context.Context, args contract.ChangeReasoningEffortArgs) (json.RawMessage, error) {
+	if _, err := e.requireSandbox(ctx, args.Sandbox); err != nil {
+		return nil, err
+	}
+	response, err := e.dispatcher.ChangeReasoningEffort(ctx, &dispatcherpb.ChangeReasoningEffortRequest{
+		CommandId: args.CommandID, SessionId: args.SessionID, Sandbox: args.Sandbox.Name,
+		SandboxUid: string(args.Sandbox.UID), Effort: args.Effort,
+	})
+	if err != nil {
+		return nil, dispatcherError(err)
+	}
+	return protoResult(response.GetDispatch())
+}
+
 // requireSandbox reads the named incarnation, refusing a Sandbox that is gone or is another incarnation. A grant is
 // pinned to one incarnation, and OpenSession takes the Sandbox by name alone, so this is what keeps a call from reaching
 // a same-name replacement.
-func (e *Executor) requireSandbox(ctx context.Context, ref SandboxRef) (*sandboxapi.Sandbox, error) {
+func (e *Executor) requireSandbox(ctx context.Context, ref contract.SandboxRef) (*sandboxapi.Sandbox, error) {
 	var sandbox sandboxapi.Sandbox
 	err := e.kube.Get(ctx, client.ObjectKey{Namespace: e.binding.Namespace, Name: ref.Name}, &sandbox)
 	switch {

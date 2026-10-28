@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/action_service:__subpackages__"])
+
+go_library(
+    name = "contract",
+    srcs = ["inputs.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract",
+    deps = [
+        "//agentplane/action_service/catalog",
+        "//agentplane/proto:runner_go_proto",
+        "@com_github_invopop_jsonschema//:jsonschema",
+        "@io_k8s_apimachinery//pkg/types",
+    ],
+)
+
+go_test(
+    name = "contract_test",
+    srcs = ["inputs_test.go"],
+    embed = [":contract"],
+    deps = ["//agentplane/action_service/catalog"],
+)

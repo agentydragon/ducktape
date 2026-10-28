@@ -6,6 +6,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
@@ -17,20 +18,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// recentDispatches is how many of a Session's Dispatches get_session answers with, newest first.
-const recentDispatches = 20
-
 // summaryBatch is the most Sessions one BatchGetSessionSummaries reads.
 const summaryBatch = 200
-
-type getSessionArgs struct {
-	Sandbox   SandboxRef `json:"sandbox"`
-	SessionID string     `json:"session_id"`
-}
-
-type listSessionsArgs struct {
-	Sandbox SandboxRef `json:"sandbox"`
-}
 
 // SessionListing is a Session as its history records it, in the fields a listing of a Sandbox's Sessions shows: none
 // of its instructions, working directory or transcript.
@@ -105,7 +94,7 @@ type SessionList struct {
 // getSession reads a Session of the named incarnation from the API server, the Session Dispatcher and the History
 // Service. A Session that neither its opening nor its history ties to that incarnation is refused as not found, so a
 // grant on one Sandbox reads no other's Sessions.
-func (e *Executor) getSession(ctx context.Context, args getSessionArgs) (SessionState, error) {
+func (e *Executor) getSession(ctx context.Context, args contract.GetSessionArgs) (SessionState, error) {
 	ctx, cancel, err := e.sessionReadContext(ctx)
 	if err != nil {
 		return SessionState{}, err
@@ -122,7 +111,7 @@ func (e *Executor) getSession(ctx context.Context, args getSessionArgs) (Session
 		return SessionState{}, readError("Session Dispatcher", err)
 	}
 	dispatches := listed.GetDispatches()
-	recent := dispatches[max(0, len(dispatches)-recentDispatches):]
+	recent := dispatches[max(0, len(dispatches)-contract.RecentDispatches):]
 	var history map[string]*CommandHistory
 	if summary != nil && len(recent) > 0 {
 		history, err = e.commandHistory(ctx, args.SessionID, summary.GetCommittedCursor(), recent)
@@ -222,7 +211,7 @@ func (e *Executor) commandHistory(ctx context.Context, sessionID string, committ
 
 // listSessions reads the Sessions the History Service records for the named incarnation, which it finds by UID alone:
 // a Sandbox deleted since keeps its Sessions there.
-func (e *Executor) listSessions(ctx context.Context, args listSessionsArgs) (SessionList, error) {
+func (e *Executor) listSessions(ctx context.Context, args contract.ListSessionsArgs) (SessionList, error) {
 	found, err := e.history.FindSessions(ctx, &historypb.FindSessionsRequest{
 		Sandbox: &historypb.FindSessionsRequest_SandboxUid{SandboxUid: string(args.Sandbox.UID)},
 	})
@@ -294,7 +283,7 @@ func readError(service string, err error) error {
 }
 
 // sessionForRead ties both authorities' evidence to the live Sandbox incarnation before reading history.
-func (e *Executor) sessionForRead(ctx context.Context, ref SandboxRef, sessionID string) (*sandboxapi.Sandbox, *dispatcherpb.GetSessionOpeningResponse, *historypb.SessionSummary, error) {
+func (e *Executor) sessionForRead(ctx context.Context, ref contract.SandboxRef, sessionID string) (*sandboxapi.Sandbox, *dispatcherpb.GetSessionOpeningResponse, *historypb.SessionSummary, error) {
 	sandbox, err := e.requireSandbox(ctx, ref)
 	if err != nil {
 		return nil, nil, nil, err

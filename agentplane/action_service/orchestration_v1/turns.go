@@ -9,24 +9,12 @@ import (
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
-
-type readTurnsArgs struct {
-	Sandbox   SandboxRef `json:"sandbox"`
-	SessionID string     `json:"session_id"`
-	Count     float64    `json:"count"`
-}
-
-type waitForTurnArgs struct {
-	Sandbox     SandboxRef `json:"sandbox"`
-	SessionID   string     `json:"session_id"`
-	ResumeToken string     `json:"resume_token"`
-	WaitSeconds float64    `json:"wait_seconds"`
-}
 
 // A token is a cursor, not authority: every call checks the live Sandbox and Session again.
 type turnResume struct {
@@ -36,7 +24,7 @@ type turnResume struct {
 	Cursor     uint64 `json:"cursor"`
 }
 
-func resumeToken(ref SandboxRef, sessionID string, cursor uint64) string {
+func resumeToken(ref contract.SandboxRef, sessionID string, cursor uint64) string {
 	encoded, err := json.Marshal(turnResume{1, string(ref.UID), sessionID, cursor})
 	if err != nil {
 		panic(err)
@@ -44,7 +32,7 @@ func resumeToken(ref SandboxRef, sessionID string, cursor uint64) string {
 	return base64.RawURLEncoding.EncodeToString(encoded)
 }
 
-func resumeCursor(token string, ref SandboxRef, sessionID string) (uint64, error) {
+func resumeCursor(token string, ref contract.SandboxRef, sessionID string) (uint64, error) {
 	encoded, err := base64.RawURLEncoding.DecodeString(token)
 	var resume turnResume
 	if err != nil || json.Unmarshal(encoded, &resume) != nil || resume.Version != 1 || resume.SandboxUID != string(ref.UID) || resume.SessionID != sessionID {
@@ -97,7 +85,7 @@ func (e *Executor) sessionReadContext(ctx context.Context) (context.Context, con
 	return bounded, cancel, nil
 }
 
-func (e *Executor) readTurns(ctx context.Context, args readTurnsArgs) (Turns, error) {
+func (e *Executor) readTurns(ctx context.Context, args contract.ReadTurnsArgs) (Turns, error) {
 	ctx, cancel, err := e.sessionReadContext(ctx)
 	if err != nil {
 		return Turns{}, err
@@ -199,7 +187,7 @@ func (e *Executor) readTurns(ctx context.Context, args readTurnsArgs) (Turns, er
 	}
 }
 
-func (e *Executor) waitForTurn(parent context.Context, args waitForTurnArgs) (TurnWait, error) {
+func (e *Executor) waitForTurn(parent context.Context, args contract.WaitForTurnArgs) (TurnWait, error) {
 	cursor, err := resumeCursor(args.ResumeToken, args.Sandbox, args.SessionID)
 	if err != nil {
 		return TurnWait{}, err

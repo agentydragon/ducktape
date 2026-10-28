@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -19,7 +20,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-func turnArguments(t *testing.T, sandbox SandboxRef, session string, extra map[string]any) string {
+func turnArguments(t *testing.T, sandbox contract.SandboxRef, session string, extra map[string]any) string {
 	t.Helper()
 	args := map[string]any{"sandbox": sandbox, "session_id": session}
 	for key, value := range extra {
@@ -72,7 +73,7 @@ func TestReadTurnsGroupsConfirmedInputToolsAndFinalAssistantText(t *testing.T) {
 		}
 		return stream.Send(&historypb.FollowSessionResponse{ThroughCursor: 12, Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
 	}
-	got := resultOf[Turns](f.attempt(t, f.caller, actionReadTurns, turnArguments(t, sandbox, session, map[string]any{"count": 2})))
+	got := resultOf[Turns](f.attempt(t, f.caller, contract.ActionReadTurns, turnArguments(t, sandbox, session, map[string]any{"count": 2})))
 	if len(got.Turns) != 2 {
 		t.Fatalf("turns = %+v", got)
 	}
@@ -113,7 +114,7 @@ func TestWaitRenewsAndStopsAtFirstCompletionInABatch(t *testing.T) {
 			&eventpb.Event{Observation: &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{TurnId: "test-next", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}}},
 		))
 	}
-	got := resultOf[TurnWait](f.attempt(t, f.caller, actionWaitForTurn, turnArguments(t, sandbox, session, map[string]any{"resume_token": resumeToken(sandbox, session, 2), "wait_seconds": 1})))
+	got := resultOf[TurnWait](f.attempt(t, f.caller, contract.ActionWaitForTurn, turnArguments(t, sandbox, session, map[string]any{"resume_token": resumeToken(sandbox, session, 2), "wait_seconds": 1})))
 	if !got.Completed || got.Turn == nil || got.Turn.TurnID != "test-first" || got.Turn.Status != "TURN_STATUS_FAILED" || got.Turn.Error == nil {
 		t.Fatalf("wait = %+v", got)
 	}
@@ -139,7 +140,7 @@ func TestWaitDeadlineReturnsNewestProgressAndRejectsBareEOF(t *testing.T) {
 		return status.FromContextError(stream.Context().Err()).Err()
 	}
 	args := turnArguments(t, sandbox, session, map[string]any{"resume_token": resumeToken(sandbox, session, 2), "wait_seconds": 30})
-	got := resultOf[TurnWait](f.attempt(t, f.caller, actionWaitForTurn, args))
+	got := resultOf[TurnWait](f.attempt(t, f.caller, contract.ActionWaitForTurn, args))
 	if got.Completed || got.Turn != nil {
 		t.Fatalf("wait = %+v", got)
 	}
@@ -149,7 +150,7 @@ func TestWaitDeadlineReturnsNewestProgressAndRejectsBareEOF(t *testing.T) {
 	f.history.follow = func(_ *historypb.FollowSessionRequest, _ grpc.ServerStreamingServer[historypb.FollowSessionResponse]) error {
 		return nil
 	}
-	if kind := f.attempt(t, f.caller, actionWaitForTurn, args).failure(); kind != "read_failed" {
+	if kind := f.attempt(t, f.caller, contract.ActionWaitForTurn, args).failure(); kind != "read_failed" {
 		t.Errorf("bare EOF failure = %s", kind)
 	}
 }
@@ -180,7 +181,7 @@ func TestWaitHistoryTimeoutBeforeDeadlineFails(t *testing.T) {
 				}
 				return status.Error(codes.DeadlineExceeded, "test History deadline before client timeout")
 			}
-			if kind := f.attempt(t, f.caller, actionWaitForTurn, turnArguments(t, sandbox, session, map[string]any{"resume_token": resumeToken(sandbox, session, 2), "wait_seconds": 30})).failure(); kind != "read_failed" {
+			if kind := f.attempt(t, f.caller, contract.ActionWaitForTurn, turnArguments(t, sandbox, session, map[string]any{"resume_token": resumeToken(sandbox, session, 2), "wait_seconds": 30})).failure(); kind != "read_failed" {
 				t.Errorf("History timeout failure = %s", kind)
 			}
 		})
@@ -193,9 +194,9 @@ func TestTurnReadsRefuseForeignSessionsAndTokens(t *testing.T) {
 	other := f.launch(t, "test-other-scope")
 	session := uuid.NewString()
 	f.history.hold(summaryOf(f, session, other, nil))
-	for _, action := range []string{actionReadTurns, actionWaitForTurn} {
+	for _, action := range []string{contract.ActionReadTurns, contract.ActionWaitForTurn} {
 		extra := map[string]any{"count": 1}
-		if action == actionWaitForTurn {
+		if action == contract.ActionWaitForTurn {
 			extra = map[string]any{"resume_token": resumeToken(sandbox, session, 0), "wait_seconds": 1}
 		}
 		if kind := f.attempt(t, f.caller, action, turnArguments(t, sandbox, session, extra)).failure(); kind != "session_not_found" {
@@ -204,17 +205,17 @@ func TestTurnReadsRefuseForeignSessionsAndTokens(t *testing.T) {
 	}
 	f.history.hold(summaryOf(f, session, sandbox, nil))
 	for _, token := range []string{"malformed", resumeToken(other, session, 0), resumeToken(sandbox, uuid.NewString(), 0)} {
-		if kind := f.attempt(t, f.caller, actionWaitForTurn, turnArguments(t, sandbox, session, map[string]any{"resume_token": token, "wait_seconds": 1})).failure(); kind != "invalid_arguments" {
+		if kind := f.attempt(t, f.caller, contract.ActionWaitForTurn, turnArguments(t, sandbox, session, map[string]any{"resume_token": token, "wait_seconds": 1})).failure(); kind != "invalid_arguments" {
 			t.Errorf("wrong-scope token = %s", kind)
 		}
 	}
 	f.history.refuse(status.Error(codes.PermissionDenied, "test denied"))
-	if kind := f.attempt(t, f.caller, actionReadTurns, turnArguments(t, sandbox, session, map[string]any{"count": 1})).failure(); kind != "read_failed" {
+	if kind := f.attempt(t, f.caller, contract.ActionReadTurns, turnArguments(t, sandbox, session, map[string]any{"count": 1})).failure(); kind != "read_failed" {
 		t.Errorf("denied = %s", kind)
 	}
 	// The same Sandbox name after replacement is never enough, even when the Session evidence matches.
 	sandbox.UID = "00000000-0000-0000-0000-000000000000"
-	if kind := f.attempt(t, f.caller, actionReadTurns, turnArguments(t, sandbox, session, map[string]any{"count": 1})).failure(); kind != "sandbox_replaced" {
+	if kind := f.attempt(t, f.caller, contract.ActionReadTurns, turnArguments(t, sandbox, session, map[string]any{"count": 1})).failure(); kind != "sandbox_replaced" {
 		t.Errorf("replaced = %s", kind)
 	}
 }
@@ -262,7 +263,7 @@ func TestWaitAuthorizationRetainsReadBudget(t *testing.T) {
 			return nil, status.Error(codes.DeadlineExceeded, "test follow open deadline")
 		},
 	}
-	got, err := f.executor.waitForTurn(parent, waitForTurnArgs{Sandbox: sandbox, SessionID: session, ResumeToken: resumeToken(sandbox, session, 2), WaitSeconds: 0.01})
+	got, err := f.executor.waitForTurn(parent, contract.WaitForTurnArgs{Sandbox: sandbox, SessionID: session, ResumeToken: resumeToken(sandbox, session, 2), WaitSeconds: 0.01})
 	if err != nil || got.Completed || got.ResumeToken != resumeToken(sandbox, session, 2) {
 		t.Fatalf("wait = %+v, %v", got, err)
 	}
@@ -294,7 +295,7 @@ func TestWaitDoesNotReopenAfterDeadline(t *testing.T) {
 			return &reconnectAtDeadline{ctx: ctx}, nil
 		},
 	}
-	got, err := f.executor.waitForTurn(t.Context(), waitForTurnArgs{Sandbox: sandbox, SessionID: session, ResumeToken: resumeToken(sandbox, session, 2), WaitSeconds: 0.01})
+	got, err := f.executor.waitForTurn(t.Context(), contract.WaitForTurnArgs{Sandbox: sandbox, SessionID: session, ResumeToken: resumeToken(sandbox, session, 2), WaitSeconds: 0.01})
 	if err != nil || got.Completed || got.ResumeToken != resumeToken(sandbox, session, 9) || calls != 1 {
 		t.Fatalf("wait = %+v, %v; follow calls = %d", got, err, calls)
 	}
@@ -332,7 +333,7 @@ func TestWaitKeepsAuthorizationCallerAndBackendFailures(t *testing.T) {
 					return nil, status.Error(codes.Unavailable, "test backend failure")
 				},
 			}
-			_, err := f.executor.waitForTurn(parent, waitForTurnArgs{Sandbox: sandbox, SessionID: session, ResumeToken: resumeToken(sandbox, session, 2), WaitSeconds: 30})
+			_, err := f.executor.waitForTurn(parent, contract.WaitForTurnArgs{Sandbox: sandbox, SessionID: session, ResumeToken: resumeToken(sandbox, session, 2), WaitSeconds: 30})
 			var refused *refusal
 			if !errors.As(err, &refused) || refused.kind != "read_failed" {
 				t.Fatalf("wait failure = %v; want read_failed", err)
@@ -366,7 +367,7 @@ func TestReadTurnsPreservesCommandOriginsWithoutReplayingInputs(t *testing.T) {
 		}
 		return stream.Send(&historypb.FollowSessionResponse{ThroughCursor: 4, Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
 	}
-	got := resultOf[Turns](f.attempt(t, f.caller, actionReadTurns, turnArguments(t, sandbox, session, map[string]any{"count": 1})))
+	got := resultOf[Turns](f.attempt(t, f.caller, contract.ActionReadTurns, turnArguments(t, sandbox, session, map[string]any{"count": 1})))
 	want := []TurnInput{{Text: "same text", CommandIDs: []string{"test-command-a", "test-command-b"}}, {Text: "same text", CommandIDs: []string{}}}
 	if len(got.Turns) != 1 || !reflect.DeepEqual(got.Turns[0].Input, want) {
 		t.Fatalf("turns = %+v; want input %+v", got.Turns, want)

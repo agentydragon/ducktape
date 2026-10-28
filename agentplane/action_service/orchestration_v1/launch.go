@@ -9,6 +9,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
@@ -25,28 +26,9 @@ import (
 // (notification_service/inboxaccess).
 const inboxAccessRule = "session_inbox_access"
 
-type launchArgs struct {
-	Name       string   `json:"name"`
-	Template   string   `json:"template"`
-	PolicySets []string `json:"policy_sets,omitempty"`
-	InboxTags  []string `json:"inbox_tags,omitempty"`
-	Bootstrap  string   `json:"bootstrap,omitempty"`
-	WakeOnSend bool     `json:"wake_on_send,omitempty"`
-	// IdleSuspendAfterSeconds decodes as float64 because a JSON Schema integer may be written 60.0; the schema bounds
-	// it.
-	IdleSuspendAfterSeconds *float64 `json:"idle_suspend_after_seconds,omitempty"`
-	LauncherGrants          []string `json:"launcher_grants,omitempty"`
-}
-
-// SandboxRef is one incarnation of a Sandbox.
-type SandboxRef struct {
-	Name string    `json:"name"`
-	UID  types.UID `json:"uid"`
-}
-
 // Launched is the result of launch_sandbox.
 type Launched struct {
-	Sandbox SandboxRef `json:"sandbox"`
+	Sandbox contract.SandboxRef `json:"sandbox"`
 	// LauncherGrants are what its launcher may do to it without asking again.
 	LauncherGrants []string `json:"launcher_grants"`
 }
@@ -58,13 +40,13 @@ func launcherName(sandbox string) string { return sandbox + ".launcher" }
 
 // launch creates the Sandbox args describe and writes its launcher grants for caller. A launch the same caller made
 // with the same arguments, whatever became of its attempt, is adopted and its grants completed.
-func (e *Executor) launch(ctx context.Context, caller store.ServiceAccount, args launchArgs) (Launched, error) {
+func (e *Executor) launch(ctx context.Context, caller store.ServiceAccount, args contract.LaunchArgs) (Launched, error) {
 	for _, list := range [][]string{args.PolicySets, args.InboxTags, args.LauncherGrants} {
 		slices.Sort(list)
 	}
 	intent, err := json.Marshal(struct {
 		Caller store.ServiceAccount `json:"caller"`
-		Launch launchArgs           `json:"launch"`
+		Launch contract.LaunchArgs  `json:"launch"`
 	}{caller, args})
 	if err != nil {
 		return Launched{}, err
@@ -85,7 +67,7 @@ func (e *Executor) launch(ctx context.Context, caller store.ServiceAccount, args
 		return Launched{}, err
 	}
 	return Launched{
-		Sandbox: SandboxRef{Name: sandbox.Name, UID: sandbox.UID}, LauncherGrants: append([]string{}, args.LauncherGrants...),
+		Sandbox: contract.SandboxRef{Name: sandbox.Name, UID: sandbox.UID}, LauncherGrants: append([]string{}, args.LauncherGrants...),
 	}, nil
 }
 
@@ -105,7 +87,7 @@ func (e *Executor) launched(ctx context.Context, name, intent string) (*sandboxa
 	return &sandbox, nil
 }
 
-func (e *Executor) create(ctx context.Context, args launchArgs, intent string) (*sandboxapi.Sandbox, error) {
+func (e *Executor) create(ctx context.Context, args contract.LaunchArgs, intent string) (*sandboxapi.Sandbox, error) {
 	policySets := slices.Compact(slices.Sorted(slices.Values(slices.Concat(e.binding.DefaultPolicySets, args.PolicySets))))
 	if err := e.requirePolicySets(ctx, policySets); err != nil {
 		return nil, err
@@ -173,7 +155,7 @@ func (e *Executor) grant(ctx context.Context, caller store.ServiceAccount, sandb
 	if len(grants) == 0 {
 		return nil
 	}
-	rules, err := e.launcherRules(SandboxRef{Name: sandbox.Name, UID: sandbox.UID}, grants)
+	rules, err := e.launcherRules(contract.SandboxRef{Name: sandbox.Name, UID: sandbox.UID}, grants)
 	if err != nil {
 		return err
 	}
@@ -194,12 +176,12 @@ func (e *Executor) grant(ctx context.Context, caller store.ServiceAccount, sandb
 
 // launcherRules are the rules granting what grants names on sandbox: send_message as the Notification Service's inbox
 // rule, and this group's Actions as an auto-approval of the requests whose `sandbox` argument is that incarnation.
-func (e *Executor) launcherRules(sandbox SandboxRef, grants []string) ([]policyapi.Rule, error) {
+func (e *Executor) launcherRules(sandbox contract.SandboxRef, grants []string) ([]policyapi.Rule, error) {
 	var rules []policyapi.Rule
-	actions := slices.DeleteFunc(slices.Clone(grants), func(grant string) bool { return grant == grantSendMessage })
+	actions := slices.DeleteFunc(slices.Clone(grants), func(grant string) bool { return grant == contract.GrantSendMessage })
 	if len(actions) < len(grants) {
 		rules = append(rules, policyapi.Rule{
-			Type: inboxAccessRule, Operations: []string{grantSendMessage},
+			Type: inboxAccessRule, Operations: []string{contract.GrantSendMessage},
 			Targets: &policyapi.SandboxTargets{Sandboxes: []policyapi.SandboxTarget{{Name: sandbox.Name, UID: sandbox.UID}}},
 		})
 	}

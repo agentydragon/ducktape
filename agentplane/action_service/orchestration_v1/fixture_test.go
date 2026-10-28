@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -147,13 +148,13 @@ func (f fixture) attempt(t *testing.T, caller store.ServiceAccount, action, argu
 }
 
 // launch launches a Sandbox of name as the fixture's caller, granting it grants.
-func (f fixture) launch(t *testing.T, name string, grants ...string) SandboxRef {
+func (f fixture) launch(t *testing.T, name string, grants ...string) contract.SandboxRef {
 	t.Helper()
-	arguments, err := json.Marshal(launchArgs{Name: name, Template: "test-template", LauncherGrants: grants})
+	arguments, err := json.Marshal(contract.LaunchArgs{Name: name, Template: "test-template", LauncherGrants: grants})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return resultOf[Launched](f.attempt(t, f.caller, actionLaunchSandbox, string(arguments))).Sandbox
+	return resultOf[Launched](f.attempt(t, f.caller, contract.ActionLaunchSandbox, string(arguments))).Sandbox
 }
 
 // resultOf is the result of an attempt that succeeded.
