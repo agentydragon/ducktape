@@ -18,6 +18,12 @@ namespace must be private (`shareProcessNamespace: false`), and the executor mod
 Both containers mount the same state, workspace, home, temporary directory, runner binary disk,
 proxy trust bundle and kubeconfig. Projected workload tokens remain confined to the egress sidecar.
 
+The companion selects the shared PID1 `Supervisor` without a Runner state-owner descriptor. A claim's
+explicit environment reaches `exec-server` through `supervision.Process`; PID 1's process-wide
+reaper owns native and orphan waits. The claim connection and container lifetime remain the
+executor's ownership protocol, and it does not construct the Runner's COSI runtime or journals.
+Stdout/stderr readers are not joined before PID 1 exits, since escaped descendants can retain them.
+
 The Sandbox template command and runner disk image pin are separate manifest inputs. A template using
 the `executor` mode requires a disk image that includes that mode; roll them out together. To roll
 back, restore both the previous template command and the previous runner disk image pin. After Flux

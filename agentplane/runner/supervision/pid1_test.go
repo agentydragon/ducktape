@@ -15,4 +15,7 @@ func TestPID1BackendRejectsNonPID1(t *testing.T) {
 	if _, err := NewPID1Supervisor(owner); err == nil || !strings.Contains(err.Error(), "requires Runner to be PID 1") {
 		t.Fatalf("PID1 backend accepted a non-PID1 process: %v", err)
 	}
+	if _, err := NewPID1SupervisorWithoutStateOwner(); err == nil || !strings.Contains(err.Error(), "requires Runner to be PID 1") {
+		t.Fatalf("state-less PID1 backend accepted a non-PID1 process: %v", err)
+	}
 }

@@ -36,8 +36,11 @@ Process resources contain lifecycle values; launch callbacks and native handles 
 registry. Teardown cancellation joins an in-flight start and fences any instance it returns before
 releasing the finalizer. A completed attempt never relaunches during reconciliation.
 Runner checks every remaining process intent before sealing or closing, so a failed fence cannot
-be hidden by a protocol reader reporting the leader's exit. The Pod executor mode still supervises
-its own container-local child; Runner owns it through the container-ownership adapter.
+be hidden by a protocol reader reporting the leader's exit. The Pod executor mode supervises its own
+container-local child through the same `Supervisor` and `Process` backend. It selects the state-less
+PID1 constructor explicitly: the live ownership connection and outer container lifetime own that
+process, while the Runner itself keeps its state-owner lock and COSI lifecycle. The executor does
+not create a second Runner runtime or journal.
 
 ## VM services
 
@@ -124,6 +127,11 @@ without joining those escaped readers. Actual Runner graceful shutdown still joi
 protocol readers; an escaped writer can hold it until the outer runtime's termination grace expires
 and SIGKILL ends the container. The production Runner container cases prove clean TERM and abrupt
 bootstrap death, not graceful TERM with escaped pipe holders.
+
+The executor companion uses the same PID1 reaper without a state-owner descriptor. It closes child
+stdin after launch and forwards stdout/stderr asynchronously. Its exit path does not join those
+readers: an escaped writer may hold the pipes until returning from PID 1 lets the runtime fence the
+whole namespace.
 
 One process-wide reaper owns every PID1 native and adopted orphan. No PID1 native uses
 `exec.Cmd.Wait`. Start's exec handshake and registration share a mutex with reaping. Managed exits

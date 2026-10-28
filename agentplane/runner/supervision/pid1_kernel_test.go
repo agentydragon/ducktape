@@ -118,6 +118,9 @@ func TestPID1ContainerContract(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if _, err := NewPID1Supervisor(nil); err == nil || !strings.Contains(err.Error(), "requires the state-owner descriptor") {
+			t.Fatalf("stateful PID1 backend accepted an absent owner descriptor: %v", err)
+		}
 		mixed, err := NewSubprocessSupervisor(owner).NewProcess(ProcessConfig{Command: []string{os.Args[0], "--pid1-proof-fast"}})
 		if err != nil {
 			t.Fatal(err)
@@ -206,6 +209,39 @@ func TestPID1ContainerContract(t *testing.T) {
 
 func provePID1Waits(t *testing.T, ctx context.Context, supervisor *Supervisor) {
 	t.Helper()
+	withoutStateOwner, err := NewPID1SupervisorWithoutStateOwner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedStart, err := withoutStateOwner.NewProcess(ProcessConfig{
+		Command: []string{"/run/agentplane-pid1-proof-absent"},
+		Env:     map[string]string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := failedStart.Start(ctx); err == nil || !strings.Contains(err.Error(), "agentplane-pid1-proof-absent") {
+		t.Fatalf("state-less PID1 start did not report an exec failure: %v", err)
+	}
+	fast, err := withoutStateOwner.NewProcess(ProcessConfig{
+		Command: []string{os.Args[0], "--pid1-proof-fast"},
+		Env:     map[string]string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fast.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if code, err := fast.Wait(ctx); code != 42 || err != nil {
+		t.Fatalf("state-less PID1 result = (%d, %v)", code, err)
+	}
+	for _, stream := range []io.Reader{fast.Stdout(), fast.Stderr()} {
+		if _, err := io.Copy(io.Discard, stream); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	// Fast exits race registration and SIGCHLD delivery. All native results must
 	// retain their own status and caller-owned pipes through the central reaper.
 	for range 32 {

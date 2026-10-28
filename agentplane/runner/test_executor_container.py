@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import shlex
+import socket
+import textwrap
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -25,6 +29,10 @@ from agentplane.runner.testing.fixtures import ModelEndpoint
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.process_fixtures import wait_for_exit
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
+from third_party.containers import debian_slim
+from util.bazel.runfiles import get_required_path
+from util.oci import load_oci_image
+from util.testing.container_logs import LoggedContainer
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps.
 # gazelle:include_dep @pypi//protobuf
@@ -131,6 +139,29 @@ def _wait_for_container_exit(companion: CodexExecServerContainer) -> None:
 def _start_container(companion: CodexExecServerContainer) -> None:
     # Starting the stopped container models kubelet's restart after PID 1 exits.
     companion.container.get_wrapped_container().start()
+
+
+def _wait_for_executor_file(path: Path) -> None:
+    deadline = time.monotonic() + 30
+    while not path.exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"executor did not create {path}")
+        time.sleep(0.01)
+
+
+def _claim_executor(path: Path, environment: dict[str, str]) -> tuple[socket.socket, dict[str, object]]:
+    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    connection.settimeout(5)
+    connection.connect(str(path))
+    connection.sendall(json.dumps({"operation": "claim", "environment": environment}).encode() + b"\n")
+    response = bytearray()
+    while not response.endswith(b"\n"):
+        chunk = connection.recv(4096)
+        if not chunk:
+            connection.close()
+            raise ConnectionError("executor companion closed its claim connection")
+        response.extend(chunk)
+    return connection, json.loads(response)
 
 
 def _detached_command(marker: str) -> str:
@@ -249,6 +280,71 @@ async def test_codex_exec_server_container_restarts_without_restarting_app_serve
     with pytest.raises(SessionSealedError) as sealed:
         await session.until(lambda _: False)
     assert sealed.value.cursor == session.cursor
+
+
+async def test_executor_exit_does_not_join_escaped_output_readers(harness: runner_pb2.Harness, tmp_path: Path) -> None:
+    load_oci_image(debian_slim.IMAGE)
+    runner_binary = get_required_path(launches.RUNNER_BINARY).resolve()
+    socket_path = tmp_path / "executor.sock"
+    ready_path = tmp_path / "server-ready"
+    exit_path = tmp_path / "server-exit"
+    pid_path = tmp_path / "pipe-holder.pid"
+    marker = f"executor-pipe-holder-{uuid4().hex}"
+    (tmp_path / "exec-server").write_text(
+        textwrap.dedent(
+            f"""\
+            setsid /bin/sh -c \\
+              'printf "%s\\n" "$$" > "$1"; trap "" TERM; while :; do sleep 1; done' \\
+              {shlex.quote(marker)} {shlex.quote(str(pid_path))} &
+            while [ ! -s {shlex.quote(str(pid_path))} ]; do sleep 0.01; done
+            : > {shlex.quote(str(ready_path))}
+            while [ ! -e {shlex.quote(str(exit_path))} ]; do sleep 0.01; done
+            exit 0
+            """
+        )
+    )
+    url = "ws://127.0.0.1:4501"
+    container = (
+        LoggedContainer(debian_slim.IMAGE.tag, test_name="runner-executor-escaped-output")
+        .with_kwargs(
+            network_mode="host",
+            mem_limit="512m",
+            pids_limit=64,
+            user=f"{os.getuid()}:{os.getgid()}",
+            working_dir=str(tmp_path),
+        )
+        .with_volume_mapping(str(tmp_path), str(tmp_path), mode="rw")
+        .with_volume_mapping(str(runner_binary), "/runner", mode="ro")
+        .with_command(
+            shlex.join(
+                [
+                    "/runner",
+                    "executor",
+                    "--socket",
+                    str(socket_path),
+                    "--listen",
+                    url,
+                    "--binary",
+                    "/bin/sh",
+                    "--health-listen",
+                    "127.0.0.1:0",
+                ]
+            )
+        )
+    )
+    companion = CodexExecServerContainer(url=url, socket=socket_path, container=container, health_port=0)
+    with container:
+        await asyncio.to_thread(_wait_for_executor_file, socket_path)
+        connection, status = await asyncio.to_thread(_claim_executor, socket_path, {"PATH": "/usr/bin:/bin"})
+        try:
+            assert status["owned"] is True
+            await asyncio.to_thread(_wait_for_executor_file, ready_path)
+            pipe_holder_host_pid = await asyncio.to_thread(_wait_for_host_pid, companion, marker)
+            exit_path.write_text("exit\n")
+            await asyncio.to_thread(_wait_for_container_exit, companion)
+            await asyncio.wait_for(wait_for_exit(pipe_holder_host_pid), timeout=10)
+        finally:
+            connection.close()
 
 
 if __name__ == "__main__":

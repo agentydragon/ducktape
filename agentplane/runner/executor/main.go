@@ -11,19 +11,17 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/executor/control"
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sys/unix"
 )
 
 // Main must be PID 1 in a private container PID namespace.
@@ -47,9 +45,14 @@ func Main(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 64
 	}
+	supervisor, err := supervision.NewPID1SupervisorWithoutStateOwner()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	if err := serve(ctx, *socket, *binary, *listen, *healthListen); err != nil {
+	if err := serve(ctx, *socket, *binary, *listen, *healthListen, supervisor); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -84,7 +87,7 @@ func healthHandler(socket string) http.Handler {
 	return mux
 }
 
-func serve(ctx context.Context, socket, binary, listen, healthListen string) error {
+func serve(ctx context.Context, socket, binary, listen, healthListen string, supervisor *supervision.Supervisor) error {
 	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
 		return err
 	}
@@ -129,12 +132,18 @@ func serve(ctx context.Context, socket, binary, listen, healthListen string) err
 	})
 	servers.Go(func() error {
 		defer cancel()
-		return serveControl(lifetime, cancel, listener, binary, listen)
+		return serveControl(lifetime, cancel, listener, binary, listen, supervisor)
 	})
 	return servers.Wait()
 }
 
-func serveControl(lifetime context.Context, cancel context.CancelFunc, listener net.Listener, binary, listen string) error {
+func serveControl(
+	lifetime context.Context,
+	cancel context.CancelFunc,
+	listener net.Listener,
+	binary, listen string,
+	supervisor *supervision.Supervisor,
+) error {
 	status := control.Status{Generation: uuid.NewString()}
 	var mu sync.Mutex
 	for {
@@ -163,22 +172,37 @@ func serveControl(lifetime context.Context, cancel context.CancelFunc, listener 
 					cancel()
 					return
 				}
-				child := exec.Command(binary, "exec-server", "--listen", listen)
-				child.Env = environment(request.Environment)
-				child.Stdout, child.Stderr = os.Stdout, os.Stderr
-				child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-				if err := child.Start(); err != nil {
-					// Nothing started, so this generation has no work to fence. Refuse and keep serving,
-					// allowing Runner to retry or fence without waiting for a container restart.
-					fmt.Fprintln(os.Stderr, "start Codex executor:", err)
+				process, err := supervisor.NewProcess(supervision.ProcessConfig{
+					Command: []string{binary, "exec-server", "--listen", listen},
+					Env:     request.Environment,
+				})
+				if err != nil {
 					refused := status
 					refused.Error = err.Error()
 					mu.Unlock()
 					_ = json.NewEncoder(c).Encode(refused)
 					return
 				}
+				if err := process.Start(lifetime); err != nil {
+					// Nothing started, so this generation has no work to fence. Refuse and keep serving,
+					// allowing Runner to retry or fence without waiting for a container restart.
+					fmt.Fprintln(os.Stderr, "start Codex executor:", err)
+					refused := status
+					refused.Error = err.Error() + "; " + process.ExitDescription()
+					mu.Unlock()
+					_ = json.NewEncoder(c).Encode(refused)
+					return
+				}
+				go forwardOutput(lifetime, cancel, "stdout", process.Stdout(), os.Stdout)
+				go forwardOutput(lifetime, cancel, "stderr", process.Stderr(), os.Stderr)
+				if err := process.CloseStdin(); err != nil {
+					fmt.Fprintln(os.Stderr, "close Codex executor stdin:", err)
+					mu.Unlock()
+					cancel()
+					return
+				}
 				status.Owned = true
-				go reap(lifetime, child.Process, cancel)
+				go waitForExecutor(process, cancel)
 			} else if request.Operation != "inspect" || len(request.Environment) != 0 {
 				mu.Unlock()
 				return
@@ -208,46 +232,21 @@ func serveControl(lifetime context.Context, cancel context.CancelFunc, listener 
 	}
 }
 
-// PID 1 reaps orphaned grandchildren. One wait4 owner avoids racing os/exec.Wait with the reaper.
-func reap(ctx context.Context, process *os.Process, exited context.CancelFunc) {
-	defer process.Release()
-	changed := make(chan os.Signal, 1)
-	signal.Notify(changed, syscall.SIGCHLD)
-	defer signal.Stop(changed)
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		for {
-			var status unix.WaitStatus
-			pid, err := unix.Wait4(-1, &status, unix.WNOHANG, nil)
-			if pid == process.Pid {
-				fmt.Fprintln(os.Stderr, "Codex executor exited:", status)
-				exited()
-				return
-			}
-			if err != nil || pid == 0 {
-				break
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-changed:
-		case <-ticker.C:
-		}
+func waitForExecutor(process *supervision.Process, exited context.CancelFunc) {
+	code, err := process.Wait(context.Background())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Codex executor cleanup failed:", err)
+	} else {
+		fmt.Fprintln(os.Stderr, "Codex executor exited with status:", code)
 	}
+	exited()
 }
 
-// The server gives exec-server a minimal, deterministic environment from Runner's claim.
-func environment(values map[string]string) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
+// Process streams can outlive the direct child when an escaped descendant inherits them. PID 1
+// must be able to return so the container runtime can fence those descendants.
+func forwardOutput(ctx context.Context, cancel context.CancelFunc, name string, source io.Reader, destination io.Writer) {
+	if _, err := io.Copy(destination, source); err != nil && ctx.Err() == nil {
+		fmt.Fprintf(os.Stderr, "copy Codex executor %s: %v\n", name, err)
+		cancel()
 	}
-	sort.Strings(keys)
-	result := make([]string, 0, len(keys))
-	for _, key := range keys {
-		result = append(result, key+"="+values[key])
-	}
-	return result
 }
