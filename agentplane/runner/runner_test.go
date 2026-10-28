@@ -183,8 +183,8 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 	session.activeTurn = "turn-1"
 	session.pending["command-1"] = true
 	session.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
-	session.activating = true
 	session.mu.Unlock()
+	setRuntimePhase(t, session, executionPreparing)
 	r.bootstrapMu.Lock()
 	r.initLog = &InitializationLog{events: []*runnerpb.InitializationEvent{{
 		Sequence: 1,
@@ -221,8 +221,8 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 	session.activeTurn = ""
 	session.pending = map[string]bool{}
 	session.setup = runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED
-	session.activating = false
 	session.mu.Unlock()
+	setRuntimePhase(t, session, executionDormant)
 	r.bootstrapMu.Lock()
 	r.initLog = nil
 	r.bootstrapMu.Unlock()

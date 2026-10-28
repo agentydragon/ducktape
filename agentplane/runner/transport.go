@@ -368,6 +368,9 @@ func (r *Runner) pushOnce(ctx context.Context, endpoint Endpoint, stub ingresspb
 	if err := r.store.WriteAcknowledgement(s.id, IngressAcknowledgement{Cursor: acknowledged, Sealed: first.ack.Sealed}); err != nil {
 		return false, &localStreamError{err}
 	}
+	if err := r.lifecycle.publishAck(s.id, IngressAcknowledgement{Cursor: acknowledged, Sealed: first.ack.Sealed}); err != nil {
+		return false, &localStreamError{err}
+	}
 	r.changed()
 	if first.ack.Sealed {
 		return true, nil
@@ -433,6 +436,9 @@ func (r *Runner) pushOnce(ctx context.Context, endpoint Endpoint, stub ingresspb
 			}
 			if err := r.store.WriteAcknowledgement(s.id, IngressAcknowledgement{Cursor: ack.Cursor, Sealed: ack.Sealed}); err != nil {
 				return progressed, &localStreamError{err}
+			}
+			if err := r.lifecycle.publishAck(s.id, IngressAcknowledgement{Cursor: ack.Cursor, Sealed: ack.Sealed}); err != nil {
+				return false, &localStreamError{err}
 			}
 			r.changed()
 			if ack.Sealed {

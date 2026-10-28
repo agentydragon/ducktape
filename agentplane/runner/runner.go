@@ -51,8 +51,9 @@ type Runner struct {
 	fatal       chan error
 	idleSince   *timestamppb.Timestamp
 	admissions  int
-	quiescing   bool
-	quiesceDone chan struct{}
+	lifecycle   *lifecycle
+	closeOnce   sync.Once
+	closeErr    error
 	initLog     *InitializationLog
 	initDone    chan struct{}
 	initErr     error
@@ -113,6 +114,14 @@ func New(config Config) (*Runner, error) {
 	if config.Codex != nil {
 		r.codex = newCodexServer(r, *config.Codex)
 	}
+	lifecycle, err := newLifecycle(r)
+	if err != nil {
+		cancel()
+		_ = owner.Close()
+		return nil, err
+	}
+	r.lifecycle = lifecycle
+	go lifecycle.run()
 	return r, nil
 }
 
@@ -121,6 +130,9 @@ func (r *Runner) changed() {
 	close(r.changes)
 	r.changes = make(chan struct{})
 	r.mu.Unlock()
+	if r.lifecycle != nil {
+		r.lifecycle.touchRunner()
+	}
 }
 
 func (r *Runner) changesSince() <-chan struct{} { r.mu.Lock(); defer r.mu.Unlock(); return r.changes }
@@ -210,8 +222,19 @@ func (r *Runner) load(ctx context.Context, id string) (*Session, error) {
 	r.mu.Lock()
 	r.sessions[id] = s
 	r.mu.Unlock()
-	s.work.Add(1)
-	go s.commandLoop()
+	if err := r.lifecycle.publishSeal(s); err != nil {
+		return nil, err
+	}
+	ack, err := r.store.ReadAcknowledgement(id)
+	if err != nil {
+		return nil, err
+	}
+	if ack != nil {
+		if err := r.lifecycle.publishAck(id, *ack); err != nil {
+			return nil, err
+		}
+	}
+	r.lifecycle.publishSession(s, false)
 	if err := r.reopen(ctx, s); err != nil {
 		return nil, err
 	}
@@ -232,8 +255,7 @@ func (r *Runner) resumeRecovered(s *Session) error {
 		return err
 	}
 	if len(commands) > 0 || len(turns) > 0 {
-		s.activate()
-		s.wake()
+		s.requestExecution()
 	}
 	return nil
 }
@@ -242,6 +264,16 @@ func (r *Runner) adoptIncarnation(ctx context.Context, uid string) error {
 	r.createMu.Lock()
 	defer r.createMu.Unlock()
 	if err := r.store.AdoptIncarnation(uid); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	mode, sealUID := runnerRunning, ""
+	if r.store.Lameduck() {
+		mode, sealUID = runnerQuiescing, uid
+	}
+	err := r.lifecycle.setGoal(mode, sealUID)
+	r.mu.Unlock()
+	if err != nil {
 		return err
 	}
 	for _, s := range r.inventory() {
@@ -265,10 +297,6 @@ func (r *Runner) reopen(ctx context.Context, s *Session) error {
 	if err := s.journal.Reopen(ctx, uid); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	s.sealing = false
-	s.tearingDown = false
-	s.mu.Unlock()
 	ack, err := r.store.ReadAcknowledgement(s.id)
 	if err != nil {
 		return err
@@ -278,6 +306,12 @@ func (r *Runner) reopen(ctx context.Context, s *Session) error {
 	}
 	ack.Sealed = false
 	if err := r.store.WriteAcknowledgement(s.id, *ack); err != nil {
+		return err
+	}
+	if err := r.lifecycle.publishAck(s.id, *ack); err != nil {
+		return err
+	}
+	if err := r.lifecycle.publishSeal(s); err != nil {
 		return err
 	}
 	r.changed()
@@ -410,8 +444,7 @@ func (r *Runner) startBootstrap() error {
 		return nil
 	}
 	go func() {
-		defer close(r.initDone)
-		defer r.changed()
+		defer func() { close(r.initDone); r.changed() }()
 		cwd := r.config.InitializationCwd
 		if cwd == "" {
 			cwd = r.config.StateDir
@@ -503,7 +536,7 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	if _, err := ValidateSessionID(request.SessionId); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	if r.store.Lameduck() {
+	if !r.lifecycle.accepting() {
 		return nil, status.Error(codes.Aborted, "this Sandbox is quiesced")
 	}
 	spec := proto.Clone(request.Spec).(*runnerpb.SessionSpec)
@@ -558,7 +591,7 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 		return nil, rpcError(err)
 	}
 	r.mu.Lock()
-	if r.store.Lameduck() {
+	if !r.lifecycle.accepting() {
 		r.mu.Unlock()
 		return nil, status.Error(codes.Aborted, "this Sandbox is quiesced")
 	}
@@ -573,7 +606,7 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	}
 	if record.SetupScriptSHA256 != nil {
 		r.mu.Lock()
-		if r.store.Lameduck() {
+		if !r.lifecycle.accepting() {
 			r.mu.Unlock()
 			return nil, status.Error(codes.Aborted, "this Sandbox is quiesced")
 		}
@@ -594,7 +627,12 @@ func (r *Runner) admit(id string, c *commandpb.Command) (*eventlogpb.EventEntry,
 		return nil, status.Error(codes.InvalidArgument, "interrupt_turn.turn_id is required")
 	}
 	r.mu.Lock()
-	lameduck := r.store.Lameduck()
+	goal, progress := r.lifecycle.goal(), r.lifecycle.status()
+	if goal.Mode == runnerClosing && progress.Generation == goal.Generation && progress.Stage == stageClosed {
+		r.mu.Unlock()
+		return nil, status.Error(codes.Unavailable, "runner is closed")
+	}
+	lameduck := !r.lifecycle.accepting()
 	r.admissions++
 	r.idleSince = nil
 	r.mu.Unlock()
@@ -654,14 +692,13 @@ func rpcError(err error) error {
 }
 
 func (r *Runner) ListSessions(ctx context.Context, _ *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
-	r.mu.Lock()
-	draining := r.quiesceDone
-	r.mu.Unlock()
-	if draining != nil {
-		select {
-		case <-draining:
-		case <-ctx.Done():
-			return nil, status.FromContextError(ctx.Err()).Err()
+	if goal := r.lifecycle.goal(); goal.Mode != runnerRunning {
+		minimum := stageFlushing
+		if goal.Mode == runnerClosing {
+			minimum = stageClosed
+		}
+		if err := r.lifecycle.wait(ctx, minimum); err != nil {
+			return nil, status.FromContextError(err).Err()
 		}
 	}
 	result := &runnerpb.ListSessionsResponse{}
@@ -677,16 +714,18 @@ func (r *Runner) GetStatus(_ context.Context, _ *runnerpb.GetStatusRequest) (*ru
 	for _, s := range r.inventory() {
 		s.mu.Lock()
 		execution := runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_DORMANT
-		if s.ready {
+		ready := s.readyLocked()
+		preparing := s.runtimeState().Phase == executionPreparing
+		if ready {
 			execution = runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_READY
 		}
-		if !s.ready && (s.activating || s.processID != "" || len(s.pending) > 0) || s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
+		if !ready && (preparing || s.processID != "" || len(s.pending) > 0) || s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
 			execution = runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_PREPARING
 		}
 		if s.failure != nil {
 			execution = runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_FAILED
 		}
-		row := &runnerpb.SessionStatus{SessionId: s.id, ExecutionState: execution, NativeSessionId: s.record.NativeSessionID, FailureCursor: s.failure, Busy: s.activeTurn != "" || len(s.pending) > 0 || s.activating || s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING}
+		row := &runnerpb.SessionStatus{SessionId: s.id, ExecutionState: execution, NativeSessionId: s.record.NativeSessionID, FailureCursor: s.failure, Busy: s.activeTurn != "" || len(s.pending) > 0 || preparing || s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING}
 		if s.activeTurn != "" {
 			value := s.activeTurn
 			row.ActiveTurnId = &value
@@ -756,7 +795,6 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 	if r.idleSince != nil {
 		facts.IdleSince = proto.Clone(r.idleSince).(*timestamppb.Timestamp)
 	}
-	quiescing := r.quiescing
 	r.mu.Unlock()
 	sort.Slice(blockers, func(i, j int) bool {
 		leftSession, rightSession := blockers[i].SessionId, blockers[j].SessionId
@@ -770,25 +808,13 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 	})
 	facts.AutosuspendBlockers = blockers
 	if r.store.Lameduck() {
-		facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_QUIESCED
-		flushed := true
-		for _, s := range sessions {
-			seal := s.journal.SealState()
-			if seal == nil {
-				quiescing = true
-				continue
-			}
-			ack, err := r.store.ReadAcknowledgement(s.id)
-			if err != nil {
-				return nil, err
-			}
-			flushed = flushed && ack != nil && ack.Sealed && ack.Cursor == seal.Cursor
-		}
-		if !flushed {
+		facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_DRAINING
+		current, goal := r.lifecycle.status(), r.lifecycle.goal()
+		if current.Generation == goal.Generation && current.Stage >= stageFlushing {
 			facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_FLUSHING
-		}
-		if quiescing {
-			facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_DRAINING
+			if current.Stage == stageQuiesced {
+				facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_QUIESCED
+			}
 		}
 	}
 	return facts, nil
@@ -800,6 +826,11 @@ func (r *Runner) Quiesce(_ context.Context, q *runnerpb.QuiesceRequest) (*runner
 		return nil, rpcError(err)
 	}
 	r.mu.Lock()
+	goal, progress := r.lifecycle.goal(), r.lifecycle.status()
+	if goal.Mode == runnerClosing && progress.Generation == goal.Generation && progress.Stage == stageClosed {
+		r.mu.Unlock()
+		return nil, status.Error(codes.Unavailable, "runner is closed")
+	}
 	if !r.store.Lameduck() && q.IfIdleSince != nil && (r.idleSince == nil || r.idleSince.AsTime().UnixMicro() != q.IfIdleSince.AsTime().UnixMicro()) {
 		r.mu.Unlock()
 		return nil, status.Error(codes.Aborted, "the Sandbox is busy or its idle_since differs")
@@ -808,10 +839,17 @@ func (r *Runner) Quiesce(_ context.Context, q *runnerpb.QuiesceRequest) (*runner
 		r.mu.Unlock()
 		return nil, rpcError(err)
 	}
-	if !r.quiescing && r.quiesceDone == nil {
-		r.quiescing = true
-		r.quiesceDone = make(chan struct{})
-		go r.drain()
+	uid, err := r.store.RequireIncarnationUID()
+	if err == nil {
+		mode := runnerQuiescing
+		if r.lifecycle.goal().Mode == runnerClosing {
+			mode = runnerClosing
+		}
+		err = r.lifecycle.setGoal(mode, uid)
+	}
+	if err != nil {
+		r.mu.Unlock()
+		return nil, rpcError(err)
 	}
 	r.mu.Unlock()
 	r.changed()
@@ -822,117 +860,36 @@ func (r *Runner) Quiesce(_ context.Context, q *runnerpb.QuiesceRequest) (*runner
 	return &runnerpb.QuiesceResponse{Stage: runnerpb.QuiesceStage(facts.QuiesceStage)}, nil
 }
 
-func (r *Runner) drain() {
-	var drainErr error
-	defer func() {
+func (r *Runner) Close() error {
+	r.closeOnce.Do(func() {
 		r.mu.Lock()
-		done := r.quiesceDone
-		r.quiescing = false
-		close(done)
-		if drainErr != nil {
-			r.quiesceDone = nil
-		}
+		err := r.lifecycle.setGoal(runnerClosing, "")
 		r.mu.Unlock()
 		r.changed()
-		if drainErr != nil {
-			slog.Error("quiesce drain failed; next Quiesce may retry", "error", drainErr)
+		if err == nil {
+			err = r.lifecycle.wait(r.ctx, stageClosed)
 		}
-	}()
-	for {
-		r.mu.Lock()
-		n := r.admissions
-		changed := r.changes
-		r.mu.Unlock()
-		if n == 0 {
-			break
-		}
-		select {
-		case <-changed:
-		case <-r.ctx.Done():
-			drainErr = r.ctx.Err()
-			return
-		}
-	}
-	ids, err := r.store.SessionIDs()
-	if err != nil {
-		drainErr = err
-		return
-	}
-	sessions := make([]*Session, 0, len(ids))
-	for _, id := range ids {
-		s, err := r.load(r.ctx, id)
 		if err != nil {
-			drainErr = err
+			r.closeErr = err
 			return
 		}
-		sessions = append(sessions, s)
-	}
-	if err := r.stopSessions(r.ctx, sessions, true); err != nil {
-		drainErr = err
-		return
-	}
-	r.bootstrapMu.Lock()
-	done := r.initDone
-	r.bootstrapMu.Unlock()
-	if done != nil {
-		<-done
-	}
-}
-
-// stopSessions halts every Session in `sessions`, ordered by ID, then stops their harness processes, then
-// seals their journals when `seal` is set. The shared Codex app-server stops once, after all of them halted.
-func (r *Runner) stopSessions(ctx context.Context, sessions []*Session, seal bool) error {
-	for _, s := range sessions {
-		s.shutdownMu.Lock()
-		defer s.shutdownMu.Unlock()
-	}
-	for _, s := range sessions {
-		s.halt(ctx, seal)
-	}
-	var errs []error
-	for _, s := range sessions {
-		errs = append(errs, s.stopProcess(ctx))
-	}
-	if r.codex != nil {
-		errs = append(errs, r.codex.stop(ctx))
-	}
-	if r.executor != nil {
-		errs = append(errs, r.executor.stop(ctx))
-	}
-	for _, s := range sessions {
-		errs = append(errs, s.reconcilePending(ctx))
-	}
-	if err := errors.Join(errs...); err != nil || !seal {
-		return err
-	}
-	for _, s := range sessions {
-		if err := s.sealJournal(ctx); err != nil {
-			return err
+		// Controllers stop before joining workers, so no new operation can race Wait.
+		r.cancel()
+		<-r.lifecycle.done
+		r.lifecycle.workers.Wait()
+		var errs []error
+		for _, s := range r.inventory() {
+			s.work.Wait()
+			errs = append(errs, s.journal.Close())
 		}
-	}
-	return nil
-}
-
-func (r *Runner) Close() error {
-	// Streams remain available while orderly shutdown settles native processes and
-	// one-shot scripts. The ownership descriptor is unlocked only after all cleanup.
-	errs := []error{r.stopSessions(r.ctx, r.inventory(), false)}
-	r.bootstrapMu.Lock()
-	initDone := r.initDone
-	r.bootstrapMu.Unlock()
-	if initDone != nil {
-		<-initDone
-	}
-	r.cancel()
-	for _, s := range r.inventory() {
-		s.work.Wait()
-		errs = append(errs, s.journal.Close())
-	}
-	if r.initLog != nil {
-		errs = append(errs, r.initLog.Close())
-	}
-	if err := errors.Join(errs...); err != nil {
-		return err
-	}
-	return r.owner.Close()
+		if r.initLog != nil {
+			errs = append(errs, r.initLog.Close())
+		}
+		if err := errors.Join(errs...); err != nil {
+			r.closeErr = err
+			return
+		}
+		r.closeErr = r.owner.Close()
+	})
+	return r.closeErr
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -70,6 +69,9 @@ func frameTestSession(t *testing.T, command []string) (*Session, *Process) {
 			t.Error(err)
 		}
 		r.cancel()
+		<-r.lifecycle.done
+		r.lifecycle.workers.Wait()
+		s.work.Wait()
 		s.readers.Wait()
 		if err := journal.Close(); err != nil {
 			t.Error(err)
@@ -154,9 +156,9 @@ func TestDispatchKeepsUncertainNativeWritePendingAndDoesNotResend(t *testing.T) 
 	}
 	adapter := &pendingSubmitAdapter{}
 	s.mu.Lock()
-	s.ready = true
 	s.adapter = adapter
 	s.mu.Unlock()
+	setRuntimeReady(t, s)
 	if err := s.dispatch(ctx, command); err != nil {
 		t.Fatal(err)
 	}
@@ -207,15 +209,19 @@ func TestRecoveryKeepsDispatchedInterruptPending(t *testing.T) {
 }
 
 func TestNativeHandshakeWaitCancellationLeavesLateResponseJournaled(t *testing.T) {
-	release := filepath.Join(t.TempDir(), "release")
-	script := `while IFS= read -r line; do while [ ! -e "$1" ]; do sleep 0.01; done; printf '%s\n' "$line"; done`
-	s, p := frameTestSession(t, []string{"/bin/sh", "-c", script, "--", release})
+	script := `while IFS= read -r line; do printf '{"received":true}\n'; IFS= read -r release; [ "$release" = '{"release":true}' ] || exit 1; printf '%s\n' "$line"; done`
+	s, p := frameTestSession(t, []string{"/bin/sh", "-c", script})
 	received := make(chan struct{})
+	lateReplyReceived := make(chan struct{})
 	adapter := frameTestAdapter{onFrame: func(ctx context.Context, raw json.RawMessage, sequence uint64) error {
+		if string(raw) == `{"received":true}` {
+			close(received)
+			return nil
+		}
 		if err := s.Emit(ctx, observation(&eventpb.HarnessStderr{Text: string(raw)}), []uint64{sequence}); err != nil {
 			return err
 		}
-		close(received)
+		close(lateReplyReceived)
 		return nil
 	}}
 	s.readers.Add(1)
@@ -230,26 +236,31 @@ func TestNativeHandshakeWaitCancellationLeavesLateResponseJournaled(t *testing.T
 	}()
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer waitCancel()
-	if err := s.journal.WaitBeyond(waitCtx, 0); err != nil {
-		t.Fatal(err)
+	select {
+	case <-received:
+	case <-waitCtx.Done():
+		t.Fatal("native process did not read the handshake request")
 	}
 	cancel()
 	if err := <-done; !errors.Is(err, harness.ErrNativeResponsePending) {
 		t.Fatalf("cancelled native wait error = %v", err)
 	}
-	if err := os.WriteFile(release, nil, 0o600); err != nil {
+	if err := p.WriteLine(context.Background(), `{"release":true}`); err != nil {
 		t.Fatal(err)
 	}
 	select {
-	case <-received:
+	case <-lateReplyReceived:
 	case <-waitCtx.Done():
 		t.Fatal("late native response was not delivered to the adapter")
+	}
+	if err := s.journal.WaitBeyond(waitCtx, 3); err != nil {
+		t.Fatalf("late native response was not committed: %v", err)
 	}
 	entries, err := s.journal.Since(context.Background(), 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 3 || entries[2].GetEvent().GetHarnessStderr() == nil {
+	if len(entries) != 4 || entries[3].GetEvent().GetHarnessStderr() == nil || entries[3].GetEvent().GetHarnessStderr().Text != `{"request":"echo"}` {
 		t.Fatalf("late response journal = %v", entries)
 	}
 }
@@ -308,7 +319,7 @@ func (a *rpcReconciliationAdapter) OnFrame(ctx context.Context, raw json.RawMess
 }
 
 func (a *rpcReconciliationAdapter) Reconcile(ctx context.Context, turn string, _ bool) (*eventpb.ConversationReconciled, error) {
-	// Even a concurrent kick cannot dispatch the next input while reconciliation is waiting.
+	// Even a concurrent lifecycle wake cannot dispatch the next input while reconciliation is waiting.
 	if err := a.session.dispatch(ctx, &commandpb.Command{CommandId: "later"}); err != nil {
 		return nil, err
 	}
@@ -325,16 +336,16 @@ func (a *rpcReconciliationAdapter) Reconcile(ctx context.Context, turn string, _
 func TestInterruptedReconciliationLeavesStdoutFreeForHistoryRPC(t *testing.T) {
 	s, p := frameTestSession(t, []string{"/bin/sh", "-c", `while IFS= read -r line; do printf '%s\n' "$line"; done`})
 	adapter := &rpcReconciliationAdapter{session: s}
+	s.mu.Lock()
 	s.adapter = adapter
-	s.ready = true
+	s.mu.Unlock()
+	registerTestSession(t, s)
+	setRuntimeReady(t, s)
 	if err := s.Emit(context.Background(), observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	s.readers.Add(1)
 	go s.readStdout(p, adapter)
-	s.work.Add(1)
-	go s.commandLoop()
-	t.Cleanup(func() { s.runner.cancel(); s.work.Wait() })
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.SendNative(ctx, json.RawMessage(`{"interrupt":true}`)); err != nil {

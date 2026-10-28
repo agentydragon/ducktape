@@ -967,64 +967,6 @@ egress proxy as a header substitution, as the staging `claude-ai` Sandboxes' `BU
 
 ## 6. Existing access and lifecycle follow-ups
 
-### Runner lifecycle state and ownership
-
-```mermaid
-flowchart LR
-    RUNNER_LIFECYCLE_DESIGN[In review: lifecycle state and ownership design]
-    RUNNER_COSI_TRIAL[Candidate: evaluate COSI on a bounded shutdown path]
-    RUNNER_SHUTDOWN_OWNER[Blocked: outer lifecycle and shutdown transitions]
-    RUNNER_SESSION_LIFECYCLE[Blocked: owned Session preparation and execution]
-    RUNNER_RECONCILIATION_OWNER[Blocked: queued and in-flight native inspection]
-    RUNNER_LIFECYCLE_DESIGN --> RUNNER_SHUTDOWN_OWNER
-    RUNNER_LIFECYCLE_DESIGN --> RUNNER_SESSION_LIFECYCLE
-    RUNNER_LIFECYCLE_DESIGN --> RUNNER_RECONCILIATION_OWNER
-    RUNNER_COSI_TRIAL -. informs runtime choice .-> RUNNER_LIFECYCLE_DESIGN
-```
-
-### `RUNNER_LIFECYCLE_DESIGN` — runner lifecycle state and ownership
-
-**In review; operator request, 2026-10-27.** Review the outer lifecycle machine, independent
-one-shot setup and native execution state, durable sealing/acknowledgement and event-driven
-reconciliation owners in the [design](runner_lifecycle_design.md). The
-[implementation plan](runner_lifecycle.md) specifies independently reviewable changes and proof.
-Keep admission-before-readiness, exact-turn interruption, both native harnesses and Session data.
-Exit: reviewed transition/effect ownership and shutdown/recovery ordering. No runtime implementation
-or manual staging verification is included in the documentation change.
-
-### `RUNNER_COSI_TRIAL` — evaluate COSI on a bounded shutdown path
-
-**Candidate; operator-selected experiment, 2026-10-27.** Try COSI Runtime against the existing
-Go loops on one quiesce path before selecting controller infrastructure. Produce a bounded spike,
-deterministic Bazel evidence and an adopt/reject recommendation covering resource ownership,
-asynchronous effects, durable admission/sealing, restart and integration cost. Scope and exit:
-[trial plan](runner_lifecycle.md#runner_cosi_trial--evaluate-cosi-on-a-bounded-shutdown-path).
-The [concrete mapping](runner_lifecycle_design.md#proposed-resource-and-controller-mapping) uses
-one runtime per Runner and follows goal -> Session cleanup -> seal -> exact acknowledgement,
-retaining the existing startup/command path during the trial.
-Adoption is not selected. This does not block state-model review or runtime-independent shutdown
-work; review the trial's recommendation before framework-specific implementation.
-
-### `RUNNER_SHUTDOWN_OWNER` — outer lifecycle and shutdown transitions
-
-**Blocked on `RUNNER_LIFECYCLE_DESIGN`.** Implement explicit shutdown intent and one owner for
-admission closure, drain/stop coordination and seal progress. Preserve Close/Quiesce overlap,
-script completion, shared-process ownership, drain retry and durable reopen. Exit evidence and
-scope: [shutdown slice](runner_lifecycle.md#runner_shutdown_owner--outer-lifecycle-and-shutdown-transitions).
-Recommended first slice; the other slices need the reviewed design, not this implementation.
-
-### `RUNNER_SESSION_LIFECYCLE` — owned Session preparation and execution
-
-**Blocked on `RUNNER_LIFECYCLE_DESIGN`.** Replace readiness/activation flags with owned preparation
-and execution transitions, retaining independent setup state, lazy startup and both harnesses.
-Exit evidence and scope: [Session slice](runner_lifecycle.md#runner_session_lifecycle--owned-session-preparation-and-execution).
-
-### `RUNNER_RECONCILIATION_OWNER` — queued and in-flight native inspection
-
-**Blocked on `RUNNER_LIFECYCLE_DESIGN`.** Own pending/in-flight inspection and dispatch eligibility
-in the Session work loop, keeping stdout live for replies and retaining uncertain native evidence.
-Exit evidence and scope: [reconciliation slice](runner_lifecycle.md#runner_reconciliation_owner--queued-and-in-flight-inspection).
-
 ### Egress implementation follow-ups
 
 Unscheduled, each its own change: upstream connection reuse, idle tunnel timeouts, and metrics.

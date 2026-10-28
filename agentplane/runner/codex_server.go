@@ -159,7 +159,8 @@ func (c *codexServer) start(ctx context.Context, s *Session) error {
 	}
 	if err != nil {
 		s.mu.Lock()
-		s.stopping = true
+		s.nativeStop = stopStartupFailure
+		s.processState = runnerpb.ProcessState_PROCESS_STATE_STOPPING
 		s.mu.Unlock()
 		stopErr := process.Stop(context.WithoutCancel(ctx), 5*time.Second)
 		p.readers.Wait()

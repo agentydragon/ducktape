@@ -207,11 +207,25 @@ budget for an isolated process purpose, while the parent aggregate remains autho
   because its native effect is uncertain. The runner then interrupts each active turn, waits up to a grace period for it to end, and
   stops every harness. Running Session setup and Sandbox bootstrap scripts finish naturally before
   teardown completes, avoiding partially initialized workspaces; their waiters cannot cancel them.
-  The turn's `TurnCompleted` has `ended_by_teardown` set, which
-  tells it from a user's interrupt. It seals each session's journal at its
-  final cursor, returning those cursors. Quiescing again returns the same cursors. Each cursor comes
-  with `flushed`: whether the ingress has acknowledged that seal, as the runner recorded it, so it
-  holds across a restart.
+  The turn's `TurnCompleted` has `ended_by_teardown` set, which tells it from a user's interrupt.
+  Each session journal is sealed at its final cursor under this incarnation UID. The response reports
+  `DRAINING` while work is ending, `FLUSHING` after every journal is sealed, and `QUIESCED` only after
+  ingress has durably acknowledged every exact final cursor. Repeated calls report current progress.
+- Command admission and lifecycle goals share a Runner barrier. A command handler already inside
+  admission when Quiesce is accepted finishes durably or is rejected before teardown proceeds; new
+  ordinary command IDs and new sessions are refused, while an identical command retry retains its
+  original admission.
+  `Close` and `Quiesce` join the same lifecycle: Close preserves a seal UID already selected by
+  Quiesce, and a Quiesce accepted during Close adds its seal UID without reopening the Runner. Close
+  waits for setup/bootstrap, process stop, outstanding inspection writes and required journal seals,
+  then closes journals and releases state ownership. Close does not wait for ingress acknowledgement;
+  if it supersedes Quiesce before that acknowledgement, the durable seals remain but the Runner can
+  close while quiesce progress is still `FLUSHING`.
+- One in-memory COSI Runtime per Runner schedules lifecycle controllers and mirrors input, operation,
+  seal and ingress-acknowledgement facts. It owns no native handles or durable truth. The Session
+  store, journal, persisted ingress acknowledgement and state-owner lock remain authoritative across
+  restart. See [Runner lifecycle ownership](docs/lifecycle.md) for the controller/resource map and
+  shutdown ordering.
 - Orderly runner shutdown also waits for running setup and bootstrap. An unexpected process loss
   can still interrupt a script; recovery records that outcome and never silently reruns it.
 - A sealed journal takes no further Events, so its commands are refused. Its ingress push sends
