@@ -17,7 +17,34 @@
   min-height: 0;
 }
 
+.session-import-progress-machines {
+  max-height: 240px;
+}
+
+.session-import-progress-explanation-mobile {
+  display: none;
+}
+
 @media (max-width: 760px) {
+  .session-import-progress-machines {
+    max-height: 144px;
+  }
+
+  .session-import-progress-refresh-note,
+  .session-import-progress-explanation-desktop {
+    display: none;
+  }
+
+  .session-import-progress-explanation-mobile {
+    display: block;
+    font-size: var(--mantine-font-size-xs);
+    color: var(--mantine-color-dimmed);
+  }
+
+  .session-import-progress-explanation-mobile summary {
+    cursor: pointer;
+  }
+
   .session-browser-layout {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(180px, 34dvh) minmax(0, 1fr);

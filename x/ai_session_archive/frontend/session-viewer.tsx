@@ -9,6 +9,7 @@ import {
   Loader,
   NativeSelect,
   Paper,
+  Progress,
   ScrollArea,
   Select,
   SimpleGrid,
@@ -880,6 +881,15 @@ function MachineImportProgressPanel({
   error: string | null;
   onRefresh: () => void;
 }): JSX.Element {
+  const progressExplanation = (
+    <>
+      Snapshot counts include registered snapshots, even if Restic later prunes them, and can grow as more are
+      discovered. File counts cover entries inventoried so far; progress uses these entries as its denominator, and that
+      total can grow as snapshots are inventoried. Processed means handled, not necessarily imported as a transcript.
+      Codex metadata counts cover registered snapshots; completed snapshots can have partial metadata, shown separately.
+    </>
+  );
+
   return (
     <Paper component="section" aria-label="Import progress by machine" withBorder radius="sm" p="xs">
       <Stack gap="xs">
@@ -888,7 +898,7 @@ function MachineImportProgressPanel({
             Import progress by machine
           </Text>
           <Group gap="xs">
-            <Text size="xs" c="dimmed">
+            <Text size="xs" c="dimmed" className="session-import-progress-refresh-note">
               Progress refreshes every 10 seconds; refresh sessions separately
             </Text>
             <Button size="xs" variant="default" loading={loading} onClick={onRefresh}>
@@ -896,12 +906,15 @@ function MachineImportProgressPanel({
             </Button>
           </Group>
         </Group>
-        <Text size="xs" c="dimmed">
-          Snapshot counts include registered snapshots, even if Restic later prunes them, and can grow as more are
-          discovered. File counts cover entries inventoried so far and can grow as snapshots are inventoried; processed
-          means handled, not necessarily imported as a transcript. Codex metadata counts cover registered snapshots;
-          completed snapshots can have partial metadata, shown separately.
+        <Text size="xs" c="dimmed" className="session-import-progress-explanation-desktop">
+          {progressExplanation}
         </Text>
+        <details className="session-import-progress-explanation-mobile">
+          <summary>Denominator: inventoried entries so far; can grow</summary>
+          <Text size="xs" c="dimmed" mt={4}>
+            {progressExplanation}
+          </Text>
+        </details>
         {error !== null && (
           <Text size="xs" c="red">
             Could not refresh import progress: {error}
@@ -918,45 +931,79 @@ function MachineImportProgressPanel({
             </Text>
           )
         ) : (
-          <ScrollArea h={120} type="auto">
+          <ScrollArea className="session-import-progress-machines" type="auto">
             <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="xs">
-              {progress.map((machine) => (
-                <Paper key={machine.machine_id} withBorder radius="xs" p="xs">
-                  <Stack gap={2}>
-                    <Group justify="space-between" gap="xs" wrap="wrap">
-                      <Text size="sm" fw={600}>
-                        {machine.display_name}
+              {progress.map((machine) => {
+                const totalFileCount =
+                  machine.processed_file_count + machine.pending_file_count + machine.failed_file_count;
+                const processedPercentage =
+                  totalFileCount === 0 ? 0 : (machine.processed_file_count / totalFileCount) * 100;
+                const pendingPercentage =
+                  totalFileCount === 0 ? 0 : (machine.pending_file_count / totalFileCount) * 100;
+                const failedPercentage = totalFileCount === 0 ? 0 : (machine.failed_file_count / totalFileCount) * 100;
+
+                return (
+                  <Paper key={machine.machine_id} withBorder radius="xs" p="xs">
+                    <Stack gap={2}>
+                      <Group justify="space-between" gap="xs" wrap="wrap">
+                        <Text size="sm" fw={600}>
+                          {machine.display_name}
+                        </Text>
+                        {machine.oldest_unfinished_snapshot_state !== null && (
+                          <Badge color={snapshotStateColor(machine.oldest_unfinished_snapshot_state)} variant="light">
+                            {snapshotStateLabel(machine.oldest_unfinished_snapshot_state)}
+                          </Badge>
+                        )}
+                      </Group>
+                      <Text size="xs" c="dimmed">
+                        Snapshots: {machine.completed_snapshot_count} of {machine.known_snapshot_count} registered
+                        complete · {machine.failed_snapshot_count} failed
                       </Text>
-                      {machine.oldest_unfinished_snapshot_state !== null && (
-                        <Badge color={snapshotStateColor(machine.oldest_unfinished_snapshot_state)} variant="light">
-                          {snapshotStateLabel(machine.oldest_unfinished_snapshot_state)}
-                        </Badge>
+                      <Text size="xs" c="dimmed">
+                        Codex metadata: {machine.codex_metadata_pending_snapshot_count} pending ·{" "}
+                        {machine.codex_metadata_failed_snapshot_count} failed ·{" "}
+                        {machine.codex_metadata_partial_snapshot_count} partial
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        Oldest unfinished snapshot:{" "}
+                        {machine.oldest_unfinished_snapshot_state === null
+                          ? machine.known_snapshot_count === 0
+                            ? "none registered"
+                            : "none; all registered snapshots complete"
+                          : formatDateTime(machine.oldest_unfinished_snapshot_at)}
+                      </Text>
+                      {totalFileCount === 0 ? (
+                        <Text size="xs" c="dimmed">
+                          No file entries inventoried yet.
+                        </Text>
+                      ) : (
+                        <>
+                          <Text size="xs" c="dimmed">
+                            File entries processed: {machine.processed_file_count} of {totalFileCount} inventoried
+                          </Text>
+                          <Progress.Root
+                            role="progressbar"
+                            aria-label={`${machine.display_name} file-entry progress`}
+                            aria-valuemin={0}
+                            aria-valuemax={totalFileCount}
+                            aria-valuenow={machine.processed_file_count}
+                            aria-valuetext={`${machine.processed_file_count} processed, ${machine.pending_file_count} pending, ${machine.failed_file_count} failed of ${totalFileCount} inventoried file entries`}
+                            size="sm"
+                          >
+                            {processedPercentage > 0 && <Progress.Section value={processedPercentage} color="blue" />}
+                            {pendingPercentage > 0 && <Progress.Section value={pendingPercentage} color="yellow" />}
+                            {failedPercentage > 0 && <Progress.Section value={failedPercentage} color="red" />}
+                          </Progress.Root>
+                        </>
                       )}
-                    </Group>
-                    <Text size="xs" c="dimmed">
-                      Snapshots: {machine.completed_snapshot_count} of {machine.known_snapshot_count} registered
-                      complete · {machine.failed_snapshot_count} failed
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      Codex metadata: {machine.codex_metadata_pending_snapshot_count} pending ·{" "}
-                      {machine.codex_metadata_failed_snapshot_count} failed ·{" "}
-                      {machine.codex_metadata_partial_snapshot_count} partial
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      Oldest unfinished snapshot:{" "}
-                      {machine.oldest_unfinished_snapshot_state === null
-                        ? machine.known_snapshot_count === 0
-                          ? "none registered"
-                          : "none; all registered snapshots complete"
-                        : formatDateTime(machine.oldest_unfinished_snapshot_at)}
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      File entries: {machine.processed_file_count} processed · {machine.pending_file_count} pending ·{" "}
-                      {machine.failed_file_count} failed
-                    </Text>
-                  </Stack>
-                </Paper>
-              ))}
+                      <Text size="xs" c="dimmed">
+                        File entries: {machine.processed_file_count} processed · {machine.pending_file_count} pending ·{" "}
+                        {machine.failed_file_count} failed
+                      </Text>
+                    </Stack>
+                  </Paper>
+                );
+              })}
             </SimpleGrid>
           </ScrollArea>
         )}

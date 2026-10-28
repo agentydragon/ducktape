@@ -54,6 +54,14 @@ function findControl(view: HTMLElement, text: string): HTMLButtonElement | HTMLA
   return control;
 }
 
+function findProgressBar(view: HTMLElement, machineName: string): HTMLElement {
+  const progressBar = [...view.querySelectorAll<HTMLElement>('[role="progressbar"]')].find(
+    (item) => item.getAttribute("aria-label") === `${machineName} file-entry progress`
+  );
+  if (progressBar === undefined) throw new Error(`Could not find file-entry progress for ${machineName}`);
+  return progressBar;
+}
+
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
@@ -203,9 +211,24 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   expect(view.textContent).toContain("completed snapshots can have partial metadata, shown separately");
   expect(view.textContent).toContain("27 processed · 4 pending · 0 failed");
   expect(view.textContent).toContain("11 processed · 0 pending · 1 failed");
+  expect(view.textContent).toContain("File entries processed: 42 of 53 inventoried");
   expect(view.textContent).toContain("Snapshot counts include registered snapshots");
   expect(view.textContent).toContain("can grow as more are discovered");
   expect(view.textContent).toContain("File counts cover entries inventoried so far");
+  expect(view.textContent).toContain("these entries as its denominator");
+
+  const thinkpadProgress = findProgressBar(view, "ThinkPad");
+  expect(thinkpadProgress.getAttribute("aria-valuenow")).toBe("27");
+  expect(thinkpadProgress.getAttribute("aria-valuemax")).toBe("31");
+  expect(thinkpadProgress.getAttribute("aria-valuetext")).toBe(
+    "27 processed, 4 pending, 0 failed of 31 inventoried file entries"
+  );
+  const atlasProgress = findProgressBar(view, "Atlas");
+  expect(atlasProgress.getAttribute("aria-valuenow")).toBe("11");
+  expect(atlasProgress.getAttribute("aria-valuemax")).toBe("12");
+  expect(atlasProgress.getAttribute("aria-valuetext")).toBe(
+    "11 processed, 0 pending, 1 failed of 12 inventoried file entries"
+  );
   expect(view.textContent).toContain("Compare two captured versions");
   expect(view.textContent).toContain("I found two snapshots for this session.");
   expect(view.textContent).toContain("Latest captured");
@@ -234,6 +257,40 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   });
   expect(view.textContent).toContain("This is the earlier captured version.");
   expect(view.textContent).not.toContain("I found two snapshots for this session.");
+});
+
+it("shows a zero-entry state without calculating a zero-denominator percentage", async () => {
+  const [fixtureMachine] = await sessionFixtureApi.listImportProgress();
+  if (fixtureMachine === undefined) throw new Error("The session fixture has no import progress");
+
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    async listImportProgress() {
+      return [
+        {
+          ...fixtureMachine,
+          machine_id: "new-machine",
+          display_name: "New machine",
+          known_snapshot_count: 0,
+          completed_snapshot_count: 0,
+          failed_snapshot_count: 0,
+          codex_metadata_pending_snapshot_count: 0,
+          codex_metadata_failed_snapshot_count: 0,
+          codex_metadata_partial_snapshot_count: 0,
+          oldest_unfinished_snapshot_at: null,
+          oldest_unfinished_snapshot_state: null,
+          processed_file_count: 0,
+          pending_file_count: 0,
+          failed_file_count: 0,
+        },
+      ];
+    },
+  };
+  const view = await renderViewer(api);
+
+  expect(view.textContent).toContain("No file entries inventoried yet.");
+  expect(view.textContent).toContain("File entries: 0 processed · 0 pending · 0 failed");
+  expect(view.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
 });
 
 it("distinguishes inventory, failed and missing imports from an empty captured version", async () => {
