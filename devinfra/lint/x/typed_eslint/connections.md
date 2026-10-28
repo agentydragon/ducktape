@@ -47,3 +47,64 @@ Listing production and test configs together made the test lint action parse the
 config first. Its sandbox contains production declarations rather than production sources,
 so that config had no matching roots and TypeScript reported `TS18003` before ESLint tried
 the test config. Separate source-pattern overrides select production and test programs.
+
+## Passing trial
+
+At `3fbe1d76864c10416c169f02f675c9b6da2dff0d`, the
+[corrected run](https://app.buildbuddy.io/invocation/6197f57b-56bf-4c10-b386-8f8e665234e3)
+passed both direct compilation targets, all three Vitest suites (cached results), the app
+bundle, and the visual-harness bundle. Both targets' human lint actions passed, and their
+SARIF reports contained no results. Build artifact digests matched the parent for all
+11 emitted JavaScript files and their 11 source maps.
+
+`pre-commit run --all-files` also passed. The
+[PR CI Bazel invocation](https://app.buildbuddy.io/invocation/66013adf-68ee-5fc3-aa00-e857fcd8f579)
+passed its 178-target affected set against the PR merge commit, including the existing
+whole-program lint check.
+
+## Cost observations
+
+These are single RBE samples from different executor processes, not a benchmark or a
+repository-wide speedup claim. Compiler dependencies were largely cached. The first
+trial's two compiler actions ran; the baseline compilers were cached, so there is no
+cold-compiler timing comparison.
+
+For the initial source set, excluding the shared CSS action and machine reports:
+
+| Layout                         | Human typed-lint actions | Total CPU seconds | Largest action peak |
+| ------------------------------ | -----------------------: | ----------------: | ------------------: |
+| Parent, per module             |                       11 |            189.17 |            1037 MiB |
+| Trial, per feature/environment |                        2 |             33.47 |             705 MiB |
+
+Both rows use the passing baseline and corrected-run invocations above. CPU and memory
+come from `executedActionMetadata.usageStats`, not build wall time.
+
+An identical temporary comment was appended to `connection_service_client.ts` in each
+layout and then restored. This preserves types while changing an emitted JavaScript
+module; the builds selected `//agentplane/app/frontend/connections:all` with typed lint.
+
+| Layout |  Executed compiler actions | Compiler CPU seconds | Human typed-lint actions | Lint CPU seconds |
+| ------ | -------------------------: | -------------------: | -----------------------: | ---------------: |
+| Parent |             1 (one module) |                 3.62 |                        5 |            97.25 |
+| Trial  | 1 (six production modules) |                 9.73 |                        2 |            31.95 |
+
+[Parent edit](https://app.buildbuddy.io/invocation/404dc701-f8f1-4d16-8007-2e46569cd6de),
+[trial edit](https://app.buildbuddy.io/invocation/e44e8f17-d70c-471e-b90f-f1815594c376).
+The trial's CSS lint action also missed cache (12.14 CPU seconds) although the stylesheet
+was unchanged; it is excluded from the TypeScript columns. The grouped compiler did more
+work for one edit, while fewer lint actions ran. Neither invocation ran tests or bundles.
+
+## Promise-rule proof
+
+A temporary exported async function in `connections/models.ts` ignored a Promise,
+assigned an async function to a `() => void` callback, and awaited a number. Its explicit
+return annotation satisfied the existing isolated-declaration policy.
+
+[Compilation and ordinary lint passed](https://app.buildbuddy.io/invocation/c2b1789e-c680-4486-a2b2-28b5db98f553).
+The [typed report-capture run](https://app.buildbuddy.io/invocation/d96e86b2-e0fa-44be-a8da-7ff80e9ec16e)
+produced exactly `no-floating-promises`, `no-misused-promises`, and `await-thenable` errors
+at the three probe locations, with no parser errors. Downloaded human and SARIF reports
+agreed; both exit-code artifacts contained `1`. This run used
+`--@aspect_rules_lint//lint:fail_on_violation=false` to preserve the reports, so the build
+itself returned success. Normal validation above used the default enforcement setting.
+The probe was restored and is not part of the PR.
