@@ -349,14 +349,6 @@ func (s *Store) CleanupGitHubDeliveries(ctx context.Context, cutoff time.Time) e
 		if err != nil {
 			return err
 		}
-		// Migration 00007 copy-forwards the aggregate CI tables so legacy payloads keep their original schema and
-		// rollback data remains available. Bound their retention by the same cutoff while both schemas coexist.
-		_, err = tx.ExecContext(ctx, `DELETE FROM github_ci_event WHERE sequence IN (
-			SELECT sequence FROM github_ci_event WHERE created_at < $1 ORDER BY created_at, sequence LIMIT 1000
-		)`, cutoff)
-		if err != nil {
-			return err
-		}
 		_, err = tx.ExecContext(ctx, `DELETE FROM github_pr_state_event WHERE sequence IN (
 			SELECT sequence FROM github_pr_state_event WHERE created_at < $1 ORDER BY created_at, sequence LIMIT 1000
 		)`, cutoff)
@@ -369,23 +361,6 @@ func (s *Store) CleanupGitHubDeliveries(ctx context.Context, cutoff time.Time) e
 			(app_id, installation_id, repository_id, head_sha, event, entity_key) IN (
 				SELECT c.app_id, c.installation_id, c.repository_id, c.head_sha, c.event, c.entity_key
 				FROM github_commit_current c WHERE (c.payload->>'observedAt')::timestamptz < $1
-				AND NOT EXISTS (
-					SELECT 1 FROM subscription s JOIN github_pull_request p
-						ON p.repository_id = s.github_repository_id AND p.number::text = s.github_subject_key
-					JOIN github_subject_revision r ON r.repository_id = p.repository_id
-						AND r.kind = 'pull_request' AND r.subject_key = p.number::text
-					WHERE s.github_app_id = c.app_id AND s.github_subject_kind = 'pull_request'
-						AND NOT s.cancelled AND s.expires_at > now() AND p.head_sha = c.head_sha
-						AND r.head_repository_id = c.repository_id AND r.sha = c.head_sha)
-				ORDER BY c.app_id, c.installation_id, c.repository_id, c.head_sha, c.event, c.entity_key LIMIT 1000
-			)`, cutoff)
-		if err != nil {
-			return err
-		}
-		_, err = tx.ExecContext(ctx, `DELETE FROM github_ci_current WHERE
-			(app_id, installation_id, repository_id, head_sha, event, entity_key) IN (
-				SELECT c.app_id, c.installation_id, c.repository_id, c.head_sha, c.event, c.entity_key
-				FROM github_ci_current c WHERE (c.payload->>'observedAt')::timestamptz < $1
 				AND NOT EXISTS (
 					SELECT 1 FROM subscription s JOIN github_pull_request p
 						ON p.repository_id = s.github_repository_id AND p.number::text = s.github_subject_key

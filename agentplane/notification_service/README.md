@@ -42,10 +42,10 @@ PolicyBinding status. Preserve existing staging data. Verify an Action
 subscription through a newly opened harness after rollout. Existing sessions retain their original prompt.
 
 Schema changes are Goose migrations. `00010_final_schema.sql` creates the native schema directly for
-an empty database, or adopts a database that completed version 9. Existing Goose history and stored
-rows stay intact; only the completed cutover checkpoint is removed. Databases predating version 9
+an empty database, or adopts a database that completed version 9. Its adoption step preserves Goose
+history and stored rows, removing the completed cutover checkpoint. Databases predating version 9
 must first finish the native-storage conversion with the preceding migration-capable image. Do not
-renumber this baseline: subsequent migrations start at version 11.
+renumber this baseline; later schema changes use subsequent Goose versions.
 
 The Notification Deployment uses `Recreate`, so old writers stop before the init container migrates
 and the new service starts. Goose's PostgreSQL advisory session lock serializes init containers.
@@ -148,11 +148,12 @@ repair does not invent `created`, `in_progress` or `completed` actions. The exis
 command and default filters are unchanged. Branch and fixed-commit CI notifications continue to use raw webhook events. See the
 [agent GitHub guide](docs/agents/github.md#follow-github-activity) for identity, payload and filter details.
 
-The legacy `github_ci_*` tables and subscription/delivery columns remain alongside native GitHub
-commit observations. Retention still cleans both event logs. Before removing the legacy tables,
-reconcile rows written after the original copy: some legacy event sequences identify different
-native observations; see the [reconciliation findings](debug/legacy_ci_reconciliation.md). Existing
-inbox payloads can also retain the original aggregate shape.
+Migration 11 retires the legacy aggregate GitHub CI tables and normalization/cursor columns. The
+operator accepted discarding fourteen historical observations missing from native history after
+overlapping writers during migration 7. Existing inbox copies, acknowledgements and native observation identities
+remain intact; the discarded facts are not replayed. Pending legacy subscription snapshots block
+the migration. Native tables and inbox payloads can retain the original aggregate JSON shape, so
+legacy payload-field compatibility remains necessary.
 
 Current review refresh state and pull-request review/lifecycle observations use the same retention
 setting and do not reconstruct transitions missed between observations. Deliveries predating the

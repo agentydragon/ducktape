@@ -20,6 +20,7 @@ go_test(
     name = "baseline_integration_test",
     size = "medium",
     srcs = ["baseline_integration_test.go"],
+    embedsrcs = ["notifications/00010_final_schema.sql"],
     tags = ["requires_docker"],
     deps = [
         ":migrations",
@@ -28,5 +29,6 @@ go_test(
         "//agentplane/testing/postgres",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
+        "@com_github_pressly_goose_v3//:goose",
     ],
 )
