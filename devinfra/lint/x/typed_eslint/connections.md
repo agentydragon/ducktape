@@ -46,6 +46,20 @@ bbr build //agentplane/app/frontend/connections:connections \
   --//devinfra/lint/x/typed_eslint:enabled
 ```
 
+At implementation commit `71e2c539d0652b5cd6102ef6f1754da15947d28f`, the
+[shared-config RBE run](https://app.buildbuddy.io/invocation/562ce12c-6267-4384-83d3-30337156b97f)
+passed all three compilation targets, all three Vitest suites (executed), the application
+bundle, and the visual-harness bundle. Human lint passed and downloaded SARIF reports
+were empty for production, helpers, and specs.
+
+The same temporary valid-TypeScript probe used below was rerun with the shared config:
+[report capture](https://app.buildbuddy.io/invocation/eff34121-b0bb-45da-9911-6c6372477a77).
+Compilation passed; human and SARIF reports contained exactly the three intended promise
+rule errors, with exit code `1` in both formats. Build failure was disabled only to retain
+the diagnostic artifacts. The probe was restored and is not committed.
+
+## Earlier split-config setup
+
 The baseline at parent `d3f632ef25` passed typed lint and compilation for
 `//agentplane/app/frontend/connections:all`:
 [BuildBuddy invocation](https://app.buildbuddy.io/invocation/b4330a41-5bec-405c-80c5-c4cfe9490852).
