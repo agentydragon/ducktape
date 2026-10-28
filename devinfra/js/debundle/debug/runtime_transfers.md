@@ -79,5 +79,9 @@ Three alternating pairs per control pass the CPU and RSS budget:
 All 24 CLI runs exit zero. All 12 output pairs match except executable identity
 and invocation-path provenance. All 12 source and emitted-entry Node controls
 exit zero and print `7`. Raw samples and comparisons are under
-`results/paired-compact-transfers/`. Private-corpus parity and the full suite
-remain pending.
+`results/paired-compact-transfers/`. All 210 debundle targets pass in
+[85642c40-b454-4d7e-b055-22f4e242bd30](https://app.buildbuddy.io/invocation/85642c40-b454-4d7e-b055-22f4e242bd30).
+Exact-head hosted CI passes production Clippy and all 183 selected tests in
+[3a719cd6-739b-5fb0-a1f4-19ef548d8253](https://app.buildbuddy.io/invocation/3a719cd6-739b-5fb0-a1f4-19ef548d8253).
+The private Claude replay matches all 75 baseline graphs and 11 conflict reports
+apart from executable provenance. Supplemental Tana parity remains pending.
