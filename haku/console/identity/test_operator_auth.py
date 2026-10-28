@@ -14,6 +14,7 @@ import asyncio
 import datetime
 import logging
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -99,7 +100,7 @@ class _MismatchingStateOAuth:
         return _MismatchingStateClient()
 
 
-async def test_credential_matrix_through_real_app(migrated_db_url: str) -> None:
+async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path: Path) -> None:
     """The browser API requires an Operator session; a bearer is not browser auth."""
     private_key, public_key = generate_rsa_keypair()
     with bind_http_server() as idp_endpoint, bind_http_server() as console_endpoint:
@@ -113,6 +114,7 @@ async def test_credential_matrix_through_real_app(migrated_db_url: str) -> None:
         )
         settings = console_settings(
             migrated_db_url,
+            tmp_path,
             haku_ui_url="about:blank",
             public_base_url=console_url,
             operator_oidc=OperatorOidcConfig(
@@ -140,7 +142,7 @@ async def test_credential_matrix_through_real_app(migrated_db_url: str) -> None:
                 assert (await operator.get("/api/tool-calls")).status_code == 404
 
 
-async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str) -> None:
+async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str, tmp_path: Path) -> None:
     """Every open tab loses its session at the same moment (one absolute deadline), so they bounce
     to /auth/login together. Neither attempt may strand the other: with authlib's session-backed
     state each new authorization request evicts the last, and the loser's callback dies on
@@ -157,6 +159,7 @@ async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str) -> None
         )
         settings = console_settings(
             migrated_db_url,
+            tmp_path,
             haku_ui_url="about:blank",
             public_base_url=console_url,
             operator_oidc=OperatorOidcConfig(
@@ -401,7 +404,7 @@ def test_retired_authentik_headers_cannot_authenticate_an_operator(make_client, 
     assert response.status_code == 401
 
 
-def test_operator_oidc_requires_canonical_public_origin(migrated_db_url: str) -> None:
+def test_operator_oidc_requires_canonical_public_origin(migrated_db_url: str, tmp_path: Path) -> None:
     oidc = OperatorOidcConfig(
         issuer="https://auth.test/application/o/haku-console/",
         client_id="console",
@@ -409,9 +412,9 @@ def test_operator_oidc_requires_canonical_public_origin(migrated_db_url: str) ->
         session_secret=SecretStr("session"),
     )
     with pytest.raises(ValidationError, match="public_base_url"):
-        console_settings(migrated_db_url, operator_oidc=oidc, public_base_url=None)
+        console_settings(migrated_db_url, tmp_path, operator_oidc=oidc, public_base_url=None)
     with pytest.raises(ValidationError):
-        console_settings(migrated_db_url, operator_oidc=oidc, public_base_url="https://haku.test/a/path")
+        console_settings(migrated_db_url, tmp_path, operator_oidc=oidc, public_base_url="https://haku.test/a/path")
 
 
 if __name__ == "__main__":

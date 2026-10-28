@@ -14,9 +14,9 @@ from haku.console.conftest import console_settings
 _CONSOLE_DATABASE_URL = "postgresql+psycopg://app:secret@db.example.test:5432/haku"
 
 
-def test_missing_deploy_config_fails_startup() -> None:
+def test_missing_deploy_config_fails_startup(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match=re.escape("/nonexistent/haku-console.yaml")):
-        console_settings(_CONSOLE_DATABASE_URL, config_file=Path("/nonexistent/haku-console.yaml"))
+        console_settings(_CONSOLE_DATABASE_URL, tmp_path, config_file=Path("/nonexistent/haku-console.yaml"))
 
 
 if __name__ == "__main__":

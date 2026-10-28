@@ -21,7 +21,6 @@ import time
 from collections.abc import AsyncGenerator, Callable, Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import Any, cast
 
 import itsdangerous
@@ -104,14 +103,14 @@ def write_config(path: Path, config: dict[str, Any]) -> Path:
     return path
 
 
-def _empty_config_file() -> Path:
+def _empty_config_file(tmp_path: Path) -> Path:
     """Return a real empty YAML file for tests that supply every setting as an init override."""
-    with NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, encoding="utf-8") as config:
-        config.write("{}\n")
-        return Path(config.name)
+    path = tmp_path / "empty.yaml"
+    path.write_text("{}\n", encoding="utf-8")
+    return path
 
 
-def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
+def console_settings(migrated_db_url: str, tmp_path: Path, **overrides: Any) -> Settings:
     """The console `Settings` tests need — required `haku_ui_url`/`database_url` defaulted, per-test
     `overrides` spread last. Shared by `make_client` and by the tests that serve `create_app` over a
     real socket (so they can't go through `make_client`'s `TestClient`)."""
@@ -122,21 +121,21 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
             "access_profiles": [{"id": DEFAULT_ACCESS_PROFILE_ID}],
             "default_access_profile_id": DEFAULT_ACCESS_PROFILE_ID,
         }
-    return Settings(
-        **{
-            "haku_ui_url": "https://haku-ui.test",
-            "auth_origin": "https://auth.test",
-            "database_url": SecretStr(migrated_db_url),
-            "public_base_url": "https://haku.test",
-            "operator_oidc": TEST_OPERATOR_OIDC,
-            "operator_identity": TEST_OPERATOR_IDENTITY,
-            # Unit tests that construct Settings directly still exercise the YAML source;
-            # app-composition tests override this with their real temporary catalog.
-            "config_file": _empty_config_file(),
-            **catalog_defaults,
-            **overrides,
-        }
-    )
+    defaults: dict[str, Any] = {
+        "haku_ui_url": "https://haku-ui.test",
+        "auth_origin": "https://auth.test",
+        "database_url": SecretStr(migrated_db_url),
+        "public_base_url": "https://haku.test",
+        "operator_oidc": TEST_OPERATOR_OIDC,
+        "operator_identity": TEST_OPERATOR_IDENTITY,
+        # Unit tests that construct Settings directly still exercise the YAML source;
+        # app-composition tests override this with their real temporary catalog.
+        **catalog_defaults,
+    }
+    if "config_file" not in overrides:
+        defaults["config_file"] = _empty_config_file(tmp_path)
+    defaults.update(overrides)
+    return Settings(**defaults)
 
 
 def operator_identity_store(sessions: async_sessionmaker[AsyncSession]) -> PostgresOperatorIdentityStore:
@@ -261,6 +260,7 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         # database_url come from console_settings.
         settings = console_settings(
             migrated_db_url,
+            tmp_path,
             config_file=config_file if config_file is not None else default_config,
             **settings_overrides,
         )
