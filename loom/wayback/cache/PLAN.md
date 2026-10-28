@@ -22,7 +22,8 @@ The service is parked; see <README.md> for the implemented contract and
 - Decide whether filler pods should remain an OVH-spread Deployment, become a
   DaemonSet, or run on roaming nodes once node/IP policy is clearer.
 - Decide `wayback-archive-db` backup/failover policy before moving from a single
-  CNPG instance to the OVH-HA profile.
+  CNPG instance to the OVH-HA profile; verify metadata survives pod restarts
+  and database failover.
 - Rename remaining stateful `archive` names in a migration-safe follow-up: GHCR
   image / Flux image policy, CNPG database and generated secret, SeaweedFS bucket
   and S3 identity. Consider renaming internal Rust `Archive*` names separately.
