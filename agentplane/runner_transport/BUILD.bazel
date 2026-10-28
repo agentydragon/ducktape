@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "runner_transport",
+    srcs = ["credentials.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner_transport",
+    deps = [
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//peer",
+    ],
+)
+
+go_test(
+    name = "runner_transport_test",
+    srcs = ["credentials_test.go"],
+    embed = [":runner_transport"],
+    race = "on",
+    deps = [
+        "//agentplane/runner_transport/testing",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//peer",
+    ],
+)
