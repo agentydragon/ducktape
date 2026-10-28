@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -14,6 +15,7 @@ import (
 const (
 	actionStorageBackfillBatchSize  = 512
 	actionStorageEvidenceByteBudget = 1 << 20
+	actionStorageBatchTimeout       = 30 * time.Second
 )
 
 // BackfillActionStorage converts legacy Action identity, actor and policy-evidence values into their typed
@@ -45,7 +47,10 @@ func verifyActionStorageBackfill(ctx context.Context, db *sql.DB) error {
 			WHERE policy_evidence IS NOT NULL AND policy_evidence <> 'null'::jsonb AND policy_evidence_proto IS NULL)`},
 	} {
 		var incomplete bool
-		if err := db.QueryRowContext(ctx, check.query).Scan(&incomplete); err != nil {
+		checkCtx, cancel := context.WithTimeout(ctx, actionStorageBatchTimeout)
+		err := db.QueryRowContext(checkCtx, check.query).Scan(&incomplete)
+		cancel()
+		if err != nil {
 			return fmt.Errorf("verify %s storage backfill: %w", check.table, err)
 		}
 		if incomplete {
@@ -53,6 +58,26 @@ func verifyActionStorageBackfill(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+func beginActionStorageBatch(ctx context.Context, db *sql.DB) (context.Context, *sql.Tx, context.CancelFunc, error) {
+	batchCtx, cancel := context.WithTimeout(ctx, actionStorageBatchTimeout)
+	tx, err := db.BeginTx(batchCtx, nil)
+	if err != nil {
+		cancel()
+		return nil, nil, nil, err
+	}
+	for _, statement := range []string{
+		"SET LOCAL lock_timeout = '1s'",
+		"SET LOCAL statement_timeout = '30s'",
+	} {
+		if _, err := tx.ExecContext(batchCtx, statement); err != nil {
+			_ = tx.Rollback()
+			cancel()
+			return nil, nil, nil, err
+		}
+	}
+	return batchCtx, tx, cancel, nil
 }
 
 func backfillActionIdentities(ctx context.Context, db *sql.DB) error {
@@ -71,10 +96,11 @@ func backfillActionIdentities(ctx context.Context, db *sql.DB) error {
 }
 
 func backfillActionIdentityBatch(ctx context.Context, db *sql.DB, after uuid.UUID, first bool) (*uuid.UUID, error) {
-	tx, err := db.BeginTx(ctx, nil)
+	batchCtx, tx, cancel, err := beginActionStorageBatch(ctx, db)
 	if err != nil {
 		return nil, err
 	}
+	defer cancel()
 	defer tx.Rollback()
 
 	query := `SELECT id, action_group, action_name,
@@ -82,12 +108,12 @@ func backfillActionIdentityBatch(ctx context.Context, db *sql.DB, after uuid.UUI
 		FROM action_request ORDER BY id LIMIT $1 FOR UPDATE`
 	var rows *sql.Rows
 	if first {
-		rows, err = tx.QueryContext(ctx, query, actionStorageBackfillBatchSize)
+		rows, err = tx.QueryContext(batchCtx, query, actionStorageBackfillBatchSize)
 	} else {
 		query = `SELECT id, action_group, action_name,
 			CASE WHEN action_group IS NULL OR action_name IS NULL THEN action::text END
 			FROM action_request WHERE id > $1::uuid ORDER BY id LIMIT $2 FOR UPDATE`
-		rows, err = tx.QueryContext(ctx, query, after, actionStorageBackfillBatchSize)
+		rows, err = tx.QueryContext(batchCtx, query, after, actionStorageBackfillBatchSize)
 	}
 	if err != nil {
 		return nil, err
@@ -127,7 +153,7 @@ func backfillActionIdentityBatch(ctx context.Context, db *sql.DB, after uuid.UUI
 		return nil, err
 	}
 	if len(ids) > 0 {
-		result, err := tx.ExecContext(ctx, `UPDATE action_request AS request
+		result, err := tx.ExecContext(batchCtx, `UPDATE action_request AS request
 			SET action_group = batch.action_group, action_name = batch.action_name
 			FROM unnest($1::uuid[], $2::text[], $3::text[]) AS batch(id, action_group, action_name)
 			WHERE request.id = batch.id AND (request.action_group IS NULL OR request.action_name IS NULL)`,
@@ -162,10 +188,11 @@ func backfillActionActors(ctx context.Context, db *sql.DB) error {
 }
 
 func backfillActionActorBatch(ctx context.Context, db *sql.DB, afterRequest uuid.UUID, afterSequence int32, first bool) (*uuid.UUID, int32, error) {
-	tx, err := db.BeginTx(ctx, nil)
+	batchCtx, tx, cancel, err := beginActionStorageBatch(ctx, db)
 	if err != nil {
 		return nil, 0, err
 	}
+	defer cancel()
 	defer tx.Rollback()
 
 	query := `SELECT request_id, sequence, CASE WHEN actor_proto IS NULL AND actor IS NOT NULL
@@ -179,9 +206,9 @@ func backfillActionActorBatch(ctx context.Context, db *sql.DB, afterRequest uuid
 	}
 	var rows *sql.Rows
 	if first {
-		rows, err = tx.QueryContext(ctx, query, actionStorageBackfillBatchSize)
+		rows, err = tx.QueryContext(batchCtx, query, actionStorageBackfillBatchSize)
 	} else {
-		rows, err = tx.QueryContext(ctx, query, afterRequest, afterSequence, actionStorageBackfillBatchSize)
+		rows, err = tx.QueryContext(batchCtx, query, afterRequest, afterSequence, actionStorageBackfillBatchSize)
 	}
 	if err != nil {
 		return nil, 0, err
@@ -229,7 +256,7 @@ func backfillActionActorBatch(ctx context.Context, db *sql.DB, afterRequest uuid
 		return nil, 0, err
 	}
 	if len(requestIDs) > 0 {
-		result, err := tx.ExecContext(ctx, `UPDATE action_event AS event SET actor_proto =
+		result, err := tx.ExecContext(batchCtx, `UPDATE action_event AS event SET actor_proto =
 			CASE WHEN batch.has_payload THEN batch.payload ELSE NULL END
 			FROM unnest($1::uuid[], $2::bigint[], $3::bytea[], $4::boolean[])
 				AS batch(request_id, sequence, payload, has_payload)
@@ -270,27 +297,28 @@ func backfillActionPolicyEvidence(ctx context.Context, db *sql.DB) error {
 }
 
 func backfillActionPolicyEvidenceBatch(ctx context.Context, db *sql.DB, after uuid.UUID, first bool) (*uuid.UUID, error) {
-	tx, err := db.BeginTx(ctx, nil)
+	batchCtx, tx, cancel, err := beginActionStorageBatch(ctx, db)
 	if err != nil {
 		return nil, err
 	}
+	defer cancel()
 	defer tx.Rollback()
 
 	query := `SELECT id, policy_evidence_proto IS NULL AND policy_evidence IS NOT NULL
 			AND policy_evidence <> 'null'::jsonb,
 		CASE WHEN policy_evidence_proto IS NULL AND policy_evidence IS NOT NULL
-			AND policy_evidence <> 'null'::jsonb THEN pg_column_size(policy_evidence) ELSE 0 END
+			AND policy_evidence <> 'null'::jsonb THEN octet_length(policy_evidence::text) ELSE 0 END
 		FROM action_decision ORDER BY id LIMIT $1 FOR UPDATE`
 	var rows *sql.Rows
 	if first {
-		rows, err = tx.QueryContext(ctx, query, actionStorageBackfillBatchSize)
+		rows, err = tx.QueryContext(batchCtx, query, actionStorageBackfillBatchSize)
 	} else {
 		query = `SELECT id, policy_evidence_proto IS NULL AND policy_evidence IS NOT NULL
 				AND policy_evidence <> 'null'::jsonb,
 			CASE WHEN policy_evidence_proto IS NULL AND policy_evidence IS NOT NULL
-				AND policy_evidence <> 'null'::jsonb THEN pg_column_size(policy_evidence) ELSE 0 END
+				AND policy_evidence <> 'null'::jsonb THEN octet_length(policy_evidence::text) ELSE 0 END
 			FROM action_decision WHERE id > $1::uuid ORDER BY id LIMIT $2 FOR UPDATE`
-		rows, err = tx.QueryContext(ctx, query, after, actionStorageBackfillBatchSize)
+		rows, err = tx.QueryContext(batchCtx, query, after, actionStorageBackfillBatchSize)
 	}
 	if err != nil {
 		return nil, err
@@ -335,7 +363,7 @@ func backfillActionPolicyEvidenceBatch(ctx context.Context, db *sql.DB, after uu
 		}
 	}
 	if len(ids) > 0 {
-		payloadRows, err := tx.QueryContext(ctx, `SELECT decision.id, CASE WHEN decision.policy_evidence_proto IS NULL
+		payloadRows, err := tx.QueryContext(batchCtx, `SELECT decision.id, CASE WHEN decision.policy_evidence_proto IS NULL
 			AND decision.policy_evidence IS NOT NULL AND decision.policy_evidence <> 'null'::jsonb
 			THEN decision.policy_evidence END FROM action_decision AS decision
 			JOIN unnest($1::uuid[]) WITH ORDINALITY AS batch(id, ordinal) ON decision.id = batch.id
@@ -381,7 +409,7 @@ func backfillActionPolicyEvidenceBatch(ctx context.Context, db *sql.DB, after uu
 		if len(updateIDs) != len(ids) {
 			return nil, fmt.Errorf("backfill action_decision policy_evidence selected %d rows but read %d", len(ids), len(updateIDs))
 		}
-		result, err := tx.ExecContext(ctx, `UPDATE action_decision AS decision SET policy_evidence_proto =
+		result, err := tx.ExecContext(batchCtx, `UPDATE action_decision AS decision SET policy_evidence_proto =
 			CASE WHEN batch.has_payload THEN batch.payload ELSE NULL END
 			FROM unnest($1::uuid[], $2::bytea[], $3::boolean[]) AS batch(id, payload, has_payload)
 			WHERE decision.id = batch.id AND decision.policy_evidence_proto IS NULL`,

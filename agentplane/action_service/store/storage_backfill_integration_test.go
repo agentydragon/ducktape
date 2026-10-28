@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -42,9 +43,12 @@ func TestBackfillActionStoragePreservesRowsAndResumesAfterFailure(t *testing.T) 
 			('00000000-0000-0000-0000-' || lpad(to_hex(n), 12, '0'))::uuid, 'deny', 'legacy-provider',
 			'legacy-' || n, now(),
 			CASE
-				WHEN n = $1 THEN jsonb_build_object('bindings', '[]'::jsonb, 'policy_sets', '[]'::jsonb,
+				WHEN n = $1 - 1 THEN jsonb_build_object('bindings', '[]'::jsonb, 'policy_sets', '[]'::jsonb,
 					'matched', jsonb_build_object('namespace', 'legacy-policy', 'policy_set', 'legacy-set',
 						'source', 'rules', 'index', 1, 'type', 'unknown-policy'))
+				WHEN n = $1 THEN jsonb_build_object('bindings', '[]'::jsonb, 'policy_sets', '[]'::jsonb,
+					'matched', jsonb_build_object('namespace', repeat('x', 1100000), 'policy_set', 'legacy-set',
+						'source', 'rules', 'index', 1, 'type', 'exact_actions'))
 				WHEN n % 4 = 1 THEN jsonb_build_object(
 					'bindings', jsonb_build_array(jsonb_build_object('namespace', 'legacy-binding-ns',
 						'name', 'legacy-binding', 'resource_version', '17')),
@@ -110,10 +114,31 @@ func TestBackfillActionStoragePreservesRowsAndResumesAfterFailure(t *testing.T) 
 		t.Fatalf("absent SQL NULL/JSON null policy evidence lost null behavior: got %d absent rows", got)
 	}
 
-	malformedID := sequentialUUID(rowCount)
+	malformedID := sequentialUUID(rowCount - 1)
 	f.exec(t, `UPDATE action_decision SET policy_evidence = jsonb_build_object('bindings', '[]'::jsonb,
 		'policy_sets', '[]'::jsonb, 'matched', jsonb_build_object('namespace', 'legacy-policy',
 		'policy_set', 'legacy-set', 'source', 'rules', 'index', 1, 'type', 'exact_actions')) WHERE id = $1`, malformedID)
+	var serializedEvidenceBytes int
+	if err := f.db.QueryRowContext(t.Context(), `SELECT octet_length(policy_evidence::text) FROM action_decision WHERE id = $1`,
+		sequentialUUID(rowCount)).Scan(&serializedEvidenceBytes); err != nil {
+		t.Fatal(err)
+	}
+	if serializedEvidenceBytes <= actionStorageEvidenceByteBudget {
+		t.Fatalf("large policy evidence serializes to %d bytes, want more than %d", serializedEvidenceBytes,
+			actionStorageEvidenceByteBudget)
+	}
+	last, err := backfillActionPolicyEvidenceBatch(t.Context(), f.db, sequentialUUID(rowCount-2), false)
+	if err != nil || last == nil || *last != malformedID {
+		t.Fatalf("first byte-budget batch ended at %v, %v; want %s", last, err, malformedID)
+	}
+	if got := f.count(t, `SELECT count(*) FROM action_decision WHERE id = $1 AND policy_evidence_proto IS NOT NULL`,
+		sequentialUUID(rowCount)); got != 0 {
+		t.Fatalf("oversized evidence row was included in the preceding batch: %d rows", got)
+	}
+	last, err = backfillActionPolicyEvidenceBatch(t.Context(), f.db, *last, false)
+	if err != nil || last == nil || *last != sequentialUUID(rowCount) {
+		t.Fatalf("oversized single-row batch ended at %v, %v; want %s", last, err, sequentialUUID(rowCount))
+	}
 	if err := BackfillActionStorage(t.Context(), f.db); err != nil {
 		t.Fatalf("resume BackfillActionStorage: %v", err)
 	}
@@ -187,6 +212,51 @@ func TestBackfillActionStoragePreservesRowsAndResumesAfterFailure(t *testing.T) 
 	events := f.events(t, sequentialUUID(4))
 	if len(events) != 1 || events[0].Actor.GetOperator().GetSubject() != "legacy-operator" {
 		t.Fatalf("store read after backfill changed historical actor: %+v", events)
+	}
+}
+
+func TestBackfillActionStorageLockTimeoutCanResume(t *testing.T) {
+	f := newFixture(t)
+	id := sequentialUUID(1)
+	if _, err := f.db.ExecContext(t.Context(), `INSERT INTO action_request
+		(id, idempotency_key, action, arguments, state, version, created_at, updated_at, title, description,
+		caller_namespace, caller_name)
+		VALUES ($1, 'legacy-lock', '{"group":"legacy-group","name":"legacy-action"}'::jsonb, '{}'::jsonb,
+		'denied', 2, now(), now(), 'legacy request', NULL, 'legacy-caller', 'owner')`, id); err != nil {
+		t.Fatal(err)
+	}
+	blocker, err := f.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lockedID uuid.UUID
+	if err := blocker.QueryRowContext(t.Context(), "SELECT id FROM action_request WHERE id = $1 FOR UPDATE", id).Scan(&lockedID); err != nil {
+		_ = blocker.Rollback()
+		t.Fatal(err)
+	}
+	if _, err := backfillActionIdentityBatch(t.Context(), f.db, uuid.Nil, true); err == nil {
+		_ = blocker.Rollback()
+		t.Fatal("backfill succeeded while the first request row was locked")
+	} else {
+		var postgresErr *pq.Error
+		if !errors.As(err, &postgresErr) || postgresErr.Code != "55P03" {
+			_ = blocker.Rollback()
+			t.Fatalf("backfill error = %v, want PostgreSQL lock timeout", err)
+		}
+	}
+	if err := blocker.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if err := BackfillActionStorage(t.Context(), f.db); err != nil {
+		t.Fatalf("resume after lock timeout: %v", err)
+	}
+	var group, name string
+	if err := f.db.QueryRowContext(t.Context(), "SELECT action_group, action_name FROM action_request WHERE id = $1", id).
+		Scan(&group, &name); err != nil {
+		t.Fatal(err)
+	}
+	if group != "legacy-group" || name != "legacy-action" {
+		t.Fatalf("backfilled identity after retry = %q/%q", group, name)
 	}
 }
 

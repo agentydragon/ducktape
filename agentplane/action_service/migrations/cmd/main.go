@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
@@ -44,7 +46,9 @@ func main() {
 			return store.BackfillActionStorage(ctx, db)
 		}
 	}
-	if err := migrate.Run(context.Background(), databaseURL, up); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := migrate.Run(ctx, databaseURL, up); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
