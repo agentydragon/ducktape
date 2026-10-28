@@ -22,6 +22,7 @@ type systemdProcess struct {
 	conn         *systemd.Conn
 	cancel       context.CancelFunc
 	name         string
+	group        string
 	accepted     bool
 	updates      chan *systemd.PropertiesUpdate
 	updateErrors chan error
@@ -154,6 +155,7 @@ func (p *Process) startSystemd(ctx context.Context) error {
 						err = errors.New("native start job completed without executing a process; Runner invocation may have ended")
 						break
 					}
+					backend.group, _ = service["ControlGroup"].(string)
 					p.mu.Lock()
 					p.nativePID = int(pid)
 					p.mu.Unlock()
@@ -195,7 +197,7 @@ func (p *Process) fenceSystemdUntilCertain() error {
 		// Only the original live connection supplies FIFO ordering behind an
 		// uncertain start. Replacement absence alone must never release admission.
 		ordered := b.accepted || (conn == b.conn && conn.Connected())
-		err := fenceSystemdUnit(ctx, conn, b.name, ordered)
+		err := fenceSystemdUnit(ctx, conn, b.name, ordered, b.group)
 		cancel()
 		if err == nil {
 			return nil
@@ -231,6 +233,13 @@ func (p *Process) reapSystemd() {
 			if why != 1 {
 				code += 128
 			}
+			break
+		}
+		// External Stop (including BindsTo parent death) can collect the unit
+		// before this observation. GetAll then synthesizes a not-found service
+		// with zeroed exit properties. Start already observed a real ExecMainPID;
+		// losing it is terminal process loss, not an indefinitely running process.
+		if executed, _ := props["ExecMainPID"].(uint32); executed == 0 {
 			break
 		}
 		if !b.waitChange() {

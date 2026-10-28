@@ -41,6 +41,8 @@ environment defaults are disabled. Start waits for the manager's completed start
 `execve` is a launch failure. `RemainAfterExit=yes` and `CollectMode=inactive` retain successful
 and failed exit information until Runner reads it and stops the unit. Ordinary stops signal the
 unit first, preserving that evidence before cleanup.
+If an external stop collects the unit before observation, Runner reports process loss (code 125)
+and checks the saved kernel domain before completing cleanup.
 
 ## Completion and crash fencing
 

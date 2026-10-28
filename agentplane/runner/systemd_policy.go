@@ -172,7 +172,7 @@ func (p *VMProcessPolicy) prepare(config Config) error {
 		if service["Slice"] != p.Slice {
 			continue
 		}
-		if err := fenceSystemdUnit(ctx, conn, unit.Name, true); err != nil {
+		if err := fenceSystemdUnit(ctx, conn, unit.Name, true, ""); err != nil {
 			return fmt.Errorf("fence prior native unit %s: %w", unit.Name, err)
 		}
 		_ = conn.ResetFailedUnitContext(ctx, unit.Name)
@@ -221,13 +221,15 @@ func prepareRunnerLifetime() (string, error) {
 
 // fenceSystemdUnit only returns after the entire unit execution domain is empty.
 // Stop completion and a vanished main PID are insufficient evidence on their own.
-func fenceSystemdUnit(ctx context.Context, conn *systemd.Conn, name string, ordered bool) error {
+func fenceSystemdUnit(ctx context.Context, conn *systemd.Conn, name string, ordered bool, group string) error {
 	// Capture the kernel domain before StopUnit can collect an inactive unit.
 	service, err := conn.GetUnitTypePropertiesContext(ctx, name, "Service")
 	if err != nil && !systemdMissing(err) {
 		return err
 	}
-	group, _ := service["ControlGroup"].(string)
+	if current, _ := service["ControlGroup"].(string); current != "" {
+		group = current
+	}
 	unit, unitErr := conn.GetUnitPropertiesContext(ctx, name)
 	if unitErr != nil && !systemdMissing(unitErr) {
 		return unitErr

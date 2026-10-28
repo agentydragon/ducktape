@@ -272,7 +272,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 			if _, err := conn.StartTransientUnitContext(ctx, name, "fail", proofUnitProperties("/bin/busybox", []string{"/bin/busybox", "sleep", "60"}, workloadSlice), nil); err != nil {
 				t.Fatal(err)
 			}
-			defer fenceSystemdUnit(context.Background(), conn, name, true)
+			defer fenceSystemdUnit(context.Background(), conn, name, true, "")
 		}
 		recovered := *policy
 		if err := recovered.prepare(config); err != nil {
@@ -292,7 +292,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		if _, err := conn.StartTransientUnitContext(ctx, parent, "fail", proofUnitProperties("/bin/busybox", []string{"/bin/busybox", "sleep", "60"}, "agentplane.slice"), nil); err != nil {
 			t.Fatal(err)
 		}
-		defer fenceSystemdUnit(context.Background(), conn, parent, true)
+		defer fenceSystemdUnit(context.Background(), conn, parent, true, "")
 		owned := *policy
 		owned.lifetimeUnit = parent
 		marker := filepath.Join(dir, "saved")
