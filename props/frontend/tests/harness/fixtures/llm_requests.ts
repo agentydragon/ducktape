@@ -221,3 +221,88 @@ export const llmChatRequests = [
     created_at: "2025-01-20T10:04:00Z",
   },
 ];
+
+/** Raw JSON viewer state for an Anthropic Messages request with text and tool blocks. */
+export const llmAnthropicRequests = [
+  {
+    id: 6,
+    model: "claude-3-7-sonnet-20250219",
+    api_shape: "anthropic",
+    request_body: {
+      model: "claude-3-7-sonnet-20250219",
+      max_tokens: 2048,
+      system: "You are a security code reviewer. Use report_issue to record findings.",
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Review this code for security issues." }],
+        },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_01HfakeReportIssue",
+              name: "report_issue",
+              input: { title: "MD5 password hashing", severity: "high" },
+            },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_01HfakeReportIssue",
+              content: "Issue recorded as issue-001.",
+            },
+          ],
+        },
+      ],
+      tools: [
+        {
+          name: "report_issue",
+          description: "Record a security issue found in the code under review.",
+          input_schema: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              severity: { type: "string", enum: ["low", "medium", "high", "critical"] },
+            },
+            required: ["title", "severity"],
+          },
+        },
+      ],
+    },
+    response_body: {
+      id: "msg_01HfakeAnthropicResponse",
+      type: "message",
+      role: "assistant",
+      model: "claude-3-7-sonnet-20250219",
+      content: [
+        {
+          type: "text",
+          text: "The code uses MD5 for password hashing, which is too fast and vulnerable to cracking.",
+        },
+        {
+          type: "tool_use",
+          id: "toolu_01HfakeRateLimit",
+          name: "report_issue",
+          input: { title: "Missing rate limiting", severity: "medium" },
+        },
+      ],
+      stop_reason: "tool_use",
+      stop_sequence: null,
+      usage: {
+        input_tokens: 284,
+        output_tokens: 74,
+        cache_creation_input_tokens: 128,
+        cache_read_input_tokens: 192,
+      },
+    },
+    response_error_body: null,
+    error: null,
+    latency_ms: 1260,
+    created_at: "2025-01-20T10:05:00Z",
+  },
+];

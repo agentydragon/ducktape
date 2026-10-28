@@ -37,13 +37,19 @@ export default function LLMRequestViewer({ requests, initialExpanded = [] }: Pro
           </summary>
 
           <div className="border-t dark:border-gray-700 divide-y dark:divide-gray-700">
-            {req.api_shape === "chat_completions" ? (
-              <RawJsonSection title="Chat Request JSON" value={req.request_body} />
+            {req.api_shape === "chat_completions" || req.api_shape === "anthropic" ? (
+              <RawJsonSection
+                title={`${req.api_shape === "anthropic" ? "Anthropic" : "Chat"} Request JSON`}
+                value={req.request_body}
+              />
             ) : (
               <LLMRequestSection requestBody={req.request_body as Record<string, unknown>} />
             )}
-            {req.response_body && req.api_shape === "chat_completions" ? (
-              <RawJsonSection title="Chat Response JSON" value={req.response_body} />
+            {req.response_body && (req.api_shape === "chat_completions" || req.api_shape === "anthropic") ? (
+              <RawJsonSection
+                title={`${req.api_shape === "anthropic" ? "Anthropic" : "Chat"} Response JSON`}
+                value={req.response_body}
+              />
             ) : req.response_body ? (
               <LLMResponseSection responseBody={req.response_body as Record<string, unknown>} />
             ) : null}
