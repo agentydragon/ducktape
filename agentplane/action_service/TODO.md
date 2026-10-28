@@ -2,11 +2,10 @@
 
 Gaps to close if a workflow needs them; none is committed.
 
-## Replace legacy model storage representations
+## Replace Notification model storage representation
 
-Evaluate typed SQL or binary protobuf storage for Action/Notification models, the migration
-scope, and any data-retention requirements. Keep current stored formats compatible during this
-shared-protobuf refactor.
+Action requests now store their identity in typed SQL columns, while event actors and policy evidence use binary
+protobuf. Notification model storage remains to evaluate, including migration scope and data-retention requirements.
 
 ## Dynamic Client Registration for MCP OAuth linkage
 

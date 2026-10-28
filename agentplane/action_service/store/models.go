@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -446,69 +445,4 @@ func (v ProviderVote) Validate() error {
 		return v.Evidence.validate()
 	}
 	return nil
-}
-
-// decodeFields reads one JSON object into v, refusing fields v does not name and, as the stored models do, a
-// missing or null field named in required.
-func decodeFields(data []byte, v any, required ...string) error {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return err
-	}
-	for _, name := range required {
-		if value, present := fields[name]; !present || string(value) == "null" {
-			return fmt.Errorf("%s is required", name)
-		}
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	return decoder.Decode(v)
-}
-
-func (a *ActionIdentity) UnmarshalJSON(data []byte) error {
-	type plain ActionIdentity
-	if err := decodeFields(data, (*plain)(a), "group", "name"); err != nil {
-		return err
-	}
-	return a.Validate()
-}
-
-func (e *PolicyEvidence) UnmarshalJSON(data []byte) error {
-	type plain PolicyEvidence
-	if err := decodeFields(data, (*plain)(e), "bindings", "policy_sets", "matched"); err != nil {
-		return err
-	}
-	return e.validate()
-}
-
-func (b *BindingEvidence) UnmarshalJSON(data []byte) error {
-	type plain BindingEvidence
-	return decodeFields(data, (*plain)(b), "namespace", "name", "resource_version")
-}
-
-func (s *PolicySetEvidence) UnmarshalJSON(data []byte) error {
-	type plain PolicySetEvidence
-	return decodeFields(data, (*plain)(s), "namespace", "name", "generation")
-}
-
-func (m *MatchedPolicy) UnmarshalJSON(data []byte) error {
-	type plain MatchedPolicy
-	return decodeFields(data, (*plain)(m), "namespace", "policy_set", "source", "index", "type")
-}
-
-func (r *MatchedRepository) UnmarshalJSON(data []byte) error {
-	type plain MatchedRepository
-	return decodeFields(data, (*plain)(r), "owner", "repository", "confirmed_public")
-}
-
-// MarshalJSON writes the empty lists a nil slice stands for, which the stored model requires.
-func (e PolicyEvidence) MarshalJSON() ([]byte, error) {
-	type plain PolicyEvidence
-	if e.Bindings == nil {
-		e.Bindings = []BindingEvidence{}
-	}
-	if e.PolicySets == nil {
-		e.PolicySets = []PolicySetEvidence{}
-	}
-	return json.Marshal(plain(e))
 }

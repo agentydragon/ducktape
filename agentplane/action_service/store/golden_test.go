@@ -77,19 +77,16 @@ func TestRequestsSatisfyStoredContract(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			action, err := json.Marshal(input.Action)
-			if err != nil {
-				t.Fatal(err)
+			// Python rows represented action identity as JSON. Keep the historical input vector, but
+			// assert that it maps to the same identity now written to typed columns.
+			var historicalAction ActionIdentity
+			if err := json.Unmarshal(vector.Stored.Action, &historicalAction); err != nil || historicalAction != input.Action {
+				t.Errorf("historical action identity = %+v, %v; want %+v", historicalAction, err, input.Action)
 			}
-			sameJSON(t, action, vector.Stored.Action)
 			sameJSON(t, input.Arguments, vector.Stored.Arguments)
 			if input.Title != vector.Stored.Title || !reflect.DeepEqual(input.Description, vector.Stored.Description) {
 				t.Errorf("title and description %q, %v are not stored as %q, %v", input.Title, input.Description,
 					vector.Stored.Title, vector.Stored.Description)
-			}
-			var read ActionIdentity
-			if err := json.Unmarshal(vector.Stored.Action, &read); err != nil || read != input.Action {
-				t.Errorf("the stored action reads back as %+v, %v", read, err)
 			}
 		})
 	}
@@ -139,77 +136,57 @@ func TestVotesRequireDecisiveOutcomes(t *testing.T) {
 	}
 }
 
-func TestPolicyEvidenceRoundTripsStoredForms(t *testing.T) {
+func TestPolicyEvidenceHistoricalInputsMapToProto(t *testing.T) {
 	for _, vector := range loadGolden(t).PolicyEvidence {
+		// Only valid historical records remain relevant to conversion; invalid missing/extra JSON-field
+		// cases belonged to the retired strict JSON storage codec.
+		if !vector.Valid {
+			continue
+		}
 		t.Run(vector.Name, func(t *testing.T) {
-			var sent, stored PolicyEvidence
-			err := json.Unmarshal(vector.Input, &sent)
-			if !vector.Valid {
-				if err == nil {
-					t.Errorf("accepted %s", vector.Input)
-				}
-				return
+			var evidence PolicyEvidence
+			if err := json.Unmarshal(vector.Input, &evidence); err != nil {
+				t.Fatal(err)
 			}
+			written, err := encodePolicyEvidence(&evidence)
 			if err != nil {
 				t.Fatal(err)
 			}
-			written, err := json.Marshal(sent)
-			if err != nil {
-				t.Fatal(err)
-			}
-			sameJSON(t, written, vector.Stored)
-			if err := json.Unmarshal(vector.Stored, &stored); err != nil || !reflect.DeepEqual(stored, sent) {
-				t.Errorf("the stored form reads back as %+v, %v; the input was %+v", stored, err, sent)
+			stored, err := decodeStoredPolicyEvidenceProto(written)
+			if err != nil || !reflect.DeepEqual(stored, &evidence) {
+				t.Errorf("the protobuf form reads back as %+v, %v; the input was %+v", stored, err, evidence)
 			}
 		})
 	}
 }
 
-func TestActorsRoundTripStoredForms(t *testing.T) {
-	for _, vector := range loadGolden(t).Actors {
-		t.Run(vector.Name, func(t *testing.T) {
-			actor, err := decodeStoredActor(vector.Input)
-			if !vector.Valid {
-				if err == nil {
-					t.Errorf("accepted %s", vector.Input)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if caller := actor.GetCaller() != nil; caller != (vector.Kind == "caller") {
-				t.Errorf("read a %T, want a %s", actor, vector.Kind)
-			}
-			written, err := encodeStoredActor(actor)
-			if err != nil {
-				t.Fatal(err)
-			}
-			sameJSON(t, written, vector.Stored)
-		})
-	}
-}
-
-func TestRecordedActorPreservesInvalidArgumentClassification(t *testing.T) {
+func TestPolicyEvidenceRejectsInvalidDomainValues(t *testing.T) {
 	for _, test := range []struct {
-		name      string
-		document  string
-		wantError error
+		name     string
+		evidence PolicyEvidence
 	}{
-		{name: "empty caller account", document: `{"account":{"namespace":"","name":"worker"}}`, wantError: ErrInvalid},
-		{name: "empty operator", document: `{"issuer":"issuer","subject":""}`, wantError: ErrInvalid},
-		{name: "unknown field", document: `{"issuer":"issuer","subject":"subject","extra":null}`},
+		{
+			name: "unknown policy kind",
+			evidence: PolicyEvidence{Matched: MatchedPolicy{
+				Source: PolicySourceRules, Type: PolicyKind("unknown"),
+			}},
+		},
+		{
+			name: "unknown source",
+			evidence: PolicyEvidence{Matched: MatchedPolicy{
+				Source: "bindings", Type: PolicyExactActions,
+			}},
+		},
+		{
+			name: "negative index",
+			evidence: PolicyEvidence{Matched: MatchedPolicy{
+				Source: PolicySourceRules, Type: PolicyExactActions, Index: -1,
+			}},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := decodeRecordedActor([]byte(test.document))
-			if err == nil {
-				t.Fatalf("decodeRecordedActor accepted %s", test.document)
-			}
-			if test.wantError != nil && !errors.Is(err, test.wantError) {
-				t.Errorf("decodeRecordedActor error = %v, want %v", err, test.wantError)
-			}
-			if test.wantError == nil && errors.Is(err, ErrInvalid) {
-				t.Errorf("decodeRecordedActor error = %v, malformed JSON shape was classified as ErrInvalid", err)
+			if err := test.evidence.validate(); !errors.Is(err, ErrInvalid) {
+				t.Errorf("validate = %v, want ErrInvalid", err)
 			}
 		})
 	}
