@@ -72,7 +72,7 @@ name is preferable to a confident-sounding but unsupported name.
 Use the current rename operation, for example:
 
 ```sh
-debundle bindings rename <current-name> <new-name>
+debundle bindings rename --modules <modules-dir> <current-name> <new-name>
 ```
 
 It checks readable-name collisions within the chunk. If editing YAML directly,
@@ -80,15 +80,16 @@ change only the existing member's `name:` field. A rename may affect other
 `source_match` templates: identifiers can stop resolving to the old export name
 or begin resolving to the new one. After each coherent batch, run the
 source-only validation on the same modules and source inputs. Compare selector
-outcomes and each template's `templates` listing with the pre-rename result so
+outcomes and resolved reference identities with the pre-rename result so
 a readable-name change does not silently change a selector claim:
 
 ```sh
 debundle spec validate --modules <modules-dir> --source-file <chunk.js> --format json
 ```
 
-Use the adapter's documented command for any additional extraction/build check
-required by that target. Keep its result separate from source-only validation.
+Use the adapter's documented naming checks and keep their results separate from
+source-only validation. Do not run extraction/cycle gates or repair module
+boundaries as part of naming; report problems requiring broader spec changes.
 
 ## Leave structure for its owner
 
