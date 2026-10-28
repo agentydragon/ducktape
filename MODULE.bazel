@@ -630,17 +630,19 @@ apt.install(
     ],
 )
 
-# The k3s fixture's VM test guest (agentplane/system_tests/k3s/guest): busybox for its init, what the init
-# runs to format and hand over the workspace, Bash for harness tools, and Git and `findmnt`
-# (util-linux), which VM acceptance scenarios run in Session setup.
+# The k3s fixture's VM guest boots real systemd, with the same runner unit as production.
+# Busybox supplies its initramfs and ACPI listener; the other tools prepare and exercise workspaces.
 apt.install(
     dependency_set = "trixie_vm_guest",
     packages = [
         "acl",
         "bash",
         "busybox-static",
+        "dbus",
         "e2fsprogs",
         "git",
+        "systemd",
+        "udev",
         "util-linux",
     ],
     suites = [
@@ -1908,13 +1910,6 @@ go_deps.gazelle_override(
     path = "github.com/grpc-ecosystem/grpc-gateway/v2",
 )
 
-# The upstream stats proto go_package omits /v3. Use the shipped Go bindings
-# rather than generating a second package at that obsolete import path.
-go_deps.gazelle_override(
-    directives = ["gazelle:proto disable_global"],
-    path = "github.com/containerd/cgroups/v3",
-)
-
 # k8s.io/apimachinery's generated BUILD files import kube-openapi, but that
 # dependency is not imported by first-party Go files.
 go_deps.module(
@@ -2269,7 +2264,6 @@ use_repo(
     "com_github_cespare_xxhash_v2",
     "com_github_cheynewallace_tabby",
     "com_github_coder_websocket",
-    "com_github_containerd_cgroups_v3",
     "com_github_coreos_go_oidc_v3",
     "com_github_cosi_project_runtime",
     "com_github_docker_docker",
@@ -2285,6 +2279,7 @@ use_repo(
     "com_github_go_logr_logr",
     "com_github_go_viper_mapstructure_v2",
     "com_github_gobuffalo_flect",
+    "com_github_godbus_dbus_v5",
     "com_github_google_go_github_v88",
     "com_github_google_uuid",
     "com_github_goretk_gore",

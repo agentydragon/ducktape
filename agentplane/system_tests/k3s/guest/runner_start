@@ -1,0 +1,4 @@
+#!/usr/bin/busybox sh
+set -eu
+/usr/libexec/agentplane/runner-systemd-fixture -test.run='^TestSystemdKernelFixture$' -test.v -test.timeout=90s
+exec /run/agentplane/runner/bin/agentplane-runner --config /run/agentplane/config/runner.json --launch-file /run/agentplane/sandbox/launch.json

@@ -1,22 +1,8 @@
 package runner
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 )
-
-func TestIOLimitsRejectsNonBlockTargets(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "regular-file")
-	if err := os.WriteFile(path, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cgroups := &AgentCgroups{BlockDevices: []string{path}}
-	limits := ResourceLimits{ReadBPS: 1, WriteBPS: 1, ReadIOPS: 1, WriteIOPS: 1}
-	if _, err := cgroups.ioLimits(limits); err == nil {
-		t.Fatal("ioLimits accepted a regular file")
-	}
-}
 
 func TestResourceLimitsRequirePositiveValues(t *testing.T) {
 	valid := ResourceLimits{
@@ -54,7 +40,7 @@ func TestProcessResourceLimitsMustFitAggregate(t *testing.T) {
 		CPUQuotaMicros: 100000, MemoryMaxBytes: 64 * 1024 * 1024, PidsMax: 32,
 		ReadBPS: 1, WriteBPS: 1, ReadIOPS: 1, WriteIOPS: 1,
 	}
-	groups := &AgentCgroups{AggregateLimits: aggregate}
+	groups := &VMProcessPolicy{AggregateLimits: aggregate}
 	if err := groups.validateProcessLimits(process); err != nil {
 		t.Fatalf("valid process limits rejected: %v", err)
 	}

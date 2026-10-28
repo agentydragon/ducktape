@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"sync"
@@ -26,21 +27,18 @@ const (
 	supervisorMode = "--agentplane-runner-supervisor"
 )
 
-// ProcessConfig describes one native harness and the isolation inherited by its supervisor.
+// ProcessConfig describes one native launch and its containment policy.
 // Env is passed as the complete environment for the native command.
 type ProcessConfig struct {
-	Command          []string
-	Dir              string
-	Env              map[string]string
-	StateOwnerFD     *os.File
-	ProcessIsolation *AgentCgroups
-	ResourceLimits   *ResourceLimits
-	AgentUID         *uint32
-	AgentGID         *uint32
-	Executable       string
+	Command              []string
+	Dir                  string
+	Env                  map[string]string
+	StateOwnerFD         *os.File
+	VMProcessPolicy      *VMProcessPolicy
+	supervisorExecutable string
 }
 
-// Process owns the supervisor, native harness streams, and optional per-process cgroup.
+// Process owns a native execution domain and its streams.
 type Process struct {
 	config ProcessConfig
 
@@ -52,7 +50,7 @@ type Process struct {
 	stdout      *os.File
 	stderr      *tailReader
 	liveness    *os.File
-	cgroupPath  string
+	systemd     *systemdProcess
 	nativePID   int
 	waitDone    chan struct{}
 	waitCode    int
@@ -60,34 +58,19 @@ type Process struct {
 	stdinClosed bool
 }
 
-// NewProcess validates the command and the identity/cgroup relationship before any resources are created.
+// NewProcess validates the launch before any resources are created.
 func NewProcess(config ProcessConfig) (*Process, error) {
 	if len(config.Command) == 0 || config.Command[0] == "" {
 		return nil, errors.New("native harness command is required")
 	}
-	if (config.AgentUID == nil) != (config.AgentGID == nil) {
-		return nil, errors.New("agent UID and GID must be configured together")
-	}
-	if config.ProcessIsolation != nil {
-		if config.AgentUID != nil && (*config.AgentUID != config.ProcessIsolation.AgentUID || *config.AgentGID != config.ProcessIsolation.AgentGID) {
-			return nil, errors.New("explicit agent identity must match process isolation")
-		}
-		uid, gid := config.ProcessIsolation.AgentUID, config.ProcessIsolation.AgentGID
-		config.AgentUID, config.AgentGID = &uid, &gid
-	}
-	if config.ResourceLimits != nil {
-		if config.ProcessIsolation == nil {
-			return nil, errors.New("process resource limits require process isolation")
-		}
-		if err := config.ProcessIsolation.validateProcessLimits(*config.ResourceLimits); err != nil {
-			return nil, fmt.Errorf("invalid process resource limits: %w", err)
-		}
+	if config.VMProcessPolicy != nil && !filepath.IsAbs(config.Command[0]) {
+		return nil, errors.New("VM native executable must be absolute")
 	}
 	return &Process{config: config, waitDone: make(chan struct{})}, nil
 }
 
-// Start starts the supervisor and waits only for its native-PID report. The context bounds
-// startup; it is not attached to the harness lifetime.
+// Start waits for native execution to begin. The context bounds startup;
+// it is not attached to the native process lifetime.
 func (p *Process) Start(ctx context.Context) error {
 	p.mu.Lock()
 	if p.started || p.cmd != nil {
@@ -100,12 +83,8 @@ func (p *Process) Start(ctx context.Context) error {
 		ctx = context.Background()
 	}
 
-	if p.config.ProcessIsolation != nil {
-		path, err := p.config.ProcessIsolation.CreateProcessGroup(p.config.ResourceLimits)
-		if err != nil {
-			return p.cleanupFailedStart(fmt.Errorf("create native process cgroup: %w", err))
-		}
-		p.cgroupPath = path
+	if p.config.VMProcessPolicy != nil {
+		return p.startSystemd(ctx)
 	}
 
 	stdinReader, stdinWriter, err := os.Pipe()
@@ -143,15 +122,10 @@ func (p *Process) Start(ctx context.Context) error {
 		extraFiles = append(extraFiles, p.config.StateOwnerFD)
 		args = append(args, "--state-owner-fd", "5")
 	}
-	if p.cgroupPath != "" {
-		args = append(args, "--cgroup-dir", p.cgroupPath)
-	}
-	if p.config.AgentUID != nil {
-		args = append(args, "--agent-uid", strconv.FormatUint(uint64(*p.config.AgentUID), 10), "--agent-gid", strconv.FormatUint(uint64(*p.config.AgentGID), 10))
-	}
+
 	args = append(args, "--")
 	args = append(args, p.config.Command...)
-	executable := p.config.Executable
+	executable := p.config.supervisorExecutable
 	if executable == "" {
 		executable, err = os.Executable()
 		if err != nil {
@@ -198,11 +172,11 @@ func (p *Process) Start(ctx context.Context) error {
 	return nil
 }
 
-// Running reports whether the supervisor has not yet been reaped.
+// Running reports whether native execution and its domain cleanup remain incomplete.
 func (p *Process) Running() bool {
 	p.mu.Lock()
 	started := p.started
-	cmd := p.cmd
+	cmd, backend := p.cmd, p.systemd
 	select {
 	case <-p.waitDone:
 		p.mu.Unlock()
@@ -210,7 +184,7 @@ func (p *Process) Running() bool {
 	default:
 	}
 	p.mu.Unlock()
-	return started && cmd != nil
+	return started && (cmd != nil || backend != nil)
 }
 
 // PID returns the native harness PID after Start has completed successfully.
@@ -218,16 +192,6 @@ func (p *Process) PID() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.nativePID
-}
-
-// SupervisorPID returns the supervisor PID after the child has started.
-func (p *Process) SupervisorPID() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.cmd == nil || p.cmd.Process == nil {
-		return 0
-	}
-	return p.cmd.Process.Pid
 }
 
 // Stdout returns the raw native stdout stream. The caller owns stream consumption.
@@ -289,7 +253,7 @@ func (p *Process) CloseStdin() error {
 	return stdin.Close()
 }
 
-// Wait waits for supervisor exit; a canceled context only stops this wait and does not stop the process.
+// Wait waits for native exit and fencing; cancellation only stops this observation.
 func (p *Process) Wait(ctx context.Context) (int, error) {
 	p.mu.Lock()
 	started := p.started
@@ -310,8 +274,14 @@ func (p *Process) Wait(ctx context.Context) (int, error) {
 	}
 }
 
-// Stop closes stdin, requests graceful shutdown, then escalates to process-group and cgroup kills.
+// Stop closes stdin, requests graceful shutdown, then fences the execution domain.
 func (p *Process) Stop(ctx context.Context, grace time.Duration) error {
+	if p.systemd != nil && p.Running() {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		return p.stopSystemd(ctx, grace)
+	}
 	if !p.Running() {
 		_, err := p.Wait(ctx)
 		return err
@@ -345,7 +315,7 @@ func (p *Process) Stop(ctx context.Context, grace time.Duration) error {
 	return err
 }
 
-// ExitDescription reports the supervisor status and the tail of stderr seen by the caller.
+// ExitDescription reports the native status and the tail of stderr seen by the caller.
 func (p *Process) ExitDescription() string {
 	p.mu.Lock()
 	code, tail, cmd := p.waitCode, []byte(nil), p.cmd
@@ -353,7 +323,7 @@ func (p *Process) ExitDescription() string {
 		tail = p.stderr.Tail()
 	}
 	p.mu.Unlock()
-	if cmd == nil {
+	if cmd == nil && p.systemd == nil {
 		return "exit_code=0, stderr_tail=\"\""
 	}
 	select {
@@ -367,14 +337,11 @@ func (p *Process) ExitDescription() string {
 func (p *Process) reapSupervisor() {
 	err := p.cmd.Wait()
 	p.mu.Lock()
-	cgroupPath, liveness := p.cgroupPath, p.liveness
+	liveness := p.liveness
 	p.mu.Unlock()
 	_ = p.CloseStdin()
-	// The supervisor retains the owner FD until its native child and cgroup fence are complete.
-	var cleanupErr error
-	if cgroupPath != "" {
-		cleanupErr = DestroyProcessGroup(cgroupPath)
-	}
+	// The container supervisor retains ownership until process-group cleanup completes.
+
 	if liveness != nil {
 		_ = liveness.Close()
 	}
@@ -396,17 +363,13 @@ func (p *Process) reapSupervisor() {
 	}
 	p.mu.Lock()
 	p.waitCode = code
-	p.waitErr = errors.Join(err, cleanupErr)
+	p.waitErr = err
 	close(p.waitDone)
 	p.mu.Unlock()
 }
 
 func (p *Process) cleanupFailedStart(cause error) error {
-	var cleanupErr error
-	if p.cgroupPath != "" {
-		cleanupErr = DestroyProcessGroup(p.cgroupPath)
-	}
-	result := errors.Join(cause, cleanupErr)
+	result := cause
 	p.mu.Lock()
 	if p.cmd == nil {
 		p.waitCode = 125
@@ -421,7 +384,7 @@ func (p *Process) killSupervisor() {
 	p.mu.Lock()
 	liveness := p.liveness
 	p.mu.Unlock()
-	// EOF asks the supervisor to fence its process group and cgroup. Do not signal
+	// EOF asks the supervisor to fence its process group. Do not signal
 	// it during startup: its Go runtime may not have installed signal handling yet.
 	if liveness != nil {
 		_ = liveness.Close()
@@ -434,7 +397,7 @@ func (p *Process) killSupervisor() {
 	case <-timer.C:
 	}
 	p.escalate()
-	// Keep waiting until the supervisor has reaped and fenced the native process;
+	// Keep waiting until the supervisor has reaped and fenced the native process group;
 	// returning early could let the runner release state ownership while children live.
 	<-p.waitDone
 }
@@ -453,16 +416,11 @@ func (p *Process) escalate() {
 		_ = unix.Kill(-pid, unix.SIGKILL)
 	}
 	p.mu.Lock()
-	path := p.cgroupPath
 	cmd := p.cmd
 	p.mu.Unlock()
-	if path != "" {
-		if manager, err := loadCgroup(path); err == nil {
-			_ = manager.Kill()
-		}
-	}
+
 	if cmd != nil && cmd.Process != nil {
-		// Leave the supervisor alive to reap and wait for cgroup emptiness while it holds state ownership.
+		// Leave the supervisor alive to reap the native leader while it holds state ownership.
 		_ = unix.Kill(-cmd.Process.Pid, unix.SIGTERM)
 	}
 }

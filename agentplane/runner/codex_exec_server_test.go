@@ -84,9 +84,9 @@ func TestExecutorConfigurationRejectsPartialOrOverlappingIsolation(t *testing.T)
 		t.Fatal(err)
 	}
 	limits := ResourceLimits{CPUQuotaMicros: 100000, MemoryMaxBytes: 64 * 1024 * 1024, PidsMax: 32, ReadBPS: 1, WriteBPS: 1, ReadIOPS: 1, WriteIOPS: 1}
-	harnessGroups := &AgentCgroups{Root: "/test-cgroups/workloads", AggregateLimits: limits, ProcessLimits: limits}
+	harnessGroups := &VMProcessPolicy{Slice: workloadSlice, AggregateLimits: limits, ProcessLimits: limits}
 	codexExecServerGroups := *harnessGroups
-	codexExecServerGroups.Root = "/test-cgroups/executors"
+	codexExecServerGroups.Slice = executorSlice
 	if err := (CodexExecServerConfig{URL: endpoint, Isolation: &codexExecServerGroups}).validate(harnessGroups); err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestExecutorConfigurationRejectsPartialOrOverlappingIsolation(t *testing.T)
 		{URL: endpoint, ContainerSocket: "relative"},
 		{URL: endpoint, ContainerSocket: "/run/test.sock", Isolation: harnessGroups},
 		{URL: endpoint, Isolation: harnessGroups},
-		{URL: endpoint, Isolation: &AgentCgroups{Root: "/test-cgroups/workloads/executor"}},
+		{URL: endpoint, Isolation: &VMProcessPolicy{Slice: "invalid.slice"}},
 		{URL: endpoint, Isolation: &invalid},
 	} {
 		if err := config.validate(harnessGroups); err == nil {

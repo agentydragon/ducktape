@@ -14,10 +14,7 @@ import (
 	"time"
 )
 
-func TestEnsureWorkspaceCreatesAsAgentAndPreservesExistingOwnership(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Fatal("workspace identity creation requires a privileged Linux test worker")
-	}
+func TestEnsureWorkspacePreservesExistingOwnership(t *testing.T) {
 	base, err := os.MkdirTemp("/tmp", "agentplane-workspace-")
 	if err != nil {
 		t.Fatal(err)
@@ -33,9 +30,9 @@ func TestEnsureWorkspaceCreatesAsAgentAndPreservesExistingOwnership(t *testing.T
 	if err := os.Chmod(root, 0o777); err != nil {
 		t.Fatal(err)
 	}
-	uid, gid := uint32(65534), uint32(65534)
+	uid, gid := uint32(os.Geteuid()), uint32(os.Getegid())
 	cwd := filepath.Join(root, "new", "repository")
-	created, err := EnsureWorkspace(context.Background(), cwd, root, &uid, &gid)
+	created, err := EnsureWorkspace(context.Background(), cwd, root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,12 +52,12 @@ func TestEnsureWorkspaceCreatesAsAgentAndPreservesExistingOwnership(t *testing.T
 		"HOME":                cwd,
 		"PATH":                os.Getenv("PATH"),
 	}
-	code, _, stderr := runWorkspaceCommand(t, []string{git, "init", "--quiet"}, cwd, gitEnvironment, &uid, &gid)
+	code, _, stderr := runWorkspaceCommand(t, []string{git, "init", "--quiet"}, cwd, gitEnvironment, nil)
 	if code != 0 {
 		t.Fatalf("git init as agent failed: %s", stderr)
 	}
 	assertOwner(t, filepath.Join(cwd, ".git"), uid, gid)
-	code, stdout, stderr := runWorkspaceCommand(t, []string{git, "rev-parse", "--show-toplevel"}, cwd, gitEnvironment, &uid, &gid)
+	code, stdout, stderr := runWorkspaceCommand(t, []string{git, "rev-parse", "--show-toplevel"}, cwd, gitEnvironment, nil)
 	if code != 0 || strings.TrimSpace(stdout) != cwd {
 		t.Fatalf("git rev-parse as agent = (%d, %q, %q), want %q", code, stdout, stderr, cwd)
 	}
@@ -74,7 +71,7 @@ func TestEnsureWorkspaceCreatesAsAgentAndPreservesExistingOwnership(t *testing.T
 	}
 	existingOwner := ownerOf(t, existing)
 	fileOwner := ownerOf(t, filepath.Join(existing, "notes.txt"))
-	resolved, err := EnsureWorkspace(context.Background(), existing, root, &uid, &gid)
+	resolved, err := EnsureWorkspace(context.Background(), existing, root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +92,7 @@ func TestEnsureWorkspaceCreatesAsAgentAndPreservesExistingOwnership(t *testing.T
 	}
 	parentOwner := ownerOf(t, parent)
 	nested := filepath.Join(parent, "new-session", "nested")
-	if _, err := EnsureWorkspace(context.Background(), nested, root, &uid, &gid); err != nil {
+	if _, err := EnsureWorkspace(context.Background(), nested, root, nil); err != nil {
 		t.Fatal(err)
 	}
 	if ownerOf(t, parent) != parentOwner {
@@ -111,7 +108,7 @@ func TestEnsureWorkspaceRejectsSymlinkEscapeBeforeCreatingAnything(t *testing.T)
 	if err := os.Symlink(filepath.Dir(outside), filepath.Join(root, "escape")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := EnsureWorkspace(context.Background(), filepath.Join(root, "escape", "new"), root, nil, nil); err == nil || !strings.Contains(err.Error(), "must be a child") {
+	if _, err := EnsureWorkspace(context.Background(), filepath.Join(root, "escape", "new"), root, nil); err == nil || !strings.Contains(err.Error(), "must be a child") {
 		t.Fatalf("EnsureWorkspace symlink escape error = %v", err)
 	}
 	if _, err := os.Stat(outside); !errors.Is(err, os.ErrNotExist) {
@@ -121,7 +118,7 @@ func TestEnsureWorkspaceRejectsSymlinkEscapeBeforeCreatingAnything(t *testing.T)
 
 func TestEnsureWorkspaceWithoutIsolationKeepsRunnerIdentity(t *testing.T) {
 	cwd := filepath.Join(t.TempDir(), "pod", "new-session")
-	created, err := EnsureWorkspace(context.Background(), cwd, "", nil, nil)
+	created, err := EnsureWorkspace(context.Background(), cwd, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,9 +152,9 @@ func assertOwner(t *testing.T, path string, uid, gid uint32) {
 	}
 }
 
-func runWorkspaceCommand(t *testing.T, command []string, cwd string, environment map[string]string, uid, gid *uint32) (int, string, string) {
+func runWorkspaceCommand(t *testing.T, command []string, cwd string, environment map[string]string, policy *VMProcessPolicy) (int, string, string) {
 	t.Helper()
-	process, err := NewProcess(ProcessConfig{Command: command, Dir: cwd, Env: environment, AgentUID: uid, AgentGID: gid})
+	process, err := NewProcess(ProcessConfig{Command: command, Dir: cwd, Env: environment, VMProcessPolicy: policy})
 	if err != nil {
 		t.Fatal(err)
 	}

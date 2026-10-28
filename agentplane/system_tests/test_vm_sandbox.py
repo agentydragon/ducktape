@@ -27,6 +27,18 @@ tracer = trace.get_tracer(__name__)
 
 PING = "Run a shell command, then say exactly PING."
 
+VM_SUPERVISION_PROBE = r"""set -eu
+printf 'VM_UID %s\n' "$(id -u)"
+printf 'VM_PID1 %s\n' "$(cat /proc/1/comm)"
+printf 'VM_CGROUP %s\n' "$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)"
+printf 'VM_SYSTEMD_PROOF %s\n' "$(cat /state/runner-systemd-proof.json)"
+if systemctl_output=$(systemctl --no-ask-password restart agentplane-cgroup-observer.service 2>&1); then
+    echo VM_SYSTEMCTL_UNEXPECTED_SUCCESS
+    exit 23
+fi
+printf 'VM_SYSTEMCTL_OUTPUT %s\n' "$systemctl_output"
+"""
+
 # The test guest's root observer publishes kernel counters without granting the tool cgroup access.
 # Wait for a new snapshot so the follow-up cannot accidentally read pre-OOM counters.
 MEMORY_PROBE = """(set -eu
@@ -79,6 +91,15 @@ class _MemoryEvidence(BaseModel):
 class _ExecResult(BaseModel):
     output: str
     exit_code: int
+
+
+def _assert_native_service_cgroup(cgroup: str, slice_name: str) -> None:
+    prefix = f"/agentplane.slice/{slice_name}/agentplane-native-"
+    assert cgroup.startswith(prefix), cgroup
+    unit = cgroup.rsplit("/", 1)[-1]
+    assert re.fullmatch(
+        r"agentplane-native-.+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.service", unit
+    ), cgroup
 
 
 async def _command(
@@ -151,12 +172,25 @@ async def test_a_vm_sandbox_runs_a_turn(
     with tracer.start_as_current_span("vm.turn"):
         async with asyncio.TaskGroup() as turns:
             turn = turns.create_task(agent.run(PING))
-            await model.reply(await model.request(), ShellCall("vm-cgroup", "cat /proc/self/cgroup"))
+            await model.reply(await model.request(), ShellCall("vm-supervision", VM_SUPERVISION_PROBE))
             result = await model.request()
             (output,) = result.tool_outputs
-            assert output.call_id == "vm-cgroup"
-            subtree = "executors" if harness == runner_pb2.HARNESS_CODEX else "workloads"
-            assert output.contains(f"/agentplane-runner.service/{subtree}/process-")
+            assert output.call_id == "vm-supervision"
+            assert output.contains("VM_UID 107"), output.blocks
+            assert output.contains("VM_PID1 systemd"), output.blocks
+            output_text = "\n".join(output.blocks)
+            assert 'VM_SYSTEMD_PROOF {"real_systemd_supervision":"passed"}' in output_text, output.blocks
+            (cgroup_line,) = [line for line in output_text.splitlines() if line.startswith("VM_CGROUP ")]
+            cgroup = cgroup_line.removeprefix("VM_CGROUP ")
+            subtree = (
+                "agentplane-executors.slice" if harness == runner_pb2.HARNESS_CODEX else "agentplane-workloads.slice"
+            )
+            _assert_native_service_cgroup(cgroup, subtree)
+            assert "VM_SYSTEMCTL_UNEXPECTED_SUCCESS" not in output_text, output.blocks
+            systemctl_denial = re.search(
+                r"authentication|authorization|not authorized|access denied", output_text, re.IGNORECASE
+            )
+            assert systemctl_denial is not None, output.blocks
             await model.reply(result, Text("PING"))
         # The scripted reply is the thread's answer: the guest's model traffic came back through the launcher.
         assert "PING" in turn.result().answer, turn.result().transcript
@@ -181,7 +215,7 @@ async def test_codex_tool_oom_preserves_runner_and_app_server(
         _, output = await _command(agent, model, call_id="memory-before", command=MEMORY_PROBE, exit_code=0)
         before = _MemoryEvidence.from_output(output.output)
         evidence["memory_before"] = before.model_dump()
-        assert "/agentplane-runner.service/executors/process-" in before.cgroup
+        _assert_native_service_cgroup(before.cgroup, "agentplane-executors.slice")
         assert before.max > 0
         assert before.swap_max == before.oom_group == before.oom_group_kill == 0
         original = await client.runner_status(view.name)

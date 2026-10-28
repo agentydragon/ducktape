@@ -27,11 +27,11 @@ func configurationFixture(t *testing.T) (map[string]any, string, string) {
 }
 
 func configurationVMEnvironment() map[string]any {
-	return map[string]any{"kind": "vm", "root": "/sys/fs/cgroup/test/workloads", "agent_uid": 107, "agent_gid": 107, "block_devices": []string{"/dev/test-workspace"}, "resources": validGuestResources()}
+	return map[string]any{"kind": "vm", "agent_uid": 107, "agent_gid": 107, "block_devices": []string{"/dev/test-workspace"}, "resources": validGuestResources()}
 }
 
 func configurationVMExecutor(environment map[string]any) {
-	environment["executor"] = map[string]any{"url": "ws://127.0.0.1:4501", "root": "/sys/fs/cgroup/test/executors"}
+	environment["executor"] = map[string]any{"url": "ws://127.0.0.1:4501"}
 	resources := environment["resources"].(map[string]any)
 	resources["executor"] = map[string]any{"cpu_quota_micros": 100000, "memory_max_bytes": 67108864, "pids_max": 128, "read_bps": 52428800, "write_bps": 20971520, "read_iops": 1000, "write_iops": 500}
 }
@@ -58,12 +58,12 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			if config.ProcessIsolation != nil {
+			if config.VMProcessPolicy != nil {
 				resources, err := guestResourcesFromMap(value["environment"].(map[string]any)["resources"].(map[string]any))
 				if err != nil {
 					t.Fatal(err)
 				}
-				if config.ProcessIsolation.AggregateLimits != resources.Aggregate || config.ProcessIsolation.ProcessLimits != resources.Process {
+				if config.VMProcessPolicy.AggregateLimits != resources.Aggregate || config.VMProcessPolicy.ProcessLimits != resources.Process {
 					t.Fatal("harness limits differ from VM resource policy")
 				}
 				if resources.Executor != nil && (config.CodexExecServer.Isolation.AggregateLimits != *resources.Executor || config.CodexExecServer.Isolation.ProcessLimits != *resources.Executor) {
@@ -89,7 +89,7 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 			if _, err := os.Stat(config.StateDir); !os.IsNotExist(err) {
 				t.Fatalf("configuration opened state: %v", err)
 			}
-			if (config.CodexExecServer == nil) != (kind == "pod-local" || kind == "vm-local") || (config.ProcessIsolation != nil) != (kind == "vm-local" || kind == "vm-executor") {
+			if (config.CodexExecServer == nil) != (kind == "pod-local" || kind == "vm-local") || (config.VMProcessPolicy != nil) != (kind == "vm-local" || kind == "vm-executor") {
 				t.Fatalf("incorrect isolation for %s", kind)
 			}
 		})
@@ -131,7 +131,7 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		}},
 		{"VM endpoint without budget", func(v map[string]any) {
 			env := configurationVMEnvironment()
-			env["executor"] = map[string]any{"url": "ws://127.0.0.1:4501", "root": "/sys/fs/cgroup/test/executors"}
+			env["executor"] = map[string]any{"url": "ws://127.0.0.1:4501"}
 			v["environment"] = env
 		}},
 		{"VM budget without endpoint", func(v map[string]any) {
@@ -146,10 +146,10 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 			env["resources"].(map[string]any)["executor"].(map[string]any)["memory_max_bytes"] = 67108865
 			v["environment"] = env
 		}},
-		{"overlapping VM roots", func(v map[string]any) {
+		{"obsolete VM executor root", func(v map[string]any) {
 			env := configurationVMEnvironment()
 			configurationVMExecutor(env)
-			env["executor"].(map[string]any)["root"] = env["root"]
+			env["executor"].(map[string]any)["root"] = "/old/executor/root"
 			v["environment"] = env
 		}},
 		{"executor without Codex", func(v map[string]any) {

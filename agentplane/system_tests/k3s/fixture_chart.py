@@ -651,7 +651,7 @@ def _boot_test_guest(objects: list[dict[str, Any]]) -> None:
     spec = template["spec"]["vm"]["template"]["spec"]
     spec["domain"]["firmware"] = {
         "kernelBoot": {
-            "kernelArgs": "console=ttyS0",
+            "kernelArgs": "console=ttyS0 net.ifnames=0",
             "container": {
                 "image": _VM_GUEST_BOOT_IMAGE,
                 "kernelPath": "/boot/vmlinuz",

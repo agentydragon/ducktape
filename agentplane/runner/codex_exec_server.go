@@ -21,14 +21,14 @@ import (
 )
 
 // A nil executor config selects Codex's local execution. ContainerSocket selects
-// the container companion; otherwise Runner supervises a separate cgroup leaf.
+// the container supervisor; otherwise systemd owns the native service.
 type CodexExecServerConfig struct {
 	URL             string
 	ContainerSocket string
-	Isolation       *AgentCgroups
+	Isolation       *VMProcessPolicy
 }
 
-func (c CodexExecServerConfig) validate(isolation *AgentCgroups) error {
+func (c CodexExecServerConfig) validate(isolation *VMProcessPolicy) error {
 	if err := validateExecutorURL(c.URL); err != nil {
 		return err
 	}
@@ -41,11 +41,11 @@ func (c CodexExecServerConfig) validate(isolation *AgentCgroups) error {
 	if isolation == nil || c.Isolation == nil {
 		return errors.New("supervised executor requires cgroup isolation and explicit leaf limits")
 	}
-	if filepath.Dir(c.Isolation.Root) != filepath.Dir(isolation.Root) || c.Isolation.Root == isolation.Root {
-		return errors.New("executor and harness cgroups must be distinct sibling subtrees")
+	if isolation.Slice != workloadSlice || c.Isolation.Slice != executorSlice {
+		return errors.New("executor and harness policies require their distinct systemd slices")
 	}
 	// Validate both policies before Prepare can change either subtree.
-	for _, groups := range []*AgentCgroups{isolation, c.Isolation} {
+	for _, groups := range []*VMProcessPolicy{isolation, c.Isolation} {
 		if err := groups.AggregateLimits.Validate(); err != nil {
 			return err
 		}
@@ -196,7 +196,7 @@ func (e *codexExecServer) start(ctx context.Context) (*codexExecServerInstance, 
 	p, err := NewProcess(ProcessConfig{
 		Command: []string{e.runner.config.Codex.Binary, "exec-server", "--listen", e.config.URL},
 		Dir:     e.runner.config.StateDir, Env: env, StateOwnerFD: e.runner.owner.File(),
-		ProcessIsolation: e.config.Isolation,
+		VMProcessPolicy: e.config.Isolation,
 	})
 	if err != nil {
 		return nil, err

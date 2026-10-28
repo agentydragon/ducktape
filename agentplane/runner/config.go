@@ -62,7 +62,7 @@ type Config struct {
 	Launch                           SandboxLaunch
 	HarnessEnvironment               map[string]string
 	Claude, Codex                    *harness.LaunchConfig
-	ProcessIsolation                 *AgentCgroups
+	VMProcessPolicy                  *VMProcessPolicy
 	CodexExecServer                  *CodexExecServerConfig
 	WorkspaceRoot, InitializationCwd string
 	DebugCheckpoint                  *DebugCheckpointConfig

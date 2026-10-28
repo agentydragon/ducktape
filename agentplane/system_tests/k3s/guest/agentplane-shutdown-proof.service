@@ -1,0 +1,15 @@
+[Unit]
+Description=Verify guest storage unmounted before poweroff
+DefaultDependencies=no
+Before=local-fs-pre.target state.mount state-workspaces.mount shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/busybox true
+ExecStop=/usr/sbin/agentplane-shutdown-complete
+Environment=PATH=/usr/sbin:/usr/bin
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttyS0

@@ -1,0 +1,14 @@
+[Unit]
+Description=Give the harness user the Agentplane workspace
+Requires=agentplane-guest-prepare.service
+After=agentplane-guest-prepare.service
+RequiresMountsFor=/state/workspaces
+Before=agentplane-runner.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=PATH=/run/current-system/sw/bin:/usr/sbin:/usr/bin
+ExecStart=/usr/sbin/agentplane-workspace-prepare
+StandardOutput=journal+console
+StandardError=journal+console

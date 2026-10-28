@@ -95,7 +95,7 @@ One library per job. An unlisted job reuses what other Go services import before
 | UUIDs      | `google/uuid`.                                                                                                                                                 |
 | YAML       | `gopkg.in/yaml.v3`.                                                                                                                                            |
 | Retry      | `sethvargo/go-retry`; callers own error classification and progress resets.                                                                                    |
-| Cgroups    | `containerd/cgroups/v3/cgroup2`.                                                                                                                               |
+| D-Bus      | `godbus/dbus/v5`; systemd transient services through its native manager API.                                                                                   |
 | GitHub     | `google/go-github` (REST) with `bradleyfalzon/ghinstallation` (App JWTs, installation tokens).                                                                 |
 | Schemas    | `santhosh-tekuri/jsonschema/v6`, with a loader of your own: the default one reads local files.                                                                 |
 | TTL cache  | `apimachinery/pkg/util/cache.Expiring`; `x/sync/singleflight` shares a lookup between callers.                                                                 |

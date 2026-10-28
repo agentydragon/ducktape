@@ -1,0 +1,9 @@
+[Unit]
+Description=Agentplane guest workload resource envelope
+
+[Slice]
+CPUAccounting=yes
+MemoryAccounting=yes
+TasksAccounting=yes
+IOAccounting=yes
+MemorySwapMax=0

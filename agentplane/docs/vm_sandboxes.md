@@ -116,11 +116,12 @@ Use separate Sandboxes when workloads need different trust or credential boundar
 Within a VM, the Runner runs as guest root and native harnesses run as uid/gid 107. Virtiofs presents
 `/state` files as 107:107, including the per-Session Runner and Claude state under
 `/state/sessions/<session_id>` and the shared Codex home under `/state/codex`. The guest does not create per-Session mount or PID namespaces or hide
-same-Sandbox processes from one another. The Runner's state-owner descriptor and process supervisor
+same-Sandbox processes from one another. The Runner's state-owner lock and systemd startup fencing barrier
 protect storage ownership across Runner restart and ensure harness descendants are reaped; they do not
 make Runner internals or sibling Session stores confidential from code in the same Sandbox.
 
-The delegated cgroups below provide resource containment and teardown within one Sandbox principal.
+Systemd service cgroups provide resource containment and teardown within one Sandbox principal
+([supervision](../runner/docs/supervision.md)).
 In isolated Codex mode, the exec-server and its descendants have a sibling budget separate from the
 app-server. Claude, local Codex mode, and app-server-owned helpers share their native harness budget.
 
@@ -139,13 +140,13 @@ The subsequent conversation-recovery failure is addressed separately in
 
 - The VM template and guest runner share the typed `GuestResources` policy. The template
   takes its KubeVirt memory request and vCPU count from that object; an `ExecStartPre` reads the same
-  seed and applies the Runner systemd caps after the ConfigMap disk is mounted and before the Runner
+  seed and applies the shared `agentplane.slice` caps after the ConfigMap disk is mounted and before the Runner
   starts. The staging template specifies:
 
   | Scope               | Memory                                                                                  | CPU                              | PID limit | Block I/O limit                                          |
   | ------------------- | --------------------------------------------------------------------------------------- | -------------------------------- | --------- | -------------------------------------------------------- |
   | VM guest            | 8192 MiB (8,589,934,592 bytes), with a 1024 MiB (1,073,741,824 byte) OS reserve         | 1 vCPU                           | —         | —                                                        |
-  | Runner service      | `MemoryHigh` 6144 MiB (6,442,450,944 bytes), `MemoryMax` 7168 MiB (7,516,192,768 bytes) | 100,000 µs per 100,000 µs period | 2048      | —                                                        |
+  | Shared parent slice | `MemoryHigh` 6144 MiB (6,442,450,944 bytes), `MemoryMax` 7168 MiB (7,516,192,768 bytes) | 100,000 µs per 100,000 µs period | 2048      | —                                                        |
   | Harness aggregate   | `memory.max` 2048 MiB (2,147,483,648 bytes)                                             | 100,000 µs per 100,000 µs period | 768       | read 50 MiB/s and 1000 IOPS; write 20 MiB/s and 500 IOPS |
   | Native process leaf | `memory.max` 1536 MiB (1,610,612,736 bytes)                                             | 100,000 µs per 100,000 µs period | 512       | read 50 MiB/s and 1000 IOPS; write 20 MiB/s and 500 IOPS |
 
@@ -156,8 +157,8 @@ The subsequent conversation-recovery failure is addressed separately in
   Memory swap remains disabled. Aggregate and native-process cgroups use `memory.oom.group=0`,
   so a cgroup OOM selects individual process victims. A tool can be killed while its harness or
   exec-server survives; the kernel can also select the native leader. Leader exit still triggers
-  supervisor cleanup of all descendants. The supervisor records `memory.events` and `memory.peak` as JSON before it
-  removes the leaf; stale leaves are also recorded during startup cleanup. This keeps each harness's
+  systemd cleanup of all descendants. Runner records `memory.events` and `memory.peak` as JSON
+  before releasing the service. This keeps each harness's
   kill boundary below the Runner.
 
   The CI-active k3s VM scenario `test_codex_tool_oom_preserves_runner_and_app_server` runs a real

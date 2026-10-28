@@ -1,0 +1,12 @@
+[Unit]
+Description=Prepare the VM fixture's harness tools and network
+DefaultDependencies=no
+Before=network.target agentplane-runner.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=PATH=/usr/sbin:/usr/bin
+ExecStart=/usr/sbin/agentplane-guest-prepare
+StandardOutput=journal+console
+StandardError=journal+console

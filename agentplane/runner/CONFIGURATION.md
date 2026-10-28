@@ -53,10 +53,9 @@ All validation completes before Runner environment changes or state ownership be
 
 - `kind: "pod"`: optional `executor` with loopback `url` and absolute ownership `socket`.
   Kubernetes owns the container resource limits.
-- `kind: "vm"`: required `resources`, absolute harness cgroup `root`, non-root `agent_uid`/
-  `agent_gid`, absolute `block_devices`, optional `console_autologin` (false when omitted), and
-  optional `executor` with loopback `url` and an absolute cgroup `root`. Executor and harness roots
-  must be distinct siblings; both use the VM's identity and block devices.
+- `kind: "vm"`: required `resources`, non-root `agent_uid`/`agent_gid`, absolute `block_devices`,
+  optional `console_autologin` (false when omitted), and optional `executor` with loopback `url`.
+  Systemd owns containment; both native service slices use the VM identity and block devices.
 
 The VM `resources` object contains `guest_memory_bytes`, `guest_vcpu_count`, `os_reserve_bytes`,
 `service_memory_high_bytes`, `service_memory_max_bytes`, `service_cpu_quota_micros`,
@@ -108,16 +107,17 @@ belonging to another environment; there is no separate boot document or executor
 
 One typed `Environment.vm_resources` value supplies KubeVirt RAM/vCPU sizing and the VM variant's
 resource policy, including boot service limits and harness/executor budgets. `vm.nix` mounts the disks
-and delegates cgroups; it does not supply an alternate Runner configuration loader.
+and installs the shared systemd units; it does not supply an alternate Runner configuration loader.
 
 Before Runner starts, systemd invokes the executable's private `--vm-resource-properties` mode
 with `runner.json`. The preflight validates resource relationships and live `/proc/meminfo` before
 printing `MemoryHigh`, `MemoryMax`, `MemorySwapMax=0`, `CPUQuota` and `TasksMax`. The maximum must be
-below live `MemTotal`, and nominal sizing must leave the configured OS reserve. The unit uses
+below live `MemTotal`, and nominal sizing must leave the configured OS reserve. The helper applies
+these properties to `agentplane.slice`, enclosing Runner, workloads and executor. The Runner unit uses
 `OOMPolicy=continue`. Aggregate and native process cgroups use `memory.oom.group=0`, so a cgroup OOM
 selects individual victims. The kernel may select the harness or executor and may kill more processes
-if pressure persists. Native leader exit still fences all descendants. Supervisors log OOM counters
-and available peak memory before removing a leaf.
+if pressure persists. Native leader exit still fences all descendants. Runner logs OOM counters and available peak memory before releasing a native service.
+See [supervision](docs/supervision.md) for the unit hierarchy and startup fence.
 
 `/run/agentplane/config/runner.env` supplies the VM systemd unit's Runner-only OpenTelemetry
 settings. Pod templates set the corresponding container environment directly. The Go guest loader

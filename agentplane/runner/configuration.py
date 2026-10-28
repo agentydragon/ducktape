@@ -37,7 +37,7 @@ class ResourceLimits(BaseModel):
 
 
 class GuestResources(BaseModel):
-    """VM size, systemd service caps, and the delegated Runner cgroup budgets."""
+    """VM size, enclosing systemd slice caps, and native service budgets."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -164,10 +164,8 @@ class ContainerExecutor(Executor):
         return value
 
 
-class CgroupExecutor(Executor):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    root: str
+class VMExecutor(Executor):
+    """Loopback exec-server endpoint supervised by the guest systemd manager."""
 
 
 class PodEnvironment(BaseModel):
@@ -183,22 +181,17 @@ class VMEnvironment(BaseModel):
     kind: Literal["vm"] = "vm"
     resources: GuestResources
     console_autologin: bool = False
-    root: str
     agent_uid: int = Field(ge=1, le=4_294_967_295)
     agent_gid: int = Field(ge=1, le=4_294_967_295)
     block_devices: Sequence[str] = Field(min_length=1)
-    executor: CgroupExecutor | None = None
+    executor: VMExecutor | None = None
 
     @model_validator(mode="after")
-    def valid_isolation(self) -> VMEnvironment:
-        if not Path(self.root).is_absolute() or any(not Path(path).is_absolute() for path in self.block_devices):
-            raise ValueError("cgroup and block-device paths must be absolute")
+    def valid_supervision(self) -> VMEnvironment:
+        if any(not Path(path).is_absolute() for path in self.block_devices):
+            raise ValueError("block-device paths must be absolute")
         if (self.executor is None) != (self.resources.executor is None):
             raise ValueError("executor endpoint and resource budget must be supplied together")
-        if self.executor is not None:
-            root, executor_root = Path(self.root), Path(self.executor.root)
-            if not executor_root.is_absolute() or root == executor_root or root.parent != executor_root.parent:
-                raise ValueError("executor and harness cgroups must be distinct absolute siblings")
         return self
 
 

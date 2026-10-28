@@ -75,7 +75,10 @@ flowchart LR
       end
       subgraph vm_guest[VM guest]
         guest[Guest runner + native drivers]
-        vmexec[Codex executor cgroup]
+        manager[systemd manager]
+        vmexec[Codex executor service]
+        guest -->|D-Bus supervision| manager
+        manager -->|service lifetime and cgroup| vmexec
       end
       subgraph vm_sandbox[VM launcher Pod]
         relay[Egress relay]

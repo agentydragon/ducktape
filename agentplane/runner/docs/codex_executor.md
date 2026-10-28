@@ -47,9 +47,10 @@ The template owns the endpoint and socket paths used on both sides.
 ## VMs
 
 The template's `vm_resources` value supplies `environment.resources` under `environment.kind: "vm"`.
-Its optional executor budget and `environment.executor` endpoint/root must be configured together.
-Runner derives the executor cgroup limits from that budget and prepares
-`workloads` and `executors` as sibling delegated cgroup subtrees, before opening Session stores.
+Its optional executor budget and `environment.executor` endpoint must be configured together.
+Runner applies that budget to `agentplane-executors.slice`; harnesses use the sibling
+`agentplane-workloads.slice`. Both live with Runner under the capped `agentplane.slice`.
+It fences previous owned services before opening Session stores.
 The harness aggregate and executor aggregate have independent limits; their configured memory caps
 must fit together below the service's memory high watermark. The service's maximum leaves the
 configured OS reserve below guest RAM. Aggregate groups and native leaves disable swap and set
@@ -57,11 +58,13 @@ configured OS reserve below guest RAM. Aggregate groups and native leaves disabl
 can be killed while the exec-server survives, but the kernel can also select the server itself.
 Native leader exit still fences the entire leaf; OOM policy does not weaken that cleanup.
 
-Runner supervises `exec-server` using the same inherited state-owner descriptor and parent-liveness
-pipe as a harness. The supervisor stays outside the executor cgroup. Parent death or server exit
-kills the entire leaf, including descendants that changed process groups, before releasing state
-ownership. Runner restarts the executor independently of the app-server. The guest remains responsible
-for root paths, agent UID/GID and block devices; templates supply resource policy.
+Runner starts `exec-server` as a systemd transient service with `Restart=no`, just like its other
+native launches. The service binds to the Runner unit; Runner death stops its whole cgroup, with
+five seconds of graceful termination before forced cleanup. Runner also fences previous owned
+units at startup before opening journals, and proves the execution domain empty before allowing
+a successor. COSI restarts the executor independently of the app-server. The guest supplies systemd,
+agent UID/GID and block devices; templates supply resource policy.
+See [native supervision](supervision.md) for the backend and ownership boundary.
 
 ## Startup, loss and suspend
 

@@ -1,7 +1,7 @@
 # Agentplane runner
 
 A statically linked Go executable that runs the native harnesses of its sessions, a Claude Code process per session
-and one Codex app-server for every Codex session, and exposes both through one protocol, over the control stream and Event ingress it dials. Pod Codex tools can run in the standalone `agentplane-executor` companion. The contract is in <SPEC.md>; the wire definition is
+and one shared Codex app-server for its Codex sessions, and exposes both through one protocol, over the control stream and Event ingress it dials. Pod Codex tools can run in the standalone `agentplane-executor` companion. The contract is in <SPEC.md>; the wire definition is
 [`agentplane/proto/runner.proto`](../proto/runner.proto).
 
 The deployment renders `platform_instructions.j2` with concrete service URLs; the runner appends
@@ -44,12 +44,10 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   to their originating commands, session metadata, ingress acknowledgements and ownership lock.
   Transactions use `database/sql` with the cgo-free SQLite driver. Outcomes and all
   coalesced command receipts commit together; publication and startup handshake replies follow commit.
-- `process.go`, `supervisor.go` and `cgroups.go`: native pipes and process
-  isolation. The runner executes itself in an internal supervisor mode, which retains
-  the state-owner descriptor until native work is fenced. A private liveness pipe
-  detects parent death independently of the Go runtime's OS-thread lifetimes.
-  Containerd's cgroup-v2 library applies resource limits and fences group members;
-  the supervisor retains state ownership until the group is empty and removed.
+- `process.go` selects native supervision from the configured environment. VM launches use
+  `systemd_process.go` and `systemd_policy.go`: transient services, resource properties and startup
+  fencing. Pod launches use `supervisor.go`: inherited state ownership and process-group cleanup.
+  `cgroups.go` reads kernel OOM diagnostics. See [supervision](docs/supervision.md).
 - `claude/` and `codex/`: harness-specific launch, frame translation and native
   history readers. They depend on the shared adapter contract and recovery types in
   `harness/`, independently of the runner runtime. Unknown frames remain in raw history,
@@ -136,9 +134,11 @@ default ACL and private `.home` directory.
 
 `//agentplane/runner:runner_test` and `//agentplane/runner/codex:codex_test` run with Go's race detector. The
 Codex router test drives parallel sessions through shared host, request, and thread routing state. The
-runner suite includes its journal, process, and session tests. `test_cgroups.py` uses the separate pure-Go
-`runner_cgroup_fixture` binary because it reruns that binary inside strict memory and PID limits; the
-production `//agentplane/runner/cmd:agentplane-runner` remains pure-Go as well.
+runner suite includes its journal, process, and Session tests. The VM fixture runs the separate
+pure-Go `runner_systemd_fixture` test binary against its real systemd manager before starting
+Runner. It exercises streams and credentials, resource mapping, lost launch replies, Runner death,
+detached descendants and scoped startup fencing; VM system tests exercise actual tools and OOM.
+The production `//agentplane/runner/cmd:agentplane-runner` remains pure-Go.
 
 ### Native subagents
 
@@ -225,11 +225,10 @@ harness or network I/O. One retained connection serves the single runner-session
 That SQLite transaction is not the native-execution fence: a runner owns its whole retained state
 directory through a nonblocking lifetime lock on the fixed `.agentplane-runner-owner` inode before
 opening a journal, dialing out, or launching a harness. A contender exits before it can serve state.
-The lock's open descriptor is inherited by the native-process supervisor. If the runner dies, that
-supervisor terminates and reaps the native harness process group while retaining the descriptor, so
-the replacement cannot start until native work is fenced. A child that remains in the group keeps
-the inherited lock even after its harness leader exits. See <SPEC.md#durability-and-restart> for
-the supported-storage and escaped-process boundary.
+In Pods the lock descriptor is inherited by the native-process supervisor, which retains it through
+process-group cleanup after Runner death. In VMs systemd owns native cgroups; a replacement acquires
+the lock and then fences prior owned services before opening Session stores or journals.
+See <SPEC.md#durability-and-restart> for storage, startup barriers and containment boundaries.
 
 The stdout reader commits in groups (`Journal.WithBatch`): the lines one pipe read delivered and the
 Events derived from them share a transaction, so a burst of output costs one commit rather than one

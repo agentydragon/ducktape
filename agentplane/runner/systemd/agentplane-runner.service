@@ -1,0 +1,31 @@
+[Unit]
+Description=Agentplane native harness runner
+Wants=network.target
+After=network.target
+RequiresMountsFor=/state /state/workspaces /run/agentplane/runner /run/agentplane/config /run/agentplane/sandbox /run/agentplane/trust
+
+[Service]
+Type=exec
+Slice=agentplane.slice
+EnvironmentFile=/run/agentplane/config/runner.env
+Environment=ANTHROPIC_AUTH_TOKEN=agentplane-credential-agentplane-workload
+Environment=OPENAI_API_KEY=agentplane-credential-agentplane-workload
+ExecStartPre=/usr/libexec/agentplane/apply-resource-limits
+ExecStart=/run/agentplane/runner/bin/agentplane-runner --config /run/agentplane/config/runner.json --launch-file /run/agentplane/sandbox/launch.json
+UMask=0007
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=25s
+OOMPolicy=continue
+KillMode=control-group
+SendSIGKILL=yes
+CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_FOWNER
+NoNewPrivileges=yes
+LockPersonality=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectSystem=strict
+ReadWritePaths=/state /state/workspaces /tmp
+
+[Install]
+WantedBy=multi-user.target

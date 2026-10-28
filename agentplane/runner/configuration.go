@@ -124,35 +124,33 @@ type PodEnvironmentConfiguration struct {
 	Executor *ContainerExecutorConfiguration `json:"executor"`
 }
 
-type CgroupExecutorConfiguration struct {
-	URL  string `json:"url"`
-	Root string `json:"root"`
+type VMExecutorConfiguration struct {
+	URL string `json:"url"`
 }
 
 type VMEnvironmentConfiguration struct {
-	Kind             string                       `json:"kind"`
-	Resources        guestResources               `json:"resources"`
-	ConsoleAutologin bool                         `json:"console_autologin"`
-	Root             string                       `json:"root"`
-	AgentUID         uint32                       `json:"agent_uid"`
-	AgentGID         uint32                       `json:"agent_gid"`
-	BlockDevices     []string                     `json:"block_devices"`
-	Executor         *CgroupExecutorConfiguration `json:"executor"`
+	Kind             string                   `json:"kind"`
+	Resources        guestResources           `json:"resources"`
+	ConsoleAutologin bool                     `json:"console_autologin"`
+	AgentUID         uint32                   `json:"agent_uid"`
+	AgentGID         uint32                   `json:"agent_gid"`
+	BlockDevices     []string                 `json:"block_devices"`
+	Executor         *VMExecutorConfiguration `json:"executor"`
 }
 
-func (v VMEnvironmentConfiguration) cgroups(root string, aggregate, process ResourceLimits) *AgentCgroups {
-	return &AgentCgroups{Root: root, AgentUID: v.AgentUID, AgentGID: v.AgentGID, BlockDevices: v.BlockDevices, AggregateLimits: aggregate, ProcessLimits: process}
+func (v VMEnvironmentConfiguration) policy(slice string, aggregate, process ResourceLimits) *VMProcessPolicy {
+	return &VMProcessPolicy{Slice: slice, AgentUID: v.AgentUID, AgentGID: v.AgentGID, BlockDevices: v.BlockDevices, AggregateLimits: aggregate, ProcessLimits: process}
 }
 
 // The environment selects resource ownership and executor transport together.
-func (f Configuration) resolveEnvironment() (*AgentCgroups, *CodexExecServerConfig, *VMEnvironmentConfiguration, error) {
+func (f Configuration) resolveEnvironment() (*VMProcessPolicy, *CodexExecServerConfig, *VMEnvironmentConfiguration, error) {
 	var tag struct {
 		Kind string `json:"kind"`
 	}
 	if err := json.Unmarshal(f.Environment, &tag); err != nil {
 		return nil, nil, nil, fmt.Errorf("environment is required: %w", err)
 	}
-	var isolation *AgentCgroups
+	var isolation *VMProcessPolicy
 	var executor *CodexExecServerConfig
 	var vm *VMEnvironmentConfiguration
 	switch tag.Kind {
@@ -175,20 +173,20 @@ func (f Configuration) resolveEnvironment() (*AgentCgroups, *CodexExecServerConf
 		if err := vm.Resources.Validate(); err != nil {
 			return nil, nil, nil, err
 		}
-		if !filepath.IsAbs(vm.Root) || vm.AgentUID == 0 || vm.AgentGID == 0 || len(vm.BlockDevices) == 0 {
-			return nil, nil, nil, errors.New("VM cgroups require an absolute root, non-root UID/GID and block devices")
+		if vm.AgentUID == 0 || vm.AgentGID == 0 || len(vm.BlockDevices) == 0 {
+			return nil, nil, nil, errors.New("VM supervision requires non-root UID/GID and block devices")
 		}
 		for _, path := range vm.BlockDevices {
 			if !filepath.IsAbs(path) {
 				return nil, nil, nil, errors.New("block device path must be absolute")
 			}
 		}
-		isolation = vm.cgroups(vm.Root, vm.Resources.Aggregate, vm.Resources.Process)
+		isolation = vm.policy(workloadSlice, vm.Resources.Aggregate, vm.Resources.Process)
 		if (vm.Executor == nil) != (vm.Resources.Executor == nil) {
 			return nil, nil, nil, errors.New("executor endpoint and resource budget must be supplied together")
 		}
 		if vm.Executor != nil {
-			executor = &CodexExecServerConfig{URL: vm.Executor.URL, Isolation: vm.cgroups(vm.Executor.Root, *vm.Resources.Executor, *vm.Resources.Executor)}
+			executor = &CodexExecServerConfig{URL: vm.Executor.URL, Isolation: vm.policy(executorSlice, *vm.Resources.Executor, *vm.Resources.Executor)}
 		}
 	default:
 		return nil, nil, nil, fmt.Errorf("unknown environment kind %q", tag.Kind)
@@ -316,7 +314,7 @@ func (f Configuration) compose(launchPath string) (Config, map[string]string, er
 		HarnessEnvironment:          child,
 		Claude:                      claude,
 		Codex:                       codex,
-		ProcessIsolation:            isolation,
+		VMProcessPolicy:             isolation,
 		CodexExecServer:             executor,
 	}
 	if f.WorkspaceRoot != nil {

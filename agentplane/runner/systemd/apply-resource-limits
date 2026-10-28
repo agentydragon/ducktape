@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+properties=$(/run/agentplane/runner/bin/agentplane-runner --vm-resource-properties /run/agentplane/config/runner.json)
+set --
+while IFS= read -r property; do
+    [ -n "$property" ] || continue
+    set -- "$@" "$property"
+done <<EOF
+$properties
+EOF
+if [ "$#" -ne 5 ]; then
+    echo "Runner resource preflight returned an unexpected property count" >&2
+    exit 1
+fi
+exec systemctl set-property --runtime agentplane.slice "$@"

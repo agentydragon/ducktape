@@ -131,7 +131,6 @@ def _vm_environment() -> dict[str, object]:
     return {
         "kind": "vm",
         "resources": _resources(),
-        "root": "/sys/fs/cgroup/test/workloads",
         "agent_uid": 107,
         "agent_gid": 107,
         "block_devices": ["/dev/test-workspace"],
@@ -154,9 +153,8 @@ def test_vm_configuration_round_trip_preserves_one_resource_policy() -> None:
     [
         {"resources": {**_resources(), "service_memory_max_bytes": 1_610_612_736}},
         {"resources": {**_resources(), "aggregate": _limits(memory=805_306_367, pids=768)}},
-        {"executor": {"url": "ws://127.0.0.1:4501", "root": "/sys/fs/cgroup/test/executors"}},
+        {"executor": {"url": "ws://127.0.0.1:4501"}},
         {"resources": {**_resources(), "executor": _limits(memory=67_108_864, pids=128)}},
-        {"root": "relative"},
         {"agent_uid": 0},
         {"block_devices": ["relative"]},
     ],
@@ -166,14 +164,14 @@ def test_vm_environment_rejects_inconsistent_policy(updates: dict[str, object]) 
         Configuration.model_validate(_configuration() | {"environment": _vm_environment() | updates})
 
 
-@pytest.mark.parametrize("root", ["/sys/fs/cgroup/test/workloads", "/sys/fs/cgroup/test/workloads/child", "relative"])
-def test_vm_executor_requires_a_sibling_cgroup(root: str) -> None:
+def test_vm_executor_accepts_endpoint_with_budget() -> None:
     value = _vm_environment() | {
         "resources": {**_resources(), "executor": _limits(memory=67_108_864, pids=128)},
-        "executor": {"url": "ws://127.0.0.1:4501", "root": root},
+        "executor": {"url": "ws://127.0.0.1:4501"},
     }
-    with pytest.raises(ValidationError):
-        Configuration.model_validate(_configuration() | {"environment": value})
+    config = Configuration.model_validate(_configuration() | {"environment": value})
+    assert isinstance(config.environment, VMEnvironment)
+    assert config.environment.executor is not None
 
 
 if __name__ == "__main__":

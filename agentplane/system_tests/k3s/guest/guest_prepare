@@ -1,0 +1,14 @@
+#!/usr/bin/busybox sh
+set -eux
+profile=/run/current-system/sw/bin
+export PATH=$profile:/usr/sbin:/usr/bin
+busybox mkdir -p "$profile"
+busybox --install -s "$profile"
+ln -s /opt/harnesses/external/+http_archive+claude_code_cli_linux_x64/claude "$profile/claude"
+ln -s /opt/harnesses/external/+http_archive+agentplane_codex_cli_linux_x64/bin/codex "$profile/codex"
+ln -s /usr/bin/bash /usr/bin/git /usr/bin/findmnt "$profile/"
+
+ip link set lo up
+ip link set eth0 up
+ip addr add 10.0.2.2/24 dev eth0
+ip route add default via 10.0.2.1

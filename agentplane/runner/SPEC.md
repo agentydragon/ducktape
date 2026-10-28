@@ -34,9 +34,9 @@ Pods and VMs expose `/run/agentplane/config/runner.json`,
 The [configuration inventory](CONFIGURATION.md) specifies every field, source and file.
 
 The required `environment.kind` selects a Pod or VM variant. Pod policy contains an optional
-container executor; VM policy contains console settings, guest/service capacity, cgroup paths and
-identity, and an optional cgroup executor. This is the only deployment/executor discriminator.
-The VM resource policy declares each harness/executor budget once; Runner derives its cgroups
+container executor; VM policy contains console settings, guest/service capacity, block devices and
+identity, and an optional systemd-managed executor. This is the only deployment/executor discriminator.
+The VM resource policy declares each harness/executor budget once; Runner derives systemd resource properties
 from it. The same typed template value sizes KubeVirt. Pod resources remain Kubernetes-owned.
 Omitting the variant's executor selects local tools. Contradictory or partial environment policy
 is rejected before environment changes or state ownership.
@@ -47,13 +47,14 @@ and vCPU values size the KubeVirt domain. Before the Runner starts, `ExecStartPr
 private Go preflight mode, which strictly decodes the shared configuration, validates VM policy,
 and confirms the service memory cap is below live `MemTotal`; only then does it apply
 `MemoryHigh`, `MemoryMax`, fixed `MemorySwapMax=0`, `CPUQuota` and `TasksMax`. The unit uses
-`OOMPolicy=continue` so a child OOM does not stop the Runner. The delegated aggregate and process
-leaves use their respective Runner configuration budgets; swap stays disabled and both aggregate and
+`OOMPolicy=continue` so a child OOM does not stop the Runner. The preflight limits the shared
+`agentplane.slice`, containing the Runner and separate workload/executor slices. Native services
+use their respective Runner configuration budgets; swap stays disabled and both aggregate and
 process cgroups use `memory.oom.group=0`. A cgroup OOM selects individual process victims, so a tool
 OOM can leave its native parent running. The kernel chooses victims; harness survival is not
-guaranteed. If the native leader exits, the supervisor still kills all remaining descendants before
-releasing state ownership. `ProcessConfig.ResourceLimits` can override a leaf
-budget for an isolated process purpose, while the parent aggregate remains authoritative.
+guaranteed. If the native leader exits, Runner stops its systemd service and proves its entire cgroup empty
+before publishing completion or allowing a successor. The enclosing slice
+budget remains authoritative across all of its native services.
 
 ## Initialization
 
@@ -133,8 +134,8 @@ budget for an isolated process purpose, while the parent aggregate remains autho
 - Deployment selects local tools or one isolated executor shared by every Codex Session. Runner
   configures the app-server's `CODEX_EXEC_SERVER_URL`; failed isolated execution never falls back to
   local tools. Claude execution is unchanged.
-- In VMs the executor and native harnesses have separate sibling cgroup budgets under the Runner
-  service. In Pods the executor companion is PID 1 in a separate container with a private PID namespace
+- In VMs the executor and native harnesses have separate sibling slice budgets under the shared
+  `agentplane.slice`. In Pods the executor companion is PID 1 in a separate container with a private PID namespace
   and Kubernetes resource limits. It runs from the standalone `agentplane-executor` binary on the
   Runner disk, outside the Runner runtime and SQLite package. Workspace and runtime paths are shared
   under the same Sandbox principal.
@@ -145,8 +146,8 @@ budget for an isolated process purpose, while the parent aggregate remains autho
   failed tool's side effects remain uncertain; Runner never replays it. Executor loss does not itself
   emit `HarnessExited` for the app-server.
 - Startup fences previous executor work before opening Session stores. Quiesce fences the executor
-  before journal seals; shutdown fences it before releasing state ownership. VM supervisors retain
-  inherited ownership through cgroup cleanup. Pod ownership-connection loss exits the executor
+  before journal seals; shutdown fences it before releasing state ownership. VM startup fences prior owned systemd units before opening stores; native services are bound
+  to the Runner unit and systemd stops their entire cgroups on Runner death. Pod ownership-connection loss exits the executor
   container, and a new idle container generation proves the runtime cleaned up detached descendants.
   Failed cleanup prevents sealing and starting a successor. A Pod companion that could not spawn
   Codex at all exits no generation and refuses the claim with its reason, staying available to
@@ -319,18 +320,25 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   sessions, opens a journal, dials out, runs initialization, or starts a harness. A contender that
   cannot take that lock exits without serving the directory. The normal runner shutdown releases
   ownership only after its sessions stop and their journals close.
-- The owner descriptor crosses the runner/harness boundary through a native-process supervisor.
-  When the runner dies, its harness-input writer disappears and the supervisor receives
-  parent-death notification. It sends `SIGTERM` to the native harness process group, gives the
-  leader five seconds to preserve native resume state, and then force-stops the group. If the
-  leader exits first but a tool remains, it force-stops that remainder immediately, including
-  when the harness exits independently while its runner stays alive. The supervisor
-  and any child that still retains the inherited descriptor hold ownership until they exit, so a
-  replacement cannot append Events or dispatch native work in that interval. This fences the
-  native harness process group, including a normal tool child; a process that deliberately escapes
-  that group and closes inherited descriptors is outside the runner's containment contract. The
-  supported state mount is the checked-in node-local `piraeus-hdd-local` PVC. A remote or otherwise
-  unreliable locking filesystem is unsupported rather than a substitute cross-host fencing authority.
+- In Pods the owner descriptor crosses the runner/harness boundary through a native-process
+  supervisor. Parent death sends `SIGTERM` to the native process group, allows five seconds for
+  native persistence, then force-stops the group. Leader exit immediately kills its remaining
+  group. The supervisor and any child retaining the descriptor exclude a replacement until they
+  exit. A process deliberately escaping that group and closing inherited descriptors is outside
+  that containment boundary.
+- In VMs every native launch is a systemd transient `Type=exec` service, bound to the Runner unit,
+  with `Restart=no` and five-second stop grace. Systemd contains descendants across process-group
+  changes. Runner reports completion only after the service is inactive/failed and its execution
+  domain is empty. Native services do not inherit the state-owner descriptor: a replacement may
+  acquire the lock after Runner death, but it must discover and fence the prior units in its
+  explicit Sandbox/state owner scope before opening Session stores, journals or admitting native
+  work. It verifies each unit's expected slice and leaves unrelated units alone. A lost or
+  canceled launch reply is resolved by fencing that same launch identity, never by issuing a
+  second launch. Manager unavailability remains a fence failure, preventing successors and seals.
+  [Supervision](docs/supervision.md) describes the resource hierarchy and backend boundary.
+- The supported state mount is the checked-in node-local `piraeus-hdd-local` PVC. A remote or
+  otherwise unreliable locking filesystem is unsupported rather than a substitute cross-host
+  fencing authority.
 - A command admission and its public Event commit atomically. A terminal outcome and its public
   Event also commit atomically, including every origin of a coalesced user message. Recovery
   retains their exact payloads and association; it does not reconstruct missing receipt Events.
@@ -355,13 +363,13 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   remain pending and are never resent. Newly sent requests gate later input until their responses
   are recorded.
 - A runner that finds a session whose setup had started without a terminal event records
-  `SetupInterrupted`. It never executes that script again. The inherited state-owner descriptor
-  keeps a replacement runner out until a surviving setup child exits.
+  `SetupInterrupted`. It never executes that script again. The Pod inherited owner descriptor or VM startup fencing barrier prevents a replacement
+  from opening journals or running work while a surviving setup child remains.
 - A harness that exits on its own is reported the same way, as `HarnessExited` with the exit code
   instead of `HarnessLost`.
-- A runner that receives SIGTERM stops every running harness through the stop ladder (stdin
-  close, then SIGTERM, then SIGKILL, five seconds per step) without interrupting an active turn
-  first, records `HarnessExited` with `stopped_by_runner`, then exits. Whatever supervises the
+- A runner that receives SIGTERM stops every running harness without interrupting an active turn
+  first. Pods close stdin, then use SIGTERM and SIGKILL with five seconds per step. VMs close stdin
+  and request systemd stop, with five seconds after SIGTERM before SIGKILL. Runner records `HarnessExited` with `stopped_by_runner`, then exits. Whatever supervises the
   runner must allow it at least twenty seconds before killing it; a harness killed outright is `HarnessLost` on the next start instead.
 
 ## Interrupted turns and continuation recovery

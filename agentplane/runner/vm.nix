@@ -73,24 +73,22 @@ let
   consoleAutologinIs =
     autologin:
     "${pkgs.jq}/bin/jq 'if (.environment.kind == \"vm\" and .environment.console_autologin == true) == ${lib.boolToString autologin} then empty else (\"\" | halt_error(1)) end' ${runtimeDir}/config/runner.json";
-  applyRunnerResourceLimits = pkgs.writeShellScript "agentplane-runner-resource-limits" ''
-    set -eu
-    properties="$(
-      ${runnerDir}/bin/agentplane-runner --vm-resource-properties ${runtimeDir}/config/runner.json
-    )"
-    set --
-    while IFS= read -r property; do
-      [ -n "$property" ] || continue
-      set -- "$@" "$property"
-    done <<EOF
-    $properties
-    EOF
-    if [ "$#" -ne 5 ]; then
-      echo "Runner resource preflight returned an unexpected property count" >&2
-      exit 1
-    fi
-    ${pkgs.systemd}/bin/systemctl set-property --runtime agentplane-runner.service "$@"
-  '';
+  applyRunnerResourceLimits = pkgs.writeShellScript "agentplane-runner-resource-limits" (
+    builtins.readFile ./systemd/apply-resource-limits
+  );
+  supervisionUnits = pkgs.linkFarm "agentplane-supervision-units" (
+    map
+      (name: {
+        name = "lib/systemd/system/${name}";
+        path = ./systemd + "/${name}";
+      })
+      [
+        "agentplane-runner.service"
+        "agentplane.slice"
+        "agentplane-workloads.slice"
+        "agentplane-executors.slice"
+      ]
+  );
 in
 {
   imports = [ ./../../nix/nixos/modules/vm-hardware.nix ];
@@ -98,6 +96,10 @@ in
   networking.hostName = "agentplane-runner-vm";
   services.openssh.enable = lib.mkForce false;
   services.qemuGuest.enable = true;
+  systemd.packages = [ supervisionUnits ];
+  # Native services share exec-server sockets and temporary files with their harnesses.
+  boot.tmp.useTmpfs = true;
+  boot.tmp.tmpfsSize = "1G";
 
   # KubeVirt's masquerade hands the guest its address alone; probing it with ARP first holds the
   # network, and the runner's first dial, back by about five seconds.
@@ -280,64 +282,21 @@ in
     serviceConfig.ExecStart = "${pkgs.systemd}/bin/systemd-tmpfiles --create --prefix=${workspaceDir}";
   };
 
+  # The production guest and the real-manager test fixture consume the same unit policy.
+  # Only the Nix store helper path and workspace preparation dependency need a drop-in.
   systemd.services.agentplane-runner = {
-    description = "Agentplane native harness runner";
+    overrideStrategy = "asDropin";
     wantedBy = [ "multi-user.target" ];
     requires = [ "agentplane-workspace.service" ];
-    after = [
-      "agentplane-workspace.service"
-      "network.target"
-    ];
-    unitConfig.RequiresMountsFor = [
-      "/state"
-      workspaceDir
-      runnerDir
-    ]
-    ++ map (directory: "${runtimeDir}/${directory}") (lib.attrNames seedDisks);
+    after = [ "agentplane-workspace.service" ];
     path = [
       pkgs.coreutils
       pkgs.systemd
     ];
-    environment = {
-      ANTHROPIC_AUTH_TOKEN = "agentplane-credential-agentplane-workload";
-      OPENAI_API_KEY = "agentplane-credential-agentplane-workload";
-    };
-    serviceConfig = {
-      EnvironmentFile = "${runtimeDir}/config/runner.env";
-      Type = "simple";
-      ExecStart = "${runnerDir}/bin/agentplane-runner --config ${runtimeDir}/config/runner.json --launch-file ${runtimeDir}/sandbox/launch.json";
-      UMask = "0007";
-      Restart = "on-failure";
-      RestartSec = "2s";
-      TimeoutStopSec = "25s";
-      OOMPolicy = "continue";
-      Delegate = "cpu io memory pids";
-      DelegateSubgroup = "runner";
-      ExecStartPre = "${applyRunnerResourceLimits}";
-      # Only signal the runner first so its shutdown drains native processes while their inherited
-      # state-owner descriptor remains open. systemd escalates to the whole unit after 25 seconds.
-      KillMode = "mixed";
-      # Root with only what it uses: entering harnesses as the agent user and stopping them, and
-      # reading and writing the agent-owned files on /state and the workspace.
-      CapabilityBoundingSet = [
-        "CAP_DAC_OVERRIDE"
-        "CAP_FOWNER"
-        "CAP_KILL"
-        "CAP_SETGID"
-        "CAP_SETUID"
-      ];
-      NoNewPrivileges = true;
-      LockPersonality = true;
-      ProtectKernelModules = true;
-      ProtectKernelLogs = true;
-      PrivateTmp = true;
-      ProtectSystem = "strict";
-      ReadWritePaths = [
-        "/state"
-        workspaceDir
-      ];
-      TemporaryFileSystem = [ "/tmp:rw,size=1G,nr_inodes=100000,mode=1777" ];
-    };
+    serviceConfig.ExecStartPre = [
+      ""
+      "${applyRunnerResourceLimits}"
+    ];
   };
 
   # The guest's package set: the tools every Sandbox kind shares (<../images/tools.nix>), the same

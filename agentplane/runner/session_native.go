@@ -87,7 +87,7 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 	if err != nil {
 		return err
 	}
-	process, err := NewProcess(ProcessConfig{Command: command, Dir: cwd, Env: env, StateOwnerFD: s.runner.owner.File(), ProcessIsolation: s.runner.config.ProcessIsolation})
+	process, err := NewProcess(ProcessConfig{Command: command, Dir: cwd, Env: env, StateOwnerFD: s.runner.owner.File(), VMProcessPolicy: s.runner.config.VMProcessPolicy})
 	if err != nil {
 		return err
 	}

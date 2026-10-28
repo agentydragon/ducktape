@@ -24,4 +24,4 @@ mount -t overlay -o lowerdir=/lower,upperdir=/upper/data,workdir=/upper/work ove
 for mount in /dev /proc /sys; do
 	mount --move "$mount" "/newroot$mount"
 done
-exec switch_root /newroot /sbin/agentplane-guest-init
+exec switch_root /newroot /usr/lib/systemd/systemd

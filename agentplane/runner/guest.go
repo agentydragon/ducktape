@@ -38,7 +38,7 @@ func (r guestResources) Validate() error {
 	if r.ServicePidsMax <= 0 {
 		return errors.New("service PID max must be positive")
 	}
-	groups := AgentCgroups{AggregateLimits: r.Aggregate, ProcessLimits: r.Process}
+	groups := VMProcessPolicy{AggregateLimits: r.Aggregate, ProcessLimits: r.Process}
 	if err := groups.AggregateLimits.Validate(); err != nil {
 		return fmt.Errorf("invalid aggregate limits: %w", err)
 	}

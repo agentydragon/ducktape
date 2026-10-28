@@ -37,11 +37,11 @@ from agentplane.runner.configuration import (
     CA_BUNDLE,
     JAVA_TRUST_STORE,
     KUBECONFIG,
-    CgroupExecutor,
     Configuration,
     Endpoint,
     Harness,
     VMEnvironment,
+    VMExecutor,
 )
 from cluster.cdk8s.agentplane import launcher_relay, llm_ingress, platform_routes, sandbox_pod, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
@@ -136,15 +136,10 @@ class RunnerVmTemplate(Construct):
             environment=VMEnvironment(
                 resources=resources,
                 console_autologin=env.vm_console_autologin,
-                root="/sys/fs/cgroup/system.slice/agentplane-runner.service/workloads",
                 agent_uid=107,
                 agent_gid=107,
                 block_devices=("/dev/disk/by-id/virtio-workspace",),
-                executor=CgroupExecutor(
-                    url="ws://127.0.0.1:4501", root="/sys/fs/cgroup/system.slice/agentplane-runner.service/executors"
-                )
-                if resources.executor is not None
-                else None,
+                executor=VMExecutor(url="ws://127.0.0.1:4501") if resources.executor is not None else None,
             ),
         )
         config_map_data = {

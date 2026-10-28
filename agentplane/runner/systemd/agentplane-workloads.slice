@@ -1,0 +1,9 @@
+[Unit]
+Description=Agentplane harness and script resource aggregate
+
+[Slice]
+CPUAccounting=yes
+MemoryAccounting=yes
+TasksAccounting=yes
+IOAccounting=yes
+MemorySwapMax=0

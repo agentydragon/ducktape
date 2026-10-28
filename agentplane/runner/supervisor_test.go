@@ -1,9 +1,7 @@
 package runner
 
 import (
-	"bufio"
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -81,41 +79,6 @@ func TestSupervisorFencesSameGroupChildAfterNativeLeaderExits(t *testing.T) {
 	}
 	_ = unix.Kill(childPID, unix.SIGKILL)
 	t.Fatalf("same-group tool %d kept state ownership after its native leader exited", childPID)
-}
-
-func TestSupervisorDropsAgentIdentityAndStopsNativeProcess(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Fatal("cross-UID supervisor coverage requires a privileged Linux test worker")
-	}
-	uid, gid := uint32(65534), uint32(65534)
-	process, err := NewProcess(ProcessConfig{
-		Command:  []string{"/bin/sh", "-c", `printf '%s:%s\n' "$(id -u)" "$(id -g)"; exec /bin/sleep 60`},
-		Env:      map[string]string{"PATH": "/usr/bin:/bin"},
-		AgentUID: &uid,
-		AgentGID: &gid,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := process.Start(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	line, err := bufio.NewReader(process.Stdout()).ReadString('\n')
-	if err != nil {
-		_ = process.Stop(context.Background(), 0)
-		t.Fatalf("read agent identity: %v", err)
-	}
-	if got, want := strings.TrimSpace(line), fmt.Sprintf("%d:%d", uid, gid); got != want {
-		_ = process.Stop(context.Background(), 0)
-		t.Fatalf("native effective identity = %q, want %q", got, want)
-	}
-	if err := process.Stop(context.Background(), 0); err != nil {
-		t.Fatalf("Stop cross-UID native process: %v", err)
-	}
-	code, err := process.Wait(context.Background())
-	if err != nil || (code != 128+int(syscall.SIGTERM) && code != 128+int(syscall.SIGKILL)) {
-		t.Fatalf("cross-UID native process exit = (%d, %v), want SIGTERM or SIGKILL", code, err)
-	}
 }
 
 func waitForProcessPID(t *testing.T, path string) int {

@@ -15,8 +15,11 @@ marked `vm_sandboxes`. `system_test(vm_sandboxes = ...)` runs those cases, and o
 `<scenario>_vm`, on a stack with KubeVirt emulating the guest CPU and the k3s test guest
 ([VM Sandboxes](k3s/README.md#vm-sandboxes)). PR CI runs only what a VM alone exercises:
 `test_vm_sandbox_vm` boots a VM Sandbox and runs a scripted turn on each harness through the
-launcher's egress relay, and verifies Codex tool OOM containment and a successful follow-up
-command with the same Runner and app-server. The other `_vm` targets are `manual`; name one to run it.
+launcher's egress relay, verifies real systemd PID 1, service containment and unprivileged
+manager access denial, and verifies Codex tool OOM containment and a successful follow-up
+command with the same Runner and app-server. Every VM boot first runs the native supervision
+proof against its real manager, covering lost launch replies, detached children, Runner death
+and startup fencing. The other `_vm` targets are `manual`; name one to run it.
 `system_test(real_model = True)` runs the `real_model` cases as `<scenario>_real_model`
 ([Real model on k3s](#real-model-on-k3s)). Two checks need what only a deployment has and run against
 staging by hand ([Running live](#running-live)).

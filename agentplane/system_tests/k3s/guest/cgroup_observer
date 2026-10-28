@@ -1,22 +1,22 @@
 #!/usr/bin/busybox sh
-# Test-only root observer, outside the runner's delegated subtree. Publish a fixed allowlist of
+# Test-only root observer, outside the execution subtree. Publish a fixed allowlist of
 # read-only kernel evidence; tools keep production's UID and cgroup permissions.
 set -eu
 umask 0022
-service=/sys/fs/cgroup/system.slice/agentplane-runner.service
+executors=/sys/fs/cgroup/agentplane.slice/agentplane-executors.slice
 destination=/run/agentplane-test/cgroups
 mkdir -p "$destination"
 sample=0
 while :; do
 	sample=$((sample + 1))
-	for group in "$service"/executors/process-*; do
+	for group in "$executors"/agentplane-native-*.service; do
 		[ -d "$group" ] || continue
 		# A leaf may disappear while the runner tears it down. Never publish a partial snapshot.
 		read -r limit <"$group/memory.max" || continue
 		read -r swap <"$group/memory.swap.max" || continue
 		read -r oom_group <"$group/memory.oom.group" || continue
 		case "$limit:$swap" in *max*) continue ;; esac
-		executor_oom=$(awk '$1 == "oom" {print $2}' "$service/executors/memory.events") || continue
+		executor_oom=$(awk '$1 == "oom" {print $2}' "$executors/memory.events") || continue
 		events=$(awk '
 			$1 == "oom" {oom = $2}
 			$1 == "oom_kill" {kill = $2}

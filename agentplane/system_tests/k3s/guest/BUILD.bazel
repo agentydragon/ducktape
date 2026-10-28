@@ -6,10 +6,13 @@ load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 # The k3s fixture's VM guest: a Debian cloud kernel booted directly by KubeVirt with a busybox
-# initramfs, and an erofs root disk holding both harnesses and the init that gives the runner what
-# agentplane/runner/vm.nix does. The runner itself comes from the fixture's runner disk.
+# initramfs, and an erofs root disk holding systemd and both harnesses. Shared production systemd
+# units supervise the runner from the fixture's runner disk.
 
-package(default_visibility = ["//agentplane/system_tests/k3s:__subpackages__"])
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane/system_tests/k3s:__subpackages__"],
+)
 
 py_library(
     name = "boot_files",
@@ -67,8 +70,10 @@ pkg_tar(
     name = "root_etc",
     srcs = [
         "acpid.conf",
+        "fstab",
         "group",
         "hosts",
+        "machine-id",
         "passwd",
     ],
     mode = "0644",
@@ -92,12 +97,18 @@ pkg_files(
     name = "root_init_file",
     srcs = [
         "cgroup_observer",
-        "guest_init",
+        "guest_prepare",
+        "runner_start",
+        "shutdown_complete",
+        "workspace_prepare",
     ],
     attributes = pkg_attributes(mode = "0755"),
     renames = {
         "cgroup_observer": "agentplane-cgroup-observer",
-        "guest_init": "agentplane-guest-init",
+        "guest_prepare": "agentplane-guest-prepare",
+        "runner_start": "agentplane-runner-start",
+        "shutdown_complete": "agentplane-shutdown-complete",
+        "workspace_prepare": "agentplane-workspace-prepare",
     },
 )
 
@@ -105,6 +116,67 @@ pkg_tar(
     name = "root_init",
     srcs = [":root_init_file"],
     package_dir = "/usr/sbin",
+)
+
+pkg_files(
+    name = "root_systemd_files",
+    srcs = [
+        "agentplane-acpi.service",
+        "agentplane-cgroup-observer.service",
+        "agentplane-guest-prepare.service",
+        "agentplane-shutdown-proof.service",
+        "agentplane-workspace.service",
+        "runner-guest.conf",
+    ],
+    attributes = pkg_attributes(mode = "0644"),
+    renames = {"runner-guest.conf": "agentplane-runner.service.d/guest.conf"},
+)
+
+pkg_tar(
+    name = "root_systemd",
+    srcs = [":root_systemd_files"],
+    package_dir = "/etc/systemd/system",
+    symlinks = {
+        "default.target": "/usr/lib/systemd/system/multi-user.target",
+        "getty.target": "/dev/null",
+        "multi-user.target.wants/agentplane-acpi.service": "../agentplane-acpi.service",
+        "multi-user.target.wants/agentplane-runner.service": "/usr/lib/systemd/system/agentplane-runner.service",
+        "multi-user.target.wants/agentplane-shutdown-proof.service": "../agentplane-shutdown-proof.service",
+        "systemd-firstboot.service": "/dev/null",
+        "systemd-logind.service": "/dev/null",
+    },
+)
+
+pkg_tar(
+    name = "root_shared_systemd",
+    srcs = [
+        "//agentplane/runner/systemd:agentplane.slice",
+        "//agentplane/runner/systemd:agentplane-executors.slice",
+        "//agentplane/runner/systemd:agentplane-runner.service",
+        "//agentplane/runner/systemd:agentplane-workloads.slice",
+    ],
+    mode = "0644",
+    package_dir = "/usr/lib/systemd/system",
+)
+
+pkg_tar(
+    name = "root_resource_limits",
+    srcs = ["//agentplane/runner/systemd:apply-resource-limits"],
+    mode = "0755",
+    package_dir = "/usr/libexec/agentplane",
+)
+
+pkg_files(
+    name = "root_supervision_fixture_file",
+    srcs = ["//agentplane/runner:runner_systemd_fixture"],
+    attributes = pkg_attributes(mode = "0755"),
+    renames = {"//agentplane/runner:runner_systemd_fixture": "runner-systemd-fixture"},
+)
+
+pkg_tar(
+    name = "root_supervision_fixture",
+    srcs = [":root_supervision_fixture_file"],
+    package_dir = "/usr/libexec/agentplane",
 )
 
 # Debian's packages are /usr-merged; ELF interpreters and the init path name the top-level links. The
@@ -119,6 +191,7 @@ pkg_tar(
         "state",
         "sys",
         "tmp",
+        "var/lib",
     ],
     symlinks = {
         "bin": "usr/bin",
@@ -131,6 +204,10 @@ pkg_tar(
         ":root_acpi",
         ":root_etc",
         ":root_init",
+        ":root_resource_limits",
+        ":root_shared_systemd",
+        ":root_supervision_fixture",
+        ":root_systemd",
         "//agentplane/system_tests/k3s:runner_claude_harness",
         "//agentplane/system_tests/k3s:runner_codex_harness",
         "@trixie_vm_guest//:flat",

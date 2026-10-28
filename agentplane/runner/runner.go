@@ -55,7 +55,7 @@ func New(config Config) (*Runner, error) {
 		if config.Codex == nil {
 			return nil, errors.New("Codex exec-server requires a configured Codex harness")
 		}
-		if err := config.CodexExecServer.validate(config.ProcessIsolation); err != nil {
+		if err := config.CodexExecServer.validate(config.VMProcessPolicy); err != nil {
 			return nil, err
 		}
 	}
@@ -66,14 +66,14 @@ func New(config Config) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	if config.ProcessIsolation != nil {
-		if err := config.ProcessIsolation.Prepare(); err != nil {
+	if config.VMProcessPolicy != nil {
+		if err := config.VMProcessPolicy.prepare(config); err != nil {
 			_ = owner.Close()
 			return nil, err
 		}
 	}
 	if config.CodexExecServer != nil && config.CodexExecServer.Isolation != nil {
-		if err := config.CodexExecServer.Isolation.Prepare(); err != nil {
+		if err := config.CodexExecServer.Isolation.prepare(config); err != nil {
 			_ = owner.Close()
 			return nil, err
 		}
@@ -321,12 +321,7 @@ func (r *Runner) reopen(ctx context.Context, s *Session) error {
 }
 
 func (r *Runner) ensureWorkspace(ctx context.Context, cwd string) (string, error) {
-	var uid, gid *uint32
-	if c := r.config.ProcessIsolation; c != nil {
-		uid = &c.AgentUID
-		gid = &c.AgentGID
-	}
-	return EnsureWorkspace(ctx, cwd, r.config.WorkspaceRoot, uid, gid)
+	return EnsureWorkspace(ctx, cwd, r.config.WorkspaceRoot, r.config.VMProcessPolicy)
 }
 
 func (r *Runner) runScript(ctx context.Context, script, cwd string, output func(bool, []byte) error) (int, error) {
@@ -340,7 +335,7 @@ func (r *Runner) runScript(ctx context.Context, script, cwd string, output func(
 	for key, value := range r.config.HarnessEnvironment {
 		env[key] = value
 	}
-	process, err := NewProcess(ProcessConfig{Command: []string{"/bin/sh", "-eu"}, Dir: cwd, Env: env, StateOwnerFD: r.owner.File(), ProcessIsolation: r.config.ProcessIsolation})
+	process, err := NewProcess(ProcessConfig{Command: []string{"/bin/sh", "-eu"}, Dir: cwd, Env: env, StateOwnerFD: r.owner.File(), VMProcessPolicy: r.config.VMProcessPolicy})
 	if err != nil {
 		return 0, err
 	}

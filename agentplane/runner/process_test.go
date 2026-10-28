@@ -124,8 +124,8 @@ func TestResolveWorkspaceRejectsSymlinkEscape(t *testing.T) {
 
 func TestProcessStartFailureCompletesWait(t *testing.T) {
 	process, err := NewProcess(ProcessConfig{
-		Command:    []string{"/bin/true"},
-		Executable: filepath.Join(t.TempDir(), "missing-runner"),
+		Command:              []string{"/bin/true"},
+		supervisorExecutable: filepath.Join(t.TempDir(), "missing-runner"),
 	})
 	if err != nil {
 		t.Fatal(err)

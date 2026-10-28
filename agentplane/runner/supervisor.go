@@ -8,18 +8,14 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"syscall"
 	"time"
 
-	"github.com/containerd/cgroups/v3/cgroup2"
 	"golang.org/x/sys/unix"
 )
 
 const (
-	execMode                 = "--agentplane-runner-exec"
 	workspaceMode            = "--agentplane-runner-workspace"
 	vmResourcePropertiesMode = "--vm-resource-properties"
 
@@ -37,8 +33,6 @@ func InternalMode(args []string) (handled bool, exitCode int) {
 	switch args[0] {
 	case supervisorMode:
 		return true, SupervisorMain(args[1:])
-	case execMode:
-		return true, ExecMain(args[1:])
 	case workspaceMode:
 		return true, WorkspaceMain(args[1:])
 	case vmResourcePropertiesMode:
@@ -69,16 +63,14 @@ func VMResourcePropertiesMain(args []string) int {
 }
 
 // SupervisorMain runs one native command, retaining inherited state ownership until the
-// command and every cgroup member have exited. It returns an exit code for the parent main.
+// command has exited and its process group has been signaled. Container isolation
+// supplies the stronger whole-domain fence after runner death.
 func SupervisorMain(args []string) int {
 	flags := flag.NewFlagSet("runner supervisor", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	parentFD := flags.Int("parent-liveness-fd", parentLivenessFDDefault, "")
 	reportFD := flags.Int("native-pid-fd", nativePIDFDDefault, "")
 	stateFD := flags.Int("state-owner-fd", -1, "")
-	cgroupDir := flags.String("cgroup-dir", "", "")
-	uid := flags.Int64("agent-uid", -1, "")
-	gid := flags.Int64("agent-gid", -1, "")
 	if err := flags.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "harness supervisor: invalid options: %v\n", err)
 		return 64
@@ -89,14 +81,6 @@ func SupervisorMain(args []string) int {
 	}
 	if len(command) == 0 || command[0] == "" || *parentFD < 0 || *reportFD < 0 {
 		fmt.Fprintln(os.Stderr, "harness supervisor requires a command, parent liveness FD, and native PID FD")
-		return 64
-	}
-	if (*uid < 0) != (*gid < 0) || *uid > int64(^uint32(0)) || *gid > int64(^uint32(0)) {
-		fmt.Fprintln(os.Stderr, "harness supervisor received an incomplete agent identity")
-		return 64
-	}
-	if *cgroupDir != "" && *uid < 0 {
-		fmt.Fprintln(os.Stderr, "harness supervisor requires an agent identity when using cgroups")
 		return 64
 	}
 
@@ -121,17 +105,6 @@ func SupervisorMain(args []string) int {
 	defer liveness.Close()
 	defer report.Close()
 
-	var cgroup *supervisorCgroup
-	if *cgroupDir != "" {
-		opened, err := openSupervisorCgroup(*cgroupDir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "harness supervisor: cannot open agent cgroup controls: %v\n", err)
-			return 125
-		}
-		cgroup = opened
-		defer cgroup.close()
-	}
-
 	// A pipe is a process-lifetime token. Unlike PR_SET_PDEATHSIG it is independent of
 	// which Go runtime thread launched this process, and EOF remains pending across the
 	// check/spawn race. Check once before the command can execute, then monitor EOF.
@@ -144,23 +117,18 @@ func SupervisorMain(args []string) int {
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGUSR1)
 	defer signal.Stop(signals)
 
-	program, err := os.Executable()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "harness supervisor: locate runner executable: %v\n", err)
-		return 125
-	}
-	child, err := startNative(program, command, *uid, *gid, stateOwner, cgroup)
+	child, err := startNative(command, stateOwner)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "harness supervisor: start native harness: %v\n", err)
 		return 125
 	}
 	if err := writePIDReport(report, child.Process.Pid); err != nil {
 		fmt.Fprintf(os.Stderr, "harness supervisor: report native PID: %v\n", err)
-		return stopAndFence(child, cgroup)
+		return stopAndFence(child)
 	}
 	_ = report.Close()
 
-	code, err := waitForNative(child, parentGone, signals, cgroup)
+	code, err := waitForNative(child, parentGone, signals)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "harness supervisor: wait for native harness: %v\n", err)
 		return 125
@@ -168,87 +136,17 @@ func SupervisorMain(args []string) int {
 	return code
 }
 
-// ExecMain runs after the kernel has applied the requested UID/GID. It clears every
-// capability set before replacing itself with the native command, preserving its PID,
-// process group, cgroup membership, inherited owner descriptor, and stdio.
-func ExecMain(args []string) int {
-	command := args
-	if len(command) > 0 && command[0] == "--" {
-		command = command[1:]
-	}
-	if len(command) == 0 || command[0] == "" {
-		fmt.Fprintln(os.Stderr, "runner exec trampoline requires a command")
-		return 64
-	}
-	runtime.LockOSThread()
-	if err := clearCapabilities(); err != nil {
-		fmt.Fprintf(os.Stderr, "runner exec trampoline: clear capabilities: %v\n", err)
-		return 125
-	}
-	if err := unix.Exec(command[0], command, os.Environ()); err != nil {
-		fmt.Fprintf(os.Stderr, "runner exec trampoline: exec %s: %v\n", command[0], err)
-		return 125
-	}
-	return 125
-}
-
-type supervisorCgroup struct {
-	manager *cgroup2.Manager
-	dir     *os.File
-}
-
-func openSupervisorCgroup(path string) (*supervisorCgroup, error) {
-	dir, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	kill, err := os.OpenFile(filepath.Join(path, "cgroup.kill"), os.O_WRONLY, 0)
-	if err != nil {
-		_ = dir.Close()
-		return nil, err
-	}
-	_ = kill.Close()
-	events, err := os.Open(filepath.Join(path, "cgroup.events"))
-	if err != nil {
-		_ = dir.Close()
-		return nil, err
-	}
-	_ = events.Close()
-	manager, err := loadCgroup(path)
-	if err != nil {
-		_ = dir.Close()
-		return nil, err
-	}
-	return &supervisorCgroup{manager: manager, dir: dir}, nil
-}
-
-func (c *supervisorCgroup) close() {
-	if c == nil {
-		return
-	}
-	_ = c.dir.Close()
-}
-
-func startNative(executable string, command []string, uid, gid int64, stateOwner *os.File, cgroup *supervisorCgroup) (*exec.Cmd, error) {
+func startNative(command []string, stateOwner *os.File) (*exec.Cmd, error) {
 	program := command[0]
 	args := command[1:]
-	if uid >= 0 {
-		program = executable
-		args = append([]string{execMode, "--"}, command...)
-	}
+
 	child := exec.Command(program, args...)
 	child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if stateOwner != nil {
 		child.ExtraFiles = []*os.File{stateOwner}
 	}
 	proc := &syscall.SysProcAttr{Setpgid: true}
-	if uid >= 0 {
-		proc.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid), Groups: []uint32{uint32(gid)}}
-	}
-	if cgroup != nil {
-		proc.UseCgroupFD = true
-		proc.CgroupFD = int(cgroup.dir.Fd())
-	}
+
 	child.SysProcAttr = proc
 	return child, child.Start()
 }
@@ -268,89 +166,55 @@ func writePIDReport(report *os.File, pid int) error {
 	return nil
 }
 
-func waitForNative(child *exec.Cmd, parentGone <-chan struct{}, signals <-chan os.Signal, cgroup *supervisorCgroup) (int, error) {
+func waitForNative(child *exec.Cmd, parentGone <-chan struct{}, signals <-chan os.Signal) (int, error) {
 	done := make(chan error, 1)
 	go func() { done <- child.Wait() }()
 	for {
 		select {
 		case err := <-done:
-			if fenceErr := fenceNativeGroup(child.Process.Pid, cgroup); fenceErr != nil {
+			if fenceErr := fenceNativeGroup(child.Process.Pid); fenceErr != nil {
 				return 125, fenceErr
 			}
 			return processExitCode(child.ProcessState), expectedWaitError(err)
 		case <-parentGone:
-			return stopNative(child, done, cgroup)
+			return stopNative(child, done)
 		case <-signals:
-			return stopNative(child, done, cgroup)
+			return stopNative(child, done)
 		}
 	}
 }
 
-func stopNative(child *exec.Cmd, done <-chan error, cgroup *supervisorCgroup) (int, error) {
+func stopNative(child *exec.Cmd, done <-chan error) (int, error) {
 	_ = signalProcessGroup(child.Process.Pid, syscall.SIGTERM)
 	timer := time.NewTimer(stopGrace)
 	defer timer.Stop()
 	select {
 	case err := <-done:
-		if fenceErr := fenceNativeGroup(child.Process.Pid, cgroup); fenceErr != nil {
+		if fenceErr := fenceNativeGroup(child.Process.Pid); fenceErr != nil {
 			return 125, fenceErr
 		}
 		return processExitCode(child.ProcessState), expectedWaitError(err)
 	case <-timer.C:
 	}
 	_ = signalProcessGroup(child.Process.Pid, syscall.SIGKILL)
-	if cgroup != nil {
-		if err := killCgroup(cgroup); err != nil {
-			return 125, err
-		}
-	}
+
 	err := <-done
-	if fenceErr := fenceNativeGroup(child.Process.Pid, cgroup); fenceErr != nil {
+	if fenceErr := fenceNativeGroup(child.Process.Pid); fenceErr != nil {
 		return 125, fenceErr
 	}
 	return processExitCode(child.ProcessState), expectedWaitError(err)
 }
 
-func stopAndFence(child *exec.Cmd, cgroup *supervisorCgroup) int {
+func stopAndFence(child *exec.Cmd) int {
 	_ = signalProcessGroup(child.Process.Pid, syscall.SIGKILL)
-	if cgroup != nil {
-		_ = killCgroup(cgroup)
-	}
+
 	_ = child.Wait()
-	_ = fenceNativeGroup(child.Process.Pid, cgroup)
+	_ = fenceNativeGroup(child.Process.Pid)
 	return 125
 }
 
-func fenceNativeGroup(leader int, cgroup *supervisorCgroup) error {
-	_ = signalProcessGroup(leader, syscall.SIGKILL)
-	if cgroup == nil {
-		return nil
-	}
-	diagnosticsLogged := false
-	for {
-		if err := killCgroup(cgroup); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return nil
-			}
-			time.Sleep(time.Second)
-			continue
-		}
-		if !diagnosticsLogged {
-			logCgroupMemoryDiagnostics(cgroup.dir.Name())
-			diagnosticsLogged = true
-		}
-		if err := cgroup.manager.Delete(); err == nil || errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-}
-
-func killCgroup(cgroup *supervisorCgroup) error {
-	if cgroup == nil {
-		return nil
-	}
-	return cgroup.manager.Kill()
+func fenceNativeGroup(leader int) error {
+	return signalProcessGroup(leader, syscall.SIGKILL)
 }
 
 func parentAlreadyGone(parent *os.File) bool {
@@ -400,13 +264,4 @@ func expectedWaitError(err error) error {
 		return nil
 	}
 	return err
-}
-
-func clearCapabilities() error {
-	if err := unix.Prctl(unix.PR_CAP_AMBIENT, unix.PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0); err != nil && !errors.Is(err, unix.EINVAL) {
-		return err
-	}
-	header := unix.CapUserHeader{Version: unix.LINUX_CAPABILITY_VERSION_3}
-	data := [2]unix.CapUserData{}
-	return unix.Capset(&header, &data[0])
 }

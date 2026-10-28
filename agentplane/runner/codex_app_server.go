@@ -197,7 +197,7 @@ func (c *codexAppServer) start(ctx context.Context, owner *Session) error {
 	if err != nil {
 		return err
 	}
-	process, err := NewProcess(ProcessConfig{Command: command, Dir: c.store, Env: env, StateOwnerFD: c.runner.owner.File(), ProcessIsolation: c.runner.config.ProcessIsolation})
+	process, err := NewProcess(ProcessConfig{Command: command, Dir: c.store, Env: env, StateOwnerFD: c.runner.owner.File(), VMProcessPolicy: c.runner.config.VMProcessPolicy})
 	if err != nil {
 		return err
 	}

@@ -1,7 +1,7 @@
 # Keeping tool memory from killing the harness
 
 Runner implements isolated Codex execution through a supervised exec-server. Pods use a separate
-container; VMs use a sibling delegated cgroup. Configuration, lifecycle, and the limits of that
+container; VMs use a systemd service in a sibling slice. Configuration, lifecycle, and the limits of that
 boundary are documented in [Codex executor isolation](../runner/docs/codex_executor.md).
 
 The research below covers additional interception and enforcement options, principally for Claude.
@@ -12,7 +12,7 @@ mode still share a resource budget with their tool children.
 The [observed VM OOM incident](vm_sandboxes.md#guest-resource-controls) demonstrates why a
 per-harness budget alone cannot keep tool memory from killing its harness. Pod workloads run as
 uid 1000 without capabilities or privilege escalation and with RuntimeDefault seccomp; their
-cgroup filesystem is read-only. VM delegation permits Runner to enforce sibling cgroup budgets.
+cgroup filesystem is read-only. The VM systemd manager enforces sibling slice and per-service budgets.
 
 ## Interception points
 
@@ -90,7 +90,7 @@ for snapshots.
 | Userspace OOM guard (earlyoom-style) in the runner             | Yes                  | Polls the container's `memory.current` against `memory.max` and SIGKILLs the largest process tree that is neither the runner nor the harness (same uid, so permitted). The runner spawns the harness, so it knows both PIDs. A poll loop can be outrun by a fast allocator, so the threshold needs headroom; PSI triggers need a writable `memory.pressure` and are not available.                   |
 | Tool cgroup with `memory.max` (Claude's built-in, or the shim) | No                   | Kernel-enforced, per tree; the right mechanism. Needs a writable delegated cgroup v2 subtree: the entrypoint moves itself into a leaf, enables `+memory` in `cgroup.subtree_control`, then starts the harness in its own leaf so `claude-code-bash` (or the shim's cgroup) is a sibling. Kubernetes has no field for a writable cgroupfs short of `privileged`; sysbox or a VM runtime provides one. |
 | Tools in a separate container (Codex exec-server)              | Needs Pod change     | Kernel-enforced by that container's own limit, no privilege. A second container with the shared workspace volume runs `codex exec-server`; Codex points at it through `environments.toml`. Claude has no equivalent short of a `CLAUDE_CODE_SHELL_PREFIX` client that proxies each command, cwd and environment to that container.                                                                   |
-| VM or microVM Sandbox                                          | No                   | The current VM uses delegated cgroups per native harness. The harness and its tool descendants share a group; per-tool limits remain optional research.                                                                                                                                                                                                                                              |
+| VM or microVM Sandbox                                          | No                   | The current VM uses systemd service cgroups per native harness. The harness and its tool descendants share a group; per-tool limits remain optional research.                                                                                                                                                                                                                                        |
 
 ## Further work
 

@@ -64,17 +64,19 @@ flowchart LR
         runner -->|loopback WebSocket tools| exec
     end
     subgraph vm[VM guest]
-        guest[Runner and native supervisor]
-        harness[Codex app-server: harness cgroup]
-        vmexec[exec-server: executor cgroup]
-        guest -->|supervision and kill fence| vmexec
-        guest -->|supervision| harness
+        guest[Runner + COSI controllers]
+        manager[systemd manager]
+        harness[Codex app-server service: workload slice]
+        vmexec[exec-server service: executor slice]
+        guest -->|D-Bus launch, observe, stop, fence| manager
+        manager -->|service lifetime and cgroup| vmexec
+        manager -->|service lifetime and cgroup| harness
         harness -->|loopback WebSocket tools| vmexec
     end
 ```
 
 The Pod executor has a private PID namespace and Kubernetes resource limits. The VM executor has a
-sibling cgroup budget. Both share the Sandbox's identity and filesystem paths with the harness.
+sibling systemd slice budget. Both share the Sandbox's identity and filesystem paths with the harness.
 Runner owns restart and fences old commands before reopening Session state or sealing journals.
 Local execution remains a deployment mode. See [executor isolation](../runner/docs/codex_executor.md).
 

@@ -1,0 +1,9 @@
+[Unit]
+Description=Agentplane exec-server resource aggregate
+
+[Slice]
+CPUAccounting=yes
+MemoryAccounting=yes
+TasksAccounting=yes
+IOAccounting=yes
+MemorySwapMax=0

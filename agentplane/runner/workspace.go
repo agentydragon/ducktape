@@ -35,10 +35,7 @@ func ResolveWorkspace(cwd, workspaceRoot string) (string, error) {
 
 // EnsureWorkspace returns cwd after creating any missing path components. Existing
 // directories and their contents retain their original ownership.
-func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, agentUID, agentGID *uint32) (string, error) {
-	if (agentUID == nil) != (agentGID == nil) {
-		return "", errors.New("workspace agent UID and GID must be configured together")
-	}
+func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, policy *VMProcessPolicy) (string, error) {
 	resolved, err := ResolveWorkspace(cwd, workspaceRoot)
 	if err != nil {
 		return "", err
@@ -53,7 +50,7 @@ func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, agentUID, a
 	if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("inspect workspace path %s: %w", resolved, err)
 	}
-	if agentUID == nil {
+	if policy == nil {
 		if workspaceRoot == "" {
 			if err := os.MkdirAll(resolved, 0o770); err != nil {
 				return "", fmt.Errorf("create workspace path %s: %w", resolved, err)
@@ -91,11 +88,10 @@ func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, agentUID, a
 	}
 	command := append([]string{executable, workspaceMode, root}, parts...)
 	process, err := NewProcess(ProcessConfig{
-		Command:  command,
-		Dir:      root,
-		Env:      map[string]string{},
-		AgentUID: agentUID,
-		AgentGID: agentGID,
+		Command:         command,
+		VMProcessPolicy: policy,
+		Dir:             root,
+		Env:             map[string]string{},
 	})
 	if err != nil {
 		return "", err

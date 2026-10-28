@@ -127,13 +127,23 @@ serial console and any image a Pod pulled from a registry to `test.outputs/vm-sa
 
 The template boots the [test guest](guest/BUILD.bazel) instead of production's NixOS image, which sits
 in a private registry and would boot for minutes without KVM: a Debian cloud kernel that KubeVirt boots
-directly, a busybox initramfs that mounts an erofs root under a tmpfs overlay, and an init that gives
-the runner what [`vm.nix`](../../runner/vm.nix) does. The runner comes from the production runner disk,
-as in a Pod; both harnesses, Git and `findmnt` are pinned in the root disk.
+directly, a BusyBox initramfs that mounts an erofs root under a tmpfs overlay, and real systemd as
+PID 1. The guest installs the same runner service and resource slices as
+[`vm.nix`](../../runner/vm.nix), with fixture-specific tool paths and mount/network preparation.
+The runner comes from the production runner disk, as in a Pod; both harnesses, Git and `findmnt`
+are pinned in the root disk. Runner uses systemd's private manager connection; a real system bus
+also exercises denial of unprivileged management requests.
+
+The fixture's runner entrypoint runs `runner_systemd_fixture` against that manager before `exec`ing
+the production runner. Its isolated `/state/.supervision-proof` exercises native process streams,
+limits, descendant fencing, uncertain launch outcomes and parent death. A failed proof prevents
+runner startup; its output is retained in the guest console. The proof binary and entrypoint
+override exist only in the fixture image.
 
 The guest loads the ACPI button/evdev drivers and runs BusyBox `acpid`. On a power-button event,
-PID1 stops restarting the runner, requests its orderly SIGTERM shutdown and waits for exit, then
-stops its helpers, syncs and unmounts the workspace and state before powering off. KubeVirt's
+the listener requests `systemctl poweroff`. Systemd stops the runner and its execution services,
+then unmounts the workspace and state before powering off. A shutdown-proof unit checks that both
+mounts are gone before emitting the exact console marker required by teardown. KubeVirt's
 shutdown grace period and the controller's wait for actual deletion remain in place. The shared
 launcher admission policy keeps PVC-backed virtiofs daemons running as native sidecars until compute
 exits; otherwise Pod termination can stop the state filesystem while the guest closes its journals.
@@ -148,12 +158,12 @@ native command item with that exit code; the turn itself completes normally. Run
 and app-server process identity/PID stay unchanged before and after the OOM and a successful
 follow-up turn. That command runs in the same executor leaf and reports exit zero. Evidence goes
 to `test.outputs/vm-codex-oom.json`, alongside the guest console and scripted upstream requests.
-The test guest runs a root observer outside the Runner subtree to publish read-only snapshots of
+The test guest runs a root observer outside the execution slices to publish read-only snapshots of
 executor limits and OOM counters. Tool processes retain production's UID and cgroup permissions.
 The executor aggregate's hierarchical OOM counter proves the constrained subtree, while the leaf's
 victim counter proves the single kill: either the aggregate or leaf limit can trigger first.
-This exercises the test guest's kernel and production Runner/Codex binaries; it does not run the
-production NixOS systemd unit or force exec-server death/restart.
+This exercises the test guest's kernel, shared production systemd units, and production Runner/Codex
+binaries; it does not boot the production NixOS image or force exec-server death/restart.
 
 KubeVirt's and Kyverno's images are Bazel-pulled layouts (`vm_sandboxes/`, pinned in `MODULE.bazel`),
 imported before their releases are applied, so no Pod pulls them; the releases roll out while the
@@ -178,7 +188,7 @@ launcher Pod UID and container log inode. They retain Kubernetes CRI timestamps 
 including the guest kernel, Runner and executor supervisor output. Open log descriptors preserve
 output across launcher deletion, suspension, replacement and container restarts.
 On successful VM test teardown, each retained launcher incarnation must contain
-`AGENTPLANE_GUEST_SHUTDOWN_COMPLETE`, emitted by the guest's PID1 after runner exit and successful
+`AGENTPLANE_GUEST_SHUTDOWN_COMPLETE`, emitted by a systemd unit after runner exit and successful
 workspace/state unmounts. Rotated logs are checked together per launcher. Existing test failures skip
 this additional assertion while retaining their logs. Launcher `compute` logs and the KubeVirt
 namespace's `virt-handler` logs are retained under `vm-artifacts/launchers/` and
