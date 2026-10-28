@@ -5,8 +5,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io/fs"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/pressly/goose/v3"
 	"google.golang.org/protobuf/proto"
+	"modernc.org/sqlite"
 )
 
 var legacyJournalSchema = []string{
@@ -679,5 +682,158 @@ func TestCommittedBatchAllowsReplayAndAdmissionWhileCallbackWaits(t *testing.T) 
 	}
 	if len(entries) != 3 || entries[1].GetEvent().GetCommandAdmitted().GetCommand().GetCommandId() != "between" || entries[2].GetEvent().GetNative().Line != "last" {
 		t.Fatalf("journal handoff order = %v", entries)
+	}
+}
+
+// A separate online backup reader takes the same shared lock as this transaction.
+func holdJournalRead(t *testing.T, path string) *sql.Conn {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = conn.ExecContext(context.Background(), "ROLLBACK"); _ = conn.Close() })
+	if _, err := conn.ExecContext(context.Background(), "BEGIN"); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := conn.QueryRowContext(context.Background(), "SELECT count(*) FROM event_entry").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return conn
+}
+
+func appendContendedEvent(ctx context.Context, j *Journal, batch bool) error {
+	appendEvent := func(ctx context.Context) error {
+		_, err := j.Append(ctx, &eventpb.Event{Observation: &eventpb.Event_HarnessLost{HarnessLost: &eventpb.HarnessLost{}}}, AppendOptions{})
+		return err
+	}
+	if batch {
+		return j.WithBatch(ctx, appendEvent)
+	}
+	return appendEvent(ctx)
+}
+
+func TestJournalCommitWaitsForExternalReader(t *testing.T) {
+	for _, batch := range []bool{false, true} {
+		t.Run(fmt.Sprintf("batch=%t", batch), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			path := filepath.Join(t.TempDir(), "journal.sqlite")
+			j, err := Open(ctx, path, "test-source")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer j.Close()
+			reader := holdJournalRead(t, path)
+			observer, err := sql.Open("sqlite", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer observer.Close()
+			done := make(chan error, 1)
+			go func() { done <- appendContendedEvent(ctx, j, batch) }()
+			// COMMIT's PENDING lock excludes new readers while our established reader
+			// prevents its promotion to EXCLUSIVE. Observe that barrier, then release.
+			for {
+				var count int
+				err := observer.QueryRowContext(ctx, "SELECT count(*) FROM event_entry").Scan(&count)
+				var busy *sqlite.Error
+				if errors.As(err, &busy) && busy.Code() == 5 {
+					break
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case err := <-done:
+					t.Fatalf("append returned before reader released: %v", err)
+				default:
+				}
+				runtime.Gosched()
+			}
+			if _, err := reader.ExecContext(ctx, "ROLLBACK"); err != nil {
+				t.Fatal(err)
+			}
+			if err := <-done; err != nil {
+				t.Fatalf("append after reader release: %v", err)
+			}
+			if j.LastCursor() != 1 {
+				t.Fatalf("published cursor = %d, want 1", j.LastCursor())
+			}
+			if err := appendContendedEvent(ctx, j, batch); err != nil {
+				t.Fatalf("subsequent append: %v", err)
+			}
+		})
+	}
+}
+
+func TestJournalBusyCommitFailsClosedAndReleasesTransaction(t *testing.T) {
+	for _, batch := range []bool{false, true} {
+		t.Run(fmt.Sprintf("batch=%t", batch), func(t *testing.T) {
+			ctx := context.Background()
+			path := filepath.Join(t.TempDir(), "journal.sqlite")
+			j, err := Open(ctx, path, "test-source")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer j.Close()
+			reader := holdJournalRead(t, path)
+			// Exercise exhaustion without spending the production wait budget.
+			if _, err := j.conn.ExecContext(ctx, "PRAGMA busy_timeout=1"); err != nil {
+				t.Fatal(err)
+			}
+			err = appendContendedEvent(ctx, j, batch)
+			var busy *sqlite.Error
+			if !errors.As(err, &busy) || busy.Code() != 5 {
+				t.Fatalf("commit error = %v, want SQLITE_BUSY", err)
+			}
+			if j.LastCursor() != 0 {
+				t.Fatalf("failed commit published cursor %d", j.LastCursor())
+			}
+			if err := appendContendedEvent(ctx, j, batch); !errors.Is(err, ErrFailed) {
+				t.Fatalf("append after failure = %v", err)
+			}
+			// An unreleased failed COMMIT retains PENDING/RESERVED locks. Even with
+			// our original reader open, a new reader and writer reservation must work.
+			observer, err := sql.Open("sqlite", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer observer.Close()
+			observer.SetMaxOpenConns(1)
+			var count int
+			if err := observer.QueryRowContext(ctx, "SELECT count(*) FROM event_entry").Scan(&count); err != nil {
+				t.Fatalf("external reader after failed commit: %v", err)
+			}
+			if count != 0 {
+				t.Fatalf("failed commit retained %d events", count)
+			}
+			if _, err := observer.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+				t.Fatalf("external writer after failed commit: %v", err)
+			}
+			if _, err := observer.ExecContext(ctx, "ROLLBACK"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := reader.ExecContext(ctx, "ROLLBACK"); err != nil {
+				t.Fatal(err)
+			}
+			if err := j.Close(); err != nil {
+				t.Fatal(err)
+			}
+			recovered, err := Open(ctx, path, "test-source")
+			if err != nil {
+				t.Fatalf("reopen after failed commit: %v", err)
+			}
+			defer recovered.Close()
+			if err := appendContendedEvent(ctx, recovered, batch); err != nil {
+				t.Fatalf("append after reopen: %v", err)
+			}
+		})
 	}
 }

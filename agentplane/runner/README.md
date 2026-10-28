@@ -246,7 +246,9 @@ The connection uses `journal_mode=DELETE` and `synchronous=EXTRA`; publication r
 [durable rollback-journal commits](https://sqlite.org/pragma.html#pragma_synchronous) and storage honoring sync.
 A journal mutex owns each complete transaction, including batch publication.
 Explicit `BEGIN IMMEDIATE` reserves the writer before reading ids/cursors; no transaction spans
-harness or network I/O. One retained connection serves the single runner-session writer.
+harness or network I/O. One retained connection serves the single runner-session writer. SQLite waits up to five seconds
+for external readers such as online backups to release conflicting locks. A failed commit attempts
+rollback before fencing the writer, so a busy commit does not retain transaction locks.
 That SQLite transaction is not the native-execution fence: a runner owns its whole retained state
 directory through a nonblocking lifetime lock on the fixed `.agentplane-runner-owner` inode before
 opening a journal, dialing out, or launching a harness. A contender exits before it can serve state.

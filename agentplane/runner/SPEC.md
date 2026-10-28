@@ -353,6 +353,8 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   preserves the published prefix with the same payloads and cursors. Session metadata and journal
   filenames are persisted before the session publishes Events. This relies on the filesystem and
   storage honoring successful synchronization; it does not cover destruction of the state volume.
+- Brief external SQLite readers may delay a journal operation for up to five seconds. On commit
+  failure, the journal attempts rollback to release transaction locks before fencing the writer.
 - A failed or cancelled journal transaction publishes no new Event and prevents further appends
   through that writer. Followers see an error after their recorded prefix; recovery requires
   reopening the journal. The interrupted transaction may or may not survive, but cannot reuse a cursor
