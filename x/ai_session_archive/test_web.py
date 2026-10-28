@@ -447,18 +447,30 @@ def test_login_routes_are_reachable_with_the_frontend_mounted(tmp_path: Path) ->
     client.cookies.set("ai-session-archive", TimestampSigner("fake-session-secret").sign(payload).decode())
 
     home = client.get("/", follow_redirects=False)
+    deep_link = client.get("/sessions/fake-session-id?machine=fake-host", follow_redirects=False)
     asset = client.get("/assets/app.js", follow_redirects=False)
+    missing_asset = client.get("/assets/missing.js", follow_redirects=False)
+    missing_page = client.get("/unknown-page", follow_redirects=False)
+    missing_api = client.get("/api/unknown", follow_redirects=False)
     login = client.get("/auth/login", follow_redirects=False)
     callback = client.get("/auth/callback", params={"error": "access_denied", "state": "fake"})
     logout = client.post("/auth/logout", headers={"Origin": settings.public_base_url}, follow_redirects=False)
     signed_out = client.get("/auth/signed-out", follow_redirects=False)
 
     assert (home.status_code, home.text) == (200, "<main>archive frontend</main>")
+    assert (deep_link.status_code, deep_link.text) == (200, home.text)
+    assert deep_link.headers["cache-control"] == "no-store"
     assert (asset.status_code, asset.text) == (200, "console.log('archive frontend')")
+    assert (missing_asset.status_code, missing_page.status_code, missing_api.status_code) == (404, 404, 404)
+    assert "archive frontend" not in missing_api.text
     assert (login.status_code, login.headers["location"]) == (307, "https://idp.example.invalid/authorize")
     assert (callback.status_code, "Authentik sign-in failed." in callback.text) == (401, True)
     assert (logout.status_code, logout.headers["location"]) == (303, "/auth/signed-out")
     assert (signed_out.status_code, "You are signed out." in signed_out.text) == (200, True)
+
+    unauthenticated = TestClient(app).get("/sessions/fake-session-id", follow_redirects=False)
+    assert unauthenticated.status_code in {302, 303, 307}
+    assert unauthenticated.headers["location"].startswith("/auth/login")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import "@mantine/core/styles.css";
 
 import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
+import { MemoryRouter, Route, Routes } from "react-router";
 
 import "../session-viewer.css";
 import { SessionViewer } from "../session-viewer";
@@ -13,7 +14,12 @@ Date.now = () => FIXED_NOW;
 createRoot(document.getElementById("root")!).render(
   <MantineProvider defaultColorScheme="light">
     <div style={{ height: "100dvh", boxSizing: "border-box", padding: 16 }}>
-      <SessionViewer api={sessionFixtureApi} />
+      <MemoryRouter>
+        <Routes>
+          <Route path="/" element={<SessionViewer api={sessionFixtureApi} />} />
+          <Route path="/sessions/:sessionId" element={<SessionViewer api={sessionFixtureApi} />} />
+        </Routes>
+      </MemoryRouter>
     </div>
   </MantineProvider>
 );

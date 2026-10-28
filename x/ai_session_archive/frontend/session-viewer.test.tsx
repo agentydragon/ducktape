@@ -3,9 +3,11 @@
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { SessionBrowserApi } from "./api";
+import { ApiError } from "./api";
 import { SessionViewer } from "./session-viewer";
 import { sessionFixtureApi } from "./fixtures/session-data";
 import type { EventPage, EventRecord, SessionPage, SessionSummary, SessionVersion } from "./schema";
@@ -23,14 +25,19 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-async function renderViewer(api: SessionBrowserApi): Promise<HTMLDivElement> {
+async function renderViewer(api: SessionBrowserApi, initialPath = "/"): Promise<HTMLDivElement> {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(async () => {
     root?.render(
       <MantineProvider env="test">
-        <SessionViewer api={api} />
+        <MemoryRouter initialEntries={[initialPath]}>
+          <Routes>
+            <Route path="/" element={<SessionViewer api={api} />} />
+            <Route path="/sessions/:sessionId" element={<SessionViewer api={api} />} />
+          </Routes>
+        </MemoryRouter>
       </MantineProvider>
     );
     await flush();
@@ -57,6 +64,94 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   });
   return { promise, resolve };
 }
+
+it("opens a direct session link outside the first page and restores the requested version and filters", async () => {
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    listSessions(query, signal) {
+      if (query.parentSessionId !== undefined) return sessionFixtureApi.listSessions(query, signal);
+      return sessionFixtureApi.listSessions(query, signal).then((page) => ({
+        ...page,
+        data: page.data.filter((session) => session.id !== "codex-thread-1"),
+      }));
+    },
+  };
+  const view = await renderViewer(
+    api,
+    "/sessions/codex-thread-1?machine=thinkpad&harness=codex&version=codex-version-1"
+  );
+
+  expect(view.querySelector('select[aria-label="Filter by harness"]')).toHaveProperty("value", "codex");
+  expect(view.querySelector('input[aria-label="Filter by machine"]')).toHaveProperty("value", "ThinkPad");
+  expect(view.querySelector('select[aria-label="Captured version"]')).toHaveProperty("value", "codex-version-1");
+  expect(view.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
+    "This is the earlier captured version."
+  );
+});
+
+it("keeps session selection in history for back and forward navigation", async () => {
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  const router = createMemoryRouter(
+    [
+      { path: "/", element: <SessionViewer api={sessionFixtureApi} /> },
+      { path: "/sessions/:sessionId", element: <SessionViewer api={sessionFixtureApi} /> },
+    ],
+    { initialEntries: ["/sessions/codex-thread-1"] }
+  );
+  await act(async () => {
+    root?.render(
+      <MantineProvider env="test">
+        <RouterProvider router={router} />
+      </MantineProvider>
+    );
+    await flush();
+  });
+  await act(async () => {
+    findButton(container!, "Inspect a local transcript").click();
+    await flush();
+  });
+  expect(router.state.location.pathname).toBe("/sessions/claude-session-1");
+  expect(container.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
+    "Review this local conversation."
+  );
+
+  await act(async () => {
+    await router.navigate(-1);
+    await flush();
+  });
+  expect(router.state.location.pathname).toBe("/sessions/codex-thread-1");
+  expect(container.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
+    "I found two snapshots for this session."
+  );
+
+  await act(async () => {
+    await router.navigate(1);
+    await flush();
+  });
+  expect(router.state.location.pathname).toBe("/sessions/claude-session-1");
+  expect(container.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
+    "Review this local conversation."
+  );
+});
+
+it("keeps a missing session link visible instead of silently selecting another session", async () => {
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    getSession(sessionId, signal) {
+      if (sessionId === "missing") return Promise.reject(new ApiError(404, "Session not found"));
+      return sessionFixtureApi.getSession(sessionId, signal);
+    },
+  };
+  const view = await renderViewer(api, "/sessions/missing");
+  expect(view.querySelector('[aria-label="Session transcript"]')?.textContent).toContain(
+    "Could not load session missing: Session not found"
+  );
+  expect(view.querySelector('[aria-label="Session transcript"]')?.textContent).not.toContain(
+    "I found two snapshots for this session."
+  );
+});
 
 it("shows captured machines, readable records, malformed raw lines, and older versions", async () => {
   const view = await renderViewer(sessionFixtureApi);
@@ -214,7 +309,12 @@ it("refreshes import progress on demand and polls automatically", async () => {
   await act(async () => {
     root?.render(
       <MantineProvider env="test">
-        <SessionViewer api={api} />
+        <MemoryRouter>
+          <Routes>
+            <Route path="/" element={<SessionViewer api={api} />} />
+            <Route path="/sessions/:sessionId" element={<SessionViewer api={api} />} />
+          </Routes>
+        </MemoryRouter>
       </MantineProvider>
     );
     await Promise.resolve();

@@ -141,5 +141,9 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
         def home() -> FileResponse:
             return FileResponse(index, headers={"Cache-Control": "no-store"})
 
+        @app.get("/sessions/{session_id}", include_in_schema=False)
+        def session_page(session_id: str) -> FileResponse:
+            return FileResponse(index, headers={"Cache-Control": "no-store"})
+
         app.mount("/", StaticFiles(directory=frontend_dir), name="frontend")
     return app
