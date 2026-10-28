@@ -118,7 +118,7 @@ impl RuntimeQueries<'_, '_> {
     pub(super) fn invocation_memo(&self, point: &ProgramPoint) -> Outcome {
         let mut context = self.context.borrow_mut();
         let Some(RuntimeFact::InvocationMemo(outcome)) =
-            context.read(RuntimeKey::InvocationMemo(point.clone()))
+            context.read_final(RuntimeKey::InvocationMemo(point.clone()))
         else {
             unreachable!("a live invocation memo points to its completed outcome");
         };

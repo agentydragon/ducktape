@@ -158,6 +158,11 @@ those links retires the corresponding memo facts. Existing active-invocation
 recursion checks and evaluation budgets remain in force; this scheduling change
 does not add recursive return-summary inference.
 
+Memo versions are completed and immutable. `read_final` carries their typed
+proof dependencies into each consumer without installing a live watcher or
+retaining the version key as a premise. Growing judgments use ordinary `read`
+so value and dependency growth still wake their consumers.
+
 ## Dependency regions and barriers
 
 Completion barriers are valid only at actual one-way dependencies; the old pass
