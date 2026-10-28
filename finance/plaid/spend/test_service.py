@@ -635,7 +635,7 @@ async def test_portfolio_read_retries_failure_and_caches_ready_result(
         _sustainability_configuration(now.date(), "synthetic-spending-account"),
         dashboard_url="https://spend.example.test",
     )
-    monkeypatch.setattr(spend_service, "_require_portfolio_sessions", object)
+    monkeypatch.setattr(spend_service, "_require_read_sessions", object)
     attempts = 0
 
     async def read_portfolio(
@@ -784,7 +784,7 @@ async def test_portfolio_reads_complete_snapshots_through_sqlalchemy(
     async with spend_service.lifespan():
         view = await spend_service._read_current_portfolio(now)
         revoked_view = await service.read_portfolio(
-            spend_service._require_portfolio_sessions(),
+            spend_service._require_read_sessions(),
             PortfolioPolicy(
                 sources=PortfolioSources(plaid=PlaidSourcePolicy(asset_account_ids=["revoked-portfolio-account"]))
             ),
@@ -993,6 +993,51 @@ async def test_read_sustainability_fails_closed_for_unusable_spending_source(
     else:
         assert result.covered_days == 0
         assert result.spending_minor_units == 0
+
+
+async def test_detached_spending_account_makes_allowance_and_sustainability_unavailable(
+    connection: asyncpg.Connection, postgres_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = datetime.now(UTC)
+    zone = ZoneInfo("America/Los_Angeles")
+    today = now.astimezone(zone).date()
+    account_id = "synthetic-detached-spending-account"
+    item_id = "synthetic-detached-spending-item"
+    transaction_id = "synthetic-retained-detached-purchase"
+    await add_link(connection, item_id, synced=now)
+    await add_account(connection, account_id, item_id, type="credit")
+    await add_account(connection, "synthetic-current-sibling-account", item_id, type="depository")
+    await add_transaction(
+        connection, account_id, item_id, transaction_id, today - timedelta(days=1), Decimal("25.00"), category="FIXED"
+    )
+    await connection.execute("UPDATE public.accounts SET detached_at = $2 WHERE account_id = $1", account_id, now)
+    await connection.execute("UPDATE public.links SET accounts_observed_at = $2 WHERE item_id = $1", item_id, now)
+    service = SpendService(
+        postgres_url, _sustainability_configuration(today, account_id), dashboard_url="https://spend.example.test"
+    )
+
+    async def read_portfolio(_now: datetime) -> PortfolioView:
+        return _synthetic_portfolio()
+
+    monkeypatch.setattr(service, "_read_current_portfolio", read_portfolio)
+    async with service.lifespan():
+        allowance = (await service.read_view()).allowance
+        sustainability = await service.read_sustainability()
+
+    retained = await connection.fetchrow(
+        "SELECT amount, removed FROM public.transactions WHERE transaction_id = $1", transaction_id
+    )
+    assert allowance is not None
+    assert allowance.status == Status.UNAVAILABLE
+    assert allowance.available_minor_units is None
+    assert allowance.forecast.projected_cycle_end_minor_units is None
+    assert sustainability.status == "unavailable"
+    assert sustainability.annualized_spending_minor_units is None
+    assert sustainability.spending_minor_units == 0
+    assert "Spending account coverage or sync freshness is unavailable." in sustainability.issues
+    assert retained is not None
+    assert retained["amount"] == Decimal("25.00")
+    assert retained["removed"] is False
 
 
 class _ConnectedRequest:

@@ -220,8 +220,10 @@ pending row. A newly linked account with a short historical backfill can underst
 promise of comprehensive coverage. CLI, web and GNOME show both rolling windows' unmatched counts and summed amounts.
 
 Configured account IDs should cover **all accounts used for purchases** (credit and checking/debit); otherwise this is
-not a reliable allowance. If an account is missing, inactive, or its sync exceeds `max_sync_age_hours`, the allowance
-shows _unavailable_ with no available balance. Ordered private rules match `name`/`merchant_name` prefixes,
+not a reliable allowance. If an account is missing, detached from the latest complete account listing, inactive, or
+its Item sync exceeds `max_sync_age_hours`, the allowance shows _unavailable_ with no available balance. A fresh sync
+of another account on the same Item does not restore coverage, and retained transaction history remains queryable.
+Ordered private rules match `name`/`merchant_name` prefixes,
 case-insensitive substrings, exact `pfc_primary`/`pfc_detailed` values, or an `all_of` of two or more of those
 conditions; first match wins. For a named transfer embedded in a long bank descriptor, combine `name_contains` with an
 exact transfer category rather than excluding all wires. **No spending categories are hard-coded.** A purchase with no

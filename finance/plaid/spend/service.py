@@ -7,13 +7,15 @@ import contextlib
 import json
 import logging
 from collections import defaultdict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import anyio
 import asyncpg
 from babel.numbers import get_currency_precision
+from sqlalchemy import text
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -58,6 +60,7 @@ from finance.plaid.spend.models import (
     TransactionPeriodSummary,
     UnavailableCardPeriod,
 )
+from finance.plaid.spend.policy_queries import select_policy_accounts, select_policy_transactions
 from finance.plaid.spend.portfolio import CoinbaseClient, read_portfolio
 from finance.plaid.spend.portfolio_models import PortfolioView, SourceValuation
 from finance.plaid.spend.reconciliation_views import allowance_view, sustainability_view
@@ -124,7 +127,7 @@ class SpendService:
         self._portfolio_lock = asyncio.Lock()
         self._portfolio_cache: tuple[datetime, PortfolioView] | None = None
         self._pool: asyncpg.Pool | None = None
-        self._portfolio_sessions: async_sessionmaker[AsyncSession] | None = None
+        self._read_sessions: async_sessionmaker[AsyncSession] | None = None
         self._listening = asyncio.Event()
         self._revision = 0
         self._subscribers: set[asyncio.Queue[None]] = set()
@@ -144,13 +147,11 @@ class SpendService:
     @contextlib.asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
         async with contextlib.AsyncExitStack() as resources:
-            portfolio_engine, portfolio_sessions = async_session_factory(
-                self._database_url, pool_size=1, max_overflow=0
-            )
-            resources.push_async_callback(portfolio_engine.dispose)
+            read_engine, read_sessions = async_session_factory(self._database_url, pool_size=1, max_overflow=0)
+            resources.push_async_callback(read_engine.dispose)
             pool = await resources.enter_async_context(asyncpg.create_pool(self._database_url, min_size=1, max_size=8))
             self._pool = pool
-            self._portfolio_sessions = portfolio_sessions
+            self._read_sessions = read_sessions
             try:
                 async with anyio.create_task_group() as task_group:
                     task_group.start_soon(self._listen_forever, name="plaid-spend-listener")
@@ -160,7 +161,7 @@ class SpendService:
                         task_group.cancel_scope.cancel()
             finally:
                 self._pool = None
-                self._portfolio_sessions = None
+                self._read_sessions = None
 
     def report_day(self, instant: datetime) -> date:
         return instant.astimezone(self._configuration.time_zone).date()
@@ -606,12 +607,9 @@ class SpendService:
         if policy is None:
             return None
         # No account IDs or names leave the server in the allowance view.
-        async with self._require_pool().acquire() as connection:
-            accounts = await connection.fetch(
-                """SELECT a.account_id, a.name, a.type, l.last_synced_at
-                   FROM public.accounts a JOIN public.links l ON l.item_id = a.item_id
-                   WHERE a.account_id = ANY($1::text[]) AND l.status = 'active'""",
-                list(policy.spending_account_ids),
+        async with self._require_read_sessions()() as session:
+            accounts = (
+                (await session.execute(select_policy_accounts(sorted(policy.spending_account_ids)))).mappings().all()
             )
             synced = [_as_utc(row["last_synced_at"]) for row in accounts]
             if account_labels is not None:
@@ -653,30 +651,23 @@ class SpendService:
                     last_synced_at=last_synced,
                     note="Account coverage or sync freshness unavailable; do not rely on the allowance.",
                 )
-            rows = []
+            rows: Sequence[RowMapping] = ()
             today = self.report_day(now)
             if policy.activation_at <= today:
-                raw_column = "t.raw_json," if transaction_details is not None else ""
-                rows = await connection.fetch(
-                    f"""SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
-                              t.date, t.amount, t.pending, t.name, t.merchant_name,
-                              t.pfc_primary, t.pfc_detailed,
-                              {_TRANSACTION_DATES_COLUMNS},
-                              {raw_column}
-                              a.type AS account_type,
-                              t.raw_json->>'merchant_category_code' AS merchant_category_code,
-                              {_COUNTERPARTIES_COLUMN},
-                              COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency
-                       FROM public.transactions t
-                       JOIN public.accounts a ON a.account_id = t.account_id AND a.item_id = t.item_id
-                       JOIN public.links l ON l.item_id = a.item_id
-                       WHERE t.account_id = ANY($1::text[])
-                         AND t.removed IS FALSE AND l.status = 'active'""",
-                    # A posting-date bound can drop late postings or purchases
-                    # that cross midnight in the policy zone. Filter in calculate
-                    # after choosing the effective purchase day instead.
-                    list(policy.spending_account_ids),
+                rows = (
+                    (
+                        await session.execute(
+                            select_policy_transactions(
+                                sorted(policy.spending_account_ids), include_raw_json=transaction_details is not None
+                            )
+                        )
+                    )
+                    .mappings()
+                    .all()
                 )
+                # A posting-date bound can drop late postings or purchases that
+                # cross midnight in the policy zone; calculate filters after
+                # choosing each transaction's effective purchase day.
             if transaction_details is not None:
                 transaction_details.update(
                     {(row["account_id"], row["transaction_id"]): _plaid_details(row["raw_json"]) for row in rows}
@@ -703,7 +694,7 @@ class SpendService:
                 return cached[1]
             try:
                 view = await read_portfolio(
-                    self._require_portfolio_sessions(), policy.portfolio, now=now, coinbase_client=self._coinbase_client
+                    self._require_read_sessions(), policy.portfolio, now=now, coinbase_client=self._coinbase_client
                 )
             except SQLAlchemyError:
                 view = PortfolioView(
@@ -751,16 +742,12 @@ class SpendService:
         account_labels = dict(self._configuration.account_labels)
         account_labels.update({card.account_id: card.label for card in self._configuration.cards})
         try:
-            async with (
-                self._require_pool().acquire() as connection,
-                connection.transaction(isolation="repeatable_read", readonly=True),
-            ):
-                accounts = await connection.fetch(
-                    """SELECT a.account_id, a.type, l.institution_name, l.last_synced_at
-                       FROM public.accounts a JOIN public.links l ON l.item_id = a.item_id
-                       WHERE a.account_id = ANY($1::text[]) AND a.detached_at IS NULL
-                         AND l.status = 'active'""",
-                    list(allowance.spending_account_ids),
+            async with self._require_read_sessions()() as session, session.begin():
+                await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+                accounts = (
+                    (await session.execute(select_policy_accounts(sorted(allowance.spending_account_ids))))
+                    .mappings()
+                    .all()
                 )
                 for row in accounts:
                     if row["institution_name"]:
@@ -772,23 +759,17 @@ class SpendService:
                     for row in accounts
                 ):
                     issues.append("Spending account coverage or sync freshness is unavailable.")
-                rows = await connection.fetch(
-                    f"""SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
-                               t.date, t.amount, t.pending, t.name, t.merchant_name,
-                               t.pfc_primary, t.pfc_detailed, {_TRANSACTION_DATES_COLUMNS},
-                               a.type AS account_type,
-                               t.raw_json->>'merchant_category_code' AS merchant_category_code,
-                               {_COUNTERPARTIES_COLUMN},
-                               COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency
-                        FROM public.transactions t
-                        JOIN public.accounts a ON a.account_id=t.account_id AND a.item_id=t.item_id
-                        JOIN public.links l ON l.item_id=a.item_id
-                        WHERE t.account_id = ANY($1::text[]) AND t.removed IS FALSE
-                          AND a.detached_at IS NULL AND l.status='active'""",
-                    list(allowance.spending_account_ids),
+                rows = (
+                    (
+                        await session.execute(
+                            select_policy_transactions(sorted(allowance.spending_account_ids), include_raw_json=False)
+                        )
+                    )
+                    .mappings()
+                    .all()
                 )
                 transactions = [Transaction.model_validate(dict(row)) for row in rows]
-        except asyncpg.PostgresError:
+        except SQLAlchemyError:
             issues.append("The spending source could not be read; totals are unavailable.")
         portfolio = await self._read_current_portfolio(now)
         return [
@@ -813,10 +794,10 @@ class SpendService:
             raise RuntimeError("spend database pool is not initialized")
         return self._pool
 
-    def _require_portfolio_sessions(self) -> async_sessionmaker[AsyncSession]:
-        if self._portfolio_sessions is None:
-            raise RuntimeError("spend portfolio session factory is not initialized")
-        return self._portfolio_sessions
+    def _require_read_sessions(self) -> async_sessionmaker[AsyncSession]:
+        if self._read_sessions is None:
+            raise RuntimeError("spend read session factory is not initialized")
+        return self._read_sessions
 
     async def _listen_forever(self) -> None:
         while True:

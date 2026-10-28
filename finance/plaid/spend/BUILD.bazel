@@ -48,6 +48,7 @@ py_library(
         ":allowance",
         ":configuration",
         ":models",
+        ":policy_queries",
         ":portfolio",
         ":portfolio_models",
         ":reconciliation_views",
@@ -393,5 +394,14 @@ py_library(
         "//finance:yaml_decimal",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "policy_queries",
+    srcs = ["policy_queries.py"],
+    deps = [
+        "//finance/plaid/db:models",
+        "@pypi//sqlalchemy",
     ],
 )
