@@ -161,11 +161,11 @@ func TestConfiguredInboxAndEntryQuotas(t *testing.T) {
 	event := func(sequence int64) model.EventIdentity {
 		return model.ActionsEvent{RequestID: request, Sequence: sequence}
 	}
-	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(1), `{}`)
-	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(2), `{}`)
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(1), entryPayloadForTest(t, event(1)))
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(2), entryPayloadForTest(t, event(2)))
 	// A replay of events the inbox holds needs no capacity.
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(2), `{}`)
-	requireQuota(t, f.appendEvent(subscription.InboxID, subscription.ID, event(3), `{}`), EntriesPerInbox, 2)
+	requireQuota(t, f.appendEvent(subscription.InboxID, subscription.ID, event(3), entryPayloadForTest(t, event(3))), EntriesPerInbox, 2)
 	page := f.read(t, subscription.InboxID, 0)
 	if page.Inbox.LastCursor != 2 || len(page.Entries) != 2 {
 		t.Fatalf("last cursor %d with %d entries, want 2 and 2", page.Inbox.LastCursor, len(page.Entries))

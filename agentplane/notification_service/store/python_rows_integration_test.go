@@ -14,8 +14,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// These tests write rows the way the retired Python service did, from the golden vectors it produced, and hold the
-// store to finding and reading them: the store takes over a database that Python filled.
+// These tests write rows the retired Python service produced, with the destination columns populated as the
+// production backfill does, and hold the store to finding and reading them.
 
 func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef, sessionID string) uuid.UUID {
 	t.Helper()
@@ -31,10 +31,11 @@ func (f fixture) insertInboxAs(t *testing.T, id uuid.UUID, key string, ref model
 		t.Fatal(err)
 	}
 	f.exec(t, `
-		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref, session_id,
+		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref,
+			destination_namespace, destination_name, destination_uid, session_id,
 			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6, 0, 0, 0, 0, false, now(), now(), now())`,
-		id, f.owner.Namespace, f.owner.Name, key, string(destination), sessionID)
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 0, 0, 0, 0, false, now(), now(), now())`,
+		id, f.owner.Namespace, f.owner.Name, key, string(destination), ref.Namespace, ref.Name, ref.UID, sessionID)
 }
 
 // insertSubscription writes a subscription of the inbox from the creation JSON Python stored, with the columns
@@ -127,13 +128,17 @@ func TestInboxesPythonCreatedAreFoundByTheirDestinationKey(t *testing.T) {
 func TestSubscriptionsPythonCreatedAreReadAndFoundByTheirKey(t *testing.T) {
 	for _, vector := range loadGolden(t).Subscriptions {
 		t.Run(vector.Name, func(t *testing.T) {
-			f := newFixture(t, defaultQuotas())
+			f := newIsolatedFixture(t, defaultQuotas())
 			var sent model.Subscribe
 			if err := decode(vector.Input, &sent); err != nil {
 				t.Fatal(err)
 			}
 			inboxID := f.insertInbox(t, model.DestinationKey(sent.DestinationRef, sent.SessionID), sent.DestinationRef, sent.SessionID)
+			allowLegacySubscriptionCreationTestRows(t, t.Context(), f.db)
 			id := f.insertSubscription(t, inboxID, vector.Stored)
+			if err := BackfillSubscriptionCreations(t.Context(), f.db); err != nil {
+				t.Fatal(err)
+			}
 
 			read := f.get(t, id)
 			if read.InboxID != inboxID || read.IdempotencyKey != sent.IdempotencyKey || read.Version != 1 || read.Cancelled ||
@@ -175,8 +180,7 @@ func TestEntriesPythonWroteAreReadAndNotAppendedAgain(t *testing.T) {
 	subscription := f.subscribe(t, body("first"))
 	vectors := loadGolden(t).Events
 	for i, vector := range vectors {
-		f.exec(t, `INSERT INTO entry (inbox_id, cursor, event, payload, created_at) VALUES ($1, $2, $3::jsonb, '{}'::jsonb, now())`,
-			subscription.InboxID, i+1, string(vector.Event))
+		insertBackfilledEntry(t, f.db, subscription.InboxID, int64(i+1), vector.Event, "{}")
 	}
 	f.exec(t, `UPDATE inbox SET last_cursor = $2 WHERE id = $1`, subscription.InboxID, len(vectors))
 

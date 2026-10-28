@@ -1,12 +1,14 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
@@ -120,8 +122,18 @@ func TestSandboxStatusSummarizesWhatAwaitsAcknowledgementWithoutItsContent(t *te
 	subscription := f.subscribeIn(t, "first", uniqueSession(), ref)
 	request := subscription.Source.(model.ActionsSource).RequestID
 	for sequence := int64(1); sequence <= 3; sequence++ {
-		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, model.ActionsEvent{RequestID: request, Sequence: sequence},
-			fmt.Sprintf(`{"sequence": %d, "state": "decision_pending", "result": "private"}`, sequence))
+		event := ActionEvent{
+			Sequence: sequence, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING,
+			At: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+			Actor: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{
+				Issuer: "private-issuer", Subject: "private-subject",
+			}}},
+		}
+		payload, err := json.Marshal(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, model.ActionsEvent{RequestID: request, Sequence: sequence}, string(payload))
 	}
 	summaries := func(cursors ...int64) []EntrySummary {
 		var want []EntrySummary
