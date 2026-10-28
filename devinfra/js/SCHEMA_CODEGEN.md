@@ -5,6 +5,9 @@ declaration file and packages it in a `js_library` under the requested target na
 produces the artifact; the converter does not invoke a backend exporter.
 
 ```starlark
+load("//devinfra/js:openapi_typescript.bzl", "openapi_typescript")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+
 genrule(
     name = "openapi_schema",
     outs = ["openapi.json"],
@@ -21,6 +24,7 @@ openapi_typescript(
 ts_library(
     name = "client",
     srcs = ["client.ts"],
+    tsconfig = ":tsconfig",
     deps = [":schema"],
 )
 ```
