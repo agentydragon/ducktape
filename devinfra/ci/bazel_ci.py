@@ -204,7 +204,7 @@ def _select_targets(temp_dir: Path) -> tuple[bool, list[str], Path]:
 
 
 def main() -> int:
-    """Run selection, test, and build, then finalize runner diagnostics."""
+    """Run selection, test, build, and Go race tests, then finalize runner diagnostics."""
     with tempfile.TemporaryDirectory(prefix="ducktape-bazel-ci-") as temp_path:
         temp_dir = Path(temp_path)
         try:
@@ -261,7 +261,34 @@ def main() -> int:
                 ]
             )
             _probe("after-build")
-            return 0
+            go_test_query = temp_dir / "go-test-query.txt"
+            go_test_set = f'kind("go_test rule", {test_query.read_text().strip()})'
+            go_test_query.write_text(f'{go_test_set} except attr("tags", "manual|live_openai_api", {go_test_set})\n')
+            go_tests = _capture(["bazel", "query", f"--query_file={go_test_query}"])
+            if not go_tests.strip():
+                print("No Go tests in scope -- skipping race detection.")
+                return 0
+
+            race_targets = temp_dir / "race-targets.txt"
+            race_targets.write_text(go_tests)
+            _announce_bazel_command("race")
+            race_result = _run(
+                [
+                    "bazel",
+                    "test",
+                    f"--invocation_id={os.environ['RACE_INVOCATION_ID']}",
+                    "--keep_going",
+                    *_rbe_flags(),
+                    "--build_metadata=DISABLE_TARGET_TRACKING=true",
+                    "--@io_bazel_rules_go//go/config:race",
+                    f"--target_pattern_file={race_targets}",
+                ],
+                check=False,
+            )
+            if race_result.returncode == 4:
+                print("No runnable Go tests after tag filtering; skipping race detection.")
+                return 0
+            return race_result.returncode
         finally:
             _finalize_probe()
 

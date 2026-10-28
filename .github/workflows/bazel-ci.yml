@@ -76,7 +76,9 @@ jobs:
   bazel-ci:
     name: Test & Build
     outputs:
-      bazel_invocation_ids: ${{ steps.bb-remote.outputs.bazel_invocation_ids }}
+      # The race invocation is linked for diagnostics and cancellation, but its
+      # differently configured outputs are not publication evidence.
+      bazel_invocation_ids: ${{ steps.bb-remote.outputs.bazel_invocation_ids && format('{0},{1}', steps.invocation-ids.outputs.test, steps.invocation-ids.outputs.build) || '' }}
       test_invocation_id: ${{ steps.invocation-ids.outputs.test }}
       test_source_commit: ${{ steps.source.outputs.sha }}
     environment: ${{ inputs.environment || null }}
@@ -134,7 +136,7 @@ jobs:
       - name: Derive BuildBuddy invocation IDs
         id: invocation-ids
         run: |
-          for role in test build; do
+          for role in test build race; do
             id=$(python3 devinfra/ci/invocation_ids.py \
               --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --role "$role")
             echo "$role=$id" >> "$GITHUB_OUTPUT"
@@ -179,8 +181,8 @@ jobs:
           # recycling remains enabled for subsequent full //... runs.
           runner_recycling_key: ducktape-bazel-ci-v3
           run_from_commit: ${{ steps.source.outputs.sha }}
-          linkage_roles: test,build
-          bazel_invocation_ids: ${{ steps.invocation-ids.outputs.test }},${{ steps.invocation-ids.outputs.build }}
+          linkage_roles: test,build,race
+          bazel_invocation_ids: ${{ steps.invocation-ids.outputs.test }},${{ steps.invocation-ids.outputs.build }},${{ steps.invocation-ids.outputs.race }}
           # The build itself lives in devinfra/ci/bazel_ci.py — see that file's header for
           # why it runs on the BuildBuddy runner VM rather than the GitHub Actions runner.
           # The VM has the repo checked
@@ -192,6 +194,7 @@ jobs:
             PR_BASE_SHA=${{ inputs.pr_base_sha || github.event.pull_request.base.sha }}
             TEST_INVOCATION_ID=${{ steps.invocation-ids.outputs.test }}
             BUILD_INVOCATION_ID=${{ steps.invocation-ids.outputs.build }}
+            RACE_INVOCATION_ID=${{ steps.invocation-ids.outputs.race }}
           script: python3 devinfra/ci/bazel_ci.py
 
       - name: Finish live BuildBuddy test status
