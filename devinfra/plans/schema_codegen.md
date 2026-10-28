@@ -9,11 +9,10 @@ design-base commit [`6eb2ffc2131fff18eaedcbdcf12d23aa93187edf`](https://github.c
 Links to the former macro files point to that baseline because those files are removed by the
 implementation. The “after” map describes the combined target state, including the direct named
 imports migrated in [PR #12418](https://github.com/agentydragon/ducktape/pull/12418). The file-input
-converter implementation is stacked in [#12477](https://github.com/agentydragon/ducktape/pull/12477)
-→ [#12484](https://github.com/agentydragon/ducktape/pull/12484) →
-[#12489](https://github.com/agentydragon/ducktape/pull/12489) →
-[#12499](https://github.com/agentydragon/ducktape/pull/12499); this spike follows that production
-stack.
+converters and their declaration packaging are stacked in [#12477](https://github.com/agentydragon/ducktape/pull/12477)
+(OpenAPI declarations) → [#12484](https://github.com/agentydragon/ducktape/pull/12484) (JSON Schema
+declarations) → [#12489](https://github.com/agentydragon/ducktape/pull/12489) (OpenAPI Zod); this
+spike follows that production stack.
 
 ## Baseline inputs, outputs, and owners
 
@@ -771,14 +770,11 @@ and Python. No live RPC server, Kubernetes API, Google service, or LLM provider 
 
 The implementation burned down the proposed migration gates as follows:
 
-1. Promoted the OpenAPI declarations, OpenAPI-to-Zod, and JSON Schema-to-declarations converters
-   into the format-specific file-input rules in [#12477](https://github.com/agentydragon/ducktape/pull/12477),
-   [#12484](https://github.com/agentydragon/ducktape/pull/12484), and
-   [#12489](https://github.com/agentydragon/ducktape/pull/12489). [#12499](https://github.com/agentydragon/ducktape/pull/12499)
-   makes the OpenAPI and JSON Schema macros expose those declarations through named `js_library`
-   targets while preserving direct output-file labels. Tests exercise source and generated single-file
-   labels, cross-package schemas and configuration, declared relative references, and caller date
-   settings.
+1. Promoted the OpenAPI declarations and their named `js_library` packaging into [#12477](https://github.com/agentydragon/ducktape/pull/12477),
+   the JSON Schema declarations and their packaging into [#12484](https://github.com/agentydragon/ducktape/pull/12484),
+   and OpenAPI-to-Zod into [#12489](https://github.com/agentydragon/ducktape/pull/12489). Both declaration
+   macros preserve direct output-file labels. Tests exercise source and generated single-file labels,
+   cross-package schemas and configuration, declared relative references, and caller date settings.
 2. Migrated every production caller of the previous `js_openapi_schema`, `js_openapi_zod`, and
    `js_json_schema` macros to explicit owner schema artifacts and normal language packaging. The
    SSH owner exports standalone argument/result schemas, and its actual FastMCP producer payloads
