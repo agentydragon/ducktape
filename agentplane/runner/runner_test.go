@@ -71,6 +71,84 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestOpenSessionRetryRestoresSetupAfterSealPublicationFailure(t *testing.T) {
+	proxy := modelConfigServer(t)
+	workspace := t.TempDir()
+	failure := errors.New("injected journal seal publication failure")
+	resources := &failJournalSealPublicationOnce{
+		State:   state.WrapCore(namespaced.NewState(inmem.Build)),
+		failure: failure,
+	}
+	resources.fail.Store(true)
+	r, err := newRunner(lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), nil, resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.store.AdoptIncarnation("test-incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Startup(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := r.Close(); err != nil {
+			t.Errorf("close test runner: %v", err)
+		}
+	})
+
+	marker := filepath.Join(t.TempDir(), "setup-runs")
+	script := fmt.Sprintf("printf setup >> %s", shellQuote(marker))
+	request := openLifecycleSession("session-retry", filepath.Join(workspace, "project"))
+	request.SetupScript = &script
+	if _, err := r.OpenSession(context.Background(), request); status.Code(err) != codes.Unavailable {
+		t.Fatalf("first OpenSession error = %v, want injected Unavailable", err)
+	}
+	if resources.fail.Load() {
+		t.Fatal("journal seal publication failure was not injected")
+	}
+	if r.sessions.Get(request.SessionId) != nil {
+		t.Fatal("failed OpenSession became visible in the Session registry")
+	}
+	if _, found, err := session.ReadInput(r.ctx, r.lifecycle.state, request.SessionId); err != nil || found {
+		t.Fatalf("failed OpenSession published a Session input: found=%t, err=%v", found, err)
+	}
+
+	if _, err := r.OpenSession(context.Background(), request); err != nil {
+		t.Fatalf("identical OpenSession retry: %v", err)
+	}
+	s := r.sessions.Get(request.SessionId)
+	if s == nil {
+		t.Fatal("successful OpenSession retry did not register the Session")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var cursor uint64
+	for {
+		entries, err := s.EventJournal().Since(ctx, cursor, 128)
+		if err != nil {
+			t.Fatal(err)
+		}
+		finished := false
+		for _, entry := range entries {
+			cursor = entry.Cursor
+			if entry.GetEvent().GetSetupInterrupted() != nil {
+				t.Fatalf("fresh setup was marked interrupted during retry: %v", entries)
+			}
+			finished = finished || entry.GetEvent().GetSetupFinished() != nil
+		}
+		if finished {
+			break
+		}
+		if err := s.EventJournal().WaitBeyond(ctx, cursor); err != nil {
+			t.Fatalf("wait for retried setup: %v", err)
+		}
+	}
+	output, err := os.ReadFile(marker)
+	if err != nil || string(output) != "setup" {
+		t.Fatalf("setup execution marker = %q, err=%v; want exactly one setup run", output, err)
+	}
+}
+
 func TestInvalidInputAndStaleTurnNeverAdmitCommands(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
@@ -157,6 +235,19 @@ type initialOperationFailureState struct {
 	failTeardown    atomic.Bool
 	failed          chan struct{}
 	teardownFailed  chan struct{}
+}
+
+type failJournalSealPublicationOnce struct {
+	state.State
+	failure error
+	fail    atomic.Bool
+}
+
+func (s *failJournalSealPublicationOnce) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
+	if value.Metadata().Type() == journalSealType && s.fail.CompareAndSwap(true, false) {
+		return s.failure
+	}
+	return s.State.Modify(ctx, value, update, opts...)
 }
 
 func (s *initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {

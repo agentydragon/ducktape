@@ -82,6 +82,9 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 				return nil, status.Error(codes.AlreadyExists, "session exists with a different setup script")
 			}
 		}
+		if s.SetupScriptSHA256() != nil && request.SetupScript != nil {
+			s.SetSetupScript(request.GetSetupScript())
+		}
 		return &runnerservicepb.OpenSessionResponse{Attached: s.Attached()}, nil
 	}
 	budget, err := r.config.ResolveModelConfig(ctx, spec.Harness, spec.Model)

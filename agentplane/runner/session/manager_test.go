@@ -2,6 +2,8 @@ package session
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -221,6 +223,127 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	}
 	if err := fresh.journal.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	root := t.TempDir()
+	store, err := retained.NewStore(filepath.Join(root, "sessions"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := retained.NewRecord(&runnerpb.SessionSpec{
+		Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: root, Model: "test-model",
+	}, "echo retained setup", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write("reopen-session", record); err != nil {
+		t.Fatal(err)
+	}
+	directory, err := store.Directory("reopen-session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	acknowledgementPath := filepath.Join(directory, "acknowledgement.json")
+	sealedJournal, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealCursor, err := sealedJournal.Seal(ctx, "previous-incarnation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sealedJournal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sealedAck := retained.Acknowledgement{Cursor: sealCursor, Sealed: true}
+	if err := store.WriteAcknowledgement("reopen-session", sealedAck); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AdoptIncarnation("current-incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	resources := state.WrapCore(namespaced.NewState(inmem.Build))
+	var ackPublications []retained.Acknowledgement
+	ackPublishCalls := 0
+	publishErr := errors.New("injected acknowledgement publication failure")
+	m, err := NewManager(withTestSessionFacilities(t, Config{
+		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root),
+		Destination: func(string) string { return "test-destination" },
+		PublishSeal: func(string, *journal.SealState) error { return nil },
+		PublishAck: func(_ string, ack retained.Acknowledgement) error {
+			ackPublishCalls++
+			if ackPublishCalls == 1 {
+				if err := os.WriteFile(acknowledgementPath, []byte("invalid acknowledgement"), 0o600); err != nil {
+					return err
+				}
+				return publishErr
+			}
+			ackPublications = append(ackPublications, ack)
+			return nil
+		},
+		OnChange: func() {},
+		OnError: func(err error) {
+			if err != nil {
+				t.Errorf("session manager: %v", err)
+			}
+		},
+		ReconcileConcurrency: 1,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := m.Close(); err != nil {
+			t.Errorf("close session manager: %v", err)
+		}
+	})
+	if _, err := m.Load(ctx, "reopen-session"); !errors.Is(err, publishErr) {
+		t.Fatalf("initial load error = %v, want %v after durable journal reopen", err, publishErr)
+	}
+	if m.Get("reopen-session") != nil {
+		t.Fatal("failed reopen became visible in the Session registry")
+	}
+	if _, found, err := ReadInput(ctx, resources, "reopen-session"); err != nil || found {
+		t.Fatalf("failed reopen published a Session input: found=%t, err=%v", found, err)
+	}
+	if err := store.WriteAcknowledgement("reopen-session", sealedAck); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := m.Load(ctx, "reopen-session")
+	if err != nil {
+		t.Fatalf("retry load after durable journal reopen: %v", err)
+	}
+	ack, err := store.ReadAcknowledgement("reopen-session")
+	if err != nil || ack == nil || ack.Cursor != sealCursor || ack.Sealed {
+		t.Fatalf("reopened acknowledgement = %+v, err=%v; want cursor preserved and unsealed", ack, err)
+	}
+	if len(ackPublications) != 1 || ackPublications[0] != *ack {
+		t.Fatalf("acknowledgement publications = %+v, want one unsealed retry state", ackPublications)
+	}
+	entries, err := s.journal.Since(ctx, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, interrupted := 0, 0
+	for _, entry := range entries {
+		if entry.GetEvent().GetJournalReopened() != nil {
+			reopened++
+		}
+		if entry.GetEvent().GetSetupInterrupted() != nil {
+			interrupted++
+		}
+	}
+	input, found, err := ReadInput(ctx, resources, "reopen-session")
+	if err != nil || !found || input.Setup != runnerpb.SetupState_SETUP_STATE_INTERRUPTED {
+		t.Fatalf("retained setup state = %+v, found=%t, err=%v", input, found, err)
+	}
+	if reopened != 1 || interrupted != 1 || s.journal.SealState() != nil {
+		t.Fatalf("reopen evidence: events=%v, seal=%+v", entries, s.journal.SealState())
 	}
 }
 

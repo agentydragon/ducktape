@@ -35,6 +35,8 @@ type Manager struct {
 	mu       sync.Mutex
 	loadMu   sync.Mutex
 	sessions map[string]*Session
+	// loadMu guards freshReservations; those records have not completed their first publication.
+	freshReservations map[string]struct{}
 }
 
 func NewManager(config Config) (*Manager, error) {
@@ -54,7 +56,7 @@ func NewManager(config Config) (*Manager, error) {
 		workspaceRoot: config.WorkspaceRoot, destination: config.Destination,
 		publishSeal: config.PublishSeal, publishAck: config.PublishAck,
 		changed: config.OnChange, fail: config.OnError,
-		workers: config.ReconcileConcurrency, sessions: map[string]*Session{},
+		workers: config.ReconcileConcurrency, sessions: map[string]*Session{}, freshReservations: map[string]struct{}{},
 	}
 	m.dependencies = sessionDependencies{
 		ctx: config.Context, state: config.State, store: config.Store,
@@ -114,6 +116,7 @@ func (m *Manager) ReserveFresh(ctx context.Context, id string, reserve func() er
 	if err := reserve(); err != nil {
 		return nil, err
 	}
+	m.freshReservations[id] = struct{}{}
 	return m.loadLocked(ctx, id, false)
 }
 
@@ -121,7 +124,8 @@ func (m *Manager) ReserveFresh(ctx context.Context, id string, reserve func() er
 func (m *Manager) Load(ctx context.Context, id string) (*Session, error) {
 	m.loadMu.Lock()
 	defer m.loadMu.Unlock()
-	return m.loadLocked(ctx, id, true)
+	_, freshReservation := m.freshReservations[id]
+	return m.loadLocked(ctx, id, !freshReservation)
 }
 
 func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained bool) (*Session, error) {
@@ -143,44 +147,39 @@ func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained boo
 	if err != nil {
 		return nil, err
 	}
+	initialized := false
+	defer func() {
+		if !initialized {
+			_ = journal.Close()
+		}
+	}()
 	deps := m.dependencies
 	deps.destination = m.destination(id)
 	s := newSession(deps, id, &record, journal)
 	s.loading = true
 	if err := s.load(ctx); err != nil {
-		_ = journal.Close()
 		return nil, err
 	}
 	if recoverRetained {
 		if err := s.recover(ctx); err != nil {
-			_ = journal.Close()
 			return nil, err
 		}
 	}
 	s.mu.Lock()
 	s.loading = false
 	s.mu.Unlock()
-	m.mu.Lock()
-	m.sessions[id] = s
-	m.mu.Unlock()
-	if err := m.publishSeal(s.id, s.journal.SealState()); err != nil {
-		return nil, err
-	}
-	ack, err := m.store.ReadAcknowledgement(id)
-	if err != nil {
-		return nil, err
-	}
-	if ack != nil {
-		if err := m.publishAck(id, *ack); err != nil {
-			return nil, err
-		}
-	}
-	s.notifyBlockers()
-	m.publishSession(s, false)
 	if err := m.Reopen(ctx, s); err != nil {
 		return nil, err
 	}
+	// The Session controller resolves each published Input through Get.
+	m.mu.Lock()
+	m.sessions[id] = s
+	m.mu.Unlock()
+	s.notifyBlockers()
+	m.publishSession(s, false)
+	delete(m.freshReservations, id)
 	m.changed()
+	initialized = true
 	return s, nil
 }
 
@@ -205,30 +204,38 @@ func (m *Manager) ResumeRecovered(s *Session) error {
 func (m *Manager) Reopen(ctx context.Context, s *Session) error {
 	uid, known := m.store.IncarnationUID()
 	seal := s.journal.SealState()
-	if !known || m.store.Lameduck() || seal == nil || seal.IncarnationUID == uid {
-		return nil
-	}
-	if err := s.journal.Reopen(ctx, uid); err != nil {
-		return err
+	mayReopen := known && !m.store.Lameduck()
+	reopening := mayReopen && seal != nil && seal.IncarnationUID != uid
+	if reopening {
+		if err := s.journal.Reopen(ctx, uid); err != nil {
+			return err
+		}
 	}
 	ack, err := m.store.ReadAcknowledgement(s.id)
 	if err != nil {
 		return err
 	}
-	if ack == nil {
+	writeAck := reopening && ack == nil || mayReopen && ack != nil && ack.Sealed && s.journal.SealState() == nil
+	if writeAck && ack == nil {
 		ack = &retained.Acknowledgement{}
 	}
-	ack.Sealed = false
-	if err := m.store.WriteAcknowledgement(s.id, *ack); err != nil {
-		return err
-	}
-	if err := m.publishAck(s.id, *ack); err != nil {
-		return err
+	if writeAck {
+		ack.Sealed = false
+		if err := m.store.WriteAcknowledgement(s.id, *ack); err != nil {
+			return err
+		}
 	}
 	if err := m.publishSeal(s.id, s.journal.SealState()); err != nil {
 		return err
 	}
-	m.changed()
+	if ack != nil {
+		if err := m.publishAck(s.id, *ack); err != nil {
+			return err
+		}
+	}
+	if reopening || writeAck {
+		m.changed()
+	}
 	return nil
 }
 
