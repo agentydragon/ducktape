@@ -4049,6 +4049,10 @@ fn source_record_native_integrity_rejects_unknown_or_rebound_keys() {
         "export function publish() { for (const [key = 'Map', value] of Object.entries({ safe: 1 })) globalThis[key] = value; }",
         "const key = Symbol.for('example.registry'); export function mutate() { Map[key] = 1; }",
         "export function mutate() { Map++; }",
+        "const key = Symbol.for('example.registry'); export function replace() { globalThis.box = Symbol; globalThis.box.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
+        "const key = Symbol.for('example.registry'); export function replace() { globalThis.box = Symbol; const alias = globalThis.box; alias.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
+        "const key = Symbol.for('example.registry'); export function replace() { globalThis[key] = Symbol; globalThis[key].for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
+        "const key = Symbol.for('example.registry'); export function replace() { globalThis[key] = Symbol; const alias = globalThis[key]; alias.for = () => 'Map'; globalThis[Symbol.for('other.registry')] = function () {}; }",
     ] {
         expect_atomic_conflict_rejection(
             source_record_namespace_opts(&[
@@ -4088,4 +4092,26 @@ fn source_record_native_integrity_checks_other_chunk_operation_replacement() {
             &[],
         );
     }
+}
+
+#[test]
+fn source_record_native_integrity_handles_long_aliases_and_cycles() {
+    let mut namespace = String::from("const key0 = Symbol.for('example.registry');\n");
+    for index in 1..=256 {
+        namespace.push_str(&format!("const key{index} = key{};\n", index - 1));
+    }
+    namespace.push_str("export function publish(value) { globalThis[key256] = value; }\n");
+    let fixture = source_record_with_global_namespace(&namespace);
+    assert_preserved_entry_output(&fixture, "0 Later\n");
+    expect_atomic_conflict_rejection(
+        source_record_namespace_opts(&[
+            ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+            (
+                "static/namespace",
+                "var first = second; var second = first; export function publish(value) { globalThis[first] = value; }",
+            ),
+        ]),
+        &["queue", "later"],
+        &[],
+    );
 }

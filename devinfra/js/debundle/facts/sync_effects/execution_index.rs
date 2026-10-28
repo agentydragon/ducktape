@@ -1257,6 +1257,36 @@ fn returned_function_span(expr: &Expr) -> Option<Span> {
 
 type IntrinsicRoots = BTreeSet<IntrinsicRoot>;
 
+/// The named native binding a write on a proved global object can replace.
+/// Reading an unrelated global slot instead yields an unknown value identity.
+fn named_global_intrinsic(property: &str) -> Option<IntrinsicRoot> {
+    match property {
+        "Error" => Some(IntrinsicRoot::Error),
+        "Object" => Some(IntrinsicRoot::Object),
+        "Array" => Some(IntrinsicRoot::Array),
+        "Math" => Some(IntrinsicRoot::Math),
+        "RegExp" => Some(IntrinsicRoot::RegExp),
+        "Symbol" => Some(IntrinsicRoot::Symbol),
+        "Promise" => Some(IntrinsicRoot::Promise),
+        "Map" => Some(IntrinsicRoot::Map),
+        "Set" => Some(IntrinsicRoot::Set),
+        "WeakMap" => Some(IntrinsicRoot::WeakMap),
+        "WeakSet" => Some(IntrinsicRoot::WeakSet),
+        "globalThis" | "window" | "self" | "frames" | "top" => Some(IntrinsicRoot::GlobalObject),
+        _ => None,
+    }
+}
+
+/// Any mutation through an unresolved global-slot value can reach a native
+/// object. Preserve that uncertainty instead of treating it as the global
+/// object itself and discarding an unrelated descendant property name.
+fn native_mutation_roots(mut roots: IntrinsicRoots) -> IntrinsicRoots {
+    if roots.remove(&IntrinsicRoot::UnknownGlobalValue) {
+        roots.insert(IntrinsicRoot::GlobalObject);
+    }
+    roots
+}
+
 fn intrinsic_roots(
     value: &ValueExpr,
     roots: &BTreeMap<Id, IntrinsicRoots>,
@@ -1307,45 +1337,17 @@ fn intrinsic_roots(
             let mut out = IntrinsicRoots::new();
             for root in base_roots {
                 match root {
-                    IntrinsicRoot::GlobalObject => match property.as_deref() {
-                        Some("Error") => {
-                            out.insert(IntrinsicRoot::Error);
-                        }
-                        Some("Object") => {
-                            out.insert(IntrinsicRoot::Object);
-                        }
-                        Some("Array") => {
-                            out.insert(IntrinsicRoot::Array);
-                        }
-                        Some("Math") => {
-                            out.insert(IntrinsicRoot::Math);
-                        }
-                        Some("RegExp") => {
-                            out.insert(IntrinsicRoot::RegExp);
-                        }
-                        Some("Symbol") => {
-                            out.insert(IntrinsicRoot::Symbol);
-                        }
-                        Some("Promise") => {
-                            out.insert(IntrinsicRoot::Promise);
-                        }
-                        Some("Map") => {
-                            out.insert(IntrinsicRoot::Map);
-                        }
-                        Some("Set") => {
-                            out.insert(IntrinsicRoot::Set);
-                        }
-                        Some("WeakMap") => {
-                            out.insert(IntrinsicRoot::WeakMap);
-                        }
-                        Some("WeakSet") => {
-                            out.insert(IntrinsicRoot::WeakSet);
-                        }
-                        Some("globalThis" | "window" | "self" | "frames" | "top") | None => {
-                            out.insert(IntrinsicRoot::GlobalObject);
-                        }
-                        _ => {}
-                    },
+                    IntrinsicRoot::GlobalObject => {
+                        out.insert(
+                            property
+                                .as_deref()
+                                .and_then(named_global_intrinsic)
+                                .unwrap_or(IntrinsicRoot::UnknownGlobalValue),
+                        );
+                    }
+                    IntrinsicRoot::UnknownGlobalValue => {
+                        out.insert(IntrinsicRoot::UnknownGlobalValue);
+                    }
                     // A member of a builtin constructor remains rooted in that
                     // constructor: Array.prototype.map, Array[Symbol.species],
                     // and Object.fromEntries are mutations of their respective
@@ -1436,40 +1438,46 @@ impl PropertyKeyEvidence {
     }
 }
 
-fn property_key_evidence(
-    expression: &PropertyKeyExpr,
-    assignments: &BTreeMap<Id, Vec<PropertyKeyExpr>>,
+fn property_key_evidence<'a>(
+    expression: &'a PropertyKeyExpr,
+    assignments: &'a BTreeMap<Id, Vec<PropertyKeyExpr>>,
     declared: &BTreeSet<Id>,
-    active: &mut BTreeSet<Id>,
 ) -> PropertyKeyEvidence {
-    match expression {
-        PropertyKeyExpr::String(key) => PropertyKeyEvidence {
-            domain: PropertyKeyDomain::FiniteStrings(BTreeSet::from([key.clone()])),
-            dependencies: BTreeSet::new(),
-        },
-        PropertyKeyExpr::Binding(binding) if active.insert(binding.clone()) => {
-            let evidence = match assignments.get(binding).map(Vec::as_slice) {
-                Some([value]) => property_key_evidence(value, assignments, declared, active),
-                _ => PropertyKeyEvidence::unknown(),
-            };
-            active.remove(binding);
-            evidence
-        }
-        PropertyKeyExpr::SymbolFor(namespace) if !declared.contains(namespace) => {
-            PropertyKeyEvidence {
-                domain: PropertyKeyDomain::Symbol,
-                dependencies: BTreeSet::from([IntrinsicRoot::Symbol]),
+    let mut expression = expression;
+    let mut seen = BTreeSet::new();
+    loop {
+        match expression {
+            PropertyKeyExpr::Binding(binding) => {
+                if !seen.insert(binding) {
+                    return PropertyKeyEvidence::unknown();
+                }
+                match assignments.get(binding).map(Vec::as_slice) {
+                    Some([value]) => expression = value,
+                    _ => return PropertyKeyEvidence::unknown(),
+                }
             }
-        }
-        PropertyKeyExpr::EntriesKeys(namespace, keys) if !declared.contains(namespace) => {
-            PropertyKeyEvidence {
-                domain: PropertyKeyDomain::FiniteStrings(keys.clone()),
-                // Both the outer entries array and each destructured pair use the
-                // Array iterator. Preserve the same family premise for both.
-                dependencies: BTreeSet::from([IntrinsicRoot::Object, IntrinsicRoot::Array]),
+            PropertyKeyExpr::String(key) => {
+                return PropertyKeyEvidence {
+                    domain: PropertyKeyDomain::FiniteStrings(BTreeSet::from([key.clone()])),
+                    dependencies: BTreeSet::new(),
+                };
             }
+            PropertyKeyExpr::SymbolFor(namespace) if !declared.contains(namespace) => {
+                return PropertyKeyEvidence {
+                    domain: PropertyKeyDomain::Symbol,
+                    dependencies: BTreeSet::from([IntrinsicRoot::Symbol]),
+                };
+            }
+            PropertyKeyExpr::EntriesKeys(namespace, keys) if !declared.contains(namespace) => {
+                return PropertyKeyEvidence {
+                    domain: PropertyKeyDomain::FiniteStrings(keys.clone()),
+                    // Both the outer entries array and each destructured pair use
+                    // the Array iterator, so the premise covers both protocols.
+                    dependencies: BTreeSet::from([IntrinsicRoot::Object, IntrinsicRoot::Array]),
+                };
+            }
+            _ => return PropertyKeyEvidence::unknown(),
         }
-        _ => PropertyKeyEvidence::unknown(),
     }
 }
 
@@ -2633,20 +2641,14 @@ impl ExecutionIndex {
                 &index.global_object_names,
             );
             let Some(key) = &write.key else {
-                index.native_write_census.unconditional.extend(roots);
+                index
+                    .native_write_census
+                    .unconditional
+                    .extend(native_mutation_roots(roots));
                 continue;
             };
-            let evidence = property_key_evidence(
-                key,
-                &index.property_key_assignments,
-                &declared,
-                &mut BTreeSet::new(),
-            );
-            let fallback = intrinsic_roots(
-                &ValueExpr::Member(Box::new(write.receiver.clone()), None, false),
-                &intrinsic_aliases,
-                &index.global_object_names,
-            );
+            let evidence = property_key_evidence(key, &index.property_key_assignments, &declared);
+            let fallback = native_mutation_roots(roots.clone());
             let mut refined: IntrinsicRoots = roots
                 .iter()
                 .filter(|root| **root != IntrinsicRoot::GlobalObject)
@@ -2656,15 +2658,7 @@ impl ExecutionIndex {
                 match &evidence.domain {
                     PropertyKeyDomain::FiniteStrings(keys) => {
                         for key in keys {
-                            refined.extend(intrinsic_roots(
-                                &ValueExpr::Member(
-                                    Box::new(write.receiver.clone()),
-                                    Some(key.clone()),
-                                    false,
-                                ),
-                                &intrinsic_aliases,
-                                &index.global_object_names,
-                            ));
+                            refined.extend(named_global_intrinsic(key));
                         }
                     }
                     PropertyKeyDomain::Symbol => {}
@@ -2677,7 +2671,7 @@ impl ExecutionIndex {
                 .native_write_census
                 .conditional
                 .push(ConditionalIntrinsicWrite {
-                    refined,
+                    refined: native_mutation_roots(refined),
                     fallback,
                     dependencies: evidence.dependencies,
                 });

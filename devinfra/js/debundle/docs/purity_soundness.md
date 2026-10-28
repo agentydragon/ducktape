@@ -113,12 +113,20 @@ all writes, including deferred bodies, and establishes a closed-write
 invariant: each refined write preserves named native global bindings provided
 its operation dependencies remain intact. Start with unconditional native
 writes and unknown global writes, then propagate dependency invalidation to a
-fixed point. An actual Symbol, Object or Array mutation in any analyzed chunk
+fixed point. A recognized visible Symbol, Object or Array mutation in any analyzed chunk
 invalidates dependent key evidence; unknown global mutation invalidates every
 native premise. A collection provider and its consumers use the same resolved
 source-derived integrity input, separate from author assumptions. Code outside
 the analyzed source remains covered by A11. No whole-program purity or
 nonreentry conclusion follows from this census.
+
+Key disjointness applies only to a receiver proved to be the actual global
+object. A value read from a computed or unrelated static global slot can hold
+an intrinsic; its unresolved native identity survives aliases and descendant
+property accesses. Mutation through that value invalidates native premises.
+The census does not prove the absence of every hidden native-alias path:
+A11's author obligation still covers native integrity outside the recognized
+source facts.
 
 ## Source-composed returned records
 

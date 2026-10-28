@@ -124,6 +124,8 @@ impl CallableSummary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NativeIntrinsic {
     GlobalObject,
+    /// A global slot may hold any native value; descendants retain this root.
+    UnknownGlobalValue,
     Error,
     Object,
     Array,

@@ -714,7 +714,10 @@ write invariant and propagating invalidated operation dependencies to a fixed
 point. Providers and consumers share this inferred integrity input; it is not
 a spec assumption or configurable override. Unknown keys, unstable bindings,
 shadowing, unsupported patterns and visible native replacement fall back
-conservatively. Key precision grants no call, purity, throw or return summary.
+conservatively. Global-slot value reads retain unresolved native identity
+through aliases and descendants; only proved global-object receivers receive
+key disjointness. A11 remains an author obligation for hidden native-alias
+paths. Key precision grants no call, purity, throw or return summary.
 
 ## Inferred returned-record construction timing
 
