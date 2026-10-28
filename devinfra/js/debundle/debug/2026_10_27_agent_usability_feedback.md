@@ -30,25 +30,26 @@ and reproducible optimized-build recipe live in the
   are evidence for review, not inferred semantic owners. Numeric names or small
   files alone do not justify merging code.
 
-## Newly observed diagnostic gap
+## Native-integrity diagnostics and remaining precision
 
-Expose native-integrity proof loss with its mutation witness and affected
-guard. The current adoption investigation traced unknown global-slot writes to
-`UnknownGlobalValue`, then `GlobalObject`, which withdraws array-intrinsic and
-ordinary-object-prototype guarantees. The resulting opaque-call fallback can
-add eager reads and atomic conflicts. Current reports expose unsupported
-construction/call targets and callback-pool limits, but connecting those losses
-to an unrelated global-property write required implementation inspection.
+Native-integrity reports [#12624] now connect evaluated ordinary-object and array
+guard failures to source write-census witnesses. The graph retains each witness
+once, including its chunk, statement/location, operation, receiver alias roots,
+affected families and invalidated key premises. Bounded `describe` follows those
+references across chunks. These are conservative source facts, including deferred
+writes; they do not prove a write executes or uniquely causes a loss. An
+exact-input downstream replay retained its rejection report and exposed bounded
+mutation witnesses; it does not establish upgrade acceptance.
 
-A neutral CLI control building a registry with
-`Object.fromEntries(entries.map(...))` and a stored deferred callback passes on
-both engines. Adding `function publish() { globalThis.slot.flag = true; }`
-passes on `ecb4a734` and rejects on `2303f0d6`; assigning `globalThis.slot = {}`
-first does not restore acceptance. This is stricter unsupported reconstruction,
-not evidence that the new guard is unsound or that a purity contract is needed.
-An unknown slot can alias a native object. Recovering precision requires an
-identity proof with accessor, replacement and reentry guards; ignoring a property
-name would not supply it. Preserve this distinction in the diagnostic.
+Ordinary receiver identity remains an adoption blocker. Unknown global-slot
+values can alias native objects; assigning a fresh RHS does not prove the slot
+retains it, because a setter can discard it. A public operation can also receive
+a different object through a borrowed method. The runtime-backed negative
+controls and identity-certificate plan in [#12625] preserve these boundaries;
+they do not restore acceptance of ordinary namespace-slot workloads or establish
+a successful consuming-project upgrade. Precision recovery still needs accessor,
+replacement, alias and reentry proofs. Preserve the working pin until the
+canonical adapter, regenerated outputs and runtime behavior validate together.
 
 The new commands retain conservative boundaries: independent audit removals do
 not establish joint removability; names-only edits still need source validation;
@@ -77,3 +78,5 @@ owners rather than in this Debundle feature list.
 [#12578]: https://github.com/agentydragon/ducktape/pull/12578
 [#12588]: https://github.com/agentydragon/ducktape/pull/12588
 [#12600]: https://github.com/agentydragon/ducktape/pull/12600
+[#12624]: https://github.com/agentydragon/ducktape/pull/12624
+[#12625]: https://github.com/agentydragon/ducktape/pull/12625
