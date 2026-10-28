@@ -86,6 +86,10 @@ followups remain open:
   manual judge checks.
 - **Judge determinism** — measure score variation across repeated runs
   against the same recovered tree.
+- **Conditional judge token-cost optimization** — if container startup becomes
+  the bottleneck, evaluate whether reducing judge input tokens lowers total
+  per-run cost. Keep the current judge prompt until that bottleneck is
+  observed.
 - **Differential verification** — compile the recovered Go source in the
   grader and adapt the protocol checks in
   `tasks/go_crypto_server/test_smoke.py` to exercise the recovered binary,
