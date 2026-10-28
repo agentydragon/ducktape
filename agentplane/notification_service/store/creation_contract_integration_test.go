@@ -77,7 +77,7 @@ func TestSubscriptionCreationContractRefusesPopulatedDatabaseWithoutProofsThenRe
 		if err := migrations.Up(t.Context(), g.db); err != nil {
 			t.Fatalf("apply contract after validated proofs: %v", err)
 		}
-		assertLatestGooseVersion(t, g.db, 14)
+		assertGooseVersionApplied(t, g.db, 14)
 		assertColumnExists(t, g.db, "subscription", "creation", false)
 		assertColumnExists(t, g.db, "subscription", "creation_proto", true)
 		assertColumnExists(t, g.db, "subscription", "source_provider", true)
@@ -154,6 +154,19 @@ func assertLatestGooseVersion(t *testing.T, db *sql.DB, want int64) {
 	}
 	if got != want {
 		t.Fatalf("latest Goose migration = %d, want %d", got, want)
+	}
+}
+
+func assertGooseVersionApplied(t *testing.T, db *sql.DB, version int64) {
+	t.Helper()
+	var applied bool
+	if err := db.QueryRowContext(t.Context(), `SELECT EXISTS (
+		SELECT 1 FROM notification_service_goose_version WHERE version_id = $1 AND is_applied
+	)`, version).Scan(&applied); err != nil {
+		t.Fatal(err)
+	}
+	if !applied {
+		t.Fatalf("Goose migration %d is not marked applied", version)
 	}
 }
 
