@@ -102,7 +102,6 @@ py_library(
         ":worktree_service",
         "//x/wt/shared:configuration",
         "//x/wt/shared:protocol",
-        "@pypi//punq",
         "@pypi//pydantic",
     ],
 )

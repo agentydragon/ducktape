@@ -371,7 +371,6 @@ manifest:
     ptyprocess: ptyprocess
     publication: publication
     publicsuffix2: publicsuffix2
-    punq: punq
     pure_eval: pure_eval
     py: pytest
     pyasn1: pyasn1
@@ -482,4 +481,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 9ec4deeb404be9755096ff03d3e1f234e96cabdfe7fc0237d575de9e19d71ab0
+integrity: b957ac3f98729b8345e47ef344d69bbf864835695d1556045b0326a9e1e1e93d

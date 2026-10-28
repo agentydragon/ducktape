@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from x.wt.server.rpc import RpcError, rpc
+from x.wt.server.rpc import RpcError, ServiceDependencies, rpc
 from x.wt.server.services import WorktreeIndexService
-from x.wt.shared.configuration import Configuration
 from x.wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from x.wt.shared.protocol import (
     ErrorCodes,
@@ -55,8 +54,9 @@ def _compute_teleport_target_path(target_path: Path, relative_path: str | None) 
 
 @rpc.method("worktree_resolve_path", params=WorktreeResolvePathParams)
 async def handle_resolve_path(
-    index: WorktreeIndexService, config: Configuration, params: WorktreeResolvePathParams
+    deps: ServiceDependencies, params: WorktreeResolvePathParams
 ) -> WorktreeResolvePathResult:
+    index = deps.index
     current_path = params.current_path
     target_worktree, current_relative_path = _find_target_worktree(index, params.worktree_name, current_path)
     resolved_path = _resolve_path_spec(
@@ -67,8 +67,9 @@ async def handle_resolve_path(
 
 @rpc.method("worktree_teleport_target", params=WorktreeTeleportTargetParams)
 async def handle_teleport_target(
-    index: WorktreeIndexService, config: Configuration, params: WorktreeTeleportTargetParams
+    deps: ServiceDependencies, params: WorktreeTeleportTargetParams
 ) -> TeleportCdThere | TeleportDoesNotExist:
+    index = deps.index
     current_path = params.current_path
     target_wt = (
         index.main() if params.target_name == MAIN_WORKTREE_DISPLAY_NAME else index.get_by_name(params.target_name)

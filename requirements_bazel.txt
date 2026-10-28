@@ -4438,10 +4438,6 @@ publicsuffix2==2.20191221 \
     --hash=sha256:00f8cc31aa8d0d5592a5ced19cccba7de428ebca985db26ac852d920ddd6fe7b \
     --hash=sha256:786b5e36205b88758bd3518725ec8cfe7a8173f5269354641f581c6b80a99893
     # via mitmproxy
-punq==0.9.0 \
-    --hash=sha256:85aab7455fac47ce1b099fcb7ea2d8e9f562014672e9d7d46e4cc8e60e19685d \
-    --hash=sha256:c8a3cc778776982cab170853c09a8712d98daae77bdd6516740c1360d41dc28c
-    # via ducktape (pyproject.toml)
 pure-eval==0.2.4 \
     --hash=sha256:260c2774686e651b79f8b8e7fc9d80b3599ea6a66334b47d5f4abb69fc2c0ea1 \
     --hash=sha256:96cae060a313cfaad51bb761278bfb0e62dc0248d9315a81173752dc546cd37a
@@ -5987,7 +5983,6 @@ typing-extensions==4.16.0 \
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   pint
-    #   punq
     #   py-key-value-aio
     #   pydantic
     #   pydantic-core

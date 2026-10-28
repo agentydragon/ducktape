@@ -17,7 +17,6 @@ import os
 import signal
 import time
 import uuid
-from datetime import datetime
 from pathlib import Path
 
 from x.wt.server.git_manager import GitManager
@@ -314,7 +313,6 @@ class WtDaemon:
 
     async def handle_client_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Handle a client request using JSON-RPC 2.0 protocol."""
-        start_time = datetime.now()
 
         try:
             # Read request line
@@ -343,7 +341,7 @@ class WtDaemon:
                 coordinator=self,
                 worktree_service=self.worktree_service,
             )
-            response = await self._method_handlers.dispatch(request, deps, writer, start_time)
+            response = await self._method_handlers.dispatch(request, deps, writer)
             await self._send_response(writer, response)
             return
 

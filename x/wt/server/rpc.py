@@ -4,11 +4,8 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime
-from inspect import signature
-from typing import Any, Protocol, get_origin, get_type_hints
+from typing import Any, overload
 
-from punq import Container
 from pydantic import BaseModel, ValidationError
 
 from x.wt.server.git_manager import GitManager
@@ -20,10 +17,6 @@ from x.wt.shared.configuration import Configuration
 from x.wt.shared.protocol import ErrorCodes, ErrorResponse, Request, Response, create_error_response
 
 logger = logging.getLogger(__name__)
-
-
-class Emitter(Protocol):
-    def emit(self, event: BaseModel) -> None: ...
 
 
 class Stream:
@@ -45,9 +38,6 @@ class RpcError(Exception):
         self.data = data
 
 
-Handler = Callable[..., Awaitable[Any]]
-
-
 @dataclass(frozen=True)
 class ServiceDependencies:
     config: Configuration
@@ -61,137 +51,91 @@ class ServiceDependencies:
     worktree_service: WorktreeService
 
 
-@dataclass(frozen=True)
-class InvocationContext:
-    deps: ServiceDependencies
-    params_obj: BaseModel | None
-    writer: Any
-    start_time: datetime
-    stream_obj: Stream | None = None
-
-
 class RpcRegistry:
     def __init__(self) -> None:
         self._handlers: dict[
-            str, Callable[[Request, ServiceDependencies, Any, datetime], Awaitable[Response | ErrorResponse]]
+            str, Callable[[Request, ServiceDependencies, Any], Awaitable[Response | ErrorResponse]]
         ] = {}
-        self._stream_methods: set[str] = set()
 
-    def _build_args(self, fn, *, context: InvocationContext):
-        deps = context.deps
-        params_obj = context.params_obj
-        start_time = context.start_time
-        stream_obj = context.stream_obj
-        sig = signature(fn)
-        c = Container()
+    async def _invoke(
+        self, req: Request, method: str, handler: Callable[[], Awaitable[Any]]
+    ) -> Response | ErrorResponse:
+        try:
+            return Response(result=await handler(), id=req.id)
+        except RpcError as e:
+            return create_error_response(e.code, str(e), req.id, e.data)
+        except Exception as e:
+            logger.exception("Unhandled error in RPC method %s", method)
+            return create_error_response(ErrorCodes.INTERNAL_ERROR, f"Internal error: {e}", req.id)
 
-        # Core config and per-request context
-        c.register(Configuration, instance=deps.config)
-        c.register(datetime, instance=start_time)
-        # Service singletons
-        c.register(GitManager, instance=deps.git_manager)
-        c.register(WorktreeIndexService, instance=deps.index)
-        c.register(GitstatusdService, instance=deps.gitstatusd)
-        if deps.github_watcher:
-            c.register(GitHubWatcher, instance=deps.github_watcher)
-        c.register(GitRefsWatcher, instance=deps.git_refs_watcher)
-        c.register(DiscoveryService, instance=deps.discovery)
-        c.register(WorktreeCoordinator, instance=deps.coordinator)
-        c.register(WorktreeService, instance=deps.worktree_service)
-        c.register(ServiceDependencies, instance=deps)
-        # Annotated: mypy infers an unannotated [] from its first append, which here would
-        # fix the element type to Stream and reject every other injected argument.
-        args: list[Any] = []
-        type_hints = get_type_hints(fn)
-        for p in sig.parameters.values():
-            anno = type_hints.get(p.name, p.annotation)
-            if stream_obj is not None and (anno is Stream or get_origin(anno) is Stream):
-                args.append(stream_obj)
-            elif params_obj is not None and anno is type(params_obj):
-                args.append(params_obj)
+    @overload
+    def method[ResultT](
+        self, name: str
+    ) -> Callable[
+        [Callable[[ServiceDependencies], Awaitable[ResultT]]], Callable[[ServiceDependencies], Awaitable[ResultT]]
+    ]: ...
 
-            else:
-                args.append(c.resolve(anno))
-        return args
+    @overload
+    def method[ParamsT: BaseModel, ResultT](
+        self, name: str, *, params: type[ParamsT]
+    ) -> Callable[
+        [Callable[[ServiceDependencies, ParamsT], Awaitable[ResultT]]],
+        Callable[[ServiceDependencies, ParamsT], Awaitable[ResultT]],
+    ]: ...
 
-    def _wrap_method[ParamsT: BaseModel](self, method: str, params_model: type[ParamsT] | None, handler) -> None:
-        async def _wrapped(
-            req: Request, deps: ServiceDependencies, writer, start_time: datetime
-        ) -> Response | ErrorResponse:
-            try:
-                params = params_model.model_validate(req.params) if params_model is not None else None
-            except ValidationError as e:
-                return create_error_response(ErrorCodes.INVALID_PARAMS, str(e), req.id)
+    def method[ParamsT: BaseModel](self, name: str, *, params: type[ParamsT] | None = None) -> Any:
+        if params is None:
 
-            try:
-                args = self._build_args(
-                    handler,
-                    context=InvocationContext(deps=deps, params_obj=params, writer=writer, start_time=start_time),
-                )
-                result = await handler(*args)
-                return Response(result=result, id=req.id)
-            except RpcError as e:
-                return create_error_response(e.code, str(e), req.id, e.data)
-            except Exception as e:
-                logger.exception("Unhandled error in method %s", method)
-                return create_error_response(ErrorCodes.INTERNAL_ERROR, f"Internal error: {e}", req.id)
+            def decorate_no_params(handler: Callable[[ServiceDependencies], Awaitable[Any]]):
+                async def wrapped(req: Request, deps: ServiceDependencies, writer: Any) -> Response | ErrorResponse:
+                    return await self._invoke(req, name, lambda: handler(deps))
 
-        self._handlers[method] = _wrapped
+                self._handlers[name] = wrapped
+                return handler
 
-    def _wrap_stream[ParamsT: BaseModel](self, method: str, params_model: type[ParamsT], handler) -> None:
-        async def _wrapped(
-            req: Request, deps: ServiceDependencies, writer, start_time: datetime
-        ) -> Response | ErrorResponse:
-            try:
-                params = params_model.model_validate(req.params)
-            except ValidationError as e:
-                return create_error_response(ErrorCodes.INVALID_PARAMS, str(e), req.id)
-            try:
+            return decorate_no_params
+
+        def decorate_with_params(handler: Callable[[ServiceDependencies, ParamsT], Awaitable[Any]]):
+            async def wrapped(req: Request, deps: ServiceDependencies, writer: Any) -> Response | ErrorResponse:
+                try:
+                    parsed = params.model_validate(req.params)
+                except ValidationError as e:
+                    return create_error_response(ErrorCodes.INVALID_PARAMS, str(e), req.id)
+                return await self._invoke(req, name, lambda: handler(deps, parsed))
+
+            self._handlers[name] = wrapped
+            return handler
+
+        return decorate_with_params
+
+    def stream[ParamsT: BaseModel](
+        self, name: str, *, params: type[ParamsT]
+    ) -> Callable[
+        [Callable[[ServiceDependencies, ParamsT, Stream], Awaitable[Any]]],
+        Callable[[ServiceDependencies, ParamsT, Stream], Awaitable[Any]],
+    ]:
+        def decorate(handler: Callable[[ServiceDependencies, ParamsT, Stream], Awaitable[Any]]):
+            async def wrapped(req: Request, deps: ServiceDependencies, writer: Any) -> Response | ErrorResponse:
+                try:
+                    parsed = params.model_validate(req.params)
+                except ValidationError as e:
+                    return create_error_response(ErrorCodes.INVALID_PARAMS, str(e), req.id)
                 stream = Stream(writer)
-                args = self._build_args(
-                    handler,
-                    context=InvocationContext(
-                        deps=deps, params_obj=params, writer=writer, start_time=start_time, stream_obj=stream
-                    ),
-                )
-                result = await handler(*args)
-                return Response(result=result, id=req.id)
-            except RpcError as e:
-                return create_error_response(e.code, str(e), req.id, e.data)
-            except Exception as e:
-                logger.exception("Unhandled error in stream method %s", method)
-                return create_error_response(ErrorCodes.INTERNAL_ERROR, f"Internal error: {e}", req.id)
+                return await self._invoke(req, name, lambda: handler(deps, parsed, stream))
 
-        self._handlers[method] = _wrapped
-        self._stream_methods.add(method)
+            self._handlers[name] = wrapped
+            return handler
 
-    def method[ParamsT: BaseModel](self, name: str, *, params: type[ParamsT] | None = None):
-        def deco(fn: Callable[..., Awaitable[Any]]):
-            # Allow DI-driven signatures; if params_model is provided,
-            # function must accept a matching params type somewhere
-            self._wrap_method(name, params, fn)
-            return fn
-
-        return deco
-
-    def stream[ParamsT: BaseModel](self, name: str, *, params: type[ParamsT]):
-        def deco(fn: Callable[..., Awaitable[Any]]):
-            # Allow DI-driven signatures; DI resolver will inject api/config/params/stream
-            self._wrap_stream(name, params, fn)
-            return fn
-
-        return deco
+        return decorate
 
     def list_methods(self) -> list[str]:
         return list(self._handlers)
 
-    async def dispatch(
-        self, req: Request, deps: ServiceDependencies, writer, start_time: datetime
-    ) -> Response | ErrorResponse:
+    async def dispatch(self, req: Request, deps: ServiceDependencies, writer: Any) -> Response | ErrorResponse:
         wrapped = self._handlers.get(req.method)
         if not wrapped:
             return create_error_response(ErrorCodes.METHOD_NOT_FOUND, f"Method '{req.method}' not found", req.id)
-        return await wrapped(req, deps, writer, start_time)
+        return await wrapped(req, deps, writer)
 
 
 rpc = RpcRegistry()

@@ -3,13 +3,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from x.wt.server.git_manager import GitManager
 from x.wt.server.rpc import RpcError, ServiceDependencies, Stream, rpc
-from x.wt.server.services import WorktreeCoordinator, WorktreeIndexService
+from x.wt.server.services import WorktreeIndexService
 from x.wt.server.types import DiscoveredWorktree
 from x.wt.server.worktree_ids import make_worktree_id, parse_worktree_id, wtid_to_path
 from x.wt.server.worktree_service import WorktreeService
-from x.wt.shared.configuration import Configuration
 from x.wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from x.wt.shared.protocol import (
     ErrorCodes,
@@ -35,9 +33,9 @@ logger = logging.getLogger(__name__)
 
 
 @rpc.method("worktree_list")
-async def worktree_list(git_manager: GitManager, config: Configuration) -> WorktreeListResult:
+async def worktree_list(deps: ServiceDependencies) -> WorktreeListResult:
     worktrees: list[WorktreeInfo] = []
-    for info in git_manager.list_worktrees():
+    for info in deps.git_manager.list_worktrees():
         if info.is_main:
             continue
         worktree_name = info.path.name
@@ -58,11 +56,12 @@ async def worktree_list(git_manager: GitManager, config: Configuration) -> Workt
 
 @rpc.stream("worktree_create", params=WorktreeCreateParams)
 async def worktree_create(
-    deps: ServiceDependencies, svc: WorktreeService, params: WorktreeCreateParams, stream: Stream
+    deps: ServiceDependencies, params: WorktreeCreateParams, stream: Stream
 ) -> WorktreeCreateResult:
     git_manager = deps.git_manager
     coordinator = deps.coordinator
     config = deps.config
+    svc = deps.worktree_service
     if "/" in params.name:
         raise RpcError(code=ErrorCodes.INVALID_PARAMS, message=f"Worktree name '{params.name}' cannot contain slashes")
     worktree_path = config.worktrees_dir / params.name
@@ -127,9 +126,10 @@ async def worktree_create(
 
 
 @rpc.method("worktree_delete", params=WorktreeDeleteParams)
-async def worktree_delete(
-    coordinator: WorktreeCoordinator, svc: WorktreeService, config: Configuration, params: WorktreeDeleteParams
-) -> WorktreeDeleteResult:
+async def worktree_delete(deps: ServiceDependencies, params: WorktreeDeleteParams) -> WorktreeDeleteResult:
+    coordinator = deps.coordinator
+    svc = deps.worktree_service
+    config = deps.config
     worktree_name = parse_worktree_id(params.wtid)
     worktree_path = config.worktrees_dir / worktree_name
     if not worktree_path.exists():
@@ -150,9 +150,9 @@ def _resolve_worktree_name_to_info(index: WorktreeIndexService, name: str) -> Di
 
 
 @rpc.method("worktree_identify", params=WorktreeIdentifyParams)
-async def worktree_identify(
-    index: WorktreeIndexService, config: Configuration, params: WorktreeIdentifyParams
-) -> WorktreeIdentifyResult:
+async def worktree_identify(deps: ServiceDependencies, params: WorktreeIdentifyParams) -> WorktreeIdentifyResult:
+    index = deps.index
+    config = deps.config
     absolute_path = params.absolute_path
     # Fail fast on non-existent path
     if not absolute_path.exists():
@@ -187,9 +187,9 @@ async def worktree_identify(
 
 
 @rpc.method("worktree_get_by_name", params=WorktreeGetByNameParams)
-async def worktree_get_by_name(
-    index: WorktreeIndexService, config: Configuration, params: WorktreeGetByNameParams
-) -> WorktreeGetByNameResult:
+async def worktree_get_by_name(deps: ServiceDependencies, params: WorktreeGetByNameParams) -> WorktreeGetByNameResult:
+    index = deps.index
+    config = deps.config
     found_worktree = _resolve_worktree_name_to_info(index, params.name)
     if found_worktree:
         worktree_name = (
