@@ -10,8 +10,6 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 
-from . import DOMAIN
-
 _LOGGER = logging.getLogger(__name__)
 
 # Indoor AQI borrowed from: https://atmotube.com/atmocube-support/indoor-air-quality-index-iaqi
@@ -139,11 +137,9 @@ def parse_timedelta(value) -> timedelta:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     """
-    Called after __init__.py's async_setup_entry. We'll read the config from
-    hass.data[DOMAIN]["yaml_config"], build one or more sensors, and add them.
+    Build sensors from the configuration stored on the config entry.
     """
-    integration_data = hass.data.get(DOMAIN, {})
-    yaml_cfg = integration_data.get("yaml_config", {})
+    yaml_cfg = entry.data
 
     # The user might define "monitors" as a list:
     # indoor_aqi:

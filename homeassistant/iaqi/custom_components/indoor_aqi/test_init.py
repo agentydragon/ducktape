@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 import pytest_bazel
-from hamcrest import assert_that, close_to, equal_to, has_entries
+from hamcrest import assert_that, close_to, equal_to
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
@@ -42,8 +42,59 @@ async def test_setup_component(hass: HomeAssistant, yaml_config: dict):
     assert await async_setup_component(hass, DOMAIN, yaml_config)
     await hass.async_block_till_done()
 
-    # Verify that the component initialized correctly
-    assert_that(hass.data[DOMAIN], has_entries(yaml_config=yaml_config[DOMAIN]))
+    # The imported config entry is the single source of truth for YAML config.
+    (entry,) = hass.config_entries.async_entries(DOMAIN)
+    assert_that(entry.data, equal_to(yaml_config[DOMAIN]))
+
+
+async def test_existing_import_entry_uses_latest_yaml_on_startup(hass: HomeAssistant, yaml_config: dict):
+    """An existing import entry is refreshed before its sensors load during startup."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: PLC0415
+
+    from homeassistant import config_entries  # noqa: PLC0415
+
+    old_config = {"monitors": [{"name": "Old AQI", "unique_id": "old_aqi", "sensors": {"co2": "sensor.old_co2"}}]}
+    MockConfigEntry(
+        domain=DOMAIN, unique_id="indoor_aqi_yaml_import", source=config_entries.SOURCE_IMPORT, data=old_config
+    ).add_to_hass(hass)
+
+    assert await async_setup_component(hass, DOMAIN, yaml_config)
+    await hass.async_block_till_done()
+
+    (entry,) = hass.config_entries.async_entries(DOMAIN)
+    assert_that(entry.data, equal_to(yaml_config[DOMAIN]))
+    assert_that(entry.state, equal_to(ConfigEntryState.LOADED))
+    sensor_state = hass.states.get("sensor.test_aqi")
+    assert sensor_state is not None
+    assert_that(float(sensor_state.state), close_to(70.0, 0.1))
+
+
+async def test_loaded_import_entry_reloads_when_yaml_changes(hass: HomeAssistant, yaml_config: dict):
+    """A runtime YAML update refreshes the entry and reloads its sensor platform."""
+    assert await async_setup_component(hass, DOMAIN, yaml_config)
+    await hass.async_block_till_done()
+    (entry,) = hass.config_entries.async_entries(DOMAIN)
+    assert_that(entry.state, equal_to(ConfigEntryState.LOADED))
+
+    hass.states.async_set("sensor.updated_co2", "400")
+    updated_config = {
+        DOMAIN: {
+            "monitors": [{"name": "Test AQI", "unique_id": "test_aqi", "sensors": {"co2": "sensor.updated_co2"}}],
+            "stale_time": "3600",
+        }
+    }
+    from custom_components.indoor_aqi import async_setup  # noqa: PLC0415
+
+    assert await async_setup(hass, updated_config)
+    await hass.async_block_till_done()
+
+    entries = hass.config_entries.async_entries(DOMAIN)
+    assert_that(len(entries), equal_to(1))
+    assert_that(entries[0].data, equal_to(updated_config[DOMAIN]))
+    assert_that(entries[0].state, equal_to(ConfigEntryState.LOADED))
+    sensor_state = hass.states.get("sensor.test_aqi")
+    assert sensor_state is not None
+    assert_that(float(sensor_state.state), close_to(100.0, 0.1))
 
 
 async def test_entry_loads_and_unloads_sensor(hass: HomeAssistant, yaml_config: dict):

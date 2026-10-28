@@ -3,7 +3,7 @@
 import logging
 
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 DOMAIN = "indoor_aqi"
@@ -20,23 +20,24 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         # No YAML config for indoor_aqi
         return True
 
-    # Store the entire YAML block in hass.data so sensor.py can see it
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN]["yaml_config"] = config[DOMAIN]
-
     # Check if we've already created an import-based entry
     current_entries = hass.config_entries.async_entries(DOMAIN)
     for entry in current_entries:
         if entry.source == config_entries.SOURCE_IMPORT:
-            _LOGGER.debug("IndoorAQI: already have an import entry; not creating another.")
+            yaml_config = config[DOMAIN]
+            if entry.data != yaml_config:
+                _LOGGER.debug("IndoorAQI: updating the existing import entry from YAML.")
+                hass.config_entries.async_update_entry(entry, data=yaml_config)
+                if entry.state is ConfigEntryState.LOADED:
+                    hass.config_entries.async_schedule_reload(entry.entry_id)
+            else:
+                _LOGGER.debug("IndoorAQI: existing import entry already matches YAML.")
             return True
 
     # Otherwise, create a new import-based config entry (which triggers config_flow.py)
     hass.async_create_task(
         hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": config_entries.SOURCE_IMPORT},
-            data=config[DOMAIN],  # pass the entire YAML as data if you want
+            DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data=config[DOMAIN]
         )
     )
     return True
