@@ -4,17 +4,24 @@ load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
+SRCS = [
+    "caller_grants.tsx",
+    "caller_grants_client.ts",
+    "connection_service_client.ts",
+    "consent.tsx",
+    "management.tsx",
+    "models.ts",
+]
+
+SPEC_SRCS = [
+    "caller_grants.test.tsx",
+    "consent.test.tsx",
+    "management.test.tsx",
+]
+
 filegroup(
     name = "typed_lint_srcs",
-    srcs = glob(
-        [
-            "*.ts",
-            "*.tsx",
-            "**/*.ts",
-            "**/*.tsx",
-        ],
-        allow_empty = True,
-    ),
+    srcs = SRCS + SPEC_SRCS,
     visibility = ["//agentplane/app/frontend:__pkg__"],
 )
 
@@ -24,38 +31,26 @@ ts_config(
     deps = ["//agentplane/app/frontend:tsconfig"],
 )
 
-ts_config(
-    name = "tsconfig_test",
-    testonly = True,
-    src = "tsconfig.test.json",
-    deps = [":tsconfig"],
-)
-
 js_library(
     name = "management_css",
     srcs = ["management.css"],
 )
 
-# Feature-level trial of direct rules_ts targets; other packages retain ts_library.
 ts_project(
     name = "connections",
-    srcs = glob(
-        ["*.ts", "*.tsx"],
-        exclude = ["*.test.tsx", "fixture.ts", "test_support.ts"],
-    ),
+    srcs = SRCS,
     declaration = True,
     resolve_json_module = True,
     source_map = True,
     transpiler = "tsc",
     tsconfig = ":tsconfig",
     deps = [
+        ":management_css",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/action_service:action_service_pb",
-        "//agentplane/app/frontend/actions:policy",
-        "//agentplane/app/frontend/bindings:table",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend:inline_name",
@@ -63,25 +58,26 @@ ts_project(
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend:watch_stream",
+        "//agentplane/app/frontend/actions:policy",
+        "//agentplane/app/frontend/bindings:table",
         "//agentplane/mcp_edge:connection_service_pb",
         "//agentplane/proto:sandboxes_pb",
         "//util/frontend:help_tooltip",
-        ":management_css",
     ],
 )
 
-TEST_SRCS = glob(["*.test.tsx"])
-
 ts_project(
-    name = "testing",
+    name = "specs",
     testonly = True,
-    srcs = TEST_SRCS,
+    srcs = SPEC_SRCS,
     declaration = True,
     resolve_json_module = True,
     source_map = True,
     transpiler = "tsc",
-    tsconfig = ":tsconfig_test",
+    tsconfig = ":tsconfig",
     deps = [
+        ":connections",
+        "//agentplane/app/frontend/connections/testing:support",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -90,26 +86,50 @@ ts_project(
         "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/actions/testing:harness",
-        ":connections",
-        "//agentplane/app/frontend/connections/testing:fixture",
-        "//agentplane/app/frontend/connections/testing:test_support",
     ],
 )
 
-[
-    vitest_bin.vitest_test(
-        name = spec.removesuffix(".test.tsx") + "_test",
-        args = [
-            "run",
-            "--config",
-            "vitest_config.mjs",
-            "connections/" + spec.removesuffix(".tsx") + ".js",
-        ],
-        chdir = "agentplane/app/frontend",
-        data = [
-            ":testing",
-            "//agentplane/app/frontend:vitest_config",
-        ],
-    )
-    for spec in TEST_SRCS
-]
+vitest_bin.vitest_test(
+    name = "caller_grants_test",
+    args = [
+        "run",
+        "--config",
+        "vitest_config.mjs",
+        "connections/caller_grants.test.js",
+    ],
+    chdir = "agentplane/app/frontend",
+    data = [
+        ":specs",
+        "//agentplane/app/frontend:vitest_config",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "consent_test",
+    args = [
+        "run",
+        "--config",
+        "vitest_config.mjs",
+        "connections/consent.test.js",
+    ],
+    chdir = "agentplane/app/frontend",
+    data = [
+        ":specs",
+        "//agentplane/app/frontend:vitest_config",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "management_test",
+    args = [
+        "run",
+        "--config",
+        "vitest_config.mjs",
+        "connections/management.test.js",
+    ],
+    chdir = "agentplane/app/frontend",
+    data = [
+        ":specs",
+        "//agentplane/app/frontend:vitest_config",
+    ],
+)
