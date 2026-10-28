@@ -20,6 +20,7 @@ filegroup(
     visibility = [
         "//agentplane/app/frontend:__pkg__",
         "//devinfra/claude/session_export/frontend:__pkg__",
+        "//devinfra/session_viewer/frontend:__pkg__",
         "//finance/plaid/spend/ui:__pkg__",
         "//props/frontend:__pkg__",
     ],
@@ -46,6 +47,7 @@ filegroup(
     visibility = [
         "//agentplane/app/frontend:__pkg__",
         "//devinfra/claude/session_export/frontend:__pkg__",
+        "//devinfra/session_viewer/frontend:__pkg__",
         "//finance/plaid/spend/ui:__pkg__",
         "//props/frontend:__pkg__",
     ],
@@ -112,6 +114,7 @@ ts_library(
     visibility = [
         "//agentplane:__subpackages__",
         "//devinfra/claude/session_export/frontend:__pkg__",
+        "//devinfra/session_viewer/frontend:__pkg__",
     ],
     deps = [
         ":code_block",
