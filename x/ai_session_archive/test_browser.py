@@ -10,6 +10,7 @@ import json
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import httpx
@@ -20,7 +21,6 @@ from playwright.async_api import Playwright, expect
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session as DbSession
-from sqlalchemy.pool import StaticPool
 
 from util.testing.asgi import serve_app
 from util.testing.frontend_visual import deterministic_browser_context, disable_animations_script
@@ -46,8 +46,8 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 _PARSER_VERSION = "jsonl-v1"
 
 
-async def test_authenticated_browser_reads_archived_transcript(playwright_driver: Playwright) -> None:
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+async def test_authenticated_browser_reads_archived_transcript(playwright_driver: Playwright, tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'archive.sqlite'}")
     Base.metadata.create_all(engine)
     session_id, child_id, older_id, latest_id = _seed_archive(engine)
     settings = WebSettings(

@@ -102,6 +102,7 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":api",
         ":session_viewer",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -163,8 +164,8 @@ vitest_test(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":app",
         ":session_fixture",
-        ":session_viewer",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -182,8 +183,8 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":app",
         ":session_fixture",
-        ":session_viewer",
         ":session_viewer_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

@@ -3,12 +3,12 @@
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from "react-router";
+import { createMemoryRouter, MemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { SessionBrowserApi } from "./api";
 import { ApiError } from "./api";
-import { SessionViewer } from "./session-viewer";
+import { App } from "./app";
 import { sessionFixtureApi } from "./fixtures/session-data";
 import type { EventPage, EventRecord, SessionPage, SessionSummary, SessionVersion } from "./schema";
 
@@ -33,10 +33,7 @@ async function renderViewer(api: SessionBrowserApi, initialPath = "/"): Promise<
     root?.render(
       <MantineProvider env="test">
         <MemoryRouter initialEntries={[initialPath]}>
-          <Routes>
-            <Route path="/" element={<SessionViewer api={api} />} />
-            <Route path="/sessions/:sessionId" element={<SessionViewer api={api} />} />
-          </Routes>
+          <App api={api} />
         </MemoryRouter>
       </MantineProvider>
     );
@@ -93,13 +90,9 @@ it("keeps session selection in history for back and forward navigation", async (
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  const router = createMemoryRouter(
-    [
-      { path: "/", element: <SessionViewer api={sessionFixtureApi} /> },
-      { path: "/sessions/:sessionId", element: <SessionViewer api={sessionFixtureApi} /> },
-    ],
-    { initialEntries: ["/sessions/codex-thread-1"] }
-  );
+  const router = createMemoryRouter([{ path: "*", element: <App api={sessionFixtureApi} /> }], {
+    initialEntries: ["/sessions/codex-thread-1"],
+  });
   await act(async () => {
     root?.render(
       <MantineProvider env="test">
@@ -353,10 +346,7 @@ it("refreshes import progress on demand and polls automatically", async () => {
     root?.render(
       <MantineProvider env="test">
         <MemoryRouter>
-          <Routes>
-            <Route path="/" element={<SessionViewer api={api} />} />
-            <Route path="/sessions/:sessionId" element={<SessionViewer api={api} />} />
-          </Routes>
+          <App api={api} />
         </MemoryRouter>
       </MantineProvider>
     );
