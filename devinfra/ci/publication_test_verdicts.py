@@ -40,16 +40,22 @@ def _explicit_ci_options(invocation_id_value: str, rbe_image: str) -> tuple[Coun
     base = Counter(
         [
             "--keep_going",
-            "--config=rbe",
             "--config=ci",
             "--build_metadata=ROLE=CI",
             "--build_metadata=DISABLE_TARGET_TRACKING=false",
             f"--remote_default_exec_properties=container-image=docker://{rbe_image}",
         ]
     )
+    # Older bazel-ci versions passed --config=rbe explicitly. Current CI gets
+    # it from the workspace .bazelrc, so both command forms are valid evidence.
+    bases = (base, base + Counter(["--config=rbe"]))
     invocation_id_arg = Counter([f"--invocation_id={invocation_id_value}"])
     pattern_arg = Counter(["//..."])
-    return base, base + invocation_id_arg, base + pattern_arg, base + invocation_id_arg + pattern_arg
+    return tuple(
+        accepted_base + extra
+        for accepted_base in bases
+        for extra in (Counter(), invocation_id_arg, pattern_arg, invocation_id_arg + pattern_arg)
+    )
 
 
 def _normalized_explicit_args(args: tuple[str, ...]) -> Counter[str] | None:
@@ -66,6 +72,40 @@ def _normalized_explicit_args(args: tuple[str, ...]) -> Counter[str] | None:
     if values and values[0] == "test":
         values.pop(0)
     return Counter(values) if values else None
+
+
+def _has_effective_rbe_options(args: tuple[str, ...] | None, rbe_image: str) -> bool:
+    """Require the RBE config and its final remote-execution settings in BEP."""
+    if args is None:
+        return False
+    values = list(args)
+    # BuildBuddy raw_json for Bazel 9.2.0 includes one trailing empty element
+    # in OptionsParsed.cmdLine, as it does for explicitCmdLine.
+    if values and values[-1] == "":
+        values.pop()
+    if not values or any(not arg for arg in values) or "--config=rbe" not in values:
+        return False
+
+    def last_value(name: str) -> str | None:
+        prefix = f"--{name}="
+        matches = [arg[len(prefix) :] for arg in values if arg.startswith(prefix)]
+        return matches[-1] if matches else None
+
+    fallback_flags = [
+        arg
+        for arg in values
+        if arg in {"--remote_local_fallback", "--noremote_local_fallback"} or arg.startswith("--remote_local_fallback=")
+    ]
+    fallback_disabled = bool(
+        fallback_flags and fallback_flags[-1] in {"--noremote_local_fallback", "--remote_local_fallback=false"}
+    )
+    return (
+        last_value("remote_executor") == "grpcs://remote.buildbuddy.io"
+        and last_value("spawn_strategy") == "remote"
+        and last_value("extra_execution_platforms") == "//:rbe_linux_x64"
+        and last_value("remote_default_exec_properties") == f"container-image=docker://{rbe_image}"
+        and fallback_disabled
+    )
 
 
 def verified_test_summaries(
@@ -109,6 +149,8 @@ def verified_test_summaries(
     actual_options = _normalized_explicit_args(invocation.explicit_cmd_line)
     if not any(actual_options == expected for expected in _explicit_ci_options(invocation_id_value, rbe_image)):
         return {}, "test invocation Bazel or RBE configuration differs from publication"
+    if not _has_effective_rbe_options(invocation.cmd_line, rbe_image):
+        return {}, "test invocation's effective RBE configuration differs from publication"
 
     summaries: dict[str, list[TestSummary]] = defaultdict(list)
     for summary in invocation.test_summaries:

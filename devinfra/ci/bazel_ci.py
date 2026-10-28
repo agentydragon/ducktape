@@ -112,7 +112,8 @@ def _announce_bazel_command(role: str) -> None:
 
 
 def _rbe_flags() -> list[str]:
-    flags = ["--config=rbe", "--config=ci"]
+    # The workspace .bazelrc expands rbe for build-like commands.
+    flags = ["--config=ci"]
     if os.environ.get("GITHUB_EVENT_NAME") == "push":
         # Only non-PR workflow pushes should enter BuildBuddy's mainline target
         # tracker. PR and hosted-script invocations must remain untracked.

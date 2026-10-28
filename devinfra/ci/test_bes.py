@@ -23,6 +23,9 @@ STREAM = b"""[
     {"name":"util/testing/frozen-clock.js","uri":"bytestream://h/blobs/src/9","digest":"src","length":"9"},
     {"pathPrefix":["bazel-out","k8-fastbuild","bin"],"name":"util/testing/frozen-clock.js",
      "uri":"bytestream://h/blobs/gen/9","digest":"gen","length":"9"}]}},
+ {"id":{"optionsParsed":{}},
+  "optionsParsed":{"explicitCmdLine":["--config=ci"],
+                    "cmdLine":["--config=rbe","--remote_executor=grpcs://remote.buildbuddy.io"]}},
  {"id":{"targetCompleted":{"label":"//skills/backtrace:backtrace_skill"}},
   "completed":{"success":true,"outputGroup":[{"name":"default","fileSets":[{"id":"outer"}]}]}},
  {"id":{"targetCompleted":{"label":"//util/testing:clock"}},
@@ -80,6 +83,17 @@ def test_size_survives_being_a_json_string() -> None:
 def test_test_verdicts_come_from_the_same_stream() -> None:
     """The reader exposes testSummary values keyed by their target labels."""
     assert parse(STREAM).test_status == {"//study_casino:test_app": "TIMEOUT", "//devinfra/ci:test_bes": "PASSED"}
+
+
+def test_options_keep_the_explicit_and_effective_command_lines() -> None:
+    parsed = parse(STREAM)
+    assert parsed.explicit_cmd_line == ("--config=ci",)
+    assert parsed.cmd_line == ("--config=rbe", "--remote_executor=grpcs://remote.buildbuddy.io")
+
+
+@pytest.mark.parametrize("raw", [b"[]", b'[{"optionsParsed":{"cmdLine":"not an argument list"}}]'])
+def test_missing_or_malformed_effective_command_line_fails_closed(raw: bytes) -> None:
+    assert parse(raw).cmd_line is None
 
 
 def test_an_unusable_stream_raises_rather_than_reading_as_empty() -> None:

@@ -110,8 +110,13 @@ def test_pr_target_selection(
     # The pre-assigned ID has to reach Bazel: it is the only handle a consumer has on
     # this invocation when the run is cancelled before `bb remote` returns.
     assert "--invocation_id=11111111-1111-1111-1111-111111111111" in test_args
+    assert "--config=ci" in test_args
+    assert "--config=rbe" not in test_args
+    assert "--remote_default_exec_properties=container-image=docker://test-image" in test_args
     build_args = (tmp_path / "build-args.log").read_text().splitlines()
     assert "--invocation_id=22222222-2222-2222-2222-222222222222" in build_args
+    assert "--config=ci" in build_args
+    assert "--config=rbe" not in build_args
     assert "--@io_bazel_rules_go//go/config:race" not in test_args
     assert "--@io_bazel_rules_go//go/config:race" not in build_args
     assert (tmp_path / "race-targets.log").read_text() == "//ci:go_test\n"

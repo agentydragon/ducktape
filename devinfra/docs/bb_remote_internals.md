@@ -96,8 +96,9 @@ Bazel on the runner reads `buildbuddy.bazelrc` then `.bazelrc` and expands all
 `--config` flags — `--config=rbe` from the workspace `.bazelrc`,
 `--config=buildbuddy_*` from `buildbuddy.bazelrc`.
 
-**If you don't pass `--config=rbe` explicitly, RBE is not enabled** — the
-runner builds everything locally in linux-sandbox on the runner VM.
+The workspace `.bazelrc` enables `rbe` for build-like commands. Passing the
+same `--config=rbe` again on the Bazel command expands it twice; callers using
+a workspace without this default must pass it explicitly to enable RBE.
 
 ## Credential and locality boundary
 
