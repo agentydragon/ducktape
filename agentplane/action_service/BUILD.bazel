@@ -339,7 +339,10 @@ go_binary(
 
 pkg_tar(
     name = "service_binary_layer",
-    srcs = [":actions"],
+    srcs = [
+        ":actions",
+        "//agentplane/action_service/migrations/cmd:actions-migrate",
+    ],
     package_dir = "/usr/local/bin",
 )
 
