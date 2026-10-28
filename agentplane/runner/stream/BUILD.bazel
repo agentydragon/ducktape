@@ -4,11 +4,16 @@ package(default_visibility = ["//agentplane/runner:__subpackages__"])
 
 go_library(
     name = "stream",
-    srcs = ["retry.go"],
+    srcs = ["connection.go", "retry.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/stream",
     deps = [
+        "//agentplane/observability",
         "@com_github_sethvargo_go_retry//:go-retry",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//backoff",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_uber_go_zap//:zap",
     ],

@@ -4,7 +4,7 @@ Status: **accepted design, deployed.** The Runner Gateway's
 control listener (`runner_gateway/gateway/control.go`), reachable over the egress sidecar's platform
 route, authenticates, fences and keeps connections alive, and carries command deliveries and
 lifecycle requests (`runner_gateway/gateway/tunnel.go`) for Sandboxes routed to it. The runner
-dials it at `control.target` in Runner configuration (`runner/transport.go`), which every runner `SandboxTemplate` passes
+dials it at `control.target` in Runner configuration (`runner/control/client.go`), which every runner `SandboxTemplate` passes
 (`cluster/cdk8s/agentplane/platform_routes.py`); runner Pods admit no connections. This is the contract it implements. It
 covers command delivery, authentication, connection ownership, lifecycle
 requests (listing, reserving and sealing Sessions), and the push of Events to the runner's

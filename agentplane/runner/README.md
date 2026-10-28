@@ -52,12 +52,15 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 - `codexappserver/`: the one shared Codex process, its COSI lifecycle resources and controller,
   startup, protocol routing, reader drain, and process exit. `Session` supplies callbacks that
   commit routed frame batches and exit observations to its journal.
-- `transport.go`: the outbound control tunnel and independent per-Session ingress
-  connection, authentication and discovery worker scheduling. Runner retains one inventory
-  notification seam and owns starting and joining per-Session delivery workers.
+- `control/`: the outbound control tunnel, authentication, reconnect and tunneled Runner RPCs.
+  It receives the generated Runner server plus narrow callbacks for incarnation adoption, facts
+  and inventory changes.
+- `transport.go`: Runner-wide orchestration and the independent per-Session ingress connection,
+  authentication and discovery worker scheduling. Runner retains one inventory notification seam
+  and owns starting and joining per-Session delivery workers.
 - `ingress/`: each Session's history push protocol, including replay, acknowledgements,
   backpressure, sealing, journal wakeups and retry. Runner retains discovery and worker lifecycle.
-- `stream/`: the neutral reconnect policy shared by control and ingress.
+- `stream/`: shared outbound gRPC setup and reconnect policy for control and ingress.
 - `journal/`: the Goose-managed SQLite schema, verbatim protobuf Event blobs, native request records
   with foreign-key links to their originating commands, and recovery queries. It depends on the
   neutral harness contract and protobuf types, with no dependency on `Runner`. Transactions use
