@@ -38,9 +38,12 @@ func recordDecision(ctx context.Context, tx *sql.Tx, row *requestRow, at time.Ti
 			return false, err
 		}
 		evidence = string(encoded)
-		evidenceProto, err = encodePolicyEvidence(decision.PolicyEvidence)
+		encoded, err = encodePolicyEvidence(decision.PolicyEvidence)
 		if err != nil {
 			return false, err
+		}
+		if encoded != nil {
+			evidenceProto = encoded
 		}
 	}
 	if decision.Operator != nil {

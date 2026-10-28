@@ -245,7 +245,7 @@ func advance(ctx context.Context, tx *sql.Tx, row *requestRow, state action_serv
 // appendEvent records the request's current version and state, and wakes whoever follows the request.
 func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principal) error {
 	var document any
-	var actorProto []byte
+	var actorProto any
 	if actor != nil {
 		recorded, err := recordedActor(actor)
 		if err != nil {
@@ -256,9 +256,12 @@ func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principa
 			return err
 		}
 		document = string(encoded)
-		actorProto, err = encodeRecordedPrincipal(recorded)
+		principalBytes, err := encodeRecordedPrincipal(recorded)
 		if err != nil {
 			return err
+		}
+		if principalBytes != nil {
+			actorProto = principalBytes
 		}
 	}
 	if _, err := tx.ExecContext(ctx,

@@ -27,10 +27,10 @@ func encodeRecordedPrincipal(principal *action_servicepb.Principal) ([]byte, err
 	return proto.Marshal(principal)
 }
 
-func encodePolicyEvidence(evidence *PolicyEvidence) ([]byte, error) {
-	if evidence == nil {
-		return nil, nil
-	}
+// Proto converts the store's policy evidence to its public message form. Keeping this
+// mapping beside the storage model lets both the API and the binary storage codec use
+// the same canonical conversion.
+func (evidence PolicyEvidence) Proto() (*action_servicepb.PolicyEvidence, error) {
 	source, ok := policySources[evidence.Matched.Source]
 	if !ok {
 		return nil, fmt.Errorf("unknown policy source %q", evidence.Matched.Source)
@@ -39,34 +39,44 @@ func encodePolicyEvidence(evidence *PolicyEvidence) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("unknown policy kind %q", evidence.Matched.Type)
 	}
-	if evidence.Matched.Index < 0 || evidence.Matched.Index > math.MaxInt32 {
+	if evidence.Matched.Index > math.MaxInt32 {
 		return nil, fmt.Errorf("policy index %d is outside int32", evidence.Matched.Index)
 	}
-	message := &action_servicepb.PolicyEvidence{
-		Bindings:   make([]*action_servicepb.BindingEvidence, len(evidence.Bindings)),
-		PolicySets: make([]*action_servicepb.PolicySetEvidence, len(evidence.PolicySets)),
-		Matched: &action_servicepb.MatchedPolicy{
-			Namespace: evidence.Matched.Namespace,
-			PolicySet: evidence.Matched.PolicySet,
-			Source:    source,
-			Index:     int32(evidence.Matched.Index),
-			Type:      kind,
-		},
-	}
-	for i, binding := range evidence.Bindings {
-		message.Bindings[i] = &action_servicepb.BindingEvidence{
+	message := &action_servicepb.PolicyEvidence{Matched: &action_servicepb.MatchedPolicy{
+		Namespace: evidence.Matched.Namespace,
+		PolicySet: evidence.Matched.PolicySet,
+		Source:    source,
+		Index:     int32(evidence.Matched.Index),
+		Type:      kind,
+	}}
+	for _, binding := range evidence.Bindings {
+		message.Bindings = append(message.Bindings, &action_servicepb.BindingEvidence{
 			Namespace: binding.Namespace, Name: binding.Name, ResourceVersion: binding.ResourceVersion,
-		}
+		})
 	}
-	for i, set := range evidence.PolicySets {
-		message.PolicySets[i] = &action_servicepb.PolicySetEvidence{
+	for _, set := range evidence.PolicySets {
+		message.PolicySets = append(message.PolicySets, &action_servicepb.PolicySetEvidence{
 			Namespace: set.Namespace, Name: set.Name, Generation: set.Generation,
-		}
+		})
 	}
 	if repository := evidence.Matched.Repository; repository != nil {
 		message.Matched.Repository = &action_servicepb.MatchedRepository{
 			Owner: repository.Owner, Repository: repository.Repository, ConfirmedPublic: repository.ConfirmedPublic,
 		}
+	}
+	return message, nil
+}
+
+func encodePolicyEvidence(evidence *PolicyEvidence) ([]byte, error) {
+	if evidence == nil {
+		return nil, nil
+	}
+	if evidence.Matched.Index < 0 {
+		return nil, fmt.Errorf("policy index %d is negative", evidence.Matched.Index)
+	}
+	message, err := evidence.Proto()
+	if err != nil {
+		return nil, err
 	}
 	return proto.Marshal(message)
 }
