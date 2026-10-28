@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use analysis::cross_module_values::resolve_primitive_binding_import_dependencies;
 use analysis::facts::module_has_top_level_await;
 use swc_common::{Spanned, SyntaxContext};
 use swc_ecma_ast::*;
@@ -523,26 +524,10 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                 binding_declarations.get(id) == Some(&1) && !binding_writes.contains(id)
             })
             .collect::<BTreeMap<_, _>>();
-        let mut stable_binding_import_dependencies = BTreeMap::new();
-        loop {
-            let mut changed = false;
-            for (id, requirements) in &stable_primitive_bindings {
-                if stable_binding_import_dependencies.contains_key(id) {
-                    continue;
-                }
-                if let Some(imports) = resolve_primitive_binding_requirements(
-                    requirements,
-                    &primitive_imported_bindings,
-                    &stable_binding_import_dependencies,
-                ) {
-                    stable_binding_import_dependencies.insert(id.clone(), imports);
-                    changed = true;
-                }
-            }
-            if !changed {
-                break;
-            }
-        }
+        let stable_binding_import_dependencies = resolve_primitive_binding_import_dependencies(
+            stable_primitive_bindings,
+            &primitive_imported_bindings,
+        );
 
         for (name, sources) in primitive_exports {
             let [Some(source)] = sources.as_slice() else {
