@@ -126,6 +126,9 @@ impl RuleSet for SemanticRules {
                 global_this_qualified,
             } => {
                 if !self.native_call_identity_candidates.contains(key)
+                    || (!*global_this_qualified
+                        && NativeIntrinsic::for_global_binding(binding.0.as_ref())
+                            != Some(*intrinsic))
                     || self.binding_context.declared_bindings.contains(binding)
                     || self
                         .binding_context

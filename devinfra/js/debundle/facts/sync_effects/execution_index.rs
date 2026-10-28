@@ -1470,26 +1470,6 @@ fn captured_callable_return_shape_is_supported(
 
 /// The named native binding a write on a proved global object can replace.
 /// Reading an unrelated global slot instead yields an unknown value identity.
-fn named_global_intrinsic(property: &str) -> Option<IntrinsicRoot> {
-    match property {
-        "Error" => Some(IntrinsicRoot::Error),
-        "Function" => Some(IntrinsicRoot::Function),
-        "Object" => Some(IntrinsicRoot::Object),
-        "Array" => Some(IntrinsicRoot::Array),
-        "Math" => Some(IntrinsicRoot::Math),
-        "RegExp" => Some(IntrinsicRoot::RegExp),
-        "Symbol" => Some(IntrinsicRoot::Symbol),
-        "Promise" => Some(IntrinsicRoot::Promise),
-        "Map" => Some(IntrinsicRoot::Map),
-        "Set" => Some(IntrinsicRoot::Set),
-        "WeakMap" => Some(IntrinsicRoot::WeakMap),
-        "WeakSet" => Some(IntrinsicRoot::WeakSet),
-        "FinalizationRegistry" => Some(IntrinsicRoot::FinalizationRegistry),
-        "globalThis" | "window" | "self" | "frames" | "top" => Some(IntrinsicRoot::GlobalObject),
-        _ => None,
-    }
-}
-
 /// Any mutation through an unresolved global-slot value can reach a native
 /// object. Preserve that uncertainty instead of treating it as the global
 /// object itself and discarding an unrelated descendant property name.
@@ -1733,7 +1713,7 @@ fn intrinsic_roots(
                         out.insert(intrinsic(
                             property
                                 .as_deref()
-                                .and_then(named_global_intrinsic)
+                                .and_then(IntrinsicRoot::for_global_binding)
                                 .unwrap_or(IntrinsicRoot::UnknownGlobalValue),
                         ));
                     }
@@ -3853,7 +3833,7 @@ impl ExecutionIndex {
                     }
                     _ => {}
                 }
-                if let Some(root) = named_global_intrinsic(id.0.as_ref())
+                if let Some(root) = IntrinsicRoot::for_global_binding(id.0.as_ref())
                     .filter(|root| *root != IntrinsicRoot::GlobalObject)
                     && binding_write_sites.insert((owner, root))
                 {
@@ -3994,7 +3974,7 @@ impl ExecutionIndex {
                 match &evidence.domain {
                     PropertyKeyDomain::FiniteStrings(keys) => {
                         for key in keys {
-                            refined.extend(named_global_intrinsic(key));
+                            refined.extend(IntrinsicRoot::for_global_binding(key));
                         }
                     }
                     PropertyKeyDomain::Symbol => {}

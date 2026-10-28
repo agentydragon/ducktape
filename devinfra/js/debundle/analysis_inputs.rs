@@ -199,6 +199,28 @@ pub enum NativeIntrinsic {
     WeakSet,
 }
 
+impl NativeIntrinsic {
+    pub(crate) fn for_global_binding(property: &str) -> Option<Self> {
+        match property {
+            "Error" => Some(Self::Error),
+            "Function" => Some(Self::Function),
+            "Object" => Some(Self::Object),
+            "Array" => Some(Self::Array),
+            "Math" => Some(Self::Math),
+            "RegExp" => Some(Self::RegExp),
+            "Symbol" => Some(Self::Symbol),
+            "Promise" => Some(Self::Promise),
+            "Map" => Some(Self::Map),
+            "Set" => Some(Self::Set),
+            "WeakMap" => Some(Self::WeakMap),
+            "WeakSet" => Some(Self::WeakSet),
+            "FinalizationRegistry" => Some(Self::FinalizationRegistry),
+            "globalThis" | "window" | "self" | "frames" | "top" => Some(Self::GlobalObject),
+            _ => None,
+        }
+    }
+}
+
 /// Stable reference to one exact author input in one provider chunk.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct ValueInputRef {
