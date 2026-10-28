@@ -317,7 +317,7 @@ func TestExecutorShutdownDrainsRelaysBeforeFencing(t *testing.T) {
 	r.mu.Unlock()
 	r.changed()
 
-	if err := r.Close(); err != nil {
+	if err := r.Close(context.Background()); err != nil {
 		t.Fatalf("close Runner: %v", err)
 	}
 	if !drained.Load() || stops.Load() != 1 {

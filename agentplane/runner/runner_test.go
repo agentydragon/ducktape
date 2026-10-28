@@ -94,7 +94,7 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := r.Close(); err != nil {
+		if err := r.Close(context.Background()); err != nil {
 			t.Errorf("close test runner: %v", err)
 		}
 	})
@@ -212,7 +212,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 	if err != nil || !found || input.Setup != runnerpb.SetupState_SETUP_STATE_INTERRUPTED || !input.SetupRequested {
 		t.Fatalf("recovered setup input = %+v, found=%t, err=%v; want retained but interrupted", input, found, err)
 	}
-	if err := r.Close(); err != nil {
+	if err := r.Close(context.Background()); err != nil {
 		t.Fatalf("close recovered Runner: %v", err)
 	}
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
