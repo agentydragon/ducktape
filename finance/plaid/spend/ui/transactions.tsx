@@ -392,7 +392,7 @@ function TransactionDetails({ row, currency }: { row: SpendTransactionRow; curre
   );
 }
 
-type ExcludedFlow = NonNullable<TransactionsView["summary"]["excluded_flows"]>[number];
+type ExcludedFlow = NonNullable<SpendTransactionsView["summary"]["excluded_flows"]>[number];
 
 type ExcludedFlowFilter = {
   periodId: TransactionPeriodId;
