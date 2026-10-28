@@ -745,14 +745,14 @@ fn explain_from_graph(
         mut unknown_binding_ids,
     } = resolve_source_unit_ids(
         selection,
-        &graph,
+        graph,
         common,
         size_cap_lines,
         source_root,
         propose,
     )?;
     let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
-    let mut source_units = source_units_for_ids(&graph, &source_unit_set);
+    let mut source_units = source_units_for_ids(graph, &source_unit_set);
 
     let mut neighbor_ids = BTreeSet::new();
     let mut incoming_edges: Vec<DependencyEdgeReport> = graph
@@ -777,8 +777,8 @@ fn explain_from_graph(
         })
         .cloned()
         .collect();
-    let mut neighbor_source_units = source_units_for_ids(&graph, &neighbor_ids);
-    let selected_atomic_group_ids = atomic_group_ids_for_source_unit_set(&graph, &source_unit_set);
+    let mut neighbor_source_units = source_units_for_ids(graph, &neighbor_ids);
+    let selected_atomic_group_ids = atomic_group_ids_for_source_unit_set(graph, &source_unit_set);
     let mut atomic_groups: Vec<AtomicGroupReport> = graph
         .atomic_graph
         .nodes
