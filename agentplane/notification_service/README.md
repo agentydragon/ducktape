@@ -61,16 +61,24 @@ until every old writer has drained and every reader has moved to relational keys
 Typed entry content is a separate phase. `00010_entry_typed_payload_expand.sql` adds nullable protobuf `BYTEA` for
 Actions events, generated mergeability observations and messages. New writers fill it while retaining the existing
 JSON payload for older readers; cleanup clears both physical representations in one transaction. GitHub webhook
-payloads remain native JSONB and do not use the typed column. A later explicit, resumable command backfills retained
-typed-source payloads outside Pod init before readers switch to protobuf-backed content.
-During rollout, an older cleanup replica can clear only the legacy JSON column; a future typed reader must treat
-that column's SQL `NULL` as expired even if typed bytes remain, until every cleanup writer runs the dual-cleanup
-release.
+payloads remain native JSONB and do not use the typed column. After every writer and cleanup worker runs that
+dual-write release, run
+`bb run //agentplane/notification_service/migrations/cmd:notifications-migrate -- backfill-entry-content --writer-gate=notification-entry-typed-payload-dual-write-v1`
+once against each Notification database. The command is resumable outside Pod init, walks every entry in native
+`(inbox_id, cursor)` primary-key order, and commits short batches bounded by entry count and one MiB of serialized
+JSON (a single oversized row is processed alone). It never loads GitHub webhook JSON. It also physically clears
+typed bytes left by an older cleanup writer wherever the legacy payload is already NULL, including entries below
+an inbox's `expired_through` cursor. It verifies both conditions over the full table before reporting completion.
+Do not switch readers to typed-only content until it completes on every database, including newly initialized
+databases. During rollout, an older cleanup replica can clear only the legacy JSON column; a future typed reader
+must treat that SQL `NULL` as expired even if typed bytes remain, until the all-cleanup-writers gate and backfill
+have completed.
 
-To roll back before the backfill/index command runs, restore the previous service image and leave the additive
-columns in place; do not run a migration's `Down` section while dual writers remain. If reverting after the
-command marks indexes ready, leave the columns, checkpoint and natural-key indexes in place as well. The previous
-image continues to use the JSONB key. After the rollback rollout settles, verify the previous API's reads, writes,
+To roll back before the content backfill runs, restore the previous service image and leave the additive column in
+place; do not run a migration's `Down` section while dual writers remain. If the content command has started or
+completed, leave its checkpoint and typed bytes in place too; the previous image continues to use the retained
+JSON payload. If the event identity backfill/index command has completed, leave its columns, checkpoint and
+natural-key indexes in place as well. After the rollback rollout settles, verify the previous API's reads, writes,
 replay deduplication and readiness. Only after no reader depends on relational keys should a later cleanup drop the
 natural-key indexes concurrently, then run the migration Down sections in reverse order. Before a later forward
 rollout, drain old writers and check for any unconverted rows; the backfill command stops with their inbox/cursors

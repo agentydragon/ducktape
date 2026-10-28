@@ -11,6 +11,7 @@ go_library(
         "creation_validation.go",
         "destination_backfill.go",
         "entry_content.go",
+        "entry_content_backfill.go",
         "event_identity_backfill.go",
         "event_identity_runtime.go",
         "event_identity_storage.go",
@@ -70,6 +71,7 @@ go_test(
         "claims_integration_test.go",
         "creation_backfill_integration_test.go",
         "destination_backfill_integration_test.go",
+        "entry_content_backfill_integration_test.go",
         "event_identity_backfill_integration_test.go",
         "event_identity_storage_integration_test.go",
         "github_ingest_integration_test.go",
@@ -110,6 +112,7 @@ go_test(
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
         "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
