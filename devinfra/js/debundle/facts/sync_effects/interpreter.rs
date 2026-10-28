@@ -6225,12 +6225,8 @@ pub(crate) fn annotate_synchronous_calls(
         active: BTreeSet::new(),
         cache: OrdMap::new(),
     };
-    let mut executor = Executor::new(&inputs, state);
-    let mut effects = Vec::with_capacity(facts.len());
-    for owner in 0..facts.len() {
-        effects.push(executor.execute_owner(SourceUnitOrdinal(owner)));
-    }
-    let _state = executor.into_state();
+    let effects =
+        super::runtime_inference::infer_synchronous_execution(&inputs, state, facts.len());
     drop(inputs);
     for (fact, effect) in facts.iter_mut().zip(effects) {
         fact.synchronous_calls = Some(effect);

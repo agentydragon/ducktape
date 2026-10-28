@@ -41,6 +41,22 @@ recursive summaries and cross-revision reuse are outside this migration.
 A, B and C are independent; D depends on C, E on A/C, F and G on D/E, H on all.
 Use isolated worktrees, independent PRs and native stacks for real dependencies.
 
+## Transfer requests
+
+The initial runtime adapter registers one producer per source owner. This is an
+intermediate scaffold; the remaining ports introduce named expression, call,
+heap and callback operations on the same store. A request identifies its source
+owner and parent operation plus a child occurrence, carries a settled input state
+and explicit argument/capture environments, and produces a settled output state
+and typed value/effect result. Child occurrence numbers describe execution order,
+not opcodes. Rule and fact families use named enums, including scheduler fixtures.
+
+Requests are deterministic from a settled prefix. A suspended parent cannot
+publish its result or schedule later children using a provisional child result.
+Retrying restores its input snapshot and reuses settled children; admission
+counts and cache revisions therefore advance only in semantic output state.
+Parent/child completion must retain the current active-recursion fallback.
+
 ## Acceptance
 
 Freeze an optimized baseline at b3697f5ee41de9fbbe1742c196f3ea594d0d10c0;
