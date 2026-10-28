@@ -425,10 +425,6 @@ on all namespaces/deployments that use `updateMode: auto`. Without a policy:
 CPU limits policy for cold-start-heavy workloads:
 <decisions.md> § "CPU limits policy (VPA)".
 
-### Alertmanager -> ntfy Bridge
-
-Deploy [alertmanager-ntfy](https://github.com/alexbakker/alertmanager-ntfy).
-
 ### SLO Definitions
 
 Deploy Pyrra or Sloth. Targets: ingress 99.5%, DNS 99.9%, Authentik 99.5%.
