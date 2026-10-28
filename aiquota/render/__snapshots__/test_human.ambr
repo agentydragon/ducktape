@@ -128,6 +128,6 @@
 # name: test_renders_shared_fixture[wire_fields]
   '''
   codex
-    visible (5h):  30%  ↻ 3h30m  Δ+0%  on pace
+    visible (5h):  30%  ↻ 45m  Δ-55%  leaves ~65% unused at reset
   '''
 # ---

@@ -167,7 +167,7 @@ def _effective_windows(
         or out_result.prepaid_balance is not None
     ):
         return (
-            [window for window in out_result.windows if window.display],
+            [_refreshed_window(window, now) for window in out_result.windows if window.display],
             out_result.extra_spend,
             out_result.paid_credits,
             out_result.available_reset_credits,
