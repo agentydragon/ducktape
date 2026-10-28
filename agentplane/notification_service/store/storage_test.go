@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
 	"github.com/google/uuid"
 )
