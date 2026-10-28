@@ -83,6 +83,7 @@ _EXECUTOR_VOLUME_NAME = "codex-executor"
 _EXECUTOR_DIR = "/run/agentplane/executor"
 _EXECUTOR_SOCKET = f"{_EXECUTOR_DIR}/control.sock"
 _EXECUTOR_URL = "ws://127.0.0.1:4501"
+_EXECUTOR_HEALTH_PORT = 4502
 _EXECUTOR_CONTAINER_NAME = "codex-executor"
 _CONFIG_VOLUME = "runner-config"
 # The bearers a Session presents: the placeholders the agentplane-workload and the notifications
@@ -344,18 +345,14 @@ class RunnerTemplate(Construct):
             k8s.VolumeMount(name=_EXECUTOR_VOLUME_NAME, mount_path=_EXECUTOR_DIR),
         ]
 
-    def _executor_health_probe(self) -> k8s.Probe:
-        return k8s.Probe(
-            exec=k8s.ExecAction(
-                command=[f"{_RUNNER_DIR}/bin/agentplane-runner", "--executor-container-health", _EXECUTOR_SOCKET]
-            ),
+    def _executor_container(self) -> k8s.Container:
+        health_probe = k8s.Probe(
+            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_EXECUTOR_HEALTH_PORT)),
             initial_delay_seconds=5,
             period_seconds=5,
             timeout_seconds=2,
             failure_threshold=1,
         )
-
-    def _executor_container(self) -> k8s.Container:
         return k8s.Container(
             name=_EXECUTOR_CONTAINER_NAME,
             image=f"{self.image}:{_PLACEHOLDER_TAG}",
@@ -366,6 +363,8 @@ class RunnerTemplate(Construct):
                 _EXECUTOR_SOCKET,
                 "--listen",
                 _EXECUTOR_URL,
+                "--health-listen",
+                f":{_EXECUTOR_HEALTH_PORT}",
                 "--binary",
                 "/bin/codex",
             ],
@@ -379,8 +378,8 @@ class RunnerTemplate(Construct):
                 requests={"cpu": k8s.Quantity.from_string("250m"), "memory": k8s.Quantity.from_string("512Mi")},
                 limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("2Gi")},
             ),
-            liveness_probe=self._executor_health_probe(),
-            readiness_probe=self._executor_health_probe(),
+            liveness_probe=health_probe,
+            readiness_probe=health_probe,
             volume_mounts=[
                 *self._execution_mounts(),
                 *self._isolated_executor_mounts(),

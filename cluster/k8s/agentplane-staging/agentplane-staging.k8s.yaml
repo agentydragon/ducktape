@@ -4117,6 +4117,8 @@ spec:
             - /run/agentplane/executor/control.sock
             - --listen
             - ws://127.0.0.1:4501
+            - --health-listen
+            - :4502
             - --binary
             - /bin/codex
           command:
@@ -4152,23 +4154,19 @@ spec:
               value: America/Los_Angeles
           image: git.allegedly.works/ducktape-ci/runner-ducktape:unset
           livenessProbe:
-            exec:
-              command:
-                - /run/agentplane/runner/bin/agentplane-runner
-                - --executor-container-health
-                - /run/agentplane/executor/control.sock
             failureThreshold: 1
+            httpGet:
+              path: /healthz
+              port: 4502
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 2
           name: codex-executor
           readinessProbe:
-            exec:
-              command:
-                - /run/agentplane/runner/bin/agentplane-runner
-                - --executor-container-health
-                - /run/agentplane/executor/control.sock
             failureThreshold: 1
+            httpGet:
+              path: /healthz
+              port: 4502
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 2

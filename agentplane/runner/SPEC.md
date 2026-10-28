@@ -18,6 +18,11 @@ isolation settings, and the configurable Session reconciliation worker count (de
 worker count does not cap Session admission. The separate controller-owned launch file contains
 only Sandbox identity and optional bootstrap source.
 
+The Pod exec-server companion serves HTTP `GET /healthz` in its existing process for Kubernetes
+liveness and readiness checks. Health checks inspect its Unix control socket within one second and
+return HTTP 503 when it is unavailable; an unclaimed companion is healthy. Probing never starts
+Codex or claims execution ownership.
+
 The loader first resolves Runner environment declarations, then harness declarations. Each declaration
 has inherited names and explicit values; explicit values take precedence. Provider tokens are read
 from the named Runner environment variables. Undeclared variables never enter native harnesses.

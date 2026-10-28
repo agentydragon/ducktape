@@ -29,15 +29,19 @@ container into the identical failure, and a companion in restart backoff leaves 
 Runner to fence — a Sandbox could then neither run Codex nor prove it may stop. Runner records the
 reason, surfaces it to every Session waiting on isolated execution instead of its own startup deadline,
 and keeps retrying at its backoff until a new container generation answers.
-The companion also reaps orphaned children while running. Its Kubernetes liveness probe checks the
-control socket, including while waiting for Runner to claim it. Pod OOM evidence remains in
+The companion also reaps orphaned children while running. It serves HTTP `GET /healthz` at the
+template's `--health-listen` address (`:4502` in Pods). Kubernetes liveness and readiness probes
+call that endpoint without launching a probe process. Each request checks the existing Unix control
+socket with a one-second deadline, including while waiting for Runner to claim it; an unavailable
+control socket returns HTTP 503. The endpoint exposes no ownership or execution commands. Pod OOM evidence remains in
 `status.containerStatuses[].lastState.terminated` and `restartCount`; an ownership disconnect alone
 does not establish that the container was OOM-killed.
 
 The common Runner configuration selects this mode with `environment.kind: "pod"` with
 `environment.executor.url` and `environment.executor.socket`. The endpoint
-is loopback-only; no Service, inbound network rule, Kubernetes credentials or cgroup privileges are
-needed by Runner. The template owns the endpoint and socket paths used on both sides.
+is loopback-only. The health listener accepts kubelet HTTP probes on the Pod address; it has no
+Service or inbound network grant. Runner needs no Kubernetes credentials or cgroup privileges.
+The template owns the endpoint and socket paths used on both sides.
 
 ## VMs
 

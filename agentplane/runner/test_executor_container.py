@@ -14,9 +14,13 @@ import pytest_bazel
 
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.testing import events, launches
+from agentplane.runner.testing.codex_exec_server_container import (
+    CodexExecServerContainer,
+    CodexExecServerContainerStatus,
+    inspect_codex_exec_server_container,
+)
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.driver import RunnerDriver, SessionFollow, SessionSealedError
-from agentplane.runner.testing.executor_companion import ExecutorCompanion, ExecutorStatus, inspect_executor
 from agentplane.runner.testing.fixtures import ModelEndpoint
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.process_fixtures import wait_for_exit
@@ -30,25 +34,28 @@ pytestmark = pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=
 
 @pytest.fixture
 def config(
-    harness: runner_pb2.Harness, endpoint: ModelEndpoint, tmp_path: Path, executor_companion: ExecutorCompanion
+    harness: runner_pb2.Harness,
+    endpoint: ModelEndpoint,
+    tmp_path: Path,
+    codex_exec_server_container: CodexExecServerContainer,
 ) -> RunnerTestConfig:
     runner_config = launches.config(
         harness,
         endpoint.origin,
         state_dir=tmp_path / "state",
         home=tmp_path / "home",
-        codex_executor_url=executor_companion.url,
-        codex_executor_socket=executor_companion.socket,
+        codex_executor_url=codex_exec_server_container.url,
+        codex_executor_socket=codex_exec_server_container.socket,
     )
     environment = {**runner_config.harness_environment, "PATH": "/usr/bin:/bin"}
     return replace(runner_config, harness_environment=environment)
 
 
-async def _wait_for_generation(path: Path, previous: str, *, owned: bool) -> ExecutorStatus:
+async def _wait_for_generation(path: Path, previous: str, *, owned: bool) -> CodexExecServerContainerStatus:
     async with asyncio.timeout(30):
         while True:
             try:
-                status = await asyncio.to_thread(inspect_executor, path)
+                status = await asyncio.to_thread(inspect_codex_exec_server_container, path)
             except OSError:
                 await asyncio.sleep(0.1)
                 continue
@@ -57,11 +64,11 @@ async def _wait_for_generation(path: Path, previous: str, *, owned: bool) -> Exe
             await asyncio.sleep(0.1)
 
 
-async def _wait_for_owned(path: Path, generation: str) -> ExecutorStatus:
+async def _wait_for_owned(path: Path, generation: str) -> CodexExecServerContainerStatus:
     async with asyncio.timeout(30):
         while True:
             try:
-                status = await asyncio.to_thread(inspect_executor, path)
+                status = await asyncio.to_thread(inspect_codex_exec_server_container, path)
             except OSError:
                 await asyncio.sleep(0.1)
                 continue
@@ -70,7 +77,7 @@ async def _wait_for_owned(path: Path, generation: str) -> ExecutorStatus:
             await asyncio.sleep(0.1)
 
 
-def _host_pid_for_marker(companion: ExecutorCompanion, marker: str) -> int | None:
+def _host_pid_for_marker(companion: CodexExecServerContainer, marker: str) -> int | None:
     process_table = companion.container.get_wrapped_container().top()
     pid_column = process_table["Titles"].index("PID")
     command_column = process_table["Titles"].index("CMD")
@@ -90,7 +97,7 @@ def _host_pid_for_marker(companion: ExecutorCompanion, marker: str) -> int | Non
     return pid
 
 
-def _wait_for_host_pid(companion: ExecutorCompanion, marker: str) -> int:
+def _wait_for_host_pid(companion: CodexExecServerContainer, marker: str) -> int:
     deadline = time.monotonic() + 30
     while (pid := _host_pid_for_marker(companion, marker)) is None:
         if time.monotonic() >= deadline:
@@ -99,7 +106,7 @@ def _wait_for_host_pid(companion: ExecutorCompanion, marker: str) -> int:
     return pid
 
 
-def _kill_exec_server(companion: ExecutorCompanion) -> None:
+def _kill_exec_server(companion: CodexExecServerContainer) -> None:
     script = """
     for process in /proc/[0-9]*; do
       args=$(tr '\\000' ' ' < "$process/cmdline" 2>/dev/null) || continue
@@ -117,11 +124,11 @@ def _kill_exec_server(companion: ExecutorCompanion) -> None:
         raise RuntimeError(f"could not kill Codex exec-server: {result.output!r}")
 
 
-def _wait_for_container_exit(companion: ExecutorCompanion) -> None:
+def _wait_for_container_exit(companion: CodexExecServerContainer) -> None:
     companion.container.get_wrapped_container().wait(timeout=30)
 
 
-def _start_container(companion: ExecutorCompanion) -> None:
+def _start_container(companion: CodexExecServerContainer) -> None:
     # Starting the stopped container models kubelet's restart after PID 1 exits.
     companion.container.get_wrapped_container().start()
 
@@ -154,12 +161,12 @@ async def _reply_to_tool(
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
 
-async def test_companion_namespace_restarts_without_restarting_codex_app_server(
+async def test_codex_exec_server_container_restarts_without_restarting_app_server(
     runner: RunningRunner,
     driver: RunnerDriver,
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
-    executor_companion: ExecutorCompanion,
+    codex_exec_server_container: CodexExecServerContainer,
 ) -> None:
     session = await driver.attach("isolated-executor", spec=spec)
     detached_marker = f"detached-child-{uuid4().hex}"
@@ -167,17 +174,21 @@ async def test_companion_namespace_restarts_without_restarting_codex_app_server(
 
     await session.submit_input("input-1", "Run the first shell tool and report its output.")
     await _reply_to_tool(model, session, "call-first", first_command, "FIRST_DONE", "FIRST_TOOL_OK")
-    detached_host_pid = await asyncio.to_thread(_wait_for_host_pid, executor_companion, detached_marker)
-    initial_executor = await asyncio.to_thread(inspect_executor, executor_companion.socket)
+    detached_host_pid = await asyncio.to_thread(_wait_for_host_pid, codex_exec_server_container, detached_marker)
+    initial_executor = await asyncio.to_thread(inspect_codex_exec_server_container, codex_exec_server_container.socket)
     assert initial_executor.owned
+    await asyncio.to_thread(codex_exec_server_container.check_health)
     initial_app_server = await _codex_process(driver)
     assert initial_app_server.HasField("pid")
 
-    await asyncio.to_thread(_kill_exec_server, executor_companion)
-    await asyncio.to_thread(_wait_for_container_exit, executor_companion)
+    await asyncio.to_thread(_kill_exec_server, codex_exec_server_container)
+    await asyncio.to_thread(_wait_for_container_exit, codex_exec_server_container)
     await asyncio.wait_for(wait_for_exit(detached_host_pid), timeout=30)
-    await asyncio.to_thread(_start_container, executor_companion)
-    restarted_executor = await _wait_for_generation(executor_companion.socket, initial_executor.generation, owned=True)
+    await asyncio.to_thread(_start_container, codex_exec_server_container)
+    restarted_executor = await _wait_for_generation(
+        codex_exec_server_container.socket, initial_executor.generation, owned=True
+    )
+    await asyncio.to_thread(codex_exec_server_container.check_health)
 
     recovered_app_server = await _codex_process(driver)
     assert recovered_app_server.pid == initial_app_server.pid
@@ -192,15 +203,20 @@ async def test_companion_namespace_restarts_without_restarting_codex_app_server(
         "SECOND_DONE",
         "SECOND_TOOL_OK",
     )
-    second_detached_host_pid = await asyncio.to_thread(_wait_for_host_pid, executor_companion, second_detached_marker)
+    second_detached_host_pid = await asyncio.to_thread(
+        _wait_for_host_pid, codex_exec_server_container, second_detached_marker
+    )
     assert restarted_executor.generation != initial_executor.generation
     assert (await _codex_process(driver)).pid == initial_app_server.pid
 
     await runner.crash()
-    await asyncio.to_thread(_wait_for_container_exit, executor_companion)
+    await asyncio.to_thread(_wait_for_container_exit, codex_exec_server_container)
     await asyncio.wait_for(wait_for_exit(second_detached_host_pid), timeout=30)
-    await asyncio.to_thread(_start_container, executor_companion)
-    idle_executor = await _wait_for_generation(executor_companion.socket, restarted_executor.generation, owned=False)
+    await asyncio.to_thread(_start_container, codex_exec_server_container)
+    idle_executor = await _wait_for_generation(
+        codex_exec_server_container.socket, restarted_executor.generation, owned=False
+    )
+    await asyncio.to_thread(codex_exec_server_container.check_health)
     await runner.start()
 
     session = await driver.attach("isolated-executor", spec=spec, after_cursor=session.cursor)
@@ -214,19 +230,21 @@ async def test_companion_namespace_restarts_without_restarting_codex_app_server(
         "THIRD_DONE",
         "THIRD_TOOL_OK",
     )
-    owned_executor = await _wait_for_owned(executor_companion.socket, idle_executor.generation)
+    owned_executor = await _wait_for_owned(codex_exec_server_container.socket, idle_executor.generation)
     assert owned_executor.generation == idle_executor.generation
 
-    third_detached_host_pid = await asyncio.to_thread(_wait_for_host_pid, executor_companion, third_detached_marker)
+    third_detached_host_pid = await asyncio.to_thread(
+        _wait_for_host_pid, codex_exec_server_container, third_detached_marker
+    )
     app_server = await _codex_process(driver)
     assert app_server.HasField("pid")
     quiescing = asyncio.create_task(driver.quiesce())
-    await asyncio.to_thread(_wait_for_container_exit, executor_companion)
+    await asyncio.to_thread(_wait_for_container_exit, codex_exec_server_container)
     await asyncio.wait_for(wait_for_exit(third_detached_host_pid), timeout=30)
     await asyncio.wait_for(wait_for_exit(app_server.pid), timeout=30)
     assert not quiescing.done()
-    await asyncio.to_thread(_start_container, executor_companion)
-    await _wait_for_generation(executor_companion.socket, owned_executor.generation, owned=False)
+    await asyncio.to_thread(_start_container, codex_exec_server_container)
+    await _wait_for_generation(codex_exec_server_container.socket, owned_executor.generation, owned=False)
     await quiescing
     with pytest.raises(SessionSealedError) as sealed:
         await session.until(lambda _: False)

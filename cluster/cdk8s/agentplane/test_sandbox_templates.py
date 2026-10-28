@@ -99,16 +99,20 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
         "/run/agentplane/executor/control.sock",
         "--listen",
         "ws://127.0.0.1:4501",
+        "--health-listen",
+        ":4502",
         "--binary",
         "/bin/codex",
     ]
-    health = [
-        "/run/agentplane/runner/bin/agentplane-runner",
-        "--executor-container-health",
-        "/run/agentplane/executor/control.sock",
-    ]
-    assert executor["livenessProbe"]["exec"]["command"] == health
-    assert executor["readinessProbe"]["exec"]["command"] == health
+    health = {
+        "httpGet": {"path": "/healthz", "port": 4502},
+        "initialDelaySeconds": 5,
+        "periodSeconds": 5,
+        "timeoutSeconds": 2,
+        "failureThreshold": 1,
+    }
+    assert executor["livenessProbe"] == health
+    assert executor["readinessProbe"] == health
     assert executor["image"] == runner["image"]
     assert executor["workingDir"] == runner["workingDir"] == "/state"
 

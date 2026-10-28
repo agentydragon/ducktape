@@ -329,7 +329,7 @@ func newExecutorLifecycleRunner(t *testing.T, start func(context.Context) (*code
 	companionCtx, cancelCompanion := context.WithCancel(context.Background())
 	companionDone := make(chan error, 1)
 	go func() {
-		companionDone <- serveCodexExecServerContainer(companionCtx, socket, filepath.Join(dir, "unused-codex"), "ws://127.0.0.1:4599")
+		companionDone <- serveCodexExecServerContainer(companionCtx, socket, filepath.Join(dir, "unused-codex"), "ws://127.0.0.1:4599", "127.0.0.1:0")
 	}()
 	waitForSocket(t, socket)
 
@@ -443,17 +443,31 @@ func waitExecutor(t *testing.T, r *Runner, predicate func(codexExecServerRuntime
 // A companion whose Codex binary cannot start serves a refusal instead of exiting: a generation that
 // spawned nothing has no work to fence, and a container restarting into the same failure would leave
 // no socket to fence and a Runner able neither to run Codex nor to quiesce.
-func TestExecutorCompanionRefusesClaimAndKeepsServing(t *testing.T) {
+func TestCodexExecServerContainerRefusesClaimAndKeepsServing(t *testing.T) {
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "control.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	served := make(chan error, 1)
 	go func() {
-		served <- serveCodexExecServerContainer(ctx, socket, filepath.Join(dir, "absent-codex"), "ws://127.0.0.1:4501")
+		served <- serveCodexExecServerContainer(ctx, socket, filepath.Join(dir, "absent-codex"), "ws://127.0.0.1:4501", "127.0.0.1:0")
 	}()
 	waitForSocket(t, socket)
 
+	health := httptest.NewServer(codexExecServerContainerHealthHandler(socket))
+	defer health.Close()
+	checkHealth := func() {
+		t.Helper()
+		response, err := health.Client().Get(health.URL + "/healthz")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("unclaimed companion health = %d, want 200", response.StatusCode)
+		}
+	}
+	checkHealth()
 	for attempt := 1; attempt <= 2; attempt++ {
 		_, err := claimCodexExecServerContainer(ctx, socket, map[string]string{"PATH": "/usr/bin"})
 		var refusal codexExecServerRefusal
@@ -463,6 +477,7 @@ func TestExecutorCompanionRefusesClaimAndKeepsServing(t *testing.T) {
 		if !strings.Contains(err.Error(), "absent-codex") {
 			t.Errorf("claim %d: %q, want the companion's reason", attempt, err)
 		}
+		checkHealth()
 	}
 
 	_, status, err := codexExecServerControl(ctx, socket, codexExecServerControlRequest{Operation: "inspect"})

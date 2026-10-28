@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -17,13 +18,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 )
 
-const (
-	codexExecServerContainerMode       = "--executor-container"
-	codexExecServerContainerHealthMode = "--executor-container-health"
-)
+const codexExecServerContainerMode = "--executor-container"
 
 // CodexExecServerContainerMain must be PID 1 in a private container PID namespace.
 // Returning to main exits that namespace, letting the runtime kill even children
@@ -33,11 +32,12 @@ func CodexExecServerContainerMain(args []string) int {
 	socket := flags.String("socket", "", "local ownership socket")
 	listen := flags.String("listen", "", "Codex WebSocket endpoint")
 	binary := flags.String("binary", "", "Codex executable")
+	healthListen := flags.String("health-listen", "", "HTTP health endpoint")
 	if err := flags.Parse(args); err != nil {
 		return 64
 	}
-	if os.Getpid() != 1 || !filepath.IsAbs(*socket) || !filepath.IsAbs(*binary) || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "executor companion requires PID 1, absolute socket and binary paths, and a private PID namespace")
+	if os.Getpid() != 1 || !filepath.IsAbs(*socket) || !filepath.IsAbs(*binary) || *healthListen == "" || flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "executor companion requires PID 1, absolute socket and binary paths, an HTTP health address, and a private PID namespace")
 		return 64
 	}
 	if err := validateExecutorURL(*listen); err != nil {
@@ -46,28 +46,30 @@ func CodexExecServerContainerMain(args []string) int {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	if err := serveCodexExecServerContainer(ctx, *socket, *binary, *listen); err != nil {
+	if err := serveCodexExecServerContainer(ctx, *socket, *binary, *listen, *healthListen); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return 0
 }
 
-func CodexExecServerContainerHealthMain(args []string) int {
-	if len(args) != 1 {
-		return 64
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	c, _, err := codexExecServerControl(ctx, args[0], codexExecServerControlRequest{Operation: "inspect"})
-	if err != nil {
-		return 1
-	}
-	_ = c.Close()
-	return 0
+func codexExecServerContainerHealthHandler(socket string) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+		defer cancel()
+		connection, _, err := codexExecServerControl(ctx, socket, codexExecServerControlRequest{Operation: "inspect"})
+		if err != nil {
+			http.Error(w, "companion control unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		_ = connection.Close()
+		w.WriteHeader(http.StatusOK)
+	})
+	return mux
 }
 
-func serveCodexExecServerContainer(ctx context.Context, socket, binary, listen string) error {
+func serveCodexExecServerContainer(ctx context.Context, socket, binary, listen, healthListen string) error {
 	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
 		return err
 	}
@@ -82,10 +84,42 @@ func serveCodexExecServerContainer(ctx context.Context, socket, binary, listen s
 	if err := os.Chmod(socket, 0o600); err != nil {
 		return err
 	}
+	healthListener, err := net.Listen("tcp", healthListen)
+	if err != nil {
+		return err
+	}
+	defer healthListener.Close()
 	lifetime, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stop := context.AfterFunc(lifetime, func() { _ = listener.Close() })
+	healthServer := &http.Server{
+		Handler:           codexExecServerContainerHealthHandler(socket),
+		ReadHeaderTimeout: time.Second,
+		WriteTimeout:      2 * time.Second,
+		IdleTimeout:       5 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return lifetime },
+	}
+	stop := context.AfterFunc(lifetime, func() {
+		_ = listener.Close()
+		_ = healthServer.Close()
+	})
 	defer stop()
+	var servers errgroup.Group
+	servers.Go(func() error {
+		defer cancel()
+		err := healthServer.Serve(healthListener)
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	})
+	servers.Go(func() error {
+		defer cancel()
+		return serveCodexExecServerControl(lifetime, cancel, listener, binary, listen)
+	})
+	return servers.Wait()
+}
+
+func serveCodexExecServerControl(lifetime context.Context, cancel context.CancelFunc, listener net.Listener, binary, listen string) error {
 	status := codexExecServerControlStatus{Generation: uuid.NewString()}
 	var mu sync.Mutex
 	for {

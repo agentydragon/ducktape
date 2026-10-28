@@ -148,8 +148,8 @@ py_library(
 )
 
 py_library(
-    name = "executor_companion",
-    srcs = ["executor_companion.py"],
+    name = "codex_exec_server_container",
+    srcs = ["codex_exec_server_container.py"],
     data = [
         "//agentplane/runner:main_bin",  # keep: production Runner companion executable
         "@agentplane_codex_cli_linux_x64//:files",  # keep: pinned exec-server executable
