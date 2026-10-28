@@ -1,6 +1,6 @@
 """Print the Haku console's OpenAPI schema to stdout (for frontend type-gen).
 
-Driven by ``//haku/console/frontend:schema`` (``js_openapi_schema``) to generate
+Captured as ``//haku/console:openapi_schema`` for the frontend's generated
 ``api/schema.d.ts``. Only route/model definitions are needed; placeholder ``Settings``
 suffice and ``app.openapi()`` runs no startup work (the Postgres stores are constructed
 lazily, and no connection or migration happens outside ``app.main``).

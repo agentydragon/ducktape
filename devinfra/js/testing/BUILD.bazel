@@ -1,0 +1,79 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("//devinfra/js:openapi_typescript.bzl", "openapi_typescript")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+package(default_testonly = True)
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+py_library(
+    name = "schema_models",
+    srcs = ["schema_models.py"],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "export_openapi",
+    srcs = ["export_openapi.py"],
+    deps = [":schema_models"],
+)
+
+py_binary(
+    name = "export_openapi_bin",
+    main_module = "devinfra.js.testing.export_openapi",
+    deps = [":export_openapi"],
+)
+
+genrule(
+    name = "openapi_schema",
+    outs = ["openapi.json"],
+    cmd = "$(location :export_openapi_bin) > $@",
+    tools = [":export_openapi_bin"],
+)
+
+openapi_typescript(
+    name = "openapi_types_codegen",
+    out = "openapi_types.d.ts",
+    schema = ":openapi_schema",
+)
+
+js_library(
+    name = "openapi_types",
+    srcs = [":openapi_types_codegen"],
+    tags = ["no-lint"],
+)
+
+ts_library(
+    name = "openapi_consumer",
+    srcs = ["openapi_consumer.ts"],
+    tsconfig = ":tsconfig",
+    deps = [":openapi_types"],
+)
+
+openapi_typescript(
+    name = "external_openapi_types_codegen",
+    out = "external_openapi_types.d.ts",
+    schema = "//devinfra/js/testing/fixtures:openapi_artifact",
+    schema_files = ["//devinfra/js/testing/fixtures:external_model_artifact"],
+)
+
+js_library(
+    name = "external_openapi_types",
+    srcs = [":external_openapi_types_codegen"],
+    tags = ["no-lint"],
+)
+
+ts_library(
+    name = "external_openapi_consumer",
+    srcs = ["external_openapi_consumer.ts"],
+    tsconfig = ":tsconfig",
+    deps = [":external_openapi_types"],
+)

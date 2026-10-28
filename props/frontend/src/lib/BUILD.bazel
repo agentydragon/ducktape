@@ -1,4 +1,5 @@
-load("//devinfra/js:openapi.bzl", "js_openapi_schema")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js:openapi_typescript.bzl", "openapi_typescript")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = [
@@ -20,9 +21,16 @@ filegroup(
     visibility = ["//props/frontend:__pkg__"],
 )
 
-js_openapi_schema(
+openapi_typescript(
+    name = "_schema_types",
+    out = "api/schema.d.ts",
+    schema = "//props/backend:openapi_schema",
+)
+
+js_library(
     name = "schema",
-    generator = "//props/backend:export_schema_bin",
+    srcs = [":_schema_types"],
+    tags = ["no-lint"],
 )
 
 ts_library(

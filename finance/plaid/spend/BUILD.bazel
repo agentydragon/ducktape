@@ -225,6 +225,14 @@ py_binary(
     deps = [":export_schema"],
 )
 
+genrule(
+    name = "openapi_schema",
+    outs = ["openapi.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+    visibility = ["//finance/plaid/spend/ui:__pkg__"],
+)
+
 aspect_py_binary(
     name = "server_bin",
     data = ["//finance/plaid/spend/ui:bundle"],
