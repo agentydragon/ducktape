@@ -1,11 +1,10 @@
 # TypeScript schema conversion
 
-The `openapi_typescript` rule converts a declared OpenAPI JSON artifact into a TypeScript
-declaration file. The schema owner produces the artifact; the converter does not invoke a backend
-exporter.
+The `openapi_typescript` macro converts a declared OpenAPI JSON artifact into a TypeScript
+declaration file and packages it in a `js_library` under the requested target name. The schema owner
+produces the artifact; the converter does not invoke a backend exporter.
 
 ```starlark
-load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/js:openapi_typescript.bzl", "openapi_typescript")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
@@ -17,14 +16,9 @@ genrule(
 )
 
 openapi_typescript(
-    name = "_schema_types",
+    name = "schema",
     schema = ":openapi_schema",
     out = "api/schema.d.ts",
-)
-
-js_library(
-    name = "schema",
-    srcs = [":_schema_types"],
 )
 
 ts_library(
@@ -40,16 +34,19 @@ reached through a relative local `$ref` in `schema_files`; source, generated, an
 targets are supported. The generated declarations preserve `rootTypes: true` and
 `rootTypesNoSchemaPrefix: true` so component models keep their named imports.
 
-`js_library` publishes the generated declaration through `JsInfo.transitive_types`; it does not
-run a compiler action. `ts_library` consumes those declarations for type checking and does not emit
-them as JavaScript source.
+The requested `schema` target publishes the generated declaration through `JsInfo.transitive_types`
+without running a compiler action. The raw file remains available as `:api/schema.d.ts`. Both
+targets inherit the macro call's `visibility`, so packages allowed to consume the library can also
+address the output file directly. `ts_library` consumes the declaration for type checking and does
+not emit it as JavaScript source.
 
 ## OpenAPI Zod source
 
-`openapi_zod` converts a declared OpenAPI file into the Zod TypeScript source selected by a local
-Hey API config. The config and every local schema/config reference are declared inputs. Compile the
-generated source with an ordinary `ts_library`; for an `.mts` source it emits both `.mjs` and
-`.d.mts` for JavaScript and TypeScript consumers:
+`openapi_zod` remains a file-only converter: it produces the Zod TypeScript source selected by a
+local Hey API config. The config and every local schema/config reference are declared inputs. Compile
+the generated source with an ordinary `ts_library`, where the consumer declares compiler settings
+and runtime dependencies; for an `.mts` source it emits both `.mjs` and `.d.mts` for JavaScript and
+TypeScript consumers:
 
 ```starlark
 load("//devinfra/js:openapi_zod.bzl", "openapi_zod")
@@ -88,14 +85,15 @@ schema reference; such payloads are not claimed as supported by this conversion 
 
 ## Standalone JSON Schema declarations
 
-The `json_schema_typescript` rule converts one declared JSON Schema file without invoking its
-producer. It has the same file-input shape as `openapi_typescript`:
+The `json_schema_typescript` macro converts one declared JSON Schema file without invoking its
+producer and packages the declaration in a `js_library` under the requested target name. It has the
+same file-input shape as `openapi_typescript`:
 
 ```starlark
 load("//devinfra/js:json_schema_typescript.bzl", "json_schema_typescript")
 
 json_schema_typescript(
-    name = "_types",
+    name = "types",
     schema = "//my/api:types_schema",
     schema_files = ["//my/api:shared_definitions"],
     out = "api/types.d.ts",
@@ -107,11 +105,19 @@ as a declared input and resolves the reference from the root schema's path. Remo
 is disabled by the converter.
 
 When a runtime consumer needs the source JSON as well as generated declarations, keep the schema
-artifact as its own Bazel input and package both files in `js_library`:
+artifact as its own Bazel input. A wrapper can package the JSON source and depend on the declaration
+library:
 
 ```starlark
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("//devinfra/js:json_schema_typescript.bzl", "json_schema_typescript")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+json_schema_typescript(
+    name = "tool_arguments_types",
+    schema = ":types_schema",
+    out = "api/types.d.ts",
+)
 
 copy_file(
     name = "_schema_json",
@@ -120,8 +126,9 @@ copy_file(
 )
 
 js_library(
-    name = "types",
-    srcs = [":_types", ":_schema_json"],
+    name = "tool_arguments",
+    srcs = [":_schema_json"],
+    deps = [":tool_arguments_types"],
 )
 ```
 

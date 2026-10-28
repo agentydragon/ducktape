@@ -40,25 +40,15 @@ js_library(
 )
 
 json_schema_typescript(
-    name = "ssh_action_arguments_types_codegen",
+    name = "ssh_action_arguments_types",
     out = "schemas/ssh/exec.arguments.d.ts",
     schema = "//ssh_mcp_server:exec.arguments.schema.json",
 )
 
 json_schema_typescript(
-    name = "ssh_action_result_types_codegen",
+    name = "ssh_action_result_types",
     out = "schemas/ssh/exec.result.d.ts",
     schema = "//ssh_mcp_server:exec.result.schema.json",
-)
-
-js_library(
-    name = "ssh_action_arguments_types",
-    srcs = [":ssh_action_arguments_types_codegen"],
-)
-
-js_library(
-    name = "ssh_action_result_types",
-    srcs = [":ssh_action_result_types_codegen"],
 )
 
 ts_library(
