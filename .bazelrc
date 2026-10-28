@@ -121,6 +121,10 @@ common:quiet --show_progress_rate_limit=30
 # CI and AI agent modes both use quiet output.
 common:ci --config=quiet
 common:ci --announce_rc
+# Suppress action retries while outer-runner cancellation propagates. This also
+# disables recovery from transient remote errors; monitor CI infrastructure failures.
+# Evidence: devinfra/debug/ci_remote_cancellation/rpc_retry_trace.md.
+build:ci --remote_retries=0
 # Live targets remain part of CI builds so their remote lint/typecheck actions
 # stay covered. Only their credentialed test processes are excluded.
 test:ci --test_tag_filters=-live_openai_api,-manual
