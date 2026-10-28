@@ -2,12 +2,14 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"slices"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 // These tests write rows the way the Python service does, from the golden vectors it produced, and hold the
@@ -39,6 +41,13 @@ func (f fixture) insertMinimalRequest(t *testing.T, owner ServiceAccount, key st
 	return id
 }
 
+func (f fixture) backfillActionStorage(t *testing.T) {
+	t.Helper()
+	if err := BackfillActionStorage(t.Context(), f.db); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // document is the JSON a query selects for the request, as PostgreSQL holds it.
 func (f fixture) document(t *testing.T, query string, id uuid.UUID) []byte {
 	t.Helper()
@@ -59,6 +68,7 @@ func TestRequestsPythonStoredAreReadAndWrittenBack(t *testing.T) {
 			sent := requestInput(t, vector.Input)
 			id := uuid.New()
 			f.insertRequest(t, id, otherCaller.Account, sent.IdempotencyKey, vector.Stored)
+			f.backfillActionStorage(t)
 
 			read := f.get(t, id)
 			stored, err := json.Marshal(read.Action)
@@ -108,6 +118,7 @@ func TestPolicyEvidencePythonStoredIsReadAndWrittenBack(t *testing.T) {
 			}
 			id := f.insertMinimalRequest(t, otherCaller.Account, "python-decided")
 			f.decideAsPython(t, id, vector.Stored)
+			f.backfillActionStorage(t)
 			if read := f.get(t, id).Decision; read == nil || !reflect.DeepEqual(read.PolicyEvidence, &evidence) {
 				t.Errorf("read evidence %+v, want %+v", read, evidence)
 			}
@@ -130,6 +141,7 @@ func TestActorsPythonStoredAreReadAndWrittenBack(t *testing.T) {
 			id := f.insertMinimalRequest(t, otherCaller.Account, "python-"+vector.Name)
 			f.exec(t, `INSERT INTO action_event (request_id, sequence, state, at, actor) VALUES ($1, 2, 'cancelled', now(), $2::jsonb)`,
 				id, string(vector.Stored))
+			f.backfillActionStorage(t)
 			events := f.events(t, id)
 			if len(events) != 2 || events[1].Actor == nil {
 				t.Fatalf("events %+v", events)
@@ -207,6 +219,7 @@ func (f fixture) insertAllowedAsPython(t *testing.T, key string) uuid.UUID {
 	f.exec(t, `UPDATE action_request SET state = 'allowed', version = 2, updated_at = now(), history_at = now() WHERE id = $1`, id)
 	f.exec(t, `INSERT INTO action_event (request_id, sequence, state, at) VALUES ($1, 2, 'allowed', now())`, id)
 	f.exec(t, `INSERT INTO action_execution (id, request_id, state, created_at) VALUES ($1, $2, 'pending_dispatch', now())`, uuid.New(), id)
+	f.backfillActionStorage(t)
 	return id
 }
 
@@ -262,6 +275,7 @@ func TestRequestsPythonWroteCanBeDecidedAndCancelled(t *testing.T) {
 	f := newFixture(t)
 	toDecide := f.insertMinimalRequest(t, caller.Account, "python-to-decide")
 	toCancel := f.insertMinimalRequest(t, caller.Account, "python-to-cancel")
+	f.backfillActionStorage(t)
 
 	pending := f.get(t, toDecide)
 	decided, dispatch, err := f.Decide(t.Context(), toDecide, decision(pending, VerdictAllow, "test-decision"), operator)
@@ -279,5 +293,80 @@ func TestRequestsPythonWroteCanBeDecidedAndCancelled(t *testing.T) {
 		if got := eventStates(f.events(t, id)); !slices.Equal(got, states) {
 			t.Errorf("events of %s = %v, want %v", id, got, states)
 		}
+	}
+}
+
+func TestReadsUseTypedActionStorageAfterBackfill(t *testing.T) {
+	f := newFixture(t)
+	id := uuid.New()
+	f.insertRequest(t, id, otherCaller.Account, "typed-read", minimalRequest)
+	evidenceJSON := json.RawMessage(`{"bindings":[],"policy_sets":[],"matched":{"namespace":"legacy-policy","policy_set":"legacy-set","source":"rules","index":4,"type":"exact_actions"}}`)
+	f.decideAsPython(t, id, evidenceJSON)
+	f.exec(t, `UPDATE action_request SET state = 'cancelled', version = 3 WHERE id = $1`, id)
+	f.exec(t, `INSERT INTO action_event (request_id, sequence, state, at, actor)
+		VALUES ($1, 3, 'cancelled', now(), '{"account":{"namespace":"legacy-actor","name":"legacy-caller"}}'::jsonb)`, id)
+	f.backfillActionStorage(t)
+
+	f.exec(t, `UPDATE action_request SET action = '{"group":"wrong-group","name":"wrong-action"}'::jsonb WHERE id = $1`, id)
+	f.exec(t, `UPDATE action_decision SET policy_evidence =
+		'{"bindings":[],"policy_sets":[],"matched":{"namespace":"wrong-policy","policy_set":"wrong-set","source":"rules","index":9,"type":"exact_actions"}}'::jsonb
+		WHERE request_id = $1`, id)
+	f.exec(t, `UPDATE action_event SET actor = '{"issuer":"wrong-issuer","subject":"wrong-subject"}'::jsonb
+		WHERE request_id = $1 AND sequence = 3`, id)
+
+	request := f.get(t, id)
+	wantEvidence := &PolicyEvidence{
+		Bindings: []BindingEvidence{}, PolicySets: []PolicySetEvidence{},
+		Matched: MatchedPolicy{
+			Namespace: "legacy-policy", PolicySet: "legacy-set", Source: PolicySourceRules,
+			Index: 4, Type: PolicyExactActions,
+		},
+	}
+	if request.Action != (ActionIdentity{Group: "test-group", Name: "test-action"}) || request.Decision == nil ||
+		!reflect.DeepEqual(request.Decision.PolicyEvidence, wantEvidence) {
+		t.Fatalf("typed request read %+v", request)
+	}
+	events := f.events(t, id)
+	if len(events) != 3 || events[2].Actor.GetCaller().GetNamespace() != "legacy-actor" ||
+		events[2].Actor.GetCaller().GetName() != "legacy-caller" {
+		t.Fatalf("typed event read %+v", events)
+	}
+}
+
+func TestTypedReadersRejectInvalidPresentProtobuf(t *testing.T) {
+	f := newFixture(t)
+	actorRequest := f.submit(t, caller, "invalid-actor-proto")
+	f.exec(t, `UPDATE action_event SET actor_proto = $3 WHERE request_id = $1 AND sequence = $2`,
+		actorRequest.ID, 1, []byte{0x78, 0x01})
+	if _, err := f.Events(t.Context(), actorRequest.ID, operator, EventsFilter{}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("an actor protobuf without a principal: %v", err)
+	}
+	f.exec(t, `UPDATE action_event SET actor_proto = decode('', 'hex') WHERE request_id = $1 AND sequence = 1`, actorRequest.ID)
+	if f.count(t, `SELECT count(*) FROM action_event WHERE request_id = $1 AND sequence = 1
+		AND actor_proto IS NOT NULL AND octet_length(actor_proto) = 0`, actorRequest.ID) != 1 {
+		t.Fatal("fixture did not store an empty, non-NULL actor protobuf")
+	}
+	if _, err := f.Events(t.Context(), actorRequest.ID, operator, EventsFilter{}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("an empty actor protobuf: %v", err)
+	}
+
+	evidenceRequest := f.allowed(t, caller, "invalid-evidence-proto")
+	unknownEvidence, err := proto.Marshal(&action_servicepb.PolicyEvidence{Matched: &action_servicepb.MatchedPolicy{
+		Source: action_servicepb.PolicySource(99), Type: action_servicepb.PolicyKind_POLICY_KIND_EXACT_ACTIONS,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.exec(t, `UPDATE action_decision SET policy_evidence_proto = $2 WHERE request_id = $1`, evidenceRequest.ID, unknownEvidence)
+	if _, err := f.Get(t.Context(), evidenceRequest.ID, operator); err == nil {
+		t.Fatal("an unknown policy-source enum was accepted")
+	}
+	f.exec(t, `UPDATE action_decision SET policy_evidence_proto = decode('', 'hex') WHERE request_id = $1`, evidenceRequest.ID)
+	if f.count(t, `SELECT count(*) FROM action_decision WHERE request_id = $1
+		AND policy_evidence_proto IS NOT NULL AND octet_length(policy_evidence_proto) = 0`, evidenceRequest.ID) != 1 {
+		t.Fatal("fixture did not store an empty, non-NULL policy evidence protobuf")
+	}
+	if _, err := f.Get(t.Context(), evidenceRequest.ID, operator); err == nil {
+		t.Fatal("an empty policy-evidence protobuf was accepted")
 	}
 }

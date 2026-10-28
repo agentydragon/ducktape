@@ -57,6 +57,15 @@ func storedStateNames() []string {
 // remain parse errors rather than this semantic error.
 var errInvalidActor = errors.New("invalid Action actor")
 
+// decodeRecordedActor reads an actor from historical JSON during the offline storage backfill.
+func decodeRecordedActor(data []byte) (*action_servicepb.Principal, error) {
+	actor, err := decodeStoredActor(data)
+	if errors.Is(err, errInvalidActor) {
+		return nil, invalid("%s", err)
+	}
+	return actor, err
+}
+
 func (a ServiceAccount) validate() error {
 	if a.Namespace == "" || a.Name == "" {
 		return errors.New("a ServiceAccount needs a namespace and a name")
