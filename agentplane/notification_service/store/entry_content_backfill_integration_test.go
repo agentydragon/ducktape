@@ -23,7 +23,7 @@ func TestBackfillEntryContentConvertsSourceVariantsAndClearsExpiredBytes(t *test
 	subscription := f.subscribe(t, body("entry-content-backfill"))
 	requestID := uuid.New()
 	messageID := uuid.New()
-	caller := model.ServiceAccount{Namespace: "caller-namespace", Name: "caller-sandbox"}.Proto()
+	caller := serviceAccountProto(model.ServiceAccount{Namespace: "caller-namespace", Name: "caller-sandbox"})
 	operator := &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{
 		Issuer: "https://operator.example", Subject: "operator-subject",
 	}}}
