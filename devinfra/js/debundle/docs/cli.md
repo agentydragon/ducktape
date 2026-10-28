@@ -10,7 +10,7 @@ The source-built CLI target is `@ducktape//devinfra/js/debundle:debundle` in
 consuming repositories, or `//devinfra/js/debundle:debundle` inside Ducktape.
 Prefer the project's CLI wrapper when provided: it supplies the matching
 graph, modules tree, and source root. All commands share the same
-JSON-on-stdout / structured-diagnostic-on-stderr convention.
+JSON-on-stdout / readable-diagnostic-on-stderr convention.
 
 ## Find a workflow
 
