@@ -34,6 +34,8 @@ function parentLinkLabel(kind: string | null): string | null {
       return "Codex parent_thread_id is unresolved";
     case "codex_parent_thread_id_ambiguous":
       return "Codex parent_thread_id is ambiguous";
+    case "codex_parent_thread_id_inconsistent":
+      return "Conflicting Codex parent_thread_id values";
     default:
       return `Parent link source: ${kind.replaceAll("_", " ")}`;
   }
@@ -473,6 +475,11 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                         Identity inferred
                       </Badge>
                     )}
+                    {selectedSession.native_session_id_conflict && (
+                      <Badge color="red" variant="light">
+                        Conflicting native session IDs
+                      </Badge>
+                    )}
                   </Group>
                   <Title order={2} size="h4" style={{ overflowWrap: "anywhere" }}>
                     {selectedSession.title || "Untitled session"}
@@ -489,6 +496,11 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                   {selectedSession.identity_inferred && (
                     <Text size="xs" c="orange" mt={4}>
                       This path-derived placeholder has no captured transcript yet.
+                    </Text>
+                  )}
+                  {selectedSession.native_session_id_conflict && (
+                    <Text size="xs" c="red" mt={4} style={{ overflowWrap: "anywhere" }}>
+                      Native session ID candidates: {(selectedSession.native_session_id_candidates ?? []).join(", ") || "unavailable"}
                     </Text>
                   )}
                 </Box>
@@ -549,6 +561,13 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                         {typeof selectedSession.parent_native_session_id === "string" && (
                           <Text size="xs" c="dimmed">
                             Native parent ID: {selectedSession.parent_native_session_id}
+                          </Text>
+                        )}
+                        {selectedSession.parent_native_session_id_conflict && (
+                          <Text size="xs" c="red" style={{ overflowWrap: "anywhere" }}>
+                            Conflicting native parent ID candidates: {(
+                              selectedSession.parent_native_session_id_candidates ?? []
+                            ).join(", ") || "unavailable"}
                           </Text>
                         )}
                         {parentSession?.identity_inferred && (

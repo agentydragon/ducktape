@@ -146,6 +146,42 @@ it("shows unresolved native parent metadata without inventing a session link", a
   expect(view.textContent).toContain("Parent session could not be resolved to a captured session.");
 });
 
+it("shows conflicting Codex native and parent IDs without inventing a parent link", async () => {
+  const conflictingSession: SessionSummary = {
+    id: "codex-child-conflicting",
+    machine_id: "thinkpad",
+    harness: "codex",
+    title: "Inspect conflicting thread metadata",
+    cwd: null,
+    started_at: null,
+    last_activity_at: null,
+    latest_version_id: null,
+    version_count: 0,
+    parent_session_id: null,
+    parent_link_kind: "codex_parent_thread_id_inconsistent",
+    parent_native_session_id: null,
+    identity_inferred: false,
+    native_session_id_conflict: true,
+    native_session_id_candidates: ["thread-child-a", "thread-child-b"],
+    parent_native_session_id_conflict: true,
+    parent_native_session_id_candidates: ["thread-parent-a", "thread-parent-b"],
+  };
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    listSessions(query) {
+      if (query.parentSessionId !== undefined) return Promise.resolve({ data: [], next_cursor: null });
+      return Promise.resolve({ data: [conflictingSession], next_cursor: null });
+    },
+  };
+  const view = await renderViewer(api);
+
+  expect(view.textContent).toContain("Conflicting native session IDs");
+  expect(view.textContent).toContain("Native session ID candidates: thread-child-a, thread-child-b");
+  expect(view.textContent).toContain("Conflicting Codex parent_thread_id values");
+  expect(view.textContent).toContain("Conflicting native parent ID candidates: thread-parent-a, thread-parent-b");
+  expect(view.textContent).toContain("Parent session could not be resolved to a captured session.");
+});
+
 it("labels a resolved Codex parent_thread_id link and navigates to the captured parent", async () => {
   const parent: SessionSummary = {
     id: "codex-parent-session",
