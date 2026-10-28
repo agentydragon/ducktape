@@ -3,9 +3,7 @@
 
 use debundle_e2e_support::*;
 
-#[test]
-fn inferred_implicit_class_construction_breaks_sequenced_cycle() {
-    let source = r#"globalThis.events = [];
+const REGISTRY_SOURCE: &str = r#"globalThis.events = [];
 const a = (() => 1)();
 class Registry {
   #items = new Set();
@@ -20,12 +18,53 @@ b.onExit();
 console.log(c, globalThis.events.join(","));
 export { a, b, c, Registry };
 "#;
+
+fn registry_modules() -> Vec<LogicalModuleEntry> {
+    vec![logical_module(
+        "registry",
+        &[Member::new("Registry"), Member::new("b")],
+    )]
+}
+
+#[test]
+fn implicit_class_construction_preserves_a_live_array_heap_barrier() {
+    let rejected = run_rejection_fixture(FixtureOpts::new(REGISTRY_SOURCE, registry_modules()));
+    let graph = rejected.dependency_graph();
+    let construction = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "b")
+        })
+        .unwrap();
+    assert!(construction.purity.is_pure());
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == construction.id && edge.edge_kind == analysis::DepKind::Sequenced
+        }),
+        "pure construction still needs its missing heap-effect capability"
+    );
+    assert!(!rejected.cycles().is_empty());
+    // Preserve the original runtime control while the requested split remains
+    // rejected: constructor purity does not summarize unrelated array effects.
+    let fixture = run_fixture(FixtureOpts::new(REGISTRY_SOURCE, vec![]));
+    assert_preserved_entry_output(&fixture, "1 clear\n");
+}
+
+#[test]
+fn inferred_implicit_class_construction_breaks_an_array_free_sequenced_cycle() {
+    let source = REGISTRY_SOURCE
+        .replace("globalThis.events = [];", "globalThis.events = '';")
+        .replace(
+            "globalThis.events.push(\"clear\");",
+            "globalThis.events += 'clear';",
+        )
+        .replace("globalThis.events.join(\",\")", "globalThis.events");
     let fixture = assert_pure_cycle_break(
-        source,
-        vec![logical_module(
-            "registry",
-            &[Member::new("Registry"), Member::new("b")],
-        )],
+        &source,
+        registry_modules(),
         "registry",
         &["class Registry", "const b = new Registry"],
         &["const a"],
