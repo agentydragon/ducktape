@@ -677,7 +677,18 @@ apt.install(
         "trixie-security",
     ],
 )
-use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_runner_tools", "trixie_vm_guest", "trixie_wayback_cache")
+
+# Exercise wt's sourced shell function in Zsh without adding it to the RBE image.
+apt.install(
+    dependency_set = "wt_shell_test",
+    packages = ["zsh"],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_runner_tools", "trixie_vm_guest", "trixie_wayback_cache", "wt_shell_test")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")

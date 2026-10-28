@@ -45,7 +45,9 @@ py_test(
     data = [
         "//third_party/gitstatusd",
         "//x/wt:wt_cli",
+        "@wt_shell_test//:flat",
     ],
+    env = {"ZSH_CLOSURE": "$(rlocationpath @wt_shell_test//:flat)"},
     deps = [
         ":conftest",
         "//:conftest",

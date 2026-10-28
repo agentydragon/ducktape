@@ -24,6 +24,53 @@ import pytest_bazel
 
 
 class TestShellIntegration:
+    @pytest.mark.parametrize("cli_exit", [0, 1, 2, 130])
+    def test_fd3_exit_policy(self, cli_exit, shell_runner, tmp_path):
+        # A separate executable injects exit statuses at the fd3 protocol boundary.
+        cli = tmp_path / "cli"
+        cli.write_text(
+            """#!/bin/sh
+printf 'CLI stdout\\n'
+printf 'CLI stderr\\n' >&2
+printf 'printf "fd3 executed\\\\n"\\n' >&3
+if [ "$2" = 130 ]; then kill -INT "$$"; exit 99; fi
+exit "$2"
+"""
+        )
+        cli.chmod(0o755)
+        result = shell_runner.run_script(
+            f"""
+trap 'printf "caller exit\\n"' EXIT
+wt {cli_exit}
+printf 'wt exit: %s\\n' "$?"
+""",
+            cwd=tmp_path,
+            cli_path=cli,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.startswith("CLI stdout\n")
+        assert ("fd3 executed\n" in result.stdout) == (cli_exit in (0, 2))
+        assert result.stdout.endswith(f"wt exit: {cli_exit}\ncaller exit\n")
+        assert "CLI stderr\n" in result.stderr
+
+    def test_preserves_caller_exit_trap_and_fd4(self, test_config, shell_runner, tmp_path):
+        result = shell_runner.run_script(
+            """
+trap 'printf "caller exit\\n"' EXIT
+exec 4>caller-fd4
+wt --help
+wt_exit=$?
+printf "caller fd4\\n" >&4
+printf "wt exit: %s\\n" "$wt_exit"
+""",
+            cwd=tmp_path,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.endswith("wt exit: 0\ncaller exit\n")
+        assert "Usage:" in result.stdout
+        assert (tmp_path / "caller-fd4").read_text() == "caller fd4\n"
+        assert result.stderr == ""
+
     def test_help_command_basic(self, test_config, shell_runner):
         """Test that help command works through shell integration."""
         # Test basic help command - should not require real git repo setup

@@ -79,6 +79,7 @@ py_library(
         ":mock_factory",
         ":repo_factory",
         ":utils",
+        "//util/bazel:runfiles",
         "//x/wt/server:git_manager",
         "//x/wt/server:github_client",
         "//x/wt/server:worktree_service",

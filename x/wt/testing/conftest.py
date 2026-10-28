@@ -15,6 +15,7 @@ import pygit2
 import pytest
 from typer.testing import CliRunner
 
+from util.bazel.runfiles import get_required_path
 from x.wt.server import github_client
 from x.wt.server.git_manager import GitManager
 from x.wt.server.worktree_service import WorktreeService
@@ -464,19 +465,31 @@ def _generate_wt_function_for_binary(binary_path: str) -> str:
     return tpl.replace("__PY__ -m x.wt.cli sh", quoted_path + " sh")
 
 
+@pytest.fixture(scope="session", params=["bash", "zsh"])
+def shell_command(request, tmp_path_factory):
+    if request.param == "bash":
+        return ["/bin/bash", "--noprofile", "--norc"]
+    root = tmp_path_factory.mktemp("zsh")
+    subprocess.run(["tar", "-xf", get_required_path(os.environ["ZSH_CLOSURE"]), "-C", root], check=True)
+    libdir = root / "usr/lib/x86_64-linux-gnu"
+    return [str(libdir / "ld-linux-x86-64.so.2"), "--library-path", str(libdir), str(root / "usr/bin/zsh"), "-f"]
+
+
 @pytest.fixture
-def shell_runner(tmp_path: Path):
+def shell_runner(tmp_path: Path, shell_command):
     """Factory for running shell commands via the installed wt shell function."""
 
     class ShellRunner:
-        def run_script(self, script_content: str, *, cwd: Path, env: dict[str, str] | None = None):
+        def run_script(
+            self, script_content: str, *, cwd: Path, env: dict[str, str] | None = None, cli_path: Path | None = None
+        ):
             # Ensure wt is importable (package installed) before attempting shell integration
             assert importlib.util.find_spec("x.wt"), "wt package not installed - required for shell integration tests"
             # Ensure env is a copy
             env = os.environ.copy() if env is None else env.copy()
 
             # Find the Bazel-built wt_cli binary - tests require it for proper environment setup
-            wt_cli_path = _find_wt_cli_binary()
+            wt_cli_path = str(cli_path) if cli_path is not None else _find_wt_cli_binary()
             if not wt_cli_path:
                 raise RuntimeError(
                     "wt_cli binary not found in runfiles. Ensure //x/wt:wt_cli is in the test's data dependencies."
@@ -494,7 +507,7 @@ def shell_runner(tmp_path: Path):
             script_path.write_text(full_script, encoding="utf-8")
             script_path.chmod(0o755)
             return subprocess.run(
-                ["/bin/bash", str(script_path)], capture_output=True, text=True, cwd=str(cwd), env=env, check=False
+                [*shell_command, str(script_path)], capture_output=True, text=True, cwd=str(cwd), env=env, check=False
             )
 
         def run_argv(self, *, cwd: Path, argv: list[str], env: dict[str, str] | None = None):
