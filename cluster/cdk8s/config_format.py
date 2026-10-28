@@ -17,10 +17,8 @@ _CONFIG = TypeAdapter[Any](Any)
 
 
 def yaml_config(data: BaseModel | dict[str, Any], *, exclude_none: bool = False) -> str:
-    return Yaml.format_objects(
-        [_CONFIG.dump_python(data, mode="json", by_alias=False, exclude_unset=True, exclude_none=exclude_none)]
-    )
+    return Yaml.format_objects([_CONFIG.dump_python(data, mode="json", exclude_unset=True, exclude_none=exclude_none)])
 
 
 def json5_config(data: BaseModel | dict[str, Any]) -> str:
-    return json.dumps(_CONFIG.dump_python(data, mode="json", by_alias=False, exclude_unset=True), indent=2) + "\n"
+    return json.dumps(_CONFIG.dump_python(data, mode="json", exclude_unset=True), indent=2) + "\n"

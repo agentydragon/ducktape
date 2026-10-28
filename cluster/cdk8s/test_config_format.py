@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 import yaml
-from pydantic import AnyHttpUrl, BaseModel, Field, field_serializer
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_serializer
 
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from util.settings_contract import validate_settings_fragment
@@ -32,6 +32,11 @@ class _Settings(BaseModel):
     database_url: str
 
 
+class _Aliased(BaseModel):
+    model_config = ConfigDict(serialize_by_alias=True)
+    account: str = Field(serialization_alias="accountName")
+
+
 @pytest.mark.parametrize("format", ["yaml", "json5"])
 def test_nested_models_remain_typed_until_rendering(format: str) -> None:
     peer = _Peer(url=AnyHttpUrl("http://peer.invalid"), token_file=Path("/tokens/peer"), optional=None, account="app")
@@ -53,6 +58,13 @@ def test_complete_model_uses_the_same_serialization_boundary(format: str) -> Non
     peer = _Peer(url=AnyHttpUrl("http://peer.invalid"), token_file=Path("/tokens/peer"), retries=3)
     rendered = yaml.safe_load(yaml_config(peer)) if format == "yaml" else json.loads(json5_config(peer))
     assert rendered == {"url": "http://peer.invalid/", "token_file": "file:/tokens/peer", "retries": 3}
+
+
+@pytest.mark.parametrize("format", ["yaml", "json5"])
+def test_models_control_their_serialization_aliases(format: str) -> None:
+    content = {"peer": _Aliased(account="app")}
+    rendered = yaml.safe_load(yaml_config(content)) if format == "yaml" else json.loads(json5_config(content))
+    assert rendered == {"peer": {"accountName": "app"}}
 
 
 def test_yaml_keeps_cdk8s_null_omission() -> None:
