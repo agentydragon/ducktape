@@ -638,3 +638,33 @@ fn primitive_set_split_keeps_the_same_input_in_purity_and_callback_timing() {
         "{unique}"
     );
 }
+
+#[test]
+fn captured_input_cannot_override_a_set_replacement_that_calls_a_later_callback() {
+    let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport const ready = true;\n";
+    let replacement = "globalThis.Set = function () { try { globalThis.saved(); return { observed: 'ready' }; } catch (error) { return { observed: error.name }; } };";
+    let source = format!(
+        "import './opaque.js';\nimport {{ ready }} from './peer.js';\nglobalThis.saved = () => later;\n{replacement}\nconst unique = new Set(['a', 'b']);\nconst later = 42;\nconsole.log(ready, unique.observed);\n"
+    );
+    let chunks = [("static/peer", provider)];
+    let opts = |modules| {
+        FixtureOpts::new(&source, modules)
+            .with_extra_chunks(&chunks)
+            .with_extra_files(OPAQUE_FILES)
+            .with_value_inputs("static/peer", vec![captured_input(provider)])
+    };
+    let fixture = run_fixture(opts(vec![]));
+    assert_preserved_entry_output(&fixture, "true ReferenceError\n");
+    expect_atomic_conflict_rejection(
+        opts(vec![
+            logical_module_with_anon(
+                "collection",
+                &[Member::new("unique")],
+                &["globalThis.saved = () => later;", replacement],
+            ),
+            logical_module("value", &[Member::new("later")]),
+        ]),
+        &["collection", "value"],
+        &[],
+    );
+}
