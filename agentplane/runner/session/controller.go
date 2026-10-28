@@ -207,9 +207,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		if outer.Generation != desiredState.Generation || outer.Stage < runnerlifecycle.Halting {
 			return write()
 		}
+		if current.Error != "" {
+			return write()
+		}
 		if current.Phase != Halted {
 			current.Phase = Stopping
-			current.Error = ""
 			if err := write(); err != nil {
 				return err
 			}
@@ -217,9 +219,6 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			halt := s.halting
 			s.mu.Unlock()
 			if halt == nil {
-				if current.Error != "" {
-					return write()
-				}
 				reason := stopClose
 				if desiredState.SealUID != "" {
 					reason = stopQuiesce
