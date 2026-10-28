@@ -2,6 +2,7 @@
 
 from agentplane.history_service.testing.fixtures import (
     history_service,
+    history_writer_namespaces,
     service_database_template,
     service_history_db_url,
 )

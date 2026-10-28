@@ -177,6 +177,15 @@ class GoHistoryService:
         return await self.settled(session_id, lambda summary: summary.folded_through >= through)
 
 
+async def wait_for_history_session(history: HistoryServiceClient, session_id: str) -> None:
+    """Wait for the raw ingress opening that binds a Session's History row."""
+    while True:
+        async with aclosing(history.watch_session_openings(after_position=0)) as openings:
+            async for opened in openings:
+                if str(opened.session_id) == session_id:
+                    return
+
+
 @asynccontextmanager
 async def go_history_service(
     database_url: str,

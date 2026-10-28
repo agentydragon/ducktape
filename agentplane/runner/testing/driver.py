@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
-from contextlib import aclosing, asynccontextmanager
+from contextlib import asynccontextmanager
 from typing import Self
 
 import grpc
@@ -15,7 +15,7 @@ from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.settled_cursors import unstored_ranges
-from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
+from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, wait_for_history_session
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner import runner_service_pb2
 from agentplane.runner.configuration import Endpoint
@@ -115,7 +115,7 @@ class SessionFollow:
                 if error.code != grpc.StatusCode.NOT_FOUND:
                     raise
                 # OpenSession can be acknowledged before its first ingress push binds the History row.
-                await _wait_for_history_session(self._history, session_id)
+                await wait_for_history_session(self._history, session_id)
                 continue
             self._pending.extend(page.entries)
             if self._pending:
@@ -179,7 +179,7 @@ class SessionFollow:
                 self._watch = None
                 if error.code != grpc.StatusCode.NOT_FOUND:
                     raise
-                await _wait_for_history_session(self._history, self.attached.session_id)
+                await wait_for_history_session(self._history, self.attached.session_id)
                 return
             if response.HasField("reconnect_required"):
                 await self._watch.aclose()
@@ -300,12 +300,3 @@ async def running(
     ingress = Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(WRITER))
     async with RunningRunner(config, gateway, history=history_service.reader, ingress_endpoint=ingress) as runner:
         yield runner
-
-
-async def _wait_for_history_session(history: HistoryServiceClient, session_id: str) -> None:
-    """Wait for ingress to bind the Session row; this wake belongs to raw History, not its fold."""
-    while True:
-        async with aclosing(history.watch_session_openings(after_position=0)) as openings:
-            async for opened in openings:
-                if str(opened.session_id) == session_id:
-                    return

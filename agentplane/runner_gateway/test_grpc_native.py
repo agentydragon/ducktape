@@ -14,6 +14,7 @@ from more_itertools import one
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.grpc.calls import ServiceError
+from agentplane.history_service.testing.go_service import wait_for_history_session
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
 from agentplane.runner import runner_service_pb2
@@ -105,8 +106,18 @@ async def wait_for_entries(
     try:
         async with asyncio.timeout(20):
             while True:
+                try:
+                    current = await runner.history.read_session_events(session_id, after_cursor=0, limit=1)
+                except ServiceError as error:
+                    if error.code != grpc.StatusCode.NOT_FOUND:
+                        raise
+                    await wait_for_history_session(runner.history, session_id)
+                    continue
+                # A control response can name an admission cursor before History commits it.
+                # Start the raw watch from the current History prefix and filter older events below.
+                cursor = min(cursor, current.last_cursor)
                 new_entries = await runner.history_entries(session_id, cursor)
-                entries.extend(new_entries)
+                entries.extend(entry for entry in new_entries if entry.cursor > after)
                 if complete(entries):
                     return entries
                 if new_entries:

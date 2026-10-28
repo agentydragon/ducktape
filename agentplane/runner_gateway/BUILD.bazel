@@ -122,6 +122,7 @@ py_test(
         ":conftest",
         "//:conftest",
         "//agentplane/grpc:calls",
+        "//agentplane/history_service/testing:go_service",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
