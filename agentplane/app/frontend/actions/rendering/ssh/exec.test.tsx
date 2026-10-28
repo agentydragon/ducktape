@@ -2,6 +2,7 @@
 import { act, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import producerFixture from "./exec.producer.fixture.json";
 import { mount } from "../../testing/harness";
 import { renderPreview } from "../entry";
 import { renderResultPreview } from "../result_entry";
@@ -33,6 +34,17 @@ function streams(container: HTMLElement): Array<[string, string]> {
 }
 
 afterEach(() => vi.restoreAllMocks());
+
+describe("SSH producer payload", () => {
+  it("renders the registered FastMCP tool's serialized call and result", async () => {
+    const argumentsContainer = await drawn(renderPreview(execArgumentsPreview, producerFixture.arguments));
+    expect(argumentsContainer.textContent).toContain("printf producer-fixture");
+
+    const resultContainer = await drawn(renderResultPreview(execResultPreview, producerFixture.result));
+    expect(resultContainer.querySelector(".mantine-Badge-root")?.textContent).toBe("Exit 0");
+    expect(streams(resultContainer)).toEqual([["stdout · 1 line", "producer-fixture"]]);
+  });
+});
 
 describe("ssh exec arguments", () => {
   it("shows the command as text, never as markup, leaving the target to the label", async () => {

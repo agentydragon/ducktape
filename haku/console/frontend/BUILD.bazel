@@ -3,7 +3,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
-load("//devinfra/js:json_schema.bzl", "js_json_schema")
+load("//devinfra/js:json_schema_typescript.bzl", "json_schema_typescript")
 load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
@@ -97,11 +97,24 @@ openapi_js_library(
 # The exact input schemas advertised by the in-process MCP servers. Keep both the generated
 # TypeScript declarations and their source JSON: :mcp_tool_schema turns each catalog entry into
 # a runtime Zod validator derived from FastMCP's advertised structural contract.
-js_json_schema(
-    name = "mcp_tool_arguments",
+json_schema_typescript(
+    name = "_mcp_tool_arguments_types",
     out = "api/mcp_tool_arguments.d.ts",
-    generator = "//haku/console/mcp:export_tool_schemas_bin",
-    schema_out = "api/mcp_tool_arguments.schema.json",
+    schema = "//haku/console/mcp:tool_arguments_schema",
+)
+
+copy_file(
+    name = "_mcp_tool_arguments_json",
+    src = "//haku/console/mcp:tool_arguments_schema",
+    out = "api/mcp_tool_arguments.schema.json",
+)
+
+js_library(
+    name = "mcp_tool_arguments",
+    srcs = [
+        ":_mcp_tool_arguments_json",
+        ":_mcp_tool_arguments_types",
+    ],
 )
 
 # The exact output (result) schemas advertised by the in-process MCP servers, emitted by the
@@ -109,12 +122,24 @@ js_json_schema(
 # so per-tool result widgets validate against FastMCP's advertised output contract rather than
 # restating it. grocy-sf contributes its reflected batch and read tools; its OpenAPI tool widgets
 # stay hand-authored.
-js_json_schema(
-    name = "mcp_tool_results",
+json_schema_typescript(
+    name = "_mcp_tool_results_types",
     out = "api/mcp_tool_results.d.ts",
-    args = ["--results"],
-    generator = "//haku/console/mcp:export_tool_schemas_bin",
-    schema_out = "api/mcp_tool_results.schema.json",
+    schema = "//haku/console/mcp:tool_results_schema",
+)
+
+copy_file(
+    name = "_mcp_tool_results_json",
+    src = "//haku/console/mcp:tool_results_schema",
+    out = "api/mcp_tool_results.schema.json",
+)
+
+js_library(
+    name = "mcp_tool_results",
+    srcs = [
+        ":_mcp_tool_results_json",
+        ":_mcp_tool_results_types",
+    ],
 )
 
 ts_library(
@@ -142,10 +167,15 @@ ts_library(
 
 # The shared ToolCallRecord wire model. No Console route serves it, so it is not in :schema; the
 # renderer-only state and preview targets consume it directly.
-js_json_schema(
-    name = "tool_call_record",
+json_schema_typescript(
+    name = "_tool_call_record_types",
     out = "api/tool_call_record.d.ts",
-    generator = "//haku/console:export_tool_call_schema_bin",
+    schema = "//haku/console:tool_call_record_schema",
+)
+
+js_library(
+    name = "tool_call_record",
+    srcs = [":_tool_call_record_types"],
 )
 
 ts_library(

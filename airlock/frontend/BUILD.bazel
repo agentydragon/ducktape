@@ -1,8 +1,9 @@
 # gazelle:exclude test_visual.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
-load("//devinfra/js:json_schema.bzl", "js_json_schema")
+load("//devinfra/js:json_schema_typescript.bzl", "json_schema_typescript")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
@@ -52,10 +53,15 @@ ts_config(
     src = "tsconfig.json",
 )
 
-js_json_schema(
-    name = "types",
+json_schema_typescript(
+    name = "_types_typescript",
     out = "types.d.ts",
-    generator = "//airlock:export_schema_bin",
+    schema = "//airlock:types_schema",
+)
+
+js_library(
+    name = "types",
+    srcs = [":_types_typescript"],
     visibility = ["//visibility:public"],
 )
 
