@@ -186,6 +186,7 @@ func watchLifecycle[T lifecycleSpec[T]](ctx context.Context, l *lifecycle, id st
 	defer stop()
 	var zero T
 	_, err := safe.StateWatchFor[*typed.Resource[T, lifecycleExtension[T]]](ctx, l.state, lifecycleResourceFor(id, zero).Metadata(),
+		state.WithEventTypes(state.Created, state.Updated),
 		state.WithCondition(func(r resource.Resource) (bool, error) {
 			value, ok := r.(*typed.Resource[T, lifecycleExtension[T]])
 			if !ok {

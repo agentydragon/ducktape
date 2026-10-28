@@ -431,3 +431,38 @@ func TestLifecycleWatchStopsWithRunner(t *testing.T) {
 		t.Fatalf("watch after runner cancellation = %v, want context.Canceled", err)
 	}
 }
+
+func TestLifecycleWatchWaitsForResourceCreation(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		l, err := newLifecycle(&Runner{ctx: ctx})
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan error, 1)
+		go func() {
+			done <- watchLifecycle(ctx, l, "created-later", func(current sessionRuntimeSpec) (bool, error) {
+				return current.Phase == executionReady, nil
+			})
+		}()
+		synctest.Wait()
+		select {
+		case err := <-done:
+			t.Fatalf("watch returned before resource creation: %v", err)
+		default:
+		}
+		if err := l.state.Create(ctx, lifecycleResourceFor("created-later", sessionRuntimeSpec{Phase: executionReady}), state.WithCreateOwner(sessionControllerName)); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("watch after resource creation: %v", err)
+			}
+		default:
+			t.Fatal("watch did not finish after the resource became ready")
+		}
+	})
+}
