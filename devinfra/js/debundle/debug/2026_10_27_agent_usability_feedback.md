@@ -26,6 +26,25 @@ witness with a runnable inspection command. Start with one supported causal
 path and permit expansion. Keep unsupported causes explicitly inconclusive and
 preserve the conservative fallback; diagnostics must not relax acceptance rules.
 
+## Contract-audit progress and recovery
+
+**Priority:** P1. **Owner:** audit CLI.
+
+The [automated-workflow plan](../plans/automated_spec_workflows.md#performance-plan)
+expects commands beyond the interactive budget to stream progress and write
+resumable intermediate plans. One observed multi-probe `spec audit-contracts`
+run exceeded 15 minutes without intermediate output: the implementation holds
+probe results in memory and emits one report after all selected probes finish.
+`--max-probes` limits the number of probes, not elapsed time, so interruption
+leaves no completed per-probe results to collect or resume.
+
+**Acceptance:** report the current typed target and completed/total count on
+stderr while keeping stdout as one valid JSON report, or persist provenance-keyed
+per-probe checkpoints with a documented resume/collection path. Preserve the
+existing conditional verdict scope: each removal is tested independently with
+all other contracts retained; passing removals are not jointly removable or
+independently inferred.
+
 ## D — Discover related bindings across a module family
 
 **Priority:** P1. **Owner:** inspection CLI.
