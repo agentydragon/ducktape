@@ -1,4 +1,11 @@
-# CI cancellation propagation (2026-10-10)
+# CI cancellation propagation
+
+The [2026-10-28 hosted probe](admission_fence_probe.md) reconfirmed cancellation
+of submitted work and proved that a successful cancellation response does not
+prevent later submissions under the same invocation ID. It records the current
+ownership boundary and the missing admission/remote-stop acknowledgment.
+
+## Original signal-forwarding investigation (2026-10-10)
 
 The bb-remote composite ran `bb remote | tee` as a foreground pipeline. GitHub
 signals the step's entry process first; Bash waits for the foreground command
