@@ -1,13 +1,13 @@
 #!/usr/bin/busybox sh
 set -eu
-if ! /usr/libexec/agentplane/runner-systemd-fixture -test.run='^TestSystemdKernelFixture$' -test.v -test.timeout=90s; then
+# Requiring the receipt also catches an accidentally empty Go test selection.
+if ! /usr/libexec/agentplane/runner-systemd-fixture -test.run='^TestSystemdKernelFixture$' -test.v -test.timeout=90s ||
+	! proof=$(cat /state/runner-systemd-proof.json); then
 	# Keep the manager's native-service evidence before fixture teardown removes the guest.
 	journalctl --boot --no-pager --unit='agentplane-native-*.service' >/dev/ttyS0 || :
 	systemctl --no-pager list-jobs >/dev/ttyS0 || :
 	echo "AGENTPLANE_GUEST_SUPERVISION_FAILED" >/dev/ttyS0
 	exit 1
 fi
-# Requiring the receipt also catches an accidentally empty Go test selection.
-proof=$(cat /state/runner-systemd-proof.json)
 printf 'AGENTPLANE_GUEST_SUPERVISION_PASSED %s\n' "$proof" >/dev/ttyS0
 exec /usr/sbin/agentplane-runner-start

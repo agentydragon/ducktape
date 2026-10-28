@@ -20,8 +20,7 @@ manager access denial, and verifies Codex tool OOM containment and a successful 
 command with the same Runner and app-server. `test_runner_systemd_vm` boots one VM with
 `vm_systemd_proof = True` and gates all eleven native supervision subtests against its real manager,
 covering lost launch replies, detached children, Runner death and startup fencing. Ordinary VM
-guests omit that proof binary and startup override. The other `_vm` targets are `manual`; name one
-to run it.
+guests omit that proof binary and startup override.
 `system_test(real_model = True)` runs the `real_model` cases as `<scenario>_real_model`
 ([Real model on k3s](#real-model-on-k3s)). Two checks need what only a deployment has and run against
 staging by hand ([Running live](#running-live)).
