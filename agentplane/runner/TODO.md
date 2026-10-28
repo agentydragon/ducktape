@@ -1,5 +1,15 @@
 # TODO — Agentplane runner
 
+## Run executor mode as the execution location for central Codex in Pods and VMs
+
+Make `agentplane-runner executor` usable as the main Agentplane process in either a Pod or a VM,
+so the central Codex spike can place execution in either environment without running the full
+Runner, Session lifecycle or journals there. Today this mode requires PID 1 in a private container.
+Select supervision explicitly for each environment: preserve the Pod container-lifetime fence and
+use VM service/cgroup supervision for the VM execution domain. Exercise both deployment modes with
+the central Codex execution contract, including ownership loss, executor replacement and descendant
+cleanup; do not infer the environment from the process ID.
+
 ## Decide whether Agentplane should own a base prompt
 
 Runners preserve the harness's default base prompt and add platform and Session instructions.
