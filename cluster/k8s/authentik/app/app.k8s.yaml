@@ -1,3 +1,553 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-sso-blueprints
+  namespace: authentik
+data:
+  activitywatch-sso.yaml: |
+    version: 1
+    metadata:
+      name: SSO - ActivityWatch
+      labels:
+        blueprints.goauthentik.io/description: "ActivityWatch read-only web UI proxy provider, application, and single-user access binding"
+
+    entries:
+      - model: authentik_providers_proxy.proxyprovider
+        id: activitywatch-provider
+        state: present
+        identifiers:
+          name: activitywatch
+        attrs:
+          external_host: "https://activitywatch.allegedly.works"
+          internal_host: "http://readonly.activitywatch.svc.cluster.local:5600"
+          mode: proxy
+          authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          access_token_validity: "hours=24"
+
+      - model: authentik_core.application
+        id: activitywatch-app
+        state: present
+        identifiers:
+          slug: activitywatch
+        attrs:
+          name: ActivityWatch
+          provider: !KeyOf activitywatch-provider
+          meta_description: "Personal activity history"
+          meta_launch_url: "https://activitywatch.allegedly.works"
+          open_in_new_tab: true
+
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          target: !KeyOf activitywatch-app
+          user: !Find [authentik_core.user, [username, agentydragon]]
+          order: 0
+  adsb-sso.yaml: |
+    version: 1
+    metadata:
+      name: SSO - ADS-B
+    entries:
+      - model: authentik_providers_proxy.proxyprovider
+        id: adsb-provider
+        state: present
+        identifiers:
+          name: adsb
+        attrs:
+          external_host: "https://adsb.allegedly.works"
+          internal_host: "http://ultrafeeder.sdr.svc.cluster.local:80"
+          mode: proxy
+          authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          access_token_validity: "hours=24"
+      - model: authentik_core.application
+        id: adsb-app
+        state: present
+        identifiers:
+          slug: adsb
+        attrs:
+          name: ADS-B Tracker
+          provider: !KeyOf adsb-provider
+          meta_description: "Aircraft tracking via ADS-B"
+          meta_launch_url: "https://adsb.allegedly.works"
+  agents-mitmproxy-sso-retire.yaml: |
+    version: 1
+    metadata:
+      name: Retire Agents Mitmproxy SSO
+      labels:
+        blueprints.goauthentik.io/description: "Delete the parked agent mitmproxy traffic viewer application and proxy provider"
+
+    entries:
+      - model: authentik_core.application
+        state: absent
+        identifiers:
+          slug: agents-mitmproxy
+
+      - model: authentik_providers_proxy.proxyprovider
+        state: absent
+        identifiers:
+          name: agents-mitmproxy
+  airlock-sso-retire.yaml: |
+    version: 1
+    metadata:
+      name: Retire Airlock public OIDC client
+      labels:
+        blueprints.goauthentik.io/description: >-
+          Delete the old browser-side public client; Airlock now owns a confidential server-side OIDC client.
+
+    entries:
+      - model: authentik_core.application
+        state: absent
+        identifiers:
+          slug: airlock
+
+      - model: authentik_providers_oauth2.oauth2provider
+        state: absent
+        identifiers:
+          name: airlock
+  claude-diagnostics-retire.yaml: |
+    version: 1
+    metadata:
+      name: Retire Claude diagnostics service account
+      labels:
+        blueprints.goauthentik.io/description: "Delete the retired Claude diagnostics role and group"
+
+    entries:
+      - model: authentik_core.group
+        state: absent
+        identifiers:
+          name: claude-diagnostics
+
+      - model: authentik_rbac.role
+        state: absent
+        identifiers:
+          name: claude-diagnostics
+  embedded-outpost.yaml: |
+    version: 1
+    metadata:
+      name: SSO - Embedded Outpost
+      labels:
+        blueprints.goauthentik.io/description: "Embedded proxy outpost for all proxy-mode SSO providers"
+
+    entries:
+      # Assign all proxy providers to the embedded outpost.
+      # The embedded outpost runs inside authentik-server pods and stores sessions
+      # in PostgreSQL, enabling HA across the 2-replica authentik-server deployment.
+      #
+      # The embedded outpost does NOT support authentik_host_browser (only standalone
+      # proxy outposts do). It uses authentik_host for both internal communication
+      # and browser-facing redirects. Internal connectivity uses localhost implicitly
+      # since the outpost runs in the server process.
+      - model: authentik_outposts.outpost
+        state: present
+        identifiers:
+          managed: goauthentik.io/outposts/embedded
+        attrs:
+          config:
+            authentik_host: "https://auth.allegedly.works"
+          providers:
+            # keep-sorted start
+            - !Find [authentik_providers_proxy.proxyprovider, [name, activitywatch]]
+            - !Find [authentik_providers_proxy.proxyprovider, [name, adsb]]
+            - !Find [authentik_providers_proxy.proxyprovider, [name, alloy-otlp]]
+            - !Find [authentik_providers_proxy.proxyprovider, [name, goldilocks]]
+            - !Find [authentik_providers_proxy.proxyprovider, [name, grocy-sf]]
+            - !Find [authentik_providers_proxy.proxyprovider, [name, grocy-vallejo]]
+            # haku-console and the Agentplane app own their own OAuth; haku-ui stays proxied.
+            - !Find [authentik_providers_proxy.proxyprovider, [name, haku-ui]]
+            - !Find [authentik_providers_proxy.proxyprovider, [name, hubble]]
+            - !Find [authentik_providers_proxy.proxyprovider, [name, proxmox]]
+            - !Find [authentik_providers_proxy.proxyprovider, [name, public-coder-agent]]
+            - !Find [authentik_providers_proxy.proxyprovider, [name, sdr]]
+            # keep-sorted end
+  fava-sso-retire.yaml: |
+    version: 1
+    metadata:
+      name: Retire Fava SSO
+      labels:
+        blueprints.goauthentik.io/description: "Delete the decommissioned Fava application and proxy provider"
+
+    entries:
+      - model: authentik_core.application
+        state: absent
+        identifiers:
+          slug: fava
+
+      - model: authentik_providers_proxy.proxyprovider
+        state: absent
+        identifiers:
+          name: fava
+  goldilocks-sso.yaml: |
+    version: 1
+    metadata:
+      name: SSO - Goldilocks
+      labels:
+        blueprints.goauthentik.io/description: "Goldilocks dashboard proxy provider and application"
+
+    entries:
+      - model: authentik_providers_proxy.proxyprovider
+        id: goldilocks-provider
+        state: present
+        identifiers:
+          name: goldilocks
+        attrs:
+          external_host: "https://goldilocks.allegedly.works"
+          internal_host: "http://goldilocks-dashboard.goldilocks.svc.cluster.local:80"
+          mode: proxy
+          authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          access_token_validity: "hours=1"
+
+      - model: authentik_core.application
+        id: goldilocks-app
+        state: present
+        identifiers:
+          slug: goldilocks
+        attrs:
+          name: Goldilocks
+          provider: !KeyOf goldilocks-provider
+          meta_description: "Goldilocks VPA recommendations dashboard"
+          meta_launch_url: "https://goldilocks.allegedly.works"
+          open_in_new_tab: true
+
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          target: !KeyOf goldilocks-app
+          group: !Find [authentik_core.group, [name, authentik Admins]]
+          order: 0
+  google-workspace-mcp-sso-retire.yaml: |
+    version: 1
+    metadata:
+      name: Retire Google Workspace MCP SSO
+      labels:
+        blueprints.goauthentik.io/description: "Delete the decommissioned Google Workspace MCP application and proxy provider"
+
+    entries:
+      - model: authentik_core.application
+        state: absent
+        identifiers:
+          slug: google-workspace-mcp
+
+      - model: authentik_providers_proxy.proxyprovider
+        state: absent
+        identifiers:
+          name: google-workspace-mcp
+  haku-openclaw-spike-sso-retire.yaml: |
+    version: 1
+    metadata:
+      name: Retire Haku OpenClaw Spike SSO
+      labels:
+        blueprints.goauthentik.io/description: "Delete the decommissioned Haku OpenClaw spike application and proxy provider"
+
+    entries:
+      - model: authentik_core.application
+        state: absent
+        identifiers:
+          slug: haku-openclaw-spike
+
+      - model: authentik_providers_proxy.proxyprovider
+        state: absent
+        identifiers:
+          name: haku-openclaw-spike
+  haku-ui-sso.yaml: |
+    version: 1
+    metadata:
+      name: SSO - Haku UI
+      labels:
+        blueprints.goauthentik.io/description: "Haku-authored UI (runs in haku-sandbox) proxy provider, application, and single-user access binding"
+
+    entries:
+      - model: authentik_providers_proxy.proxyprovider
+        id: haku-ui-provider
+        state: present
+        identifiers:
+          name: haku-ui
+        attrs:
+          external_host: "https://haku-ui.allegedly.works"
+          internal_host: "http://haku-ui.haku-sandbox.svc.cluster.local:80"
+          mode: proxy
+          authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          access_token_validity: "hours=24"
+
+      - model: authentik_core.application
+        id: haku-ui-app
+        state: present
+        identifiers:
+          slug: haku-ui
+        attrs:
+          name: Haku UI
+          provider: !KeyOf haku-ui-provider
+          meta_description: "Haku's own UI service — agent-authored, runs in haku-sandbox, embedded in the Haku console iframe"
+          meta_launch_url: "https://haku-ui.allegedly.works"
+          open_in_new_tab: true
+
+      # Restrict access to the single user agentydragon.
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          target: !KeyOf haku-ui-app
+          user: !Find [authentik_core.user, [username, agentydragon]]
+          order: 0
+  hubble-sso.yaml: |
+    version: 1
+    metadata:
+      name: SSO - Hubble
+      labels:
+        blueprints.goauthentik.io/description: "Hubble UI proxy provider, application, and outpost"
+
+    entries:
+      - model: authentik_providers_proxy.proxyprovider
+        id: hubble-provider
+        state: present
+        identifiers:
+          name: hubble
+        attrs:
+          external_host: "https://hubble.allegedly.works"
+          internal_host: "http://hubble-ui.kube-system.svc.cluster.local:80"
+          mode: proxy
+          authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          access_token_validity: "hours=1"
+
+      - model: authentik_core.application
+        id: hubble-app
+        state: present
+        identifiers:
+          slug: hubble
+        attrs:
+          name: Hubble UI
+          provider: !KeyOf hubble-provider
+          meta_description: "Cilium Hubble Network Observability"
+          meta_launch_url: "https://hubble.allegedly.works"
+          meta_icon: "https://cdn.simpleicons.org/cilium"
+          open_in_new_tab: true
+
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          target: !KeyOf hubble-app
+          group: !Find [authentik_core.group, [name, authentik Admins]]
+          order: 0
+  plaid-link-sso.yaml: |
+    version: 1
+    metadata:
+      name: SSO - Plaid Link Admin Access
+    entries:
+      - model: authentik_providers_proxy.proxyprovider
+        state: absent
+        identifiers:
+          name: plaid-link
+
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          target: !Find [authentik_core.application, [slug, plaid-link]]
+          group: !Find [authentik_core.group, [name, authentik Admins]]
+          order: 0
+  proxmox-sso.yaml: |
+    version: 1
+    metadata:
+      name: SSO - Proxmox
+    entries:
+      - model: authentik_providers_proxy.proxyprovider
+        id: proxmox-provider
+        state: present
+        identifiers:
+          name: proxmox
+        attrs:
+          external_host: "https://atlas.allegedly.works"
+          internal_host: "http://proxmox-proxy.proxmox-proxy.svc.cluster.local:8080"
+          mode: proxy
+          authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          access_token_validity: "hours=24"
+
+      - model: authentik_core.application
+        id: proxmox-app
+        state: present
+        identifiers:
+          slug: proxmox
+        attrs:
+          name: Proxmox
+          provider: !KeyOf proxmox-provider
+          meta_description: "Proxmox Virtual Environment"
+          meta_launch_url: "https://atlas.allegedly.works"
+          open_in_new_tab: true
+
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          target: !KeyOf proxmox-app
+          group: !Find [authentik_core.group, [name, authentik Admins]]
+          order: 0
+  public-coder-agent-sso.yaml: |
+    version: 1
+    metadata:
+      name: SSO - Public Coder Agent
+      labels:
+        blueprints.goauthentik.io/description: "public-coder-agent proxy provider and application"
+
+    # Deviation from cluster/docs/sso.md, which prefers Terraform for new providers:
+    # every proxy provider here is blueprint-managed, and embedded-outpost.yaml --
+    # also a blueprint -- owns outpost membership. A Terraform provider would split
+    # ownership of one object graph across two systems, so this follows the
+    # established proxy pattern and moves with the rest under issue #987.
+
+    entries:
+      - model: authentik_providers_proxy.proxyprovider
+        id: public-coder-agent-provider
+        state: present
+        identifiers:
+          name: public-coder-agent
+        attrs:
+          external_host: "https://public-coder-agent.allegedly.works"
+          internal_host: "http://public-coder-agent.public-coder-agent.svc.cluster.local:18789"
+          mode: proxy
+          authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          access_token_validity: "hours=1"
+
+      - model: authentik_core.application
+        id: public-coder-agent-app
+        state: present
+        identifiers:
+          slug: public-coder-agent
+        attrs:
+          name: Public Coder Agent
+          provider: !KeyOf public-coder-agent-provider
+          meta_description: "OpenClaw coder agent -- opens pull requests against public repositories"
+          meta_launch_url: "https://public-coder-agent.allegedly.works"
+          open_in_new_tab: true
+
+      # Single-user access, same as openclaw. The agent holds a GitHub token, so
+      # widening this widens who can drive that token.
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          target: !KeyOf public-coder-agent-app
+          user: !Find [authentik_core.user, [username, agentydragon]]
+          order: 0
+  sdr-sso.yaml: |
+    version: 1
+    metadata:
+      name: SSO - SDR
+    entries:
+      - model: authentik_providers_proxy.proxyprovider
+        id: sdr-provider
+        state: present
+        identifiers:
+          name: sdr
+        attrs:
+          external_host: "https://sdr.allegedly.works"
+          internal_host: "http://openwebrx.sdr.svc.cluster.local:8073"
+          mode: proxy
+          authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          access_token_validity: "hours=24"
+      - model: authentik_core.application
+        id: sdr-app
+        state: present
+        identifiers:
+          slug: sdr
+        attrs:
+          name: OpenWebRX+ SDR
+          provider: !KeyOf sdr-provider
+          meta_description: "Software Defined Radio receiver"
+          meta_launch_url: "https://sdr.allegedly.works"
+  users.yaml: |
+    version: 1
+    metadata:
+      name: SSO - Default authentication customizations
+      labels:
+        blueprints.goauthentik.io/description: >
+          Patches built-in Authentik stages so every app using
+          default-authentication-flow (which is all of them) gets the
+          "Sign in with Google" button, doesn't require MFA for users
+          who haven't enrolled, and keeps the resulting session for 30
+          days instead of only until the browser session ends.
+
+    # The custom-authentication-flow that this directory used to define
+    # (together with a no-MFA binding set and a brand flow_authentication
+    # override) was removed in 2026-04. The simpler equivalent: use
+    # Authentik's built-in default-authentication-flow for everything, and
+    # patch its relevant stages below.
+    #
+    # Every entry is an upsert on an Authentik-owned built-in: it patches only
+    # the relevant fields and leaves the other fields alone, which is exactly
+    # what the blueprint `state: present` semantic provides. TF can't express
+    # that cleanly without taking full ownership of every field — fragile
+    # across Authentik upgrades that tweak built-in defaults.
+
+    entries:
+      # Google as a source on the identification stage. The source itself is
+      # provisioned in tf/gitops/sso-providers/source_google.tf, and `!Find`
+      # resolves the referenced Authentik object by slug at blueprint-apply
+      # time. The Flux dep chain actually runs `authentik-tf` AFTER
+      # `authentik` (see cluster/generated/authentik/tf/
+      # central Flux chart), so on a cold bootstrap this blueprint's
+      # first apply can fail to resolve the source; Authentik's blueprint
+      # reconciler retries, and the next pass after TF creates the source
+      # succeeds. Keep this reference's slug aligned with the TF resource.
+      - model: authentik_stages_identification.identificationstage
+        state: present
+        identifiers:
+          name: default-authentication-identification
+        attrs:
+          sources:
+            - !Find [authentik_sources_oauth.oauthsource, [slug, google]]
+          show_source_labels: false
+
+      # MFA validation stage: skip if the user has nothing enrolled, rather
+      # than denying login. Lets users without MFA proceed while still
+      # enforcing MFA for users who have it configured. Opt-in re-enablement
+      # once someone's registered a TOTP/WebAuthn device.
+      - model: authentik_stages_authenticator_validate.authenticatorvalidatestage
+        state: present
+        identifiers:
+          name: default-authentication-mfa-validation
+        attrs:
+          not_configured_action: skip
+
+      # User-login stage for the Google source-authentication flow
+      # (default-source-authentication). This is the stage that actually runs
+      # on every real login here: clicking the Google source button on the
+      # identification stage above abandons default-authentication-flow
+      # entirely and switches to default-source-authentication, whose only
+      # stage is this one -- confirmed via default-authentication-flow's own
+      # bindings (identification -> password -> mfa-validation ->
+      # default-authentication-login) never executing past identification for
+      # a source-based login. Default session_duration is Authentik's
+      # "seconds=0" sentinel: keep the session only until the browser session
+      # ends, not a fixed timer -- which on mobile means "until the OS
+      # backgrounds/kills the browser", causing frequent unwanted re-logins.
+      - model: authentik_stages_user_login.userloginstage
+        state: present
+        identifiers:
+          name: default-source-authentication-login
+        attrs:
+          session_duration: "days=30"
+
+      # Same fix for default-authentication-flow's own login stage (the
+      # native username/password path). Unused today -- every observed login
+      # goes through Google -- kept in sync in case that ever changes.
+      - model: authentik_stages_user_login.userloginstage
+        state: present
+        identifiers:
+          name: default-authentication-login
+        attrs:
+          session_duration: "days=30"
+immutable: false
+---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:

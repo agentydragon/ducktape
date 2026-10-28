@@ -5,6 +5,10 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "app",
     srcs = ["app.py"],
+    data = [
+        "//cluster/k8s/home-assistant/app:Caddyfile",
+        "//cluster/k8s/home-assistant/app:configuration.yaml.conf",
+    ],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":db",
@@ -30,6 +34,7 @@ py_library(
         "//homeassistant/provisioner/tokens:settings",
         "//util:settings_contract",
         "//util:yaml_file_settings",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

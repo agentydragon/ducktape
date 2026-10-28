@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ConfigMap, k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallStrategy,
@@ -24,7 +24,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor
 
 from cluster.cdk8s import cilium, opentofu
 from cluster.cdk8s.authentik import db
-from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
+from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.helm import helm_release, https_helm_repository
@@ -299,6 +299,14 @@ def _pod_monitor(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    # The data dependency includes every blueprint in the source directory.
+    blueprints = get_required_path(own_repo_rlocation(f"{OUTPUT_DIR}/blueprints"))
+    ConfigMap(
+        chart,
+        "blueprints",
+        metadata=ApiObjectMetadata(name=_BLUEPRINTS_CONFIG_MAP, namespace=NAMESPACE),
+        data={path.name: path.read_text() for path in sorted(blueprints.glob("*.yaml"))},
+    )
     _helm_release(chart)
     _host_config_map(chart)
     _http_route(chart)
@@ -308,22 +316,9 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    # The data dep packages exactly Bazel's glob of the directory, so a new blueprint is listed
-    # by regenerating.
-    blueprints = get_required_path(own_repo_rlocation(f"{OUTPUT_DIR}/blueprints"))
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
         kustomize_kustomization(
-            resources=[write_charts(root, OUTPUT_DIR, chart), *(f"{secret}.sops.yaml" for secret in _SOPS_SECRETS)],
-            config_map_generator=[
-                ConfigMapArgs(
-                    name=_BLUEPRINTS_CONFIG_MAP,
-                    namespace=NAMESPACE,
-                    # The Helm values name the ConfigMap, and kustomize cannot rewrite a reference
-                    # inside a HelmRelease's values.
-                    options=GeneratorOptions(disable_name_suffix_hash=True),
-                    files=[f"blueprints/{path.name}" for path in sorted(blueprints.glob("*.yaml"))],
-                )
-            ],
+            resources=[write_charts(root, OUTPUT_DIR, chart), *(f"{secret}.sops.yaml" for secret in _SOPS_SECRETS)]
         ),
     )

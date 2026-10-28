@@ -92,6 +92,68 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  name: home-assistant-configuration
+  namespace: home-assistant
+data:
+  configuration.yaml: |
+    default_config:
+
+    homeassistant:
+      country: US
+
+    recorder:
+      db_url: !env_var RECORDER_DB_URL
+      # Keeps the phone's GPS fixes a year (#11760); revisit once DB growth is known.
+      purge_keep_days: 365
+
+    # Caddy restricts this otherwise-unauthed endpoint to the Prometheus bearer
+    # token. Keeping the token outside Home Assistant avoids a manually-created HA
+    # long-lived access token during first boot.
+    prometheus:
+      requires_auth: false
+      namespace: hass
+
+    auth_oidc:
+      client_id: home-assistant
+      discovery_url: https://auth.allegedly.works/application/o/home-assistant/.well-known/openid-configuration
+      display_name: Authentik
+      claims:
+        username: preferred_username
+        groups: groups
+      roles:
+        admin: home-assistant-admins
+        user: home-assistant-users
+      features:
+        automatic_user_linking: false
+        automatic_person_creation: true
+        default_redirect: false
+        force_https: true
+
+    automation: !include automations.yaml
+    script: !include scripts.yaml
+    scene: !include scenes.yaml
+immutable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: home-assistant-caddy
+  namespace: home-assistant
+data:
+  Caddyfile: |
+    :8123 {
+    	@unauthorizedMetrics {
+    		path /api/prometheus
+    		not header Authorization "Bearer {$METRICS_TOKEN}"
+    	}
+    	respond @unauthorizedMetrics 401
+    	reverse_proxy 127.0.0.1:8124
+    }
+immutable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
   name: component-installer
   namespace: home-assistant
 data:

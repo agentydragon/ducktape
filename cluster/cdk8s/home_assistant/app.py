@@ -6,7 +6,7 @@ PrometheusRule.
 The provisioner images' tags are the placeholder "unset"; the hand-written
 `cluster/k8s/home-assistant/app/image-pins/kustomization.yaml` overrides them at
 `kustomize build` time via Flux's image-automation markers. Hand-written beside the generated
-output: the `configMapGenerator` inputs and the SOPS Secrets.
+output: the config sources and the SOPS Secrets.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
@@ -39,7 +39,7 @@ from volsync_replicationsource_crds.backube.volsync import (
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
+from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
@@ -56,6 +56,7 @@ from homeassistant.provisioner.components import settings as components
 from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
 from homeassistant.provisioner.onboarding import settings as onboarding
 from homeassistant.provisioner.tokens import settings as tokens
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.settings_contract import env_name, settings_file
 from util.yaml_file_settings import YamlFileSettings
 
@@ -88,19 +89,6 @@ _SETTINGS_DIR = "/etc/provisioner"
 _CONFIG_DIR = "/config"
 # Home Assistant's own listener; Caddy (the hand-written Caddyfile) proxies to it.
 _BACKEND = Port(name="backend", number=8124)
-# From the hand-written files beside the kustomization.yaml, under names without a content hash:
-# Reloader restarts the Deployment when either changes.
-_FIXED_NAME = GeneratorOptions(disable_name_suffix_hash=True)
-_CONFIGURATION_CONFIG_MAP = ConfigMapArgs(
-    name="home-assistant-configuration",
-    namespace=_NAMESPACE,
-    options=_FIXED_NAME,
-    files=["configuration.yaml=configuration.yaml.conf"],
-)
-_CADDY_CONFIG_MAP = ConfigMapArgs(
-    name="home-assistant-caddy", namespace=_NAMESPACE, options=_FIXED_NAME, files=["Caddyfile"]
-)
-
 # The local owner the provisioners log in as, through the in-cluster Service.
 _ENDPOINT = HomeAssistantEndpoint(
     url=SERVICE.url, client_id=f"https://{_HOSTNAME}/", redirect_uri=f"https://{_HOSTNAME}/"
@@ -203,7 +191,7 @@ def _backend_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Pr
     )
 
 
-def _deployment(scope: Construct) -> None:
+def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: ConfigMap) -> None:
     installer_settings = _settings_config_map(
         scope,
         "component-installer",
@@ -308,9 +296,9 @@ def _deployment(scope: Construct) -> None:
                             name="config",
                             persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=CONFIG_CLAIM),
                         ),
-                        _config_map_volume("configuration", _CONFIGURATION_CONFIG_MAP.name),
+                        _config_map_volume("configuration", configuration.name),
                         _config_map_volume("installer-settings", installer_settings.name),
-                        _config_map_volume("caddy-config", _CADDY_CONFIG_MAP.name),
+                        _config_map_volume("caddy-config", caddy_config.name),
                     ],
                 ),
             ),
@@ -681,7 +669,24 @@ def chart(app: App) -> Chart:
         )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
     _metrics_token(chart)
-    _deployment(chart)
+    # Fixed names preserve Reloader updates for these mounted files.
+    configuration = ConfigMap(
+        chart,
+        "configuration",
+        metadata=ApiObjectMetadata(name="home-assistant-configuration", namespace=_NAMESPACE),
+        data={
+            "configuration.yaml": get_required_path(
+                own_repo_rlocation(f"{_OUTPUT_DIR}/configuration.yaml.conf")
+            ).read_text()
+        },
+    )
+    caddy_config = ConfigMap(
+        chart,
+        "caddy-config",
+        metadata=ApiObjectMetadata(name="home-assistant-caddy", namespace=_NAMESPACE),
+        data={"Caddyfile": get_required_path(own_repo_rlocation(f"{_OUTPUT_DIR}/Caddyfile")).read_text()},
+    )
+    _deployment(chart, configuration, caddy_config)
     _onboarding_job(chart)
     _token_provisioner(chart)
     https_route(
@@ -708,6 +713,6 @@ def write_manifests(root: Path) -> None:
                 "home-location.sops.yaml",
             ],
             components=["./image-pins"],
-            config_map_generator=[_CONFIGURATION_CONFIG_MAP, _CADDY_CONFIG_MAP, _ONBOARDING_SETTINGS],
+            config_map_generator=[_ONBOARDING_SETTINGS],
         ),
     )

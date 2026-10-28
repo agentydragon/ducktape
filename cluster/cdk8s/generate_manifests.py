@@ -879,9 +879,7 @@ def generate_manifests(root: Path) -> None:
     ollama_kustomization = ollama_app.ollama(
         flux_chart,
         # No `namespace=`: that transformer would also rewrite the RoleBinding's `claude-sandbox` subject.
-        write_directory(
-            root, ollama_app_artifact, ollama_app.chart, config_map_generator=ollama_app.write_config_maps(root)
-        ),
+        write_directory(root, ollama_app_artifact, ollama_app.chart),
         external_secrets_operator_kustomization,
         kyverno_kustomization,
     )
@@ -1232,7 +1230,7 @@ def generate_manifests(root: Path) -> None:
     gatus_artifact = artifact("gatus", gatus_app.OUTPUT_DIR)
     gatus_kustomization = gatus_app.gatus(
         flux_chart,
-        write_directory(root, gatus_artifact, gatus_app.chart, config_map_generator=[gatus_app.CONFIG_MAP]),
+        write_directory(root, gatus_artifact, gatus_app.chart),
         cnpg_kustomization,
         monitoring_crds_kustomization,
         seaweedfs_operator_kustomization,
@@ -1259,13 +1257,7 @@ def generate_manifests(root: Path) -> None:
     monitoring_alloy_artifact = artifact("monitoring-alloy", alloy.OUTPUT_DIR)
     alloy.alloy(
         flux_chart,
-        write_directory(
-            root,
-            monitoring_alloy_artifact,
-            alloy.chart,
-            namespace=alloy.NAMESPACE,
-            config_map_generator=alloy.write_config_maps(root),
-        ),
+        write_directory(root, monitoring_alloy_artifact, alloy.chart, namespace=alloy.NAMESPACE),
         monitoring_crds_kustomization,
     )
     public_coder_agent_backup_artifact = artifact("public-coder-agent-backup", public_coder_backup.OUTPUT_DIR)

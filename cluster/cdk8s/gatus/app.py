@@ -4,7 +4,7 @@ own configuration (`config.py`) in the `gatus-config` ConfigMap."""
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ConfigMap, k8s
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress, CiliumNetworkPolicySpecEgressToEntities
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
@@ -19,14 +19,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import cilium, cnpg, cnpg_backup, namespaces, node_scheduling
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    GeneratorOptions,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.gatus import config
 from cluster.cdk8s.helm import helm_release, https_helm_repository
@@ -46,14 +39,6 @@ _HELM_REPOSITORY = "twin"
 # The chart's Service: port 80 to the Pods' `http` (8080), selecting `app.kubernetes.io/name`.
 SERVICE = ServiceRef(name=_NAME, port=Port(name="http", number=80), pods=cilium.PROBER, target_port=8080)
 _LITELLM_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-master-key").key("api-key")
-CONFIG_MAP = ConfigMapArgs(
-    name="gatus-config",
-    namespace=_NAMESPACE,
-    # The Helm values name it, and kustomize cannot rewrite a reference inside a HelmRelease's values.
-    options=GeneratorOptions(disable_name_suffix_hash=True),
-    # The chart mounts the ConfigMap at /config; config/config.yaml is Gatus's default path.
-    literals=[f"config.yaml={config.render(hostname=_HOSTNAME)}"],
-)
 
 
 def _namespace(scope: Construct) -> None:
@@ -74,7 +59,7 @@ def _database(scope: Construct) -> None:
     cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
 
 
-def _helm_release(scope: Construct) -> None:
+def _helm_release(scope: Construct, config_map: ConfigMap) -> None:
     repository = https_helm_repository(scope, _HELM_REPOSITORY, _NAMESPACE, url="https://twin.github.io/helm-charts")
     # Empty ConfigMap required by the gatus Helm chart. The chart hardcodes
     # envFrom.configMapRef with the release name but skips creating it when
@@ -95,7 +80,7 @@ def _helm_release(scope: Construct) -> None:
             strategy=HelmReleaseSpecUpgradeStrategy(name=HelmReleaseSpecUpgradeStrategyName.RETRY_ON_FAILURE)
         ),
         values={
-            "externalConfigMap": CONFIG_MAP.name,
+            "externalConfigMap": config_map.name,
             "env": {
                 config.DB_URI_ENV: {"valueFrom": DATABASE.app_secret.key("uri").value_from()},
                 config.LITELLM_API_KEY_ENV: {"valueFrom": _LITELLM_KEY.value_from()},
@@ -171,7 +156,13 @@ def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     _namespace(chart)
     _database(chart)
-    _helm_release(chart)
+    config_map = ConfigMap(
+        chart,
+        "config",
+        metadata=ApiObjectMetadata(name="gatus-config", namespace=_NAMESPACE),
+        data={"config.yaml": config.render(hostname=_HOSTNAME)},
+    )
+    _helm_release(chart, config_map)
     _network_policies(chart)
     # Traffic flows directly: Gateway → Gatus backend. Auth is handled by Gatus's native
     # OIDC integration (no proxy outpost needed).

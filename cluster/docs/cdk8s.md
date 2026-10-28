@@ -86,8 +86,9 @@ Kustomization that owns it through `generation.namespace_chart`.
 
 - `.sops.yaml` Secrets (cdk8s has no key material; below).
 - Vendored and externally generated manifests: `flux/flux-system`.
-- `configMapGenerator` inputs (Iron and app configs, SQL, blueprints), and the
-  `kustomization.yaml` that carries the generator where it is hand-written.
+- Native configuration sources (app configs, SQL, blueprints). Fixed-name maps are
+  built with cdk8s `ConfigMap`; keep `configMapGenerator` where its content hash drives
+  references or rollout behavior, with a hand-written `kustomization.yaml` when needed.
 - `image-pins/` Components and the ConfigMaps whose data carries a `$imagepolicy` marker
   (§ Live image automation).
 

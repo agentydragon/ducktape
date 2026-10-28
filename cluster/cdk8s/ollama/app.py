@@ -6,10 +6,8 @@ The ConfigMaps' payloads are the files beside this module; `README.md` there cov
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -20,16 +18,8 @@ from jinja2 import Environment, StrictUndefined
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    GeneratorOptions,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import copy_source_file
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.secret_ref import SecretRef
@@ -195,7 +185,7 @@ def _auth_proxy_container() -> k8s.Container:
     )
 
 
-def _deployment(scope: Construct) -> None:
+def _deployment(scope: Construct, scripts: ConfigMap, auth_proxy_config: ConfigMap) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
@@ -221,16 +211,16 @@ def _deployment(scope: Construct) -> None:
                                 claim_name=_SSD_MODELS_CLAIM, read_only=True
                             ),
                         ),
-                        k8s.Volume(name="scripts", config_map=k8s.ConfigMapVolumeSource(name=_SCRIPTS_CONFIG_MAP)),
+                        k8s.Volume(name="scripts", config_map=k8s.ConfigMapVolumeSource(name=scripts.name)),
                         k8s.Volume(
                             name="models",
                             persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=_MODELS_CLAIM),
                         ),
                         k8s.Volume(
-                            name="nginx-templates", config_map=k8s.ConfigMapVolumeSource(name=_AUTH_PROXY_CONFIG_MAP)
+                            name="nginx-templates", config_map=k8s.ConfigMapVolumeSource(name=auth_proxy_config.name)
                         ),
                         k8s.Volume(
-                            name="nginx-config", config_map=k8s.ConfigMapVolumeSource(name=_AUTH_PROXY_CONFIG_MAP)
+                            name="nginx-config", config_map=k8s.ConfigMapVolumeSource(name=auth_proxy_config.name)
                         ),
                     ],
                 ),
@@ -292,7 +282,7 @@ def _rbac(scope: Construct) -> None:
     )
 
 
-def _setup_job(scope: Construct) -> None:
+def _setup_job(scope: Construct, scripts: ConfigMap) -> None:
     k8s.KubeJob(
         scope,
         "setup-gpt-oss",
@@ -307,8 +297,7 @@ def _setup_job(scope: Construct) -> None:
                     node_selector={"kubernetes.io/hostname": "wyrm2"},
                     volumes=[
                         k8s.Volume(
-                            name="scripts",
-                            config_map=k8s.ConfigMapVolumeSource(name=_SCRIPTS_CONFIG_MAP, default_mode=0o755),
+                            name="scripts", config_map=k8s.ConfigMapVolumeSource(name=scripts.name, default_mode=0o755)
                         ),
                         k8s.Volume(
                             name="models",
@@ -399,7 +388,39 @@ def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     _namespace(chart)
     _claims(chart)
-    _deployment(chart)
+    scripts = ConfigMap(
+        chart,
+        "scripts",
+        metadata=ApiObjectMetadata(name=_SCRIPTS_CONFIG_MAP, namespace=_NAMESPACE),
+        data={
+            _SETUP_SCRIPT: Environment(undefined=StrictUndefined, keep_trailing_newline=True)
+            .from_string(get_required_path(own_repo_rlocation(f"{_SOURCE_DIR}/{_SETUP_SCRIPT}.j2")).read_text())
+            .render(
+                qwen=models.QWEN_IQ4XS_128K,
+                qwen_256k=models.QWEN_IQ4XS_256K,
+                gpt_oss_20b=models.GPT_OSS_20B,
+                gpt_oss_120b=models.GPT_OSS_120B,
+                gemma4=models.GEMMA4,
+                embedding=models.QWEN_EMBEDDING,
+            ),
+            **{
+                name: get_required_path(own_repo_rlocation(f"{_SOURCE_DIR}/{name}")).read_text()
+                for name in (_LINK_SCRIPT, "qwen38-ssd-shards.tsv", "qwen38-ssd-derived-shards.tsv")
+            },
+        },
+    )
+    auth_proxy_config = ConfigMap(
+        chart,
+        "auth-proxy-config",
+        metadata=ApiObjectMetadata(name=_AUTH_PROXY_CONFIG_MAP, namespace=_NAMESPACE),
+        data={
+            "default.conf.template": get_required_path(
+                own_repo_rlocation(f"{_SOURCE_DIR}/nginx-auth-proxy.conf.template")
+            ).read_text(),
+            _NGINX_CONF: get_required_path(own_repo_rlocation(f"{_SOURCE_DIR}/{_NGINX_CONF}")).read_text(),
+        },
+    )
+    _deployment(chart, scripts, auth_proxy_config)
     _service(chart)
     https_route(
         chart,
@@ -413,54 +434,9 @@ def chart(app: App) -> Chart:
     )
     _rbac(chart)
     if not _PAUSED_FOR_HOST_EXPERIMENTS:
-        _setup_job(chart)
+        _setup_job(chart, scripts)
     _direct_token(chart)
     return chart
-
-
-def write_config_maps(root: Path) -> list[ConfigMapArgs]:
-    """Write the ConfigMaps' payloads into `OUTPUT_DIR`; return the `configMapGenerator` entries."""
-    setup = root / OUTPUT_DIR / _SETUP_SCRIPT
-    setup.parent.mkdir(parents=True, exist_ok=True)
-    setup.write_text(
-        Environment(undefined=StrictUndefined, keep_trailing_newline=True)
-        .from_string(get_required_path(own_repo_rlocation(f"{_SOURCE_DIR}/{_SETUP_SCRIPT}.j2")).read_text())
-        .render(
-            qwen=models.QWEN_IQ4XS_128K,
-            qwen_256k=models.QWEN_IQ4XS_256K,
-            gpt_oss_20b=models.GPT_OSS_20B,
-            gpt_oss_120b=models.GPT_OSS_120B,
-            gemma4=models.GEMMA4,
-            embedding=models.QWEN_EMBEDDING,
-        )
-    )
-    fixed_name = GeneratorOptions(disable_name_suffix_hash=True)
-    return [
-        ConfigMapArgs(
-            name=_SCRIPTS_CONFIG_MAP,
-            namespace=_NAMESPACE,
-            options=fixed_name,
-            files=[
-                _SETUP_SCRIPT,
-                copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/{_LINK_SCRIPT}"),
-                copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/qwen38-ssd-shards.tsv"),
-                copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/qwen38-ssd-derived-shards.tsv"),
-            ],
-        ),
-        ConfigMapArgs(
-            name=_AUTH_PROXY_CONFIG_MAP,
-            namespace=_NAMESPACE,
-            options=fixed_name,
-            files=[
-                # The nginx image renders `/etc/nginx/templates/*.template` into `conf.d`,
-                # substituting the auth-proxy container's environment variables; `default.conf`
-                # replaces the image's own.
-                "default.conf.template="
-                + copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/nginx-auth-proxy.conf.template"),
-                copy_source_file(root, OUTPUT_DIR, f"{_SOURCE_DIR}/{_NGINX_CONF}"),
-            ],
-        ),
-    ]
 
 
 def ollama(

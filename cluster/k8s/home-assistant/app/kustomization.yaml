@@ -7,18 +7,6 @@ resources:
 components:
   - ./image-pins
 configMapGenerator:
-  - name: home-assistant-configuration
-    namespace: home-assistant
-    options:
-      disableNameSuffixHash: true
-    files:
-      - configuration.yaml=configuration.yaml.conf
-  - name: home-assistant-caddy
-    namespace: home-assistant
-    options:
-      disableNameSuffixHash: true
-    files:
-      - Caddyfile
   - name: home-assistant-onboarding
     namespace: home-assistant
     literals:

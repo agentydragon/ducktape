@@ -3,22 +3,3 @@ kind: Kustomization
 namespace: monitoring
 resources:
   - alloy.k8s.yaml
-configMapGenerator:
-  - name: alloy-config
-    namespace: monitoring
-    options:
-      disableNameSuffixHash: true
-    files:
-      - config.alloy
-  - name: alloy-node-config
-    namespace: monitoring
-    options:
-      disableNameSuffixHash: true
-    files:
-      - node.alloy
-  - name: alloy-syslog-config
-    namespace: monitoring
-    options:
-      disableNameSuffixHash: true
-    files:
-      - syslog.alloy

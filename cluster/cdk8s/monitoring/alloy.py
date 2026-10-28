@@ -9,27 +9,18 @@ modules own through `sys.env`, from the environment the HelmReleases set.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import ConfigMap, k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.agentplane import telemetry
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    GeneratorOptions,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
-from cluster.cdk8s.generation import copy_source_file
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository, loki, mimir, tempo
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 _NAME = "alloy"
 NAMESPACE = "monitoring"
@@ -67,27 +58,21 @@ _CONFIG_ENV = {
 }
 
 
-def write_config_maps(root: Path) -> list[ConfigMapArgs]:
-    """Copy both Alloy configs into `OUTPUT_DIR`; return the `configMapGenerator` entries packaging them."""
-    return [
-        ConfigMapArgs(
-            name=name,
-            namespace=NAMESPACE,
-            # The Helm values name the ConfigMap, and kustomize cannot rewrite a reference inside a
-            # HelmRelease's values.
-            options=GeneratorOptions(disable_name_suffix_hash=True),
-            files=[copy_source_file(root, OUTPUT_DIR, f"cluster/cdk8s/monitoring/{key}")],
+def chart(app: App) -> Chart:
+    chart = Chart(app, _NAME, disable_resource_name_hashes=True)
+    config_map, node_config_map, syslog_config_map = (
+        ConfigMap(
+            chart,
+            name,
+            metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+            data={key: get_required_path(own_repo_rlocation(f"cluster/cdk8s/monitoring/{key}")).read_text()},
         )
         for name, key in (
             (_CONFIG_MAP, _CONFIG_KEY),
             (_NODE_CONFIG_MAP, _NODE_CONFIG_KEY),
             (_SYSLOG_CONFIG_MAP, _SYSLOG_CONFIG_KEY),
         )
-    ]
-
-
-def chart(app: App) -> Chart:
-    chart = Chart(app, _NAME, disable_resource_name_hashes=True)
+    )
     helm_release(
         chart,
         _NAME,
@@ -99,7 +84,7 @@ def chart(app: App) -> Chart:
         chart_interval="12h",
         values={
             "alloy": {
-                "configMap": {"name": _CONFIG_MAP, "key": _CONFIG_KEY, "create": False},
+                "configMap": {"name": config_map.name, "key": _CONFIG_KEY, "create": False},
                 "extraEnv": [{"name": name, "value": value} for name, value in _CONFIG_ENV.items()],
                 # The Grafana Alloy chart reads extraPorts from .Values.alloy and reuses
                 # them for both the Service and the container port list.
@@ -136,7 +121,7 @@ def chart(app: App) -> Chart:
             # NetworkPolicy below match these pods.
             "nameOverride": _NODE_NAME,
             "alloy": {
-                "configMap": {"name": _NODE_CONFIG_MAP, "key": _NODE_CONFIG_KEY, "create": False},
+                "configMap": {"name": node_config_map.name, "key": _NODE_CONFIG_KEY, "create": False},
                 "storagePath": _NODE_STORAGE_PATH,
                 "mounts": {"extra": [{"name": "wal", "mountPath": _NODE_STORAGE_PATH}]},
                 "extraEnv": [
@@ -186,7 +171,7 @@ def chart(app: App) -> Chart:
         values={
             "nameOverride": _SYSLOG_NAME,
             "alloy": {
-                "configMap": {"name": _SYSLOG_CONFIG_MAP, "key": _SYSLOG_CONFIG_KEY, "create": False},
+                "configMap": {"name": syslog_config_map.name, "key": _SYSLOG_CONFIG_KEY, "create": False},
                 "extraEnv": [
                     {"name": "LOKI_PUSH_URL", "value": loki.PUSH_URL},
                     {"name": "SYSLOG_LISTEN_ADDRESS", "value": f"0.0.0.0:{_SYSLOG_LISTEN_PORT}"},

@@ -14,3 +14,11 @@ filegroup(
         "//cluster/validation:__pkg__",
     ],
 )
+
+exports_files(
+    [
+        "Caddyfile",
+        "configuration.yaml.conf",
+    ],
+    visibility = ["//cluster/cdk8s/home_assistant:__pkg__"],
+)
