@@ -1,4 +1,12 @@
-"""Generate Protobuf-ES JavaScript for a proto_library's imported schema closure."""
+"""Generate Protobuf-ES JavaScript for a proto_library's imported schema closure.
+
+The pinned Aspect proto aspect leaves Google API imports such as
+`../../google/api/annotations_pb.js` relative to the importing module while it emits
+the imported module under its external-repository output path. The frontend's standard
+esbuild bundle cannot resolve that layout, so this rule emits the complete closure into
+one root where those relative imports stay valid. The runtime test checks direct Node
+consumption of those outputs.
+"""
 
 load("@protobuf//bazel/common:proto_common.bzl", "proto_common")
 load("@protobuf//bazel/common:proto_info.bzl", "ProtoInfo")
