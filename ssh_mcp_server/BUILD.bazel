@@ -56,28 +56,15 @@ genrule(
 )
 
 json_schema_js_library(
-    name = "exec_arguments_types",
+    name = "exec_arguments",
     schema = ":exec.arguments.schema.json",
     visibility = ["//agentplane/app/frontend/actions:__pkg__"],
 )
 
 json_schema_js_library(
-    name = "exec_result_types",
+    name = "exec_result",
     schema = ":exec.result.schema.json",
     visibility = ["//agentplane/app/frontend/actions:__pkg__"],
-)
-
-js_library(
-    name = "exec_schemas",
-    srcs = [
-        ":exec.arguments.schema.json",
-        ":exec.result.schema.json",
-    ],
-    visibility = ["//agentplane/app/frontend/actions:__pkg__"],
-    deps = [
-        ":exec_arguments_types",
-        ":exec_result_types",
-    ],
 )
 
 py_library(

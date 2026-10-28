@@ -1,5 +1,5 @@
 # gazelle:exclude test_visual.py
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
@@ -41,9 +41,7 @@ filegroup(
 filegroup(
     name = "typed_lint_program_data",
     srcs = [
-        ":mcp_tool_arguments",
         ":mcp_tool_result_schema",
-        ":mcp_tool_results",
         ":mcp_tool_schema",
         ":schema",
         "//:node_modules/@codemirror/lang-json",
@@ -67,6 +65,8 @@ filegroup(
         "//:node_modules/rrule",
         "//:node_modules/tailwindcss",
         "//:node_modules/zod",
+        "//haku/console/mcp:tool_arguments",
+        "//haku/console/mcp:tool_results",
     ],
 )
 
@@ -94,59 +94,14 @@ openapi_js_library(
     schema = "//haku/console:openapi_schema",
 )
 
-# The exact input schemas advertised by the in-process MCP servers. Keep both the generated
-# TypeScript declarations and their source JSON: :mcp_tool_schema turns each catalog entry into
-# a runtime Zod validator derived from FastMCP's advertised structural contract. The declarations
-# stay beside the JSON because `mcp_tool_schema.ts` imports both through the `api/` module paths.
-json_schema_js_library(
-    name = "mcp_tool_arguments_types",
-    out = "api/mcp_tool_arguments.d.ts",
-    schema = "//haku/console/mcp:tool_arguments_schema",
-)
-
-copy_file(
-    name = "_mcp_tool_arguments_json",
-    src = "//haku/console/mcp:tool_arguments_schema",
-    out = "api/mcp_tool_arguments.schema.json",
-)
-
-js_library(
-    name = "mcp_tool_arguments",
-    srcs = [":_mcp_tool_arguments_json"],
-    deps = [":mcp_tool_arguments_types"],
-)
-
-# The exact output (result) schemas advertised by the in-process MCP servers, emitted by the
-# same exporter with `--results`. :mcp_tool_result_schema mirrors :mcp_tool_schema for results,
-# so per-tool result widgets validate against FastMCP's advertised output contract rather than
-# restating it. grocy-sf contributes its reflected batch and read tools; its OpenAPI tool widgets
-# stay hand-authored.
-json_schema_js_library(
-    name = "mcp_tool_results_types",
-    out = "api/mcp_tool_results.d.ts",
-    schema = "//haku/console/mcp:tool_results_schema",
-)
-
-copy_file(
-    name = "_mcp_tool_results_json",
-    src = "//haku/console/mcp:tool_results_schema",
-    out = "api/mcp_tool_results.schema.json",
-)
-
-js_library(
-    name = "mcp_tool_results",
-    srcs = [":_mcp_tool_results_json"],
-    deps = [":mcp_tool_results_types"],
-)
-
 ts_library(
     name = "mcp_tool_schema",
     srcs = ["mcp_tool_schema.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":mcp_tool_arguments",
         "//:node_modules/zod",
+        "//haku/console/mcp:tool_arguments",
     ],
 )
 
@@ -156,9 +111,9 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":mcp_tool_results",
         ":mcp_tool_schema",
         "//:node_modules/zod",
+        "//haku/console/mcp:tool_results",
     ],
 )
 

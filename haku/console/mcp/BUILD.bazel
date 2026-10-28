@@ -1,3 +1,4 @@
+load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -38,6 +39,18 @@ genrule(
     outs = ["tool_results.schema.json"],
     cmd = "$(location :export_tool_schemas_bin) --results > $@",
     tools = [":export_tool_schemas_bin"],
+    visibility = ["//haku/console/frontend:__pkg__"],
+)
+
+json_schema_js_library(
+    name = "tool_arguments",
+    schema = ":tool_arguments_schema",
+    visibility = ["//haku/console/frontend:__pkg__"],
+)
+
+json_schema_js_library(
+    name = "tool_results",
+    schema = ":tool_results_schema",
     visibility = ["//haku/console/frontend:__pkg__"],
 )
 

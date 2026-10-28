@@ -1,13 +1,13 @@
 // Runtime validators and static argument types derived from the exact schemas advertised by
 // the in-process FastMCP servers. They cover JSON-Schema-expressible structure; execution-only
-// Python cross-field validators may be stricter. The JSON catalog and .d.ts module are two
-// outputs of the same generator; this is the only boundary where the experimental
+// Python cross-field validators may be stricter. The producer-owned JSON catalog and its generated
+// declarations describe the same contract; this is the only boundary where the experimental
 // z.fromJSONSchema API is used.
 
 import { z } from "zod";
 
-import type { McpToolArguments } from "./api/mcp_tool_arguments";
-import mcpToolArgumentsSchema from "./api/mcp_tool_arguments.schema.json";
+import type { McpToolArguments } from "../mcp/tool_arguments";
+import mcpToolArgumentsSchema from "../mcp/tool_arguments.schema.json";
 
 type JsonSchema = Parameters<typeof z.fromJSONSchema>[0];
 type ObjectSchema = Exclude<JsonSchema, boolean> & {

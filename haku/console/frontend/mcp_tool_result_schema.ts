@@ -2,14 +2,14 @@
 // the in-process FastMCP servers — the result-side mirror of mcp_tool_schema.ts, plus grocy-sf's
 // typed batch-tool results. Only tools with a structured output schema have an entry, so this is a
 // subset of the argument catalog; renderer-specific projections may narrow permissive
-// `extra="allow"` Grocy rows further. The JSON catalog and .d.ts module are two outputs of the same
-// generator; like the argument side, this is the only boundary where the experimental
+// `extra="allow"` Grocy rows further. The producer-owned JSON catalog and its generated declarations
+// describe the same contract; like the argument side, this is the only boundary where the experimental
 // z.fromJSONSchema API is used.
 
 import { z } from "zod";
 
-import type { McpToolResults } from "./api/mcp_tool_results";
-import mcpToolResultsSchema from "./api/mcp_tool_results.schema.json";
+import type { McpToolResults } from "../mcp/tool_results";
+import mcpToolResultsSchema from "../mcp/tool_results.schema.json";
 import { objectProperties } from "./mcp_tool_schema";
 
 type JsonSchema = Parameters<typeof z.fromJSONSchema>[0];

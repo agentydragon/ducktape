@@ -26,7 +26,8 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/zod",
-        "//ssh_mcp_server:exec_schemas",
+        "//ssh_mcp_server:exec_arguments",
+        "//ssh_mcp_server:exec_result",
     ],
 )
 

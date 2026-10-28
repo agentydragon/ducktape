@@ -8,8 +8,9 @@ def json_schema_js_library(name, schema, out = None, schema_files = [], visibili
     `schema_files` declares each file reached by a relative local `$ref`.
     The converter accepts single-file Bazel targets and passes Bazel-expanded
     paths directly, preserving local relative-reference resolution. The named
-    target publishes the declarations through `JsInfo`; the generated file is
-    also available by its `out` label, which defaults to `<name>.d.ts`.
+    target publishes the schema, its declared references, and generated
+    declarations through `JsInfo`; the generated file is also available by its
+    `out` label, which defaults to `<name>.d.ts`.
     """
     if out == None:
         out = name + ".d.ts"
@@ -32,6 +33,6 @@ def json_schema_js_library(name, schema, out = None, schema_files = [], visibili
 
     js_library(
         name = name,
-        srcs = [":" + generated_name],
+        srcs = [schema] + schema_files + [":" + generated_name],
         visibility = visibility,
     )

@@ -1,8 +1,8 @@
 import { z } from "zod";
 import argumentsSchema from "../../../../../../ssh_mcp_server/exec.arguments.schema.json";
 import resultSchema from "../../../../../../ssh_mcp_server/exec.result.schema.json";
-import type { SshExecArguments } from "../../../../../../ssh_mcp_server/exec_arguments_types";
-import type { SshExecResult } from "../../../../../../ssh_mcp_server/exec_result_types";
+import type { SshExecArguments } from "../../../../../../ssh_mcp_server/exec_arguments";
+import type { SshExecResult } from "../../../../../../ssh_mcp_server/exec_result";
 
 type JsonSchema = Parameters<typeof z.fromJSONSchema>[0];
 const generatedArguments = z.fromJSONSchema(argumentsSchema as unknown as JsonSchema) as z.ZodObject;
