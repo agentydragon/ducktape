@@ -132,11 +132,11 @@
   }
 
   .session-browser-related-children {
-    max-height: min(9dvh, 72px);
+    max-height: min(28dvh, 236px);
   }
 
   .session-browser-related-sessions {
-    max-height: min(16dvh, 128px);
+    max-height: min(48dvh, 400px);
   }
 
   .session-import-progress-machines {

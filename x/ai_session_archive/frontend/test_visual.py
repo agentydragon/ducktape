@@ -136,9 +136,39 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
 
         await related.get_by_role("button", name="Load more child sessions").click()
         await expect(children).to_contain_text("Inspect module 63")
+        await related.evaluate(
+            "element => { element.scrollIntoView({ block: 'nearest' }); element.scrollTop = element.scrollHeight; }"
+        )
         await children.evaluate("element => { element.scrollTop = element.scrollHeight; }")
         last_child = children.get_by_role("link", name="Inspect module 63")
-        await expect(last_child).to_be_in_viewport()
+        last_child_visibility = await last_child.evaluate(
+            """node => {
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                const textRect = range.getBoundingClientRect();
+                const clippingBounds = [{ top: 0, bottom: window.innerHeight, left: 0, right: window.innerWidth }];
+                for (let ancestor = node.parentElement; ancestor !== null; ancestor = ancestor.parentElement) {
+                  if (!/(auto|scroll|hidden|clip)/.test(getComputedStyle(ancestor).overflowY)) continue;
+                  const rect = ancestor.getBoundingClientRect();
+                  clippingBounds.push({
+                    top: rect.top + ancestor.clientTop,
+                    bottom: rect.top + ancestor.clientTop + ancestor.clientHeight,
+                    left: rect.left + ancestor.clientLeft,
+                    right: rect.left + ancestor.clientLeft + ancestor.clientWidth,
+                  });
+                }
+                return {
+                  visible: clippingBounds.every(bounds => textRect.top >= bounds.top && textRect.bottom <= bounds.bottom &&
+                    textRect.left >= bounds.left && textRect.right <= bounds.right),
+                  text: { top: textRect.top, bottom: textRect.bottom, left: textRect.left, right: textRect.right },
+                  clippingBounds,
+                };
+            }"""
+        )
+        assert last_child_visibility["visible"], (
+            "the final child link text must fit in the viewport and every enclosing scrollport: "
+            f"{last_child_visibility}"
+        )
         await expect(transcript).to_contain_text("The capture preserves the original JSONL records.")
         if viewport.width <= 760:
             await view.check(context="related children remain reachable in the mobile session-list drawer")
