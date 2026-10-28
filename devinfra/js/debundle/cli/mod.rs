@@ -83,11 +83,33 @@ fn verify_graph_compatibility_with_scope(
     graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
     scope: GraphCompatibilityScope<'_>,
 ) -> Result<()> {
+    let graph = graph_provenance::read_graph_header(graph_path)?;
+    verify_graph_header_compatibility(
+        graph_path,
+        &graph,
+        modules_root,
+        selector_source_root,
+        spec_root,
+        graph_source_root,
+        graph_package_roots,
+        scope,
+    )
+}
+
+fn verify_graph_header_compatibility(
+    graph_path: &std::path::Path,
+    graph: &graph_provenance::GraphHeader,
+    modules_root: &std::path::Path,
+    selector_source_root: Option<&std::path::Path>,
+    spec_root: Option<&std::path::Path>,
+    graph_source_root: Option<&std::path::Path>,
+    graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
+    scope: GraphCompatibilityScope<'_>,
+) -> Result<()> {
     let (require_module_scope, tree_config) = match scope {
         GraphCompatibilityScope::AuthoredModuleTree { tree_config } => (true, tree_config),
         GraphCompatibilityScope::ExactSourceUnit => (false, None),
     };
-    let graph = graph_provenance::read_graph_header(graph_path)?;
     let provenance = graph.provenance.as_ref().ok_or_else(|| {
         GraphMismatch::new(
             GraphMismatchReason::MissingProvenance {
@@ -245,7 +267,7 @@ fn verify_graph_compatibility_with_scope(
             return Err(GraphMismatch::new(
                 GraphMismatchReason::SelectorSource {
                     path,
-                    chunk_id: graph.chunk_id,
+                    chunk_id: graph.chunk_id.clone(),
                     expected: source.sha256.clone(),
                     actual,
                 },
@@ -438,7 +460,14 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
         DebundleCommand::Atoms(args) => inspection_commands::run_atoms(args),
         DebundleCommand::Coverage(args) => inspection_commands::run_coverage(args),
         DebundleCommand::GraphSummary(args) => inspection_commands::run_graph_summary(args),
-        DebundleCommand::Describe(args) => inspection_commands::run_describe(args),
+        DebundleCommand::Describe(describe_args) => inspection_commands::run_describe(
+            describe_args,
+            InspectionRoots {
+                spec_root: args.spec_root.clone(),
+                graph_source_root: args.graph_source_root.clone(),
+                graph_package_roots: graph_package_roots.clone(),
+            },
+        ),
         DebundleCommand::InspectSource(args) => inspection_commands::run_inspect_source(args),
         DebundleCommand::Scc(args) => run_scc(args),
         DebundleCommand::Cluster(args) => run_cluster(args),
@@ -615,15 +644,6 @@ fn verify_mixed_graph_command(
                 None,
             )
         }
-        DebundleCommand::Describe(args) => verify_graph_compatibility(
-            &args.common.dependency_graph_path,
-            &args.common.modules_root,
-            args.source_root.as_deref(),
-            spec_root,
-            graph_source_root,
-            graph_package_roots,
-            None,
-        ),
         DebundleCommand::InspectSource(args) if args.id.is_some() => {
             let graph = args.graph.as_deref().context("--id requires --graph")?;
             let modules = args.modules.as_deref().context("--id requires --modules")?;

@@ -1,13 +1,15 @@
 //! Graph/source inspection commands and their ID resolution and rendering.
-use crate::emit_report;
+use crate::gate::InspectionRoots;
+use crate::{GraphCompatibilityScope, emit_report, verify_graph_header_compatibility};
 use analysis::DepKind;
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
+use peel::plan::ExplainSession;
 use peel::propose::DEFAULT_SIZE_CAP_LINES;
 use peel::{
     AtomicGroupsArgs, CommonArgs as PeelCommonArgs, DEFAULT_DESCRIBE_LIMIT, ExplainArgs,
     ExplainDirection, GraphSummaryArgs, OutputFormat, PatchPlanArgs, SelectionKind,
-    SourceSelectionArgs, run_atomic_groups_report, run_explain_report, run_graph_summary_report,
+    SourceSelectionArgs, run_atomic_groups_report, run_graph_summary_report,
     run_patch_plan_report, run_source_selection_report,
 };
 use selector_codemod::source_input::resolve_chunk_source_file;
@@ -27,7 +29,12 @@ use std::path::PathBuf;
 #[derive(Debug, ClapArgs)]
 pub(super) struct DescribeArgs {
     /// Identifier to describe.
-    pub id: String,
+    #[arg(required_unless_present = "batch_file", conflicts_with = "batch_file")]
+    pub id: Option<String>,
+
+    /// JSON array of identifiers to describe together, sharing one verified graph.
+    #[arg(long = "batch", value_name = "FILE")]
+    pub batch_file: Option<PathBuf>,
 
     #[command(flatten)]
     pub common: PeelCommonArgs,
@@ -240,31 +247,88 @@ fn resolve_id_as_module_path(id: &str, modules_root: &std::path::Path) -> Result
     Ok(Some(first))
 }
 
-pub(super) fn run_describe(args: DescribeArgs) -> Result<()> {
+pub(super) fn run_describe(args: DescribeArgs, roots: InspectionRoots) -> Result<()> {
     if args.limit == Some(0) {
         bail!("--limit must be greater than zero; use --all for exhaustive results");
     }
-    let selection = dispatch_id_selection(&args.id, &args.common.modules_root)?;
-    let inner = ExplainArgs {
-        common: args.common,
-        selection,
-        size_cap_lines: args.size_cap_lines,
-        source_root: args.source_root,
-        limit: if args.all {
-            0
-        } else {
-            args.limit.unwrap_or(DEFAULT_DESCRIBE_LIMIT)
-        },
-        direction: args.direction,
-        reasons: args.reasons,
-        include_proposals: args.include_proposals,
+    let ids = if let Some(path) = &args.batch_file {
+        let bytes = std::fs::read(path)
+            .with_context(|| format!("reading describe batch {}", path.display()))?;
+        let ids: Vec<String> = serde_json::from_slice(&bytes)
+            .with_context(|| format!("parsing describe batch {}", path.display()))?;
+        if ids.is_empty() {
+            bail!("describe --batch requires a nonempty JSON array of identifiers");
+        }
+        ids
+    } else {
+        vec![args.id.clone().expect("Clap requires an ID or --batch")]
     };
-    let report = run_explain_report(&inner)?;
+    let mut session = ExplainSession::load(
+        args.common.clone(),
+        args.source_root.clone(),
+        args.size_cap_lines,
+    )?;
+    let graph = session.graph();
+    verify_graph_header_compatibility(
+        &args.common.dependency_graph_path,
+        &graph_provenance::GraphHeader {
+            chunk_id: graph.chunk_id.clone(),
+            provenance: graph.provenance.clone(),
+        },
+        &args.common.modules_root,
+        args.source_root.as_deref(),
+        roots.spec_root.as_deref(),
+        roots.graph_source_root.as_deref(),
+        &roots.graph_package_roots,
+        GraphCompatibilityScope::AuthoredModuleTree { tree_config: None },
+    )?;
+    // Finish the entire batch before emitting any result, including NDJSON.
+    // A failed item must not leave an apparently successful partial document.
+    let results = ids
+        .iter()
+        .enumerate()
+        .map(|(index, id)| {
+            dispatch_id_selection(id, &args.common.modules_root)
+                .and_then(|selection| {
+                    session.explain(&ExplainArgs {
+                        selection,
+                        limit: if args.all { 0 } else { args.limit.unwrap_or(DEFAULT_DESCRIBE_LIMIT) },
+                        direction: args.direction,
+                        reasons: args.reasons.clone(),
+                        include_proposals: args.include_proposals,
+                    })
+                })
+                .with_context(|| format!("describing item {} ({id:?})", index + 1))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if args.batch_file.is_none() {
+        return emit_report(
+            args.format,
+            &results[0],
+            render_explain_text,
+            "writing describe output",
+        );
+    }
+    let format = OutputFormat::resolve(args.format);
+    if format == OutputFormat::Ndjson {
+        for result in results {
+            println!("{}", serde_json::to_string(&result)?);
+        }
+        return Ok(());
+    }
+    #[derive(Serialize)]
+    struct BatchReport {
+        results: Vec<peel::ExplainReport>,
+    }
     emit_report(
-        args.format,
-        &report,
-        render_explain_text,
-        "writing describe output",
+        Some(format),
+        &BatchReport { results },
+        |batch, out| {
+            for result in &batch.results {
+                render_explain_text(result, out);
+            }
+        },
+        "writing describe batch output",
     )
 }
 

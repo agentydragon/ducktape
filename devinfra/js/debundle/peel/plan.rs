@@ -149,13 +149,7 @@ pub struct GraphSummaryArgs {
 
 #[derive(Debug, Clone)]
 pub struct ExplainArgs {
-    pub common: CommonArgs,
     pub selection: SelectionKind,
-    /// Hard line ceiling used when resolving a proposal selection.
-    pub size_cap_lines: usize,
-    /// Root used to resolve relative `source_location.source_path`
-    /// values when module-path selections claim anonymous statements.
-    pub source_root: Option<PathBuf>,
     /// Maximum number of rows to emit per report section. Zero means unlimited.
     pub limit: usize,
     /// Which dependency-graph edge directions to include in the report.
@@ -666,28 +660,85 @@ macro_rules! apply_limits {
     };
 }
 
-pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
-    let graph = load_graph(&args.common.dependency_graph_path)?;
+/// One command's loaded graph and shared authoring lookups. This cache never
+/// survives the invocation or suppresses the caller's compatibility check.
+pub struct ExplainSession {
+    graph: DependencyGraphReport,
+    common: CommonArgs,
+    source_root: Option<PathBuf>,
+    size_cap_lines: usize,
+    binding_homes: Option<Vec<BindingHomeReport>>,
+    proposals: Option<ProposalsReport>,
+}
+
+impl ExplainSession {
+    pub fn load(
+        common: CommonArgs,
+        source_root: Option<PathBuf>,
+        size_cap_lines: usize,
+    ) -> Result<Self> {
+        Ok(Self {
+            graph: load_graph(&common.dependency_graph_path)?,
+            common,
+            source_root,
+            size_cap_lines,
+            binding_homes: None,
+            proposals: None,
+        })
+    }
+
+    pub fn graph(&self) -> &DependencyGraphReport {
+        &self.graph
+    }
+
+    pub fn explain(&mut self, args: &ExplainArgs) -> Result<ExplainReport> {
+        if self.binding_homes.is_none() {
+            self.binding_homes = Some(binding_homes(&self.common.modules_root)?);
+        }
+        let needs_proposals = args.include_proposals
+            || matches!(
+                args.selection,
+                SelectionKind::Proposal(_) | SelectionKind::Diagnostic(_)
+            );
+        if needs_proposals && self.proposals.is_none() {
+            self.proposals = Some(propose_from_graph(
+                &self.graph,
+                &ProposalOptions {
+                    dependency_graph_path: self.common.dependency_graph_path.clone(),
+                    modules_root: self.common.modules_root.clone(),
+                    tree_config: None,
+                    source_root: self.source_root.clone(),
+                    size_cap_lines: self.size_cap_lines,
+                },
+            )?);
+        }
+        explain_from_graph(
+            args,
+            &self.graph,
+            &self.common,
+            self.source_root.as_deref(),
+            self.size_cap_lines,
+            self.binding_homes.as_deref().expect("loaded above"),
+            if needs_proposals {
+                self.proposals.as_ref()
+            } else {
+                None
+            },
+        )
+    }
+}
+
+fn explain_from_graph(
+    args: &ExplainArgs,
+    graph: &DependencyGraphReport,
+    common: &CommonArgs,
+    source_root: Option<&Path>,
+    size_cap_lines: usize,
+    homes: &[BindingHomeReport],
+    propose: Option<&ProposalsReport>,
+) -> Result<ExplainReport> {
     let selection = &args.selection;
     let query = query_report(selection);
-    let selection_needs_proposals = matches!(
-        selection,
-        SelectionKind::Proposal(_) | SelectionKind::Diagnostic(_)
-    );
-    let propose = if args.include_proposals || selection_needs_proposals {
-        Some(propose_from_graph(
-            &graph,
-            &ProposalOptions {
-                dependency_graph_path: args.common.dependency_graph_path.clone(),
-                modules_root: args.common.modules_root.clone(),
-                tree_config: None,
-                source_root: args.source_root.clone(),
-                size_cap_lines: args.size_cap_lines,
-            },
-        )?)
-    } else {
-        None
-    };
     let include_proposal_sections = propose.is_some();
     let ResolvedSelection {
         source_unit_ids,
@@ -695,10 +746,10 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     } = resolve_source_unit_ids(
         selection,
         &graph,
-        &args.common,
-        args.size_cap_lines,
-        args.source_root.as_deref(),
-        propose.as_ref(),
+        common,
+        size_cap_lines,
+        source_root,
+        propose,
     )?;
     let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
     let mut source_units = source_units_for_ids(&graph, &source_unit_set);
@@ -760,7 +811,11 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .iter()
         .map(|binding| binding.binding.to_string())
         .collect();
-    let mut binding_homes = binding_homes(&args.common.modules_root, &binding_ids)?;
+    let mut binding_homes = homes
+        .iter()
+        .filter(|home| binding_ids.contains(&home.binding))
+        .cloned()
+        .collect();
 
     let selected_destinations: BTreeSet<analysis::ModuleKey> = source_units
         .iter()
@@ -784,13 +839,15 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         (
             propose
                 .proposals
-                .into_iter()
+                .iter()
                 .filter(|proposal| overlaps(&proposal.source_unit_ids, &source_unit_set))
+                .cloned()
                 .collect(),
             propose
                 .diagnostics
-                .into_iter()
+                .iter()
                 .filter(|diagnostic| overlaps(&diagnostic.source_unit_ids, &source_unit_set))
+                .cloned()
                 .collect(),
         )
     } else {
@@ -1668,10 +1725,7 @@ fn source_unit_ids_for_diagnostic(
         .map(|diagnostic| diagnostic.source_unit_ids.clone())
 }
 
-fn binding_homes(
-    modules_root: &Path,
-    binding_ids: &BTreeSet<String>,
-) -> Result<Vec<BindingHomeReport>> {
+fn binding_homes(modules_root: &Path) -> Result<Vec<BindingHomeReport>> {
     let mut homes = BTreeSet::new();
     for path in collect_module_files(modules_root)? {
         let module_path = module_path_from_file(&path, modules_root);
@@ -1680,14 +1734,12 @@ fn binding_homes(
                 continue;
             };
             let binding = binding_selector.name;
-            if binding_ids.contains(&binding) {
-                homes.insert(BindingHomeReport {
-                    binding,
-                    name: member.name.unwrap_or_default(),
-                    source_kind: BindingHomeSourceKind::Module,
-                    path: module_path.clone(),
-                });
-            }
+            homes.insert(BindingHomeReport {
+                binding,
+                name: member.name.unwrap_or_default(),
+                source_kind: BindingHomeSourceKind::Module,
+                path: module_path.clone(),
+            });
         }
     }
     let patches_path = default_binding_patches_path(modules_root);
@@ -1696,14 +1748,12 @@ fn binding_homes(
             continue;
         };
         let binding = binding_selector.name;
-        if binding_ids.contains(&binding) {
-            homes.insert(BindingHomeReport {
-                binding,
-                name: member.name.unwrap_or_default(),
-                source_kind: BindingHomeSourceKind::BindingPatch,
-                path: patches_path.display().to_string(),
-            });
-        }
+        homes.insert(BindingHomeReport {
+            binding,
+            name: member.name.unwrap_or_default(),
+            source_kind: BindingHomeSourceKind::BindingPatch,
+            path: patches_path.display().to_string(),
+        });
     }
     Ok(homes.into_iter().collect())
 }

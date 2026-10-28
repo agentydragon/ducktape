@@ -176,6 +176,32 @@ DEBUNDLE_GRAPH='reports/tree/main/dependency_graph.json' \
 If remote execution downloads only minimal outputs, request full outputs so
 the report side files are local: `--remote_download_outputs=all`.
 
+## Describe related IDs together
+
+`describe --batch <file>` reads a nonempty JSON array of identifiers using the
+same dispatch rules as `describe <id>`. For example, a file containing
+`["factory", "unit:12", "runtime/setup"]` describes those three selections in
+that order. Duplicate identifiers are retained. `--batch` and a positional ID
+are mutually exclusive; the graph, modules tree, source root, bounds and edge
+filters apply to every item.
+
+The command loads one graph and verifies its provenance once before querying.
+It reuses binding-home lookups and, when requested, proposal analysis within
+that invocation. Module-path selections still resolve their source-backed
+claims through the ordinary resolver. No analysis is cached between commands.
+Keep the inputs unchanged while the batch runs, as with any single query.
+
+JSON output is `{"results": [...]}`, with the same report objects returned
+by standalone queries. NDJSON emits one report per requested ID. Every item
+must succeed before any reports are emitted: a failed item exits nonzero and
+returns the ordinary structured failure, including its position and ID, without
+partial results. Text output prints each report in request order.
+
+`--print-invocation` and `--invocation-out` retain the explicit batch-file path
+along with resolved graph/root options. The record references that file; it
+does not copy or fingerprint its contents. Preserve the batch file alongside
+the input snapshot when handing the command to another worker.
+
 ## Output format
 
 Read-only commands accept `--format <text|json|ndjson>`:

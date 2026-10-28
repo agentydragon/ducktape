@@ -127,6 +127,15 @@ only when proposal analysis runs. Their limits sections use the same field names
 Proposals name their outgoing residual quotient-class dependencies with
 `edges_to_other_residual_classes` and `other_residual_classes_referenced`.
 
+`describe --batch` accepts a nonempty JSON array of identifiers and returns the
+same per-selection reports as separate `describe` calls, in request order with
+duplicates retained. One invocation loads and verifies one graph and shares
+binding-home and requested proposal lookups. All selections use the same
+roots, limits and filters; module source claims retain the ordinary resolver's
+semantics. JSON wraps the reports in `results`; NDJSON emits one report per
+item. A failed item emits only the command failure, with no partial reports.
+The invocation record retains the batch-file path, not its contents.
+
 ## Delegated input snapshots
 
 `snapshot create` copies one saved graph's verified input set and exact engine
