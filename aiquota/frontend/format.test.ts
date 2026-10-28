@@ -20,6 +20,7 @@ import {
   isExhausted,
   roundHalfToEven,
   tintFor,
+  type Tint,
 } from "../shared/presentation.js";
 
 type FormatCase = {
@@ -64,45 +65,56 @@ describe("the Python renderers' output", () => {
 });
 
 describe("compact binding summary", () => {
-  it.each([
-    [
-      [
+  type BindingWindow = { name: string | null; tint: Tint };
+  type BindingSummaryCase = {
+    windows: BindingWindow[];
+    expected: { tint: Tint; index: number | null };
+  };
+
+  const bindingSummaryCases: BindingSummaryCase[] = [
+    {
+      windows: [
         { name: "burst", tint: "warn" },
         { name: "weekly", tint: "cool" },
       ],
-      { tint: "warn", index: 0 },
-    ],
-    [
-      [
+      expected: { tint: "warn", index: 0 },
+    },
+    {
+      windows: [
         { name: "primary", tint: "ok" },
         { name: "secondary", tint: "hot" },
       ],
-      { tint: "hot", index: 1 },
-    ],
-    [
-      [
+      expected: { tint: "hot", index: 1 },
+    },
+    {
+      windows: [
         { name: "burst", tint: "cool" },
         { name: "weekly", tint: "ok" },
       ],
-      { tint: "cool", index: 0 },
-    ],
-    [
-      [
+      expected: { tint: "cool", index: 0 },
+    },
+    {
+      windows: [
         { name: "primary", tint: "ok" },
         { name: "secondary", tint: "ok" },
       ],
-      { tint: "ok", index: 1 },
-    ],
-    [
-      [
+      expected: { tint: "ok", index: 1 },
+    },
+    {
+      windows: [
         { name: "primary", tint: "ok" },
         { name: null, tint: "ok" },
         { name: "secondary", tint: "ok" },
       ],
-      { tint: "ok", index: 1 },
-    ],
-    [[{ name: "stale", tint: "stale" }], { tint: "unknown", index: null }],
-  ])("keeps pace on a window with the summary tint", (windows, expected) => {
+      expected: { tint: "ok", index: 1 },
+    },
+    {
+      windows: [{ name: "stale", tint: "stale" }],
+      expected: { tint: "unknown", index: null },
+    },
+  ];
+
+  it.each(bindingSummaryCases)("keeps pace on a window with the summary tint", ({ windows, expected }) => {
     expect(bindingSummary(windows)).toEqual(expected);
   });
 });
