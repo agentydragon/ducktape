@@ -23,13 +23,6 @@ class HoldingValueCorrection(BaseModel):
             raise ValueError("security selectors must contain unique non-empty IDs")
         return values
 
-    @field_validator("value_multiplier", mode="before")
-    @classmethod
-    def _decimal_multiplier(cls, value: object) -> Decimal:
-        if isinstance(value, bool) or not isinstance(value, int | Decimal):
-            raise ValueError("value_multiplier must be a positive decimal or integer")
-        return Decimal(value)
-
 
 class PlaidSourcePolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)

@@ -229,8 +229,9 @@ pagination drained; neither supplies an account's earliest available date.
 
 Portfolio value is selected gross USD assets minus signed liabilities minus the current value of explicitly excluded
 security positions. Holdings are not added to their account balances. Each Plaid holding-value correction selects an
-exact account and one or more security IDs with a positive finite `value_multiplier`. Corrected holdings in that
-account must reconcile to its balance. Exclusions contain selectors only; a matching correction is applied before an
+exact account and one or more security IDs with a positive finite `value_multiplier`. Multipliers require `Decimal`
+in Python and decimal notation in YAML (for example, `2.0`). Corrected holdings in that account must reconcile to its
+balance. Exclusions contain selectors only; a matching correction is applied before an
 excluded holding is subtracted, and corrections can also apply to included holdings. Enabled sources must be complete
 and fresh for a percentage to appear. The Coinbase source covers returned brokerage
 wallets and current USD spot quotes, including held quantities, not external wallets or every Coinbase product.

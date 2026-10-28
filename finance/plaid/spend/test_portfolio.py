@@ -250,7 +250,9 @@ async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_
                 "security_ids": ["security-fake-1"],
             }
         ],
-        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}],
+        corrections=[
+            {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": Decimal(2)}
+        ],
     )
     _seed_plaid(
         postgres_engine,
@@ -288,7 +290,9 @@ async def test_holding_correction_uses_balance_from_the_same_capture(
 ) -> None:
     captured_at = datetime.now(UTC)
     policy = _policy(
-        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+        corrections=[
+            {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": Decimal(2)}
+        ]
     )
     _seed_plaid(
         postgres_engine,
@@ -333,7 +337,9 @@ async def test_correction_reconciles_with_independent_capture_times_across_accou
 ) -> None:
     now = datetime.now(UTC)
     policy = _policy(
-        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 100}]
+        corrections=[
+            {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": Decimal(100)}
+        ]
     )
     balances = [
         _balance("asset-checking", 1000, now - timedelta(minutes=5)),
@@ -381,7 +387,7 @@ def test_plaid_adjustments_reject_inconsistent_timestamps_within_capture(
     captured_at = now - timedelta(hours=1)
     policy = _policy(
         corrections=(
-            [{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+            [{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": Decimal(2)}]
             if adjustment == "correction"
             else []
         ),
@@ -426,7 +432,9 @@ def test_plaid_adjustments_reject_inconsistent_timestamps_within_capture(
 def test_plaid_adjustments_match_capture_ids_even_when_timestamps_match() -> None:
     now = datetime(2026, 1, 2, tzinfo=UTC)
     policy = _policy(
-        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+        corrections=[
+            {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": Decimal(2)}
+        ]
     )
     accounts = [
         _balance("asset-checking", 0, now),
@@ -452,7 +460,9 @@ def test_plaid_adjustments_match_capture_ids_even_when_timestamps_match() -> Non
 def test_covered_empty_correction_capture_is_zero_and_still_reconciles(current: int, expected_ready: bool) -> None:
     now = datetime(2026, 1, 2, tzinfo=UTC)
     policy = _policy(
-        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+        corrections=[
+            {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": Decimal(2)}
+        ]
     )
     accounts = [
         _balance("asset-checking", 0, now),
@@ -474,7 +484,9 @@ async def test_corrected_holdings_that_do_not_reconcile_fail_closed(
 ) -> None:
     now = datetime.now(UTC)
     policy = _policy(
-        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+        corrections=[
+            {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": Decimal(2)}
+        ]
     )
     _seed_plaid(
         postgres_engine,
@@ -551,7 +563,9 @@ async def test_complete_capture_treats_missing_corrected_position_as_absent(
     now = datetime.now(UTC)
     captured_at = now - timedelta(minutes=5)
     policy = _policy(
-        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+        corrections=[
+            {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": Decimal(2)}
+        ]
     )
     _seed_plaid(
         postgres_engine,
@@ -614,7 +628,9 @@ async def test_spend_does_not_fall_back_when_latest_item_capture_lacks_account_c
 ) -> None:
     captured_at = datetime.now(UTC)
     policy = _policy(
-        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+        corrections=[
+            {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": Decimal(2)}
+        ]
     )
     _seed_plaid(
         postgres_engine,
@@ -664,7 +680,9 @@ async def test_spend_fails_closed_on_unlinked_rows_from_an_old_writer(
 ) -> None:
     now = datetime.now(UTC)
     policy = _policy(
-        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+        corrections=[
+            {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": Decimal(2)}
+        ]
     )
     _seed_plaid(
         postgres_engine,
@@ -711,7 +729,9 @@ async def test_fresh_holding_capture_supersedes_older_unlinked_rows(
     now = datetime.now(UTC)
     captured_at = now + timedelta(minutes=1)
     policy = _policy(
-        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+        corrections=[
+            {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": Decimal(2)}
+        ]
     )
     _seed_plaid(
         postgres_engine,
@@ -757,7 +777,9 @@ async def test_fresh_capture_supersedes_an_empty_legacy_holdings_receipt(
 ) -> None:
     now = datetime.now(UTC)
     policy = _policy(
-        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+        corrections=[
+            {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": Decimal(2)}
+        ]
     )
     _seed_plaid(
         postgres_engine,
@@ -1100,14 +1122,16 @@ def test_portfolio_policy_rejects_overlapping_account_and_security_selectors() -
     with pytest.raises(ValidationError, match="must not overlap"):
         _policy(
             corrections=[
-                {"account_id": "asset-brokerage", "security_ids": ["same-security"], "value_multiplier": 2},
-                {"account_id": "asset-brokerage", "security_ids": ["same-security"], "value_multiplier": 3},
+                {"account_id": "asset-brokerage", "security_ids": ["same-security"], "value_multiplier": Decimal(2)},
+                {"account_id": "asset-brokerage", "security_ids": ["same-security"], "value_multiplier": Decimal(3)},
             ]
         )
 
     with pytest.raises(ValidationError, match="selected asset account"):
         _policy(
-            corrections=[{"account_id": "card-account", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+            corrections=[
+                {"account_id": "card-account", "security_ids": ["security-fake-1"], "value_multiplier": Decimal(2)}
+            ]
         )
 
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
@@ -1118,7 +1142,7 @@ def test_portfolio_policy_rejects_overlapping_account_and_security_selectors() -
                     "source": "plaid",
                     "account_id": "asset-brokerage",
                     "security_ids": ["security-fake-1"],
-                    "value_multiplier": 2,
+                    "value_multiplier": Decimal(2),
                 }
             ]
         )
@@ -1136,11 +1160,12 @@ def test_holding_value_correction_multiplier_must_be_positive_and_finite(multipl
         )
 
 
-def test_holding_value_correction_rejects_float_multiplier() -> None:
+@pytest.mark.parametrize("multiplier", [2, True, 0.5, "2"])
+def test_holding_value_correction_rejects_non_decimal_multiplier(multiplier: object) -> None:
     with pytest.raises(ValidationError):
         _policy(
             corrections=[
-                {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 0.5}
+                {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": multiplier}
             ]
         )
 
@@ -1185,7 +1210,7 @@ def test_plaid_row_valuation_accepts_transport_numeric_strings_and_extra_metadat
 
 def test_holding_value_correction_applies_only_to_exact_policy_positions() -> None:
     policy = _policy(
-        corrections=[{"account_id": "asset-brokerage", "security_ids": ["fake-bond"], "value_multiplier": 100}]
+        corrections=[{"account_id": "asset-brokerage", "security_ids": ["fake-bond"], "value_multiplier": Decimal(100)}]
     ).sources.plaid
     assert corrected_holding_value(
         policy, account_id="asset-brokerage", security_id="fake-bond", value=Decimal("1.25")
