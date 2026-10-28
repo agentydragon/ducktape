@@ -14,7 +14,7 @@ Every Pod and VM starts `agentplane-runner --config PATH --launch-file PATH`. Th
 has no effect on configuration. Both flags are required; the shared version-2 JSON configuration
 rejects unknown fields, unsupported versions and contradictory policy before state ownership.
 Templates own paths, endpoints, providers, explicit environment allowlists, platform instructions,
-isolation settings, and the configurable Session reconciliation worker count (default 1000). That
+isolation settings, and the configurable Session reconciliation worker count (default 16). That
 worker count does not cap Session admission. The separate controller-owned launch file contains
 only Sandbox identity and optional bootstrap source.
 

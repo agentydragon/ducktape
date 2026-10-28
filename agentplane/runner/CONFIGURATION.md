@@ -37,7 +37,7 @@ All validation completes before Runner environment changes or state ownership be
 
 | Field                           | Meaning                                                                                                                      |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `session_reconcile_concurrency` | Optional positive count of concurrent Session COSI reconciliations; defaults to `1000` and does not limit Session admission. |
+| `session_reconcile_concurrency` | Optional positive count of concurrent Session COSI reconciliations; defaults to `16` and does not limit Session admission. |
 | `state_dir`                     | Required absolute persistent state path; deployed as `/state`.                                                               |
 | `initialization_cwd`            | Required absolute bootstrap working directory.                                                                               |
 | `workspace_root`                | Optional absolute directory constraining Session working directories. Omission permits requested absolute paths directly.    |

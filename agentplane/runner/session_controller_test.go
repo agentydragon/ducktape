@@ -9,7 +9,7 @@ import (
 )
 
 func TestSessionControllerUsesConfiguredReconcileConcurrency(t *testing.T) {
-	for _, concurrency := range []int{1000, 2048} {
+	for _, concurrency := range []int{16, 2048} {
 		t.Run(strconv.Itoa(concurrency), func(t *testing.T) {
 			c := &sessionLifecycleController{l: &lifecycle{runner: &Runner{config: Config{
 				SessionReconcileConcurrency: concurrency,

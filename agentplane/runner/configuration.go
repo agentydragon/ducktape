@@ -35,7 +35,7 @@ type Configuration struct {
 	DebugCheckpoint             *DebugCheckpointConfiguration `json:"debug_checkpoint"`
 }
 
-const defaultSessionReconcileConcurrency = 1000
+const defaultSessionReconcileConcurrency = 16
 
 type DebugCheckpointConfiguration struct {
 	Name      string `json:"name"`

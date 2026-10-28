@@ -30,7 +30,7 @@ The renamed resource kinds are `RunnerDesiredStates.agentplane`,
 The process controller names are `codex-exec-server-lifecycle` and
 `codex-app-server-lifecycle`, matching the upstream `codex exec-server` and
 `codex app-server` commands. Each controller exclusively writes its own runtime resource. The Session QController can reconcile up to
-`session_reconcile_concurrency` Sessions at once (default 1000); this controls reconcile workers,
+`session_reconcile_concurrency` Sessions at once (default 16); this controls reconcile workers,
 not how many Sessions can be admitted or stored. The other QControllers each reconcile one shared instance. The host
 publishes input changes and operation results, while stdout and transport workers remain independent
 so native replies and ingress acknowledgements can make progress while a controller is waiting.
