@@ -635,7 +635,7 @@ fn class_names_are_bindings_but_class_evaluation_reads_remain_eager() {
 }
 
 #[test]
-fn annotated_decorate_helper_call_records_target_local_effect_not_global_sequence() {
+fn annotated_decorate_helper_keeps_target_local_effect_and_array_frontier() {
     let module = parse(
         r#"console.log("boot");
 function Ro(decorators, target, key, flags) {}
@@ -664,12 +664,15 @@ console.log("tail");"#,
             .map(|id| id.0.as_ref()),
         Some("C"),
     );
-    assert!(
-        graph.iter_edges().all(|edge| {
-            edge.reason.kind != DepKind::Sequenced
-                || (edge.from != SourceUnitId(4) && edge.to != SourceUnitId(4))
-        }),
-        "recognized decorate helper must not participate in unrelated global S edges: {:#?}",
+    let sequenced_edges: Vec<_> = graph
+        .iter_edges()
+        .filter(|edge| edge.reason.kind == DepKind::Sequenced)
+        .map(|edge| (edge.from.0, edge.to.0))
+        .collect();
+    assert_eq!(
+        sequenced_edges,
+        vec![(5, 0), (5, 4)],
+        "the call's temporary array keeps the heap-frontier edge from tail (5) to the helper call (4), while the helper remains outside the unrelated boot/tail global sequence: {:#?}",
         graph.iter_edges().collect::<Vec<_>>(),
     );
 }

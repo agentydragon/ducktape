@@ -6,6 +6,7 @@
 //! graph on demand. Blocked or size-capped frontier states are
 //! diagnostics, not proposals.
 
+use analysis::DepKind;
 use debundle_e2e_support::*;
 use peel::propose::{PeelCandidateStatus, ProposalsReport, propose};
 use spec::MemberEffect;
@@ -353,11 +354,11 @@ export { anchor, mutable, peer };
 }
 
 #[test]
-fn annotated_decorate_helper_breaks_class_plus_decorator_from_side_effect_chain() {
-    // Minified TypeScript-decorator shape: the class itself is small and
-    // peelable only with its post-class decorator application. The unrelated
-    // source-order side effects before/after the decorator should not force a
-    // mega-closure once the helper is annotated as a target-local effect.
+fn annotated_decorate_helper_keeps_temporary_array_frontier_in_landability() {
+    // Minified TypeScript-decorator shape: the class must stay with its
+    // post-class decorator application. The legacy target-local helper effect
+    // does not prove that its temporary array argument cannot be retained, so
+    // the later opaque operation must remain ordered after the decorator call.
     let chunk_source = r#"const anchor = "anchor";
 console.log("boot");
 function Ro(decorators, target, key, flags) {
@@ -372,7 +373,7 @@ console.log("tail");
 export { anchor, SearchPopoverState };
 "#;
 
-    let report = factorize_residual(
+    let fixture = residual_fixture(
         chunk_source,
         vec![
             logical_module("anchors/anchor", &[Member::new("anchor")]),
@@ -384,15 +385,41 @@ export { anchor, SearchPopoverState };
             logical_module("infra/decorators/observable", &[Member::new("Z")]),
         ],
     );
+    let graph = fixture.dependency_graph();
+    let source_unit_for_ordinal = |ordinal| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| node.statement_ordinal.0 == ordinal)
+            .unwrap_or_else(|| panic!("missing graph node at source ordinal {ordinal}"))
+            .id
+            .as_str()
+    };
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.edge_kind == DepKind::Sequenced
+                && edge.source == source_unit_for_ordinal(6)
+                && edge.target == source_unit_for_ordinal(5)
+        }),
+        "the later tail must stay ordered after the temporary-array decorator call: {:#?}",
+        graph.edges,
+    );
+    let report = propose(&graph, &BTreeMap::new(), 10_000).unwrap();
 
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["SearchPopoverState".to_string()]
-                && proposal.anonymous_statement_source_unit_ids.len() == 1
-                && proposal.source_unit_ids.len() == 2
-                && proposal.landable_today
+                && proposal.source_unit_ids
+                    == vec!["unit:1", "unit:4", "unit:5", "unit:6", "unit:7"]
+                && proposal.anonymous_statement_source_unit_ids
+                    == vec!["unit:1", "unit:5", "unit:6", "unit:7"]
+                && !proposal.landable_today
+                && proposal
+                    .landability_notes
+                    .iter()
+                    .any(|note| note.contains("import/export"))
         }),
-        "decorated class should be proposed with exactly its decorator statement, not the unrelated side-effect chain: {report:#?}",
+        "the proposer must not claim an exact, landable class-plus-decorator extraction while the conservative heap frontier retains the surrounding chain: {report:#?}",
     );
     assert!(
         !report.proposals.iter().any(|proposal| {
