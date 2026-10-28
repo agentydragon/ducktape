@@ -3,15 +3,24 @@ adds its environment-only objects to what it returns; that is what generate_mani
 disk) and the tests (synthesize it in memory via `cdk8s.Testing`) build.
 
 The caller names the Pod execution environment the chart offers and the image it runs
-(`runner_name`, `runner_image`), plus any Secret a runner workload reads as a file
-(`runner_key_files`); the chart itself takes a side in none of that.
+(`runner_name`, `runner_image`), the explicit runner control transport, plus any Secret a runner
+workload reads as a file (`runner_key_files`). The chart provisions the shared cert-manager Issuer
+and Gateway certificate; the Sandbox Controller provisions a unique leaf Certificate for each
+workload incarnation.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Literal
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from cert_manager_crds.io.cert_manager import (
+    CertificateSpecIssuerRef,
+    CertificateSpecPrivateKeyRotationPolicy,
+    CertificateSpecUsages,
+)
+from cert_manager_issuer_crds.io.cert_manager import IssuerSpecCa
 from constructs import Construct
 
 from agentplane.subjects import ServiceAccountRef
@@ -36,10 +45,21 @@ from cluster.cdk8s.agentplane import (
     telemetry,
 )
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.cert_manager import cluster_ca
+from cluster.cdk8s.cert_manager.cluster_ca import INTERNAL_ISSUER
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
+from cluster.cdk8s.providers.cert_manager.issuer import Issuer
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
+
+RUNNER_CERTIFICATE_ISSUER = runner_gateway.RUNNER_CERTIFICATE_ISSUER
+RUNNER_CA_SECRET = "agentplane-runner-ca"
+RUNNER_GATEWAY_CERTIFICATE = "agentplane-runner-gateway"
+RUNNER_GATEWAY_SECRET = runner_gateway.GATEWAY_TLS_SECRET
+RUNNER_TRUST_BUNDLE = cluster_ca.BUNDLE
+RUNNER_TRUST_BUNDLE_KEY = cluster_ca.BUNDLE_KEY
 
 
 class Namespace(Construct):
@@ -60,6 +80,45 @@ class Namespace(Construct):
         )
 
 
+def add_runner_certificates(scope: Construct, env: Environment) -> None:
+    """Provision the environment CA, Gateway leaf and namespaced Issuer with cert-manager."""
+    Certificate(
+        scope,
+        "runner-issuer-ca-certificate",
+        metadata=ApiObjectMetadata(name=RUNNER_CA_SECRET, namespace=env.namespace),
+        secret_name=RUNNER_CA_SECRET,
+        is_ca=True,
+        common_name=RUNNER_CA_SECRET,
+        duration="87600h",
+        renew_before="8760h",
+        private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
+        usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
+        issuer_ref=CertificateSpecIssuerRef(name=INTERNAL_ISSUER.name, kind="ClusterIssuer"),
+    )
+    Issuer(
+        scope,
+        "runner-issuer",
+        metadata=ApiObjectMetadata(name=RUNNER_CERTIFICATE_ISSUER, namespace=env.namespace),
+        ca=IssuerSpecCa(secret_name=RUNNER_CA_SECRET),
+    )
+    Certificate(
+        scope,
+        "runner-gateway-certificate",
+        metadata=ApiObjectMetadata(name=RUNNER_GATEWAY_CERTIFICATE, namespace=env.namespace),
+        secret_name=RUNNER_GATEWAY_SECRET,
+        uris=["spiffe://agentplane/runner-gateway"],
+        duration="24h",
+        renew_before="8h",
+        private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
+        usages=[
+            CertificateSpecUsages.DIGITAL_SIGNATURE,
+            CertificateSpecUsages.CLIENT_AUTH,
+            CertificateSpecUsages.SERVER_AUTH,
+        ],
+        issuer_ref=CertificateSpecIssuerRef(name=RUNNER_CERTIFICATE_ISSUER, kind="Issuer"),
+    )
+
+
 def environment_chart(
     app: App,
     env: Environment,
@@ -67,12 +126,14 @@ def environment_chart(
     db: database.DbProps,
     runner_name: str,
     runner_image: str,
+    runner_transport: Literal["forward", "reverse"],
     runner_key_files: Sequence[runner_sandbox.KeyFile] = (),
 ) -> Chart:
     """The shared objects. The fleet rules attach as a synth-time validation, so a caller
     may keep adding objects to the returned chart and they are still checked."""
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
+    add_runner_certificates(chart, env)
     NetworkPolicy(
         chart,
         "otel-egress",
@@ -155,7 +216,7 @@ def environment_chart(
         image=runner_image,
         key_files=runner_key_files,
         image_pull_secret_name=sandbox_pod.SECRET_NAME,
-        control_service=runner_gateway.runner_control(env.namespace),
+        runner_transport=runner_transport,
         egress_api_service=egress.agent_api(env.namespace),
     ).add_platform_resources()
     sandbox_controller.SandboxController(
@@ -165,6 +226,7 @@ def environment_chart(
         gateway=runner_gateway.service(env.namespace),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=runner_gateway.control_target(env.namespace),
+        runner_certificate_issuer=RUNNER_CERTIFICATE_ISSUER,
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()

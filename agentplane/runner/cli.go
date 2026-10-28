@@ -19,7 +19,7 @@ func CLI(ctx context.Context, args []string) error {
 	if flags.NArg() != 0 || *configPath == "" || *launchPath == "" {
 		return errors.New("--config and --launch-file are required; positional arguments are forbidden")
 	}
-	config, control, ingress, err := LoadConfiguration(*configPath, *launchPath)
+	config, ingress, err := LoadConfiguration(*configPath, *launchPath)
 	if err != nil {
 		return err
 	}
@@ -27,5 +27,5 @@ func CLI(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return runner.Run(ctx, control, ingress)
+	return runner.Run(ctx, ingress)
 }

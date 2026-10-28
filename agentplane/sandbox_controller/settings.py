@@ -29,3 +29,7 @@ class Settings(BaseSettings):
     runner_gateway_token_file: Path = Field(
         description="Projected ServiceAccount token the Runner Gateway accepts from this controller."
     )
+    runner_certificate_issuer: str = Field(
+        min_length=1,
+        description="Namespace-scoped cert-manager Issuer that signs immutable runner workload credentials.",
+    )

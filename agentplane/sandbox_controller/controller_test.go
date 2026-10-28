@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	runtimeschema "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -47,6 +48,7 @@ func testTemplate(image string) *sandboxapi.SandboxTemplate {
 	return &sandboxapi.SandboxTemplate{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: templateName},
 		Spec: sandboxapi.SandboxTemplateSpec{
+			RunnerTransport: sandboxapi.RunnerTransportReverse,
 			Pod: &corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/name": "test-runner"}},
 				Spec: corev1.PodSpec{Containers: []corev1.Container{{
@@ -80,6 +82,10 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 	if err := kubevirtv1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
+	certificateGV := runnerCertificateGVK.GroupVersion()
+	scheme.AddKnownTypeWithName(runnerCertificateGVK, &unstructured.Unstructured{})
+	scheme.AddKnownTypeWithName(certificateGV.WithKind("CertificateList"), &unstructured.UnstructuredList{})
+	metav1.AddToGroupVersion(scheme, certificateGV)
 	sandbox := &sandboxapi.Sandbox{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName, UID: "uid-sandbox"},
 		Spec:       sandboxapi.SandboxSpec{Template: templateName, Running: running},
@@ -95,16 +101,62 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 			if _, claim := obj.(*corev1.PersistentVolumeClaim); claim && obj.GetUID() == "" {
 				obj.SetUID(types.UID("uid-" + obj.GetName()))
 			}
+			// A Pod needs its server-assigned UID before the next credential reconcile can bind
+			// the issued URI identity to this workload incarnation. Keep the fixture's existing
+			// stable UID so tests that publish a matching Runner Lease exercise that incarnation.
+			if _, pod := obj.(*corev1.Pod); pod && obj.GetUID() == "" {
+				obj.SetUID(types.UID("uid-pod"))
+			}
+			certificate, isUnstructured := obj.(*unstructured.Unstructured)
+			if isUnstructured && certificate.GetAPIVersion() == runnerCertificateGroup+"/"+runnerCertificateVersion && certificate.GetKind() == runnerCertificateKind {
+				certificate.Object["status"] = map[string]interface{}{"conditions": []interface{}{map[string]interface{}{
+					"type": "Ready", "status": "True",
+				}}}
+				if err := c.Create(ctx, obj, opts...); err != nil {
+					return err
+				}
+				labels := map[string]string{
+					sandboxapi.SandboxLabel:          certificate.GetLabels()[sandboxapi.SandboxLabel],
+					sandboxapi.RunnerCredentialLabel: certificate.GetLabels()[sandboxapi.RunnerCredentialLabel],
+				}
+				return c.Create(ctx, &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: certificate.GetNamespace(), Name: certificate.GetName(), Labels: labels,
+						Annotations: map[string]string{runnerCertificateNameAnnotation: certificate.GetName()},
+					},
+					Type: corev1.SecretTypeTLS,
+					Data: map[string][]byte{"tls.crt": []byte("test-cert"), "tls.key": []byte("test-key")},
+				})
+			}
 			return c.Create(ctx, obj, opts...)
 		}}).Build()
-	return &Reconciler{Client: c, Objects: c, KubeVirt: true, Quiescer: &fakeQuiescer{}, Leases: c, Now: func() time.Time { return testNow }}, c
+	return &Reconciler{
+		Client: c, Objects: c, KubeVirt: true, Quiescer: &fakeQuiescer{}, Leases: c,
+		RunnerCertificateIssuer: "test-issuer", Now: func() time.Time { return testNow },
+	}, c
 }
 
 func reconcileOnce(t *testing.T, r *Reconciler) {
 	t.Helper()
-	if _, err := r.Reconcile(context.Background(), request); err != nil {
-		t.Fatal(err)
+	for attempt := 0; attempt < 5; attempt++ {
+		if _, err := r.Reconcile(context.Background(), request); err != nil {
+			t.Fatal(err)
+		}
+		var sandbox sandboxapi.Sandbox
+		if err := r.Client.Get(context.Background(), sandboxKey, &sandbox); err != nil {
+			if apierrors.IsNotFound(err) {
+				return
+			}
+			t.Fatal(err)
+		}
+		condition := meta.FindStatusCondition(sandbox.Status.Conditions, sandboxapi.ConditionRunning)
+		credentialPending := condition != nil && (condition.Reason == "CertificatePending" || condition.Reason == "CertificateSecretPending" || condition.Reason == "RunnerCredentialCleanupPending" || condition.Reason == "RunnerCredentialPending")
+		incarnationPending := condition != nil && condition.Reason == "Starting" && sandbox.Spec.Running && sandbox.Status.Incarnation == nil && getPod(t, r.Client) != nil
+		if !credentialPending && !incarnationPending {
+			return
+		}
 	}
+	t.Fatalf("runner credential stayed pending after 5 fake-signer reconciles: %s", runningReason(t, r.Client))
 }
 
 func getSandbox(t *testing.T, c client.Client) *sandboxapi.Sandbox {
@@ -284,7 +336,7 @@ func TestStatusConditionsUseOneConnectionLeaseSnapshot(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName, UID: "uid-pod"},
 		Status:     corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 	}
-	if _, err := r.updateStatus(context.Background(), sandbox, workload{pod: pod}, nil, nil); err != nil {
+	if _, err := r.updateStatus(context.Background(), sandbox, workload{pod: pod, runnerIncarnationPublished: true}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if reader.leaseGets != 1 {
@@ -759,8 +811,11 @@ func connect(t *testing.T, c client.Client, runner string) {
 	t.Helper()
 	renewed, duration := metav1.NewMicroTime(testNow), int32(30)
 	lease := &coordinationv1.Lease{
-		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix, Annotations: map[string]string{sandboxlease.PodUIDAnnotation: runner}},
-		Spec:       coordinationv1.LeaseSpec{RenewTime: &renewed, LeaseDurationSeconds: &duration},
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName + sandboxlease.RunnerLeaseSuffix, Annotations: map[string]string{
+			sandboxlease.PodUIDAnnotation:       runner,
+			sandboxlease.RunnerBootIDAnnotation: "test-runner-boot",
+		}},
+		Spec: coordinationv1.LeaseSpec{RenewTime: &renewed, LeaseDurationSeconds: &duration},
 	}
 	if err := c.Create(context.Background(), lease); err != nil {
 		t.Fatal(err)
@@ -786,7 +841,7 @@ func TestDeletionOfASandboxNoRunnerConnectedToSealsNothing(t *testing.T) {
 func TestDeletionWaitsForTheRunnerToSealAndFlush(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
-	connect(t, c, "uid-runner")
+	connect(t, c, string(getPod(t, c).UID))
 	quiescer := r.Quiescer.(*fakeQuiescer)
 	deleteSandbox(t, c)
 	quiescer.err = errors.New("runner unreachable")
@@ -821,7 +876,7 @@ func deleteSandbox(t *testing.T, c client.Client) {
 func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
-	connect(t, c, "uid-runner")
+	connect(t, c, string(getPod(t, c).UID))
 	r.Quiescer.(*fakeQuiescer).err = errors.New("runner unreachable")
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
@@ -1086,7 +1141,10 @@ func TestFailedQuiesceWaitsAcrossNoStageEventsAndControllerRestart(t *testing.T)
 
 	// A controller restart and the status event from the attempt write both see the persisted deadline.
 	afterRestart := &fakeQuiescer{result: QuiesceResult{Quiescing: true}}
-	restarted := &Reconciler{Client: c, Objects: c, KubeVirt: true, Quiescer: afterRestart, Leases: c, Now: func() time.Time { return now }}
+	restarted := &Reconciler{
+		Client: c, Objects: c, KubeVirt: true, Quiescer: afterRestart, Leases: c,
+		RunnerCertificateIssuer: "test-issuer", Now: func() time.Time { return now },
+	}
 	// A resume followed by another suspend continues this same runner's quiesce operation; it does not
 	// make a new request intent that reopens the per-incarnation retry budget.
 	setRunning(t, c, true)

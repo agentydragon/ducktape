@@ -51,7 +51,6 @@ from trust_manager_crds.io.cert_manager.trust import (
 from agentplane.crd_group import GROUP
 from agentplane.egress.settings import Settings
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
-from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
@@ -639,12 +638,7 @@ class Egress(Construct):
                 f"{account.namespace}/{account.name}"
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
             ],
-            "projected_token_audiences": [
-                KUBERNETES_AUDIENCE,
-                notifications.TOKEN_AUDIENCE,
-                RUNNER_CONTROL_AUDIENCE,
-                RUNNER_INGRESS_AUDIENCE,
-            ],
+            "projected_token_audiences": [KUBERNETES_AUDIENCE, notifications.TOKEN_AUDIENCE, RUNNER_INGRESS_AUDIENCE],
         }
         settings = SettingsFile(
             self,

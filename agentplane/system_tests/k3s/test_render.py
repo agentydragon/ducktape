@@ -42,7 +42,11 @@ def _filled_fixture() -> rendered_fixture.RenderedFixture:
     return rendered_fixture.fill(
         cached,
         RuntimeInputs(
-            ca_cert="fixture-ca\n", ca_key="fixture-key\n", system_roots="system-roots\n", cluster_ca="cluster-ca\n"
+            ca_cert="fixture-ca\n",
+            ca_key="fixture-key\n",
+            system_roots="system-roots\n",
+            cluster_ca="cluster-ca\n",
+            runner_ca_cert="runner-ca\n",
         ),
         LocalModel(url="http://scripted-model.k3s-fixture.invalid:4000"),
         _MCP,
@@ -61,7 +65,6 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
             "ExternalSecret",
             "Password",
             "Bundle",
-            "Certificate",
             "ServiceMonitor",
             "PrometheusRule",
             "ResourceQuota",
@@ -69,6 +72,16 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         }
         for doc in docs
     )
+    assert {doc["metadata"]["name"] for doc in docs if doc["kind"] == "Certificate"} == {
+        "agentplane-runner-ca",
+        "agentplane-runner-gateway",
+    }
+    assert _resource(docs, "Issuer", "agentplane-runner-ca")["spec"]["ca"]["secretName"] == "agentplane-runner-ca"
+    gateway_certificate = _resource(docs, "Certificate", "agentplane-runner-gateway")
+    assert gateway_certificate["spec"]["uris"] == ["spiffe://agentplane/runner-gateway"]
+    assert set(gateway_certificate["spec"]["usages"]) >= {"client auth", "server auth"}
+    trust_bundle = _resource(docs, "ConfigMap", "cluster-internal-ca-bundle")
+    assert trust_bundle["data"]["ca-certificates.crt"] == "runner-ca\n"
     assert not any(
         doc["kind"] == "Deployment" and doc["metadata"]["name"] == fixture_chart.SESSION_DISPATCHER for doc in docs
     )
@@ -149,7 +162,11 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     pod = gateway["spec"]["template"]["spec"]
     container = pod["containers"][0]
     assert container["image"] == fixture_chart.RUNNER_GATEWAY_IMAGE
-    assert {port["name"]: port["containerPort"] for port in container["ports"]} == {"grpc": 8080, "http": 8081}
+    assert {port["name"]: port["containerPort"] for port in container["ports"]} == {
+        "grpc": 8080,
+        "http": 8081,
+        "runner-control": 8090,
+    }
     database_env = next(
         entry for entry in container["env"] if entry["name"] == "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
     )

@@ -17,8 +17,7 @@ from constructs import Construct
 
 from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
-from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
-from cluster.cdk8s.agentplane import history_service, runner_gateway, sandbox_pod, telemetry
+from cluster.cdk8s.agentplane import history_service, sandbox_pod, telemetry
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 
@@ -40,11 +39,6 @@ class Route:
 ROUTE_BEARER = "platform-route"
 
 
-def control(namespace: str, *, service: ServiceRef | None = None) -> Route:
-    service = service or runner_gateway.runner_control(namespace)
-    return Route("control", service, RUNNER_CONTROL_AUDIENCE, 3130)
-
-
 def ingress(namespace: str) -> Route:
     return Route("ingress", history_service.ingress_service(namespace), RUNNER_INGRESS_AUDIENCE, 3131)
 
@@ -54,13 +48,11 @@ def telemetry_route() -> Route:
     return Route("telemetry", telemetry.ALLOY_OTLP_GRPC, None, 3132)
 
 
-def routes(namespace: str, *, control_service: ServiceRef | None = None) -> tuple[Route, ...]:
-    return control(namespace, service=control_service), ingress(namespace), telemetry_route()
+def routes(namespace: str) -> tuple[Route, ...]:
+    return ingress(namespace), telemetry_route()
 
 
-def sidecar_routes(
-    namespace: str, *, control_service: ServiceRef | None = None, listen_host: str = "127.0.0.1"
-) -> dict[str, PlatformRoute]:
+def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> dict[str, PlatformRoute]:
     """The sidecar's `platform_routes` setting."""
     return {
         route.name: PlatformRoute(
@@ -68,7 +60,7 @@ def sidecar_routes(
             upstream=f"{route.service.fqdn}:{route.service.pod_port}",
             **({"token_file": Path(sandbox_pod.audience_token_file(route.audience))} if route.audience else {}),
         )
-        for route in routes(namespace, control_service=control_service)
+        for route in routes(namespace)
     }
 
 

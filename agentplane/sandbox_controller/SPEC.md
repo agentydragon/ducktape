@@ -65,6 +65,24 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   already sealed to new work, and the Sandbox is to run.
 - Each incarnation reads `spec.template` and the template as they are when it starts. Editing
   either never changes a running Pod or VM, its kind included.
+- Every `SandboxTemplate` must set `spec.runnerTransport` to `forward` or `reverse`; there is no
+  default or fallback. The controller copies that choice and a fresh runner credential ID onto the
+  live Pod or VM template as labels, so the Gateway authorizes the workload's stored choice rather
+  than rereading a mutable template.
+- Before starting a new workload, the controller creates a cert-manager `Certificate` named
+  `runner-<credential-id>` and waits for its generated TLS Secret. The leaf URI SAN is exactly
+  `spiffe://agentplane/runner/<namespace>/<Sandbox UID>/<credential-id>` and has client and server
+  authentication usages. The namespace Issuer signs it; cert-manager owns key generation and
+  renewal. Runner TLS files mount from that generation's unique Secret, and the shared trust-manager
+  CA bundle supplies the root. A renewed key can update only its own generation's Secret.
+- A Pod UID is bound to its credential before the controller publishes its incarnation. A VM's
+  first VMI UID is persisted on its VM and Sandbox. If KubeVirt unexpectedly replaces a VMI while
+  the VM still carries the old identity, the controller halts that replacement, rotates to a new
+  credential ID and Secret name, and resumes only after the old VMI is gone and the new certificate
+  is ready. A replacement never inherits a credential issued to its predecessor.
+- An older running Pod or VM without a runner credential follows the normal quiesce and stop path;
+  the controller does not halt an active VM just to install credentials. A coordinated Gateway
+  authentication rollout must wait until legacy runners are stopped.
 - Each Pod and VM carries the spec rendered from the template when it started
   (`agentplane.allegedly.works/rendered-spec`), for diffing against what the template renders now.
 - A template that does not exist, sets neither or both kinds, sets a workspace volume without `vm`, or
@@ -79,6 +97,10 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   `Halted`. Stopping keeps the VM and its disks.
 - Each start of a halted VM sets its spec from the template as it is then; its disks stay.
 - The guest gets the state PVC as a virtiofs filesystem named after the template's state volume.
+- The runner TLS Secret is a separate virtiofs config volume under a root-only guest directory.
+  The runner reads its certificate and private key there; the guest's unprivileged native-agent
+  account cannot traverse that directory. The trust-manager CA bundle is mounted separately as
+  public trust data.
 - Each of the template's DataVolume templates is named `<sandbox>-<name>`, and the template's
   volumes naming it follow. Those disks belong to the VM: they outlive stops and go with the VM.
 - Optional `workspaceVolume` declares a retained workspace's name, claim and required layout:
@@ -111,8 +133,10 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 
 ## Control Service
 
-Every Sandbox has a headless, selector-less `<sandbox>-control` Service on the Runner Gateway
-control port. The controller repairs its managed fields; the Gateway owns its EndpointSlice.
+Every Sandbox has a headless, selector-less `<sandbox>-control` Service on the Runner Gateway's
+public proxy port, 8080. Callers use their workload bearers to reach the connection holder through
+this Service. Reverse runners dial the stable private mTLS Gateway Service on port 8090.
+The controller repairs the per-Sandbox Service's managed fields; the Gateway owns its EndpointSlice.
 A foreign same-name Service blocks new workload starts.
 
 ## Launch
@@ -131,8 +155,9 @@ A foreign same-name Service blocks new workload starts.
   acknowledged each seal, so history holds every Session through its seal before its state goes.
   A stopped Sandbox runs once more to seal only if the runner that last connected is not the one
   recorded in `status.quiescedIncarnation`; one sealed when it was suspended is deleted as it is.
-- Then the Pod or VM is deleted, then, once it and any VMI are gone, the finalizer clears and the
-  PVC goes with the Sandbox.
+- Then the Pod or VM is deleted, then, once it and any VMI are gone, the controller removes old
+  runner Certificate resources and their cert-manager-generated TLS Secrets. The finalizer clears
+  and the PVC goes with the Sandbox only after that cleanup finishes.
 - A Sandbox without a state PVC of its own never had a runner, so nothing is sealed.
 - Nothing forces a seal: a Sandbox whose seal cannot complete is cleared by removing its finalizer by hand.
 - The Pod or VM and the Sandbox's ServiceAccount are owned by the Sandbox with `blockOwnerDeletion`, so
@@ -146,9 +171,16 @@ A foreign same-name Service blocks new workload starts.
 virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunning`) or the VMI runs
 (`VMRunning`). Otherwise it is False, with reason `Stopped`, `Starting`, `PullingImage`, `Stopping`, `PodEnded`,
 `VMEnded`, `SuspendPending`, `Quiescing`, `Deleting`,
-`TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `VolumeLayoutMismatch`, `ServiceAccountConflict`,
-`PolicyBindingConflict`, `PodConflict` or `VMConflict` (a Pod or VM of the Sandbox's name that
-it does not control). `SuspendPending` holds a suspend while the runner's bootstrap is still running, so the
+`TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `VolumeLayoutMismatch`,
+`RunnerTransportMissing`, `RunnerCredentialMissing`, `RunnerCredentialRequired`,
+`RunnerCredentialPending`, `RunnerCredentialMismatch`, `RunnerCredentialCleanupPending`,
+`RunnerCertificateIssuerMissing`, `CertificatePending`, `CertificateConflict`,
+`CertificateIdentityConflict`, `CertificateSecretPending`, `CertificateSecretConflict`,
+`VMIStopping`, `IncarnationUnpublished`, `ServiceAccountConflict`, `PolicyBindingConflict`,
+`PodConflict` or `VMConflict`
+(a Pod or VM of the Sandbox's name that it does not control). Credential and certificate pending
+reasons requeue while cert-manager provisions or cleans up generation-specific resources; conflicts
+keep the workload from starting until resolved. `SuspendPending` holds a suspend while the runner's bootstrap is still running, so the
 suspend never interrupts it; a delete does not wait. While a scheduled Pod is Pending, the reason is
 `PullingImage` when its latest Event is an image pull, and the message carries that latest Event;
 when no Event can be read the message says only that the Pod is not running yet.
@@ -160,8 +192,10 @@ with the reason and message of `Running`.
 `RunnerConnected` is True while the Runner Gateway's connection Lease for the Sandbox names the
 incarnation's Pod and was renewed within its duration plus a grace, so a connection from an earlier
 incarnation never counts and a gateway rollout's brief drop does not. It is False with `NeverConnected`,
-`AwaitingRunner`, `ConnectionLost` or `WorkloadNotReady`. Losing the connection restarts and replaces
-nothing. A controller not configured to read Leases omits it.
+`AwaitingRunner`, `ConnectionLost`, `ConnectionPending` or `WorkloadNotReady`. `ConnectionPending`
+means the authenticated forward connection has not reported its runner boot ID, so it is not yet a
+live connection. Losing the connection restarts and replaces nothing. A controller not configured to
+read Leases omits it.
 
 `Bootstrapped` is True once the Sandbox's bootstrap has run to success, and when the Sandbox has
 none (`NoBootstrap`). It is Unknown with `BootstrapNotReported` while the incarnation's runner has

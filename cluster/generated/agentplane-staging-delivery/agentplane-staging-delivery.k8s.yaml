@@ -13,6 +13,13 @@ data:
       - agentplane-staging/app
       - agentplane-staging/notifications
       - agentplane-staging/runner-gateway
+    runner_transports:
+      - forward
+      - reverse
+    runner_tls:
+      cert_file: /run/agentplane/runner-tls/tls.crt
+      key_file: /run/agentplane/runner-tls/tls.key
+      ca_file: /run/agentplane/runner-tls/ca.crt
     wake_callers:
       - agentplane-staging/actions
       - agentplane-staging/app
@@ -69,8 +76,10 @@ spec:
               value: session-dispatcher
             - name: AGENTPLANE_RUNNER_GATEWAY_GATEWAY_AUDIENCE
               value: agentplane-runner-gateway
-            - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_AUDIENCE
-              value: agentplane-runner-control
+            - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_CONTROL_TARGET_TEMPLATE
+              value: "{sandbox}-control.{namespace}.svc:8080"
+            - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_LISTEN_ADDRESS
+              value: 0.0.0.0:8090
             - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_CONTROLLER_ACCOUNT
               value: agentplane-staging/sandbox-controller
             - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL
@@ -109,6 +118,9 @@ spec:
             - containerPort: 8080
               name: grpc
               protocol: TCP
+            - containerPort: 8090
+              name: runner-control
+              protocol: TCP
             - containerPort: 8081
               name: http
               protocol: TCP
@@ -135,6 +147,9 @@ spec:
           volumeMounts:
             - mountPath: /etc/agentplane-runner-gateway/settings
               name: configmap-runner-gateway-settings
+              readOnly: true
+            - mountPath: /run/agentplane/runner-tls
+              name: runner-tls
               readOnly: true
             - mountPath: /var/run/secrets/agentplane-runner-gateway
               name: runner-gateway-token
@@ -186,6 +201,22 @@ spec:
         - configMap:
             name: runner-gateway-settings
           name: configmap-runner-gateway-settings
+        - name: runner-tls
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: tls.crt
+                      path: tls.crt
+                    - key: tls.key
+                      path: tls.key
+                  name: agentplane-runner-gateway-tls
+              - configMap:
+                  items:
+                    - key: ca-certificates.crt
+                      path: ca.crt
+                  name: cluster-internal-ca-bundle
         - name: runner-gateway-token
           projected:
             sources:
@@ -246,6 +277,22 @@ rules:
       - list
       - watch
   - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachineinstances
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachines
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - agentplane.allegedly.works
     resources:
       - sandboxes
@@ -288,39 +335,6 @@ subjects:
     name: runner-gateway
     namespace: agentplane-staging
 ---
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
-  name: agentplane-runner-control
-  namespace: agentplane-staging
-spec:
-  description: The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's control stream to the Runner Gateway. It conveys no other authority.
-  source:
-    projectedWorkloadToken:
-      audience: agentplane-runner-control
-  targets:
-    - header: Authorization
-      method: schemeToken
-      scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  name: runner-control
-  namespace: agentplane-staging
-spec:
-  rules:
-    - clusterInternal: true
-      credentialRef:
-        name: agentplane-runner-control
-      hosts:
-        - runner-gateway.agentplane-staging.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /agentplane.runner_gateway.RunnerControl/Connect
-      type: egress
----
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -355,6 +369,15 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            agentplane.allegedly.works/runner-transport: forward
+            app.kubernetes.io/name: agentplane-runner
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "9090"
               protocol: TCP
   endpointSelector:
     matchLabels:
@@ -424,28 +447,10 @@ spec:
               protocol: TCP
     - fromEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: egress
+            agentplane.allegedly.works/runner-transport: reverse
+            app.kubernetes.io/name: agentplane-runner
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "8090"
               protocol: TCP
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: runner-gateway-runner-control-proxy
-  namespace: agentplane-staging
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: egress

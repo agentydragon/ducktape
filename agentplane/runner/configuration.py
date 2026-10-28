@@ -22,6 +22,70 @@ class Endpoint(BaseModel):
     bearer: str = Field(min_length=1, description="Bearer presented to the platform route.")
 
 
+class RunnerTransportTLS(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    cert_file: str = Field(min_length=1)
+    key_file: str = Field(min_length=1)
+    ca_file: str = Field(min_length=1)
+
+    @field_validator("cert_file", "key_file", "ca_file")
+    @classmethod
+    def absolute_file(cls, value: str) -> str:
+        if not Path(value).is_absolute():
+            raise ValueError("Runner control TLS paths must be absolute")
+        return value
+
+
+def _valid_host_port(value: str, field: str) -> str:
+    try:
+        parsed = urlsplit(f"//{value}")
+        port = parsed.port
+    except ValueError as error:
+        raise ValueError(f"{field} must be host:port") from error
+    if (
+        not parsed.hostname
+        or port is None
+        or not 1 <= port <= 65535
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(f"{field} must be host:port")
+    return value
+
+
+class ReverseControl(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    mode: Literal["reverse"]
+    target: str = Field(min_length=1, description="Private Runner Gateway host:port.")
+    tls: RunnerTransportTLS
+
+    @field_validator("target")
+    @classmethod
+    def valid_target(cls, value: str) -> str:
+        return _valid_host_port(value, "control.target")
+
+
+class ForwardControl(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    mode: Literal["forward"]
+    listen_address: str = Field(min_length=1, description="Runner gRPC listener host:port.")
+    tls: RunnerTransportTLS
+
+    @field_validator("listen_address")
+    @classmethod
+    def valid_listen_address(cls, value: str) -> str:
+        return _valid_host_port(value, "control.listen_address")
+
+
+RunnerControl = Annotated[ReverseControl | ForwardControl, Field(discriminator="mode")]
+
+
 class ResourceLimits(BaseModel):
     """A cgroup-v2 budget; CPU quota is per fixed 100,000 microsecond period."""
 
@@ -217,7 +281,7 @@ class Configuration(BaseModel):
     state_dir: str
     workspace_root: str | None = None
     initialization_cwd: str
-    control: Endpoint
+    control: RunnerControl
     ingress: Endpoint
     platform_instructions: str = Field(min_length=1)
     runner_environment: EnvironmentVariables = Field(default_factory=EnvironmentVariables)

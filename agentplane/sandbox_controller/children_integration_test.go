@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -25,6 +27,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -38,12 +41,99 @@ func eventually(t *testing.T, check func() bool) {
 	}
 }
 
+func withRunnerCertificateCRD(t *testing.T) kubeapiserver.Option {
+	t.Helper()
+	directory := t.TempDir()
+	manifest := `apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: certificates.cert-manager.io
+spec:
+  group: cert-manager.io
+  names:
+    plural: certificates
+    singular: certificate
+    kind: Certificate
+    listKind: CertificateList
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+          properties:
+            spec:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        status: {}
+`
+	if err := os.WriteFile(filepath.Join(directory, "certificate.yaml"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return func(environment *envtest.Environment) {
+		environment.CRDDirectoryPaths = append(environment.CRDDirectoryPaths, directory)
+	}
+}
+
+func runFakeCertificateSigner(ctx context.Context, objects client.Client, namespace string) error {
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		certificates := &unstructured.UnstructuredList{}
+		certificates.SetGroupVersionKind(runnerCertificateGVK.GroupVersion().WithKind("CertificateList"))
+		if err := objects.List(ctx, certificates, client.InNamespace(namespace)); err != nil {
+			return err
+		}
+		for i := range certificates.Items {
+			certificate := &certificates.Items[i]
+			if !certificateReady(certificate) {
+				certificate.Object["status"] = map[string]interface{}{"conditions": []interface{}{map[string]interface{}{
+					"type": "Ready", "status": "True",
+				}}}
+				if err := objects.Status().Update(ctx, certificate); err != nil && !apierrors.IsConflict(err) {
+					return err
+				}
+			}
+			labels := map[string]string{
+				sandboxapi.SandboxLabel:          certificate.GetLabels()[sandboxapi.SandboxLabel],
+				sandboxapi.RunnerCredentialLabel: certificate.GetLabels()[sandboxapi.RunnerCredentialLabel],
+			}
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: certificate.GetNamespace(), Name: certificate.GetName(), Labels: labels,
+					Annotations: map[string]string{runnerCertificateNameAnnotation: certificate.GetName()},
+				},
+				Type: corev1.SecretTypeTLS,
+				Data: map[string][]byte{"tls.crt": []byte("test-cert"), "tls.key": []byte("test-key")},
+			}
+			if err := objects.Create(ctx, secret); err != nil && !apierrors.IsAlreadyExists(err) {
+				return err
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+	}
+}
+
 // Exercise a real API server without KubeVirt and real SSA field ownership and manager watches.
 func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	ctrl.SetLogger(logr.FromSlogHandler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	// Kubernetes defaults selector-less headless Services to dual-stack. Configure both
 	// families so their defaulted fields also pass validation on later drift updates.
-	kube, err := kubeapiserver.Start(kubeapiserver.WithAPIServerFlag("service-cluster-ip-range", "10.0.0.0/24,fd00::/108"))
+	kube, err := kubeapiserver.Start(
+		kubeapiserver.WithAPIServerFlag("service-cluster-ip-range", "10.0.0.0/24,fd00::/108"),
+		withRunnerCertificateCRD(t),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +177,10 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &Reconciler{Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: false, Leases: mgr.GetClient(), Now: time.Now}
+	r := &Reconciler{
+		Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: false, Leases: mgr.GetClient(),
+		RunnerCertificateIssuer: "test-issuer", Now: time.Now,
+	}
 	if err := r.SetupWithManager(mgr); err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +188,8 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		t.Fatal(err)
 	}
 	template := &sandboxapi.SandboxTemplate{ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: ns}, Spec: sandboxapi.SandboxTemplateSpec{
-		Pod: &corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: RunnerContainer, Image: "example.invalid/runner:v1"}}}},
+		RunnerTransport: sandboxapi.RunnerTransportReverse,
+		Pod:             &corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: RunnerContainer, Image: "example.invalid/runner:v1"}}}},
 		StateVolume: sandboxapi.StateVolume{Name: "state", Layout: sandboxapi.VolumeLayout{Type: sandboxapi.DirectoryTree}, Claim: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources:   corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}},
@@ -109,6 +203,14 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	t.Cleanup(func() {
 		cancel()
 		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	})
+	signerDone := make(chan error, 1)
+	go func() { signerDone <- runFakeCertificateSigner(ctx, objects, ns) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-signerDone; err != nil {
 			t.Error(err)
 		}
 	})

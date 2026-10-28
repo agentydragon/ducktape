@@ -62,6 +62,7 @@ class SandboxController(Construct):
         gateway: ServiceRef,
         gateway_audience: str,
         gateway_control_target: str,
+        runner_certificate_issuer: str,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
@@ -81,6 +82,7 @@ class SandboxController(Construct):
                 "health_probe_bind_address": f":{_HEALTH_PORT}",
                 "runner_gateway_target": gateway_control_target,
                 "runner_gateway_token_file": f"{_GATEWAY_TOKEN_DIR}/token",
+                "runner_certificate_issuer": runner_certificate_issuer,
             }.items()
         }
         workload = add_service_workload(
@@ -123,6 +125,14 @@ class SandboxController(Construct):
                 RolePolicyRule(
                     resources=[custom_resource("", "pods")], verbs=["get", "list", "watch", "create", "delete"]
                 ),
+                # Per-incarnation cert-manager requests. cert-manager owns every generated key and
+                # certificate; the controller only creates/deletes Certificate declarations and
+                # reads the resulting leaf Secret before attaching it to a workload.
+                RolePolicyRule(
+                    resources=[custom_resource("cert-manager.io", "certificates")],
+                    verbs=["get", "list", "create", "delete"],
+                ),
+                RolePolicyRule(resources=[custom_resource("", "secrets")], verbs=["get", "list", "delete"]),
                 # Update adds and removes the Sandbox owner reference; patch backfills the durable
                 # state-volume layout record on an older controller-owned claim.
                 RolePolicyRule(

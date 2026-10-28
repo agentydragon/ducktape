@@ -25,21 +25,21 @@ their cdk8s authors at `b3ec6c38b6`. This is desired configuration, not a live t
 The table's schemes and ports are the proposed permitted origins; current rules do not restrict
 either. Retain existing host, method, path, and identity restrictions.
 
-| Credentials and destinations                                                                          | Proposed origins                    | Authoritative source                                                                       |
-| ----------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------ |
-| `github-pat`: GitHub API, Git, codeload, and GitHub content hosts; `buildbuddy`: app and remote hosts | HTTPS 443                           | `cluster/cdk8s/agentplane/egress.py`                                                       |
-| `google-readonly`, `grocy-sf-readonly`, `activitywatch-read`, public `aiquota-read`, `haku-mailbox`   | HTTPS 443                           | `cluster/cdk8s/agentplane/egress_staging_credentials.py` and `actions_staging_policies.py` |
-| Public `forgejo-haku` and `forgejo-finance-agent`: `git.allegedly.works`                              | HTTPS 443                           | `egress_staging_credentials.py::_forgejo_rules`                                            |
-| `brave-search`, `public-coder-matrix`, plus reused GitHub/AIQuota credentials                         | HTTPS 443                           | `cluster/cdk8s/public_coder/egress.py`                                                     |
-| `agentplane-workload`: LLM ingress and Actions; `agentplane-notifications-workload`: Notifications    | HTTP 8080                           | `cluster/cdk8s/agentplane/{egress,llm_ingress,actions,notifications}.py`                   |
-| `agentplane-workload`: egress rules/discovery API                                                     | HTTP 80                             | `egress.py::agent_api`                                                                     |
-| `agentplane-runner-ingress`: History ingress; `agentplane-runner-control`: Gateway control            | HTTP/h2c 8081 and 8082 respectively | `history_service.py::ingress_service`, `runner_gateway.py::runner_control`                 |
-| `kubernetes-workload`: `kubernetes.default.svc.cluster.local`                                         | HTTPS 443                           | `egress.py`, `sandbox_pod.py`                                                              |
-| `ollama`, `litellm-cheap-experiments`                                                                 | HTTP 11435 and 4000 respectively    | `egress.py::_egress_policies`, Ollama and LiteLLM Service definitions                      |
-| Internal Forgejo credentials and existing host aliases                                                | HTTP 3000                           | `egress_staging_credentials.py::_forgejo_rules`, `cluster/cdk8s/forgejo/app.py`            |
-| `home-assistant-readonly`; internal `aiquota-read`                                                    | HTTP 8123 and 8080 respectively     | `home_assistant_read_egress_rules`, `cluster/cdk8s/aiquota.py`                             |
-| `clickhouse-aiquota-history-credentials`, `public-coder-clickhouse`                                   | HTTP 8123                           | `cluster/cdk8s/clickhouse/client.py` and the granting PolicySets                           |
-| `plaid-pgweb`                                                                                         | HTTP 80                             | `cluster/cdk8s/plaid_mcp/pgweb.py` and `cluster/cdk8s/agent_access_profiles.py`            |
+| Credentials and destinations                                                                          | Proposed origins                 | Authoritative source                                                                       |
+| ----------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------ |
+| `github-pat`: GitHub API, Git, codeload, and GitHub content hosts; `buildbuddy`: app and remote hosts | HTTPS 443                        | `cluster/cdk8s/agentplane/egress.py`                                                       |
+| `google-readonly`, `grocy-sf-readonly`, `activitywatch-read`, public `aiquota-read`, `haku-mailbox`   | HTTPS 443                        | `cluster/cdk8s/agentplane/egress_staging_credentials.py` and `actions_staging_policies.py` |
+| Public `forgejo-haku` and `forgejo-finance-agent`: `git.allegedly.works`                              | HTTPS 443                        | `egress_staging_credentials.py::_forgejo_rules`                                            |
+| `brave-search`, `public-coder-matrix`, plus reused GitHub/AIQuota credentials                         | HTTPS 443                        | `cluster/cdk8s/public_coder/egress.py`                                                     |
+| `agentplane-workload`: LLM ingress and Actions; `agentplane-notifications-workload`: Notifications    | HTTP 8080                        | `cluster/cdk8s/agentplane/{egress,llm_ingress,actions,notifications}.py`                   |
+| `agentplane-workload`: egress rules/discovery API                                                     | HTTP 80                          | `egress.py::agent_api`                                                                     |
+| `agentplane-runner-ingress`: History ingress                                                          | HTTP/h2c 8081                    | `history_service.py::ingress_service`                                                      |
+| `kubernetes-workload`: `kubernetes.default.svc.cluster.local`                                         | HTTPS 443                        | `egress.py`, `sandbox_pod.py`                                                              |
+| `ollama`, `litellm-cheap-experiments`                                                                 | HTTP 11435 and 4000 respectively | `egress.py::_egress_policies`, Ollama and LiteLLM Service definitions                      |
+| Internal Forgejo credentials and existing host aliases                                                | HTTP 3000                        | `egress_staging_credentials.py::_forgejo_rules`, `cluster/cdk8s/forgejo/app.py`            |
+| `home-assistant-readonly`; internal `aiquota-read`                                                    | HTTP 8123 and 8080 respectively  | `home_assistant_read_egress_rules`, `cluster/cdk8s/aiquota.py`                             |
+| `clickhouse-aiquota-history-credentials`, `public-coder-clickhouse`                                   | HTTP 8123                        | `cluster/cdk8s/clickhouse/client.py` and the granting PolicySets                           |
+| `plaid-pgweb`                                                                                         | HTTP 80                          | `cluster/cdk8s/plaid_mcp/pgweb.py` and `cluster/cdk8s/agent_access_profiles.py`            |
 
 ## Alternatives and recommendation
 
@@ -62,7 +62,8 @@ granting the cross-product of independent scheme and port lists.
 
 For review: choose the rule-local origin-pair model versus the deployment allowlist, and approve
 the explicit internal plaintext set. This proposal does not select a routing change, move
-credentials into the sidecar, or migrate internal services to TLS.
+credentials into the sidecar, or migrate internal services to TLS. Runner control uses a separate
+mTLS Gateway listener and is outside this bearer-substitution inventory.
 
 ## Enforcement and implementation acceptance
 

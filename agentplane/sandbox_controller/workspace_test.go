@@ -151,6 +151,12 @@ func TestWorkspaceChangeRefusesResumeAndRetainsClaimAndHaltedVM(t *testing.T) {
 func TestWorkspaceRestartRecoversCreationRecordAfterFailedStatusWrite(t *testing.T) {
 	template := workspaceTemplate("vm", sandboxapi.RawDiskImage)
 	r, c := newReconciler(t, true, template)
+	// The fake signer makes the Certificate Ready at creation, while this reconcile records that
+	// the controller is still waiting for that issued identity. Install the injected failure only
+	// once the next reconcile can reach workspace binding.
+	if _, err := r.Reconcile(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
 	failure := errors.New("controller interrupted before binding persistence")
 	r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
 		SubResourceUpdate: func(ctx context.Context, c client.Client, name string, obj client.Object, opts ...client.SubResourceUpdateOption) error {

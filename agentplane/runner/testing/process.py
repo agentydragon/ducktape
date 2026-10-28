@@ -12,7 +12,7 @@ from uuid import uuid4
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner import runner_service_pb2_grpc
-from agentplane.runner.configuration import Endpoint
+from agentplane.runner.configuration import Endpoint, RunnerControl
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.gateway import Gateway
@@ -28,7 +28,7 @@ class RunningRunner:
         *,
         history: HistoryServiceClient,
         ingress_endpoint: Endpoint,
-        control_endpoint: Endpoint | None = None,
+        control_endpoint: RunnerControl | None = None,
     ) -> None:
         self.config = config
         self.gateway = gateway
@@ -102,7 +102,7 @@ class RunningRunner:
             raise RuntimeError(f"Go runner exited with {self.process.returncode}; see {self.log_path}")
 
     async def restart(
-        self, *, control_endpoint: Endpoint | None = None, ingress_endpoint: Endpoint | None = None
+        self, *, control_endpoint: RunnerControl | None = None, ingress_endpoint: Endpoint | None = None
     ) -> None:
         await self.stop()
         if control_endpoint is not None:

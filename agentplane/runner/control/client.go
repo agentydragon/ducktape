@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/stream"
 	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
+	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -28,7 +29,7 @@ const (
 // Endpoint is one authenticated Runner Gateway destination.
 type Endpoint struct {
 	Target string
-	Bearer string
+	TLS    runnertransport.Config
 }
 
 // ExecutorConnection owns the Runner's executor channels for one control connection.
@@ -89,7 +90,11 @@ func (c *Client) Run(ctx context.Context, endpoint Endpoint) error {
 }
 
 func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
-	conn, err := stream.NewConnection(endpoint.Target)
+	credentials, err := endpoint.TLS.ClientCredentials(runnertransport.GatewayURI)
+	if err != nil {
+		return false, err
+	}
+	conn, err := stream.NewSecureConnection(endpoint.Target, credentials)
 	if err != nil {
 		return false, err
 	}
@@ -110,7 +115,7 @@ func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
 		receiving.Wait()
 		adoption.Wait()
 	}()
-	controlStream, err := controlpb.NewRunnerControlClient(conn).Connect(stream.Authenticated(ctx, endpoint.Bearer))
+	controlStream, err := controlpb.NewRunnerControlClient(conn).Connect(ctx)
 	if err != nil {
 		return false, err
 	}

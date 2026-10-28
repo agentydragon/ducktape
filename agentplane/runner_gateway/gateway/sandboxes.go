@@ -7,14 +7,12 @@ import (
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -165,50 +163,4 @@ func podIsReadyForSandbox(pod *corev1.Pod, sandbox sandboxView) bool {
 	}
 	return owner.APIVersion == sandboxVMIAPIVer && owner.Kind == sandboxVMIKind &&
 		pod.Labels[sandboxapi.SandboxLabel] == sandbox.identity.Name
-}
-
-func (r *sandboxResolver) runnerPeer(ctx context.Context, principal auth.Principal) (sandboxreader.Identity, string, error) {
-	if principal.Account.Namespace != r.namespace || principal.PodName == "" || principal.PodUID == "" {
-		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-	}
-	pod, err := r.core.Pods(r.namespace).Get(ctx, principal.PodName, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		return sandboxreader.Identity{}, "", status.Error(codes.Unauthenticated, "invalid workload bearer")
-	}
-	if err != nil {
-		return sandboxreader.Identity{}, "", fmt.Errorf("read runner Pod: %w", err)
-	}
-	if string(pod.UID) != principal.PodUID || pod.DeletionTimestamp != nil && !pod.DeletionTimestamp.IsZero() {
-		return sandboxreader.Identity{}, "", status.Error(codes.Unauthenticated, "invalid workload bearer")
-	}
-	owner := metav1.GetControllerOf(pod)
-	if owner == nil {
-		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-	}
-	sandboxName := owner.Name
-	if owner.APIVersion == sandboxVMIAPIVer && owner.Kind == sandboxVMIKind {
-		sandboxName = pod.Labels[sandboxapi.SandboxLabel]
-		if sandboxName == "" {
-			return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-		}
-	} else if owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Kind != sandboxapi.SandboxKind {
-		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-	}
-	view, err := r.get(ctx, sandboxName)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-		}
-		return sandboxreader.Identity{}, "", err
-	}
-	if principal.Account.Name != view.identity.Name {
-		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-	}
-	if owner.APIVersion == sandboxapi.GroupVersion.String() && owner.UID != types.UID(view.identity.UID) {
-		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-	}
-	if owner.APIVersion == sandboxVMIAPIVer && (view.incarnation == nil || view.incarnation.UID != string(pod.UID)) {
-		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "not a Sandbox Pod")
-	}
-	return view.identity, string(pod.UID), nil
 }

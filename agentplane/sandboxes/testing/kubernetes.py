@@ -20,12 +20,16 @@ from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.launch import SandboxIdentity
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
+from agentplane.testing.tls import runner_identity_uri
 from util.kubernetes import CustomObjectsClient
 
 # gazelle:include_dep @pypi//protobuf
 
 SANDBOX = "test-runner"
 _MERGE_PATCH = "application/merge-patch+json"
+_RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/runner-credential"
+_RUNNER_TRANSPORT_LABEL = "agentplane.allegedly.works/runner-transport"
+_RUNNER_CREDENTIAL_ID = "test-runner-credential"
 
 
 @dataclass(frozen=True)
@@ -54,6 +58,10 @@ class SandboxCluster:
         return SandboxDestination(
             owner=ServiceAccount(namespace=self.namespace, name=self.name), sandbox=self.name, sandbox_uid=self.uid
         )
+
+    @property
+    def runner_identity_uri(self) -> str:
+        return runner_identity_uri(self.namespace, self.uid, _RUNNER_CREDENTIAL_ID)
 
     async def pod_token(self, audience: str) -> str:
         """A token bound to the runner Pod, as its runner container holds one."""
@@ -136,6 +144,7 @@ async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -
         k8s_client.V1Pod(
             metadata=k8s_client.V1ObjectMeta(
                 name=name,
+                labels={_RUNNER_CREDENTIAL_LABEL: _RUNNER_CREDENTIAL_ID, _RUNNER_TRANSPORT_LABEL: "reverse"},
                 owner_references=[
                     k8s_client.V1OwnerReference(
                         api_version=sandbox_resource.SANDBOX_API_VERSION,

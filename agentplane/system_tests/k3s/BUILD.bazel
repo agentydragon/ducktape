@@ -232,6 +232,7 @@ py_library(
     deps = [
         ":block_storage",
         ":bootstrap",
+        ":certificate_issuer",
         ":guest_logs",
         ":iptables_rule",
         ":rendered_fixture",
@@ -246,9 +247,35 @@ py_library(
 )
 
 py_library(
+    name = "certificate_issuer",
+    testonly = True,
+    srcs = ["certificate_issuer.py"],
+    deps = [
+        "//agentplane/testing:tls",
+        "@pypi//cryptography",
+        "@pypi//kubernetes",
+    ],
+)
+
+py_test(
+    name = "test_certificate_issuer",
+    srcs = ["test_certificate_issuer.py"],
+    deps = [
+        ":certificate_issuer",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/testing:tls",
+        "@pypi//cryptography",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "fixture_chart",
     testonly = True,
     srcs = ["fixture_chart.py"],
+    visibility = ["//agentplane/system_tests:__pkg__"],
     deps = [
         ":block_storage",
         ":dex",

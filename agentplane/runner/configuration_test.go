@@ -16,7 +16,9 @@ func configurationFixture(t *testing.T) (map[string]any, string, string) {
 	value := map[string]any{
 		"environment": map[string]any{"kind": "pod", "supervision": "subprocess"},
 		"version":     2, "state_dir": filepath.Join(directory, "state"), "initialization_cwd": directory,
-		"control":               map[string]string{"target": "gateway.test:7100", "bearer": "control-placeholder"},
+		"control": map[string]any{"mode": "reverse", "target": "gateway.test:7100", "tls": map[string]string{
+			"cert_file": "/run/test/tls.crt", "key_file": "/run/test/tls.key", "ca_file": "/run/test/ca.crt",
+		}},
 		"ingress":               map[string]string{"target": "history.test:8081", "bearer": "ingress-placeholder"},
 		"platform_instructions": "Test guidance.",
 		"runner_environment":    map[string]any{"values": map[string]string{"TOOL_ROUTE": "http://tools.test"}},
@@ -54,7 +56,7 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 				value["environment"] = environment
 			}
 			writeJSONFixture(t, path, value)
-			config, control, ingress, environment, err := loadConfiguration(path, launchPath)
+			config, ingress, environment, err := loadConfiguration(path, launchPath)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -70,8 +72,8 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 					t.Fatal("executor limits differ from VM resource policy")
 				}
 			}
-			if control.Target != "gateway.test:7100" || ingress.Target != "history.test:8081" {
-				t.Fatalf("endpoints = %v %v", control, ingress)
+			if config.Control.Target != "gateway.test:7100" || ingress.Target != "history.test:8081" {
+				t.Fatalf("endpoints = %v %v", config.Control, ingress)
 			}
 			want := map[string]string{"PATH": "/image/bin", "TOOL_ROUTE": "http://tools.test", "HOME": filepath.Dir(path)}
 			if !reflect.DeepEqual(config.HarnessEnvironment, want) {
@@ -109,7 +111,16 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		{"relative state", func(v map[string]any) { v["state_dir"] = "relative" }},
 		{"missing initialization cwd", func(v map[string]any) { delete(v, "initialization_cwd") }},
 		{"empty workspace root", func(v map[string]any) { v["workspace_root"] = "" }},
-		{"missing bearer", func(v map[string]any) { v["control"] = map[string]string{"target": "gateway.test:7100"} }},
+		{"missing control mode", func(v map[string]any) { v["control"] = map[string]any{"target": "gateway.test:7100"} }},
+		{"legacy bearer control", func(v map[string]any) {
+			v["control"] = map[string]string{"target": "gateway.test:7100", "bearer": "old-token"}
+		}},
+		{"reverse with listen address", func(v map[string]any) {
+			v["control"].(map[string]any)["listen_address"] = "0.0.0.0:8090"
+		}},
+		{"missing mTLS material", func(v map[string]any) {
+			v["control"].(map[string]any)["tls"] = map[string]string{"cert_file": "/run/test/tls.crt", "key_file": "/run/test/tls.key"}
+		}},
 		{"bad endpoint", func(v map[string]any) {
 			v["ingress"] = map[string]string{"target": "host:notaport", "bearer": "placeholder"}
 		}},
@@ -169,7 +180,7 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 			value, path, launchPath := configurationFixture(t)
 			test.update(value)
 			writeJSONFixture(t, path, value)
-			if _, _, _, err := LoadConfiguration(path, launchPath); err == nil {
+			if _, _, err := LoadConfiguration(path, launchPath); err == nil {
 				t.Fatal("accepted invalid configuration")
 			}
 			if os.Getenv("TOOL_ROUTE") != "original" {
@@ -185,7 +196,7 @@ func TestConfigurationUsesExplicitSessionReconcileConcurrency(t *testing.T) {
 	value["session_reconcile_concurrency"] = 2048
 	writeJSONFixture(t, path, value)
 
-	config, _, _, _, err := loadConfiguration(path, launchPath)
+	config, _, _, err := loadConfiguration(path, launchPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +215,7 @@ func TestConfigurationRejectsLaunchFieldsOutsideControllerContract(t *testing.T)
 			t.Fatal(err)
 		}
 		writeJSONFixture(t, launchPath, launch)
-		if _, _, _, _, err := loadConfiguration(path, launchPath); err == nil {
+		if _, _, _, err := loadConfiguration(path, launchPath); err == nil {
 			t.Fatalf("accepted invalid launch %s", data)
 		}
 	}

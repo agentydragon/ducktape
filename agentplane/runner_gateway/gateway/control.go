@@ -9,6 +9,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc"
@@ -155,14 +156,12 @@ func (s *runnerControlServer) Connect(stream grpc.BidiStreamingServer[runnercont
 	timing := g.config.ControlTiming
 	ctx := stream.Context()
 
-	resolveCtx, cancel := context.WithTimeout(ctx, timing.LivenessTimeout)
-	principal, err := g.runnerAuth.Resolve(resolveCtx)
-	cancel()
+	peerURI, err := runner_transport.PeerIdentity(ctx)
 	if err != nil {
-		return err
+		return status.Error(codes.Unauthenticated, "a verified runner certificate is required")
 	}
-	resolveCtx, cancel = context.WithTimeout(ctx, timing.LivenessTimeout)
-	identity, podUID, err := g.sandboxes.runnerPeer(resolveCtx, principal)
+	resolveCtx, cancel := context.WithTimeout(ctx, timing.LivenessTimeout)
+	identity, podUID, err := g.certificatePeer(resolveCtx, peerURI, "reverse")
 	cancel()
 	if err != nil {
 		return unavailable(err)
@@ -273,11 +272,14 @@ func (s *runnerControlServer) Connect(stream grpc.BidiStreamingServer[runnercont
 			return status.Error(codes.Unavailable, "maximum connection age reached")
 		}
 		if urgent || now.Sub(lastTouch) >= timing.LeaseTouchInterval {
+			if _, err := runner_transport.PeerIdentity(ctx); err != nil {
+				return status.Error(codes.Unauthenticated, "runner certificate is no longer valid")
+			}
 			touchCtx, touchCancel := context.WithTimeout(ctx, timing.LivenessTimeout)
 			err := g.records.renew(touchCtx, identity, epoch, lastFrameAt, facts)
 			if err == nil {
 				var current sandboxreader.Identity
-				current, currentPodUID, resolveErr := g.sandboxes.runnerPeer(touchCtx, principal)
+				current, currentPodUID, resolveErr := g.certificatePeer(touchCtx, peerURI, "reverse")
 				if resolveErr != nil || current != identity || currentPodUID != podUID {
 					err = status.Error(codes.PermissionDenied, "the Sandbox routing changed")
 				}

@@ -70,7 +70,13 @@ from cluster.cdk8s.agentplane import (
     sandbox_pod,
     session_dispatcher,
 )
-from cluster.cdk8s.agentplane.chart import Namespace
+from cluster.cdk8s.agentplane.chart import (
+    RUNNER_CERTIFICATE_ISSUER,
+    RUNNER_TRUST_BUNDLE,
+    RUNNER_TRUST_BUNDLE_KEY,
+    Namespace,
+    add_runner_certificates,
+)
 from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
@@ -94,6 +100,7 @@ SESSION_DISPATCHER = "session-dispatcher"
 # The fixture's one Pod execution environment. Nothing outside the fixture names it -- no live Sandbox
 # or preset does -- so unlike staging's it is the fixture's own to rename.
 POD_TEMPLATE = "runner"
+FORWARD_POD_TEMPLATE = "runner-forward"
 # The image it runs: //agentplane/system_tests/k3s:runner_image, or its harnesses variant, which
 # stack.py imports into containerd under this reference. The runner binary itself still comes from the
 # runner disk image, as in staging.
@@ -271,12 +278,25 @@ def environment(*, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORI
 
 
 def objects(
-    *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, vm_sandboxes: bool
+    *,
+    ca_cert: str,
+    ca_key: str,
+    system_roots: str,
+    cluster_ca: str,
+    runner_ca_cert: str,
+    models: Models,
+    vm_sandboxes: bool,
 ) -> list[dict[str, Any]]:
     """Synthesize the common one-node fixture, optionally replacing the production guest for VM tests."""
     env = environment(vm_sandboxes=vm_sandboxes, models=models)
     fixture = build_chart(
-        ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
+        ca_cert=ca_cert,
+        ca_key=ca_key,
+        system_roots=system_roots,
+        cluster_ca=cluster_ca,
+        runner_ca_cert=runner_ca_cert,
+        models=models,
+        env=env,
     )
     synthesized = list(Testing.synth(fixture.chart))
     if vm_sandboxes:
@@ -285,7 +305,14 @@ def objects(
 
 
 def build_chart(
-    *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, env: Environment
+    *,
+    ca_cert: str,
+    ca_key: str,
+    system_roots: str,
+    cluster_ca: str,
+    runner_ca_cert: str,
+    models: Models,
+    env: Environment,
 ) -> FixtureChart:
     """Construct the shared stack and return its chart before synthesis for fixture-specific additions."""
     app_origin = str(env.app.origin)
@@ -300,6 +327,7 @@ def build_chart(
     app = Testing.app()
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
+    add_runner_certificates(chart, env)
     fixture_database.add_database(chart, env)
     app_database_url = (
         SecretRef(namespace=NAMESPACE, name="postgres-app").key("async-uri").env_value(chart, "app-database-url")
@@ -366,8 +394,7 @@ def build_chart(
     }
     orchestration_caller = actions.orchestration_callers(env)
     gateway_callers = app_caller | notifications_caller
-    control = runner_gateway_workload.runner_control_service(NAMESPACE, port=Port(name="grpc", number=8080))
-    runner_gateway_workload.add_stable_services(chart, env, control=control)
+    runner_gateway_workload.add_stable_services(chart, env)
     runner_gateway_workload.RunnerGateway(
         chart,
         "runner-gateway",
@@ -380,7 +407,6 @@ def build_chart(
             ServiceAccountRef(namespace=NAMESPACE, name=sandbox_controller.NAME),
             sandbox_controller.pods(NAMESPACE),
         ),
-        control=control,
         migration=ContainerProps(
             name="migrate",
             image=QUEUE_MIGRATOR_IMAGE,
@@ -396,7 +422,7 @@ def build_chart(
         container_env=database_env,
         memory_limit=None,
     )
-    control_target = f"{control.fqdn}:{control.port.number}"
+    control_target = runner_gateway.control_target(NAMESPACE)
     history_service.HistoryService(
         chart,
         "history-service",
@@ -419,7 +445,7 @@ def build_chart(
         database_url=app_database_url,
         placement=None,
         registry_secret_name=None,
-        runner_control_target=f"{{sandbox}}-control.{{namespace}}.svc:{control.port.number}",
+        runner_control_target=control_target,
         memory_limit=None,
         migrate_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         migrate_memory_limit=None,
@@ -440,6 +466,7 @@ def build_chart(
         env,
         name=POD_TEMPLATE,
         image=RUNNER_IMAGE,
+        runner_transport="reverse",
         egress_api_service=agent_api,
         storage_class="local-path",
         vm_workspace_storage_class=block_storage.STORAGE_CLASS if env.vm_sandboxes else None,
@@ -452,8 +479,27 @@ def build_chart(
         sidecar_resources=sandbox_sidecar_resources,
         image_pull_secret_name=None,
         trust_mounts=sandbox_pod.egress_proxy_mounts(),
-        control_service=control,
         # The hermetic k3s fixture has no Alloy collector behind the telemetry sidecar route.
+        disable_otel_sdk=True,
+    )
+    runner_sandbox.RunnerTemplate(
+        chart,
+        "runner-forward-template",
+        env,
+        name=FORWARD_POD_TEMPLATE,
+        image=RUNNER_IMAGE,
+        runner_transport="forward",
+        egress_api_service=agent_api,
+        storage_class="local-path",
+        runner_resources=k8s.ResourceRequirements(
+            requests={
+                "cpu": k8s.Quantity.from_string(Cpu.millis(500).amount),
+                "memory": k8s.Quantity.from_string(Size.gibibytes(1).as_string()),
+            }
+        ),
+        sidecar_resources=sandbox_sidecar_resources,
+        image_pull_secret_name=None,
+        trust_mounts=sandbox_pod.egress_proxy_mounts(),
         disable_otel_sdk=True,
     )
     sandbox_controller.SandboxController(
@@ -463,6 +509,7 @@ def build_chart(
         gateway=runner_gateway.service(NAMESPACE),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=control_target,
+        runner_certificate_issuer=RUNNER_CERTIFICATE_ISSUER,
         placement=None,
         registry_secret_name=None,
         memory_limit=None,
@@ -539,6 +586,12 @@ def build_chart(
         "fixture-egress-upstream-ca",
         metadata=ApiObjectMetadata(name="systest-egress-upstream-ca", namespace=NAMESPACE),
         data={"ca-certificates.crt": system_roots + cluster_ca},
+    )
+    ConfigMap(
+        chart,
+        "fixture-runner-trust",
+        metadata=ApiObjectMetadata(name=RUNNER_TRUST_BUNDLE, namespace=NAMESPACE),
+        data={RUNNER_TRUST_BUNDLE_KEY: runner_ca_cert},
     )
     key = models.key if isinstance(models, PublicLiteLLM) else "unused-without-litellm"
     add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key})

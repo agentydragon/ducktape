@@ -1552,7 +1552,7 @@ The Gateway serves `Connect` and proxies the runner's
 
 ```mermaid
 flowchart TD
-    RUNNER_CONTROL_TRANSPORT_DESIGN[Decision, unscheduled: runner listens versus reverse tunnel]
+    RUNNER_CONTROL_TRANSPORT_DESIGN[In progress: explicit forward and reverse runner transports]
     PROXY_START_METHODS_DISPATCHER_ONLY[Candidate: narrow proxy command authorization]
     DISPATCHER_OWNERSHIP_IN_POSTGRES[Unscheduled: Dispatcher Sandbox ownership without the Kubernetes Lease]
 ```
@@ -1562,27 +1562,21 @@ describe the current proxy. Live `Runner.ListSessions` remains part of the app a
 service caller contract. The separate destination-authority decision
 `DELIVERY_DESTINATION_AUTHORITY_DESIGN` (section 13) remains open.
 
-### `RUNNER_CONTROL_TRANSPORT_DESIGN` — consider making the runner a gRPC server again
+### `RUNNER_CONTROL_TRANSPORT_DESIGN` — explicit forward and reverse runner transports
 
-**Decision, unscheduled; operator, 2026-10-27 PDT: consider the alternative, no transport change selected.**
-Compare the current runner-initiated [reverse control stream](../docs/runner_control.md) with ordinary
-Gateway-to-runner gRPC on a private listener reachable only by authorized Gateway workloads. Evaluate
-Pod and KubeVirt guest reachability, ingress restrictions, mutual workload authentication and credential
-rotation, Sandbox/Pod incarnation checks, replica routing, connection loss, cancellation, and migration
-cost against the custom tunnel and connection-owner machinery that could be removed. Establish whether
-remote or NAT-bound runners are a real requirement. The initial recommendation is direct gRPC for a
-cluster-routable fleet, retaining outbound control if otherwise unreachable runners are required.
+**Selected; implementation in progress, operator, 2026-10-28 PDT.** Implement both native
+Gateway-to-runner gRPC (`forward`) and runner-initiated control (`reverse`), requiring an explicit
+choice with no default. A Gateway may admit both modes. The runner–Gateway link uses mTLS in
+both modes, with cert-manager leaf issuance and trust-manager root distribution. Existing public
+Gateway caller authorization, runner journals and History push retain their contracts.
 
-Keep runner journal admission/execution ownership and History Event push independent of transport.
-Both choices must preserve command-ID deduplication when an admission reply is lost; reconnecting is
-not proof that a command failed or permission to repeat an uncertain native effect. Review consequences
-for [holder-owned Dispatcher delivery](dispatcher_gateway_merge.md) rather than assuming a connection
-holder still owns delivery with direct dialing.
+The first version retains the Gateway's per-Sandbox observation owner and control route in both
+modes; direct dialing does not itself choose Dispatcher queue ownership. The
+[transport contract](../docs/runner_control.md) defines credential/incarnation binding and epochs.
 
-**Exit:** a reviewed comparison, recommendation and operator decision on retaining the tunnel or
-returning to a runner listener, with focused security/reconnect proof requirements and a cutover/rollback
-outline if changing transport. This evaluation has no prerequisites and does not gate existing work;
-implementation waits for that decision.
+Exit: both-mode runtime and integration coverage, stale credential and epoch rejection, lost-reply
+admission reconciliation, bounded executor relay, generated Pod/VM deployment wiring, and a
+reviewable coordinated cutover/rollback procedure that preserves runner state.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 

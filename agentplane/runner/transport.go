@@ -12,39 +12,69 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	"github.com/agentydragon/ducktape/agentplane/runner/stream"
+	"google.golang.org/grpc"
 )
 
-func (r *Runner) Run(ctx context.Context, controlEndpoint, ingressEndpoint Endpoint) error {
+func (r *Runner) Run(ctx context.Context, ingressEndpoint Endpoint) error {
 	if err := r.Startup(r.ctx); err != nil {
 		return errors.Join(err, r.Close(context.WithoutCancel(ctx)))
 	}
-	controlClient, err := control.New(control.Dependencies{
-		BootID:           r.bootID,
-		OpenExecutor:     r.openExecutorConnection,
-		Server:           r,
-		AdoptIncarnation: r.adoptIncarnation,
-		Facts:            r.facts,
-		Changes:          r.changesSince,
-		StopRetry: func(err error) bool {
-			var storage *journal.StorageError
-			return errors.As(err, &storage)
-		},
-	})
-	if err != nil {
-		return errors.Join(err, r.Close(context.WithoutCancel(ctx)))
-	}
-	streamCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	controlCtx, cancelControl := context.WithCancel(context.WithoutCancel(ctx))
+	ingressCtx, cancelIngress := context.WithCancel(context.WithoutCancel(ctx))
 	var streams sync.WaitGroup
-	streams.Add(2)
-	go func() {
-		defer streams.Done()
-		if err := controlClient.Run(streamCtx, control.Endpoint{Target: controlEndpoint.Target, Bearer: controlEndpoint.Bearer}); err != nil {
-			r.fail(err)
+	var server *grpc.Server
+	var listenerClose func()
+	switch r.config.Control.Mode {
+	case "reverse":
+		controlClient, err := control.New(control.Dependencies{
+			BootID:           r.bootID,
+			OpenExecutor:     r.openExecutorConnection,
+			Server:           r,
+			AdoptIncarnation: r.adoptIncarnation,
+			Facts:            r.facts,
+			Changes:          r.changesSince,
+			StopRetry: func(err error) bool {
+				var storage *journal.StorageError
+				return errors.As(err, &storage)
+			},
+		})
+		if err != nil {
+			cancelControl()
+			cancelIngress()
+			return errors.Join(err, r.Close(context.WithoutCancel(ctx)))
 		}
-	}()
+		streams.Add(1)
+		go func() {
+			defer streams.Done()
+			if err := controlClient.Run(controlCtx, control.Endpoint{Target: r.config.Control.Target, TLS: r.config.Control.TLS}); err != nil {
+				r.fail(err)
+			}
+		}()
+	case "forward":
+		listener, forwardServer, err := r.forwardServer()
+		if err != nil {
+			cancelControl()
+			cancelIngress()
+			return errors.Join(err, r.Close(context.WithoutCancel(ctx)))
+		}
+		server = forwardServer
+		listenerClose = func() { _ = listener.Close() }
+		streams.Add(1)
+		go func() {
+			defer streams.Done()
+			if err := server.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) && controlCtx.Err() == nil {
+				r.fail(err)
+			}
+		}()
+	default:
+		cancelControl()
+		cancelIngress()
+		return errors.Join(errors.New("Runner control mode must explicitly select forward or reverse"), r.Close(context.WithoutCancel(ctx)))
+	}
+	streams.Add(1)
 	go func() {
 		defer streams.Done()
-		if err := r.ingressLoop(streamCtx, ingressEndpoint); err != nil {
+		if err := r.ingressLoop(ingressCtx, ingressEndpoint); err != nil {
 			r.fail(err)
 		}
 	}()
@@ -54,7 +84,12 @@ func (r *Runner) Run(ctx context.Context, controlEndpoint, ingressEndpoint Endpo
 	case failure = <-r.fatal:
 	}
 	closeErr := r.Close(context.WithoutCancel(ctx))
-	cancel()
+	cancelControl()
+	cancelIngress()
+	if server != nil {
+		server.Stop()
+		listenerClose()
+	}
 	streams.Wait()
 	return errors.Join(failure, closeErr)
 }

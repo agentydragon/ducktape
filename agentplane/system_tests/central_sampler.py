@@ -322,9 +322,10 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
         caller_token = await _bound_token(core, "app", app, "session-dispatcher")
         reader_token = directory / "history-reader-token"
         reader_token.write_text(await _bound_token(core, "app", app, HISTORY_READER_AUDIENCE))
+        database_name = "central_sampler_test_" + uuid4().hex
         for statement in (
-            "CREATE ROLE central_sampler_test LOGIN PASSWORD 'test-central-database-password'",
-            "CREATE DATABASE central_sampler_test OWNER central_sampler_test",
+            f"CREATE ROLE {database_name} LOGIN PASSWORD 'test-central-database-password'",
+            f"CREATE DATABASE {database_name} OWNER {database_name}",
         ):
             await kubectl(
                 "exec",
@@ -385,7 +386,7 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
         # The per-Sandbox Service selects the replica holding this Sandbox's Runner stream.
         control_target = await _control_address(connection, sandbox, uid)
         config = Settings(
-            database_url=f"postgresql://central_sampler_test:test-central-database-password@{database}/central_sampler_test?sslmode=disable",
+            database_url=f"postgresql://{database_name}:test-central-database-password@{database}/{database_name}?sslmode=disable",
             listen="0.0.0.0:8080",
             service_name=SERVICE,
             providers={

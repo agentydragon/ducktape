@@ -2,7 +2,7 @@
 Description=Agentplane native harness runner
 Wants=network.target
 After=network.target
-RequiresMountsFor=/state /state/workspaces /run/agentplane/runner /run/agentplane/config /run/agentplane/sandbox /run/agentplane/trust
+RequiresMountsFor=/state /state/workspaces /run/agentplane/runner /run/agentplane/config /run/agentplane/sandbox /run/agentplane/trust /run/agentplane/runner-private/runner-tls /run/agentplane/runner-trust
 
 [Service]
 Type=exec

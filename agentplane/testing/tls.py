@@ -16,7 +16,9 @@ from pathlib import Path
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.x509.oid import NameOID
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+
+RUNNER_GATEWAY_TEST_DNS = "runner-gateway.test"
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,82 @@ def issue_leaf(ca: CertificateAuthority, hostname: str, directory: Path) -> tupl
     )
     cert_path = directory / f"{hostname}-cert.pem"
     key_path = directory / f"{hostname}-key.pem"
+    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    )
+    return cert_path, key_path
+
+
+def runner_identity_uri(namespace: str, sandbox_uid: str, credential_id: str) -> str:
+    """Return the Runner identity URI used by the Gateway and transport fixtures."""
+    if (
+        not namespace
+        or len(namespace) > 63
+        or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789-" for character in namespace)
+    ):
+        raise ValueError("namespace must be a lowercase DNS label")
+    if namespace.startswith("-") or namespace.endswith("-"):
+        raise ValueError("namespace must not start or end with a hyphen")
+    for name, value in (("Sandbox UID", sandbox_uid), ("credential ID", credential_id)):
+        if (
+            not value
+            or value in {".", ".."}
+            or any(
+                character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_."
+                for character in value
+            )
+        ):
+            raise ValueError(f"{name} must be a non-empty URI path segment")
+    return f"spiffe://agentplane/runner/{namespace}/{sandbox_uid}/{credential_id}"
+
+
+def issue_workload_leaf(
+    ca: CertificateAuthority, uri: str, directory: Path, *, dns_name: str = RUNNER_GATEWAY_TEST_DNS
+) -> tuple[Path, Path]:
+    """Issue an mTLS leaf with one URI identity and the supplied test DNS name.
+
+    Runner Gateway test servers need both SANs: Python clients verify the DNS
+    name as part of TLS, while the Go Gateway authenticates Runner identities
+    from the URI SAN. Both clientAuth and serverAuth EKUs permit either
+    transport direction in the same fixture.
+    """
+    key = ec.generate_private_key(ec.SECP256R1())
+    not_before, not_after = _validity()
+    cert = (
+        x509.CertificateBuilder()
+        # URI SAN is the workload identity; SPIFFE URIs commonly exceed the 64-byte CN limit.
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "agentplane-runner")]))
+        .issuer_name(ca.cert.subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(not_before)
+        .not_valid_after(not_after)
+        .add_extension(
+            x509.SubjectAlternativeName([x509.UniformResourceIdentifier(uri), x509.DNSName(dns_name)]), critical=False
+        )
+        .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(ca.key.public_key()), critical=False)
+        .add_extension(
+            x509.ExtendedKeyUsage([ExtendedKeyUsageOID.CLIENT_AUTH, ExtendedKeyUsageOID.SERVER_AUTH]), critical=False
+        )
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=False,
+                crl_sign=False,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+        .sign(ca.key, hashes.SHA256())
+    )
+    cert_path = directory / "workload-cert.pem"
+    key_path = directory / "workload-key.pem"
     cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
     key_path.write_bytes(
         key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())

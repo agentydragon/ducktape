@@ -33,8 +33,11 @@ from agentplane.runner.configuration import (
     Configuration,
     ContainerExecutor,
     Endpoint,
+    ForwardControl,
     Harness,
     PodEnvironment,
+    ReverseControl,
+    RunnerTransportTLS,
 )
 from agentplane.runner.platform_instructions import render_platform_instructions
 from cluster.cdk8s import cilium
@@ -45,6 +48,7 @@ from cluster.cdk8s.agentplane import (
     llm_ingress,
     notifications,
     platform_routes,
+    runner_gateway,
     runner_vm,
     sandbox_pod,
     telemetry,
@@ -64,6 +68,9 @@ _POD_LABEL_NAME = "agentplane-runner"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _STORAGE_CLASS = "piraeus-hdd-local"
 _LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
+RUNNER_SERVICE_PORT = 9090
+RUNNER_TRANSPORT_LABEL = "agentplane.allegedly.works/runner-transport"
+_RUNNER_TLS_PATH = "/run/agentplane/runner-tls"
 # Shared by the Runner configuration, its container volumeMount, and the
 # SandboxTemplate's state volume -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
@@ -170,6 +177,18 @@ def pods(namespace: str) -> Pods:
     return Pods(namespace=namespace, labels=tuple(_LABELS.items()))
 
 
+def forward_pods(namespace: str) -> Pods:
+    """Runner workloads whose immutable transport label selects the forward listener."""
+    labels = {**_LABELS, RUNNER_TRANSPORT_LABEL: "forward"}
+    return Pods(namespace=namespace, labels=tuple(labels.items()))
+
+
+def reverse_pods(namespace: str) -> Pods:
+    """Runner workloads whose immutable transport label selects the reverse connection."""
+    labels = {**_LABELS, RUNNER_TRANSPORT_LABEL: "reverse"}
+    return Pods(namespace=namespace, labels=tuple(labels.items()))
+
+
 def workspace_volume_spec(
     state_volume: dict[str, Any],
     *,
@@ -202,6 +221,7 @@ class RunnerSandbox(Construct):
         *,
         name: str,
         image: str,
+        runner_transport: Literal["forward", "reverse"],
         key_files: Sequence[KeyFile] = (),
         vm_workspace_storage_class: str | None = None,
         egress_api_service: ServiceRef | None = None,
@@ -211,7 +231,6 @@ class RunnerSandbox(Construct):
         sidecar_resources: k8s.ResourceRequirements | None = None,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
-        control_service: ServiceRef | None = None,
         session_reconcile_concurrency: int | None = None,
         disable_otel_sdk: bool = False,
     ) -> None:
@@ -229,6 +248,7 @@ class RunnerSandbox(Construct):
             env,
             name=name,
             image=image,
+            runner_transport=runner_transport,
             key_files=key_files,
             storage_class=storage_class,
             runner_resources=runner_resources,
@@ -236,7 +256,6 @@ class RunnerSandbox(Construct):
             sidecar_resources=sidecar_resources,
             image_pull_secret_name=image_pull_secret_name,
             trust_mounts=trust_mounts,
-            control_service=control_service,
             egress_api_service=egress_api_service,
             session_reconcile_concurrency=session_reconcile_concurrency,
             disable_otel_sdk=disable_otel_sdk,
@@ -270,6 +289,7 @@ class RunnerSandbox(Construct):
                 ),
                 platform_instructions=platform_instructions(env, egress_api_service=egress_api_service),
                 harness_env=template.agent_cli_env,
+                runner_transport=runner_transport,
                 session_reconcile_concurrency=session_reconcile_concurrency,
             )
 
@@ -282,9 +302,22 @@ class RunnerSandbox(Construct):
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=pods(namespace).selector,
             ingress=isolate_ingress(),
-            egress=[cilium.dns_egress(), egress.proxy(namespace).egress()],
+            egress=[
+                cilium.dns_egress(),
+                egress.proxy(namespace).egress(),
+                runner_gateway.runner_control(namespace).egress(),
+            ],
         )
         platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
+        NetworkPolicy(
+            self,
+            "forward-listener",
+            metadata=ApiObjectMetadata(
+                name=f"{NAME.removeprefix('agentplane-')}-forward-listener", namespace=namespace
+            ),
+            endpoint_selector=forward_pods(namespace).selector,
+            ingress=[runner_gateway.service(namespace).pods.admit(RUNNER_SERVICE_PORT)],
+        )
 
 
 class RunnerTemplate(Construct):
@@ -302,6 +335,7 @@ class RunnerTemplate(Construct):
         *,
         name: str,
         image: str,
+        runner_transport: Literal["forward", "reverse"],
         key_files: Sequence[KeyFile] = (),
         storage_class: str = _STORAGE_CLASS,
         runner_resources: k8s.ResourceRequirements | None = None,
@@ -309,7 +343,6 @@ class RunnerTemplate(Construct):
         sidecar_resources: k8s.ResourceRequirements | None = None,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
-        control_service: ServiceRef | None = None,
         egress_api_service: ServiceRef | None = None,
         session_reconcile_concurrency: int | None = None,
         disable_otel_sdk: bool = False,
@@ -318,6 +351,7 @@ class RunnerTemplate(Construct):
         self.env = env
         self.name = name
         self.image = image
+        self.runner_transport = runner_transport
         self.key_files = tuple(key_files)
         self.config_map_name = f"{name}-config"
         self.egress_api_service = egress_api_service
@@ -327,7 +361,6 @@ class RunnerTemplate(Construct):
         self.sidecar_resources = sidecar_resources
         self.image_pull_secret_name = image_pull_secret_name
         self.trust_mounts = trust_mounts if trust_mounts is not None else sandbox_pod.proxy_trust_mounts()
-        self.control_service = control_service
         self.session_reconcile_concurrency = session_reconcile_concurrency
         self.disable_otel_sdk = disable_otel_sdk
         self.agent_cli_env = agent_cli_environment(service_urls(env, egress_api_service=egress_api_service))
@@ -407,15 +440,28 @@ class RunnerTemplate(Construct):
                 ]
             )
         )
-        control = platform_routes.control(self.env.namespace, service=self.control_service)
         ingress = platform_routes.ingress(self.env.namespace)
         llm_url = llm_ingress.proxied_url(self.env.namespace)
+        tls = RunnerTransportTLS(
+            cert_file=f"{_RUNNER_TLS_PATH}/tls.crt",
+            key_file=f"{_RUNNER_TLS_PATH}/tls.key",
+            ca_file=f"{_RUNNER_TLS_PATH}/ca.crt",
+        )
+        control = (
+            ReverseControl(
+                mode="reverse",
+                target=f"{runner_gateway.runner_control(self.env.namespace).fqdn}:{runner_gateway.RUNNER_CONTROL_PORT}",
+                tls=tls,
+            )
+            if self.runner_transport == "reverse"
+            else ForwardControl(mode="forward", listen_address=f"0.0.0.0:{RUNNER_SERVICE_PORT}", tls=tls)
+        )
         config = Configuration(
             version=2,
             session_reconcile_concurrency=self.session_reconcile_concurrency,
             state_dir=_STATE_DIR,
             initialization_cwd=_STATE_DIR,
-            control=Endpoint(target=control.local_target, bearer=platform_routes.ROUTE_BEARER),
+            control=control,
             ingress=Endpoint(target=ingress.local_target, bearer=platform_routes.ROUTE_BEARER),
             platform_instructions=platform_instructions(self.env, egress_api_service=self.egress_api_service),
             harness_environment=configuration.EnvironmentVariables(
@@ -474,6 +520,11 @@ class RunnerTemplate(Construct):
                 requests={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("1Gi")},
                 limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
             ),
+            ports=(
+                [k8s.ContainerPort(name="runner-control", container_port=RUNNER_SERVICE_PORT)]
+                if self.runner_transport == "forward"
+                else None
+            ),
             volume_mounts=[
                 *self._execution_mounts(),
                 k8s.VolumeMount(name=_CONFIG_VOLUME, mount_path=CONFIG_FILE, sub_path="runner.json", read_only=True),
@@ -494,9 +545,7 @@ class RunnerTemplate(Construct):
             self,
             self.env,
             name=name,
-            platform_routes=platform_routes.sidecar_routes(
-                self.env.namespace, control_service=self.control_service, listen_host=bind_host
-            ),
+            platform_routes=platform_routes.sidecar_routes(self.env.namespace, listen_host=bind_host),
             listen_address=(f"{bind_host}:{sandbox_pod.SIDECAR_LISTEN_PORT}" if listen_host is not None else None),
         )
 
@@ -545,6 +594,7 @@ class RunnerTemplate(Construct):
             },
         }
         spec = {
+            "runnerTransport": self.runner_transport,
             "pod": pod,
             "stateVolume": state_volume,
             "workspaceVolume": workspace_volume_spec(state_volume, layout_type="DirectoryTree"),

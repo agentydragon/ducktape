@@ -11,11 +11,12 @@ import (
 // AGENTPLANE_SANDBOX_CONTROLLER_* environment variable. No setting is a list, so there is no settings
 // file. Keep the keys in sync with the fields of settings.py, which the Deployment is rendered from.
 type config struct {
-	Namespace              string `mapstructure:"namespace"`
-	MetricsBindAddress     string `mapstructure:"metrics_bind_address"`
-	HealthProbeBindAddress string `mapstructure:"health_probe_bind_address"`
-	RunnerGatewayTarget    string `mapstructure:"runner_gateway_target"`
-	RunnerGatewayTokenFile string `mapstructure:"runner_gateway_token_file"`
+	Namespace               string `mapstructure:"namespace"`
+	MetricsBindAddress      string `mapstructure:"metrics_bind_address"`
+	HealthProbeBindAddress  string `mapstructure:"health_probe_bind_address"`
+	RunnerGatewayTarget     string `mapstructure:"runner_gateway_target"`
+	RunnerGatewayTokenFile  string `mapstructure:"runner_gateway_token_file"`
+	RunnerCertificateIssuer string `mapstructure:"runner_certificate_issuer"`
 }
 
 func defaultConfig() config {
@@ -39,6 +40,7 @@ func (c config) validate() error {
 		{"namespace", c.Namespace},
 		{"runner_gateway_target", c.RunnerGatewayTarget},
 		{"runner_gateway_token_file", c.RunnerGatewayTokenFile},
+		{"runner_certificate_issuer", c.RunnerCertificateIssuer},
 	} {
 		if required.value == "" {
 			return fmt.Errorf("%s is required", required.name)

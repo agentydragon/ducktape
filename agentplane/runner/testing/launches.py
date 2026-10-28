@@ -18,6 +18,8 @@ from agentplane.runner.configuration import (
     EnvironmentVariables,
     Harness,
     PodEnvironment,
+    ReverseControl,
+    RunnerControl,
 )
 from agentplane.runner.testing.config import NativeLaunch, RunnerTestConfig, SandboxLaunch
 from agentplane.sandboxes.launch import SandboxIdentity
@@ -89,7 +91,7 @@ def runner_command(
     endpoint: str,
     *,
     state_dir: Path,
-    gateway: Endpoint,
+    gateway: ReverseControl,
     ingress: Endpoint,
     test_debug_checkpoint: tuple[str, str] | None = None,
     bootstrap: str | None = None,
@@ -145,7 +147,7 @@ def runner_command(
     ]
 
 
-def command(config: RunnerTestConfig, *, control: Endpoint, ingress: Endpoint) -> list[str]:
+def command(config: RunnerTestConfig, *, control: RunnerControl, ingress: Endpoint) -> list[str]:
     """Serialize test launch values into the production executable's CLI."""
     config.state_dir.parent.mkdir(parents=True, exist_ok=True)
     launch_file = config.state_dir.parent / f"{config.state_dir.name}-launch.json"

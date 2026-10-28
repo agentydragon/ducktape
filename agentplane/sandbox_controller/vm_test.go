@@ -163,8 +163,12 @@ func TestVMTemplateGetsARunningVMWithStateOverVirtiofs(t *testing.T) {
 		t.Fatalf("VM state volume = %v, want the state PVC", state)
 	}
 	filesystems := vm.Spec.Template.Spec.Domain.Devices.Filesystems
-	if len(filesystems) != 1 || filesystems[0].Name != "state" || filesystems[0].Virtiofs == nil {
-		t.Errorf("VM filesystems = %v, want the state volume over virtiofs", filesystems)
+	filesystemNames := make(map[string]bool, len(filesystems))
+	for _, filesystem := range filesystems {
+		filesystemNames[filesystem.Name] = filesystem.Virtiofs != nil
+	}
+	if len(filesystems) != 3 || !filesystemNames["state"] || !filesystemNames[RunnerTLSVolumeName] || !filesystemNames[RunnerTrustVolumeName] {
+		t.Errorf("VM filesystems = %v, want state and runner TLS/trust volumes over virtiofs", filesystems)
 	}
 	// One template serves many Sandboxes, and DataVolume names are per namespace.
 	workspace := sandboxName + "-" + workspaceVolume

@@ -84,7 +84,7 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 	}
 	server := grpc.NewServer()
 	gateway.RegisterProxy(server)
-	gateway.RegisterRunnerControl(server)
+
 	go func() { _ = server.Serve(listener) }()
 	defer server.Stop()
 	defer listener.Close()
@@ -93,8 +93,22 @@ func TestQueuedDeliveryThroughGatewayTunnel(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer connection.Close()
+	runnerListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerServer := grpc.NewServer(grpc.Creds(f.serverCredentials(t)))
+	gateway.RegisterRunnerControl(runnerServer)
+	go func() { _ = runnerServer.Serve(runnerListener) }()
+	defer runnerServer.Stop()
+	runnerConnection, err := grpc.NewClient(runnerListener.Addr().String(), grpc.WithTransportCredentials(f.clientCredentials(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runnerConnection.Close()
+
 	streamCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer "+f.runnerToken))
-	stream, err := runnercontrolpb.NewRunnerControlClient(connection).Connect(streamCtx)
+	stream, err := runnercontrolpb.NewRunnerControlClient(runnerConnection).Connect(streamCtx)
 	if err != nil {
 		t.Fatal(err)
 	}

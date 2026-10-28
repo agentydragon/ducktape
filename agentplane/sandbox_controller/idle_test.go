@@ -208,7 +208,7 @@ func TestIdleSuspendDeadlineRestartsWithControllerMemoryTimer(t *testing.T) {
 	*now = now.Add(3 * time.Minute)
 	restarted := &Reconciler{
 		Client: r.Client, Objects: r.Objects, KubeVirt: r.KubeVirt,
-		Quiescer: r.Quiescer, Leases: r.Leases, Now: r.Now,
+		Quiescer: r.Quiescer, Leases: r.Leases, RunnerCertificateIssuer: r.RunnerCertificateIssuer, Now: r.Now,
 	}
 	reconcileOnce(t, restarted)
 	got := getSandbox(t, c).Status.IdleSuspendAt

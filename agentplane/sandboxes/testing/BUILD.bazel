@@ -17,6 +17,7 @@ py_library(
         "//agentplane/sandboxes:inventory",
         "//agentplane/sandboxes:launch",
         "//agentplane/testing:kubernetes_apiserver",
+        "//agentplane/testing:tls",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",

@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"google.golang.org/grpc"
+
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -16,16 +18,18 @@ const connectionHeldByAnotherReplica = "another replica holds this Sandbox's run
 var errSupersededConnection = status.Error(codes.Aborted, "superseded by a newer connection")
 
 type runnerConnection struct {
-	identity sandboxreader.Identity
-	podUID   string
-	epoch    uint64
-	bootID   string
-	tunnel   *tunnel
-	executor *executorTunnel
-	runner   runnerservicepb.RunnerClient
-	ended    chan struct{}
-	endMu    sync.Mutex
-	endErr   error
+	identity    sandboxreader.Identity
+	podUID      string
+	epoch       uint64
+	bootID      string
+	tunnel      *tunnel
+	executor    *executorTunnel
+	runner      runnerservicepb.RunnerClient
+	direct      *forwardClientConn
+	closeDirect func()
+	ended       chan struct{}
+	endMu       sync.Mutex
+	endErr      error
 }
 
 func newRunnerConnection(identity sandboxreader.Identity, podUID, bootID string, epoch uint64, send, sendExecutorData sendServiceFrame) *runnerConnection {
@@ -48,9 +52,18 @@ func (c *runnerConnection) end(err error) {
 		close(c.ended)
 	}
 	c.endMu.Unlock()
-	c.tunnel.close(err)
-	c.executor.close(err)
+	if c.tunnel != nil {
+		c.tunnel.close(err)
+	}
+	if c.executor != nil {
+		c.executor.close(err)
+	}
+	if c.closeDirect != nil {
+		c.closeDirect()
+	}
 }
+
+var _ grpc.ClientConnInterface = (*forwardClientConn)(nil)
 
 func (c *runnerConnection) routeExecutor(frame *executorpb.ExecutorFrame) error {
 	return c.executor.receive(frame)

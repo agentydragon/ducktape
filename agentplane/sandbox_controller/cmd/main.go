@@ -114,7 +114,10 @@ func run(c config) error {
 		return err
 	}
 	quiescer := sandboxcontroller.GatewayQuiescer{Target: c.RunnerGatewayTarget, TokenFile: c.RunnerGatewayTokenFile}
-	reconciler := &sandboxcontroller.Reconciler{Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: kubeVirt, Quiescer: quiescer, Leases: mgr.GetClient(), Now: time.Now}
+	reconciler := &sandboxcontroller.Reconciler{
+		Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: kubeVirt,
+		Quiescer: quiescer, Leases: mgr.GetClient(), RunnerCertificateIssuer: c.RunnerCertificateIssuer, Now: time.Now,
+	}
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return err
 	}

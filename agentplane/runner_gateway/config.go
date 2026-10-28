@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
+	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"github.com/go-viper/mapstructure/v2"
@@ -23,26 +24,28 @@ const settingPrefix = "AGENTPLANE_RUNNER_GATEWAY_"
 // The database URL is a Secret and the Pod IP comes from the Downward API, so both are environment
 // values. Kubernetes sets the Pod hostname to its name unless an explicit hostname is configured.
 type config struct {
-	Namespace                   string         `mapstructure:"sandbox_namespace"`
-	DispatcherDatabaseURL       string         `mapstructure:"dispatcher_database_url"`
-	PodName                     string         `mapstructure:"pod_name"`
-	PodIP                       string         `mapstructure:"pod_ip"`
-	RunnerTokenFile             string         `mapstructure:"runner_token_file"`
-	Kubeconfig                  string         `mapstructure:"kubeconfig"`
-	ListenAddress               string         `mapstructure:"listen_address"`
-	HTTPListenAddress           string         `mapstructure:"http_listen_address"`
-	ProxyPort                   int            `mapstructure:"proxy_port"`
-	RunnerControlTargetTemplate string         `mapstructure:"runner_control_target_template"`
-	DispatcherAudience          string         `mapstructure:"dispatcher_audience"`
-	GatewayAudience             string         `mapstructure:"gateway_audience"`
-	RunnerAudience              string         `mapstructure:"runner_audience"`
-	DispatcherCallers           []auth.Account `mapstructure:"dispatcher_callers"`
-	GatewayCallers              []auth.Account `mapstructure:"gateway_callers"`
-	WakeCallers                 []auth.Account `mapstructure:"wake_callers"`
-	ControllerAccount           *auth.Account  `mapstructure:"sandbox_controller_account"`
-	QueueCap                    int            `mapstructure:"max_queued_per_session"`
-	WatchLeaseSeconds           int            `mapstructure:"dispatcher_watch_lease_seconds"`
-	RunnerTimeoutSeconds        int            `mapstructure:"runner_request_timeout_seconds"`
+	RunnerTransports            []string                `mapstructure:"runner_transports"`
+	RunnerTLS                   runner_transport.Config `mapstructure:"runner_tls"`
+	RunnerListenAddress         string                  `mapstructure:"runner_listen_address"`
+	Namespace                   string                  `mapstructure:"sandbox_namespace"`
+	DispatcherDatabaseURL       string                  `mapstructure:"dispatcher_database_url"`
+	PodName                     string                  `mapstructure:"pod_name"`
+	PodIP                       string                  `mapstructure:"pod_ip"`
+	RunnerTokenFile             string                  `mapstructure:"runner_token_file"`
+	Kubeconfig                  string                  `mapstructure:"kubeconfig"`
+	ListenAddress               string                  `mapstructure:"listen_address"`
+	HTTPListenAddress           string                  `mapstructure:"http_listen_address"`
+	ProxyPort                   int                     `mapstructure:"proxy_port"`
+	RunnerControlTargetTemplate string                  `mapstructure:"runner_control_target_template"`
+	DispatcherAudience          string                  `mapstructure:"dispatcher_audience"`
+	GatewayAudience             string                  `mapstructure:"gateway_audience"`
+	DispatcherCallers           []auth.Account          `mapstructure:"dispatcher_callers"`
+	GatewayCallers              []auth.Account          `mapstructure:"gateway_callers"`
+	WakeCallers                 []auth.Account          `mapstructure:"wake_callers"`
+	ControllerAccount           *auth.Account           `mapstructure:"sandbox_controller_account"`
+	QueueCap                    int                     `mapstructure:"max_queued_per_session"`
+	WatchLeaseSeconds           int                     `mapstructure:"dispatcher_watch_lease_seconds"`
+	RunnerTimeoutSeconds        int                     `mapstructure:"runner_request_timeout_seconds"`
 
 	CentralSamplers map[string]dispatcher.CentralTarget `mapstructure:"central_samplers"`
 	ExecutorCallers []auth.Account                      `mapstructure:"executor_callers"`
@@ -92,13 +95,31 @@ func (c *config) validate() error {
 		{"runner_token_file", c.RunnerTokenFile},
 		{"dispatcher_audience", c.DispatcherAudience},
 		{"gateway_audience", c.GatewayAudience},
-		{"runner_audience", c.RunnerAudience},
+		{"runner_tls.cert_file", c.RunnerTLS.CertFile},
+		{"runner_tls.key_file", c.RunnerTLS.KeyFile},
+		{"runner_tls.ca_file", c.RunnerTLS.CAFile},
 		{"listen_address", c.ListenAddress},
 		{"runner_control_target_template", c.RunnerControlTargetTemplate},
 	} {
 		if required.value == "" {
 			return fmt.Errorf("%s is required", required.name)
 		}
+	}
+	if len(c.RunnerTransports) == 0 {
+		return errors.New("runner_transports must explicitly select forward, reverse, or both")
+	}
+	seen := make(map[string]bool)
+	for _, mode := range c.RunnerTransports {
+		if (mode != "forward" && mode != "reverse") || seen[mode] {
+			return errors.New("runner_transports contains an invalid or duplicate mode")
+		}
+		seen[mode] = true
+	}
+	if seen["reverse"] != (c.RunnerListenAddress != "") {
+		return errors.New("runner_listen_address must be supplied exactly when reverse mode is enabled")
+	}
+	if c.RunnerListenAddress != "" && c.RunnerListenAddress == c.ListenAddress {
+		return errors.New("runner and public listeners must be separate")
 	}
 	if len(c.DispatcherCallers) == 0 || len(c.GatewayCallers) == 0 {
 		return errors.New("dispatcher_callers and gateway_callers must each list at least one ServiceAccount")

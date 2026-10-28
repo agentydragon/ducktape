@@ -27,7 +27,7 @@ type Configuration struct {
 	StateDir                    string                        `json:"state_dir"`
 	WorkspaceRoot               *string                       `json:"workspace_root"`
 	InitializationCwd           string                        `json:"initialization_cwd"`
-	Control                     Endpoint                      `json:"control"`
+	Control                     RunnerControlConfiguration    `json:"control"`
 	Ingress                     Endpoint                      `json:"ingress"`
 	PlatformInstructions        string                        `json:"platform_instructions"`
 	RunnerEnvironment           EnvironmentVariables          `json:"runner_environment"`
@@ -228,26 +228,58 @@ func readConfiguration(path string) (Configuration, error) {
 
 // LoadConfiguration validates and composes template policy, the image's explicitly
 // inherited environment, and controller-owned launch data before opening state.
-func LoadConfiguration(path, launchPath string) (Config, Endpoint, Endpoint, error) {
-	config, control, ingress, environment, err := loadConfiguration(path, launchPath)
+func LoadConfiguration(path, launchPath string) (Config, Endpoint, error) {
+	config, ingress, environment, err := loadConfiguration(path, launchPath)
 	if err != nil {
-		return Config{}, Endpoint{}, Endpoint{}, err
+		return Config{}, Endpoint{}, err
+	}
+	if err := validateControlIdentity(config); err != nil {
+		return Config{}, Endpoint{}, err
 	}
 	for name, value := range environment {
 		if err := os.Setenv(name, value); err != nil {
-			return Config{}, Endpoint{}, Endpoint{}, err
+			return Config{}, Endpoint{}, err
 		}
 	}
-	return config, control, ingress, nil
+	return config, ingress, nil
 }
 
-func loadConfiguration(path, launchPath string) (Config, Endpoint, Endpoint, map[string]string, error) {
+func loadConfiguration(path, launchPath string) (Config, Endpoint, map[string]string, error) {
 	file, err := readConfiguration(path)
 	if err != nil {
-		return Config{}, Endpoint{}, Endpoint{}, nil, err
+		return Config{}, Endpoint{}, nil, err
 	}
 	config, environment, err := file.compose(launchPath)
-	return config, file.Control, file.Ingress, environment, err
+	return config, file.Ingress, environment, err
+}
+
+func validateRunnerControl(control RunnerControlConfiguration) error {
+	if control.TLS.CertFile == "" || control.TLS.KeyFile == "" || control.TLS.CAFile == "" ||
+		!filepath.IsAbs(control.TLS.CertFile) || !filepath.IsAbs(control.TLS.KeyFile) || !filepath.IsAbs(control.TLS.CAFile) {
+		return errors.New("control TLS cert_file, key_file, and ca_file must be absolute paths")
+	}
+	address := control.Target
+	field := "control.target"
+	switch control.Mode {
+	case "reverse":
+		if control.Target == "" || control.ListenAddress != "" {
+			return errors.New("reverse control requires target and forbids listen_address")
+		}
+	case "forward":
+		address = control.ListenAddress
+		field = "control.listen_address"
+		if control.ListenAddress == "" || control.Target != "" {
+			return errors.New("forward control requires listen_address and forbids target")
+		}
+	default:
+		return errors.New("control.mode must explicitly select forward or reverse")
+	}
+	host, port, err := net.SplitHostPort(address)
+	number, numberErr := strconv.Atoi(port)
+	if err != nil || host == "" || numberErr != nil || number < 1 || number > 65535 {
+		return fmt.Errorf("%s must be a valid host:port", field)
+	}
+	return nil
 }
 
 func (f Configuration) compose(launchPath string) (Config, map[string]string, error) {
@@ -261,10 +293,16 @@ func (f Configuration) compose(launchPath string) (Config, map[string]string, er
 	if !filepath.IsAbs(f.StateDir) || !filepath.IsAbs(f.InitializationCwd) || (f.WorkspaceRoot != nil && !filepath.IsAbs(*f.WorkspaceRoot)) {
 		return Config{}, nil, errors.New("state, initialization and configured workspace paths must be absolute")
 	}
-	for name, endpoint := range map[string]Endpoint{"control": f.Control, "ingress": f.Ingress} {
+	if err := validateRunnerControl(f.Control); err != nil {
+		return Config{}, nil, err
+	}
+	if f.Ingress.Target == "" || f.Ingress.Bearer == "" {
+		return Config{}, nil, errors.New("invalid ingress endpoint")
+	}
+	for name, endpoint := range map[string]Endpoint{"ingress": f.Ingress} {
 		host, port, err := net.SplitHostPort(endpoint.Target)
 		number, numberErr := strconv.Atoi(port)
-		if err != nil || host == "" || numberErr != nil || number < 1 || number > 65535 || endpoint.Bearer == "" {
+		if err != nil || host == "" || numberErr != nil || number < 1 || number > 65535 {
 			return Config{}, nil, fmt.Errorf("invalid %s endpoint", name)
 		}
 	}
@@ -316,6 +354,7 @@ func (f Configuration) compose(launchPath string) (Config, map[string]string, er
 	}
 	launch.PlatformInstructions = strings.TrimSpace(f.PlatformInstructions)
 	config := Config{
+		Control:                     f.Control,
 		StateDir:                    f.StateDir,
 		SessionReconcileConcurrency: sessionReconcileConcurrency,
 		InitializationCwd:           f.InitializationCwd,

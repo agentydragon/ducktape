@@ -15,7 +15,7 @@ flowchart LR
     app[Integration app]
     subgraph unified[Runner Gateway]
         dispatcher[Dispatcher API and durable delivery]
-        gateway[Runner proxy and control tunnel]
+        gateway[Runner proxy and transport adapters]
     end
     central[Experimental central sampler]
     sandboxctl[Sandbox Controller]
@@ -45,8 +45,8 @@ flowchart LR
     dispatcher -->|Sampler gRPC: open, input, controls| sampler
     sampler -->|continuation, commands, evidence outbox| db
     sampler -->|authenticated exec-server frames| gateway
-    runner -.->|outbound RunnerControl.Connect| gateway
-    gateway -->|frames over existing stream| runner
+    runner -.->|reverse: mTLS RunnerControl.Connect| gateway
+    gateway -->|forward: mTLS RunnerExec gRPC| runner
     runner -->|WebSocket| executor
     sampler -->|acknowledged outbox: RunnerIngress.Push| history
     sampler -->|Session identity| llm --> provider
@@ -63,35 +63,23 @@ provider continuation format: the sampler owns that state in its database. Wrapp
 harnesses keep their current local sampling, execution and persistence paths. See the
 [standalone API and recovery contract](../x/central_sampler/SPEC.md).
 
-## Runner control tunnel
+## Runner control transports
 
 ```mermaid
 flowchart LR
     gateway[Runner Gateway]
-    subgraph pod[Sandbox Pod]
-        runner[Runner]
-        sidecar[Egress sidecar]
-    end
-    subgraph vm_guest[VM guest]
-        guest[Guest runner]
-    end
-    subgraph vm_pod[VM launcher Pod]
-        relay[Egress relay]
-    end
-
-    runner -.->|RunnerControl.Connect| sidecar
-    sidecar -.->|outbound route| gateway
-    guest -.->|RunnerControl.Connect| relay
-    relay -.->|outbound route| gateway
-    gateway -->|tunneled Runner RPCs| runner
-    runner -->|responses + heartbeat| gateway
-    gateway -->|tunneled Runner RPCs| guest
-    guest -->|responses + heartbeat| gateway
+    pod[Pod runner]
+    guest[VM guest runner]
+    pod -.->|reverse: mTLS RunnerControl.Connect| gateway
+    guest -.->|reverse: mTLS RunnerControl.Connect| gateway
+    gateway -->|forward: mTLS Runner + RunnerExec| pod
+    gateway -->|forward: mTLS Runner + RunnerExec| guest
 ```
 
-The runner opens the long-lived `RunnerControl.Connect` stream through its Pod's egress sidecar or
-the VM launcher's relay. The Gateway sends `Runner` RPC calls back through that existing stream,
-and responses return there; neither Pod accepts an inbound Gateway connection.
+Each workload explicitly selects one direction; the Gateway may admit a mixed fleet.
+Reverse calls and executor frames return over the existing stream. Forward mode exposes native
+gRPC and a state watch on the runner. Both modes share incarnation fencing, connection Leases,
+command IDs and runner-owned journals. History push remains a separate outbound platform route.
 
 ## Codex execution inside a Sandbox
 

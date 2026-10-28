@@ -47,13 +47,14 @@ func (c *executorConnection) Route(frame *executorpb.ExecutorFrame) error {
 }
 
 func (c *executorConnection) Close() {
-	c.runner.cancelExecutorRelays()
+	c.runner.cancelExecutorRelays(c.epoch)
 	c.workers.Wait()
 }
 
 type executorRelay struct {
 	id        string
 	sessionID string
+	epoch     uint64
 	inbound   chan *executorpb.ExecutorFrame
 	done      chan struct{}
 	cancel    context.CancelFunc
@@ -72,6 +73,7 @@ func newExecutorRelay(id, sessionID string, cancel context.CancelFunc) *executor
 func (r *Runner) startExecutorRelay(
 	streamCtx context.Context,
 	channelID string,
+	epoch uint64,
 	open *executorpb.ExecutorOpen,
 	send func(*controlpb.RunnerFrame) error,
 	sendData func(*controlpb.RunnerFrame) error,
@@ -84,7 +86,7 @@ func (r *Runner) startExecutorRelay(
 		return status.Error(codes.InvalidArgument, "executor channel ID and Session ID are required")
 	}
 	r.mu.Lock()
-	if !r.lifecycle.accepting() {
+	if r.closing || !r.lifecycle.accepting() {
 		r.mu.Unlock()
 		return status.Error(codes.FailedPrecondition, "Runner is quiescing")
 	}
@@ -102,6 +104,7 @@ func (r *Runner) startExecutorRelay(
 	}
 	ctx, cancel := context.WithCancel(streamCtx)
 	relay := newExecutorRelay(channelID, open.GetSessionId(), cancel)
+	relay.epoch = epoch
 	r.executorRelays[channelID] = relay
 	r.mu.Unlock()
 	r.changed()
@@ -375,7 +378,7 @@ func (r *Runner) routeExecutorFrame(ctx context.Context, frame *executorpb.Execu
 			return err
 		}
 		*lastOpen = sequence
-		if err := r.startExecutorRelay(ctx, frame.GetChannelId(), body.Open, send, sendData, workers); err != nil {
+		if err := r.startExecutorRelay(ctx, frame.GetChannelId(), epoch, body.Open, send, sendData, workers); err != nil {
 			slog.Debug("central executor channel refused", "session_id", body.Open.GetSessionId(), "error", err)
 			return sendExecutorReady(send, frame.GetChannelId(), false)
 		}
@@ -430,10 +433,12 @@ func (r *Runner) closeExecutorRelays(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runner) cancelExecutorRelays() {
+func (r *Runner) cancelExecutorRelays(epoch uint64) {
 	r.mu.Lock()
 	for _, relay := range r.executorRelays {
-		relay.cancel()
+		if relay.epoch == epoch {
+			relay.cancel()
+		}
 	}
 	r.mu.Unlock()
 }

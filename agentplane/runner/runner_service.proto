@@ -1,4 +1,4 @@
-// The `Runner` service the runner serves over its outbound control stream; contract in
+// The `Runner` service the runner serves over its configured control transport; contract in
 // agentplane/docs/runner_control.md. An incompatible change rides a clean cutover: the operator
 // retires every Sandbox on the old protocol.
 syntax = "proto3";
@@ -7,10 +7,14 @@ package agentplane.runner;
 
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/runner.proto";
+import "agentplane/runner_gateway/runner_control.proto";
 
-// Served by the runner through its outbound control stream. Sessions are durable;
+// Served by the Runner over its configured control transport. Sessions are durable;
 // process startup, native readiness and reconciliation are runner-owned after admission.
 service Runner {
+  // Forward-mode liveness and state watch. The Gateway supplies the current Sandbox and workload
+  // incarnation and its Lease epoch. The Runner adopts that incarnation before publishing facts.
+  rpc WatchState(WatchStateRequest) returns (stream WatchStateResponse);
   rpc ListSessions(agentplane.proto.ListSessionsRequest)
       returns (agentplane.proto.ListSessionsResponse);
   // Durably reserve or confirm a Session and immutable creation configuration.
@@ -33,6 +37,20 @@ service Runner {
   // A new interrupt with a non-active turn_id fails FAILED_PRECONDITION before admission.
   // Already admitted retries return their original admission; never affect a successor turn.
   rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse);
+}
+
+message WatchStateRequest {
+  string sandbox_uid = 1;
+  string incarnation_uid = 2;  // current Pod or virt-launcher Pod UID
+  uint64 connection_epoch = 3;  // monotonically increasing Gateway Lease epoch
+}
+
+message WatchStateResponse {
+  string sandbox_uid = 1;
+  string incarnation_uid = 2;
+  string runner_boot_id = 3;
+  uint64 connection_epoch = 4;
+  agentplane.runner_gateway.RunnerFacts facts = 5;
 }
 
 message OpenSessionRequest {

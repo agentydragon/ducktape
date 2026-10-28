@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from agentplane.runner.configuration import Configuration, EnvironmentVariables, PodEnvironment
+from agentplane.runner.configuration import Configuration, Endpoint, EnvironmentVariables, PodEnvironment
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.process_fixtures import wait_for_exit
@@ -100,12 +100,13 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
     fixture = get_required_path(
         "_main/agentplane/runner/supervision/runner_pid1_fixture_/runner_pid1_fixture"
     ).resolve()
+    control = gateway.endpoint_for_sandbox("proof", "pid1-proof-uid")
     config = Configuration(
         version=2,
         state_dir="/proof/state",
         initialization_cwd="/proof/state",
-        control=gateway.endpoint,
-        ingress=gateway.endpoint,
+        control=control,
+        ingress=Endpoint(target=control.target, bearer="unused-ingress-token"),
         platform_instructions="PID1 proof",
         harness_environment=EnvironmentVariables(values={"PATH": "/bin:/usr/bin"}),
         environment=PodEnvironment(supervision="pid1"),

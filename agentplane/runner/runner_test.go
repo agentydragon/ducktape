@@ -34,6 +34,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+func closeRunnerForTest(t *testing.T, r *Runner) error {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return r.Close(ctx)
+}
+
 func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	var lookups atomic.Int32
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +101,7 @@ func TestOpenSessionRetryUsesPersistedSetupAfterSealPublicationFailure(t *testin
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := r.Close(context.Background()); err != nil {
+		if err := closeRunnerForTest(t, r); err != nil {
 			t.Errorf("close test runner: %v", err)
 		}
 	})
@@ -212,7 +219,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 	if err != nil || !found || input.Setup != runnerpb.SetupState_SETUP_STATE_INTERRUPTED || !input.SetupRequested {
 		t.Fatalf("recovered setup input = %+v, found=%t, err=%v; want retained but interrupted", input, found, err)
 	}
-	if err := r.Close(context.Background()); err != nil {
+	if err := closeRunnerForTest(t, r); err != nil {
 		t.Fatalf("close recovered Runner: %v", err)
 	}
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {

@@ -68,6 +68,17 @@ py_library(
 )
 
 py_library(
+    name = "cert_manager_issuer",
+    srcs = ["issuer.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":issuer",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "cert_manager_bundle",
     srcs = ["bundle.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],

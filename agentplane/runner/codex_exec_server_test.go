@@ -356,7 +356,7 @@ func TestExecutorRelayAdmissionClosesWhenRunnerQuiesces(t *testing.T) {
 	}
 
 	var workers sync.WaitGroup
-	err := r.startExecutorRelay(context.Background(), "1-1", &executorpb.ExecutorOpen{SessionId: "session-1"},
+	err := r.startExecutorRelay(context.Background(), "1-1", 1, &executorpb.ExecutorOpen{SessionId: "session-1"},
 		func(*controlpb.RunnerFrame) error { return nil },
 		func(*controlpb.RunnerFrame) error { return nil }, &workers)
 	if status.Code(err) != codes.FailedPrecondition {
@@ -417,7 +417,7 @@ func TestExecutorShutdownDrainsRelaysBeforeFencing(t *testing.T) {
 	r.mu.Unlock()
 	r.changed()
 
-	if err := r.Close(context.Background()); err != nil {
+	if err := closeRunnerForTest(t, r); err != nil {
 		t.Fatalf("close Runner: %v", err)
 	}
 	if !drained.Load() || stops.Load() != 1 {

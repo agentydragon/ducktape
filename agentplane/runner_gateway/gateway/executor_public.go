@@ -53,6 +53,9 @@ func (s *executorGatewayServer) Connect(stream grpc.BidiStreamingServer[executor
 	if connection.identity != view.identity || connection.podUID != open.GetExpectedIncarnationUid() {
 		return status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
 	}
+	if connection.direct != nil {
+		return s.forwardExecutor(stream, connection, open)
+	}
 	channel, err := connection.executor.open(open)
 	if err != nil {
 		return err

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -28,32 +29,43 @@ import (
 
 type Runner struct {
 	runnerservicepb.UnimplementedRunnerServer
-	config              Config
-	ctx                 context.Context
-	cancel              context.CancelFunc
-	owner               *retained.Owner
-	supervisor          *supervision.Supervisor
-	scripts             *scripts.Runner
-	workspaceSupervisor *supervision.Supervisor
-	store               *retained.Store
-	bootID              string
-	mu                  sync.Mutex
-	sessions            *session.Manager
-	createMu            sync.Mutex
-	bootstrapHost       *bootstrap.Host
-	codexAppServer      *codexappserver.Host
-	codexExecServer     *codexexecserver.Host
-	executorRelays      map[string]*executorRelay
-	changes             chan struct{}
-	fatal               chan error
-	idleSince           *timestamppb.Timestamp
-	lifecycle           *lifecycle
-	closeOnce           sync.Once
-	closeDone           chan struct{}
-	closeErr            error
+	config                      Config
+	ctx                         context.Context
+	cancel                      context.CancelFunc
+	owner                       *retained.Owner
+	supervisor                  *supervision.Supervisor
+	scripts                     *scripts.Runner
+	workspaceSupervisor         *supervision.Supervisor
+	store                       *retained.Store
+	bootID                      string
+	mu                          sync.Mutex
+	directMu                    sync.RWMutex
+	directWatch                 *directWatch
+	directHighestEpoch          uint64
+	directHighestSandboxUID     string
+	directHighestIncarnationUID string
+	directExecStreams           int
+	directExecSequence          atomic.Uint64
+	sessions                    *session.Manager
+	createMu                    sync.Mutex
+	bootstrapHost               *bootstrap.Host
+	codexAppServer              *codexappserver.Host
+	codexExecServer             *codexexecserver.Host
+	executorRelays              map[string]*executorRelay
+	changes                     chan struct{}
+	fatal                       chan error
+	idleSince                   *timestamppb.Timestamp
+	lifecycle                   *lifecycle
+	closeOnce                   sync.Once
+	closeDone                   chan struct{}
+	closeErr                    error
+	closing                     bool
 }
 
 func New(config Config) (*Runner, error) {
+	if err := validateControlIdentity(config); err != nil {
+		return nil, err
+	}
 	return newRunner(config, nil, nil)
 }
 
@@ -343,6 +355,9 @@ func (r *Runner) Quiesce(_ context.Context, q *runnerpb.QuiesceRequest) (*runner
 // accepted setup/bootstrap and the shared cleanup continue under Runner ownership.
 func (r *Runner) Close(ctx context.Context) error {
 	r.closeOnce.Do(func() {
+		r.mu.Lock()
+		r.closing = true
+		r.mu.Unlock()
 		r.closeDone = make(chan struct{})
 		go func() {
 			r.closeErr = r.finishClose()
@@ -360,6 +375,12 @@ func (r *Runner) Close(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (r *Runner) isClosing() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.closing
 }
 
 func (r *Runner) finishClose() error {

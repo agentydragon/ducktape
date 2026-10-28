@@ -55,6 +55,14 @@ func newConnectionRecords(
 }
 
 func (r *connectionRecords) accept(ctx context.Context, sandbox sandboxreader.Identity, podUID, bootID string) (uint64, error) {
+	return r.acceptConnection(ctx, sandbox, podUID, bootID, false)
+}
+
+func (r *connectionRecords) claimForward(ctx context.Context, sandbox sandboxreader.Identity, podUID string) (uint64, error) {
+	return r.acceptConnection(ctx, sandbox, podUID, "", true)
+}
+
+func (r *connectionRecords) acceptConnection(ctx context.Context, sandbox sandboxreader.Identity, podUID, bootID string, exclusive bool) (uint64, error) {
 	leaseName := sandbox.Name + sandboxlease.RunnerLeaseSuffix
 	var epoch uint64
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -68,6 +76,11 @@ func (r *connectionRecords) accept(ctx context.Context, sandbox sandboxreader.Id
 		if current != nil {
 			if !ownsSandbox(current.OwnerReferences, sandbox) || !current.DeletionTimestamp.IsZero() {
 				return fmt.Errorf("refusing to adopt Lease %s: foreign or being deleted", leaseName)
+			}
+			if exclusive && current.Spec.HolderIdentity != nil && *current.Spec.HolderIdentity != r.holder.name &&
+				current.Spec.RenewTime != nil && current.Spec.LeaseDurationSeconds != nil &&
+				time.Now().Before(current.Spec.RenewTime.Add(time.Duration(*current.Spec.LeaseDurationSeconds)*time.Second)) {
+				return errForwardOwned
 			}
 			if current.Spec.LeaseTransitions != nil {
 				if *current.Spec.LeaseTransitions == math.MaxInt32 {
@@ -112,6 +125,25 @@ func (r *connectionRecords) accept(ctx context.Context, sandbox sandboxreader.Id
 		return 0, fmt.Errorf("point Sandbox control Service at connection holder: %w", err)
 	}
 	return epoch, nil
+}
+
+func (r *connectionRecords) recordBootID(ctx context.Context, sandbox sandboxreader.Identity, epoch uint64, bootID string) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		lease, err := r.coordination.Leases(r.namespace).Get(ctx, sandbox.Name+sandboxlease.RunnerLeaseSuffix, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if !ownsSandbox(lease.OwnerReferences, sandbox) || lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity != r.holder.name ||
+			lease.Spec.LeaseTransitions == nil || uint64(*lease.Spec.LeaseTransitions) != epoch {
+			return errSupersededConnection
+		}
+		if lease.Annotations == nil {
+			lease.Annotations = make(map[string]string)
+		}
+		lease.Annotations[sandboxlease.RunnerBootIDAnnotation] = bootID
+		_, err = r.coordination.Leases(r.namespace).Update(ctx, lease, metav1.UpdateOptions{})
+		return err
+	})
 }
 
 func (r *connectionRecords) renew(

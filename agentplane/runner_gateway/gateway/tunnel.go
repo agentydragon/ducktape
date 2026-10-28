@@ -169,7 +169,7 @@ func (t *tunnel) closedError() error {
 }
 
 // tunnelClientConn lets the generated Runner client use this authenticated runner
-// stream as its transport. Runner currently defines unary methods only.
+// stream as its transport. State observations use reverse control heartbeats.
 type tunnelClientConn struct {
 	tunnel *tunnel
 }
@@ -187,7 +187,7 @@ func (c *tunnelClientConn) Invoke(ctx context.Context, method string, args, repl
 }
 
 func (*tunnelClientConn) NewStream(context.Context, *grpc.StreamDesc, string, ...grpc.CallOption) (grpc.ClientStream, error) {
-	return nil, status.Error(codes.Unimplemented, "Runner has no streaming methods")
+	return nil, status.Error(codes.Unimplemented, "streaming Runner RPCs require forward transport")
 }
 
 var _ grpc.ClientConnInterface = (*tunnelClientConn)(nil)

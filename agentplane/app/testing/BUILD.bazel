@@ -188,7 +188,6 @@ py_library(
         ":http2_proxy",
         ":replication_process",
         ":replication_source",
-        ":runner_gateway",
         ":thread_view_marks",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads/view:content",

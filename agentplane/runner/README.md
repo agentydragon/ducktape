@@ -1,7 +1,7 @@
 # Agentplane runner
 
 A statically linked Go executable that runs the native harnesses of its sessions, a Claude Code process per session
-and one shared Codex app-server for its Codex sessions, and exposes both through one protocol, over the control stream and Event ingress it dials. Pod Codex tools can run in `agentplane-runner executor` mode in a separate companion container. The contract is in <SPEC.md>; the wire definition is
+and one shared Codex app-server for its Codex sessions. It exposes the Runner protocol over the explicitly configured reverse or forward mTLS control transport, and pushes journals to History ingress. Pod Codex tools can run in `agentplane-runner executor` mode in a separate companion container. The contract is in <SPEC.md>; the wire definition is
 [`agentplane/proto/runner.proto`](../proto/runner.proto).
 
 The deployment renders `platform_instructions.j2` with concrete service URLs; the runner appends
@@ -14,9 +14,9 @@ bbr test //agentplane/runner/...
 ```
 
 While its ingress (the History Service) is down or rolling, the runner keeps its harnesses
-running and admitting commands from the control stream, and keeps every journal entry on its state
-volume. Each Session's push retries with the control stream's backoff and resumes after the last
-acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history but loses none of it.
+running and admitting commands through the configured control transport, and keeps every journal
+entry on its state volume. Each Session's push retries with ingress backoff and resumes after the
+last acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history but loses none of it.
 
 ## Layout
 
@@ -51,15 +51,18 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 - `codexappserver/`: the one shared Codex process, its COSI lifecycle resources and controller,
   startup, protocol routing, reader drain, and process exit. `Session` supplies callbacks that
   commit routed frame batches and exit observations to its journal.
-- `control/`: the outbound control tunnel, authentication, reconnect and tunneled Runner RPCs.
+- `control/`: the reverse-mode outbound control stream, mTLS authentication, reconnect and tunneled Runner RPCs.
   It receives the generated Runner server plus narrow callbacks for incarnation adoption, facts
   and inventory changes.
+- `forward.go`: the forward-mode mTLS gRPC listener, epoch-fenced state watch, authenticated direct
+  Runner RPCs, standard gRPC health service, and bounded executor stream relay.
 - `transport.go`: Runner-wide orchestration and the independent per-Session ingress connection,
-  authentication and discovery worker scheduling. Runner retains one inventory notification seam
-  and owns starting and joining per-Session delivery workers.
+  authentication and discovery worker scheduling. It also selects the explicit control mode and
+  keeps ingress available while Runner shutdown flushes final acknowledgements. Runner retains one
+  inventory notification seam and owns starting and joining per-Session delivery workers.
 - `ingress/`: each Session's history push protocol, including replay, acknowledgements,
   backpressure, sealing, journal wakeups and retry. Runner retains discovery and worker lifecycle.
-- `stream/`: shared outbound gRPC setup and reconnect policy for control and ingress.
+- `stream/`: shared outbound gRPC setup and reconnect policy for reverse control and ingress.
 - `journal/`: the Goose-managed SQLite schema, verbatim protobuf Event blobs, native request records
   with foreign-key links to their originating commands, and recovery queries. It depends on the
   neutral harness contract and protobuf types, with no dependency on `Runner`. Transactions use

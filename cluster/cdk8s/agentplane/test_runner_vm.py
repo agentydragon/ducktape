@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pytest
 import pytest_bazel
@@ -21,7 +21,10 @@ HARNESS_ENV = {"EXAMPLE_SERVICE_URL": "http://service.test"}
 
 
 def _runner_vm_manifests(
-    *, console_autologin: bool, session_reconcile_concurrency: int | None = None
+    *,
+    console_autologin: bool,
+    runner_transport: Literal["forward", "reverse"],
+    session_reconcile_concurrency: int | None = None,
 ) -> dict[str, dict[str, Any]]:
     chart = Chart(Cdk8sTesting.app(), "test")
     runner_vm.RunnerVmTemplate(
@@ -39,6 +42,7 @@ def _runner_vm_manifests(
         ),
         platform_instructions="Test platform guidance.",
         harness_env=HARNESS_ENV,
+        runner_transport=runner_transport,
         session_reconcile_concurrency=session_reconcile_concurrency,
     )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
@@ -56,13 +60,15 @@ def _runner_vm_manifests(
 def test_console_autologin_reaches_the_vm_environment_only_when_enabled(
     console_autologin: bool, rendered: bool
 ) -> None:
-    config = Configuration.model_validate(_runner_vm_manifests(console_autologin=console_autologin)["runner"])
+    config = Configuration.model_validate(
+        _runner_vm_manifests(console_autologin=console_autologin, runner_transport="reverse")["runner"]
+    )
     assert isinstance(config.environment, VMEnvironment)
     assert config.environment.console_autologin == rendered
 
 
 def test_harness_env_reaches_the_vm_environment() -> None:
-    rendered = _runner_vm_manifests(console_autologin=False)
+    rendered = _runner_vm_manifests(console_autologin=False, runner_transport="reverse")
     runner = Configuration.model_validate(rendered["runner"])
     assert all(runner.harness_environment.values[name] == value for name, value in HARNESS_ENV.items())
     assert runner.session_reconcile_concurrency is None
@@ -70,13 +76,15 @@ def test_harness_env_reaches_the_vm_environment() -> None:
 
 
 def test_session_reconcile_concurrency_reaches_vm_runner_configuration() -> None:
-    rendered = _runner_vm_manifests(console_autologin=False, session_reconcile_concurrency=2048)
+    rendered = _runner_vm_manifests(
+        console_autologin=False, runner_transport="reverse", session_reconcile_concurrency=2048
+    )
     config = Configuration.model_validate(rendered["runner"])
     assert config.session_reconcile_concurrency == 2048
 
 
 def test_vm_size_and_runner_configuration_share_resource_policy() -> None:
-    rendered = _runner_vm_manifests(console_autologin=False)
+    rendered = _runner_vm_manifests(console_autologin=False, runner_transport="reverse")
     config = rendered["runner"]["environment"]
     vm = rendered["sandbox_template"]["spec"]["vm"]
     domain = vm["template"]["spec"]["domain"]
@@ -87,7 +95,7 @@ def test_vm_size_and_runner_configuration_share_resource_policy() -> None:
 
 
 def test_vm_workspace_is_a_controller_attached_block_filesystem() -> None:
-    template = _runner_vm_manifests(console_autologin=False)["sandbox_template"]["spec"]
+    template = _runner_vm_manifests(console_autologin=False, runner_transport="reverse")["sandbox_template"]["spec"]
     assert template["workspaceVolume"] == {
         "name": "workspace",
         "claim": {"storageClassName": "test-storage", "volumeMode": "Block"},
@@ -141,6 +149,23 @@ def test_staging_uses_the_replicated_class_for_both_vm_claims_and_keeps_pod_stor
 def test_vm_storage_class_requires_vm_sandboxes() -> None:
     with pytest.raises(ValueError, match="vm_storage_class requires vm_sandboxes"):
         replace(staging.ENV, vm_sandboxes=False, vm_storage_class="example-storage")
+
+
+def test_forward_vm_template_renders_gateway_mtls_target() -> None:
+    rendered = _runner_vm_manifests(console_autologin=False, runner_transport="forward")
+    runner = rendered["runner"]
+    template = rendered["sandbox_template"]["spec"]
+
+    assert template["runnerTransport"] == "forward"
+    assert runner["control"] == {
+        "mode": "forward",
+        "listen_address": "0.0.0.0:9090",
+        "tls": {
+            "cert_file": "/run/agentplane/runner-tls/tls.crt",
+            "key_file": "/run/agentplane/runner-tls/tls.key",
+            "ca_file": "/run/agentplane/runner-trust/ca-certificates.crt",
+        },
+    }
 
 
 if __name__ == "__main__":

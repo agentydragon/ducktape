@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from collections.abc import Set
 from pathlib import Path
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from util.yaml_file_settings import YamlFileSettings
@@ -21,6 +21,14 @@ class CentralSamplerTarget(BaseModel):
     model_config = ConfigDict(extra="forbid")
     target: str = Field(min_length=1)
     token_file: Path
+
+
+class RunnerTLS(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    cert_file: str = Field(min_length=1)
+    key_file: str = Field(min_length=1)
+    ca_file: str = Field(min_length=1)
 
 
 class Settings(YamlFileSettings):
@@ -41,9 +49,7 @@ class Settings(YamlFileSettings):
     runner_token_file: Path = Field(description="Projected Gateway-audience token for cross-replica Runner calls.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     listen_address: str = Field(
-        default=":8080",
-        min_length=1,
-        description="gRPC listen address for the Dispatcher, Runner proxy and Runner Connect.",
+        default=":8080", min_length=1, description="gRPC listen address for authenticated platform callers."
     )
     http_listen_address: str | None = Field(
         default=None,
@@ -60,7 +66,13 @@ class Settings(YamlFileSettings):
     )
     dispatcher_audience: str = Field(min_length=1, description="Dispatcher caller TokenReview audience.")
     gateway_audience: str = Field(min_length=1, description="Gateway caller TokenReview audience.")
-    runner_audience: str = Field(min_length=1, description="Runner Connect TokenReview audience.")
+    runner_transports: Set[Literal["forward", "reverse"]] = Field(
+        min_length=1, description="Explicitly admitted runner transports."
+    )
+    runner_tls: RunnerTLS
+    runner_listen_address: str | None = Field(
+        default=None, min_length=1, description="Private mTLS listener; required exactly when reverse mode is enabled."
+    )
     dispatcher_callers: Set[ServiceAccountName] = Field(
         min_length=1, description="ServiceAccounts admitted as Dispatcher callers, as namespace/name."
     )
@@ -87,3 +99,11 @@ class Settings(YamlFileSettings):
     executor_callers: Set[ServiceAccountName] = Field(
         default_factory=frozenset, description="ServiceAccounts allowed to open fixed exec-server tunnels."
     )
+
+    @model_validator(mode="after")
+    def validate_runner_transport(self) -> Settings:
+        if ("reverse" in self.runner_transports) != (self.runner_listen_address is not None):
+            raise ValueError("runner_listen_address must be supplied exactly when reverse mode is enabled")
+        if self.runner_listen_address == self.listen_address:
+            raise ValueError("runner and public listeners must be separate")
+        return self

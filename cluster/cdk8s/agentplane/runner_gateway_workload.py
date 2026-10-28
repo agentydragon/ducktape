@@ -1,7 +1,7 @@
 """The Gateway workload and its Goose migration init container.
 
-The stable addresses stay in `runner_gateway.py`: the app and Notification service import them, and this
-module imports both of those."""
+The public API, private runner mTLS listener and stable Service addresses are defined in
+`runner_gateway.py`; this module wires their listener and network-policy boundaries."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import cast
 
-from cdk8s import ApiObjectMetadata, App, Chart, Duration, Size
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ContainerProps,
@@ -31,7 +31,6 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
-from agentplane.runner_gateway.api import RUNNER_CONTROL_AUDIENCE
 from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
@@ -39,9 +38,9 @@ from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
     database,
-    egress,
     notifications,
     runner_gateway,
+    runner_sandbox,
     sandbox_controller,
     session_dispatcher,
 )
@@ -49,6 +48,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE as TRUST_BUNDLE_NAME, BUNDLE_KEY as TRUST_BUNDLE_KEY
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.probes import grpc_probe
@@ -62,6 +62,9 @@ from util.settings_contract import checked_value, env_name, validate_settings_fr
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
 _MIGRATION_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-queue-migrate:unset"
 _RUNNER_TOKEN_FILE = "/var/run/secrets/agentplane-runner-gateway/token"
+_RUNNER_TLS_CERT = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.crt"
+_RUNNER_TLS_KEY = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.key"
+_RUNNER_TLS_CA = f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/ca.crt"
 _GRPC_PORT = 8080
 
 _DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
@@ -107,7 +110,7 @@ def add_stable_services(scope: Construct, env: Environment, *, control: ServiceR
                     k8s.ServicePort(
                         name=control.port.name,
                         port=control.port.number,
-                        target_port=k8s.IntOrString.from_number(_GRPC_PORT),
+                        target_port=k8s.IntOrString.from_number(control.pod_port),
                         protocol="TCP",
                     ),
                 ]
@@ -136,7 +139,7 @@ def add_stable_services(scope: Construct, env: Environment, *, control: ServiceR
 
 
 class RunnerGateway(Construct):
-    """One workload with three authenticated services on one listener; the root retains its Services."""
+    """One workload with public gRPC, dispatcher HTTP and private runner mTLS listeners."""
 
     def __init__(
         self,
@@ -185,7 +188,8 @@ class RunnerGateway(Construct):
                 "runner_token_file": _RUNNER_TOKEN_FILE,
                 "dispatcher_audience": session_dispatcher.TOKEN_AUDIENCE,
                 "gateway_audience": runner_gateway.TOKEN_AUDIENCE,
-                "runner_audience": RUNNER_CONTROL_AUDIENCE,
+                "runner_control_target_template": runner_gateway.control_target(namespace),
+                "runner_listen_address": "0.0.0.0:8090",
                 "sandbox_controller_account": _account(sandbox_controller[0]),
             }.items()
         }
@@ -196,6 +200,8 @@ class RunnerGateway(Construct):
         content = {
             "dispatcher_callers": dispatcher_accounts,
             "gateway_callers": gateway_accounts,
+            "runner_transports": ["forward", "reverse"],
+            "runner_tls": {"cert_file": _RUNNER_TLS_CERT, "key_file": _RUNNER_TLS_KEY, "ca_file": _RUNNER_TLS_CA},
             **({"wake_callers": wake_accounts} if wake_accounts else {}),
         }
         settings = SettingsFile(
@@ -240,21 +246,43 @@ class RunnerGateway(Construct):
             placement=placement,
         )
         settings.mount_into(workload.container, env=Settings.config_file_env)
+        trust_projection = k8s.ProjectedVolumeSource(
+            default_mode=0o440,
+            sources=[
+                k8s.VolumeProjection(
+                    secret=k8s.SecretProjection(
+                        name=runner_gateway.GATEWAY_TLS_SECRET,
+                        items=[
+                            k8s.KeyToPath(key="tls.crt", path="tls.crt"),
+                            k8s.KeyToPath(key="tls.key", path="tls.key"),
+                        ],
+                    )
+                ),
+                k8s.VolumeProjection(
+                    config_map=k8s.ConfigMapProjection(
+                        name=TRUST_BUNDLE_NAME, items=[k8s.KeyToPath(key=TRUST_BUNDLE_KEY, path="ca.crt")]
+                    )
+                ),
+            ],
+        )
+        # cdk8s-plus Container.mount consumes its IStorage interface; a projected volume has no
+        # cdk8s-plus wrapper, so append the generated typed Kubernetes structs directly.
+        deployment = ApiObject.of(workload.deployment)
+        deployment.add_json_patch(
+            JsonPatch.add("/spec/template/spec/volumes/-", k8s.Volume(name="runner-tls", projected=trust_projection))
+        )
+        deployment.add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/containers/0/volumeMounts/-",
+                k8s.VolumeMount(name="runner-tls", mount_path=runner_gateway.GATEWAY_TLS_MOUNT_PATH, read_only=True),
+            )
+        )
         workload.project_tokens(
             "runner-gateway-token",
             "/var/run/secrets/agentplane-runner-gateway",
             {"token": runner_gateway.TOKEN_AUDIENCE},
         )
         self._add_rbac(workload.account, namespace)
-        egress.add_runner_egress(
-            self,
-            policy=runner_gateway.RUNNER_CONTROL_POLICY,
-            credential=runner_gateway.RUNNER_CONTROL_CREDENTIAL,
-            endpoint=control,
-            path="/agentplane.runner_gateway.RunnerControl/Connect",
-            audience=RUNNER_CONTROL_AUDIENCE,
-            purpose="control stream to the Runner Gateway",
-        )
 
     def add_platform_resources(self) -> None:
         """Add the fleet Cilium fences around the shared Gateway listeners."""
@@ -274,17 +302,17 @@ class RunnerGateway(Construct):
                     pods.admit(dispatcher.pod_port, dispatcher_http.pod_port)
                     for pods in self.dispatcher_callers.values()
                 ),
-                egress.proxy(namespace).pods.admit(self.control.pod_port),
+                runner_sandbox.reverse_pods(namespace).admit(self.control.pod_port),
             ],
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(namespace),
                 proxy.egress(),
+                EgressRule.to_endpoints(
+                    runner_sandbox.forward_pods(namespace).cilium, runner_sandbox.RUNNER_SERVICE_PORT
+                ),
             ],
-        )
-        egress.add_runner_egress_network_policy(
-            self, policy=runner_gateway.RUNNER_CONTROL_POLICY, endpoint=self.control
         )
 
     def _add_rbac(self, service_account: ServiceAccount, namespace: str) -> None:
@@ -302,6 +330,13 @@ class RunnerGateway(Construct):
             metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             rules=[
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
+                RolePolicyRule(
+                    resources=[
+                        custom_resource("kubevirt.io", "virtualmachineinstances"),
+                        custom_resource("kubevirt.io", "virtualmachines"),
+                    ],
+                    verbs=["get", "list", "watch"],
+                ),
                 RolePolicyRule(
                     resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch", "patch"]
                 ),

@@ -30,7 +30,6 @@ from agentplane.app.testing.replication_source import (
     ReplicationSource,
     add_replication_source,
 )
-from agentplane.app.testing.runner_gateway import RUNNER_AUDIENCE
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
@@ -160,10 +159,15 @@ async def scripted_runner(
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
+    tmp_path: Path,
 ) -> AsyncIterator[None]:
     """`source`'s scripted runner, connected to the Runner Gateway as `sandbox`'s runner."""
+    if gateway_service.runner_target is None:
+        raise AssertionError("reverse Runner transport did not open its private listener")
     async with runner_connection(
-        gateway_service.target, await sandbox.pod_token(RUNNER_AUDIENCE), partial(add_replication_source, source)
+        gateway_service.runner_target,
+        gateway_service.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
+        partial(add_replication_source, source),
     ):
         await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
         yield
@@ -212,12 +216,13 @@ async def thread_browser(
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
     gateway_access: GatewayAccess,
+    tmp_path: Path,
 ) -> AsyncIterator[ThreadBrowser]:
     source = thread_source
     thread_id = await event_logs.seed(SANDBOX, SESSION)
     await store.rename(thread_id, "Browser thread")
     async with (
-        scripted_runner(source, sandbox, gateway_service, sandbox_control),
+        scripted_runner(source, sandbox, gateway_service, sandbox_control, tmp_path),
         source.ingesting(history),
         app_process(
             db_url,

@@ -1,3 +1,14 @@
 #!/usr/bin/busybox sh
 set -eu
+
+# KubeVirt's virtiofs Secret mount cannot set a file mode. The production guest protects it with a
+# root-only parent; prove the native-agent account (uid 107) cannot read the runner's private key.
+test -r /run/agentplane/runner-tls/tls.key
+if su agent -s /bin/sh -c 'test ! -r /run/agentplane/runner-tls/tls.key'; then
+	:
+else
+	echo "native agent can read the runner TLS private key" >&2
+	exit 1
+fi
+
 exec /run/agentplane/runner/bin/agentplane-runner --config /run/agentplane/config/runner.json --launch-file /run/agentplane/sandbox/launch.json

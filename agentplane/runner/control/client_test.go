@@ -16,6 +16,8 @@ import (
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
+	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
+	runnertransporttesting "github.com/agentydragon/ducktape/agentplane/runner_transport/testing"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -42,20 +44,31 @@ func (s *controlService) Connect(stream grpc.BidiStreamingServer[controlpb.Runne
 	return s.connect(stream)
 }
 
-func controlServer(t *testing.T, service *controlService, options ...grpc.ServerOption) string {
+func controlServer(t *testing.T, service *controlService, options ...grpc.ServerOption) Endpoint {
 	t.Helper()
+	ca := runnertransporttesting.NewCA(t)
+	runnerURI, err := runnertransport.RunnerURI("test", "sandbox-uid", "test-workload")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerTLS := ca.Issue(t, runnerURI)
+	gatewayTLS := ca.Issue(t, runnertransport.GatewayURI)
+	credentials, err := gatewayTLS.ServerCredentials(runnerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer(options...)
+	server := grpc.NewServer(append(options, grpc.Creds(credentials))...)
 	controlpb.RegisterRunnerControlServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() {
 		server.Stop()
 		_ = listener.Close()
 	})
-	return listener.Addr().String()
+	return Endpoint{Target: listener.Addr().String(), TLS: runnerTLS}
 }
 
 func TestSenderTimeoutCancelsAndRejectsQueuedWrite(t *testing.T) {
@@ -220,6 +233,7 @@ func receiveFacts(stream grpc.BidiStreamingServer[controlpb.RunnerFrame, control
 func TestClientAuthenticatesWelcomesPublishesFactsAndRelaysRPC(t *testing.T) {
 	type audit struct {
 		authorization string
+		identity      string
 		hello         *controlpb.Hello
 		facts         *controlpb.RunnerFacts
 		reply         *tunnelpb.Reply
@@ -231,7 +245,11 @@ func TestClientAuthenticatesWelcomesPublishesFactsAndRelaysRPC(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		current := audit{authorization: first(values.Get("authorization")), hello: frame.GetHello()}
+		identity, err := runnertransport.PeerIdentity(stream.Context())
+		if err != nil {
+			return err
+		}
+		current := audit{authorization: first(values.Get("authorization")), identity: identity, hello: frame.GetHello()}
 		if err := stream.Send(&controlpb.ServiceFrame{Frame: &controlpb.ServiceFrame_Welcome{Welcome: &controlpb.Welcome{ConnectionEpoch: 1, IncarnationUid: "loopback-incarnation"}}}); err != nil {
 			return err
 		}
@@ -272,12 +290,13 @@ func TestClientAuthenticatesWelcomesPublishesFactsAndRelaysRPC(t *testing.T) {
 	defer cancel()
 	connected := make(chan error, 1)
 	go func() {
-		_, err := client.connect(ctx, Endpoint{Target: endpoint, Bearer: "loopback-token"})
+		_, err := client.connect(ctx, endpoint)
 		connected <- err
 	}()
 	current := <-audited
-	if current.authorization != "Bearer loopback-token" || current.hello == nil || current.hello.RunnerBootId != "test-boot-id" {
-		t.Fatalf("control authentication/Hello = %q, %v", current.authorization, current.hello)
+	if current.authorization != "" || current.identity != "spiffe://agentplane/runner/test/sandbox-uid/test-workload" ||
+		current.hello == nil || current.hello.RunnerBootId != "test-boot-id" {
+		t.Fatalf("control mTLS identity/Hello = %q, %q, %v", current.authorization, current.identity, current.hello)
 	}
 	if current.facts == nil || current.facts.IdleSince == nil || current.facts.QuiesceStage != controlpb.RunnerFacts_QUIESCE_STAGE_UNSPECIFIED {
 		t.Fatalf("first heartbeat facts = %v", current.facts)
@@ -402,7 +421,7 @@ func TestClientKeepsStreamLiveAndFencesCallsDuringIncarnationAdoption(t *testing
 	t.Cleanup(cancel)
 	connected := make(chan error, 1)
 	go func() {
-		_, err := client.connect(ctx, Endpoint{Target: endpoint, Bearer: "token"})
+		_, err := client.connect(ctx, endpoint)
 		connected <- err
 	}()
 	select {
@@ -548,7 +567,7 @@ func TestClientReturnsIncarnationAdoptionFailure(t *testing.T) {
 	t.Cleanup(cancel)
 	connected := make(chan error, 1)
 	go func() {
-		_, err := client.connect(ctx, Endpoint{Target: endpoint, Bearer: "token"})
+		_, err := client.connect(ctx, endpoint)
 		connected <- err
 	}()
 	select {
@@ -644,7 +663,7 @@ func TestClientJoinsCanceledAdoptionBeforeReconnect(t *testing.T) {
 	}
 	firstConnected := make(chan connectResult, 1)
 	go func() {
-		_, err := client.connect(firstCtx, Endpoint{Target: endpoint, Bearer: "token"})
+		_, err := client.connect(firstCtx, endpoint)
 		firstConnected <- connectResult{err: err, activeAdoptionsOnExit: activeAdoptions.Load()}
 	}()
 	select {
@@ -685,7 +704,7 @@ func TestClientJoinsCanceledAdoptionBeforeReconnect(t *testing.T) {
 	defer cancelSecond()
 	secondConnected := make(chan error, 1)
 	go func() {
-		_, err := client.connect(secondCtx, Endpoint{Target: endpoint, Bearer: "token"})
+		_, err := client.connect(secondCtx, endpoint)
 		secondConnected <- err
 	}()
 	select {
@@ -735,7 +754,7 @@ func TestClientReconnectsAndPublishesFactsAfterEveryWelcome(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- client.Run(ctx, Endpoint{Target: endpoint, Bearer: "token"}) }()
+	go func() { done <- client.Run(ctx, endpoint) }()
 	select {
 	case <-secondFacts:
 	case <-ctx.Done():
@@ -769,7 +788,7 @@ func TestClientStopsRetryingTerminalLocalError(t *testing.T) {
 	}, func(context.Context, string) error { return nil }, func(err error) bool { return errors.Is(err, localErr) })
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	err := client.Run(ctx, Endpoint{Target: endpoint, Bearer: "token"})
+	err := client.Run(ctx, endpoint)
 	if !errors.Is(err, localErr) {
 		t.Fatalf("control run error = %v, want %v", err, localErr)
 	}
@@ -810,7 +829,7 @@ func TestClientCancelsAndJoinsTunneledRPC(t *testing.T) {
 	client := controlClient(t, rpc, func() (*controlpb.RunnerFacts, error) { return &controlpb.RunnerFacts{}, nil }, func(context.Context, string) error { return nil }, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { _, err := client.connect(ctx, Endpoint{Target: endpoint, Bearer: "token"}); done <- err }()
+	go func() { _, err := client.connect(ctx, endpoint); done <- err }()
 	select {
 	case <-rpcStarted:
 	case <-time.After(5 * time.Second):
@@ -819,7 +838,7 @@ func TestClientCancelsAndJoinsTunneledRPC(t *testing.T) {
 	cancel()
 	select {
 	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
+		if !errors.Is(err, context.Canceled) && status.Code(err) != codes.Canceled {
 			t.Fatalf("control connect error after cancellation = %v", err)
 		}
 	case <-time.After(5 * time.Second):
@@ -890,7 +909,7 @@ func TestClientCancelsBlockedConnectSendAndReconnects(t *testing.T) {
 	client.writeTimeout = 150 * time.Millisecond
 	runCtx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	done := make(chan error, 1)
-	go func() { done <- client.Run(runCtx, Endpoint{Target: endpoint, Bearer: "token"}) }()
+	go func() { done <- client.Run(runCtx, endpoint) }()
 
 	select {
 	case <-firstCallSent:
@@ -1000,7 +1019,7 @@ func TestClientRoutesExecutorWithinConnectionLifetime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = client.connect(ctx, Endpoint{Target: endpoint, Bearer: "loopback-token"}); err == nil {
+	if _, err = client.connect(ctx, endpoint); err == nil {
 		t.Fatal("connection returned no error after peer closed")
 	}
 	select {

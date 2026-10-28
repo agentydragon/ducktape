@@ -497,7 +497,40 @@ proto_library(
     deps = [
         "//agentplane/proto:event_log_proto",
         "//agentplane/proto:runner_proto",
+        "//agentplane/runner_gateway:runner_control_proto",
     ],
+)
+
+proto_library(
+    name = "runner_exec_proto",
+    srcs = ["runner_exec.proto"],
+    visibility = ["//agentplane:__subpackages__"],
+    deps = ["//agentplane/runner_gateway:executor_gateway_proto"],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "runner_exec_pb2",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [":runner_exec_proto"],
+)
+
+py_grpc_service_library(
+    name = "runner_exec_pb2_grpc",
+    proto = ":runner_exec_proto",
+    py_proto = ":runner_exec_pb2",
+    visibility = ["//agentplane:__subpackages__"],
+)
+
+go_proto_library(
+    name = "runner_exec_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb",
+    proto = ":runner_exec_proto",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = ["//agentplane/runner_gateway:executor_gateway_go_proto"],
 )
 
 py_proto_library_with_mypy_stubs(
@@ -525,6 +558,7 @@ go_proto_library(
     deps = [
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
+        "//agentplane/runner_gateway:runner_control_go_proto",
     ],
 )
 
@@ -553,6 +587,7 @@ go_library(
     ),
     importpath = "github.com/agentydragon/ducktape/agentplane/runner",
     deps = [
+        "//agentplane/grpc/streaming",
         "//agentplane/history_service:runner_ingress_go_proto",
         "//agentplane/observability",
         "//agentplane/proto:command_go_proto",
@@ -560,6 +595,7 @@ go_library(
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/runner:runner_exec_go_proto",
         "//agentplane/runner:runner_service_go_proto",
         "//agentplane/runner/bootstrap",
         "//agentplane/runner/codexappserver",
@@ -579,6 +615,7 @@ go_library(
         "//agentplane/runner/workspace",
         "//agentplane/runner_gateway:executor_gateway_go_proto",
         "//agentplane/runner_gateway:runner_control_go_proto",
+        "//agentplane/runner_transport",
         "@com_github_coder_websocket//:websocket",
         "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/controller/runtime",
@@ -592,7 +629,11 @@ go_library(
         "@com_github_google_uuid//:uuid",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
@@ -617,6 +658,7 @@ go_test(
         "//agentplane/proto:grpc_tunnel_go_proto",
         "//agentplane/proto:runner_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/runner:runner_exec_go_proto",
         "//agentplane/runner:runner_service_go_proto",
         "//agentplane/runner/bootstrap",
         "//agentplane/runner/claude",
@@ -634,6 +676,8 @@ go_test(
         "//agentplane/runner/supervision",
         "//agentplane/runner_gateway:executor_gateway_go_proto",
         "//agentplane/runner_gateway:runner_control_go_proto",
+        "//agentplane/runner_transport",
+        "//agentplane/runner_transport/testing",
         "//agentplane/sandboxes/lease",
         "@com_github_coder_websocket//:websocket",
         "@com_github_cosi_project_runtime//pkg/resource",
@@ -644,6 +688,7 @@ go_test(
         "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/protojson",

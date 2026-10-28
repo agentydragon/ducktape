@@ -18,7 +18,7 @@ from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import bearer, dial
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
-from agentplane.runner.configuration import Endpoint
+from agentplane.runner.configuration import Endpoint, ReverseControl
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.gateway import Gateway
@@ -36,7 +36,6 @@ from util.testing.postgres import DatabaseNames, create_temporary_database
 
 DISPATCHER_AUDIENCE = "test-dispatcher"
 GATEWAY_AUDIENCE = "test-gateway"
-RUNNER_AUDIENCE = "test-runner-control"
 # The app calls the Dispatcher and the Runner proxy; the Gateway's own Dispatcher calls the proxy too.
 APP = ServiceAccountRef(namespace="test-app-namespace", name="test-app")
 GATEWAY = ServiceAccountRef(namespace="test-gateway-namespace", name="test-runner-gateway")
@@ -82,8 +81,8 @@ async def gateway_service(
         gateway_callers=(APP, GATEWAY),
         dispatcher_audience=DISPATCHER_AUDIENCE,
         gateway_audience=GATEWAY_AUDIENCE,
-        runner_audience=RUNNER_AUDIENCE,
         runner_proxy_token_file=token_file,
+        runner_transports=("reverse",),
     ) as service:
         yield service
 
@@ -129,11 +128,18 @@ async def runner(
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
+    tmp_path: Path,
 ) -> AsyncIterator[RunningRunner]:
     """The production Go runner as `sandbox`'s, taking control through the Go Runner Gateway; it still
     pushes its journal directly to the Go History Service ingress. Failed tests retain native
     evidence."""
-    control = Endpoint(target=gateway_service.target, bearer=await sandbox.pod_token(RUNNER_AUDIENCE))
+    if gateway_service.runner_target is None:
+        raise AssertionError("reverse Runner transport did not open its private listener")
+    control = ReverseControl(
+        mode="reverse",
+        target=gateway_service.runner_target,
+        tls=gateway_service.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
+    )
     ingress = Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(sandbox.owner))
     launched = replace(config, launch=replace(config.launch, sandbox=sandbox.identity))
     async with RunningRunner(

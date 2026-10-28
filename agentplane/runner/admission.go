@@ -36,7 +36,7 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	if _, err := retained.ValidateSessionID(request.SessionId); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	if !r.lifecycle.accepting() {
+	if r.isClosing() || !r.lifecycle.accepting() {
 		return nil, status.Error(codes.Aborted, "this Sandbox is quiesced")
 	}
 	spec := proto.Clone(request.Spec).(*runnerpb.SessionSpec)
@@ -92,7 +92,7 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	admitted := false
 	s, err := r.sessions.ReserveFresh(r.ctx, request.SessionId, func() error {
 		r.mu.Lock()
-		if !r.lifecycle.accepting() {
+		if r.closing || !r.lifecycle.accepting() {
 			r.mu.Unlock()
 			return status.Error(codes.Aborted, "this Sandbox is quiesced")
 		}
@@ -125,6 +125,10 @@ func (r *Runner) admit(id string, c *commandpb.Command) (entry *eventlogpb.Event
 		return nil, status.Error(codes.InvalidArgument, "interrupt_turn.turn_id is required")
 	}
 	r.mu.Lock()
+	if r.closing {
+		r.mu.Unlock()
+		return nil, status.Error(codes.Unavailable, "runner is closing")
+	}
 	desiredState, progress := r.lifecycle.desiredState(), r.lifecycle.status()
 	if desiredState.Mode == runnerlifecycle.Closing && progress.Generation == desiredState.Generation && progress.Stage == runnerlifecycle.Closed {
 		r.mu.Unlock()

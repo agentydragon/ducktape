@@ -9,8 +9,8 @@
 # /state lands as 107:107 and chown fails, so only guest root and a user whose uid and gid are both
 # 107 can write there. The runner runs as root; harness children run as that 107 user.
 #
-# The runner's configuration, launch file and CA bundle arrive on three read-only KubeVirt ConfigMap
-# disks, mounted under /run/agentplane and linked to the paths the runner reads.
+# The runner configuration, launch file, trust bundle, and mTLS credentials arrive on read-only
+# KubeVirt ConfigMap/Secret virtiofs mounts under /run/agentplane.
 #
 # The runner and the `agentplane` command are not in this closure. They arrive on the read-only
 # runner disk (//agentplane/runner:disk_image), a second containerDisk mounted at /run/agentplane/runner, so a new
@@ -235,6 +235,34 @@ in
         "nofail"
       ];
     };
+    # KubeVirt Secret virtiofs mounts do not expose defaultMode, so keep the TLS key behind a
+    # root-only parent directory. The runner runs as root; harnesses run as the unprivileged agent.
+    "${runtimeDir}/runner-private/runner-tls" = {
+      device = "agentplane-runner-tls";
+      fsType = "virtiofs";
+      noCheck = true;
+      options = [
+        "ro"
+        "nosuid"
+        "nodev"
+        "noexec"
+        "nofail"
+        "x-systemd.requires=systemd-tmpfiles-setup.service"
+      ];
+    };
+    "${runtimeDir}/runner-trust" = {
+      device = "agentplane-runner-trust";
+      fsType = "virtiofs";
+      noCheck = true;
+      options = [
+        "ro"
+        "nosuid"
+        "nodev"
+        "noexec"
+        "nofail"
+        "x-systemd.requires=systemd-tmpfiles-setup.service"
+      ];
+    };
   }
   # KubeVirt builds a ConfigMap disk as an ISO 9660 image with Rock Ridge names. `nofail` leaves a
   # missing disk to the runner, which requires its mount, rather than to local-fs.target.
@@ -263,6 +291,9 @@ in
     "d ${workspaceDir}/.home 0700 ${agentUser} ${agentUser} -"
     "z ${workspaceDir}/.home 0700 ${agentUser} ${agentUser} -"
     "d ${runtimeDir} 0755 root root -"
+    "d ${runtimeDir}/runner-private 0700 root root -"
+    "d ${runtimeDir}/runner-trust 0755 root root -"
+    "L+ ${runtimeDir}/runner-tls - - - - ${runtimeDir}/runner-private/runner-tls"
   ];
 
   systemd.services.agentplane-workspace = {

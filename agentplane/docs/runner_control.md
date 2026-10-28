@@ -1,18 +1,39 @@
-# Runner control stream
+# Runner control transports
 
-Status: **accepted design, deployed.** The Runner Gateway's
-control listener (`runner_gateway/gateway/control.go`), reachable over the egress sidecar's platform
-route, authenticates, fences and keeps connections alive, and carries command deliveries and
-lifecycle requests (`runner_gateway/gateway/tunnel.go`) for Sandboxes routed to it. The runner
-dials it at `control.target` in Runner configuration (`runner/control/client.go`), which every runner `SandboxTemplate` passes
-(`cluster/cdk8s/agentplane/platform_routes.py`); runner Pods admit no connections. This is the contract it implements. It
-covers command delivery, authentication, connection ownership, lifecycle
-requests (listing, reserving and sealing Sessions), and the push of Events to the runner's
-ingress.
+Runner configuration must select `control.mode: forward` or `control.mode: reverse`.
+There is no default or automatic fallback. The Gateway's required `runner_transports` allowlist
+can admit either mode or both. A SandboxTemplate's required `spec.runnerTransport` selects the
+mode for its next workload; the live Pod or VMI carries that selection, independently of later
+template edits. History Event ingress and durable runner command admission have the same contract
+in both modes.
 
-## Shape
+## Forward transport
 
-The runner dials out to two endpoints its Sandbox names. It pushes its journals' Events to one
+The runner serves native gRPC on one private listener: `Runner`, `RunnerExec` and standard gRPC
+health. The Gateway derives its address from the current workload's Pod IP and the runner port;
+KubeVirt forwards that port into the guest. Only Gateway workloads may reach it.
+
+One Gateway replica claims the existing runner Lease, then calls `Runner.WatchState` with the
+Sandbox UID, incarnation Pod UID and claimed epoch. The runner adopts that incarnation before
+publishing its boot ID and facts, then sends snapshots on changes and periodically. The Gateway
+publishes authenticated facts and the boot ID to the Lease and exposes the existing
+`<sandbox>-control` proxy route. An ownership claim without an observed boot ID is not a connected
+runner. Other replicas wait for the owner's Lease to expire before taking over.
+
+Unary Runner calls and each `RunnerExec.Connect` stream carry the Sandbox UID, incarnation UID,
+runner boot ID and epoch in metadata. The runner rejects calls outside its active observer epoch.
+A superseded observer cannot clear its successor. Observation loss stops executor streams and
+new control calls; admitted journal work remains runner-owned and continues independently.
+Each executor connection uses an ordinary bidirectional gRPC stream without tunnel channel IDs.
+
+`control` is a tagged object containing either `mode: forward`, `listen_address` and `tls`, or
+`mode: reverse`, `target` and `tls`. TLS settings contain `cert_file`, `key_file` and `ca_file`.
+Contradictory or partial settings fail startup. Gateway `runner_listen_address` is required exactly
+when its transport allowlist includes `reverse`; its public caller listener remains separate.
+
+## Reverse transport
+
+In reverse mode, the runner dials two endpoints its Sandbox names. It pushes its journals' Events to one
 **ingress** ([Event ingress](#event-ingress)), and holds a control stream to the Runner Gateway for
 commands and lifecycle requests. Each runner process is a gRPC client of the Runner Gateway and
 holds one HTTP/2 connection to it. On that connection it keeps one long-lived bidirectional
@@ -30,6 +51,7 @@ service RunnerControl {
 }
 
 service Runner {
+  rpc WatchState(WatchStateRequest) returns (stream WatchStateResponse); // forward only
   rpc ListSessions(runner.ListSessionsRequest) returns (runner.ListSessionsResponse);
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   rpc GetStatus(runner.GetStatusRequest) returns (runner.RunnerStatus);
@@ -92,7 +114,7 @@ message RunnerFacts {
 - **Versioning.** The protos are `agentplane/runner_gateway/runner_control.proto` (`RunnerControl` and its frames)
   and `agentplane/runner/runner_service.proto` (the `Runner` service), packages
   `agentplane.runner_gateway` and `agentplane.runner`. An incompatible change, a rename included, rides a clean
-  cutover: the operator retires every Sandbox on the old protocol, and no dual path is served.
+  cutover: the operator retires every Sandbox on the old protocol, and no incompatible wire version is negotiated.
   Nothing is negotiated: every connection carries commands and lifecycle requests. A frame of a
   kind the receiver does not know fails the stream, and an RPC the service does not implement
   returns `UNIMPLEMENTED`, so a skew shows up at first use rather than as silently dropped work; a
@@ -101,8 +123,8 @@ message RunnerFacts {
   is the Sandbox's current incarnation (a VM's virt-launcher Pod for a VM Sandbox). The runner tells
   its Sessions' seal apart from an earlier incarnation's by it ([teardown seal](../runner/SPEC.md#teardown-seal)).
   A `Welcome` without a UID is rejected before the runner serves calls or quiesces sessions.
-- **Later streams bind to the epoch.** Every RPC other than `Connect` carries the connection epoch
-  from `Welcome` in metadata and is refused once that epoch is superseded.
+- **Epoch fencing.** Reverse calls belong to the authenticated control stream. Forward calls carry
+  the epoch from `WatchState`; either path refuses a superseded connection.
 - **Message size.** gRPC's default 4 MiB per message.
 - **Admissions are facts.** A per-operation RPC answer reports the runner journal. Repeating an
   operation already journaled with the same payload returns its existing `CommandAdmitted` entry,
@@ -127,9 +149,8 @@ message RunnerFacts {
 
 The gateway's stub sits on a channel that never dials: an interceptor sends each call as a `Call`
 naming its method, serialized request and remaining deadline, and completes it from the `Reply` with
-the same `call_id`. The runner makes the call on its own gRPC server on a private Unix socket, so its
-servicer runs with the deadline, cancellation and status mapping of any gRPC server, and returns the
-outcome as a `Reply`. Calls run concurrently and replies come back in completion order.
+the same `call_id`. The runner dispatches the generated unary method handler with the remaining deadline and returns
+the outcome as a `Reply`. Calls run concurrently and replies come back in completion order.
 
 ```protobuf
 // agentplane/proto/grpc_tunnel.proto
@@ -152,26 +173,21 @@ message Reply {
 that carried it. When the stream ends the gateway fails its unanswered calls with `UNAVAILABLE`,
 since whether they ran is unknown, and a call after it ends fails the same way; a call whose deadline
 passes fails with `DEADLINE_EXCEEDED` and its late reply is dropped. A reconnect replays none of
-them. Only unary calls are carried; nothing here needs a streaming `Runner` method.
+them. Only unary calls are tunneled; forward state observation uses `WatchState`.
 
 ## Runner proxy
 
 The gateway replica holding a Sandbox's connection also serves `agentplane.runner.Runner`
-on its gRPC port, which the Sandbox's `<sandbox>-control` Service reaches. A call is forwarded as a
-tunnelled `Call` without decoding its messages, so the proxy serves every method of the service and
-answers with the runner's own status and bytes. It has no database.
+on its public gRPC port, which the Sandbox's `<sandbox>-control` Service reaches. The proxy forwards
+unary calls through the selected transport and returns the runner's status and response.
 
 - **Sandbox.** The caller names it in the `x-agentplane-sandbox` header, the same name its target
   carries; a gRPC server cannot see the dialed `:authority`. A missing or repeated header is
   `INVALID_ARGUMENT`, an unknown Sandbox `NOT_FOUND`.
-- **Expected identity during caller rollout.** A caller may also send all three headers
-  `x-agentplane-sandbox-uid`, `x-agentplane-sandbox-owner-namespace` and
-  `x-agentplane-sandbox-owner-name`. The proxy compares them with the current Sandbox and verifies
-  its runner Pod is ready before looking up the connection, using the same read-side destination
-  checks as the wrapper. It returns `NOT_FOUND` if its UID or owner changed and `UNAVAILABLE` if the
-  runner Pod is not reachable. The group is optional while old callers are being replaced; callers
-  that need the wrapper's incarnation and owner fence send all three. Requiring the group is a
-  separate reader-removal rollout gate.
+- **Expected identity.** Callers must supply `x-agentplane-sandbox-uid`,
+  `x-agentplane-sandbox-owner-namespace` and `x-agentplane-sandbox-owner-name` exactly once.
+  The proxy checks them against the current Sandbox and ready runner Pod before resolving its
+  connection. A stale UID or owner returns `NOT_FOUND`; an unavailable runner returns `UNAVAILABLE`.
 - **Authorization.** The bearer is a `token_audience` token. The `caller_accounts` may call every
   method but `Quiesce`, which only `sandbox_controller_account` may; unset, nobody may.
 - **Holder.** A replica that does not hold the Sandbox's current connection answers `UNAVAILABLE`
@@ -181,9 +197,8 @@ answers with the runner's own status and bytes. It has no database.
 
 ## Event ingress
 
-Status: **accepted design (operator, 2026-10-10 PDT); deployed.** The runner pushes
-when started with `--ingress-target` (`runner/transport.go`), which every runner `SandboxTemplate`
-passes, and reports `flushed` from what it recorded. The History
+The runner pushes to the `ingress` endpoint in its configuration (`runner/transport.go`) and
+reports `flushed` from what it recorded. The History
 Service serves the ingress (`history_service/ingress/ingress.go`) on a listener of its own, and follows no
 runner.
 
@@ -289,8 +304,7 @@ bounded only by the state volume, and a Sandbox cannot finish teardown while any
 its `SandboxTemplate` sets: one ingress for every Sandbox (the History Service, or a historyless
 deployment's own sink), and the control target is always the Runner Gateway. A create request
 cannot choose either; an ingress per Sandbox is not built. The runner reaches the ingress over its
-egress sidecar's platform route, like the control listener
-([Authentication and incarnation binding](#authentication-and-incarnation-binding)): the sidecar
+egress sidecar's platform route: the sidecar
 attaches the Pod's projected token for that ingress's own audience, `agentplane-runner-ingress` for
 the History Service, and an audience of its own for a historyless client. No other recipient
 can replay a token the ingress saw, and an ingress token opens no control connection.
@@ -455,54 +469,50 @@ Alternatives for the transport itself:
 
 ## Authentication and incarnation binding
 
-The runner dials the Runner Gateway's control listener at a loopback port of the Pod's egress
-sidecar, a platform route (`agentplane/egress/sidecar/platform_routes.go`) that forwards to the listener in
-plaintext in-cluster, past the egress proxy. The route replaces the `authorization` metadata on
-every RPC with that Pod's own projected token for the dedicated audience
-`agentplane-runner-control`. The token is projected only into the sidecar, so neither the runner nor
-the harness ever holds it.
+The runner–Gateway link uses mTLS in both directions. Reverse control dials the Gateway's private
+TLS listener directly; it does not use the sidecar's bearer-substituting control route. Forward
+control dials the runner's private TLS listener. Neither link accepts a bearer instead of a certificate.
+Public Gateway callers still use their existing workload bearers and per-method authorization.
 
-The audience is distinct from the Runner Gateway's (`agentplane-runner-gateway`) and from
-the shared `agentplane-egress` audience that the LLM ingress and Action Service receive, so none of
-those recipients can replay a token they saw as a runner connection, and a control token cannot
-call the Gateway's public Runner proxy.
+The Gateway's certificate has URI SAN `spiffe://agentplane/runner-gateway`. Each runner certificate
+has exactly one URI SAN, `spiffe://agentplane/runner/<namespace>/<sandbox-uid>/<credential-id>`.
+Certificates must chain to the configured trust roots and permit the peer's client/server EKU.
+A CA-valid certificate with the wrong URI is rejected.
 
-The route is part of every runner template, and its network rules are not policy a launch selects,
-so no Sandbox can be cut off from its own control plane.
+The Sandbox Controller allocates a credential ID before each workload incarnation and cert-manager
+issues its certificate into a distinct Secret. The workload carries that ID and its explicit
+transport. Gateway authorization checks the current Sandbox UID, current incarnation Pod, owner
+chain, transport and credential ID. VM authorization checks the launcher, VMI and Sandbox-owned VM.
+An old credential ID never authorizes a replacement workload. Names, addresses and `Hello` fields
+are not identity evidence.
 
-When a `Connect` stream opens, the Runner Gateway authenticates the bearer with the shared
-`WorkloadPrincipalAuthenticator` ([workload authentication](workload_authentication.md)) and then
-resolves the principal the way destination resolution does, in reverse:
+cert-manager owns leaf renewal through the namespaced runner Issuer, whose intermediate CA is
+signed by the cluster internal CA. trust-manager distributes the cluster internal root bundle.
+Pods use projected credential files; guests use a mounted Secret filesystem. Certificate and root
+files are reloaded at new TLS handshakes. Peer leaf validity is checked during continuing control
+observation, and connections are periodically replaced to pick up rotated credentials and trust.
+Active connection age is bounded to one hour; root removal therefore has that bounded delay for
+existing connections. Workload deletion or replacement is checked on continuing observation.
 
-1. The Pod named by the token exists with the token's UID and is not being deleted.
-2. It has exactly one controller reference: a `Sandbox` (`agentplane/sandbox_resource.py`) that
-   exists with the same UID; or, for a VM Sandbox, its VMI, in which case the Pod's
-   `agentplane.allegedly.works/sandbox` label names the Sandbox, whose
-   `status.incarnation` (written only by the Sandbox Controller) is this Pod's UID.
-3. The token's ServiceAccount is the Sandbox's, which has its name.
+The certificate authenticates the Sandbox workload, not every process within it. Code able to read
+the runner's private key can act as that workload. No runner certificate authenticates as the
+Gateway, and certificates do not replace command authorization or journal deduplication.
 
-A VM Sandbox's runner reaches the control listener from its `virt-launcher` Pod's egress relay,
-through the egress proxy ([Path through the egress proxy](#path-through-the-egress-proxy)), so its
-token is that Pod's.
+### Coordinated transport and authentication cutover
 
-Names, IPs, claimed Session IDs and anything in `Hello` are not identity. The connection is bound
-to the Sandbox UID and Pod UID that resolution returned. A Sandbox being deleted is still
-accepted, because the runner must stay reachable while it seals its Sessions; a deleted Pod fails
-TokenReview.
+This change requires matching runner, Sandbox Controller, Gateway and template configuration.
+Old runner binaries cannot authenticate to the new private listener. Before updating the Gateway,
+quiesce and suspend existing runners through the old Gateway and wait for their retained journal
+state to flush. Preserve Sandbox objects and state PVCs. Provision the Issuer, Gateway Certificate,
+trust bundle and network policy, then deploy the matching services and templates with explicit
+transport selections. Resume the Sandboxes after certificates become Ready. Verify
+`RunnerConnected`, bootstrap readiness, journal/history continuity and a new admitted command for
+each transport in use. A ready Pod alone does not establish control connectivity.
 
-**Revocation.** Every RPC is authenticated when it opens. With each liveness write (every 15 s) the
-owning replica resolves the connection's Pod and Sandbox again, and ends the connection's streams
-when its Pod is deleted or replaced or its Sandbox is replaced by another of its name. As a backstop for a
-missed watch event, it ends every `Connect` stream after one hour; the runner reconnects and
-authenticates again.
-
-**Trust boundary.** The token proves the Pod, not the runner process. The harness and every
-process it launches share the runner's container and state volume, so a process inside the Sandbox
-can open a competing control connection. That gains nothing it does not already have: it can
-already rewrite the runner's journal on the shared volume or kill the runner. The control stream
-therefore authenticates the Sandbox incarnation and claims no process isolation. Distinguishing
-the runner from agent processes needs a resource boundary inside the Sandbox, such as a VM guest
-that keeps the runner outside the agent's reach.
+Rollback also requires matching binaries and configuration: quiesce through the working Gateway,
+restore the prior Gateway, Controller and template versions together, and resume against retained
+state. Do not retry an uncertain command with a new command ID; reconcile the journal admission
+receipt first. Certificate resources can remain while rolling back; prior runners do not use them.
 
 ## Connection ownership and fencing
 
@@ -560,12 +570,6 @@ incarnation. Until adoption succeeds, it sends no Runner facts and answers tunne
 
 ## Path through the egress proxy
 
-The KubeVirt experiment's runner, which has no platform routes, dials both listeners through the
-egress proxy with a placeholder bearer. The `runner-control` and `runner-ingress` egress policies
-admit each host and substitute the Pod's projected token for its audience.
-
-A gRPC client behind an HTTP proxy opens a `CONNECT` tunnel, and the egress proxy intercepts the
-tunnel to read and substitute metadata. It reads the plaintext HTTP/2 the control listener and the ingress
-speak inside that tunnel, and decides a gRPC request from its headers, so the stream's messages pass
-through as they are written rather than after the stream closes. Long streams also cross proxy
-replica drains, which end them; the runner reconnects like after any other `UNAVAILABLE`.
+History ingress and other platform routes retain their bearer-substituting egress paths.
+Runner control uses its dedicated mTLS connection in either direction and never sends its private
+key or control credentials through an HTTP interception proxy.

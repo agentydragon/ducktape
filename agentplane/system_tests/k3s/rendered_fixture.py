@@ -45,6 +45,7 @@ class RuntimeInputs:
     ca_key: str
     system_roots: str
     cluster_ca: str
+    runner_ca_cert: str
 
 
 PLACEHOLDERS = RuntimeInputs(
@@ -52,6 +53,7 @@ PLACEHOLDERS = RuntimeInputs(
     ca_key="k3s-env-placeholder-egress-ca-key",
     system_roots="k3s-env-placeholder-system-roots",
     cluster_ca="k3s-env-placeholder-cluster-ca",
+    runner_ca_cert="k3s-env-placeholder-runner-ca-cert",
 )
 
 

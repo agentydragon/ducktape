@@ -1,4 +1,4 @@
-"""Stable Runner Gateway addresses and runner-control egress identity."""
+"""Stable public and private Runner Gateway Service addresses."""
 
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -6,10 +6,10 @@ NAME = "runner-gateway"
 TOKEN_AUDIENCE = "agentplane-runner-gateway"
 _LABELS = {"app.kubernetes.io/name": NAME}
 
-# The policy a runner behind the egress proxy dials the control stream under (the KubeVirt
-# experiment's; a Sandbox's runner uses its sidecar's platform route), and the credential it substitutes.
-RUNNER_CONTROL_POLICY = "runner-control"
-RUNNER_CONTROL_CREDENTIAL = "agentplane-runner-control"
+RUNNER_CONTROL_PORT = 8090
+GATEWAY_TLS_SECRET = "agentplane-runner-gateway-tls"
+GATEWAY_TLS_MOUNT_PATH = "/run/agentplane/runner-tls"
+RUNNER_CERTIFICATE_ISSUER = "agentplane-runner-ca"
 
 
 def service(namespace: str) -> ServiceRef:
@@ -29,11 +29,9 @@ def control_target(namespace: str) -> str:
 
 
 def runner_control(namespace: str) -> ServiceRef:
-    """The listener runners dial out to (agentplane/docs/runner_control.md), through the egress proxy.
-    Its Service port reaches the Gateway's one listener, so network rules name that Pod port."""
+    """Private mTLS listener used by reverse-mode runners."""
     return ServiceRef(
         name=NAME,
-        port=Port(name="runner-control", number=8082),
+        port=Port(name="runner-control", number=RUNNER_CONTROL_PORT),
         pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
-        target_port=service(namespace).pod_port,
     )

@@ -19,6 +19,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_transport"
+	tlstest "github.com/agentydragon/ducktape/agentplane/runner_transport/testing"
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
@@ -27,7 +29,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
@@ -69,7 +71,9 @@ type sandboxFixture struct {
 	pod                                                   *corev1.Pod
 	objects                                               client.Client
 	runnerToken, appToken, executorToken, controllerToken string
-	callerAuth, runnerAuth                                *auth.Resolver
+	callerAuth                                            *auth.Resolver
+	ca                                                    *tlstest.CA
+	gatewayTLS, runnerTLS                                 runner_transport.Config
 }
 
 func newSandboxFixture(t *testing.T) *sandboxFixture {
@@ -101,6 +105,7 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	f.pod, err = pods.Create(ctx, &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testPod, Namespace: f.namespace,
+			Labels: map[string]string{sandboxapi.RunnerTransportLabel: "reverse", sandboxapi.RunnerCredentialLabel: "test-runner-credential"},
 			OwnerReferences: []metav1.OwnerReference{{
 				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: testSandbox,
 				UID: f.sandbox.UID, Controller: &controller,
@@ -114,7 +119,7 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.pod.Status = corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{
+	f.pod.Status = corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "192.0.2.20", Conditions: []corev1.PodCondition{{
 		Type: corev1.PodReady, Status: corev1.ConditionTrue,
 	}}}
 	if f.pod, err = pods.UpdateStatus(ctx, f.pod, metav1.UpdateOptions{}); err != nil {
@@ -146,9 +151,13 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 		[]string{appAccount.Namespace, controllerAccount.Namespace, executorAccount.Namespace}); err != nil {
 		t.Fatal(err)
 	}
-	if f.runnerAuth, err = auth.NewResolver(api.TokenReviews(), testAudience, []string{f.namespace}); err != nil {
+	f.ca = tlstest.NewCA(t)
+	f.gatewayTLS = f.ca.Issue(t, runner_transport.GatewayURI)
+	uri, err := runner_transport.RunnerURI(f.namespace, string(f.sandbox.UID), f.pod.Labels[sandboxapi.RunnerCredentialLabel])
+	if err != nil {
 		t.Fatal(err)
 	}
+	f.runnerTLS = f.ca.Issue(t, uri)
 	return f
 }
 
@@ -157,7 +166,8 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 func (f *sandboxFixture) newGateway(t *testing.T, holderName, holderIP string, executorCallers ...auth.Account) *Gateway {
 	t.Helper()
 	gateway, err := New(Config{
-		Namespace:                f.namespace,
+		Namespace:        f.namespace,
+		RunnerTransports: []string{"forward", "reverse"}, RunnerTLS: f.gatewayTLS,
 		CallerAccounts:           []auth.Account{appAccount},
 		ExecutorCallers:          executorCallers,
 		SandboxControllerAccount: &controllerAccount,
@@ -168,7 +178,7 @@ func (f *sandboxFixture) newGateway(t *testing.T, holderName, holderIP string, e
 			LeaseTouchInterval: 5 * time.Second,
 			MaximumAge:         time.Minute,
 		},
-	}, f.callerAuth, f.runnerAuth, f.objects, api.Clientset.CoreV1(), api.Clientset.CoordinationV1(), api.Clientset.DiscoveryV1())
+	}, f.callerAuth, f.objects, api.Clientset.CoreV1(), api.Clientset.CoordinationV1(), api.Clientset.DiscoveryV1())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,25 +199,19 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("test Sandbox fixture is not readable: %v", err)
 	}
-	runnerPrincipal, err := f.runnerAuth.Resolve(metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+f.runnerToken)))
+	uri, err := f.runnerTLS.LocalIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if runnerPrincipal.Account != (auth.Account{Namespace: f.namespace, Name: testSandbox}) || runnerPrincipal.PodName != testPod || runnerPrincipal.PodUID != podUID {
-		t.Fatalf("TokenReview returned the wrong runner principal: %#v", runnerPrincipal)
+	if _, _, err := gateway.certificatePeer(t.Context(), uri, "reverse"); err != nil {
+		t.Fatal(err)
 	}
-	if _, _, err := gateway.sandboxes.runnerPeer(context.Background(), runnerPrincipal); err != nil {
-		t.Fatalf("runner peer resolution rejected the test Sandbox Pod: %v", err)
+	wrongURI, err := runner_transport.RunnerURI(f.namespace, "test-other-sandbox-uid", podUID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	wrongRunner := runnerPrincipal
-	wrongRunner.Account.Name = "test-other-sandbox"
-	if _, _, err := gateway.sandboxes.runnerPeer(context.Background(), wrongRunner); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("a runner token for another ServiceAccount was accepted: %v", err)
-	}
-	missingRunnerPodUID := runnerPrincipal
-	missingRunnerPodUID.PodUID = ""
-	if _, _, err := gateway.sandboxes.runnerPeer(context.Background(), missingRunnerPodUID); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("a runner principal without its Pod UID was accepted: %v", err)
+	if _, _, err := gateway.certificatePeer(t.Context(), wrongURI, "reverse"); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("another Sandbox certificate was accepted: %v", err)
 	}
 	setOwnerUID := func(uid types.UID) {
 		t.Helper()
@@ -222,20 +226,20 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 		}
 	}
 	setOwnerUID("test-replacement-sandbox-uid")
-	if _, _, err := gateway.sandboxes.runnerPeer(context.Background(), runnerPrincipal); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("a runner Pod owned by another Sandbox incarnation was accepted: %v", err)
+	if _, _, err := gateway.certificatePeer(context.Background(), uri, "reverse"); status.Code(err) != codes.Unavailable {
+		t.Fatalf("a foreign runner Pod was not rejected as unavailable: %v", err)
 	}
 	setOwnerUID(f.sandbox.UID)
 
 	listener := newBufconnListener()
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.Creds(f.serverCredentials(t)))
 	gateway.RegisterRunnerControl(server)
 	gateway.RegisterProxy(server)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	connection, err := grpc.NewClient(
 		"passthrough:///runner-gateway-test",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(f.clientCredentials(t)),
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
 	)
 	if err != nil {
@@ -551,14 +555,14 @@ func TestRunnerControlTunnelRoutesAuthenticatedProxyCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	otherListener := newBufconnListener()
-	otherServer := grpc.NewServer()
+	otherServer := grpc.NewServer(grpc.Creds(f.serverCredentials(t)))
 	other.RegisterRunnerControl(otherServer)
 	other.RegisterProxy(otherServer)
 	go func() { _ = otherServer.Serve(otherListener) }()
 	t.Cleanup(otherServer.Stop)
 	otherConnection, err := grpc.NewClient(
 		"passthrough:///other-runner-gateway-test",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(f.clientCredentials(t)),
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return otherListener.Dial() }),
 	)
 	if err != nil {
@@ -790,14 +794,14 @@ func TestExecutorGatewayRoutesBoundedMessageFrames(t *testing.T) {
 	f := newSandboxFixture(t)
 	gateway := f.newGateway(t, "test-runner-gateway-0", "192.0.2.10", executorAccount)
 	listener := newBufconnListener()
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.Creds(f.serverCredentials(t)))
 	gateway.RegisterRunnerControl(server)
 	gateway.RegisterExecutorGateway(server)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	connection, err := grpc.NewClient(
 		"passthrough:///executor-gateway-test",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(f.clientCredentials(t)),
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
 	)
 	if err != nil {
@@ -948,13 +952,13 @@ func TestExecutorGatewayIsAbsentWithoutIndependentAllowlist(t *testing.T) {
 	f := newSandboxFixture(t)
 	gateway := f.newGateway(t, "test-runner-gateway-0", "192.0.2.10")
 	listener := newBufconnListener()
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.Creds(f.serverCredentials(t)))
 	gateway.RegisterExecutorGateway(server)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	connection, err := grpc.NewClient(
 		"passthrough:///disabled-executor-gateway-test",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(f.clientCredentials(t)),
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
 	)
 	if err != nil {
@@ -970,4 +974,22 @@ func TestExecutorGatewayIsAbsentWithoutIndependentAllowlist(t *testing.T) {
 	if status.Code(err) != codes.Unimplemented {
 		t.Fatalf("executor Gateway RPC was registered without its opt-in caller allowlist: %v", err)
 	}
+}
+
+func (f *sandboxFixture) serverCredentials(t *testing.T) credentials.TransportCredentials {
+	t.Helper()
+	c, err := f.gatewayTLS.ServerCredentials("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func (f *sandboxFixture) clientCredentials(t *testing.T) credentials.TransportCredentials {
+	t.Helper()
+	c, err := f.runnerTLS.ClientCredentials(runner_transport.GatewayURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
 }

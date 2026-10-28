@@ -47,11 +47,23 @@ spec:
             type: object
           spec:
             description: 'SandboxTemplateSpec sets the Sandbox''s kind: exactly one
-              of Pod and VM.'
+              of Pod and VM, and chooses its runner
+
+              control transport explicitly.'
             properties:
               pod:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              runnerTransport:
+                description: 'RunnerTransport is required and has no default: the
+                  live workload carries this choice as a
+
+                  label so the Runner Gateway does not reread a mutable template during
+                  authentication.'
+                enum:
+                - forward
+                - reverse
+                type: string
               stateVolume:
                 description: 'StateVolume is the volume the controller fills with
                   the Sandbox''s state PVC: a Pod''s containers
@@ -151,6 +163,7 @@ spec:
                     && self.claim.volumeMode == ''Block'' : !has(self.claim.volumeMode)
                     || self.claim.volumeMode == ''Filesystem'''
             required:
+            - runnerTransport
             - stateVolume
             type: object
             x-kubernetes-validations:

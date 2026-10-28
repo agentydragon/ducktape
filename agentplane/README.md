@@ -12,7 +12,7 @@ the approval gateway for any MCP-capable LLM product, exposed externally through
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   upstream MCP execution and the gRPC/HTTP APIs used by the MCP edge.
 - [MCP edge](mcp_edge/README.md): external Connection/OAuth authority and `/mcp`; forwards authenticated Actions calls over gRPC.
-- [Runner Gateway](runner_gateway/README.md): one process serving the runner control stream,
+- [Runner Gateway](runner_gateway/README.md): one process supporting forward and reverse runner transports,
   authorized live Runner proxy and [Session Dispatcher](runner_gateway/dispatcher/README.md) durable queue.
   New serving Pods run the queue migration before starting ([deployment](runner_gateway/README.md#deployment)).
 - [History Service](history_service/README.md): retained Session history, read by the
@@ -137,16 +137,14 @@ flowchart LR
     vmexec --> relay
     runner --> sidecar --> egress
     guest --> relay --> egress
-    runner -.->|RunnerControl.Connect| sidecar
+    runner -.->|reverse: mTLS RunnerControl.Connect| gw
     runner -.->|OTLP/gRPC telemetry route| sidecar
-    sidecar -.->|outbound platform route| gw
     sidecar -->|OTLP/gRPC| alloy
-    guest -.->|RunnerControl.Connect| relay
+    guest -.->|reverse: mTLS RunnerControl.Connect| gw
     guest -.->|OTLP/gRPC telemetry route| relay
-    relay -.->|outbound platform route| gw
     relay -->|OTLP/gRPC| alloy
-    gw -->|tunneled Runner RPCs and exec-server frames| runner
-    gw -->|tunneled Runner RPCs and exec-server frames| guest
+    gw -->|forward: mTLS Runner and RunnerExec gRPC| runner
+    gw -->|forward: mTLS Runner and RunnerExec gRPC| guest
     runner -.->|dials RunnerIngress.Push| sidecar
     sidecar -.->|outbound ingress route| hs
     guest -.->|dials RunnerIngress.Push| relay
@@ -176,13 +174,11 @@ embeds files through an embedding endpoint and owns its own PostgreSQL database
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its conversation
   view, folded by the History Service. Runners push Events to the History Service, the only way into
   retained history.
-- **Runner traffic is outbound.** Runner Pods admit no connections. Everything a runner sends goes
-  through its Pod's egress sidecar: to the egress proxy, which authenticates the Pod and substitutes
-  credentials, or over the sidecar's platform routes with the Pod's own token to the Runner Gateway
-  and History Service ingress. A VM Sandbox's guest uses an identical relay that Kyverno adds to its
-  KubeVirt launcher Pod. Commands and lifecycle requests reach runners over the `RunnerControl`
-  stream they dial to the Runner Gateway, routed per Sandbox by its `<sandbox>-control` Service and
-  `<sandbox>-runner` Lease ([runner control stream](docs/runner_control.md)).
+- **Runner transport is explicit.** Each template selects `forward` (Gateway dials the runner's
+  gRPC server) or `reverse` (runner dials `RunnerControl.Connect`); there is no default. Both links
+  use mTLS. The Gateway validates the certificate against the active Sandbox/workload and retains
+  `<sandbox>-control` routing and `<sandbox>-runner` observation Leases. History push and ordinary
+  Sandbox egress retain their sidecar or VM relay paths ([runner control](docs/runner_control.md)).
 - **Telemetry uses Alloy as its collector.** SDK-instrumented services export OTLP/gRPC to Alloy.
   Browser spans post to the same-origin App relay, which forwards OTLP/HTTP to Alloy. Runner spans use
   the sidecar's local telemetry route; VM guest spans use the launcher relay's guest gateway route.

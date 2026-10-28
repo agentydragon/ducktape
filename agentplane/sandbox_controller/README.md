@@ -4,8 +4,8 @@ Reconciles `Sandbox` into retained state and optional workspace PVCs, its own Se
 `PolicyBinding`, and, while running, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel). The integration app submits Sandbox desired state and
 operator grants through the Kubernetes API; this controller reconciles each Sandbox and owns its
-status. Its runner template reaches platform services over the
-egress sidecar's platform routes. `spec.bootstrap` and the Sandbox's identity reach its runner
+status. Runner control uses the template's explicitly selected `forward` or `reverse` mTLS transport;
+History and telemetry use the egress sidecar's platform routes. `spec.bootstrap` and the Sandbox's identity reach its runner
 through the Sandbox's launch ConfigMap (a Pod mounts it, a VM gets it as a disk). Session launch
 defaults live in the app's preset catalog and are resolved before an opening reaches the Dispatcher.
 Deletion first has the runner seal every
@@ -14,6 +14,12 @@ Session: the controller calls `Runner.Quiesce` through the [Runner Gateway](../r
 `Quiesced` condition. Suspension seals the same way before the Pod stops, recorded as
 `status.quiescedIncarnation`. `runner_gateway_target` and `runner_gateway_token_file` are required settings.
 Storage layouts, compatible attachments and retained identities: [Sandbox storage](../docs/sandbox_storage.md).
+
+`runner_certificate_issuer` names the cert-manager Issuer used for per-incarnation `Certificate`
+requests. cert-manager owns key generation and renewal. The controller waits for the matching
+TLS Secret before starting a runner and binds its credential ID to the current Pod or VMI UID.
+Replacement workloads get distinct Secret names. trust-manager supplies the trusted roots.
+See [authentication and cutover](../docs/runner_control.md#authentication-and-incarnation-binding).
 
 Because that condition is set only once the History Service's ingress has
 acknowledged every seal, deleting a Sandbox waits while the History Service is down or rolling;
@@ -29,6 +35,8 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   state PVC (by the Sandbox label) and the templates it names (by a field index) map back to it.
 - [`vm.go`](vm.go): a VM Sandbox's VirtualMachine (types from `kubevirt.io/api`), its run strategy,
   and the VMI and virt-launcher Pod its status comes from.
+- [`runner_credential.go`](runner_credential.go): Certificate requests, incarnation binding,
+  credential mounts and cleanup of retired generations.
 - [`state_volume.go`](state_volume.go): the state layout contract, PVC creation record and identity binding.
 - [`workspace.go`](workspace.go): workspace layout validation, its PVC creation record and persisted claim binding.
 - [`identity.go`](identity.go): the Sandbox's ServiceAccount and `PolicyBinding`, and the
@@ -51,6 +59,7 @@ Its settings are `AGENTPLANE_SANDBOX_CONTROLLER_*` environment variables, named 
 AGENTPLANE_SANDBOX_CONTROLLER_NAMESPACE=<namespace> \
   AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TARGET=<target> \
   AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TOKEN_FILE=<token file> \
+  AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_CERTIFICATE_ISSUER=<issuer> \
   bb run //agentplane/sandbox_controller/cmd:sandbox-controller
 ```
 

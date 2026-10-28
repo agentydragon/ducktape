@@ -60,7 +60,14 @@ func (p *runnerProxy) connection(ctx context.Context, controllerOnly bool) (*run
 	if err != nil {
 		return nil, unavailable(err)
 	}
-	return g.connections.holder(view.identity.UID)
+	connection, err := g.connections.holder(view.identity.UID)
+	if err != nil {
+		return nil, err
+	}
+	if view.incarnation == nil || connection.identity != view.identity || connection.podUID != view.incarnation.UID {
+		return nil, status.Error(codes.Unavailable, "runner connection belongs to another incarnation")
+	}
+	return connection, nil
 }
 
 func (p *runnerProxy) ListSessions(ctx context.Context, request *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {

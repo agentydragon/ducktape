@@ -7,9 +7,10 @@ import os
 import subprocess
 import tempfile
 from collections.abc import AsyncIterator, Awaitable, Sequence
-from contextlib import asynccontextmanager, suppress
+from contextlib import ExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 import grpc
@@ -20,9 +21,11 @@ from sqlalchemy.engine import make_url
 
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
+from agentplane.runner.configuration import RunnerTransportTLS
 from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.runner_gateway.settings import Settings
+from agentplane.runner_gateway.settings import RunnerTLS, Settings
 from agentplane.subjects import ServiceAccountRef
+from agentplane.testing.tls import RUNNER_GATEWAY_TEST_DNS, CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import listen_tcp
 from util.settings_contract import env_name
@@ -70,6 +73,15 @@ class GatewayProcess:
     # The Dispatcher's generated HTTP/JSON facade.
     http_url: str
     log_path: Path
+    runner_target: str | None
+    runner_ca: CertificateAuthority
+    runner_ca_file: Path
+
+    def issue_runner_tls(self, uri: str, directory: Path) -> RunnerTransportTLS:
+        """Issue a Runner peer certificate trusted by this Gateway process."""
+        directory.mkdir(parents=True, exist_ok=True)
+        cert_file, key_file = issue_workload_leaf(self.runner_ca, uri, directory)
+        return RunnerTransportTLS(cert_file=str(cert_file), key_file=str(key_file), ca_file=str(self.runner_ca_file))
 
     def gateway_client(
         self, token_file: Path, *, request_timeout_s: float = 20, lifecycle_timeout_s: float = 310
@@ -201,17 +213,17 @@ async def run_gateway(
     dispatcher_callers: Sequence[ServiceAccountRef],
     gateway_callers: Sequence[ServiceAccountRef],
     executor_callers: Sequence[ServiceAccountRef] = (),
+    runner_transports: Sequence[Literal["forward", "reverse"]],
     dispatcher_audience: str,
     gateway_audience: str,
-    runner_audience: str,
     runner_proxy_token_file: Path,
     startup_timeout_s: float = 30,
 ) -> AsyncIterator[GatewayProcess]:
     """Migrate the supplied database, then run the full Gateway on deployment-shaped settings.
 
     The Kubernetes API and PostgreSQL database are owned by the caller. The Goose migration
-    runner applies the schema before the server starts. All three gRPC services share a
-    loopback listener, including the Dispatcher calling the Runner proxy.
+    runner applies the schema before the server starts. Platform gRPC and HTTP use the public
+    listeners; runner control uses a separate mTLS listener when reverse mode is enabled.
     """
     migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
     await asyncio.to_thread(_migrate, database_url, migration_log)
@@ -220,38 +232,54 @@ async def run_gateway(
     log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
     # The database URL and Pod fields stay out of the file, as in deployment, where they come from
     # runtime sources. The explicit empty wake list exercises the authoring schema and Go loader contract.
-    with listen_tcp() as grpc_listener, listen_tcp() as http_listener:
-        effective_settings = Settings(
-            sandbox_namespace=namespace,
-            dispatcher_database_url=database_url,
-            pod_name="runner-gateway-test",
-            pod_ip="192.0.2.10",
-            runner_token_file=runner_proxy_token_file,
-            kubeconfig=kubeconfig,
-            listen_address=f"fd:{grpc_listener.socket.fileno()}",
-            http_listen_address=f"fd:{http_listener.socket.fileno()}",
-            proxy_port=grpc_listener.port,
-            runner_control_target_template=f"{grpc_listener.host}:{grpc_listener.port}",
-            dispatcher_audience=dispatcher_audience,
-            gateway_audience=gateway_audience,
-            runner_audience=runner_audience,
-            dispatcher_callers={f"{account.namespace}/{account.name}" for account in dispatcher_callers},
-            gateway_callers={f"{account.namespace}/{account.name}" for account in gateway_callers},
-            executor_callers={f"{account.namespace}/{account.name}" for account in executor_callers},
-            wake_callers=set(),
-            _cli_parse_args=[],
-        )
-        # These runtime-source settings stay out of the YAML, especially the database Secret.
-        settings = effective_settings.model_dump(
-            mode="json",
-            exclude_none=True,
-            exclude_unset=True,
-            exclude={"dispatcher_database_url", "pod_name", "pod_ip"},
-        )
-        for caller_list in ("dispatcher_callers", "gateway_callers", "executor_callers", "wake_callers"):
-            settings[caller_list] = sorted(settings[caller_list])
+    with ExitStack() as listeners:
+        grpc_listener = listeners.enter_context(listen_tcp())
+        http_listener = listeners.enter_context(listen_tcp())
+        runner_listener = listeners.enter_context(listen_tcp()) if "reverse" in runner_transports else None
+        runner_target = f"{runner_listener.host}:{runner_listener.port}" if runner_listener is not None else None
         with tempfile.TemporaryDirectory() as settings_dir, log_path.open("wb") as log_file:
-            settings_path = Path(settings_dir) / "settings.yaml"
+            settings_directory = Path(settings_dir)
+            runner_ca = make_ca("runner transport test CA")
+            runner_ca_file, _ = write_ca(runner_ca, settings_directory, "runner-ca")
+            gateway_cert, gateway_key = issue_workload_leaf(
+                runner_ca, "spiffe://agentplane/runner-gateway", settings_directory, dns_name=RUNNER_GATEWAY_TEST_DNS
+            )
+            runner_tls = RunnerTLS(cert_file=str(gateway_cert), key_file=str(gateway_key), ca_file=str(runner_ca_file))
+            effective_settings = Settings(
+                sandbox_namespace=namespace,
+                dispatcher_database_url=database_url,
+                pod_name="runner-gateway-test",
+                pod_ip="192.0.2.10",
+                runner_token_file=runner_proxy_token_file,
+                kubeconfig=kubeconfig,
+                listen_address=f"fd:{grpc_listener.socket.fileno()}",
+                http_listen_address=f"fd:{http_listener.socket.fileno()}",
+                proxy_port=grpc_listener.port,
+                runner_control_target_template=f"{grpc_listener.host}:{grpc_listener.port}",
+                dispatcher_audience=dispatcher_audience,
+                gateway_audience=gateway_audience,
+                runner_transports=set(runner_transports),
+                runner_tls=runner_tls,
+                runner_listen_address=(
+                    f"fd:{runner_listener.socket.fileno()}" if runner_listener is not None else None
+                ),
+                dispatcher_callers={f"{account.namespace}/{account.name}" for account in dispatcher_callers},
+                gateway_callers={f"{account.namespace}/{account.name}" for account in gateway_callers},
+                executor_callers={f"{account.namespace}/{account.name}" for account in executor_callers},
+                wake_callers=set(),
+                _cli_parse_args=[],
+            )
+            # These runtime-source settings stay out of the YAML, especially the database Secret.
+            settings = effective_settings.model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude_unset=True,
+                exclude={"dispatcher_database_url", "pod_name", "pod_ip"},
+            )
+            settings["runner_transports"] = sorted(settings["runner_transports"])
+            for caller_list in ("dispatcher_callers", "gateway_callers", "executor_callers", "wake_callers"):
+                settings[caller_list] = sorted(settings[caller_list])
+            settings_path = settings_directory / "settings.yaml"
             settings_path.write_text(yaml.safe_dump(settings))
             environment = {
                 **os.environ,
@@ -262,13 +290,12 @@ async def run_gateway(
                 # is not dialed: this single-replica fixture sends RPCs to its loopback listener.
                 env_name(Settings, "pod_ip"): "192.0.2.10",
             }
+            pass_fds = [grpc_listener.socket.fileno(), http_listener.socket.fileno()]
+            if runner_listener is not None:
+                pass_fds.append(runner_listener.socket.fileno())
             spawn = asyncio.create_task(
                 asyncio.create_subprocess_exec(
-                    str(binary),
-                    env=environment,
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
-                    pass_fds=[grpc_listener.socket.fileno(), http_listener.socket.fileno()],
+                    str(binary), env=environment, stdout=log_file, stderr=subprocess.STDOUT, pass_fds=pass_fds
                 )
             )
             try:
@@ -280,6 +307,9 @@ async def run_gateway(
                     target=f"{grpc_listener.host}:{grpc_listener.port}",
                     http_url=f"http://{http_listener.host}:{http_listener.port}",
                     log_path=log_path,
+                    runner_target=runner_target,
+                    runner_ca=runner_ca,
+                    runner_ca_file=runner_ca_file,
                 )
                 cleanup = asyncio.create_task(orphan.stop())
                 try:
@@ -290,11 +320,16 @@ async def run_gateway(
                 raise
             grpc_listener.socket.close()
             http_listener.socket.close()
+            if runner_listener is not None:
+                runner_listener.socket.close()
             service = GatewayProcess(
                 process=process,
                 target=f"{grpc_listener.host}:{grpc_listener.port}",
                 http_url=f"http://{http_listener.host}:{http_listener.port}",
                 log_path=log_path,
+                runner_target=runner_target,
+                runner_ca=runner_ca,
+                runner_ca_file=runner_ca_file,
             )
             try:
                 await _wait_ready(service, timeout_s=startup_timeout_s)
