@@ -459,6 +459,14 @@ func (s *Session) ensureReady(ctx context.Context) error {
 	if err := s.runner.bootstrap(ctx); err != nil {
 		return err
 	}
+	s.mu.Lock()
+	previous, shared := s.process, s.codex != nil
+	s.mu.Unlock()
+	if previous != nil && !shared && !previous.Running() {
+		// The exited process may still be recording frames and clearing its
+		// attachment. Join those callbacks before installing a successor.
+		s.readers.Wait()
+	}
 	return s.startHarness(ctx)
 }
 

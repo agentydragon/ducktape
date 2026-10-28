@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -269,4 +270,31 @@ func TestPreparationCompletingAfterCloseCannotMakeSessionReady(t *testing.T) {
 	if preparation != nil {
 		t.Fatalf("preparation operation remained owned after Close: %+v", preparation)
 	}
+}
+
+func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testing.T) {
+	s, previous := frameTestSession(t, []string{"/bin/true"})
+	if _, err := previous.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	synctest.Test(t, func(t *testing.T) {
+		// The OS process has exited, but its stdout callback still owns the
+		// attachment until its final journal writes and exit handling complete.
+		s.readers.Add(1)
+		returned := make(chan struct{})
+		var prepareErr error
+		go func() { prepareErr = s.ensureReady(context.Background()); close(returned) }()
+		synctest.Wait()
+		select {
+		case <-returned:
+			t.Error("preparation reached successor startup before the old reader completed")
+		default:
+		}
+		s.readers.Done()
+		synctest.Wait()
+		<-returned
+		if prepareErr == nil {
+			t.Fatal("expected the fixture's unconfigured harness to reject successor startup")
+		}
+	})
 }
