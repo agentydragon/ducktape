@@ -367,12 +367,12 @@ pub fn resolve_imported_callable_summaries(
                 .map(|(_, local)| local.clone())
                 .collect();
             let views = top_level_item_views(facts.body);
-            (
-                module,
+            let mut prepared =
                 crate::facts::sync_effects::execution_index::prepare_callable_capabilities(
                     &views, locals,
-                ),
-            )
+                );
+            prepared.locate_native_writes(module, facts.source.as_ref());
+            (module, prepared)
         })
         .collect();
     let native_integrity = crate::facts::sync_effects::execution_index::resolve_native_integrity(

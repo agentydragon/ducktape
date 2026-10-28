@@ -4,6 +4,7 @@
 //! can themselves depend on author contracts in their defining chunks.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -121,7 +122,8 @@ impl CallableSummary {
 }
 
 /// Intrinsic families whose visible writes constrain inferred native operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum NativeIntrinsic {
     GlobalObject,
     /// A global slot may hold any native value; descendants retain this root.
@@ -144,6 +146,7 @@ pub enum NativeIntrinsic {
 #[derive(Debug, Clone, Default)]
 pub struct NativeIntegrity {
     pub mutated: BTreeSet<NativeIntrinsic>,
+    pub witnesses: Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
 }
 
 #[derive(Debug, Clone, Default)]

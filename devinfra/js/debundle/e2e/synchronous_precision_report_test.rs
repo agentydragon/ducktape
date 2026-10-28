@@ -157,3 +157,223 @@ fn wide_acyclic_execution_reports_the_actual_expansion_bound() {
         }),
     );
 }
+
+#[test]
+fn native_integrity_failure_reports_the_cross_chunk_write() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "import './mutation.js';\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });\nconsole.log(result.value);",
+        vec![],
+    ).with_extra_chunks(&[("static/mutation", "export function mutate() { const alias = globalThis.slot; alias.flag = 1; }")]));
+    assert_entry_output(&fixture, "3\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let witnesses = graph["native_integrity_witnesses"]
+        .as_array()
+        .expect("native mutation witnesses");
+    let witness = witnesses
+        .iter()
+        .find(|witness| witness["receiver_roots"] == serde_json::json!(["unknown_global_value"]))
+        .expect("unknown global receiver witness");
+    assert_eq!(witness["chunk_id"], "static/mutation");
+    assert_eq!(witness["statement_ordinal"], 0);
+    assert_eq!(
+        witness["source_location"]["source_path"],
+        "static/mutation.js"
+    );
+    assert_eq!(witness["source_location"]["start_line"], 1);
+    assert_eq!(witness["operation"], "property_assignment");
+    assert_eq!(witness["through_local_alias"], true);
+    assert_eq!(
+        witness["affected_roots"],
+        serde_json::json!(["global_object"])
+    );
+    let result = execution(&fixture, "result");
+    assert!(
+        result["native_integrity_checks"]
+            .as_array()
+            .expect("evaluated guards")
+            .iter()
+            .any(|check| check["guard"] == "ordinary_object_prototype"
+                && check["affected_roots"] == serde_json::json!(["global_object"])),
+        "{result}"
+    );
+}
+
+#[test]
+fn unrelated_object_write_does_not_supply_native_mutation_evidence() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import './mutation.js';\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });\nconsole.log(result.value);",
+            vec![],
+        )
+        .with_extra_chunks(&[("static/mutation", "const object = {}; export function mutate() { object.flag = 1; }")]),
+    );
+    assert_entry_output(&fixture, "3\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert!(graph.get("native_integrity_witnesses").is_none(), "{graph}");
+    assert!(
+        execution(&fixture, "result")
+            .get("native_integrity_checks")
+            .is_none()
+    );
+}
+
+#[test]
+fn array_guard_references_a_direct_native_write_without_unknown_alias_widening() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import './mutation.js';\nconst result = [1, 2].map(value => value + 1);\nconsole.log(result.join(','));",
+            vec![],
+        )
+        .with_extra_chunks(&[("static/mutation", "export function mutate() { Array.flag = 1; }")]),
+    );
+    assert_entry_output(&fixture, "2,3\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let witnesses = graph["native_integrity_witnesses"].as_array().unwrap();
+    assert_eq!(witnesses.len(), 1, "{graph}");
+    assert_eq!(witnesses[0]["receiver_roots"], serde_json::json!(["array"]));
+    assert_eq!(witnesses[0]["affected_roots"], serde_json::json!(["array"]));
+    assert_eq!(witnesses[0]["through_local_alias"], false);
+    let result = execution(&fixture, "result");
+    assert!(
+        result["native_integrity_checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|check| check["guard"] == "array_intrinsics"
+                && check["affected_roots"] == serde_json::json!(["array"])),
+        "{result}"
+    );
+}
+
+#[test]
+fn describe_bounds_cross_chunk_native_mutation_witnesses() {
+    let fixture = GraphFixture::with_dependency(
+        "import './dependency.js';\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });\nconsole.log(result.value);",
+        "export function mutate() { globalThis.slot.flag = 1; globalThis.other.flag = 2; }",
+        &[],
+    );
+    let bounded = fixture.json(&["describe", "result", "--limit", "1"]);
+    assert_eq!(
+        bounded["native_integrity_witnesses"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        bounded["native_integrity_witnesses"][0]["chunk_id"],
+        "dependency"
+    );
+    assert_eq!(
+        bounded["limits"]["sections"]["native_integrity_witnesses"],
+        serde_json::json!({"total": 2, "emitted": 1, "truncated": true})
+    );
+    let all = fixture.json(&["describe", "result", "--all"]);
+    assert_eq!(
+        all["native_integrity_witnesses"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(
+        all["limits"]["sections"]["native_integrity_witnesses"],
+        serde_json::json!({"total": 2, "emitted": 2, "truncated": false})
+    );
+}
+
+#[test]
+fn mutation_witness_keeps_operation_and_known_native_alias_identity() {
+    for (body, operation, alias) in [
+        (
+            "const alias = Array; alias.flag = 1;",
+            "property_assignment",
+            true,
+        ),
+        ("Array.flag++;", "update", false),
+        ("delete Array.flag;", "delete", false),
+        (
+            "Object.defineProperty(Array, 'flag', { value: 1 });",
+            "mutation_call",
+            false,
+        ),
+    ] {
+        let source = format!("export function mutate() {{ {body} }}");
+        let fixture = run_fixture(
+            FixtureOpts::new("import './mutation.js';\nconsole.log(3);", vec![])
+                .with_extra_chunks(&[("static/mutation", &source)]),
+        );
+        let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+        let witnesses = graph["native_integrity_witnesses"].as_array().unwrap();
+        assert_eq!(witnesses.len(), 1, "{graph}");
+        assert_eq!(witnesses[0]["operation"], operation);
+        assert_eq!(witnesses[0]["through_local_alias"], alias);
+        assert_eq!(witnesses[0]["receiver_roots"], serde_json::json!(["array"]));
+        assert_eq!(
+            witnesses[0]["source_location"]["source_path"],
+            "static/mutation.js"
+        );
+    }
+}
+
+#[test]
+fn refined_global_key_witness_explains_its_cross_chunk_native_dependency() {
+    for replacement in [
+        "export const value = 1;",
+        "export function replace() { Symbol.for = () => 'Array'; }",
+    ] {
+        let fixture = run_fixture(FixtureOpts::new("import './mutation.js';\nconsole.log(3);", vec![]).with_extra_chunks(&[
+            ("static/mutation", "import './replacement.js';\nconst key = Symbol.for('example.registry');\nexport function mutate() { globalThis[key] = 1; }"),
+            ("static/replacement", replacement),
+        ]));
+        let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+        let witnesses = graph["native_integrity_witnesses"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let writes: Vec<_> = witnesses
+            .iter()
+            .filter(|witness| witness["chunk_id"] == "static/mutation")
+            .collect();
+        if replacement.starts_with("export const") {
+            assert!(writes.is_empty(), "{graph}");
+        } else {
+            assert_eq!(writes.len(), 1, "{graph}");
+            assert_eq!(writes[0]["statement_ordinal"], 2);
+            assert_eq!(writes[0]["source_location"]["start_line"], 3);
+            assert_eq!(
+                writes[0]["affected_roots"],
+                serde_json::json!(["global_object"])
+            );
+            assert!(
+                writes[0]["invalidated_key_dependencies"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&serde_json::json!("symbol")),
+                "{graph}"
+            );
+            assert!(
+                witnesses
+                    .iter()
+                    .any(|witness| witness["chunk_id"] == "static/replacement"
+                        && witness["affected_roots"] == serde_json::json!(["symbol"]))
+            );
+        }
+    }
+}
+
+#[test]
+fn describe_follows_key_premises_to_the_other_chunk_write() {
+    let fixture = GraphFixture::with_dependency(
+        "import './dependency.js';\nexport function replace() { Symbol.for = () => 'Array'; }\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });",
+        "const key = Symbol.for('example.registry');\nexport function mutate() { globalThis[key] = 1; }",
+        &[],
+    );
+    let report = fixture.json(&["describe", "result", "--all"]);
+    let witnesses = report["native_integrity_witnesses"].as_array().unwrap();
+    assert!(
+        witnesses
+            .iter()
+            .any(|witness| witness["chunk_id"] == "dependency"
+                && witness["affected_roots"] == serde_json::json!(["global_object"]))
+    );
+    assert!(witnesses.iter().any(|witness| witness["chunk_id"] == "main"
+        && witness["affected_roots"] == serde_json::json!(["symbol"])));
+}

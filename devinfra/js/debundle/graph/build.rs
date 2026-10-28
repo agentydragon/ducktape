@@ -73,11 +73,17 @@ pub fn build_dependency_graph_with(
             synchronous_execution: stmt.synchronous_calls.as_ref().map(|calls| {
                 crate::reports::schema::SynchronousExecutionReport {
                     complete: calls.complete,
+                    native_integrity_checks: calls.native_integrity_checks.clone(),
                     precision_losses: calls.precision_losses.clone(),
                     callback_factory_uses: Vec::new(),
                     returned_record_uses: Vec::new(),
                 }
             }),
+            native_integrity_witnesses: stmt
+                .synchronous_calls
+                .as_ref()
+                .map(|calls| calls.native_integrity_witnesses.clone())
+                .unwrap_or_default(),
             callback_factory_uses: stmt
                 .synchronous_calls
                 .as_ref()

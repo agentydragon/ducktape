@@ -99,7 +99,20 @@ pub(crate) fn build_dependency_graph_report(
         .collect();
     let quotient_sccs =
         build_quotient_scc_reports(assignment_analysis, &quotient_nodes, &quotient_edges);
+    let mut native_integrity_witnesses = assignment_analysis
+        .inputs()
+        .dependency_graph()
+        .iter_nodes()
+        .next()
+        .map(|source_unit| source_unit.native_integrity_witnesses.as_ref().clone())
+        .unwrap_or_default();
+    for witness in &mut native_integrity_witnesses {
+        if witness.chunk_id.is_empty() {
+            witness.chunk_id = assignment_analysis.inputs().chunk_id().to_string();
+        }
+    }
     DependencyGraphReport {
+        native_integrity_witnesses,
         provenance: None,
         chunk_id: assignment_analysis.inputs().chunk_id().to_string(),
         nodes,

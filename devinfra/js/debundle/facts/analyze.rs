@@ -254,7 +254,7 @@ where
         top_level_await,
     } = structural;
     let plain_array_bindings = crate::purity::collect_plain_array_bindings(&body, &shadowed);
-    let prepared_sync_index =
+    let mut prepared_sync_index =
         super::sync_effects::execution_index::interpreter::prepare_synchronous_call_index(
             &body,
             &value_flow,
@@ -262,6 +262,16 @@ where
             &plain_array_bindings,
             &local_class_construction_proof,
         );
+    prepared_sync_index.locate_native_integrity_witnesses(|span| {
+        let source_path = source_path?;
+        let (start_line, end_line, start_column) = line_range_for_span(span)?;
+        Some(SourceLocation {
+            source_path: source_path.to_owned(),
+            start_line,
+            end_line,
+            start_column: Some(start_column),
+        })
+    });
     let set_iterable_proof = if prepared_sync_index.set_iterable_intrinsics_are_unmodified() {
         set_iterable_proof
     } else {

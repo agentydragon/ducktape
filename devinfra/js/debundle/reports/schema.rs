@@ -95,6 +95,9 @@ pub struct DependencyGraphReport {
     /// Each cause is emitted once, even when many source units call it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub purity_causes: Vec<PurityCauseReport>,
+    /// Whole-program census sites, shared by failed native premise checks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_integrity_witnesses: Vec<NativeMutationWitness>,
     /// Imported callable summaries whose callback-factory capability was used.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imported_callable_summaries: Vec<ImportedCallableSummaryReport>,
@@ -247,9 +250,54 @@ impl DependencyGraphReport {
     }
 }
 
+/// A conservative source write census entry, including writes in deferred bodies.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NativeMutationWitness {
+    pub chunk_id: String,
+    pub statement_ordinal: SourceUnitOrdinal,
+    pub source_location: Option<SourceLocation>,
+    pub operation: NativeMutationOperation,
+    /// Identity before unknown-global descendants widen to GlobalObject.
+    pub receiver_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    pub through_local_alias: bool,
+    pub affected_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    /// Native premises invalidating the property-key refinement, if any.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub invalidated_key_dependencies: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    #[serde(skip)]
+    pub(crate) span: swc_common::Span,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeMutationOperation {
+    PropertyAssignment,
+    BindingAssignment,
+    Update,
+    Delete,
+    MutationCall,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeIntegrityGuard {
+    OrdinaryObjectPrototype,
+    ArrayIntrinsics,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct NativeIntegrityCheck {
+    pub guard: NativeIntegrityGuard,
+    /// References to the affected roots in graph-level native_integrity_witnesses.
+    pub affected_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+}
+
 /// Completeness of the existing synchronous-effect inference, independent of purity.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SynchronousExecutionReport {
+    /// Evaluated premises which failed; other eligibility conditions may also fail.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_integrity_checks: Vec<NativeIntegrityCheck>,
     pub complete: bool,
     pub precision_losses: Vec<ExecutionPrecisionLoss>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

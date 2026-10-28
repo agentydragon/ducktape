@@ -19,10 +19,12 @@ use crate::facts::statement_facts::{
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin};
 use crate::purity::ChunkCodeGraph;
+use crate::reports::schema::{NativeMutationOperation, NativeMutationWitness};
 use source_identity::SourceUnitOrdinal;
 use spec::{BuiltinGlobalRoot, HostNoReentryOperation, HostNoReentryRuntime};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -1287,6 +1289,20 @@ fn native_mutation_roots(mut roots: IntrinsicRoots) -> IntrinsicRoots {
     roots
 }
 
+fn receiver_uses_intrinsic_alias(
+    value: &ValueExpr,
+    aliases: &BTreeMap<Id, IntrinsicRoots>,
+) -> bool {
+    match value {
+        ValueExpr::Binding(id) => aliases.contains_key(id),
+        ValueExpr::Member(base, ..) => receiver_uses_intrinsic_alias(base, aliases),
+        ValueExpr::Alternatives(options) => options
+            .iter()
+            .any(|option| receiver_uses_intrinsic_alias(option, aliases)),
+        _ => false,
+    }
+}
+
 fn intrinsic_roots(
     value: &ValueExpr,
     roots: &BTreeMap<Id, IntrinsicRoots>,
@@ -1483,17 +1499,27 @@ fn property_key_evidence<'a>(
 
 #[derive(Debug)]
 struct IntrinsicWriteTarget {
+    owner: SourceUnitOrdinal,
+    span: Span,
+    operation: NativeMutationOperation,
     receiver: ValueExpr,
     key: Option<PropertyKeyExpr>,
 }
 
-fn intrinsic_write_target(member: &MemberExpr) -> IntrinsicWriteTarget {
+fn intrinsic_write_target(
+    member: &MemberExpr,
+    owner: SourceUnitOrdinal,
+    operation: NativeMutationOperation,
+) -> IntrinsicWriteTarget {
     let key = match &member.prop {
         MemberProp::Ident(property) => PropertyKeyExpr::String(property.sym.to_string()),
         MemberProp::Computed(property) => PropertyKeyExpr::from_expr(&property.expr),
         _ => PropertyKeyExpr::Unknown,
     };
     IntrinsicWriteTarget {
+        owner,
+        span: member.span,
+        operation,
         receiver: ValueExpr::from_expr(&member.obj),
         key: Some(key),
     }
@@ -1502,10 +1528,12 @@ fn intrinsic_write_target(member: &MemberExpr) -> IntrinsicWriteTarget {
 #[derive(Default)]
 pub(crate) struct NativeWriteCensus {
     unconditional: IntrinsicRoots,
+    witnesses: Arc<Vec<NativeMutationWitness>>,
     conditional: Vec<ConditionalIntrinsicWrite>,
 }
 
 struct ConditionalIntrinsicWrite {
+    witness: NativeMutationWitness,
     refined: IntrinsicRoots,
     fallback: IntrinsicRoots,
     dependencies: IntrinsicRoots,
@@ -1520,6 +1548,40 @@ pub(crate) fn resolve_native_integrity<'a>(
     censuses: impl IntoIterator<Item = &'a NativeWriteCensus>,
 ) -> NativeIntegrity {
     let censuses: Vec<_> = censuses.into_iter().collect();
+    let mutated = resolve_native_integrity_roots(&censuses);
+    let mut witnesses: Vec<_> = censuses
+        .iter()
+        .flat_map(|census| census.witnesses.iter().cloned())
+        .collect();
+    for write in censuses.iter().flat_map(|census| &census.conditional) {
+        let mut witness = write.witness.clone();
+        let invalid = mutated.contains(&IntrinsicRoot::GlobalObject)
+            || !write.dependencies.is_disjoint(&mutated);
+        witness.affected_roots = if invalid {
+            write.fallback.clone()
+        } else {
+            write.refined.clone()
+        };
+        if invalid && write.refined != write.fallback {
+            witness.invalidated_key_dependencies =
+                write.dependencies.intersection(&mutated).copied().collect();
+            if mutated.contains(&IntrinsicRoot::GlobalObject) {
+                witness
+                    .invalidated_key_dependencies
+                    .insert(IntrinsicRoot::GlobalObject);
+            }
+        }
+        if !witness.affected_roots.is_empty() {
+            witnesses.push(witness);
+        }
+    }
+    NativeIntegrity {
+        mutated,
+        witnesses: Arc::new(witnesses),
+    }
+}
+
+fn resolve_native_integrity_roots(censuses: &[&NativeWriteCensus]) -> IntrinsicRoots {
     let mut mutated: IntrinsicRoots = censuses
         .iter()
         .flat_map(|census| census.unconditional.iter().copied())
@@ -1536,7 +1598,7 @@ pub(crate) fn resolve_native_integrity<'a>(
             });
         }
         if before == mutated.len() {
-            return NativeIntegrity { mutated };
+            return mutated;
         }
     }
 }
@@ -2074,6 +2136,7 @@ struct ExecutionIndex {
     mapped_array_map_calls: BTreeMap<CallSite, FromEntriesMappedProof>,
     plain_array_bindings: BTreeSet<String>,
     mutated_intrinsic_roots: IntrinsicRoots,
+    native_integrity_witnesses: Arc<Vec<NativeMutationWitness>>,
     reassigned_map: bool,
     namespace_privacy: NamespacePrivacy,
     fresh_error_claims: Vec<FreshErrorWriteClaim>,
@@ -2188,6 +2251,7 @@ impl Default for ExecutionIndex {
             mapped_array_map_calls: BTreeMap::new(),
             plain_array_bindings: BTreeSet::new(),
             mutated_intrinsic_roots: IntrinsicRoots::new(),
+            native_integrity_witnesses: Arc::default(),
             reassigned_map: false,
             namespace_privacy: NamespacePrivacy::default(),
             fresh_error_claims: Vec::new(),
@@ -2586,48 +2650,80 @@ impl ExecutionIndex {
             }
         }
         let mut mutated_intrinsics = IntrinsicRoots::new();
-        for (id, _) in &namespace_assignments {
-            match id.0.as_ref() {
-                "Error" => {
-                    mutated_intrinsics.insert(IntrinsicRoot::Error);
+        let mut unconditional_witnesses = Vec::new();
+        let mut binding_write_sites = BTreeSet::new();
+        for (owner, assignments) in index
+            .top_assignments
+            .iter()
+            .enumerate()
+            .map(|(owner, values)| (SourceUnitOrdinal(owner), values))
+            .chain(
+                index
+                    .callables
+                    .values()
+                    .map(|callable| (callable.owner, &callable.local_assignments)),
+            )
+        {
+            for (id, _) in assignments {
+                match id.0.as_ref() {
+                    "Error" => {
+                        mutated_intrinsics.insert(IntrinsicRoot::Error);
+                    }
+                    "Object" => {
+                        mutated_intrinsics.insert(IntrinsicRoot::Object);
+                    }
+                    "Array" => {
+                        mutated_intrinsics.insert(IntrinsicRoot::Array);
+                    }
+                    "Math" => {
+                        mutated_intrinsics.insert(IntrinsicRoot::Math);
+                    }
+                    "RegExp" => {
+                        mutated_intrinsics.insert(IntrinsicRoot::RegExp);
+                    }
+                    "Symbol" => {
+                        mutated_intrinsics.insert(IntrinsicRoot::Symbol);
+                    }
+                    "Promise" => {
+                        mutated_intrinsics.insert(IntrinsicRoot::Promise);
+                    }
+                    "Map" => {
+                        mutated_intrinsics.insert(IntrinsicRoot::Map);
+                    }
+                    "Set" => {
+                        mutated_intrinsics.insert(IntrinsicRoot::Set);
+                    }
+                    "WeakMap" => {
+                        mutated_intrinsics.insert(IntrinsicRoot::WeakMap);
+                    }
+                    "WeakSet" => {
+                        mutated_intrinsics.insert(IntrinsicRoot::WeakSet);
+                    }
+                    _ => {}
                 }
-                "Object" => {
-                    mutated_intrinsics.insert(IntrinsicRoot::Object);
+                if let Some(root) = named_global_intrinsic(id.0.as_ref())
+                    .filter(|root| *root != IntrinsicRoot::GlobalObject)
+                    && binding_write_sites.insert((owner, root))
+                {
+                    unconditional_witnesses.push(NativeMutationWitness {
+                        chunk_id: String::new(),
+                        statement_ordinal: owner,
+                        source_location: None,
+                        operation: NativeMutationOperation::BindingAssignment,
+                        receiver_roots: BTreeSet::from([root]),
+                        through_local_alias: false,
+                        affected_roots: BTreeSet::from([root]),
+                        invalidated_key_dependencies: BTreeSet::new(),
+                        span: body[owner.0].as_module_item().span(),
+                    });
                 }
-                "Array" => {
-                    mutated_intrinsics.insert(IntrinsicRoot::Array);
-                }
-                "Math" => {
-                    mutated_intrinsics.insert(IntrinsicRoot::Math);
-                }
-                "RegExp" => {
-                    mutated_intrinsics.insert(IntrinsicRoot::RegExp);
-                }
-                "Symbol" => {
-                    mutated_intrinsics.insert(IntrinsicRoot::Symbol);
-                }
-                "Promise" => {
-                    mutated_intrinsics.insert(IntrinsicRoot::Promise);
-                }
-                "Map" => {
-                    mutated_intrinsics.insert(IntrinsicRoot::Map);
-                }
-                "Set" => {
-                    mutated_intrinsics.insert(IntrinsicRoot::Set);
-                }
-                "WeakMap" => {
-                    mutated_intrinsics.insert(IntrinsicRoot::WeakMap);
-                }
-                "WeakSet" => {
-                    mutated_intrinsics.insert(IntrinsicRoot::WeakSet);
-                }
-                _ => {}
             }
         }
         if !index.dynamic_scope_owners.is_empty() {
             mutated_intrinsics.insert(IntrinsicRoot::GlobalObject);
         }
         index.native_write_census.unconditional = mutated_intrinsics;
+        index.native_write_census.witnesses = Arc::new(unconditional_witnesses);
         let declared: BTreeSet<_> = index
             .property_key_declarations
             .iter()
@@ -2642,7 +2738,24 @@ impl ExecutionIndex {
                 &intrinsic_aliases,
                 &index.global_object_names,
             );
+            let witness = NativeMutationWitness {
+                chunk_id: String::new(),
+                statement_ordinal: write.owner,
+                source_location: None,
+                operation: write.operation,
+                receiver_roots: roots.clone(),
+                through_local_alias: receiver_uses_intrinsic_alias(
+                    &write.receiver,
+                    &intrinsic_aliases,
+                ),
+                affected_roots: native_mutation_roots(roots.clone()),
+                invalidated_key_dependencies: BTreeSet::new(),
+                span: write.span,
+            };
             let Some(key) = &write.key else {
+                if !witness.affected_roots.is_empty() {
+                    Arc::make_mut(&mut index.native_write_census.witnesses).push(witness);
+                }
                 index
                     .native_write_census
                     .unconditional
@@ -2673,6 +2786,7 @@ impl ExecutionIndex {
                 .native_write_census
                 .conditional
                 .push(ConditionalIntrinsicWrite {
+                    witness,
                     refined: native_mutation_roots(refined),
                     fallback,
                     dependencies: evidence.dependencies,
@@ -2680,6 +2794,11 @@ impl ExecutionIndex {
         }
         let mut censuses = vec![&index.native_write_census];
         let external = NativeWriteCensus {
+            witnesses: hints
+                .native_integrity
+                .as_ref()
+                .map(|integrity| integrity.witnesses.clone())
+                .unwrap_or_default(),
             unconditional: hints
                 .native_integrity
                 .as_ref()
@@ -2688,7 +2807,14 @@ impl ExecutionIndex {
             conditional: Vec::new(),
         };
         censuses.push(&external);
-        let mutated_intrinsics = resolve_native_integrity(censuses).mutated;
+        let mutated_intrinsics = if let Some(integrity) = &hints.native_integrity {
+            index.native_integrity_witnesses = integrity.witnesses.clone();
+            resolve_native_integrity_roots(&censuses)
+        } else {
+            let integrity = resolve_native_integrity(censuses);
+            index.native_integrity_witnesses = integrity.witnesses;
+            integrity.mutated
+        };
         index.mutated_intrinsic_roots = mutated_intrinsics.clone();
         let mut claim_counts = BTreeMap::<FreshErrorWriteSite, usize>::new();
         if !index.fresh_error_claims.is_empty()
@@ -3273,6 +3399,23 @@ impl ExecutionIndex {
             && !flow.is_declared(id)
             && !shadowed.contains(id.0.as_ref())
             && self.collection_intrinsic_is_unmodified(id.0.as_ref())
+    }
+
+    pub(crate) fn locate_native_integrity_witnesses(
+        &mut self,
+        mut locate: impl FnMut(Span) -> Option<crate::reports::schema::SourceLocation>,
+    ) {
+        if self
+            .native_integrity_witnesses
+            .iter()
+            .any(|witness| witness.chunk_id.is_empty())
+        {
+            for witness in Arc::make_mut(&mut self.native_integrity_witnesses) {
+                if witness.chunk_id.is_empty() {
+                    witness.source_location = locate(witness.span);
+                }
+            }
+        }
     }
 
     fn set_iterable_intrinsics_are_unmodified(&self) -> bool {
@@ -4584,7 +4727,11 @@ impl Visit for ExecutionIndex {
                 Pat::Expr(expression) => Some(match expression.unwrap_parens() {
                     Expr::Member(member) => {
                         self.member_write_sites.insert(member.span.into());
-                        self.intrinsic_writes.push(intrinsic_write_target(member));
+                        self.intrinsic_writes.push(intrinsic_write_target(
+                            member,
+                            self.owner,
+                            NativeMutationOperation::PropertyAssignment,
+                        ));
                         ValueExpr::from_expr(&member.obj)
                     }
                     _ => ValueExpr::Unknown,
@@ -4687,7 +4834,11 @@ impl Visit for ExecutionIndex {
             self.reassigned_map = true;
         }
         if let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left {
-            self.intrinsic_writes.push(intrinsic_write_target(member));
+            self.intrinsic_writes.push(intrinsic_write_target(
+                member,
+                self.owner,
+                NativeMutationOperation::PropertyAssignment,
+            ));
         }
         let before_assignment = self.past_await;
         let previous_source = self.destructuring_source.take();
@@ -4854,6 +5005,9 @@ impl Visit for ExecutionIndex {
         if matches!(expression.arg.unwrap_parens(), Expr::Ident(id) if matches!(id.sym.as_ref(), "Error" | "Object" | "Array" | "Math" | "RegExp" | "Symbol" | "Promise" | "Map" | "Set" | "WeakMap" | "WeakSet"))
         {
             self.intrinsic_writes.push(IntrinsicWriteTarget {
+                owner: self.owner,
+                span: expression.span,
+                operation: NativeMutationOperation::Update,
                 receiver: ValueExpr::from_expr(&expression.arg),
                 key: None,
             });
@@ -4867,7 +5021,11 @@ impl Visit for ExecutionIndex {
         self.namespace_privacy.target_depth -= 1;
         self.record_implicit_coercion(&expression.arg, expression.span);
         if let Expr::Member(member) = expression.arg.unwrap_parens() {
-            self.intrinsic_writes.push(intrinsic_write_target(member));
+            self.intrinsic_writes.push(intrinsic_write_target(
+                member,
+                self.owner,
+                NativeMutationOperation::Update,
+            ));
             self.mark_dynamic_property_effect(Some(&member.obj));
         }
         self.mark_opaque();
@@ -4893,7 +5051,11 @@ impl Visit for ExecutionIndex {
         if expression.op == UnaryOp::Delete
             && let Expr::Member(member) = expression.arg.unwrap_parens()
         {
-            self.intrinsic_writes.push(intrinsic_write_target(member));
+            self.intrinsic_writes.push(intrinsic_write_target(
+                member,
+                self.owner,
+                NativeMutationOperation::Delete,
+            ));
             self.mark_dynamic_property_effect(Some(&member.obj));
         }
     }
@@ -5020,6 +5182,9 @@ impl Visit for ExecutionIndex {
                 Some("set" | "defineProperty" | "deleteProperty")
             ) {
                 IntrinsicWriteTarget {
+                    owner: self.owner,
+                    span: call.span,
+                    operation: NativeMutationOperation::MutationCall,
                     receiver,
                     key: Some(
                         call.args
@@ -5031,6 +5196,9 @@ impl Visit for ExecutionIndex {
                 }
             } else {
                 IntrinsicWriteTarget {
+                    owner: self.owner,
+                    span: call.span,
+                    operation: NativeMutationOperation::MutationCall,
                     receiver,
                     key: None,
                 }
@@ -5418,6 +5586,35 @@ pub(crate) struct PreparedCallableCapabilities {
 }
 
 impl PreparedCallableCapabilities {
+    pub(crate) fn locate_native_writes(
+        &mut self,
+        chunk_id: &str,
+        source: Option<&(String, js_ast::SourceLineIndex)>,
+    ) {
+        let locate = |witness: &mut NativeMutationWitness| {
+            if witness.receiver_roots.is_empty() {
+                return;
+            }
+            witness.chunk_id = chunk_id.to_owned();
+            witness.source_location = source.and_then(|(path, index)| {
+                let (start_line, end_line, start_column) =
+                    index.line_range_and_start_column_for_span(witness.span)?;
+                Some(crate::reports::schema::SourceLocation {
+                    source_path: path.clone(),
+                    start_line,
+                    end_line,
+                    start_column: Some(start_column),
+                })
+            });
+        };
+        for witness in Arc::make_mut(&mut self.index.native_write_census.witnesses) {
+            locate(witness);
+        }
+        for write in &mut self.index.native_write_census.conditional {
+            locate(&mut write.witness);
+        }
+    }
+
     pub(crate) fn native_writes(&self) -> &NativeWriteCensus {
         &self.index.native_write_census
     }

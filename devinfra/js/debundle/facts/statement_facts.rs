@@ -208,6 +208,9 @@ pub(crate) struct SynchronousCalls {
     pub uninitialized_reads: BTreeSet<Id>,
     pub complete: bool,
     pub precision_losses: Vec<crate::reports::schema::ExecutionPrecisionLoss>,
+    pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
+    pub native_integrity_witnesses:
+        std::sync::Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<ReturnedRecordUseFact>,
 }

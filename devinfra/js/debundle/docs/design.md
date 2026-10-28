@@ -407,6 +407,20 @@ The dependency graph is the right abstraction for tooling:
 - "Why did this fail?" should point at dependency edges first, then
   at the derived module edge they induced.
 
+Native-integrity diagnostics retain the write census produced during the shared
+AST analysis, including source chunk, statement, operation, and location. The
+receiver roots precede unknown-global-value widening; `through_local_alias`
+distinguishes an alias path from a direct receiver. Graph-level
+`native_integrity_witnesses` stores each census site once. Source units reference
+its affected native families through `synchronous_execution.native_integrity_checks`
+when the ordinary-object-prototype or array-intrinsics guard is evaluated and
+fails. These are failed premises, not claims that a write executed or that it
+alone explains lost precision. Other eligibility conditions may also fail.
+`describe` follows affected families and invalidated key dependencies to the
+source witnesses, bounding rows with the same total/emitted/truncated metadata as
+its other sections. Diagnostics do not
+change the census, guard verdicts, or dependency edges.
+
 ### Saved-graph input contract
 
 `debundle run` embeds a `GraphProvenance` inventory in each saved graph. It

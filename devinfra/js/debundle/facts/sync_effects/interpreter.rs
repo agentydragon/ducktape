@@ -24,9 +24,10 @@ use crate::facts::{LocalClassConstructionProof, set_iterables::SetIterableProof}
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     CallbackFactoryUseKind, ExecutionOperation, ExecutionPrecisionLoss,
-    ExecutionPrecisionLossReason,
+    ExecutionPrecisionLossReason, NativeIntegrityCheck, NativeIntegrityGuard,
 };
 use source_identity::SourceUnitOrdinal;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span, SyntaxContext};
@@ -143,6 +144,7 @@ const MAX_SYNCHRONOUS_INVOCATIONS: usize = 256;
 const MAX_SYNCHRONOUS_CALLBACK_POOL: usize = 64;
 
 struct Executor<'a> {
+    native_integrity_checks: RefCell<BTreeSet<NativeIntegrityCheck>>,
     index: &'a ExecutionIndex,
     graph: &'a ChunkCodeGraph,
     facts: &'a [StatementFacts],
@@ -287,13 +289,30 @@ impl Executor<'_> {
         }
     }
 
+    fn native_guard_intact(&self, guard: NativeIntegrityGuard, roots: &[IntrinsicRoot]) -> bool {
+        let affected_roots: BTreeSet<_> = roots
+            .iter()
+            .filter(|root| self.index.mutated_intrinsic_roots.contains(root))
+            .copied()
+            .collect();
+        if affected_roots.is_empty() {
+            return true;
+        }
+        self.native_integrity_checks
+            .borrow_mut()
+            .insert(NativeIntegrityCheck {
+                guard,
+                affected_roots,
+            });
+        false
+    }
+
     fn ordinary_object_prototype_intact(&self) -> bool {
         self.index.dynamic_scope_owners.is_empty()
-            && !self
-                .index
-                .mutated_intrinsic_roots
-                .iter()
-                .any(|root| matches!(root, IntrinsicRoot::GlobalObject | IntrinsicRoot::Object))
+            && self.native_guard_intact(
+                NativeIntegrityGuard::OrdinaryObjectPrototype,
+                &[IntrinsicRoot::GlobalObject, IntrinsicRoot::Object],
+            )
     }
 
     /// A successful model lookup certifies the operation after its inputs
@@ -504,12 +523,14 @@ impl Executor<'_> {
             && !self.flow.is_declared(&array)
             && !self.shadowed.contains("Array")
             && self.index.dynamic_scope_owners.is_empty()
-            && !self.index.mutated_intrinsic_roots.iter().any(|root| {
-                matches!(
-                    root,
-                    IntrinsicRoot::GlobalObject | IntrinsicRoot::Array | IntrinsicRoot::Object
-                )
-            })
+            && self.native_guard_intact(
+                NativeIntegrityGuard::ArrayIntrinsics,
+                &[
+                    IntrinsicRoot::GlobalObject,
+                    IntrinsicRoot::Array,
+                    IntrinsicRoot::Object,
+                ],
+            )
     }
 
     fn dense_source(&self, values: &Values) -> Option<(u32, DenseArray)> {
@@ -4749,6 +4770,13 @@ pub(crate) struct PreparedSynchronousCallIndex {
 }
 
 impl PreparedSynchronousCallIndex {
+    pub(crate) fn locate_native_integrity_witnesses(
+        &mut self,
+        locate: impl FnMut(Span) -> Option<crate::reports::schema::SourceLocation>,
+    ) {
+        self.index.locate_native_integrity_witnesses(locate);
+    }
+
     pub(crate) fn set_iterable_intrinsics_are_unmodified(&self) -> bool {
         self.index.set_iterable_intrinsics_are_unmodified()
     }
@@ -5014,6 +5042,7 @@ pub(crate) fn annotate_synchronous_calls(
     }
     let enum_data_members = super::stable_ts_enum_named_data_members(proofs.graph, facts);
     let mut executor = Executor {
+        native_integrity_checks: RefCell::default(),
         index: &index,
         graph: proofs.graph,
         facts,
@@ -5108,6 +5137,7 @@ pub(crate) fn annotate_synchronous_calls(
         .iter()
         .zip(index.top_calls.iter().zip(&index.top_assignments))
     {
+        executor.native_integrity_checks.borrow_mut().clear();
         executor.current_top_owner = Some(fact.ordinal);
         executor.proof_uses.clear();
         // Cache keys include this owner; previous statement snapshots cannot
@@ -5368,6 +5398,11 @@ pub(crate) fn annotate_synchronous_calls(
         outcome.effects.callback_factory_uses = std::mem::take(&mut executor.proof_uses);
         outcome.effects.returned_record_uses =
             std::mem::take(&mut executor.returned_record_proof_uses);
+        outcome.effects.native_integrity_checks =
+            std::mem::take(executor.native_integrity_checks.get_mut())
+                .into_iter()
+                .collect();
+        outcome.effects.native_integrity_witnesses = index.native_integrity_witnesses.clone();
         effects.push(outcome.effects);
     }
     for (fact, effect) in facts.iter_mut().zip(effects) {

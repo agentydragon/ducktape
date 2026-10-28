@@ -267,6 +267,7 @@ pub struct PlanWorkReport {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ExplainReport {
+    pub native_integrity_witnesses: Vec<analysis::reports::schema::NativeMutationWitness>,
     pub query: QueryReport,
     pub source_unit_ids: Vec<String>,
     pub source_units: Vec<SourceUnitReport>,
@@ -1005,10 +1006,35 @@ fn explain_from_graph(
     limited_source_unit_ids.sort();
     limited_source_unit_ids.sort_by_key(|id| !preferred_source_unit_ids.contains(id));
 
+    let mut affected_roots: BTreeSet<_> = source_units
+        .iter()
+        .chain(&neighbor_source_units)
+        .filter_map(|unit| unit.synchronous_execution.as_ref())
+        .flat_map(|execution| &execution.native_integrity_checks)
+        .flat_map(|check| check.affected_roots.iter().copied())
+        .collect();
+    loop {
+        let before = affected_roots.len();
+        for witness in &graph.native_integrity_witnesses {
+            if !witness.affected_roots.is_disjoint(&affected_roots) {
+                affected_roots.extend(&witness.invalidated_key_dependencies);
+            }
+        }
+        if before == affected_roots.len() {
+            break;
+        }
+    }
+    let mut native_integrity_witnesses: Vec<_> = graph
+        .native_integrity_witnesses
+        .iter()
+        .filter(|witness| !witness.affected_roots.is_disjoint(&affected_roots))
+        .cloned()
+        .collect();
     let mut sections = BTreeMap::new();
     apply_limits!(
         args.limit,
         sections,
+        (native_integrity_witnesses, "native_integrity_witnesses"),
         (limited_source_unit_ids, "source_unit_ids"),
         (source_units, "source_units"),
         (neighbor_source_units, "neighbor_source_units"),
@@ -1026,6 +1052,7 @@ fn explain_from_graph(
     );
 
     Ok(ExplainReport {
+        native_integrity_witnesses,
         query,
         source_unit_ids: limited_source_unit_ids,
         source_units,

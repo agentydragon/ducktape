@@ -812,6 +812,33 @@ fn render_graph_summary_text(report: &peel::GraphSummaryReport, out: &mut String
 }
 
 fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
+    for source_unit in report
+        .source_units
+        .iter()
+        .chain(&report.neighbor_source_units)
+    {
+        if let Some(execution) = &source_unit.synchronous_execution {
+            for check in &execution.native_integrity_checks {
+                out.push_str(&format!(
+                    "  {} failed native premise {:?}: {:?}\n",
+                    source_unit.id, check.guard, check.affected_roots
+                ));
+            }
+        }
+    }
+    for witness in &report.native_integrity_witnesses {
+        out.push_str(&format!(
+            "  native census {}:unit:{} {:?} receiver={:?} alias={} affected={:?} location={:?}\n",
+            witness.chunk_id,
+            witness.statement_ordinal.0,
+            witness.operation,
+            witness.receiver_roots,
+            witness.through_local_alias,
+            witness.affected_roots,
+            witness.source_location
+        ));
+    }
+
     out.push_str(&format!(
         "{:?} {:?}\n",
         report.query.kind, report.query.value
