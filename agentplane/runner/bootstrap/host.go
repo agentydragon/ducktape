@@ -265,11 +265,11 @@ func (h *Host) setLog(log *Log) {
 	h.logMu.Unlock()
 }
 
-func (h *Host) startOperation(work func(context.Context) error) {
+func (h *Host) startOperation(work func(context.Context) error) error {
 	h.mu.Lock()
 	if h.operation != nil {
 		h.mu.Unlock()
-		return
+		return nil
 	}
 	op := operation.New(h.ctx)
 	op.Register(h.workers)
@@ -277,6 +277,7 @@ func (h *Host) startOperation(work func(context.Context) error) {
 	h.mu.Unlock()
 
 	err := op.Start(
+		&h.mu,
 		func(done bool) error { return h.publishOperation(op, done) },
 		h.onError,
 		work,
@@ -290,6 +291,7 @@ func (h *Host) startOperation(work func(context.Context) error) {
 		}
 		h.mu.Unlock()
 	}
+	return err
 }
 
 func (h *Host) publishOperation(op *operation.Operation, done bool) error {

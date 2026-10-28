@@ -115,12 +115,14 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		script, job := s.setupScript, s.setupJob
 		s.mu.Unlock()
 		if script != nil && job == nil && input.Setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
-			s.startOperation(&s.setupJob, func(ctx context.Context) error { return s.runSetup(ctx, *script) })
-			s.mu.Lock()
-			if s.setupJob != nil {
-				current.SetupAttempt = s.setupJob.ID()
+			op, startErr := s.startOperation(&s.setupJob, func(ctx context.Context) error { return s.runSetup(ctx, *script) })
+			if op != nil {
+				current.SetupAttempt = op.ID()
 			}
-			s.mu.Unlock()
+			if startErr != nil {
+				current.Error = startErr.Error()
+				return write()
+			}
 			if err := write(); err != nil {
 				return err
 			}
@@ -162,6 +164,12 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			return op.Err()
 		}
 	}
+	s.mu.Lock()
+	operationStartFailed := s.operationStartFailed
+	s.mu.Unlock()
+	if operationStartFailed || current.Error != "" && desiredState.Mode == runnerlifecycle.Running {
+		return write()
+	}
 	// Reconciliation runs independently from halt, so native stdout can deliver its replies.
 	s.mu.Lock()
 	inspectionPending := input.Inspections > 0 && len(s.reconciliations) > 0
@@ -169,7 +177,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		pending := s.reconciliations[0]
 		s.reconciliations = s.reconciliations[1:]
 		s.mu.Unlock()
-		s.startOperation(&s.inspection, func(ctx context.Context) error {
+		if _, startErr := s.startOperation(&s.inspection, func(ctx context.Context) error {
 			report, err := pending.adapter.Reconcile(ctx, pending.turnID, false)
 			if err == nil {
 				err = s.Emit(ctx, observation(report), pending.sources)
@@ -180,7 +188,13 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 				s.mu.Unlock()
 			}
 			return err
-		})
+		}); startErr != nil {
+			s.mu.Lock()
+			s.reconciliations = append([]*pendingReconciliation{pending}, s.reconciliations...)
+			s.mu.Unlock()
+			current.Error = startErr.Error()
+			return write()
+		}
 	} else {
 		s.mu.Unlock()
 	}
@@ -195,6 +209,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		if current.Phase != Halted {
 			current.Phase = Stopping
+			current.Error = ""
 			if err := write(); err != nil {
 				return err
 			}
@@ -202,11 +217,17 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			halt := s.halting
 			s.mu.Unlock()
 			if halt == nil {
+				if current.Error != "" {
+					return write()
+				}
 				reason := stopClose
 				if desiredState.SealUID != "" {
 					reason = stopQuiesce
 				}
-				s.startOperation(&s.halting, func(ctx context.Context) error { s.halt(ctx, reason); return nil })
+				if _, err := s.startOperation(&s.halting, func(ctx context.Context) error { s.halt(ctx, reason); return nil }); err != nil {
+					current.Error = err.Error()
+					return write()
+				}
 				return nil
 			}
 			s.mu.Lock()
@@ -243,7 +264,10 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 					current.ProcessStopped = true
 				}
 			} else {
-				s.startOperation(&s.stopping, s.stopProcess)
+				if _, err := s.startOperation(&s.stopping, s.stopProcess); err != nil {
+					current.Error = err.Error()
+					return write()
+				}
 			}
 		}
 		if op, done := s.takeOperation(&s.sealing); done {
@@ -256,12 +280,15 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		inspected := s.inspection == nil && len(s.reconciliations) == 0
 		s.mu.Unlock()
 		if current.Phase == Halted && current.ProcessStopped && inspected && outer.Stage >= runnerlifecycle.Sealing && desiredState.SealUID != "" && s.journal.SealState() == nil {
-			s.startOperation(&s.sealing, func(ctx context.Context) error {
+			if _, err := s.startOperation(&s.sealing, func(ctx context.Context) error {
 				if err := s.sealJournal(ctx); err != nil {
 					return err
 				}
 				return c.manager.publishSeal(s.id, s.journal.SealState())
-			})
+			}); err != nil {
+				current.Error = err.Error()
+				return write()
+			}
 		}
 		return write()
 	}
@@ -289,10 +316,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		s.mu.Unlock()
 		current.Phase, current.Attempt, current.Resuming = Preparing, input.Demand, resuming
 		current.ProcessStopped = false
+		current.Error = ""
 		if err := write(); err != nil {
 			return err
 		}
-		s.startOperation(&s.preparation, func(ctx context.Context) error {
+		if _, err := s.startOperation(&s.preparation, func(ctx context.Context) error {
 			err := s.ensureReady(ctx)
 			if err == nil {
 				s.mu.Lock()
@@ -313,7 +341,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 				}
 			}
 			return err
-		})
+		}); err != nil {
+			current.Phase = Dormant
+			current.Error = err.Error()
+			return write()
+		}
 		return nil
 	}
 	if err := write(); err != nil {
@@ -339,7 +371,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	}
 	s.mu.Unlock()
 	if len(dispatch) > 0 {
-		s.startOperation(&s.dispatching, func(ctx context.Context) error {
+		if _, err := s.startOperation(&s.dispatching, func(ctx context.Context) error {
 			for _, command := range dispatch {
 				if err := s.dispatch(ctx, command); err != nil {
 					return err
@@ -349,7 +381,10 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 				}
 			}
 			return nil
-		})
+		}); err != nil {
+			current.Error = err.Error()
+			return write()
+		}
 	}
 	return nil
 }

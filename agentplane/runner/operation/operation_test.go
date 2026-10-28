@@ -23,7 +23,7 @@ func TestCompletionPublicationPrecedesSingleConsumption(t *testing.T) {
 	mu.Unlock()
 
 	op.Register(&workers)
-	if err := op.Start(func(done bool) error {
+	if err := op.Start(&mu, func(done bool) error {
 		if done {
 			close(publicationStarted)
 			<-releasePublication
@@ -36,8 +36,24 @@ func TestCompletionPublicationPrecedesSingleConsumption(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-publicationStarted
-	if _, consumed := Consume(&mu, &slot); consumed {
-		t.Fatal("operation was consumed before completion publication finished")
+	consumedResult := make(chan bool, 1)
+	consumerStarted := make(chan struct{})
+	go func() {
+		close(consumerStarted)
+		_, consumed := Consume(&mu, &slot)
+		consumedResult <- consumed
+	}()
+	<-consumerStarted
+	premature := false
+	select {
+	case <-consumedResult:
+		premature = true
+	case <-time.After(50 * time.Millisecond):
+	}
+	if premature {
+		close(releasePublication)
+		workers.Wait()
+		t.Fatal("consumer returned before completion publication finished")
 	}
 	if op.Finished() {
 		t.Fatal("operation became finished before completion publication finished")
@@ -45,9 +61,14 @@ func TestCompletionPublicationPrecedesSingleConsumption(t *testing.T) {
 	close(releasePublication)
 	workers.Wait()
 
-	consumed, ok := Consume(&mu, &slot)
-	if !ok || consumed != op || slot != nil {
-		t.Fatalf("first consume = (%p, %t), slot = %p", consumed, ok, slot)
+	if !<-consumedResult {
+		t.Fatal("consumer did not consume after completion publication finished")
+	}
+	mu.Lock()
+	remaining := slot
+	mu.Unlock()
+	if remaining != nil {
+		t.Fatalf("slot remained set after consume: %p", remaining)
 	}
 	if _, ok := Consume(&mu, &slot); ok {
 		t.Fatal("operation was consumed more than once")
@@ -63,8 +84,9 @@ func TestInitialPublicationFailureDoesNotRunWork(t *testing.T) {
 	var executions atomic.Int32
 	var reported error
 	op := New(context.Background())
+	var ownerMu sync.Mutex
 	op.Register(&workers)
-	err := op.Start(func(done bool) error {
+	err := op.Start(&ownerMu, func(done bool) error {
 		if done {
 			t.Fatal("completion was published after initial publication failed")
 		}
@@ -94,8 +116,9 @@ func TestCompletionPublicationFailureSettlesWorkerAndRetainsErrors(t *testing.T)
 	var workers sync.WaitGroup
 	var executions atomic.Int32
 	op := New(context.Background())
+	var ownerMu sync.Mutex
 	op.Register(&workers)
-	if err := op.Start(func(done bool) error {
+	if err := op.Start(&ownerMu, func(done bool) error {
 		if done {
 			return publicationErr
 		}
@@ -148,7 +171,7 @@ func TestCancelSettlesAndCanBeConsumedOnce(t *testing.T) {
 	slot = op
 	mu.Unlock()
 	op.Register(&workers)
-	if err := op.Start(func(bool) error { return nil }, func(err error) { t.Errorf("unexpected publication error: %v", err) }, func(ctx context.Context) error {
+	if err := op.Start(&mu, func(bool) error { return nil }, func(err error) { t.Errorf("unexpected publication error: %v", err) }, func(ctx context.Context) error {
 		close(started)
 		<-ctx.Done()
 		return ctx.Err()

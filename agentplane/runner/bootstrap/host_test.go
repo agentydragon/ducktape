@@ -20,6 +20,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -42,29 +43,82 @@ func (s initialOperationFailureState) Modify(ctx context.Context, value resource
 	return s.State.Modify(ctx, value, update, opts...)
 }
 
-func TestInitialOperationPublicationFailureClearsSlotAndSkipsWork(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+func TestControllerInitialOperationPublicationFailureBecomesTerminal(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), bootstrapTestTimeout)
 	defer cancel()
 	publicationErr := errors.New("initial operation state write failed")
 	workers := &sync.WaitGroup{}
-	reported := make(chan error, 1)
-	store := state.WrapCore(namespaced.NewState(inmem.Build))
-	host, err := NewHost(Config{}, Dependencies{
-		Context: ctx, State: initialOperationFailureState{State: store, err: publicationErr}, Workers: workers,
+	reported := make(chan error, 4)
+	underlying := state.WrapCore(namespaced.NewState(inmem.Build))
+	store := initialOperationFailureState{State: underlying, err: publicationErr}
+	var effects atomic.Int32
+	script := "exit 0"
+	scriptRunner, err := scripts.New(scripts.Config{LaunchProcess: func(context.Context, string, supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+		effects.Add(1)
+		return nil, errors.New("bootstrap script should not launch")
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := NewHost(Config{Script: &script, StateDir: t.TempDir()}, Dependencies{
+		Context: ctx, State: store, Workers: workers, Scripts: scriptRunner,
 		Admission: func(context.Context, lifecycle.Desired, func(context.Context) error) error { return nil },
 		OnError:   func(err error) { reported <- err },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var effects atomic.Int32
-	host.startOperation(func(context.Context) error {
-		effects.Add(1)
-		return nil
+	if err := host.Initialize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := publish(ctx, store, ResourceID, Input{Requested: true}); err != nil {
+		t.Fatal(err)
+	}
+	engine, err := runtime.NewRuntime(store, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.RegisterQController(host.Controller()); err != nil {
+		t.Fatal(err)
+	}
+	runDone := make(chan error, 1)
+	go func() { runDone <- engine.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-runDone:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Errorf("bootstrap controller runtime: %v", err)
+			}
+		case <-time.After(bootstrapTestTimeout):
+			t.Error("bootstrap controller runtime did not stop")
+		}
+		workers.Wait()
 	})
+	if _, err := safe.StateWatchFor[*typed.Resource[Runtime, componentExtension[Runtime]]](
+		ctx, store,
+		componentResource(ResourceID, Runtime{}).Metadata(), state.WithEventTypes(state.Created, state.Updated),
+		state.WithCondition(func(value resource.Resource) (bool, error) {
+			current, ok := value.(*typed.Resource[Runtime, componentExtension[Runtime]])
+			if !ok {
+				return false, fmt.Errorf("unexpected bootstrap runtime resource %T", value)
+			}
+			return current.TypedSpec().Phase == Failed, nil
+		}),
+	); err != nil {
+		t.Fatal(err)
+	}
 	workers.Wait()
 	if got := effects.Load(); got != 0 {
 		t.Fatalf("bootstrap effects = %d, want 0", got)
+	}
+	current, found, err := ReadRuntime(ctx, store)
+	if err != nil || !found || current.Phase != Failed || current.Error == "" {
+		t.Fatalf("bootstrap runtime = %+v, found=%t, error=%v", current, found, err)
+	}
+	settled, err := host.Settled(ctx)
+	if err != nil || !settled {
+		t.Fatalf("bootstrap settled = %t, error = %v", settled, err)
 	}
 	host.mu.Lock()
 	slot := host.operation
@@ -77,7 +131,7 @@ func TestInitialOperationPublicationFailureClearsSlotAndSkipsWork(t *testing.T) 
 		if !errors.Is(err, publicationErr) {
 			t.Fatalf("reported error = %v, want initial publication failure", err)
 		}
-	default:
+	case <-time.After(bootstrapTestTimeout):
 		t.Fatal("initial publication failure was not reported")
 	}
 }

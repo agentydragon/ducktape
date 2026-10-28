@@ -54,6 +54,7 @@ type Session struct {
 	setupJob, stopping                                     *operation.Operation
 	connection                                             *nativeConnection
 	work                                                   sync.WaitGroup
+	operationStartFailed                                   bool
 	pending                                                map[string]bool
 	dispatched                                             map[string]bool
 	interrupts                                             map[string]string

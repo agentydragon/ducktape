@@ -32,11 +32,12 @@ func (m *Manager) forgetOperation(op *operation.Operation) {
 	}
 }
 
-func (s *Session) startOperation(slot **operation.Operation, work func(context.Context) error) {
+func (s *Session) startOperation(slot **operation.Operation, work func(context.Context) error) (*operation.Operation, error) {
 	s.mu.Lock()
 	if *slot != nil {
+		op := *slot
 		s.mu.Unlock()
-		return
+		return op, nil
 	}
 	op := operation.New(s.deps.ctx)
 	op.Register(&s.work)
@@ -44,6 +45,7 @@ func (s *Session) startOperation(slot **operation.Operation, work func(context.C
 	s.mu.Unlock()
 
 	err := op.Start(
+		&s.mu,
 		func(done bool) error { return s.deps.publishOperation(s.id, op.ID(), done) },
 		s.deps.fail,
 		work,
@@ -58,8 +60,10 @@ func (s *Session) startOperation(slot **operation.Operation, work func(context.C
 		if *slot == op {
 			*slot = nil
 		}
+		s.operationStartFailed = true
 		s.mu.Unlock()
 	}
+	return op, err
 }
 
 func (s *Session) takeOperation(slot **operation.Operation) (*operation.Operation, bool) {

@@ -44,6 +44,7 @@ go_test(
         "//agentplane/runner/scripts",
         "//agentplane/runner/supervision",
         "@com_github_cosi_project_runtime//pkg/controller/runtime",
+        "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_cosi_project_runtime//pkg/state",
         "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
         "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",

@@ -67,10 +67,13 @@ func (op *Operation) Finished() bool {
 	}
 }
 
-// Start publishes an in-progress result before starting work. It reports
-// publication failures through report; completion publication happens before
-// Done closes, and its error is retained alongside any work error.
+// Start publishes an in-progress result before starting work. ownerMu is the
+// owner's slot mutex: completion publication and Done closing happen under it,
+// so Consume cannot observe the slot between those two events. It reports
+// publication failures through report; a completion error is retained alongside
+// any work error.
 func (op *Operation) Start(
+	ownerMu *sync.Mutex,
 	publish func(done bool) error,
 	report func(error),
 	work func(context.Context) error,
@@ -103,13 +106,18 @@ func (op *Operation) Start(
 	go func() {
 		defer workers.Done()
 		defer op.Cancel()
-		var publicationErr error
 		workErr := work(op.ctx)
+		// Serialize the terminal publication and local completion with Consume.
+		// A state watcher may wake a controller as soon as publish returns; it
+		// must not observe the slot as unfinished in the gap before finish.
+		ownerMu.Lock()
+		var publicationErr error
 		if err := publish(true); err != nil {
 			publicationErr = fmt.Errorf("publish operation completion: %w", err)
 			workErr = errors.Join(workErr, publicationErr)
 		}
 		op.finish(workErr)
+		ownerMu.Unlock()
 		if onDone != nil {
 			onDone()
 		}

@@ -80,7 +80,10 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		if err := write(); err != nil {
 			return err
 		}
-		h.startOperation(h.runBootstrap)
+		if err := h.startOperation(h.runBootstrap); err != nil {
+			current = outcome(err)
+			return write()
+		}
 	}
 	return nil
 }

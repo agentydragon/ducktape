@@ -206,7 +206,11 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		if err := write(); err != nil {
 			return err
 		}
-		return server.startOperation(&server.draining, server.drainProcess)
+		if err := server.startOperation(&server.draining, server.drainProcess); err != nil {
+			current.StopError = err.Error()
+			return write()
+		}
+		return nil
 	}
 
 	server.mu.Lock()
@@ -314,7 +318,16 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		if err := server.startOperation(&server.initializing, func(ctx context.Context) error {
 			return server.initialize(ctx, owner, desiredState.Generation)
 		}); err != nil {
-			return err
+			server.mu.Lock()
+			server.initializingOwner = nil
+			server.initializingOwnerGeneration = 0
+			server.mu.Unlock()
+			current.Phase = Stopped
+			current.Attempt = input.Demand
+			current.ProcessID = ""
+			current.Error = err.Error()
+			current.ExecServerReadyDeadline = time.Time{}
+			return write()
 		}
 		server.mu.Lock()
 		server.initializingOwner = nil
