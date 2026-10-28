@@ -13,6 +13,8 @@ ALTER TABLE action_decision ADD CONSTRAINT action_decision_policy_evidence_proto
     CHECK (policy_evidence IS NULL OR policy_evidence = 'null'::jsonb OR policy_evidence_proto IS NOT NULL) NOT VALID;
 
 -- +goose Down
+-- +goose StatementBegin
 DO $$ BEGIN
     RAISE EXCEPTION 'Action typed-only storage is irreversible; roll back the service image and retain expanded columns';
 END $$;
+-- +goose StatementEnd
