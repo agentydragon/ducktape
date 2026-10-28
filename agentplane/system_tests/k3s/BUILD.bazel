@@ -153,7 +153,7 @@ _IMAGES = {
 
 py_test(
     name = "test_render",
-    # cdk8s/jsii startup dominates this one-case test on RBE; see debug/render_startup.md.
+    # cdk8s/jsii startup dominates the one-case test on RBE; keep medium.
     size = "medium",
     srcs = ["test_render.py"],
     data = [

@@ -211,6 +211,7 @@ py_test(
 
 py_test(
     name = "test_compaction",
+    # Cold PostgreSQL image loading can consume most of the small test budget on RBE.
     size = "medium",
     srcs = ["test_compaction.py"],
     data = [
