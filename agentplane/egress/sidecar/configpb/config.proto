@@ -12,7 +12,11 @@ message Config {
   // Absent uses 8888; an explicitly supplied zero is invalid.
   optional int32 proxy_port = 2 [(buf.validate.field).int32 = {gte: 1, lte: 65535}];
   string token_file = 3 [(buf.validate.field).string.min_len = 1];
+  // Audience -> projected ServiceAccount token file path. These tokens are sent
+  // to the central proxy for audience-specific credential substitution.
   map<string, string> audience_token_files = 4;
+  // Route name (e.g. control or telemetry) -> local gRPC listener and upstream.
+  // Platform routes connect directly to services, bypassing the central HTTP proxy.
   map<string, PlatformRoute> platform_routes = 5;
   // Absent uses 127.0.0.1:3128.
   optional string listen_address = 6 [(buf.validate.field).string.min_len = 1];
