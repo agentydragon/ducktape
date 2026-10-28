@@ -206,6 +206,7 @@ impl Values {
         Arc::ptr_eq(&self.bitmap, &other.bitmap)
     }
 
+    #[cfg(test)]
     pub(super) fn contains(&self, value: &ValueOrigin) -> bool {
         if *value == ValueOrigin::Unknown {
             return self.unknown;
@@ -1136,6 +1137,7 @@ impl ChunkValueFlow {
         self.singleton_value(ValueOrigin::Unknown)
     }
 
+    #[cfg(test)]
     fn values_for_key(&self, key: &FlowKey) -> Option<Values> {
         match key {
             FlowKey::Binding(id) => self.bindings.get(id).cloned(),
