@@ -1,15 +1,22 @@
-load("//devinfra/js:openapi.bzl", "js_openapi_zod")
+load("//devinfra/js:openapi_zod.bzl", "openapi_zod")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
 TSCONFIG = "//finance/augur/frontend:tsconfig"
 
-js_openapi_zod(
-    name = "schema_zod",
+openapi_zod(
+    name = "schema_zod_codegen",
     out = "api/schema.zod.ts",
-    generator = "//finance/augur/api:export_schema_bin",
+    config = "openapi-ts.config.mjs",
+    schema = "//finance/augur/api:frontend_openapi_json",
+)
+
+ts_library(
+    name = "schema_zod",
+    srcs = [":schema_zod_codegen"],
     tsconfig = TSCONFIG,
+    deps = ["//:node_modules/zod"],
 )
 
 ts_library(
@@ -56,11 +63,11 @@ ts_library(
 )
 
 # This package's half of //finance/augur/frontend:typed_lint_srcs — a glob cannot cross a package
-# boundary. Includes the generated Zod module, which is part of the same TS program.
+# boundary. Include the generated source alongside this package's hand-written TS modules.
 filegroup(
     name = "typed_lint_srcs",
     srcs = glob([
         "*.ts",
         "*.tsx",
-    ]) + [":_schema_zod_emit"],
+    ]) + [":schema_zod_codegen"],
 )

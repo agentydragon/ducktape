@@ -2,6 +2,8 @@
 import { act, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import producerFixture from "./exec.producer.fixture.json";
+import { zSshExecArguments, zSshExecResult } from "../../schemas/ssh/exec";
 import { mount } from "../../testing/harness";
 import { renderPreview } from "../entry";
 import { renderResultPreview } from "../result_entry";
@@ -33,6 +35,26 @@ function streams(container: HTMLElement): Array<[string, string]> {
 }
 
 afterEach(() => vi.restoreAllMocks());
+
+describe("SSH producer payload", () => {
+  it("accepts the registered FastMCP tool's serialized call and result", () => {
+    expect(zSshExecArguments.parse(producerFixture.arguments)).toEqual({
+      host: "fixture.example",
+      user: "runner",
+      command: "printf producer-fixture",
+      timeout_seconds: 5,
+    });
+    expect(zSshExecResult.parse(producerFixture.result)).toEqual({
+      host: "fixture.example",
+      user: "runner",
+      exit_code: 0,
+      stdout: "producer-fixture\n",
+      stderr: "",
+      stdout_truncated: false,
+      stderr_truncated: false,
+    });
+  });
+});
 
 describe("ssh exec arguments", () => {
   it("shows the command as text, never as markup, leaving the target to the label", async () => {

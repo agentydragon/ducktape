@@ -1,6 +1,7 @@
 import { createClient } from "@hey-api/openapi-ts";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { withRemoteReferencesDisabled } from "./schema_remote_fetch_guard.mjs";
 
 const [inputArgument, outputArgument, configArgument] = process.argv.slice(2);
 if (!inputArgument || !outputArgument || !configArgument) {
@@ -13,21 +14,10 @@ if (!configModule.default || typeof configModule.default !== "object" || Array.i
   throw new Error("OpenAPI Zod config must default-export one configuration object");
 }
 
-const originalFetch = globalThis.fetch;
-globalThis.fetch = async (input) => {
-  const url = String(input);
-  return new Response(`Remote OpenAPI references are disabled: ${url}`, {
-    status: 400,
-    statusText: "Remote references disabled",
-  });
-};
-
-try {
+await withRemoteReferencesDisabled(async () => {
   await createClient({
     configFile: configPath,
     input: resolve(inputArgument),
     output: resolve(outputArgument),
   });
-} finally {
-  globalThis.fetch = originalFetch;
-}
+});

@@ -1,6 +1,6 @@
 # Shared JavaScript/TypeScript Bazel macros.
 
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
 load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/python:defs.bzl", "py_binary", "py_test")
 
@@ -30,23 +30,44 @@ js_binary(
 
 js_binary(
     name = "openapi_typescript_codegen",
+    data = [
+        ":schema_remote_fetch_guard",
+        "//:node_modules/openapi-typescript",
+    ],
     entry_point = "openapi_typescript_codegen.mjs",
-    data = ["//:node_modules/openapi-typescript"],
     visibility = ["//visibility:public"],
 )
 
 js_binary(
     name = "json_schema_typescript_codegen",
-    entry_point = "json_schema_typescript_codegen.mjs",
     data = ["//:node_modules/json-schema-to-typescript"],
+    entry_point = "json_schema_typescript_codegen.mjs",
     visibility = ["//visibility:public"],
 )
 
 js_binary(
     name = "openapi_zod_codegen",
+    data = [
+        ":schema_remote_fetch_guard",
+        "//:node_modules/@hey-api/openapi-ts",
+    ],
     entry_point = "openapi_zod_codegen.mjs",
-    data = ["//:node_modules/@hey-api/openapi-ts"],
     visibility = ["//visibility:public"],
+)
+
+js_library(
+    name = "schema_remote_fetch_guard",
+    srcs = ["schema_remote_fetch_guard.mjs"],
+)
+
+js_test(
+    name = "schema_remote_references_test",
+    data = [
+        ":json_schema_typescript_codegen",
+        ":openapi_typescript_codegen",
+        ":openapi_zod_codegen",
+    ],
+    entry_point = "schema_remote_references.test.mjs",
 )
 
 py_library(
