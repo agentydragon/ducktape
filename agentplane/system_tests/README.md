@@ -209,9 +209,10 @@ receipt back from what the harness sent the model.
   through the BFF.
 - `test_agent_mcp_bff_decision` submits from an unbound Sandbox, reads through the app's generated
   `/upstream/actions/v1/action-requests/{id}` facade and decides through its operator decision RPC,
-  then has the agent `wait` for the outcome. It checks the
-  request/Decision/Execution snapshots, the operator's identity, duplicate-decision idempotency and
-  stale-version rejection.
+  then has the agent `wait` for the outcome. Each harness denies a request in a fresh session, then
+  allows a new request in that same session. Each verdict has its own marker and idempotency keys,
+  and checks the request/Decision/Execution snapshots, the operator's identity, duplicate-decision
+  idempotency and stale-version rejection.
 - `test_operator_links_oauth_mcp_server` links the OAuth fixture through the BFF, following Dex's
   local-password form in a separate fresh browser that stops at the linkage callback; the BFF then
   validates the unchanged state and completes its own token exchange. The agent then calls the

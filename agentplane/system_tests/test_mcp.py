@@ -379,7 +379,6 @@ def _bff_decision(response: httpx.Response) -> action_service_pb2.ActionRequest:
 
 
 @pytest.mark.scripted_model
-@pytest.mark.parametrize("verdict", [action_service_pb2.VERDICT_ALLOW, action_service_pb2.VERDICT_DENY])
 async def test_agent_mcp_bff_decision(
     operator_bff: httpx.AsyncClient,
     operator_credentials: OperatorCredentials,
@@ -388,107 +387,108 @@ async def test_agent_mcp_bff_decision(
     harness: runner_pb2.Harness,
     offered_model: str,
     scripted: ScriptedUpstream,
-    verdict: action_service_pb2.Verdict,
 ) -> None:
-    view = await sandbox(f"systest-mcp-{harness}-{verdict}")
+    view = await sandbox(f"systest-mcp-{harness}")
     agent = await ScriptedAgent.open(client, view, harness=harness, model=offered_model, upstream=scripted)
-    # Nothing binds this Sandbox to a policy set, so every Action of its waits for the operator.
-    marker = f"MCP-BFF-{uuid4()}-" + "x" * 201
-    submitted = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=False)
-    assert submitted.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
-    request_id = submitted.id
-    path = f"/upstream/actions/v1/action-requests/{request_id}"
-    decision_path = f"/upstream/actions/v1/operator/action-requests/{request_id}/decision"
-    pending_response = await operator_bff.get(path)
-    assert pending_response.status_code == HTTPStatus.OK
-    pending = _bff_request(pending_response)
-    assert pending.id == request_id
-    assert pending.idempotency_key
-    assert (pending.action.group, pending.action.name) == (mcp_servers.EVERYTHING_GROUP, mcp_servers.ECHO)
-    assert json_format.MessageToDict(pending.arguments) == {"message": marker}
-    assert pending.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
-    assert pending.version == 1
-    if pending.HasField("decision"):
-        pytest.fail("Pending request already has a Decision", pytrace=False)
-    assert not pending.HasField("execution")
+    # Denial runs first on a fresh session; the next request must still wait for its own decision.
+    for verdict in (action_service_pb2.VERDICT_DENY, action_service_pb2.VERDICT_ALLOW):
+        # Nothing binds this Sandbox to a policy set, so every Action of its waits for the operator.
+        marker = f"MCP-BFF-{uuid4()}-" + "x" * 201
+        submitted = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=False)
+        assert submitted.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
+        request_id = submitted.id
+        path = f"/upstream/actions/v1/action-requests/{request_id}"
+        decision_path = f"/upstream/actions/v1/operator/action-requests/{request_id}/decision"
+        pending_response = await operator_bff.get(path)
+        assert pending_response.status_code == HTTPStatus.OK
+        pending = _bff_request(pending_response)
+        assert pending.id == request_id
+        assert pending.idempotency_key
+        assert (pending.action.group, pending.action.name) == (mcp_servers.EVERYTHING_GROUP, mcp_servers.ECHO)
+        assert json_format.MessageToDict(pending.arguments) == {"message": marker}
+        assert pending.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
+        assert pending.version == 1
+        if pending.HasField("decision"):
+            pytest.fail("Pending request already has a Decision", pytrace=False)
+        assert not pending.HasField("execution")
 
-    decision = operator_action_service_pb2.DecideActionRequestRequest(
-        request_id=str(request_id), verdict=verdict, expected_version=pending.version, idempotency_key=str(uuid4())
-    )
-    decided_response = await operator_bff.post(decision_path, json=json_format.MessageToDict(decision))
-    assert decided_response.status_code == HTTPStatus.OK
-    decided = _bff_decision(decided_response)
-    assert decided.id == request_id
-    assert json_format.MessageToDict(decided.arguments) == json_format.MessageToDict(pending.arguments)
-    assert decided.version == pending.version + 1
-    assert decided.HasField("decision")
-    assert decided.decision.verdict == verdict
-    assert decided.decision.provider == "human_operator"
-    if not decided.decision.HasField("operator") or (
-        decided.decision.operator.issuer != operator_credentials.issuer.get_secret_value()
-        or decided.decision.operator.subject != operator_credentials.subject.get_secret_value()
-    ):
-        pytest.fail("Decision operator identity differs from the dedicated Secret", pytrace=False)
-    assert decided.decision.idempotency_key == decision.idempotency_key
-    expected_completed_state = (
-        action_service_pb2.ACTION_STATE_SUCCEEDED
-        if verdict == action_service_pb2.VERDICT_ALLOW
-        else action_service_pb2.ACTION_STATE_DENIED
-    )
-    if verdict == action_service_pb2.VERDICT_ALLOW:
-        assert decided.state == action_service_pb2.ACTION_STATE_ALLOWED
-        assert decided.HasField("execution")
-    else:
-        assert decided.state == action_service_pb2.ACTION_STATE_DENIED
-        assert not decided.HasField("execution")
-
-    # What the agent learns of the operator's decision.
-    completed = await agent.run("actions", "wait", str(request_id))
-    assert completed.id == request_id
-    assert completed.state == expected_completed_state
-    terminal_response = await operator_bff.get(path)
-    assert terminal_response.status_code == HTTPStatus.OK
-    terminal = _bff_request(terminal_response)
-    assert terminal.id == request_id
-    assert terminal.idempotency_key == pending.idempotency_key
-    assert terminal.action == pending.action
-    assert terminal.arguments == pending.arguments
-    assert terminal.caller == pending.caller
-    if terminal.decision != decided.decision:
-        pytest.fail("Terminal Decision changed", pytrace=False)
-    assert terminal.state == expected_completed_state
-    if verdict == action_service_pb2.VERDICT_ALLOW:
-        assert terminal.HasField("execution")
-        assert decided.HasField("execution")
-        assert terminal.execution.id == decided.execution.id
-        assert terminal.execution.state == action_service_pb2.EXECUTION_STATE_SUCCEEDED
-        _assert_echoed(terminal.execution.result, marker)
-        assert not terminal.execution.HasField("error")
-        assert completed.HasField("execution")
-        assert completed.execution.state == action_service_pb2.EXECUTION_STATE_SUCCEEDED
-        assert completed.execution.id == terminal.execution.id
-        assert json_format.MessageToDict(completed.execution.result) == json_format.MessageToDict(
-            terminal.execution.result
+        decision = operator_action_service_pb2.DecideActionRequestRequest(
+            request_id=str(request_id), verdict=verdict, expected_version=pending.version, idempotency_key=str(uuid4())
         )
-        assert not completed.execution.HasField("error")
-    else:
-        assert not terminal.HasField("execution")
-        assert not completed.HasField("execution")
+        decided_response = await operator_bff.post(decision_path, json=json_format.MessageToDict(decision))
+        assert decided_response.status_code == HTTPStatus.OK
+        decided = _bff_decision(decided_response)
+        assert decided.id == request_id
+        assert json_format.MessageToDict(decided.arguments) == json_format.MessageToDict(pending.arguments)
+        assert decided.version == pending.version + 1
+        assert decided.HasField("decision")
+        assert decided.decision.verdict == verdict
+        assert decided.decision.provider == "human_operator"
+        if not decided.decision.HasField("operator") or (
+            decided.decision.operator.issuer != operator_credentials.issuer.get_secret_value()
+            or decided.decision.operator.subject != operator_credentials.subject.get_secret_value()
+        ):
+            pytest.fail("Decision operator identity differs from the dedicated Secret", pytrace=False)
+        assert decided.decision.idempotency_key == decision.idempotency_key
+        expected_completed_state = (
+            action_service_pb2.ACTION_STATE_SUCCEEDED
+            if verdict == action_service_pb2.VERDICT_ALLOW
+            else action_service_pb2.ACTION_STATE_DENIED
+        )
+        if verdict == action_service_pb2.VERDICT_ALLOW:
+            assert decided.state == action_service_pb2.ACTION_STATE_ALLOWED
+            assert decided.HasField("execution")
+        else:
+            assert decided.state == action_service_pb2.ACTION_STATE_DENIED
+            assert not decided.HasField("execution")
 
-    # Replay the original version/key after completion: same Decision and Execution, no new dispatch.
-    duplicate = await operator_bff.post(decision_path, json=json_format.MessageToDict(decision))
-    assert duplicate.status_code == HTTPStatus.OK
-    if _bff_decision(duplicate) != terminal:
-        pytest.fail("Duplicate decision changed the terminal request", pytrace=False)
-    stale = operator_action_service_pb2.DecideActionRequestRequest()
-    stale.CopyFrom(decision)
-    stale.idempotency_key = str(uuid4())
-    refused = await operator_bff.post(decision_path, json=json_format.MessageToDict(stale))
-    assert refused.status_code == HTTPStatus.CONFLICT
-    unchanged = await operator_bff.get(path)
-    assert unchanged.status_code == HTTPStatus.OK
-    if _bff_request(unchanged) != terminal:
-        pytest.fail("Stale decision changed the terminal request", pytrace=False)
+        # What the agent learns of the operator's decision.
+        completed = await agent.run("actions", "wait", str(request_id))
+        assert completed.id == request_id
+        assert completed.state == expected_completed_state
+        terminal_response = await operator_bff.get(path)
+        assert terminal_response.status_code == HTTPStatus.OK
+        terminal = _bff_request(terminal_response)
+        assert terminal.id == request_id
+        assert terminal.idempotency_key == pending.idempotency_key
+        assert terminal.action == pending.action
+        assert terminal.arguments == pending.arguments
+        assert terminal.caller == pending.caller
+        if terminal.decision != decided.decision:
+            pytest.fail("Terminal Decision changed", pytrace=False)
+        assert terminal.state == expected_completed_state
+        if verdict == action_service_pb2.VERDICT_ALLOW:
+            assert terminal.HasField("execution")
+            assert decided.HasField("execution")
+            assert terminal.execution.id == decided.execution.id
+            assert terminal.execution.state == action_service_pb2.EXECUTION_STATE_SUCCEEDED
+            _assert_echoed(terminal.execution.result, marker)
+            assert not terminal.execution.HasField("error")
+            assert completed.HasField("execution")
+            assert completed.execution.state == action_service_pb2.EXECUTION_STATE_SUCCEEDED
+            assert completed.execution.id == terminal.execution.id
+            assert json_format.MessageToDict(completed.execution.result) == json_format.MessageToDict(
+                terminal.execution.result
+            )
+            assert not completed.execution.HasField("error")
+        else:
+            assert not terminal.HasField("execution")
+            assert not completed.HasField("execution")
+
+        # Replay the original version/key after completion: same Decision and Execution, no new dispatch.
+        duplicate = await operator_bff.post(decision_path, json=json_format.MessageToDict(decision))
+        assert duplicate.status_code == HTTPStatus.OK
+        if _bff_decision(duplicate) != terminal:
+            pytest.fail("Duplicate decision changed the terminal request", pytrace=False)
+        stale = operator_action_service_pb2.DecideActionRequestRequest()
+        stale.CopyFrom(decision)
+        stale.idempotency_key = str(uuid4())
+        refused = await operator_bff.post(decision_path, json=json_format.MessageToDict(stale))
+        assert refused.status_code == HTTPStatus.CONFLICT
+        unchanged = await operator_bff.get(path)
+        assert unchanged.status_code == HTTPStatus.OK
+        if _bff_request(unchanged) != terminal:
+            pytest.fail("Stale decision changed the terminal request", pytrace=False)
 
 
 async def _decide_pending(
