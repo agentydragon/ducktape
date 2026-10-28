@@ -518,8 +518,17 @@ def running_stack(
         if fixture.vm_sandboxes:
             layouts += sorted(get_required_path("_main/agentplane/system_tests/k3s/guest").glob("*_layout.rloc"))
         images = {_ci_image(rloc): rloc for rloc in layouts}
-        if missing := _deployment_images(fixture.objects) - images.keys():
+        deployment_images = _deployment_images(fixture.objects)
+        if missing := deployment_images - images.keys():
             raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")
+        guest_root: dict[str, Path] = {}
+        if fixture.vm_sandboxes:
+            # Only a Sandbox created by the test uses this image. Let the stack's Deployments start
+            # while containerd unpacks its large root disk, before the test can create that Sandbox.
+            root = _ci_image(get_required_path("_main/agentplane/system_tests/k3s/guest/vm_guest_root_layout.rloc"))
+            if root in deployment_images:
+                raise ValueError(f"Guest root image is used by a Deployment: {root}")
+            guest_root[root] = images.pop(root)
         if fixture.vm_sandboxes:
             releases = vm_sandboxes.releases()
             # Their images first, so they roll out while the stack's own import; a Pod that starts before
@@ -528,7 +537,7 @@ def running_stack(
             vm_sandboxes.install(k3s.kubectl, releases)
             timeline.mark("KubeVirt and Kyverno applied")
         k3s.import_images(images, timeline)
-        timeline.mark("images imported")
+        timeline.mark("deployment images imported" if guest_root else "images imported")
         for crd in crds:
             k3s.kubectl("apply", "-f", str(crd))
         if fixture.vm_sandboxes:
@@ -544,6 +553,9 @@ def running_stack(
         print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
         logger.info("applied %s objects", len(rest))
         timeline.mark("manifests applied")
+        if guest_root:
+            k3s.import_images(guest_root, timeline)
+            timeline.mark("images imported")
 
         failed: list[str] = []
         deployments = [d["metadata"]["name"] for d in rest if d["kind"] == "Deployment"]
