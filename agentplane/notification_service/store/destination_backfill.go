@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -14,6 +15,7 @@ const (
 	destinationBackfillBatchSize   = 512
 	destinationBackfillBatchBytes  = 1 << 20
 	destinationBackfillMaxRowBytes = 256 << 10
+	destinationBackfillBatchLimit  = 30 * time.Second
 )
 
 const inboxDestinationCandidatesAfterCursor = `SELECT id, CASE
@@ -58,12 +60,16 @@ type inboxDestinationBackfillRow struct {
 func BackfillInboxDestinations(ctx context.Context, db *sql.DB) error {
 	reset := false
 	for {
-		done, err := backfillInboxDestinations(ctx, db)
+		batchCtx, cancel := context.WithTimeout(ctx, destinationBackfillBatchLimit)
+		done, err := backfillInboxDestinations(batchCtx, db)
+		cancel()
 		if err != nil {
 			return err
 		}
 		if done {
-			incomplete, err := inboxDestinationsIncomplete(ctx, db)
+			validationCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+			incomplete, err := inboxDestinationsIncomplete(validationCtx, db)
+			cancel()
 			if err != nil {
 				return err
 			}
@@ -73,7 +79,10 @@ func BackfillInboxDestinations(ctx context.Context, db *sql.DB) error {
 			if reset {
 				return errors.New("inbox destination backfill found incomplete rows after a full rescan; verify all writers use notification-destination-dual-write-v1 and inspect partial destination columns")
 			}
-			if err := resetInboxDestinationBackfill(ctx, db); err != nil {
+			resetCtx, cancel := context.WithTimeout(ctx, destinationBackfillBatchLimit)
+			err = resetInboxDestinationBackfill(resetCtx, db)
+			cancel()
+			if err != nil {
 				return err
 			}
 			reset = true
@@ -84,11 +93,24 @@ func BackfillInboxDestinations(ctx context.Context, db *sql.DB) error {
 // A completed cursor can be stale if an old writer inserted a row behind it. Validate once at command
 // completion, and restart from the beginning if such rows exist. This is deliberately not done per batch.
 func inboxDestinationsIncomplete(ctx context.Context, db *sql.DB) (bool, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '5s'`); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `SET LOCAL statement_timeout = '5min'`); err != nil {
+		return false, err
+	}
 	var incomplete bool
-	err := db.QueryRowContext(ctx, `SELECT EXISTS (
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
 		SELECT 1 FROM inbox WHERE destination_namespace IS NULL OR destination_name IS NULL OR destination_uid IS NULL
-	)`).Scan(&incomplete)
-	return incomplete, err
+	)`).Scan(&incomplete); err != nil {
+		return false, err
+	}
+	return incomplete, tx.Commit()
 }
 
 func resetInboxDestinationBackfill(ctx context.Context, db *sql.DB) error {
@@ -98,6 +120,9 @@ func resetInboxDestinationBackfill(ctx context.Context, db *sql.DB) error {
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '5s'`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `SET LOCAL statement_timeout = '30s'`); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE notification_storage_backfill_progress
@@ -114,6 +139,9 @@ func backfillInboxDestinations(ctx context.Context, db *sql.DB) (bool, error) {
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '5s'`); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `SET LOCAL statement_timeout = '30s'`); err != nil {
 		return false, err
 	}
 

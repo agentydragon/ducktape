@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/migrate"
@@ -30,7 +32,9 @@ func main() {
 		os.Exit(2)
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
-	if err := migrate.Run(context.Background(), databaseURL, store.BackfillInboxDestinations); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := migrate.Run(ctx, databaseURL, store.BackfillInboxDestinations); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
