@@ -235,50 +235,42 @@ def _sync_occurrences[
     yaml_occs: list[OccPydantic],
     from_orm: Callable[[OccORM], OccPydantic],
     add_occ: Callable[[OccPydantic], None],
-) -> bool:
-    """Diff occurrences by id; delete+re-add only changed ones. Returns True if anything changed."""
-    changed = False
+) -> None:
+    """Diff occurrences by id; delete+re-add only changed ones."""
     db_map = {o.occurrence_id: o for o in db_occs}
     yaml_map = {o.occurrence_id: o for o in yaml_occs}
 
     for occ_id in set(db_map) - set(yaml_map):
         session.delete(db_map[occ_id])
-        changed = True
 
     for occ_id, yaml_occ in yaml_map.items():
         if occ_id not in db_map:
             add_occ(yaml_occ)
-            changed = True
         elif from_orm(db_map[occ_id]) != yaml_occ:
             session.delete(db_map[occ_id])
             add_occ(yaml_occ)
-            changed = True
-
-    return changed
 
 
-def _sync_tp_issue(session: Session, existing: TruePositive, yaml_issue: SyncTruePositive) -> bool:
-    """Sync a TP issue, returning True if anything changed."""
-    changed = existing.rationale != yaml_issue.rationale
-    if changed:
+def _sync_tp_issue(session: Session, existing: TruePositive, yaml_issue: SyncTruePositive) -> None:
+    """Sync a TP issue."""
+    if existing.rationale != yaml_issue.rationale:
         existing.rationale = yaml_issue.rationale
 
     def add(occ: TruePositiveOccurrence) -> None:
         _add_tp_occurrence(session, yaml_issue.snapshot_slug, yaml_issue.tp_id, occ)
 
-    return _sync_occurrences(session, existing.occurrences, yaml_issue.occurrences, _tp_occ_from_orm, add) or changed
+    _sync_occurrences(session, existing.occurrences, yaml_issue.occurrences, _tp_occ_from_orm, add)
 
 
-def _sync_fp_issue(session: Session, existing: FalsePositive, yaml_fp: SyncFalsePositive) -> bool:
-    """Sync an FP issue, returning True if anything changed."""
-    changed = existing.rationale != yaml_fp.rationale
-    if changed:
+def _sync_fp_issue(session: Session, existing: FalsePositive, yaml_fp: SyncFalsePositive) -> None:
+    """Sync an FP issue."""
+    if existing.rationale != yaml_fp.rationale:
         existing.rationale = yaml_fp.rationale
 
     def add(occ: FalsePositiveOccurrence) -> None:
         _add_fp_occurrence(session, yaml_fp.snapshot_slug, yaml_fp.fp_id, occ)
 
-    return _sync_occurrences(session, existing.occurrences, yaml_fp.occurrences, _fp_occ_from_orm, add) or changed
+    _sync_occurrences(session, existing.occurrences, yaml_fp.occurrences, _fp_occ_from_orm, add)
 
 
 def _add_tp_occurrence(session: Session, snapshot_slug: SnapshotSlug, tp_id: str, occ: TruePositiveOccurrence) -> None:

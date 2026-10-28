@@ -61,6 +61,24 @@ payment transactions are excluded, and transactions with an explicit different c
 Plaid's negative sign. Spend percentage uses the configured limit; the alert becomes `warning` at its threshold and
 `exceeded` at 100 percent. Card views identify both the Plaid account name and its institution when available.
 
+## Shared transaction accounting
+
+`allowance.prepare_accounting` prepares purchase dates, currency minor units, ordered rule matches,
+pending supersession and confirmed full reversals once. `AccountingPolicy` supplies each view's choices
+for the single `accounting_disposition` function. Allowance and consumption use the same `Disposition` enum. The statement API converts
+shared results to its narrower `StatementReason` vocabulary at the response boundary.
+
+| View               | Included kinds                                            | Negative credits            | Full reversals            | Reporting date |
+| ------------------ | --------------------------------------------------------- | --------------------------- | ------------------------- | -------------- |
+| Flexible allowance | Flexible and review                                       | Held outside spend          | Excluded                  | Purchase date  |
+| Net consumption    | Fixed, flexible and review; configured category overrides | Confirmed refund rules only | Excluded                  | Purchase date  |
+| Gross consumption  | Same as net consumption                                   | Held outside spend          | Excluded                  | Purchase date  |
+| Card statement     | All; card repayments excluded                             | Signed credits              | Both signed legs retained | Posting date   |
+
+For example, a confirmed purchase reversal contributes neither leg to consumption; a card statement
+still reports each signed leg in its posting cycle. Projection windows and totals remain specific to
+each view. Private reports call the same preparation and disposition functions as the app.
+
 ## Shared card configuration
 
 The private policy file follows `SpendConfiguration` in [`models.py`](models.py). Its `cards` list is required;
@@ -207,8 +225,9 @@ reads on the next request.
 Read-only analysis clients can reuse `plaid_valuation.value_plaid_rows` without importing the database or Coinbase
 clients. The `portfolio_queries` SQLAlchemy Select builders select current active account balances and each account's latest complete holding capture
 batch, with security metadata for allocation details. Convert transport timestamps to timezone-aware `datetime`
-objects and pass holdings for the configured correction/exclusion accounts. The result contains the source status,
-gross assets, signed liabilities and exclusions in USD cents; an unavailable source's zero totals must not be used.
+objects, validate them as `AccountObservation` / `HoldingObservation`, and pass holdings for the configured
+correction/exclusion accounts. Successful calls return `PlaidValuation` with named gross assets, signed liabilities
+and exclusions in USD cents. Unavailable data raises `PlaidValuationError`; it never returns a zero-valued portfolio.
 `corrected_holding_value` applies the same exact-position policy corrections to allocation detail rows.
 
 Every historical spending point uses **today's** eligible portfolio; historical asset values are not reconstructed.
@@ -217,3 +236,9 @@ not proof of complete linked spending. Asset
 observations, transaction posting and transfer settlement can arrive at different times. Private `known_issues` notes
 appear on the page alongside source errors. Historical asset-denominator charts and richer tax models remain
 follow-ups. No financial-account writes are performed.
+
+The Transactions page summarizes policy-excluded flows by analysis category and currency for the selected period.
+Gross debits and credits remain separate, including pending rows with a pending count; these are ledger flows, not
+additional consumption. Selecting a group filters the existing transaction list. Full reversals, replaced pending
+rows, foreign-currency dispositions and held refunds remain distinct accounting reasons and are not included in
+this policy-exclusion summary. Categories describe economic purpose independently of report inclusion.

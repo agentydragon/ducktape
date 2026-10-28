@@ -454,6 +454,8 @@ class Purchase:
 class Disposition(StrEnum):
     COUNTED = "counted"
     PACE_ONLY = "pace_only"
+    GROSS_CREDIT = "gross_credit"
+    CARD_PAYMENT = "card_payment"
     FIXED = "fixed"
     EXCLUDED = "excluded"
     REVERSED = "reversed"
@@ -675,6 +677,126 @@ def resolve_reversal_pairs(
     return ResolvedReversals(pairs_by_transaction=pairs_by_transaction, resolutions=resolutions)
 
 
+class CreditTreatment(StrEnum):
+    HOLD = "hold"
+    CONFIRMED_REFUNDS = "confirmed_refunds"
+    GROSS_PURCHASES = "gross_purchases"
+    ALL = "all"
+
+
+@dataclass(frozen=True)
+class AccountingPolicy:
+    currency: str
+    counted_kinds: frozenset[Kind]
+    credits: CreditTreatment
+    honor_reversals: bool = True
+    exclude_card_payments: bool = False
+    include_excluded_categories: frozenset[str] = frozenset()
+    confirmed_refund_rule_ids: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True)
+class PreparedTransaction:
+    transaction: Transaction
+    report_day: date_type
+    rule: Rule | None
+    rule_number: int | None
+    amount_minor_units: int
+    superseded_pending: bool
+    reversal_pair: ReversalPair | None
+
+    @property
+    def kind(self) -> Kind:
+        return self.rule.kind if self.rule is not None else Kind.REVIEW
+
+    @property
+    def card_payment(self) -> bool:
+        return self.transaction.pfc_detailed == "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
+
+
+@dataclass(frozen=True)
+class PreparedAccounting:
+    entries: list[PreparedTransaction]
+    issues: list[str]
+
+
+def round_minor_units(amount: Decimal, precision: int = 2) -> int:
+    quantum = Decimal(1).scaleb(-precision)
+    return int(amount.quantize(quantum, rounding=ROUND_HALF_UP) * 10**precision)
+
+
+def prepare_accounting(
+    transactions: list[Transaction],
+    *,
+    time_zone: ZoneInfo,
+    today: date_type,
+    allowance: AllowancePolicy | None = None,
+    minor_unit_precision: int = 2,
+) -> PreparedAccounting:
+    """Resolve transaction facts against retained history before any view windows.
+
+    With an allowance, scope to its selected accounts and match its rules and
+    reversal assertions. Statement-only callers need replacement and amount facts
+    without a spending policy. Posting dates stay on the source transaction;
+    report_day is the independently computed local purchase day.
+    """
+    selected = [t for t in transactions if allowance is None or t.account_id in allowance.spending_account_ids]
+    superseded = superseded_pending_keys(selected)
+    reversals = (
+        resolve_reversal_pairs(allowance, selected, time_zone=time_zone, today=today)
+        if allowance is not None
+        else ResolvedReversals(pairs_by_transaction={}, resolutions=[])
+    )
+    entries = []
+    for transaction in selected:
+        rule = matching_rule(transaction, allowance.rules) if allowance is not None else None
+        key = (transaction.account_id, transaction.transaction_id)
+        entries.append(
+            PreparedTransaction(
+                transaction=transaction,
+                report_day=transaction.report_day(time_zone),
+                rule=rule,
+                rule_number=(
+                    next((i for i, candidate in enumerate(allowance.rules, 1) if candidate is rule), None)
+                    if allowance is not None
+                    else None
+                ),
+                amount_minor_units=round_minor_units(transaction.amount, minor_unit_precision),
+                superseded_pending=transaction.pending and key in superseded,
+                reversal_pair=reversals.pairs_by_transaction.get(key),
+            )
+        )
+    return PreparedAccounting(entries=entries, issues=reversals.issues)
+
+
+def accounting_disposition(entry: PreparedTransaction, policy: AccountingPolicy) -> Disposition:
+    """One inclusion decision; views specify which economic effects they measure."""
+    if entry.superseded_pending:
+        return Disposition.SUPERSEDED_PENDING
+    if policy.exclude_card_payments and entry.card_payment:
+        return Disposition.CARD_PAYMENT
+    if entry.transaction.currency not in (None, policy.currency):
+        return Disposition.OTHER_CURRENCY
+    if policy.honor_reversals and entry.reversal_pair is not None:
+        return Disposition.REVERSED
+    if entry.kind not in policy.counted_kinds:
+        if entry.kind == Kind.FIXED:
+            return Disposition.FIXED
+        if entry.kind != Kind.EXCLUDED or (
+            entry.rule is None or entry.rule.analysis_category not in policy.include_excluded_categories
+        ):
+            return Disposition.EXCLUDED
+    if entry.amount_minor_units < 0:
+        if policy.credits == CreditTreatment.GROSS_PURCHASES:
+            return Disposition.GROSS_CREDIT
+        if policy.credits == CreditTreatment.HOLD or (
+            policy.credits == CreditTreatment.CONFIRMED_REFUNDS
+            and (entry.rule is None or entry.rule.id not in policy.confirmed_refund_rule_ids)
+        ):
+            return Disposition.HELD_REFUND
+    return Disposition.COUNTED
+
+
 def calculate(
     policy: AllowancePolicy,
     transactions: list[Transaction],
@@ -698,12 +820,14 @@ def calculate(
     while month_anniversary(start, credits) <= now:
         credits += 1
     next_credit = month_anniversary(start, credits)
-    superseded = superseded_pending_keys(transactions)
+    prepared = prepare_accounting(transactions, allowance=policy, time_zone=zone, today=local_now.date())
+    accounting_policy = AccountingPolicy(
+        currency=policy.currency, counted_kinds=frozenset({Kind.FLEXIBLE, Kind.REVIEW}), credits=CreditTreatment.HOLD
+    )
     # Keep each included purchase once, with its category and posting state.
     included: list[Purchase] = []
     rolling_periods = tuple(period_id for period_id in PeriodId if period_id.rolling_days is not None)
     today = local_now.date()
-    reversals = resolve_reversal_pairs(policy, transactions, time_zone=zone, today=today)
     rolling_starts = {period_id: period_id.start(today) for period_id in rolling_periods}
     positive_by_period = dict.fromkeys(rolling_periods, 0)
     unmatched_count_by_period = dict.fromkeys(rolling_periods, 0)
@@ -711,7 +835,7 @@ def calculate(
     unmatched = 0
 
     def record(
-        transaction: Transaction,
+        entry: PreparedTransaction,
         rule: Rule | None,
         disposition: Disposition,
         *,
@@ -722,8 +846,8 @@ def calculate(
         if decisions is not None:
             decisions.append(
                 TransactionDecision(
-                    transaction=transaction,
-                    rule_number=next((i for i, candidate in enumerate(policy.rules, 1) if candidate is rule), None),
+                    transaction=entry.transaction,
+                    rule_number=entry.rule_number if rule is not None else None,
                     rule=rule,
                     disposition=disposition,
                     allowance_minor_units=allowance_minor_units,
@@ -732,31 +856,27 @@ def calculate(
                 )
             )
 
-    for transaction in transactions:
-        day = transaction.report_day(zone)
+    for entry in prepared.entries:
+        transaction = entry.transaction
+        day = entry.report_day
         if not min(start.date(), *rolling_starts.values()) <= day <= today:
             continue
-        if transaction.pending and (transaction.account_id, transaction.transaction_id) in superseded:
-            record(transaction, None, Disposition.SUPERSEDED_PENDING)
-            continue
-        if transaction.currency not in (None, policy.currency):
-            record(transaction, None, Disposition.OTHER_CURRENCY)
-            continue
-        # First match wins, so a one_off placed above the patterns it corrects governs this transaction.
-        rule = matching_rule(transaction, policy.rules)
-        pair = reversals.pairs_by_transaction.get((transaction.account_id, transaction.transaction_id))
-        if pair is not None:
-            record(transaction, rule, Disposition.REVERSED, reversal_pair=pair)
-            continue
-        if rule is not None and rule.kind in (Kind.FIXED, Kind.EXCLUDED):
-            record(transaction, rule, Disposition.FIXED if rule.kind == Kind.FIXED else Disposition.EXCLUDED)
-            continue
-        amount = int((transaction.amount * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
-        # A merchant rule does not prove which earlier purchase a credit reverses.
-        if amount < 0:
-            if day >= start.date():
+        disposition = accounting_disposition(entry, accounting_policy)
+        amount = entry.amount_minor_units
+        rule = entry.rule
+        if disposition != Disposition.COUNTED:
+            if disposition == Disposition.HELD_REFUND and day >= start.date():
                 unmatched += -amount
-            record(transaction, rule, Disposition.HELD_REFUND)
+            # Preserve the API's absence of a rule on transport-ineligible rows.
+            reported_rule = (
+                None if disposition in (Disposition.SUPERSEDED_PENDING, Disposition.OTHER_CURRENCY) else rule
+            )
+            record(
+                entry,
+                reported_rule,
+                disposition,
+                reversal_pair=entry.reversal_pair if disposition == Disposition.REVERSED else None,
+            )
             continue
         pace_effects = {
             period_id: max(0, amount) if day >= period_start else 0
@@ -774,7 +894,7 @@ def calculate(
                 )
             )
         record(
-            transaction,
+            entry,
             rule,
             Disposition.COUNTED if day >= start.date() else Disposition.PACE_ONLY,
             allowance_minor_units=amount if day >= start.date() else 0,
@@ -875,5 +995,5 @@ def calculate(
         spending_signal=signal,
         last_synced_at=last_synced_at,
         prior_carry_minor_units=(credits - 1) * policy.monthly_minor_units - (posted + pending - current_cycle_spend),
-        note=" ".join(reversals.issues) or None,
+        note=" ".join(prepared.issues) or None,
     )

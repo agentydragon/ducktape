@@ -53,6 +53,7 @@ from finance.plaid.spend.models import (
     AnalysisCategoryView,
     CardConfigurationView,
     CardView,
+    ExcludedFlowSummary,
     PaceEffect,
     PlaidPaymentMeta,
     PlaidPersonalFinanceCategory,
@@ -771,7 +772,7 @@ def dashboard_url() -> Iterator[str]:
                 pfc_primary="TRANSFER_OUT",
                 pfc_detailed="TRANSFER_OUT_OTHER",
                 merchant_category_code=None,
-                category=AnalysisCategoryView(id="unclassified", label="Unclassified", color="#D97706"),
+                category=AnalysisCategoryView(id="own_transfers", label="Own-account transfers", color="#64748B"),
             ),
             SpendTransactionRow(
                 date=date(2026, 10, 12),
@@ -801,7 +802,7 @@ def dashboard_url() -> Iterator[str]:
                 pfc_primary="TRANSFER_IN",
                 pfc_detailed="TRANSFER_IN_OTHER",
                 merchant_category_code=None,
-                category=AnalysisCategoryView(id="unclassified", label="Unclassified", color="#D97706"),
+                category=AnalysisCategoryView(id="own_transfers", label="Own-account transfers", color="#64748B"),
             ),
             SpendTransactionRow(
                 date=date(2026, 10, 2),
@@ -835,6 +836,122 @@ def dashboard_url() -> Iterator[str]:
                 merchant_category_code=None,
                 category=AnalysisCategoryView(id="travel", label="Holiday travel", color="#7C3AED"),
             ),
+            SpendTransactionRow(
+                date=date(2026, 10, 10),
+                account_label="Example checking",
+                name="EXAMPLE OWN TRANSFER DEBIT",
+                merchant_name=None,
+                amount_minor_units=12_500,
+                currency="USD",
+                pending=False,
+                allowance_in_scope=True,
+                disposition=Disposition.EXCLUDED,
+                effective_kind=Kind.EXCLUDED,
+                rule=Rule(
+                    condition=NamePrefix(field="name", prefix="EXAMPLE OWN TRANSFER"),
+                    kind=Kind.EXCLUDED,
+                    analysis_category="own_transfers",
+                    description="Synthetic own-account transfer excluded from the allowance.",
+                ),
+                allowance_minor_units=0,
+                pace_effects=[
+                    PaceEffect(period_id=period_id, amount_minor_units=0)
+                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
+                ],
+                statement_minor_units=None,
+                statement_reason=None,
+                pfc_primary="TRANSFER_OUT",
+                pfc_detailed="TRANSFER_OUT_OTHER",
+                merchant_category_code=None,
+                category=AnalysisCategoryView(id="own_transfers", label="Own-account transfers", color="#64748B"),
+            ),
+            SpendTransactionRow(
+                date=date(2026, 10, 11),
+                account_label="Example checking",
+                name="EXAMPLE OWN TRANSFER CREDIT",
+                merchant_name=None,
+                amount_minor_units=-12_500,
+                currency="USD",
+                pending=False,
+                allowance_in_scope=True,
+                disposition=Disposition.EXCLUDED,
+                effective_kind=Kind.EXCLUDED,
+                rule=Rule(
+                    condition=NamePrefix(field="name", prefix="EXAMPLE OWN TRANSFER"),
+                    kind=Kind.EXCLUDED,
+                    analysis_category="own_transfers",
+                    description="Synthetic own-account transfer excluded from the allowance.",
+                ),
+                allowance_minor_units=0,
+                pace_effects=[
+                    PaceEffect(period_id=period_id, amount_minor_units=0)
+                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
+                ],
+                statement_minor_units=None,
+                statement_reason=None,
+                pfc_primary="TRANSFER_IN",
+                pfc_detailed="TRANSFER_IN_OTHER",
+                merchant_category_code=None,
+                category=AnalysisCategoryView(id="own_transfers", label="Own-account transfers", color="#64748B"),
+            ),
+            SpendTransactionRow(
+                date=date(2026, 10, 12),
+                account_label="Example checking",
+                name="EXAMPLE TAX PAYMENT",
+                merchant_name=None,
+                amount_minor_units=41_500,
+                currency="USD",
+                pending=True,
+                allowance_in_scope=True,
+                disposition=Disposition.EXCLUDED,
+                effective_kind=Kind.EXCLUDED,
+                rule=Rule(
+                    condition=NamePrefix(field="name", prefix="EXAMPLE TAX"),
+                    kind=Kind.EXCLUDED,
+                    analysis_category="taxes",
+                    description="Synthetic tax payment accounted for separately.",
+                ),
+                allowance_minor_units=0,
+                pace_effects=[
+                    PaceEffect(period_id=period_id, amount_minor_units=0)
+                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
+                ],
+                statement_minor_units=None,
+                statement_reason=None,
+                pfc_primary="TAXES",
+                pfc_detailed="TAXES_OTHER_TAXES",
+                merchant_category_code=None,
+                category=AnalysisCategoryView(id="taxes", label="Taxes", color="#B45309"),
+            ),
+            SpendTransactionRow(
+                date=date(2026, 10, 13),
+                account_label="Example checking",
+                name="EXAMPLE TAX PAYMENT CAD",
+                merchant_name=None,
+                amount_minor_units=7_200,
+                currency="CAD",
+                pending=False,
+                allowance_in_scope=True,
+                disposition=Disposition.EXCLUDED,
+                effective_kind=Kind.EXCLUDED,
+                rule=Rule(
+                    condition=NamePrefix(field="name", prefix="EXAMPLE TAX"),
+                    kind=Kind.EXCLUDED,
+                    analysis_category="taxes",
+                    description="Synthetic foreign-currency tax payment accounted for separately.",
+                ),
+                allowance_minor_units=0,
+                pace_effects=[
+                    PaceEffect(period_id=period_id, amount_minor_units=0)
+                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
+                ],
+                statement_minor_units=None,
+                statement_reason=None,
+                pfc_primary="TAXES",
+                pfc_detailed="TAXES_OTHER_TAXES",
+                merchant_category_code=None,
+                category=AnalysisCategoryView(id="taxes", label="Taxes", color="#B45309"),
+            ),
         ]
         shown = [row for row in rows if row.date >= PeriodId(period).start(today, date(2026, 10, 1))]
         return SpendTransactionsView(
@@ -846,6 +963,34 @@ def dashboard_url() -> Iterator[str]:
                 net_allowance_spend_minor_units=sum(row.allowance_minor_units for row in shown),
                 unmatched_charge_count=1,
                 unmatched_charge_minor_units=1500,
+                excluded_flows=[
+                    ExcludedFlowSummary(
+                        category=AnalysisCategoryView(
+                            id="own_transfers", label="Own-account transfers", color="#64748B"
+                        ),
+                        currency="USD",
+                        debit_minor_units=12_500,
+                        credit_minor_units=12_500,
+                        transaction_count=2,
+                        pending_count=0,
+                    ),
+                    ExcludedFlowSummary(
+                        category=AnalysisCategoryView(id="taxes", label="Taxes", color="#B45309"),
+                        currency="USD",
+                        debit_minor_units=41_500,
+                        credit_minor_units=0,
+                        transaction_count=1,
+                        pending_count=1,
+                    ),
+                    ExcludedFlowSummary(
+                        category=AnalysisCategoryView(id="taxes", label="Taxes", color="#B45309"),
+                        currency="CAD",
+                        debit_minor_units=7_200,
+                        credit_minor_units=0,
+                        transaction_count=1,
+                        pending_count=0,
+                    ),
+                ],
             ),
             allowance=example_allowance(),
             rows=shown,
@@ -1095,7 +1240,7 @@ async def _open_transaction_details(page: Page, rows: Locator, width: int) -> No
     await page.get_by_text("Allowance bridge", exact=True).wait_for()
     if width >= 992:
         await rows.locator("tbody tr[data-transaction-row]").filter(has_text="UPS").click()
-        await expect(rows.locator("tbody tr")).to_have_count(7)
+        await expect(rows.locator("tbody tr")).to_have_count(11)
     else:
         await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))
     await rows.get_by_text("Required document shipping for a synthetic example.").wait_for()
@@ -1129,8 +1274,18 @@ async def test_transaction_explanations_render(
     await expect(rows.get_by_text("Full reversal", exact=True)).to_have_count(2)
     await expect(rows.locator('[data-category-id="travel"]')).to_have_count(1)
     await expect(page.get_by_text("1 · $15", exact=True)).to_have_count(1)
+    transfer_flow = page.get_by_role("button", name="Filter transactions to Own-account transfers, USD")
+    await expect(transfer_flow.get_by_text("$125.00", exact=True)).to_have_count(2)
+    await expect(transfer_flow.get_by_text("2", exact=True)).to_have_count(1)
+    tax_flow = page.get_by_role("button", name="Filter transactions to Taxes, USD")
+    await expect(tax_flow.get_by_text("$415.00", exact=True)).to_have_count(1)
+    await expect(tax_flow.get_by_text("$0.00", exact=True)).to_have_count(1)
+    await expect(tax_flow.get_by_text("1 pending", exact=True)).to_have_count(1)
+    cad_tax_flow = page.get_by_role("button", name="Filter transactions to Taxes, CAD")
+    await expect(cad_tax_flow).to_contain_text("72.00")
+    await expect(page.get_by_text("can still be real cash flows", exact=False)).to_be_visible()
     if width >= 992:
-        await expect(rows.locator("tbody tr")).to_have_count(6)
+        await expect(rows.locator("tbody tr")).to_have_count(10)
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = f"transactions-{width}.png"
@@ -1142,8 +1297,8 @@ async def test_transaction_explanations_render(
     await view.capture(
         expanded.removesuffix(".png"), label=f"{width}px rule explanation", full_page=True, animations="disabled"
     )
-    await page.get_by_text("Review", exact=True).click()
-    await page.get_by_text("Showing 2 of 6", exact=True).wait_for()
+    await page.get_by_label("Transaction filter").get_by_text("Review", exact=True).click()
+    await page.get_by_text("Showing 2 of 10", exact=True).wait_for()
     await expect(rows.get_by_text("UPS", exact=True)).to_have_count(0)
     await expect(rows.get_by_text("EXAMPLE OWN ACCOUNT TRANSFER", exact=True)).to_have_count(0)
     await expect(rows.get_by_text("Confirm the purchase before netting this refund.")).not_to_be_visible()
@@ -1151,6 +1306,75 @@ async def test_transaction_explanations_render(
     review = f"transactions-review-{width}.png"
     await view.capture(
         review.removesuffix(".png"), label=f"{width}px review filter", full_page=True, animations="disabled"
+    )
+
+    await page.get_by_label("Transaction filter").get_by_text("All", exact=True).click()
+    await transfer_flow.click()
+    await page.get_by_text("Showing 2 of 10", exact=True).wait_for()
+    await expect(rows.get_by_text("EXAMPLE OWN TRANSFER DEBIT", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("EXAMPLE OWN TRANSFER CREDIT", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("EXAMPLE OWN ACCOUNT TRANSFER", exact=True)).to_have_count(0)
+    await expect(rows.get_by_text("EXAMPLE OWN ACCOUNT REVERSAL", exact=True)).to_have_count(0)
+    await expect(rows.get_by_text("EXAMPLE TAX PAYMENT", exact=True)).to_have_count(0)
+    await expect(page.get_by_text("Clear exclusion filter", exact=True)).to_be_visible()
+    view.errors.assert_none(context="Spend")
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"transactions-excluded-flow-selected-{width}",
+        label=f"{width}px excluded flow drilldown",
+        full_page=True,
+        animations="disabled",
+    )
+
+    await page.get_by_label("Transaction filter").get_by_text("Allowance effect", exact=True).click()
+    await page.get_by_text("Showing 0 of 10", exact=True).wait_for()
+    await page.get_by_text("Clear exclusion filter", exact=True).click()
+    await page.get_by_text("Showing 2 of 10", exact=True).wait_for()
+    await page.get_by_label("Transaction filter").get_by_text("All", exact=True).click()
+
+    await tax_flow.click()
+    await page.get_by_text("Showing 1 of 10", exact=True).wait_for()
+    await expect(rows.get_by_text("EXAMPLE TAX PAYMENT", exact=True)).to_have_count(1)
+    await expect(rows.get_by_text("EXAMPLE TAX PAYMENT CAD", exact=True)).to_have_count(0)
+    await page.get_by_label("Transaction filter").get_by_text("Review", exact=True).click()
+    await page.get_by_text("Showing 0 of 10", exact=True).wait_for()
+    await page.get_by_text("Clear exclusion filter", exact=True).click()
+    await page.get_by_text("Showing 2 of 10", exact=True).wait_for()
+    await expect(rows.get_by_text("EXAMPLE TAX PAYMENT", exact=True)).to_have_count(0)
+
+    await page.get_by_label("Transaction filter").get_by_text("All", exact=True).click()
+    await page.get_by_role("button", name="Filter transactions to Taxes, USD").click()
+    await page.get_by_text("Clear exclusion filter", exact=True).wait_for()
+    await page.get_by_text("7 days", exact=True).click()
+    await page.get_by_text("Showing 9 of 9", exact=True).wait_for()
+    await expect(page.get_by_text("Clear exclusion filter", exact=True)).to_have_count(0)
+    await expect(rows.get_by_text("EXAMPLE TAX PAYMENT", exact=True)).to_have_count(1)
+    view.errors.assert_none(context="Spend")
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
+@pytest.mark.asyncio
+async def test_empty_policy_excluded_flows_render(page: Page, view: VisualPage, dashboard_url: str) -> None:
+    await page.set_viewport_size({"width": 390, "height": 844})
+
+    async def remove_excluded_flows(route: Route) -> None:
+        response = await route.fetch()
+        payload = await response.json()
+        payload["summary"]["excluded_flows"] = []
+        await route.fulfill(response=response, json=payload)
+
+    await page.route("**/api/v1/transactions*", remove_excluded_flows)
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await _select_spend_page(page, "Transactions")
+    await page.get_by_text("No policy-excluded flows in this period.", exact=True).wait_for()
+    await expect(page.get_by_role("button", name="Filter transactions to Taxes, USD")).to_have_count(0)
+    view.errors.assert_none(context="Spend")
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        "transactions-excluded-flows-empty-mobile",
+        label="390px empty policy-excluded flows panel",
+        full_page=True,
+        animations="disabled",
     )
 
 

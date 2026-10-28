@@ -11,14 +11,8 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
-from finance.plaid.spend.allowance import (
-    AllowancePolicy,
-    Kind,
-    Transaction,
-    matching_rule,
-    resolve_reversal_pairs,
-    superseded_pending_keys,
-)
+from finance.plaid.spend.allowance import AllowancePolicy, Disposition, Kind, Transaction
+from finance.plaid.spend.consumption import ConsumptionMode, prepare_consumption
 from finance.plaid.spend.portfolio_models import PortfolioPolicy, PortfolioView
 
 _YEAR_DAYS = Decimal("365.2425")
@@ -255,21 +249,24 @@ def calculate_sustainability(
     end = today - timedelta(days=1)
     requested_start = today - timedelta(days=window_days)
     issues = list(source_issues)
-    reversals = resolve_reversal_pairs(allowance, transactions, time_zone=time_zone, today=today)
-    issues.extend(reversals.issues)
-    superseded = superseded_pending_keys(transactions)
+    prepared = prepare_consumption(
+        allowance,
+        transactions,
+        time_zone=time_zone,
+        today=today,
+        currency=policy.currency,
+        include_excluded_categories=policy.include_excluded_categories,
+        confirmed_refund_rule_ids=policy.confirmed_refund_rule_ids,
+        mode=ConsumptionMode.NET,
+    )
+    issues.extend(prepared.issues)
     days_by_account: dict[str, list[date_type]] = defaultdict(list)
-    daily: dict[date_type, list[int]] = defaultdict(lambda: [0, 0, 0])
+    daily: dict[date_type, dict[Kind, int]] = defaultdict(lambda: defaultdict(int))
     contradictory_accounts: set[str] = set()
     held_refunds = other_currency = 0
-    for transaction in transactions:
-        if transaction.account_id not in allowance.spending_account_ids:
-            continue
-        day = transaction.report_day(time_zone)
-        if day > today:
-            continue
-        if transaction.pending and (transaction.account_id, transaction.transaction_id) in superseded:
-            continue
+    for entry in prepared.entries:
+        transaction = entry.transaction
+        day = entry.report_day
         # Even a transfer establishes that a source has some recorded history.
         days_by_account[transaction.account_id].append(day)
         evidence = policy.account_history.get(transaction.account_id)
@@ -277,26 +274,12 @@ def calculate_sustainability(
             contradictory_accounts.add(transaction.account_id)
         if day > end:
             continue
-        if transaction.currency not in (None, policy.currency):
+        if entry.disposition == Disposition.OTHER_CURRENCY:
             other_currency += int(requested_start <= day <= end)
-            continue
-        if (transaction.account_id, transaction.transaction_id) in reversals.pairs_by_transaction:
-            continue
-        rule = matching_rule(transaction, allowance.rules)
-        if (
-            rule is not None
-            and rule.kind == Kind.EXCLUDED
-            and rule.analysis_category not in policy.include_excluded_categories
-        ):
-            continue
-        amount = int((transaction.amount * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
-        if amount < 0 and (rule is None or rule.id not in policy.confirmed_refund_rule_ids):
+        elif entry.disposition == Disposition.HELD_REFUND:
             held_refunds += int(requested_start <= day <= end)
-            continue
-        bucket = (
-            0 if rule is not None and rule.kind == Kind.FIXED else 2 if rule is None or rule.kind == Kind.REVIEW else 1
-        )
-        daily[day][bucket] += amount
+        elif entry.disposition == Disposition.COUNTED:
+            daily[day][entry.kind] += entry.amount_minor_units
 
     account_coverage = []
     boundaries = []
@@ -359,8 +342,13 @@ def calculate_sustainability(
     ready = source_ready and covered_days > 0 and net is not None and net > 0
     if net is not None and net <= 0:
         issues.append("Eligible funding assets are not positive; a withdrawal percentage is unavailable.")
-    totals = [sum(values[i] for day, values in daily.items() if start <= day <= end) for i in range(3)]
-    consumption = Consumption(*totals)
+    totals = {kind: sum(values.get(kind, 0) for day, values in daily.items() if start <= day <= end) for kind in Kind}
+    consumption = Consumption(
+        mandatory=totals[Kind.FIXED],
+        # Policy-included excluded categories retain their flexible treatment.
+        flexible=totals[Kind.FLEXIBLE] + totals[Kind.EXCLUDED],
+        provisional=totals[Kind.REVIEW],
+    )
     annual = _annualize(consumption.total, covered_days) if source_ready and covered_days else None
     draw = _tax_adjust(annual, policy.withdrawal_tax.rate)
     if annual is not None and annual < 0:
@@ -376,7 +364,7 @@ def calculate_sustainability(
     while chart_day <= end:
         point_start = chart_day - timedelta(days=window_days - 1)
         point_days = sum(point_start + timedelta(days=offset) in covered_dates for offset in range(window_days))
-        point_total = sum(sum(values) for day, values in daily.items() if point_start <= day <= chart_day)
+        point_total = sum(sum(values.values()) for day, values in daily.items() if point_start <= day <= chart_day)
         point_annual = _annualize(point_total, window_days) if source_ready and point_days == window_days else None
         point_draw = _tax_adjust(point_annual, policy.withdrawal_tax.rate)
         # Omit incomplete startup windows; retain later nulls to break the line

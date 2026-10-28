@@ -122,6 +122,9 @@ submission idempotency key; an intentional new attempt requires a new key.
 
 ## Receipt reads and waits
 
+Browser Web Push signals changes to pending requests. The service worker reads current receipts before choosing
+notification content or decision buttons, and owns their presentation.
+
 `ActionService.GetActionRequest` reads the current receipt once. `WatchActionRequest` streams that
 receipt immediately and then on committed changes until `WatchUntil` holds or the client deadline
 ends; the last received receipt is current state. The HTTP/JSON facade exposes the generated stream

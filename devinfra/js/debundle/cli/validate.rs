@@ -23,18 +23,21 @@ use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 use output_layout::SELECTOR_DIAGNOSTICS_REPORT;
 use peel::{OutputFormat, print_report};
-use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
+use pipeline::{TransformArgs, TransformRunOptions, TransformSpecSource, run_transform_cli};
 use selector_codemod::source_input::resolve_chunk_source_file;
 use selector_outcome::{
-    Entity, Outcome, Placement, SelectorKind, SelectorOutcome, SelectorOutcomeReport, Severity,
+    Entity, Outcome, Placement, SelectorKind, SelectorOutcome, SelectorOutcomeReport,
+    SelectorValidationCounts, Severity,
 };
 use serde::Serialize;
 use source_match::source_match_claim_member_selectors;
 use spec::{AnonymousStatementSelector, MemberSelectorSpec};
+use spec_modules::read_flat_transform_spec;
 use spec_resolution::{
     anonymous_statement, member_from_source_match, member_from_spec, parse_anonymous_selector,
     resolve_chunk, spec_module, validate_logical_module_claims,
 };
+use spec_tree::compile_spec_tree;
 
 /// Args for `debundle spec validate`. The spec source and package-root flags
 /// mirror `debundle run` (`--spec` / `--tree-config` + roots) so the same
@@ -90,9 +93,8 @@ pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
     }
     if !report_only
         && report
-            .outcomes
-            .iter()
-            .any(|outcome| outcome.severity() == Severity::Error)
+            .validation_summary()
+            .is_some_and(|summary| !summary.success)
     {
         bail!("validation found selector errors");
     }
@@ -102,6 +104,7 @@ pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
 fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
     let keep_going = !args.transform.fail_fast;
     let cli = args.transform.resolve()?;
+    let expected_chunks = expected_validation_chunks(&cli.spec_source)?;
 
     // Force reports into a private capture dir: dry-run + a report dir makes
     // the materialize pass emit `selector_diagnostics.json` per chunk on
@@ -124,20 +127,68 @@ fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
     );
 
     let mut chunks = Vec::new();
-    collect_chunk_reports(capture.path(), &mut chunks)?;
-    if let Err(error) = pass
-        && chunks.is_empty()
-    {
-        return Err(error).context("running keep-going validation pass");
+    collect_chunk_reports(capture.path(), capture.path(), &mut chunks)?;
+    let mut pass_error = pass.err();
+    let present_chunks: BTreeSet<_> = chunks.iter().map(|(chunk, _)| chunk.clone()).collect();
+    let missing_chunks: Vec<_> = expected_chunks
+        .difference(&present_chunks)
+        .cloned()
+        .collect();
+    if pass_error.is_some() {
+        if chunks.is_empty() {
+            return Err(pass_error.take().expect("pass error is present"))
+                .context("running selector validation pass");
+        }
+        if !missing_chunks.is_empty() {
+            return Err(pass_error.take().expect("pass error is present")).context(format!(
+                "selector validation stopped before reports were written for chunks: {}",
+                missing_chunks.join(", ")
+            ));
+        }
     }
-    let mut report = SelectorOutcomeReport::default();
-    for chunk in chunks {
+    if !missing_chunks.is_empty() {
+        bail!(
+            "selector validation did not produce reports for chunks: {}",
+            missing_chunks.join(", ")
+        );
+    }
+
+    let mut report = SelectorOutcomeReport {
+        validation: Some(SelectorValidationCounts::default()),
+        ..SelectorOutcomeReport::default()
+    };
+    for (_, chunk) in chunks {
+        let Some(validation) = chunk.validation else {
+            bail!("selector diagnostics report is missing validation counts");
+        };
+        report
+            .validation
+            .as_mut()
+            .expect("validation counts initialized")
+            .extend(validation);
         report.outcomes.extend(chunk.outcomes);
         report.templates.extend(chunk.templates);
     }
     report.outcomes.sort();
     report.templates.sort();
+    if pass_error.is_some()
+        && (!keep_going
+            || report
+                .validation_summary()
+                .is_none_or(|summary| summary.success))
+    {
+        return Err(pass_error.take().expect("pass error is present"))
+            .context("running selector validation pass");
+    }
     Ok(report)
+}
+
+fn expected_validation_chunks(source: &TransformSpecSource) -> Result<BTreeSet<String>> {
+    let spec = match source {
+        TransformSpecSource::Flat { path } => read_flat_transform_spec(path)?,
+        TransformSpecSource::Tree(options) => compile_spec_tree(options)?,
+    };
+    Ok(spec.materialize_chunk_ids())
 }
 
 impl ValidateArgs {
@@ -222,6 +273,7 @@ fn validate_modules_against_source(
 
     let mut outcomes = Vec::new();
     let mut modules = Vec::new();
+    let mut validation = SelectorValidationCounts::default();
     for path in spec_modules::collect_module_files(modules_root)? {
         let module_path = spec_modules::module_path_from_file(&path, modules_root);
         let module = spec_modules::read_module_file(&path)?;
@@ -248,18 +300,24 @@ fn validate_modules_against_source(
                     let export_name = match (&member.name, &selector) {
                         (Some(name), _) => name.clone(),
                         (None, MemberSelectorSpec::Binding(binding)) => binding.name.clone(),
-                        (None, _) => continue,
+                        (None, _) => {
+                            validation.record(false);
+                            continue;
+                        }
                     };
                     members.push(member_from_spec(export_name, selector));
                 }
-                Err(error) => outcomes.push(invalid_outcome(
-                    chunk,
-                    &module_path,
-                    member.name.map(Entity::Export),
-                    SelectorKind::UnparsedMember,
-                    None,
-                    &error,
-                )),
+                Err(error) => {
+                    validation.record(false);
+                    outcomes.push(invalid_outcome(
+                        chunk,
+                        &module_path,
+                        member.name.map(Entity::Export),
+                        SelectorKind::UnparsedMember,
+                        None,
+                        &error,
+                    ));
+                }
             }
         }
         for claim in &module.source_matches {
@@ -267,19 +325,28 @@ fn validate_modules_against_source(
                 Ok(expanded) => members.extend(expanded.into_iter().map(|expanded| {
                     member_from_source_match(expanded.export_name, expanded.parsed_selector)
                 })),
-                Err(error) => outcomes.push(invalid_outcome(
-                    chunk,
-                    &module_path,
-                    None,
-                    SelectorKind::SourceMatches,
-                    Some(&claim.source_match().selector()),
-                    &error,
-                )),
+                Err(error) => {
+                    for _ in &claim.bindings {
+                        validation.record(false);
+                    }
+                    outcomes.push(invalid_outcome(
+                        chunk,
+                        &module_path,
+                        None,
+                        SelectorKind::SourceMatches,
+                        Some(&claim.source_match().selector()),
+                        &error,
+                    ));
+                }
             }
         }
         // Each export name resolves once; a repeat was reported above.
         let mut export_names = BTreeSet::new();
+        let parsed_member_count = members.len();
         members.retain(|member| export_names.insert(member.export_name.clone()));
+        for _ in members.len()..parsed_member_count {
+            validation.record(false);
+        }
         let mut anonymous_statements = Vec::new();
         for (index, statement) in module.anonymous_statements.into_iter().enumerate() {
             let entity = Some(Entity::AnonymousStatement(index));
@@ -295,40 +362,50 @@ fn validate_modules_against_source(
                 });
             match parsed {
                 Ok(selector) => anonymous_statements.push(anonymous_statement(index, selector)),
-                Err(error) => outcomes.push(invalid_outcome(
-                    chunk,
-                    &module_path,
-                    entity,
-                    SelectorKind::AnonymousStatement,
-                    statement.selector().ok().as_ref(),
-                    &error,
-                )),
+                Err(error) => {
+                    validation.record(false);
+                    outcomes.push(invalid_outcome(
+                        chunk,
+                        &module_path,
+                        entity,
+                        SelectorKind::AnonymousStatement,
+                        statement.selector().ok().as_ref(),
+                        &error,
+                    ));
+                }
             }
         }
         modules.push(spec_module(module_path, members, anonymous_statements));
     }
     let source_chunk = selector_resolve::Chunk::analyze(chunk, &parsed.module);
     let resolution = resolve_chunk(&source_chunk, &modules)?;
-    outcomes.extend(
-        resolution
-            .outcomes
-            .into_iter()
-            .map(|resolved| resolved.outcome)
-            .filter(|outcome| outcome.severity() != Severity::Ok),
-    );
+    for resolved in resolution.outcomes {
+        validation.record(matches!(
+            &resolved.outcome.outcome,
+            Outcome::Resolved { .. }
+        ));
+        if resolved.outcome.severity() != Severity::Ok {
+            outcomes.push(resolved.outcome);
+        }
+    }
     outcomes.sort();
     let mut templates = resolution.templates;
     templates.sort();
     Ok(SelectorOutcomeReport {
         outcomes,
         templates,
+        validation: Some(validation),
     })
 }
 
 /// Recursively gather every `selector_diagnostics.json` under the capture
 /// directory. The materialize pass nests each report at
 /// `<capture>/<chunk_id parts>/selector_diagnostics.json`.
-fn collect_chunk_reports(dir: &Path, reports: &mut Vec<SelectorOutcomeReport>) -> Result<()> {
+fn collect_chunk_reports(
+    root: &Path,
+    dir: &Path,
+    reports: &mut Vec<(String, SelectorOutcomeReport)>,
+) -> Result<()> {
     if !dir.is_dir() {
         return Ok(());
     }
@@ -340,19 +417,38 @@ fn collect_chunk_reports(dir: &Path, reports: &mut Vec<SelectorOutcomeReport>) -
     for entry in entries {
         let path = entry.path();
         if path.is_dir() {
-            collect_chunk_reports(&path, reports)?;
+            collect_chunk_reports(root, &path, reports)?;
         } else if path.file_name().and_then(|name| name.to_str())
             == Some(SELECTOR_DIAGNOSTICS_REPORT)
         {
+            let chunk = report_chunk_id(root, &path)?;
             let text = std::fs::read_to_string(&path)
                 .with_context(|| format!("reading {}", path.display()))?;
-            reports.push(
+            reports.push((
+                chunk,
                 serde_json::from_str(&text)
                     .with_context(|| format!("parsing selector outcomes {}", path.display()))?,
-            );
+            ));
         }
     }
     Ok(())
+}
+
+fn report_chunk_id(root: &Path, report_path: &Path) -> Result<String> {
+    let relative = report_path.strip_prefix(root).with_context(|| {
+        format!(
+            "selector report {} is outside capture root",
+            report_path.display()
+        )
+    })?;
+    let parent = relative
+        .parent()
+        .context("selector report path has no chunk directory")?;
+    let chunk = artifact::paths::module_path_from_path(parent);
+    if chunk.is_empty() {
+        bail!("selector report is not nested under a chunk directory");
+    }
+    Ok(chunk)
 }
 
 /// One JSON object per outcome, one per listed template, then a final
@@ -362,6 +458,8 @@ fn emit_validate_ndjson(report: &SelectorOutcomeReport) -> Result<()> {
     #[derive(Serialize)]
     struct Summary<T> {
         counts: T,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        validation: Option<selector_outcome::SelectorValidationSummary>,
     }
     for outcome in &report.outcomes {
         print_section("outcome", outcome)?;
@@ -373,6 +471,7 @@ fn emit_validate_ndjson(report: &SelectorOutcomeReport) -> Result<()> {
         "summary",
         &Summary {
             counts: report.counts(),
+            validation: report.validation_summary(),
         },
     )
 }

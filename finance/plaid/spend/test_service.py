@@ -32,7 +32,13 @@ from finance.plaid.spend.allowance import (
     Status,
 )
 from finance.plaid.spend.app import _event_stream
-from finance.plaid.spend.models import AlertState, CardConfig, SpendConfiguration
+from finance.plaid.spend.models import (
+    AlertState,
+    AnalysisCategoryView,
+    CardConfig,
+    SpendConfiguration,
+    SpendTransactionRow,
+)
 from finance.plaid.spend.portfolio_models import (
     PlaidSourcePolicy,
     PortfolioPolicy,
@@ -42,6 +48,61 @@ from finance.plaid.spend.portfolio_models import (
 )
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.sustainability import SustainabilityDisplay, SustainabilityPolicy
+
+
+def excluded_row(
+    amount: int,
+    *,
+    currency: str = "USD",
+    pending: bool = False,
+    disposition: Disposition | None = Disposition.EXCLUDED,
+    category: str | None = "transfer",
+) -> SpendTransactionRow:
+    return SpendTransactionRow(
+        date=date(2026, 1, 1),
+        account_label="Example account",
+        name="Synthetic flow",
+        merchant_name=None,
+        amount_minor_units=amount,
+        currency=currency,
+        pending=pending,
+        allowance_in_scope=True,
+        disposition=disposition,
+        allowance_minor_units=0,
+        pace_effects=[],
+        statement_minor_units=None,
+        statement_reason=None,
+        pfc_primary=None,
+        pfc_detailed=None,
+        merchant_category_code=None,
+        category=AnalysisCategoryView(id=category, label=category.title(), color="#64748B") if category else None,
+    )
+
+
+def test_excluded_flows_keep_directions_and_currencies_separate() -> None:
+    rows = [excluded_row(500), excluded_row(-500), excluded_row(0, pending=True), excluded_row(700, currency="EUR")]
+    groups = service.summarize_excluded_flows(rows)
+    assert [
+        (g.currency, g.debit_minor_units, g.credit_minor_units, g.transaction_count, g.pending_count) for g in groups
+    ] == [("EUR", 700, 0, 1, 0), ("USD", 500, 500, 3, 1)]
+    assert groups[0].category.id == "transfer"
+
+
+@pytest.mark.parametrize("disposition", [value for value in Disposition if value != Disposition.EXCLUDED] + [None])
+def test_excluded_flows_ignore_other_dispositions(disposition: Disposition | None) -> None:
+    assert service.summarize_excluded_flows([excluded_row(500, disposition=disposition)]) == []
+
+
+def test_excluded_flows_keep_categories_and_uncategorized_rows() -> None:
+    groups = service.summarize_excluded_flows(
+        [excluded_row(100), excluded_row(200, category="tax"), excluded_row(-50, category=None)]
+    )
+    assert [(g.category.id, g.debit_minor_units, g.credit_minor_units) for g in groups] == [
+        ("tax", 200, 0),
+        ("transfer", 100, 0),
+        ("uncategorized", 0, 50),
+    ]
+    assert service.summarize_excluded_flows([]) == []
 
 
 @pytest_asyncio.fixture

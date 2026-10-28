@@ -260,6 +260,7 @@ py_library(
     srcs = ["sustainability.py"],
     deps = [
         ":allowance",
+        ":consumption",
         ":portfolio_models",
         "@pypi//pydantic",
     ],
@@ -315,5 +316,24 @@ py_test(
         "//finance/plaid/db:models",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "consumption",
+    srcs = ["consumption.py"],
+    deps = [":allowance"],
+)
+
+py_test(
+    name = "test_consumption",
+    srcs = ["test_consumption.py"],
+    deps = [
+        ":allowance",
+        ":conftest",
+        ":consumption",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

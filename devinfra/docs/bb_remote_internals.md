@@ -432,6 +432,21 @@ bbr build //:requirements --remote_download_regex='.*requirements\.out'
 cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
 ```
 
+### Checking a generated tree after download
+
+A successful local writer only shows that it processed the input it received; it
+does not establish that the downloaded tree matches the current build outputs.
+Run the adapter's review-tree equality check and its normal smoke check. If the
+diff shows removed files left behind or stale bytes at file ends, preserve the
+writer's downloaded input and destination, then compare both with the remote
+invocation artifact when available to identify which side is stale.
+
+If the local downloaded tree is stale, stop commands using that checkout and
+move aside only its idle, clone-owned `bb-out/` directory. Rerun the same
+`bbr` command with the same remote-cache settings, then repeat the equality and
+smoke checks. Keep the old tree for comparison; do not clear shared caches or
+disable remote caching as a first response.
+
 ## Server-side: how `Run` becomes an RE action
 
 Source: `enterprise/server/hostedrunner/hostedrunner.go`

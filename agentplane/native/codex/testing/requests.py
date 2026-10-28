@@ -52,10 +52,21 @@ class FunctionCall(BaseModel):
     arguments: str
 
 
-class FunctionCallOutput(BaseModel):
-    type: Literal["function_call_output"]
+class ToolCallOutput(BaseModel):
     call_id: str
-    output: str
+    output: str | list[Annotated[InputText | InputImage, Field(discriminator="type")]]
+
+    @property
+    def text(self) -> str:
+        return (
+            self.output
+            if isinstance(self.output, str)
+            else "".join(part.text for part in self.output if isinstance(part, InputText))
+        )
+
+
+class FunctionCallOutput(ToolCallOutput):
+    type: Literal["function_call_output"]
 
 
 class CustomToolCall(BaseModel):
@@ -67,12 +78,8 @@ class CustomToolCall(BaseModel):
     input: str
 
 
-class CustomToolCallOutput(BaseModel):
+class CustomToolCallOutput(ToolCallOutput):
     type: Literal["custom_tool_call_output"]
-    call_id: str
-    # Code mode returns a script's result as content items: a status header, then what the script emitted. A
-    # call Codex fails before running gets plain text.
-    output: str | list[Annotated[InputText | InputImage, Field(discriminator="type")]]
 
 
 class SummaryText(BaseModel):

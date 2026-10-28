@@ -1045,6 +1045,7 @@ rust_library(
     deps = [
         ":analysis",
         ":anonymous_resolution",
+        ":artifact",
         ":gate",
         ":graph_provenance",
         ":js_ast",

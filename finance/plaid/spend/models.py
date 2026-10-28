@@ -348,6 +348,19 @@ class SpendTransactionRow(BaseModel):
     details: PlaidTransactionDetails = Field(default_factory=PlaidTransactionDetails)
 
 
+class ExcludedFlowSummary(BaseModel):
+    """Policy-excluded ledger flows, gross in each direction and never netted."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    category: AnalysisCategoryView
+    currency: str
+    debit_minor_units: int = Field(ge=0)
+    credit_minor_units: int = Field(ge=0)
+    transaction_count: int = Field(ge=0)
+    pending_count: int = Field(ge=0)
+
+
 class TransactionPeriodSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -355,6 +368,7 @@ class TransactionPeriodSummary(BaseModel):
     net_allowance_spend_minor_units: int
     unmatched_charge_count: int
     unmatched_charge_minor_units: int
+    excluded_flows: list[ExcludedFlowSummary] = Field(default_factory=list)
 
 
 class SpendTransactionsView(BaseModel):

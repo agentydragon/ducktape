@@ -14,7 +14,6 @@ interface PushShow {
 interface PushRetract {
   kind: "retract";
   action_id: string;
-  outcome: string;
 }
 
 type PushMessage = PushShow | PushRetract;

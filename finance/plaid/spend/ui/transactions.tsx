@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Accordion,
   Alert,
@@ -42,6 +42,8 @@ const dispositionText = {
   excluded: "Excluded from allowance",
   reversed: "Full reversal · excluded from allowance",
   held_refund: "Refund held for review",
+  gross_credit: "Credit outside gross purchases",
+  card_payment: "Card payment excluded from spend",
   superseded_pending: "Pending version replaced by posted charge",
   other_currency: "Different currency · outside allowance",
 } satisfies Record<NonNullable<TransactionRow["disposition"]>, string>;
@@ -396,6 +398,144 @@ function TransactionDetails({ row, currency }: { row: TransactionRow; currency: 
   );
 }
 
+type ExcludedFlow = NonNullable<TransactionsView["summary"]["excluded_flows"]>[number];
+
+type ExcludedFlowFilter = {
+  periodId: TransactionPeriodId;
+  categoryId: string;
+  currency: string;
+};
+
+function ExcludedFlowsPanel({
+  flows,
+  periodId,
+  selected,
+  onSelect,
+}: {
+  flows: ExcludedFlow[];
+  periodId: TransactionPeriodId;
+  selected: ExcludedFlowFilter | null;
+  onSelect: (filter: ExcludedFlowFilter | null) => void;
+}) {
+  return (
+    <Paper withBorder radius="lg" p="lg">
+      <Stack gap="md">
+        <div>
+          <Title order={2} size="h4">
+            Policy-excluded flows
+          </Title>
+          <Text size="sm" c="dimmed" mt="xs">
+            These transactions are excluded from the allowance by policy, but can still be real cash flows, such as
+            taxes accounted for separately. Debits and credits are shown separately and are not netted.
+          </Text>
+        </div>
+        {flows.length === 0 ? (
+          <Text size="sm" c="dimmed">
+            No policy-excluded flows in this period.
+          </Text>
+        ) : (
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+            {flows.map((flow) => {
+              const active =
+                selected?.periodId === periodId &&
+                selected.categoryId === flow.category.id &&
+                selected.currency === flow.currency;
+              return (
+                <Paper
+                  key={`${flow.category.id}:${flow.currency}`}
+                  component="button"
+                  type="button"
+                  withBorder
+                  radius="md"
+                  p="sm"
+                  aria-pressed={active}
+                  aria-label={`Filter transactions to ${flow.category.label}, ${flow.currency}`}
+                  onClick={() =>
+                    onSelect(active ? null : { periodId, categoryId: flow.category.id, currency: flow.currency })
+                  }
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    background: "var(--mantine-color-body)",
+                    borderColor: active ? "var(--mantine-primary-color-filled)" : undefined,
+                  }}
+                >
+                  <Stack gap="sm">
+                    <Group justify="space-between" gap="xs" wrap="nowrap">
+                      <Group gap="xs" wrap="nowrap" miw={0}>
+                        <Box
+                          component="span"
+                          aria-hidden="true"
+                          style={{
+                            width: 10,
+                            height: 10,
+                            flex: "0 0 auto",
+                            borderRadius: "50%",
+                            backgroundColor: flow.category.color,
+                          }}
+                        />
+                        <Text size="sm" fw={650} style={{ overflowWrap: "anywhere" }}>
+                          {flow.category.label}
+                        </Text>
+                      </Group>
+                      <Badge size="sm" variant="light" color="gray" style={{ flexShrink: 0 }}>
+                        {flow.currency}
+                      </Badge>
+                    </Group>
+                    <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="xs">
+                      <Stack gap={2}>
+                        <Text size="xs" c="dimmed">
+                          Debits
+                        </Text>
+                        <Text size="sm" fw={650} style={{ whiteSpace: "nowrap" }}>
+                          {money(flow.debit_minor_units, flow.currency, true)}
+                        </Text>
+                      </Stack>
+                      <Stack gap={2}>
+                        <Text size="xs" c="dimmed">
+                          Credits
+                        </Text>
+                        <Text size="sm" fw={650} style={{ whiteSpace: "nowrap" }}>
+                          {money(flow.credit_minor_units, flow.currency, true)}
+                        </Text>
+                      </Stack>
+                      <Stack gap={2}>
+                        <Text size="xs" c="dimmed">
+                          Transactions
+                        </Text>
+                        <Text size="sm" fw={650}>
+                          {flow.transaction_count}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {flow.pending_count} pending
+                        </Text>
+                      </Stack>
+                    </SimpleGrid>
+                  </Stack>
+                </Paper>
+              );
+            })}
+          </SimpleGrid>
+        )}
+        {selected?.periodId === periodId && (
+          <Group justify="space-between" gap="sm">
+            <Text size="sm" c="dimmed">
+              Filtering to{" "}
+              {flows.find((flow) => flow.category.id === selected.categoryId && flow.currency === selected.currency)
+                ?.category.label ?? selected.categoryId}{" "}
+              · {selected.currency}
+            </Text>
+            <Button size="xs" variant="subtle" onClick={() => onSelect(null)}>
+              Clear exclusion filter
+            </Button>
+          </Group>
+        )}
+      </Stack>
+    </Paper>
+  );
+}
+
 export function TransactionsPage({
   transactions,
   loading,
@@ -410,13 +550,23 @@ export function TransactionsPage({
   onPeriodChange: (periodId: TransactionPeriodId) => void;
 }) {
   const [filter, setFilter] = useState<"all" | "review" | "effect">("all");
+  const [excludedFlowFilter, setExcludedFlowFilter] = useState<ExcludedFlowFilter | null>(null);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  useEffect(() => setExcludedFlowFilter(null), [periodId]);
   const rows = transactions?.rows ?? [];
+  const activeExcludedFlowFilter = excludedFlowFilter?.periodId === periodId ? excludedFlowFilter : null;
   const shown = rows
     .map((row, index) => ({ row, index }))
-    .filter(({ row }) =>
-      filter === "review" ? isReviewRow(row) : filter === "effect" ? row.allowance_minor_units !== 0 : true
-    );
+    .filter(({ row }) => {
+      const matchesRowFilter =
+        filter === "review" ? isReviewRow(row) : filter === "effect" ? row.allowance_minor_units !== 0 : true;
+      const matchesExcludedFlow =
+        activeExcludedFlowFilter === null ||
+        (row.disposition === "excluded" &&
+          (row.category?.id ?? "uncategorized") === activeExcludedFlowFilter.categoryId &&
+          row.currency === activeExcludedFlowFilter.currency);
+      return matchesRowFilter && matchesExcludedFlow;
+    });
   const allowance = transactions?.allowance;
   const currency = allowance?.currency ?? "USD";
   const m = (value: number | null | undefined) => <Money value={value} currency={currency} />;
@@ -532,6 +682,12 @@ export function TransactionsPage({
               )}
             </Stack>
           </Paper>
+          <ExcludedFlowsPanel
+            flows={transactions.summary.excluded_flows ?? []}
+            periodId={periodId}
+            selected={activeExcludedFlowFilter}
+            onSelect={setExcludedFlowFilter}
+          />
           <Group justify="space-between" align="baseline" gap="sm">
             <Text size="sm" c="dimmed">
               Showing {shown.length} of {rows.length}

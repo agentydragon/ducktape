@@ -2,7 +2,11 @@
 //! keep-going differ in exactly one branch.
 
 use anyhow::{Result, bail};
-use selector_outcome::{SelectorOutcome, SelectorOutcomeReport, Severity, TemplateIdentifiers};
+use selector_outcome::{
+    Entity, Outcome, SelectorOutcome, SelectorOutcomeReport, SelectorValidationCounts, Severity,
+    TemplateIdentifiers,
+};
+use std::collections::BTreeSet;
 
 /// Outcome lines a failing chunk prints; `selector_diagnostics.json` keeps them
 /// all.
@@ -18,6 +22,10 @@ pub(super) struct OutcomeSink {
     fail_fast: bool,
     /// `Some` when the report lists template identifiers.
     templates: Option<Vec<TemplateIdentifiers>>,
+    /// `Some` only for `spec validate`; selector success records are counted
+    /// here without adding them to the issue-only `outcomes` list.
+    validation: Option<SelectorValidationCounts>,
+    seen_selector_entities: BTreeSet<(String, String, Entity)>,
 }
 
 impl OutcomeSink {
@@ -26,6 +34,8 @@ impl OutcomeSink {
             outcomes: Vec::new(),
             fail_fast,
             templates: list_template_identifiers.then(Vec::new),
+            validation: list_template_identifiers.then(SelectorValidationCounts::default),
+            seen_selector_entities: BTreeSet::new(),
         }
     }
 
@@ -40,6 +50,16 @@ impl OutcomeSink {
     }
 
     pub(super) fn record(&mut self, outcome: SelectorOutcome) -> Result<()> {
+        if let Some(placement) = &outcome.placement
+            && let Some(entity) = &placement.entity
+        {
+            self.record_selector_result(
+                &outcome.chunk,
+                &placement.logical_module,
+                entity.clone(),
+                matches!(&outcome.outcome, Outcome::Resolved { .. }),
+            );
+        }
         match outcome.severity() {
             Severity::Error if self.fail_fast => bail!("{}", outcome.render_line()),
             Severity::Warning => eprintln!("{}", outcome.render_line()),
@@ -47,6 +67,22 @@ impl OutcomeSink {
         }
         self.outcomes.push(outcome);
         Ok(())
+    }
+
+    pub(super) fn record_selector_result(
+        &mut self,
+        chunk: &str,
+        logical_module: &str,
+        entity: Entity,
+        matched: bool,
+    ) {
+        let Some(validation) = &mut self.validation else {
+            return;
+        };
+        let key = (chunk.to_string(), logical_module.to_string(), entity);
+        if self.seen_selector_entities.insert(key) {
+            validation.record(matched);
+        }
     }
 
     /// Every recorded outcome, sorted, and the listed templates; `None` when
@@ -62,6 +98,7 @@ impl OutcomeSink {
         Some(SelectorOutcomeReport {
             outcomes,
             templates,
+            validation: self.validation,
         })
     }
 
@@ -83,6 +120,7 @@ impl OutcomeSink {
         SelectorOutcomeReport {
             outcomes: failed,
             templates: Vec::new(),
+            validation: self.validation,
         }
         .render_text(&mut report, Some(HUMAN_OUTCOME_REPORT_LIMIT));
         bail!("{report}")

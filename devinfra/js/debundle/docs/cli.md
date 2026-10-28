@@ -424,6 +424,23 @@ error severity. Warnings do not fail validation. Pass `--report-only` to keep
 the report but exit zero for selector errors, for example when collecting
 diagnostics across several chunks.
 
+Every `spec validate` format includes a `validation` summary. JSON places it
+beside `counts` and `outcomes`; the final NDJSON `summary` line includes it;
+text prints `Selector validation: success|failed; checked=N, matched=M`.
+`checked` counts each evaluated member, expanded
+`source_matches[].bindings[]` entry, and anonymous statement. Invalid or
+unmatched selectors count as checked but not matched. `matched` counts entities
+whose final selector outcome is resolved, including warning outcomes. The
+summary's `success` means all checked selectors matched and there are no
+error-severity selector outcomes. Module-level diagnostics such as stale
+annotations can fail `success` without increasing `checked`. Issue rows are
+diagnostics, not the source of the summary counts. A zero/zero summary is
+successful but explicitly means no selectors were evaluated. This status covers
+selector validation only, not gate acceptance, emission, or runtime behavior;
+`--report-only` changes only the exit status for selector errors. If the full
+pipeline cannot produce reports for all configured chunks, validation returns
+the pipeline error rather than publishing partial counts.
+
 Each group of interacting selectors is one CP-SAT solve inside the `debundle`
 process (<selector_resolution.md> § The solver) — in `run`, `validate`, and in
 the edit gate, `describe` and `peel` when they resolve source claims. The

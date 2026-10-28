@@ -152,7 +152,7 @@ func TestEachPassPushesTheNewestChangeOnceRatherThanOnePushPerRequest(t *testing
 		d.deny(t, request)
 	}
 	reconcile(t, notifier)
-	if got, want := d.one(t, b), (message{Kind: "retract", ActionID: newest.ID.String(), Outcome: "denied"}); got != want {
+	if got, want := d.one(t, b), (message{Kind: "retract", ActionID: newest.ID.String()}); got != want {
 		t.Errorf("push %+v, want %+v", got, want)
 	}
 	reconcile(t, notifier)

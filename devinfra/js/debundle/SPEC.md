@@ -358,6 +358,21 @@ member alpha-renames there. Only the pipeline
 resolves its selector as a spec of one entity, so a selector resolved by
 elimination or by its references in a spec is `ambiguous` there.
 
+`spec validate` also reports selector-validation evidence independently of its
+issue rows. `checked` counts one member, one expanded
+`source_matches[].bindings[]` entry, or one anonymous statement that was
+evaluated; parse or resolution failures count as checked but not matched.
+`matched` counts checked entities whose final outcome is `resolved`, including
+those resolved by elimination or references. A module-level diagnostic such as
+a stale annotation can fail validation without adding a selector to these
+counts. `success` means there are no error-severity selector outcomes and every
+checked selector matched. It describes selector validation only; it does not
+claim that the assignment gate, emission, or runtime checks passed. An empty
+selection reports success with `checked: 0` and `matched: 0`, making clear that
+no selectors were evaluated. Outcome rows remain diagnostics, not the source of
+these totals. If the full pipeline stops before all configured chunks report,
+`spec validate` preserves that error instead of returning partial evidence.
+
 ## Modes
 
 - **Keep-going** (the default): every outcome is reported, entities with an

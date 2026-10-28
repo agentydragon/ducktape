@@ -232,7 +232,8 @@ const (
 )
 
 // show and retract are the payloads the integration app's service worker reads
-// (agentplane/app/frontend/service_worker/sw.ts).
+// (agentplane/app/frontend/service_worker/sw.ts). They invalidate its view; the worker fetches current requests
+// before presenting them because pushes can arrive late or out of order.
 type show struct {
 	Kind        string `json:"kind"`
 	ActionID    string `json:"action_id"`
@@ -245,8 +246,6 @@ type show struct {
 type retract struct {
 	Kind     string `json:"kind"`
 	ActionID string `json:"action_id"`
-	// Outcome is the state the request left the wait for, in words.
-	Outcome string `json:"outcome"`
 }
 
 // message is the push that tells a browser, which was shown the requests of shown, what changed among requests (oldest
@@ -279,7 +278,7 @@ func (n *Notifier) message(requests []store.ActionRequest, shown map[uuid.UUID]b
 	case len(left) > 0:
 		newest := left[len(left)-1]
 		return retract{
-			Kind: kindRetract, ActionID: newest.ID.String(), Outcome: stateWords(newest.State),
+			Kind: kindRetract, ActionID: newest.ID.String(),
 		}, ledger
 	default:
 		return nil, nil
@@ -365,8 +364,4 @@ func deleteGone(ctx context.Context, conn *sql.Conn, subscription webpush.Subscr
 		SELECT pg_notify($4, '') FROM deleted`,
 		subscription.Endpoint, subscription.Keys.P256dh, subscription.Keys.Auth, UpdatesChannel)
 	return err
-}
-
-func stateWords(state action_servicepb.ActionState) string {
-	return strings.ReplaceAll(strings.TrimPrefix(strings.ToLower(state.String()), "action_state_"), "_", " ")
 }

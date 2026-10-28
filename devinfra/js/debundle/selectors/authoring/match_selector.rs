@@ -145,6 +145,7 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
                 outcome,
             }],
             templates: Vec::new(),
+            validation: None,
         },
         slack,
     })
