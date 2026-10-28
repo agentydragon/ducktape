@@ -66,13 +66,12 @@ def _new_repository(tmp_path: Path) -> tuple[ResticRepository, dict[str, str]]:
     return ResticRepository(binary=_restic_binary(), environment=env), env
 
 
-def _backup(env: dict[str, str], *source_paths: Path) -> None:
-    subprocess.run(
-        [_restic_binary(), "backup", "--force", "--host", "archive-test", *(str(path) for path in source_paths)],
-        env=env,
-        check=True,
-        capture_output=True,
-    )
+def _backup(env: dict[str, str], *source_paths: Path, force: bool = False) -> None:
+    arguments = [_restic_binary(), "backup"]
+    if force:
+        arguments.append("--force")
+    arguments.extend(("--host", "archive-test", *(str(path) for path in source_paths)))
+    subprocess.run(arguments, env=env, check=True, capture_output=True)
 
 
 def test_real_restic_import_retains_every_changed_and_deleted_version(tmp_path: Path, postgres_engine: Engine) -> None:
@@ -181,8 +180,9 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(tmp_path: 
     os.utime(main_path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
     _backup(env, claude_root, codex_root)
     snapshots = repository.list_snapshots()
-    same_metadata_snapshot = snapshots[-1]
-    changes = repository.diff_snapshots(snapshots[-2].id, same_metadata_snapshot.id)
+    same_metadata_snapshot = next(snapshot for snapshot in snapshots if snapshot.id != initial_snapshot.id)
+    assert same_metadata_snapshot.parent_id == initial_snapshot.id
+    changes = repository.diff_snapshots(initial_snapshot.id, same_metadata_snapshot.id)
     assert any(change.path.endswith("/main-session.jsonl") and change.modifier == "M" for change in changes), [
         (change.path, change.modifier) for change in changes
     ]
@@ -205,7 +205,10 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(tmp_path: 
         assert changed_events.data[0].raw_base64 == changed_events.data[1].raw_base64
         changed_row = db.get(SnapshotFileRow, ("archive-test", same_metadata_snapshot.id, str(main_path)))
         assert changed_row is not None
-        assert changed_row.change_kind == "?"
+        assert changed_row.change_kind == "M"
+        changed_snapshot_row = db.get(ArchiveSnapshotRow, ("archive-test", same_metadata_snapshot.id))
+        assert changed_snapshot_row is not None
+        assert changed_snapshot_row.comparison_snapshot_id == initial_snapshot.id
 
     main_path.write_bytes(repeated)
     _backup(env, claude_root, codex_root)
@@ -302,6 +305,41 @@ def test_postgres_file_transaction_rolls_back_and_retries(tmp_path: Path, postgr
     with factory() as db:
         assert db.scalar(select(func.count()).select_from(FileVersionRow)) == 1
         assert db.scalar(select(func.count()).select_from(RecordPayloadRow)) == 1
+
+
+def test_parentless_restic_snapshot_uses_full_inventory(tmp_path: Path, postgres_engine: Engine) -> None:
+    repository, env = _new_repository(tmp_path)
+    claude_root = tmp_path / "home" / ".claude"
+    transcript = claude_root / "projects" / "example-project" / "session.jsonl"
+    transcript.parent.mkdir(parents=True)
+    transcript.write_bytes(b'{"type":"user","message":{"content":"original"}}\n')
+    _backup(env, claude_root)
+    first_snapshot = repository.list_snapshots()[0]
+    factory = sessionmaker(postgres_engine, expire_on_commit=False)
+    source = ArchiveSource(
+        machine_id="parentless-test",
+        display_name="Parentless test host",
+        restic=repository,
+        roots=(HarnessRoot(Harness.CLAUDE, str(claude_root)),),
+    )
+    ingestor = SnapshotIngestor(factory, source)
+    ingestor.ingest()
+
+    transcript.write_bytes(b'{"type":"user","message":{"content":"forced snapshot"}}\n')
+    _backup(env, claude_root, force=True)
+    second_snapshot = next(snapshot for snapshot in repository.list_snapshots() if snapshot.id != first_snapshot.id)
+    assert second_snapshot.parent_id is None
+    report = ingestor.ingest()
+    assert report.files_failed == 0
+    assert report.snapshots_incomplete == 0
+    with factory() as db:
+        snapshot_row = db.get(ArchiveSnapshotRow, ("parentless-test", second_snapshot.id))
+        assert snapshot_row is not None
+        assert snapshot_row.comparison_snapshot_id is None
+        file_row = db.get(SnapshotFileRow, ("parentless-test", second_snapshot.id, str(transcript)))
+        assert file_row is not None
+        assert file_row.change_kind == "inventory"
+        assert file_row.status == "complete"
 
 
 def test_restic_question_modifier_is_an_indexable_content_change() -> None:
