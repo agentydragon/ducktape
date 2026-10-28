@@ -81,8 +81,9 @@ schema reference; such payloads are not claimed as supported by this conversion 
 ## Standalone JSON Schema declarations
 
 The `json_schema_js_library` macro converts one declared JSON Schema file without invoking its
-producer and packages the declaration in a `js_library` under the requested target name. It has the
-same file-input shape as `openapi_js_library`:
+producer. Its named `js_library` publishes the original schema, declared local-reference files, and
+generated declaration together through `JsInfo`. It has the same file-input shape as
+`openapi_js_library`:
 
 ```starlark
 load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
@@ -97,32 +98,21 @@ json_schema_js_library(
 List every file reached through a relative local `$ref` in `schema_files`; the action receives each
 as a declared input and resolves the reference from the root schema's path. The generated file
 defaults to `:<name>.d.ts` (`:types.d.ts` here); set `out` when consumers need another module path.
-Remote HTTP resolution is disabled by the converter.
+Remote HTTP resolution is disabled by the converter. The named library exposes the schema and
+`schema_files` at their producer-owned paths, so runtime consumers can import those JSON modules
+directly alongside the generated declarations.
 
-When a runtime consumer needs the source JSON as well as generated declarations, keep the schema
-artifact as its own Bazel input. A wrapper can package the JSON source and depend on the declaration
-library:
+Keep the macro beside the schema producer when the producer also owns runtime consumers. Its target
+provides both the original JSON module and generated declarations without a wrapper or relocated
+copy:
 
 ```starlark
-load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
-load("@aspect_rules_js//js:defs.bzl", "js_library")
 
 json_schema_js_library(
-    name = "tool_arguments_types",
-    schema = ":types_schema",
-)
-
-copy_file(
-    name = "_schema_json",
-    src = ":types_schema",
-    out = "api/types.schema.json",
-)
-
-js_library(
     name = "tool_arguments",
-    srcs = [":_schema_json"],
-    deps = [":tool_arguments_types"],
+    schema = ":types_schema",
+    schema_files = [":shared_definitions"],
 )
 ```
 
