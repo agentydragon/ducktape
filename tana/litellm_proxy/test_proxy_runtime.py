@@ -20,7 +20,7 @@ from anthropic.types import MessageParam, TextBlockParam, ToolParam, ToolUseBloc
 from litellm.proxy import proxy_server
 from litellm.proxy.proxy_server import ProxyConfig
 from litellm.types.utils import GenericStreamingChunk
-from openai.types.chat import ChatCompletionMessageParam
+from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 
 from tana.litellm_proxy import custom_handler
 from tana.litellm_proxy.provider import TanaChatResult, TanaLiteLLM, TanaProxyClient, TanaProxyConfig
@@ -417,26 +417,24 @@ async def test_chat_completions_stream_tool_roundtrip_without_usage(
         _serve_tana_proxy(tmp_path, monkeypatch, handle) as origin,
         openai.AsyncOpenAI(api_key="sk-test", base_url=origin + "/v1", max_retries=0) as client,
     ):
+        tools: list[ChatCompletionToolParam] = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "lookup_fact",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"topic": {"type": "string"}},
+                        "required": ["topic"],
+                    },
+                },
+            }
+        ]
         messages = _chat_messages()
         chunks = [
             chunk
             async for chunk in await client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=messages,
-                stream=True,
-                tools=[
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "lookup_fact",
-                            "parameters": {
-                                "type": "object",
-                                "properties": {"topic": {"type": "string"}},
-                                "required": ["topic"],
-                            },
-                        },
-                    }
-                ],
+                model="gpt-4o-mini", messages=messages, stream=True, tools=tools
             )
         ]
         calls = [call for chunk in chunks if chunk.choices for call in chunk.choices[0].delta.tool_calls or []]
@@ -461,7 +459,7 @@ async def test_chat_completions_stream_tool_roundtrip_without_usage(
                 {"role": "tool", "tool_call_id": first.id, "content": "A fact about Tana."},
             ]
         )
-        result = await client.chat.completions.create(model="gpt-4o-mini", messages=messages)
+        result = await client.chat.completions.create(model="gpt-4o-mini", messages=messages, tools=tools)
         assert result.choices[0].message.content == "Fact received."
         assert result.usage is None
 
