@@ -49,7 +49,7 @@ def _detach_transaction_view(connection: Connection) -> None:
             CREATE TEMP TABLE plaid_transaction_view_grants ON COMMIT DROP AS
             SELECT CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(acl.grantee)) END AS grantee,
               acl.privilege_type,acl.is_grantable
-            FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) acl
+            FROM pg_class c CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) acl
             WHERE c.oid='current_transactions'::regclass
             """
         )
@@ -70,7 +70,7 @@ def _restore_transaction_view(connection: Connection) -> None:
               FOR permission IN
                 SELECT DISTINCT CASE WHEN acl.grantee=0 THEN 'PUBLIC'
                   ELSE quote_ident(pg_get_userbyid(acl.grantee)) END AS grantee
-                FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) acl
+                FROM pg_class c CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) acl
                 WHERE c.oid='current_transactions'::regclass
               LOOP
                 EXECUTE format('REVOKE ALL ON current_transactions FROM %s',permission.grantee);

@@ -146,7 +146,16 @@ def _seed_capture(
         )
 
 
-def test_upgrade_recovers_exact_captures_and_coverage(postgres_admin_url: str, database_names: DatabaseNames) -> None:
+@pytest.mark.parametrize("existing_public_grant", [False, True])
+def test_upgrade_recovers_exact_captures_and_coverage(
+    postgres_admin_url: str, database_names: DatabaseNames, existing_public_grant: bool
+) -> None:
+    view_acl = text(
+        """SELECT jsonb_agg(jsonb_build_array(a.grantee,a.privilege_type,a.is_grantable)
+           ORDER BY a.grantee,a.privilege_type,a.is_grantable)
+           FROM pg_class c CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a
+           WHERE c.oid='current_transactions'::regclass"""
+    )
     with create_temporary_database(postgres_admin_url, database_names()) as db_url, _connection(db_url) as connection:
         with connection.begin():
             command.upgrade(_config(connection), "0009")
@@ -154,7 +163,11 @@ def test_upgrade_recovers_exact_captures_and_coverage(postgres_admin_url: str, d
             _seed_capture(connection, status="failed")
             _seed_capture(connection, at=_CAPTURED + timedelta(days=1), empty=True)
             _seed_capture(connection, removed_item=True)
-            connection.execute(text("GRANT SELECT ON current_transactions TO PUBLIC"))
+            if existing_public_grant:
+                connection.execute(text("GRANT SELECT ON current_transactions TO PUBLIC"))
+            original_acl = connection.scalar(view_acl)
+            # Recreating the view must not accidentally acquire newer default grants.
+            connection.execute(text("ALTER DEFAULT PRIVILEGES GRANT INSERT ON TABLES TO PUBLIC"))
         with connection.begin():
             command.upgrade(_config(connection), "0010")
             revision = ScriptDirectory.from_config(_config(connection)).get_revision("0010")
@@ -184,14 +197,7 @@ def test_upgrade_recovers_exact_captures_and_coverage(postgres_admin_url: str, d
             assert tuple(holding) == (_CAPTURED, Decimal("0.1"), Decimal("12.34"), True)
             assert connection.scalar(text("SELECT amount FROM transactions")) == Decimal("0.1")
             assert connection.scalar(text("SELECT amount FROM current_transactions")) == Decimal("0.1")
-            assert (
-                connection.scalar(
-                    text(
-                        "SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='current_transactions'::regclass AND a.grantee=0 AND a.privilege_type='SELECT'"
-                    )
-                )
-                == 1
-            )
+            assert connection.scalar(view_acl) == original_acl
             assert connection.scalar(text("SELECT current FROM balance_snapshots")) == Decimal("123.45")
             assert connection.scalar(text("SELECT count(*) FROM plaid_api_events")) == 3
 
