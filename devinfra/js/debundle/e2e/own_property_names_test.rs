@@ -76,12 +76,14 @@ const names = Object.getOwnPropertyNames({
   field: makeValue(),
   get deferred() { getterCalls++; return later; },
 });
-let argumentThrew = false;
-try {
-  Object.getOwnPropertyNames({ field: (() => { throw new Error("argument"); })() });
-} catch (error) {
-  argumentThrew = error.message === "argument";
-}
+const argumentThrew = (() => {
+  try {
+    Object.getOwnPropertyNames({ field: (() => { throw new Error("argument"); })() });
+    return false;
+  } catch (error) {
+    return error.message === "argument";
+  }
+})();
 const later = 42;
 console.log(names[0], names[1], argumentCalls, getterCalls, argumentThrew);
 "#;
