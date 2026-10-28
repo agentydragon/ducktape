@@ -8,6 +8,11 @@ import config from "../../../../eslint.config.js";
 export default [
   ...config,
   {
+    files: ["devinfra/lint/x/typed_eslint/fixtures/**/*.{ts,tsx}"],
+    // These fixtures sit outside the frontend globs; tsc checks their identifiers.
+    rules: { "no-undef": "off" },
+  },
+  {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsparser,
