@@ -275,14 +275,14 @@ func TestUnknownRetryAttemptSurvivesReacquireWebhookAndResetsOnRefChange(t *test
 	g.assertPullRequestRetry(t, sub, 15*time.Second, 2)
 
 	// An unchanged pull_request webhook forces a read, but the unchanged observation keeps its retry budget.
-	g.deliver(t, "pull_request", onPullRequest(7), action("edited"))
+	g.deliver(t, "pull_request", onPullRequest(7), withAction("edited"))
 	if err := g.tryCompletePullRequestRefresh(t, sub, observation); err != nil {
 		t.Fatal(err)
 	}
 	g.assertPullRequestRetry(t, sub, 45*time.Second, 3)
 
 	// A changed head starts this observed tuple at the first delay again.
-	g.deliver(t, "pull_request", onPullRequest(7), action("synchronize"))
+	g.deliver(t, "pull_request", onPullRequest(7), withAction("synchronize"))
 	changed := observation
 	changed.HeadSHA = commitC
 	if err := g.tryCompletePullRequestRefresh(t, sub, changed); err != nil {
@@ -354,14 +354,14 @@ func TestConflictingRetryScheduleStopsAfterThreeEarlyRechecks(t *testing.T) {
 	g.assertNoPullRequestRetry(t, sub, 3)
 
 	// An unchanged webhook reacquires the subject without resetting the exhausted tuple's counter.
-	g.deliver(t, "pull_request", onPullRequest(7), action("edited"))
+	g.deliver(t, "pull_request", onPullRequest(7), withAction("edited"))
 	if err := g.tryCompletePullRequestRefresh(t, sub, conflicting); err != nil {
 		t.Fatal(err)
 	}
 	g.assertNoPullRequestRetry(t, sub, 3)
 
 	// A changed base ref starts a new negative retry budget.
-	g.deliver(t, "pull_request", onPullRequest(7), action("edited"))
+	g.deliver(t, "pull_request", onPullRequest(7), withAction("edited"))
 	changed := conflicting
 	changed.BaseRef = "release"
 	if err := g.tryCompletePullRequestRefresh(t, sub, changed); err != nil {
