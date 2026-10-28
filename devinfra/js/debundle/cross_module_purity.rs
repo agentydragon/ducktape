@@ -132,11 +132,8 @@ impl<'a> ModulePurityFacts<'a> {
         }
     }
 
-    /// Build this module's `ChunkCodeGraph` with the supplied imported-binding
-    /// purities. Only the cross-module map varies across fixpoint rounds; the
-    /// declared-purity inputs are not consulted here (the oracle reasons about
-    /// inferred body purity, and declared annotations only ever make a binding
-    /// *more* pure, so omitting them keeps the verdict conservative).
+    /// Test helper for checking a module graph with pre-resolved imports.
+    #[cfg(test)]
     fn build_graph(
         &self,
         prepared: &PreparedModulePurityFacts<'_>,
@@ -189,23 +186,14 @@ impl<'a> ModulePurityFacts<'a> {
     }
 }
 
-#[cfg(test)]
-fn merge_inferred_export_purity(current: &Arc<Purity>, inferred: &Purity) -> Option<Purity> {
-    if !current.is_pure() {
-        return None;
-    }
-    let updated = current.as_ref().clone().worst(inferred.clone());
-    (updated != **current).then_some(updated)
-}
-
 /// Compute, per module, the imported-binding purity map to feed that module's
-/// `ChunkCodeGraph::build_full`. See the module docs for the fixpoint.
+/// callers. See the module docs for the shared effects closure.
 ///
 /// `asserted_pure` carries author-asserted pure exports keyed by defining
 /// module (`TransformSpec::chunk_export_purity`). Assertions are trusted
 /// axioms: they enter the verdict map as `Pure` even when the export's
 /// binding is not a classifiable chunk-top function (interop wrappers,
-/// re-exported callables), and the fixpoint never demotes them. An assertion
+/// re-exported callables), and the effects closure never demotes them. An assertion
 /// naming a module or export the program doesn't have is reported to stderr
 /// as a dangling assertion (likely a typo or a stale entry) and ignored.
 pub fn resolve_imported_purities(
@@ -1180,50 +1168,18 @@ mod tests {
     }
 
     #[test]
-    fn pure_export_fixpoint_unions_dependencies_and_importers_retain_them() {
-        let first = value_input_dependencies("static/provider-a.js", 1);
-        let second = value_input_dependencies("static/provider-b.js", 3);
-        let current = Arc::new(Purity::pure().with_dependencies(&first));
-        let newly_inferred = Purity::pure().with_dependencies(&second);
-        let merged = merge_inferred_export_purity(&current, &newly_inferred)
-            .expect("new proof dependency must update a still-pure export");
-        assert_eq!(
-            merged.dependencies(),
-            Some(&ProofDependencies {
-                value_inputs: BTreeSet::from([
-                    ValueInputRef {
-                        defining_chunk: "static/provider-a.js".to_string(),
-                        input_index: 1,
-                    },
-                    ValueInputRef {
-                        defining_chunk: "static/provider-b.js".to_string(),
-                        input_index: 3,
-                    },
-                ]),
-            })
-        );
-        assert!(
-            merge_inferred_export_purity(&Arc::new(merged.clone()), &newly_inferred).is_none(),
-            "an unchanged summary must converge"
-        );
-
-        let first_import = BTreeMap::from([("upstream".to_string(), Arc::new(merged))]);
-        let middle = function_purity_with_imports(
+    fn imported_pure_dependencies_are_retained_by_local_wrappers() {
+        let dependencies = value_input_dependencies("static/provider.js", 1);
+        let imported = BTreeMap::from([(
+            "upstream".to_string(),
+            Arc::new(Purity::pure().with_dependencies(&dependencies)),
+        )]);
+        let wrapper = function_purity_with_imports(
             "export function forward() { return upstream(); }",
             "forward",
-            &first_import,
+            &imported,
         );
-        assert_eq!(
-            middle.dependencies(),
-            first_import["upstream"].dependencies()
-        );
-        let second_import = BTreeMap::from([("middle".to_string(), Arc::new(middle))]);
-        let leaf = function_purity_with_imports(
-            "export function forwardAgain() { return middle(); }",
-            "forwardAgain",
-            &second_import,
-        );
-        assert_eq!(leaf.dependencies(), second_import["middle"].dependencies());
+        assert_eq!(wrapper.dependencies(), Some(&dependencies));
     }
 
     #[test]
