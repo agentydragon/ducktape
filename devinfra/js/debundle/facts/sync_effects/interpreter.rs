@@ -5,6 +5,7 @@ use super::super::value_model::{
     Context, DenseArray, FrozenNamespaceProof, ValueExpr, Values,
 };
 use super::native_calls::{CallInputs, CallReturn, NativeCallModel};
+use super::runtime_inference::{RuntimeOperation, RuntimeQueries, RuntimeValue};
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, IntrinsicRoot, LocalConstructor,
     RetainedCallbackCall,
@@ -60,7 +61,7 @@ fn unknown() -> Values {
 }
 
 #[derive(Debug, Clone, Default)]
-struct Outcome {
+pub(super) struct Outcome {
     effects: SynchronousCalls,
     returns: Values,
     complete: bool,
@@ -293,6 +294,7 @@ pub(super) struct ExecutionState {
 pub(super) struct Executor<'source, 'rule> {
     inputs: &'rule ExecutionInputs<'source>,
     state: ExecutionState,
+    queries: RuntimeQueries<'rule>,
 }
 
 /// The source proof selected for one exact factory call. Kept separate from
@@ -309,12 +311,26 @@ struct ValidatedMetadataDecoration {
 }
 
 impl<'source, 'rule> Executor<'source, 'rule> {
-    pub(super) fn new(inputs: &'rule ExecutionInputs<'source>, state: ExecutionState) -> Self {
-        Self { inputs, state }
+    pub(super) fn new(
+        inputs: &'rule ExecutionInputs<'source>,
+        state: ExecutionState,
+        queries: RuntimeQueries<'rule>,
+    ) -> Self {
+        Self {
+            inputs,
+            state,
+            queries,
+        }
     }
 
-    pub(super) fn into_state(self) -> ExecutionState {
-        self.state
+    pub(super) fn into_settled_state(self) -> Option<ExecutionState> {
+        (!self.queries.suspended()).then_some(self.state)
+    }
+
+    fn request(&mut self, operation: RuntimeOperation) -> Option<RuntimeValue> {
+        let result = self.queries.request(&self.state, operation)?;
+        self.state = result.state.as_ref().clone();
+        Some(result.value.clone())
     }
 
     /// The abstract callback-factory value also represents namespace members
@@ -4229,6 +4245,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn evaluate(&mut self, expr: &ValueExpr, env: &Context, captures: &Context) -> Values {
+        if self.queries.suspended() {
+            return Values::new();
+        }
+        let Some(result) = self.request(RuntimeOperation::Evaluate {
+            expression: expr.clone(),
+            environment: env.clone(),
+            captures: captures.clone(),
+        }) else {
+            return Values::new();
+        };
+        let RuntimeValue::Values(values) = result else {
+            unreachable!("expression transfers produce values");
+        };
+        values
+    }
+
+    pub(super) fn evaluate_transfer(
+        &mut self,
+        expr: &ValueExpr,
+        env: &Context,
+        captures: &Context,
+    ) -> Values {
         match expr {
             ValueExpr::Binding(id) => {
                 if self.inputs.index.callback_factory_imports.contains(id) {
@@ -4777,6 +4815,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captured: Option<CapturedContext>,
         fresh_checked_constructor: bool,
     ) -> Outcome {
+        if self.queries.suspended() {
+            return Outcome::default();
+        }
+        let Some(result) = self.request(RuntimeOperation::Invoke {
+            callable: key,
+            arguments: args,
+            captured,
+            fresh_checked_constructor,
+        }) else {
+            return Outcome::default();
+        };
+        let RuntimeValue::Outcome(outcome) = result else {
+            unreachable!("invocation transfers produce outcomes");
+        };
+        *outcome
+    }
+
+    pub(super) fn invoke_transfer(
+        &mut self,
+        key: u32,
+        args: Vec<Values>,
+        captured: Option<CapturedContext>,
+        fresh_checked_constructor: bool,
+    ) -> Outcome {
         let Some((callable_owner, callable_opaque, uses_arguments)) =
             self.inputs.index.callables.get(&key).map(|callable| {
                 (
@@ -5052,6 +5114,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn execute_call(
+        &mut self,
+        call: &Call,
+        env: &Context,
+        captures: &Context,
+        outcome: &mut Outcome,
+    ) {
+        if self.queries.suspended() {
+            return;
+        }
+        let Some(result) = self.request(RuntimeOperation::Call {
+            call: call.clone(),
+            environment: env.clone(),
+            captures: captures.clone(),
+            outcome: Box::new(outcome.clone()),
+        }) else {
+            return;
+        };
+        let RuntimeValue::Outcome(result) = result else {
+            unreachable!("call transfers produce outcomes");
+        };
+        *outcome = *result;
+    }
+
+    pub(super) fn execute_call_transfer(
         &mut self,
         call: &Call,
         env: &Context,
