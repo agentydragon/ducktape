@@ -53,9 +53,12 @@ Also here:
   that service's projected token on every call. The runtime uses no Python interpreter. Its
   settings come only from the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE`, which it
   refuses to start without; it reads no per-setting env and takes no flags.
-- `sidecar_config.py` and `platform_routes.py`: Python settings and route models cdk8s renders each
-  Sandbox template's sidecar settings ConfigMap from. The process entry point and both forwarding
-  paths live in Go; `platform_routes.py` does not serve traffic.
+- `sidecar/configpb/config.proto`: the Go sidecar configuration schema, decoded with Buf's `protoyaml`
+  and validated with `protovalidate`. Optional listener and port fields distinguish omission from an
+  invalid explicit empty string or zero.
+- `sidecar/configpb:config_pb2`: generated Python config and route messages used by cdk8s and process
+  tests. ConfigMap synthesis validates the same annotations as the Go runtime. `sidecar_config.py`
+  holds process/probe constants; omitted settings receive defaults in the Go loader.
 - `../app/go/streamapi.go`: the integration app's authenticated `EgressAdmin.WatchDecisions` client
   and browser stream projection. `decisions.py` remains the Python value model used by system tests.
 - `testing/`: the throwaway CAs and process launchers `test_proxy.py` runs the built binaries with.

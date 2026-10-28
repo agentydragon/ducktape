@@ -1,7 +1,7 @@
 # Agentplane LLM workload ingress
 
-This is the authenticated Sandbox-facing hop in front of the existing LiteLLM deployment. Its runtime is a Go binary; Python models remain for deployment
-authoring and the runner-facing model-config contract. The
+This is the authenticated Sandbox-facing hop in front of the existing LiteLLM deployment. Its Go runtime and Python deployment authors share the generated messages and Protovalidate
+annotations in `configpb/config.proto`. The
 central egress proxy substitutes the caller's already-authenticated Pod-bound workload token into
 an ordinary `Authorization: Bearer` header. This service resolves that bearer with the shared
 Go workload-auth resolver, removes it, and forwards the request to LiteLLM with one
@@ -113,8 +113,8 @@ include prompts, reasoning, generated text, and tool arguments; keep it disabled
 restrict access and retention while enabled. Authorization and other request headers are not logged.
 
 Each environment projects its Claude routes through the explicit runner budget map
-into `LlmIngressProps.models` (Codex budgets are catalog entries, above), then `settings.py`'s configuration schema. `models.py` owns the lightweight
-`ModelConfig` API contract shared by ingress, runner, and config generation.
+into `LlmIngressProps.models` (Codex budgets are catalog entries, above), then the generated protobuf configuration. `configpb/config.proto` owns the lightweight
+`ModelConfig` record; the HTTP endpoint keeps its existing snake_case JSON and numeric budget.
 These are configured harness overrides, not a catalog of every known model capacity.
 
 ## Contract tests
@@ -129,6 +129,20 @@ configuration path.
 ```sh
 bbr test //agentplane/llm_ingress/...
 ```
+
+## Configuration
+
+`AGENTPLANE_LLM_INGRESS_CONFIG_FILE` names a YAML/JSON protobuf settings file. Top-level scalar
+`AGENTPLANE_LLM_INGRESS_*` environment values override it; empty environment values are ignored.
+Lists, maps and attribution remain file-only. Unknown and duplicate file keys are rejected.
+The Go loader owns omitted listener and attribution defaults and validates the completed config.
+Python synthesis validates the complete nested model and attribution values, including header
+restrictions and uniqueness, then serializes the file fragment. It does not manufacture missing
+environment values or credentials to claim full validation. The LiteLLM key remains a Kubernetes
+Secret reference and is never serialized into the ConfigMap; config errors omit values.
+
+Model budgets are `int64`: canonical protobuf JSON writes them as decimal strings in YAML, while
+`GET /agentplane/model-config` retains numeric JSON for the runner.
 
 ## Trusted central Session attribution
 

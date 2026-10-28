@@ -1,4 +1,6 @@
 # Gazelle exclusions
+# gazelle:resolve py agentplane.egress.sidecar.configpb.config_pb2 //agentplane/egress/sidecar/configpb:config_pb2
+# gazelle:resolve py agentplane.llm_ingress.configpb.config_pb2 //agentplane/llm_ingress/configpb:config_pb2
 # Resolve upstream Google API proto imports to the shared googleapis repository.
 # gazelle:resolve proto google/api/annotations.proto @googleapis//google/api:annotations_proto
 # Most .gitignore patterns are handled by .bazelignore (root-level directories)

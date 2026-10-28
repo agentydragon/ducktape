@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/llm_ingress/configpb"
 )
 
 const testCodexCatalog = `{"models":[{"slug":"test/route-a"},{"slug":"test/route-b"}]}`
@@ -23,8 +25,8 @@ func TestCodexCatalogIsServedAuthenticatedAndSignalledOnResponses(t *testing.T) 
 	tokenA := workloadToken(t, "test-sandbox-a")
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
-	ingress := newConfiguredIngressTestServer(t, api.TokenReviews(), config{
-		LiteLLMURL: backendServer.URL, LiteLLMKey: testBackendKey,
+	ingress := newConfiguredIngressTestServer(t, api.TokenReviews(), &configpb.Config{
+		LitellmUrl: backendServer.URL, LitellmKey: testBackendKey,
 		CodexModelCatalogFile: writeCodexCatalog(t, testCodexCatalog),
 	})
 	client := testClient()

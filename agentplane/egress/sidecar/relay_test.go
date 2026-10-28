@@ -13,6 +13,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/egress/sidecar/configpb"
+	"google.golang.org/protobuf/proto"
 )
 
 const testAudience = "https://kubernetes.test.invalid"
@@ -163,9 +166,9 @@ func startTestSidecar(t *testing.T, proxyPort int, tokenFile string, audiences m
 		t.Fatal(err)
 	}
 	s := &sidecar{
-		config: config{
+		config: &configpb.Config{
 			ProxyHost:          "127.0.0.1",
-			ProxyPort:          proxyPort,
+			ProxyPort:          proto.Int32(int32(proxyPort)),
 			TokenFile:          tokenFile,
 			AudienceTokenFiles: audiences,
 		},

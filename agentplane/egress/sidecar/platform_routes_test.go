@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/egress/sidecar/configpb"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
@@ -18,7 +20,7 @@ func TestPlatformRouteRecoversAfterSilentUpstreamBlackhole(t *testing.T) {
 	replacement := startRouteTestBackend(t, "replacement")
 	proxy := startRouteTestProxy(t, original)
 	routes, err := bindPlatformRoutesWithKeepalive(
-		map[string]platformRouteConfig{
+		map[string]*configpb.PlatformRoute{
 			"control": {ListenAddress: "127.0.0.1:0", Upstream: proxy.listener.Addr().String()},
 		},
 		keepalive.ClientParameters{Time: 10 * time.Second, Timeout: time.Second},

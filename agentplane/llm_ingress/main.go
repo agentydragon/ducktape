@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/llm_ingress/configpb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	authenticationclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
@@ -42,7 +43,7 @@ func main() {
 	}
 }
 
-func serve(ctx context.Context, c config, logger *slog.Logger) error {
+func serve(ctx context.Context, c *configpb.Config, logger *slog.Logger) error {
 	kubeConfig, err := kubernetesConfig(c)
 	if err != nil {
 		return err
@@ -60,7 +61,7 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 		return err
 	}
 	defer handler.backend.CloseIdleConnections()
-	address := net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
+	address := net.JoinHostPort(c.GetHost(), strconv.Itoa(int(c.GetPort())))
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("could not listen on configured address: %w", err)
@@ -70,7 +71,7 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 		Handler:           observability.HTTPHandler(handler),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	logger.Info("forwarding authenticated Sandbox model traffic to LiteLLM", "url", c.LiteLLMURL, "address", address)
+	logger.Info("forwarding authenticated Sandbox model traffic to LiteLLM", "url", c.LitellmUrl, "address", address)
 	serveResult := make(chan error, 1)
 	go func() { serveResult <- server.Serve(listener) }()
 	select {
@@ -93,7 +94,7 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	}
 }
 
-func kubernetesConfig(c config) (*rest.Config, error) {
+func kubernetesConfig(c *configpb.Config) (*rest.Config, error) {
 	var kubeconfig *rest.Config
 	var err error
 	if c.Kubeconfig != "" {

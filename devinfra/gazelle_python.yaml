@@ -363,6 +363,9 @@ manifest:
     prompt_toolkit: prompt_toolkit
     propcache: propcache
     proto: proto_plus
+    protobuf: protobuf_py_pure
+    protobuf_ext: protobuf_py_ext
+    protovalidate: protovalidate
     proxytypes: jsonref
     psutil: psutil
     psycopg: psycopg
@@ -481,4 +484,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: b957ac3f98729b8345e47ef344d69bbf864835695d1556045b0326a9e1e1e93d
+integrity: 5444a027812094c35a0d90b98ab7eaafd0fb17d9021ad6f0469c081a4c65529a

@@ -11,8 +11,11 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.egress.platform_routes import PlatformRoute
+from agentplane.egress.sidecar.configpb import config_pb2
 from agentplane.egress.testing.sidecar_process import SidecarProcess
+
+# Generated message stubs import protobuf's own types.
+# gazelle:include_dep @pypi//protobuf
 
 UNARY = "/test.Echo/Unary"
 STREAM = "/test.Echo/Stream"
@@ -91,7 +94,9 @@ def token_file(tmp_path: Path) -> Path:
 async def route_channel(upstream: tuple[Upstream, int], token_file: Path) -> AsyncIterator[RouteUnderTest]:
     handler, port = upstream
     route_config = {
-        "control": PlatformRoute(listen_address="127.0.0.1:0", upstream=f"127.0.0.1:{port}", token_file=token_file)
+        "control": config_pb2.PlatformRoute(
+            listen_address="127.0.0.1:0", upstream=f"127.0.0.1:{port}", token_file=str(token_file)
+        )
     }
     async with (
         SidecarProcess(

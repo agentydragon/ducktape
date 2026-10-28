@@ -1,5 +1,5 @@
 """The Agentplane services runners call over the egress sidecar's platform routes
-(agentplane/egress/platform_routes.py). From this one list come:
+(agentplane/egress/sidecar/configpb/config.proto). From this one list come:
 - the sidecar's routes and the runner's endpoint flags in the runner SandboxTemplates;
 - the network rules on both ends.
 
@@ -10,12 +10,11 @@ telemetry route is an unauthenticated local hop to Alloy. Neither route uses the
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
 
-from agentplane.egress.platform_routes import PlatformRoute
+from agentplane.egress.sidecar.configpb import config_pb2
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from cluster.cdk8s.agentplane import history_service, sandbox_pod, telemetry
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
@@ -52,13 +51,13 @@ def routes(namespace: str) -> tuple[Route, ...]:
     return ingress(namespace), telemetry_route()
 
 
-def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> dict[str, PlatformRoute]:
+def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> dict[str, config_pb2.PlatformRoute]:
     """The sidecar's `platform_routes` setting."""
     return {
-        route.name: PlatformRoute(
+        route.name: config_pb2.PlatformRoute(
             listen_address=f"{listen_host}:{route.listen_port}",
             upstream=f"{route.service.fqdn}:{route.service.pod_port}",
-            **({"token_file": Path(sandbox_pod.audience_token_file(route.audience))} if route.audience else {}),
+            token_file=sandbox_pod.audience_token_file(route.audience) if route.audience else "",
         )
         for route in routes(namespace)
     }

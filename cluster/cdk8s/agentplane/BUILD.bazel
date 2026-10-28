@@ -315,7 +315,7 @@ py_library(
         ":codex_models",
         ":environment",
         ":telemetry",
-        "//agentplane/llm_ingress:settings",
+        "//agentplane/llm_ingress/configpb:config_pb2",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
@@ -328,10 +328,12 @@ py_library(
         "//cluster/cdk8s:token_reviewer_rbac",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
-        "//util:settings_contract",
+        "//util:protobuf",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@pypi//protobuf",
+        "@pypi//protovalidate",
     ],
 )
 
@@ -359,9 +361,9 @@ py_library(
         ":environment",
         ":notifications",
         ":telemetry",
-        "//agentplane/egress:platform_routes",
         "//agentplane/egress:resources",
         "//agentplane/egress:sidecar_config",
+        "//agentplane/egress/sidecar/configpb:config_pb2",
         "//agentplane/history_service:settings",
         "//agentplane/runner:configuration",
         "//agentplane/runner_gateway:api",
@@ -371,9 +373,12 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:settings_file",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//util:protobuf",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@pypi//protobuf",
+        "@pypi//protovalidate",
     ],
 )
 
@@ -701,13 +706,14 @@ py_library(
         "//agentplane/action_service:mcp_settings",
         "//agentplane/action_service:operator_oidc_settings",
         "//agentplane/app:settings",
-        "//agentplane/llm_ingress:models",
+        "//agentplane/llm_ingress/configpb:config_pb2",
         "//agentplane/runner:configuration",
         "//agentplane/x/central_sampler:settings",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//protobuf",
     ],
 )
 
@@ -796,6 +802,7 @@ py_library(
         "//agentplane/action_service/sandbox/contract:actions",
         "//agentplane/app:action_federation_settings",
         "//agentplane/app:model_catalog",
+        "//agentplane/llm_ingress/configpb:config_pb2",
         "//agentplane/runner:configuration",
         "//agentplane/x/central_sampler:settings",
         "//cluster/cdk8s:agent_access_profiles",
@@ -820,6 +827,24 @@ py_library(
         "//cluster/cdk8s/ssh_mcp:config",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_llm_ingress",
+    srcs = ["test_llm_ingress.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":staging",
+        "//agentplane/llm_ingress/configpb:config_pb2",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//protovalidate",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -1293,13 +1318,14 @@ py_library(
         ":runner_gateway",
         ":sandbox_pod",
         ":telemetry",
-        "//agentplane/egress:platform_routes",
+        "//agentplane/egress/sidecar/configpb:config_pb2",
         "//agentplane/history_service:settings",
         "//agentplane/runner_gateway:api",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//constructs",
+        "@pypi//protobuf",
     ],
 )
 
