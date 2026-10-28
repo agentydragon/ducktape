@@ -1,4 +1,4 @@
-package runner
+package executor
 
 import (
 	"encoding/json"
@@ -8,9 +8,11 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/runner/executor/control"
 )
 
-func TestCodexExecServerContainerHealthUnavailable(t *testing.T) {
+func TestHealthUnavailable(t *testing.T) {
 	for _, behavior := range []string{"absent", "malformed", "stalled"} {
 		t.Run(behavior, func(t *testing.T) {
 			socket := filepath.Join(t.TempDir(), "control.sock")
@@ -29,7 +31,7 @@ func TestCodexExecServerContainerHealthUnavailable(t *testing.T) {
 						return
 					}
 					defer connection.Close()
-					var request codexExecServerControlRequest
+					var request control.Request
 					if err := json.NewDecoder(connection).Decode(&request); err != nil {
 						done <- err
 						return
@@ -54,7 +56,7 @@ func TestCodexExecServerContainerHealthUnavailable(t *testing.T) {
 				}()
 			}
 			response := httptest.NewRecorder()
-			codexExecServerContainerHealthHandler(socket).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+			healthHandler(socket).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 			if response.Code != http.StatusServiceUnavailable {
 				t.Fatalf("health with %s control = %d, want 503", behavior, response.Code)
 			}
@@ -62,7 +64,7 @@ func TestCodexExecServerContainerHealthUnavailable(t *testing.T) {
 	}
 }
 
-func TestCodexExecServerContainerHealthExposesNoControlOperations(t *testing.T) {
+func TestHealthExposesNoControlOperations(t *testing.T) {
 	for _, request := range []struct {
 		method string
 		path   string
@@ -73,7 +75,7 @@ func TestCodexExecServerContainerHealthExposesNoControlOperations(t *testing.T) 
 		{http.MethodGet, "/fence", http.StatusNotFound},
 	} {
 		response := httptest.NewRecorder()
-		codexExecServerContainerHealthHandler("").ServeHTTP(response, httptest.NewRequest(request.method, request.path, nil))
+		healthHandler("").ServeHTTP(response, httptest.NewRequest(request.method, request.path, nil))
 		if response.Code != request.status {
 			t.Errorf("%s %s = %d, want %d", request.method, request.path, response.Code, request.status)
 		}

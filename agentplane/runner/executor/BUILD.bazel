@@ -16,7 +16,10 @@ go_library(
 
 go_test(
     name = "executor_test",
-    srcs = ["main_test.go"],
+    srcs = [
+        "health_test.go",
+        "main_test.go",
+    ],
     embed = [":executor"],
     deps = ["//agentplane/runner/executor/control"],
 )
