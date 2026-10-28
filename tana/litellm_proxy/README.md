@@ -76,6 +76,11 @@ adapter deliberately does not adopt or persist rotated Firebase refresh tokens
 from the Secure Token response. Direct `TanaProxyClient` use retains the lookup
 order above for local tools such as `probe_models.py`.
 
+Keep the resigner as the sole owner of the canonical refresh-token Secret. Do
+not add a Tana MCP endpoint that brokers renderer or session tokens to LiteLLM
+unless the Secret-based flow proves insufficient; that would couple the
+deployments and add a token-broker API.
+
 In the cluster deployment, this Secret is optional at LiteLLM startup. Without
 it, the proxy still starts and serves other providers; Tana model requests fail
 until the credential is available. ESO copies the Secret from `tana-mcp` every

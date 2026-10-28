@@ -19,17 +19,6 @@ source-faithful to that evidence.
     blocks, `cache_control`, `tool_use`, and `tool_result` transcript entries
   - `/v1/messages/count_tokens`
   - tool use and tool-result continuation
-- Keep refresh-token ownership in the resigner:
-  - LiteLLM config gets the reflected refresh-token env var through the
-    standard `api_key: os.environ/...` reference; its custom handler uses the
-    resolved value but never owns the token
-  - LiteLLM may cache Firebase ID tokens, but must not persist or adopt rotated
-    Firebase refresh tokens
-  - the existing resigner remains the only component that maintains the
-    canonical refresh-token secret
-  - avoid unless necessary: make the Tana MCP pod expose the currently valid
-    renderer/session token to LiteLLM, because that couples two deployments and
-    creates a new token-broker surface
 - Map upstream failures into useful client-facing errors:
   - Firebase refresh-token exchange failures
   - Tana 5xx and malformed stream events
