@@ -46,7 +46,7 @@ def _clear_generation(directory: Path) -> None:
 @pytest.mark.parametrize("mode", ["native-exit", "term", "crash"])
 async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str) -> None:
     load_oci_image(debian_slim.IMAGE)
-    binary = get_required_path("agentplane/runner/supervision/runner_pid1_fixture_/runner_pid1_fixture").resolve()
+    binary = get_required_path("_main/agentplane/runner/supervision/runner_pid1_fixture_/runner_pid1_fixture").resolve()
     container = (
         LoggedContainer(debian_slim.IMAGE.tag, test_name=f"runner-pid1-{mode}")
         .with_kwargs(user=f"{os.getuid()}:{os.getgid()}", pids_limit=64, mem_limit="256m")
