@@ -87,9 +87,9 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 					close(adapter.release)
 				}
 			})
-			s.readers.Add(2)
-			go s.readStdout(p, adapter)
-			go s.readStderr(p)
+			s.connection.readers.Add(2)
+			go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+			go s.connection.readStderr(p)
 			preparing := make(chan context.Context, 1)
 			s.startOperation(&s.preparation, func(ctx context.Context) error {
 				preparing <- ctx
@@ -192,7 +192,7 @@ func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testin
 		if _, err := previous.Wait(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		s.readers.Add(1)
+		s.connection.readers.Add(1)
 		returned := make(chan struct{})
 		var prepareErr error
 		go func() { prepareErr = s.ensureReady(context.Background()); close(returned) }()
@@ -202,7 +202,7 @@ func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testin
 			t.Error("preparation reached successor startup before prior reader completed")
 		default:
 		}
-		s.readers.Done()
+		s.connection.readers.Done()
 		synctest.Wait()
 		<-returned
 		if prepareErr == nil {

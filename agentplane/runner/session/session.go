@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -51,13 +52,11 @@ type Session struct {
 	failure                                                *uint64
 	setupScript                                            *string
 	setupJob, stopping                                     *operation.Operation
-	readers                                                sync.WaitGroup
+	connection                                             *nativeConnection
 	work                                                   sync.WaitGroup
 	pending                                                map[string]bool
 	dispatched                                             map[string]bool
 	interrupts                                             map[string]string
-	waiters                                                []*nativeWaiter
-	replies                                                []matchedReply
 
 	// codexAppServer is the shared app-server incarnation hosting this Codex Session's thread.
 	codexAppServer  *codexappserver.Process
@@ -92,6 +91,15 @@ func newSession(deps sessionDependencies, id string, record *retained.Record, jo
 	if record.SetupScriptSHA256 != nil {
 		s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
 	}
+	s.connection = &nativeConnection{deps: nativeConnectionDependencies{
+		ctx: deps.ctx, journal: journal,
+		send:       func(ctx context.Context, frame json.RawMessage) error { return s.sendNative(ctx, deps.ctx, frame) },
+		afterBatch: s.wake,
+		stderr: func(ctx context.Context, text string) error {
+			return s.Emit(ctx, observation(&eventpb.HarnessStderr{Text: text}), nil)
+		},
+		ended: s.harnessEnded, fail: deps.fail,
+	}}
 	s.activeTurn = journal.RecoveryState().ActiveTurnID
 	return s
 }
@@ -145,7 +153,7 @@ func (s *Session) ensureReady(ctx context.Context) error {
 		}
 		// The exited process may still be recording frames and clearing its
 		// attachment. Join those callbacks before installing a successor.
-		s.readers.Wait()
+		s.connection.join()
 	}
 	return s.startHarness(ctx)
 }
@@ -318,7 +326,7 @@ func (s *Session) stopProcess(ctx context.Context) error {
 			return err
 		}
 	}
-	s.readers.Wait()
+	s.connection.join()
 	return nil
 }
 

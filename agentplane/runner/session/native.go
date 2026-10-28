@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -21,18 +20,6 @@ import (
 	"go.uber.org/zap"
 )
 
-type nativeWaiter struct {
-	matches func(json.RawMessage) bool
-	result  chan nativeResult
-}
-type nativeResult struct {
-	receipt harness.NativeReceipt
-	err     error
-}
-type matchedReply struct {
-	waiter  *nativeWaiter
-	receipt harness.NativeReceipt
-}
 type interruptTargetKey struct{}
 
 // Run read-only reconciliation off the stdout reader, which must deliver its RPC replies.
@@ -98,9 +85,8 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 	s.processID = process.ID()
 	s.nativeStop = stopNone
 	s.mu.Unlock()
-	s.readers.Add(2)
-	go s.readStdout(process, adapter)
-	go s.readStderr(process)
+	s.connection.startStdout(process, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+	s.connection.startStderr(process)
 	if err := s.prepare(ctx, adapter, process.PID()); err != nil {
 		s.mu.Lock()
 		s.nativeStop = stopStartupFailure
@@ -108,7 +94,7 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 		s.mu.Unlock()
 		stopErr := process.Stop(context.WithoutCancel(ctx))
 		if stopErr == nil {
-			s.readers.Wait()
+			s.connection.join()
 		}
 		return errors.Join(fmt.Errorf("harness startup failed: %w; %s", err, process.ExitDescription()), stopErr)
 	}
@@ -176,19 +162,9 @@ func (s *Session) appServerAttachment() *codexappserver.Attachment {
 			ID: s.id,
 			Frames: func(ctx context.Context, lines [][]byte) error {
 				adapter := s.hostedAdapter()
-				if err := s.journal.WithBatch(ctx, func(ctx context.Context) error {
-					for _, line := range lines {
-						if err := s.receive(ctx, line, adapter); err != nil {
-							return err
-						}
-					}
-					return nil
-				}); err != nil {
-					return err
-				}
-				s.wake()
-				s.deliverReplies()
-				return nil
+				return s.connection.receiveBatch(ctx, lines, func(ctx context.Context, line []byte) error {
+					return s.receive(ctx, line, adapter)
+				})
 			},
 			Stderr: func(ctx context.Context, text string) error {
 				return s.Emit(ctx, observation(&eventpb.HarnessStderr{Text: text}), nil)
@@ -395,7 +371,7 @@ func (s *Session) sendNative(ctx, journalCtx context.Context, frame json.RawMess
 	if err := s.journal.CommitBatch(journalCtx); err != nil {
 		return err
 	}
-	s.deliverReplies()
+	s.connection.deliverReplies()
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	s.mu.Lock()
@@ -426,33 +402,7 @@ func (s *Session) sendNative(ctx, journalCtx context.Context, frame json.RawMess
 // run on the stdout reader that delivers the reply. Runtime commands use send-and-observe
 // transitions instead, so their scheduler never waits here for a native response.
 func (s *Session) RequestNativeHandshake(ctx context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (harness.NativeReceipt, error) {
-	if err := ctx.Err(); err != nil {
-		return harness.NativeReceipt{}, err
-	}
-	waiter := &nativeWaiter{matches: match, result: make(chan nativeResult, 1)}
-	s.mu.Lock()
-	s.waiters = append(s.waiters, waiter)
-	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		for i, w := range s.waiters {
-			if w == waiter {
-				s.waiters = append(s.waiters[:i], s.waiters[i+1:]...)
-				break
-			}
-		}
-	}()
-	// Preparation cancellation bounds native I/O and waiting, while its journal remains runner-owned.
-	if err := s.sendNative(ctx, s.deps.ctx, frame); err != nil {
-		return harness.NativeReceipt{}, err
-	}
-	select {
-	case reply := <-waiter.result:
-		return reply.receipt, reply.err
-	case <-ctx.Done():
-		return harness.NativeReceipt{}, &harness.NativeResponsePendingError{Cause: ctx.Err()}
-	}
+	return s.connection.request(ctx, frame, match)
 }
 
 func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adapter) error {
@@ -477,133 +427,19 @@ func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adap
 		}
 		zap.L().Error("native frame translation failed", zap.String("session", s.id), zap.Uint64("sequence", entry.Origin.Sequence), zap.Error(err))
 	}
-	s.mu.Lock()
-	waiting := s.waiters[:0]
-	for _, w := range s.waiters {
-		if w.matches(frame) {
-			s.replies = append(s.replies, matchedReply{w, harness.NativeReceipt{Frame: frame, Sequence: entry.Origin.Sequence}})
-		} else {
-			waiting = append(waiting, w)
-		}
-	}
-	s.waiters = waiting
-	s.mu.Unlock()
+	s.connection.match(harness.NativeReceipt{Frame: frame, Sequence: entry.Origin.Sequence})
 	return nil
-}
-
-func (s *Session) deliverReplies() {
-	s.mu.Lock()
-	replies := s.replies
-	s.replies = nil
-	s.mu.Unlock()
-	for _, reply := range replies {
-		reply.waiter.result <- nativeResult{receipt: reply.receipt}
-	}
-}
-
-func (s *Session) readStdout(process *supervision.ManagedProcess, adapter harness.Adapter) {
-	defer s.readers.Done()
-	buffer := make([]byte, 64*1024)
-	var pending []byte
-	var readErr error
-	for {
-		n, err := process.Stdout().Read(buffer)
-		if n > 0 {
-			pending = append(pending, buffer[:n]...)
-			if e := s.journal.WithBatch(s.deps.ctx, func(ctx context.Context) error {
-				for {
-					i := bytes.IndexByte(pending, '\n')
-					if i < 0 {
-						break
-					}
-					if i > harness.MaxFrameLineBytes {
-						return errors.New("native frame exceeded the 64 MiB limit")
-					}
-					line := append([]byte(nil), bytes.TrimRight(pending[:i], "\r")...)
-					pending = pending[i+1:]
-					if e := s.receive(ctx, line, adapter); e != nil {
-						return e
-					}
-				}
-				return nil
-			}); e != nil {
-				readErr = e
-				break
-			}
-			s.wake()
-			s.deliverReplies()
-			if len(pending) > harness.MaxFrameLineBytes {
-				readErr = errors.New("native frame exceeded the 64 MiB limit")
-				break
-			}
-		}
-		if err != nil {
-			if err == io.EOF && len(pending) > 0 {
-				if e := s.journal.WithBatch(s.deps.ctx, func(ctx context.Context) error { return s.receive(ctx, bytes.TrimRight(pending, "\r"), adapter) }); e != nil {
-					readErr = e
-				} else {
-					s.wake()
-					s.deliverReplies()
-				}
-			}
-			if err != io.EOF {
-				readErr = err
-			}
-			break
-		}
-	}
-	if readErr != nil {
-		s.deps.fail(readErr)
-		if err := process.Stop(context.Background()); err != nil {
-			s.deps.fail(err)
-		}
-	}
-	code, err := process.Wait(context.Background())
-	if err != nil {
-		s.deps.fail(err)
-	}
-	if err := s.harnessEnded(s.deps.ctx, code); err != nil {
-		s.deps.fail(err)
-	}
-}
-
-func (s *Session) readStderr(process *supervision.ManagedProcess) {
-	defer s.readers.Done()
-	buffer := make([]byte, 4096)
-	for {
-		n, err := process.Stderr().Read(buffer)
-		if n > 0 {
-			if e := s.Emit(s.deps.ctx, observation(&eventpb.HarnessStderr{Text: string(bytes.ToValidUTF8(buffer[:n], []byte("�")))}), nil); e != nil {
-				s.deps.fail(e)
-				return
-			}
-		}
-		if err != nil {
-			if err != io.EOF {
-				s.deps.fail(err)
-			}
-			return
-		}
-	}
 }
 
 func (s *Session) harnessEnded(ctx context.Context, code int) error {
 	s.mu.Lock()
 	s.codexExitEpoch++
-	waiting := s.waiters
-	s.waiters = nil
-	for _, reply := range s.replies {
-		waiting = append(waiting, reply.waiter)
-	}
-	s.replies = nil
 	stoppedByRunner := s.nativeStop != stopNone
 	s.codexAppServer = nil
 	s.processID = ""
 	s.processState = runnerpb.ProcessState_PROCESS_STATE_UNSPECIFIED
 	s.mu.Unlock()
-	for _, w := range waiting {
-		w.result <- nativeResult{err: fmt.Errorf("the harness exited with exit_code=%d", code)}
-	}
+	s.connection.end(code)
 	if err := s.Emit(ctx, observation(&eventpb.HarnessExited{ExitCode: int32(code), StoppedByRunner: stoppedByRunner}), nil); err != nil {
 		return err
 	}
