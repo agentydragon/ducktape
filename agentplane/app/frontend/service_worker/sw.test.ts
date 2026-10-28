@@ -19,7 +19,7 @@ type PushMessage =
       version: number;
       url: string;
     }
-  | { kind: "retract"; action_id: string; outcome: string };
+  | { kind: "retract"; action_id: string };
 
 type Notice = {
   title: string;
@@ -213,7 +213,7 @@ describe("service worker notifications", () => {
     expect(denied.idempotencyKey).toEqual(expect.any(String));
     expect(worker.windows).toEqual(["/#/actions"]);
 
-    const retracted = await show(worker, { kind: "retract", action_id: "request", outcome: "denied" });
+    const retracted = await show(worker, { kind: "retract", action_id: "request" });
     expect(retracted.silent).toBe(true);
   });
 
@@ -246,7 +246,7 @@ describe("service worker notifications", () => {
   it("clears the notification once nothing waits, and degrades without session authority", async () => {
     const worker = loadWorker();
     worker.setPending([]);
-    await show(worker, { kind: "retract", action_id: "request", outcome: "denied" });
+    await show(worker, { kind: "retract", action_id: "request" });
     expect(worker.closed).toEqual(["agentplane-pending"]);
 
     worker.setPending(null);

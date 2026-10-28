@@ -115,7 +115,6 @@ type message struct {
 	ActionName  string `json:"action_name"`
 	Version     int64  `json:"version"`
 	URL         string `json:"url"`
-	Outcome     string `json:"outcome"`
 }
 
 // received is a push as the push service received it.
