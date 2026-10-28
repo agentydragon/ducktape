@@ -14,10 +14,10 @@ use crate::inference::{Inference, RuleContext, RuleSet};
 use crate::reports::schema::{InferenceRule, InferenceUse};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Debug, Clone, Copy)]
-pub(super) enum OwnPropertyProjectionKind {
-    Names,
-    Descriptors,
+#[derive(Debug, Clone)]
+pub(super) enum OwnPropertyRequest {
+    Names { native_call_identity: SemanticKey },
+    Descriptors { native_call_identity: SemanticKey },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,7 +100,7 @@ struct OwnPropertyRules<'a> {
     prefix_properties: &'a BTreeMap<Option<String>, Values>,
     tainted: bool,
     semantic_facts: &'a SemanticFacts,
-    native_call_identity: SemanticKey,
+    request: OwnPropertyRequest,
 }
 
 impl OwnPropertyRules<'_> {
@@ -262,10 +262,15 @@ impl<'a> RuleSet for OwnPropertyRules<'a> {
                 else {
                     return None;
                 };
+                let OwnPropertyRequest::Names {
+                    native_call_identity,
+                } = &self.request
+                else {
+                    return None;
+                };
                 if *source_object != state.source_object
                     || !matches!(
-                        context
-                            .require(OwnPropertyKey::Native(self.native_call_identity.clone()))?,
+                        context.require(OwnPropertyKey::Native(native_call_identity.clone()))?,
                         OwnPropertyFact::Native(_)
                     )
                 {
@@ -283,7 +288,13 @@ impl<'a> RuleSet for OwnPropertyRules<'a> {
                 else {
                     return None;
                 };
-                context.require(OwnPropertyKey::Native(self.native_call_identity.clone()))?;
+                let OwnPropertyRequest::Descriptors {
+                    native_call_identity,
+                } = &self.request
+                else {
+                    return None;
+                };
+                context.require(OwnPropertyKey::Native(native_call_identity.clone()))?;
                 context.require(OwnPropertyKey::Native(SemanticKey::NativeIntegrity(
                     NativeIntrinsic::GlobalObject,
                 )))?;
@@ -304,9 +315,14 @@ pub(super) fn infer_own_property_projection(
     prefix_properties: &BTreeMap<Option<String>, Values>,
     tainted: bool,
     semantic_facts: &SemanticFacts,
-    native_call_identity: SemanticKey,
-    projection: OwnPropertyProjectionKind,
+    request: OwnPropertyRequest,
 ) -> Option<OwnPropertyProof> {
+    let key = match &request {
+        OwnPropertyRequest::Names { .. } => OwnPropertyKey::NamesProjection(source_object),
+        OwnPropertyRequest::Descriptors { .. } => {
+            OwnPropertyKey::DescriptorProjection(source_object)
+        }
+    };
     let rules = OwnPropertyRules {
         source_object,
         source_values,
@@ -314,15 +330,9 @@ pub(super) fn infer_own_property_projection(
         prefix_properties,
         tainted,
         semantic_facts,
-        native_call_identity,
+        request,
     };
     let mut inference = Inference::new(rules);
-    let key = match projection {
-        OwnPropertyProjectionKind::Names => OwnPropertyKey::NamesProjection(source_object),
-        OwnPropertyProjectionKind::Descriptors => {
-            OwnPropertyKey::DescriptorProjection(source_object)
-        }
-    };
     inference.query(&key)?;
     let judgment = inference.get(&key)?;
     let conclusion = key.rule()?;

@@ -22,7 +22,7 @@ use crate::facts::statement_facts::{
     ReturnedRecordUseFact, StatementFacts, StatementKind, SynchronousCalls,
 };
 use crate::facts::sync_effects::property_inference::{
-    CapturedPropertyDescriptor, OwnPropertyProjection, OwnPropertyProjectionKind, OwnPropertyProof,
+    CapturedPropertyDescriptor, OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest,
     infer_own_property_projection,
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin, Values as FlowValues};
@@ -518,8 +518,7 @@ impl Executor<'_> {
     fn own_property_projection(
         &self,
         values: &Values,
-        native_call_identity: &SemanticKey,
-        projection: OwnPropertyProjectionKind,
+        request: OwnPropertyRequest,
     ) -> Option<OwnPropertyProof> {
         let [AbstractValue::Origin(ValueOrigin::Object(object))] =
             values.iter().collect::<Vec<_>>().as_slice()
@@ -536,8 +535,7 @@ impl Executor<'_> {
             properties,
             self.tainted_objects.contains(object),
             semantic_facts,
-            native_call_identity.clone(),
-            projection,
+            request,
         )
     }
 
@@ -729,8 +727,9 @@ impl Executor<'_> {
                 };
                 own_property_projection = Some(self.own_property_projection(
                     values,
-                    &native_call_identity,
-                    OwnPropertyProjectionKind::Descriptors,
+                    OwnPropertyRequest::Descriptors {
+                        native_call_identity: native_call_identity.clone(),
+                    },
                 )?);
                 true
             }
@@ -740,8 +739,9 @@ impl Executor<'_> {
                 };
                 own_property_projection = Some(self.own_property_projection(
                     values,
-                    &native_call_identity,
-                    OwnPropertyProjectionKind::Names,
+                    OwnPropertyRequest::Names {
+                        native_call_identity: native_call_identity.clone(),
+                    },
                 )?);
                 true
             }
