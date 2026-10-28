@@ -2,6 +2,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from threading import Event, get_ident
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -49,11 +50,25 @@ def test_redact_payload_returns_json_serializable_dates() -> None:
 
 
 async def test_call_preserves_decimal_json_tokens_before_pydantic_validation() -> None:
+    loop_thread = get_ident()
+    released = Event()
+
+    class _WorkerResponse(HTTPResponse):
+        @property
+        def data(self) -> bytes:
+            assert get_ident() != loop_thread
+            return cast(bytes, super().data)
+
+        def release_conn(self) -> None:
+            assert get_ident() != loop_thread
+            super().release_conn()
+            released.set()
+
     class _PrecisionApi(_FakeApi):
         def accounts_get(self, accounts_get_request: AccountsGetRequest, **kwargs: Any) -> HTTPResponse:
             assert kwargs["_preload_content"] is False
-            return _raw_json_response(
-                b'{"accounts":[{"account_id":"account-1","name":"Checking","type":"depository",'
+            return _WorkerResponse(
+                body=b'{"accounts":[{"account_id":"account-1","name":"Checking","type":"depository",'
                 b'"balances":{"available":9007199254740993.01,"current":0.10000000000000000001,'
                 b'"limit":null,"iso_currency_code":"USD"}}],"request_id":"req-accounts"}'
             )
@@ -74,6 +89,7 @@ async def test_call_preserves_decimal_json_tokens_before_pydantic_validation() -
     assert account.balances is not None
     assert account.balances.available == Decimal("9007199254740993.01")
     assert account.balances.current == Decimal("0.10000000000000000001")
+    assert released.is_set()
 
 
 def _stored_link(item_id: str, products: list[str], cursor: str | None = None) -> StoredLink:

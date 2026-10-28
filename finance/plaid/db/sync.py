@@ -421,14 +421,20 @@ async def _call[PlaidRequestT: ModelNormal, ResponseT: PlaidApiResponse](
 ) -> ApiCallResult[ResponseT]:
     started = time.monotonic()
     request_json = request.to_dict()
-    try:
-        response = cast(HTTPResponse, await asyncio.to_thread(call, request, _preload_content=False))
+
+    def fetch_response() -> ResponseT:
+        # Raw mode leaves body I/O pending. Keep reading and cleanup in the SDK worker,
+        # including when the awaiting task is cancelled before that worker finishes.
+        response = cast(HTTPResponse, call(request, _preload_content=False))
         try:
             serialized = json.loads(cast(bytes, response.data), parse_float=Decimal)
-            typed_response = response_model.model_validate(serialized)
-            response_json = typed_response.model_dump(mode="json", exclude_unset=True)
+            return response_model.model_validate(serialized)
         finally:
             response.release_conn()
+
+    try:
+        typed_response = await asyncio.to_thread(fetch_response)
+        response_json = typed_response.model_dump(mode="json", exclude_unset=True)
     except Exception as exc:
         await storage.record_api_event(
             ApiEvent(
