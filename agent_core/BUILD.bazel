@@ -105,7 +105,6 @@ py_library(
         "//agent_core/testing/mcp:fixtures",
         "//agent_core/testing/mcp:responses",
         "//openai_utils/testing:fixtures",
-        "@pypi//pytest",
     ],
 )
 

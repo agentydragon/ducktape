@@ -12,7 +12,6 @@ from util.testing.otel_tracing import configure_tracing
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    config.option.asyncio_mode = "auto"
     configure_tracing(config)
 
 

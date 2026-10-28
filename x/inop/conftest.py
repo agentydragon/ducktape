@@ -17,12 +17,6 @@ from x.inop.config import (
     TruncationConfig,
 )
 
-
-def pytest_configure(config: pytest.Config) -> None:
-    """Configure pytest-asyncio auto mode."""
-    config.option.asyncio_mode = "auto"
-
-
 # Point tiktoken at bundled o200k_base encoding from Bazel runfiles so tests
 # work offline / on RBE workers without network access.
 _TIKTOKEN_CACHE_KEY = "fb374d419588a4632f3f557e76b4b70aebbca790"
