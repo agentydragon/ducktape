@@ -16,13 +16,14 @@ use crate::facts::local_effect_targets::MetadataDecorateCall;
 use crate::facts::set_iterables::SetIterableProof;
 use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
 use crate::facts::statement_facts::{
-    CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, StatementFacts, StatementKind,
-    SynchronousCalls,
+    CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryUseFact,
+    StatementFacts, StatementKind, SynchronousCalls,
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin, Values as FlowValues};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
-    ExecutionOperation, ExecutionPrecisionLoss, ExecutionPrecisionLossReason,
+    CallbackFactoryUseKind, ExecutionOperation, ExecutionPrecisionLoss,
+    ExecutionPrecisionLossReason,
 };
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
@@ -161,6 +162,8 @@ struct Executor<'a> {
     exported_owners: BTreeSet<SourceUnitOrdinal>,
     prior_reachability_roots: Option<BTreeSet<SourceUnitOrdinal>>,
     current_top_owner: Option<SourceUnitOrdinal>,
+    call_site_owners: BTreeMap<CallSite, (SourceUnitOrdinal, Span)>,
+    proof_uses: Vec<CallbackFactoryUseFact>,
     /// Owners executed while building a certified unpublished instance graph.
     /// Their synchronous effects still run; execution alone does not expose
     /// the wrapper or the classes' deferred callable members to the host.
@@ -212,6 +215,36 @@ struct ValidatedMetadataDecoration {
 }
 
 impl Executor<'_> {
+    /// The abstract callback-factory value also represents namespace members
+    /// and aliases. Only a checked direct imported binding identifies the
+    /// summary without changing value or cache semantics.
+    fn record_callback_factory_use(
+        &mut self,
+        imported_local: &Id,
+        kind: CallbackFactoryUseKind,
+        lexical_statement_ordinal: SourceUnitOrdinal,
+        span: Span,
+    ) {
+        let Some(summary) = self.index.callback_factory_summaries.get(imported_local) else {
+            return;
+        };
+        let proof_use = CallbackFactoryUseFact {
+            imported_local: imported_local.0.to_string(),
+            evidence: summary
+                .callback_factory_evidence()
+                .iter()
+                .cloned()
+                .collect(),
+            kind,
+            lexical_statement_ordinal,
+            source_location: None,
+            span,
+        };
+        if !self.proof_uses.contains(&proof_use) {
+            self.proof_uses.push(proof_use);
+        }
+    }
+
     fn closed_enum_member_read(&self, value: &ValueExpr) -> bool {
         let ValueExpr::Member(receiver, Some(property), _) = value else {
             return false;
@@ -1037,6 +1070,7 @@ impl Executor<'_> {
         metadata_target: Option<SourceUnitOrdinal>,
         private_constructor_result_owners: &BTreeSet<SourceUnitOrdinal>,
         frozen_namespace: Option<&FrozenNamespaceProof>,
+        closed_callback_factory_result: bool,
     ) -> BTreeSet<SourceUnitOrdinal> {
         let mut roots = BTreeSet::new();
         // Storing a known callable in an author-certified inert global data
@@ -1060,7 +1094,7 @@ impl Executor<'_> {
                 || !((fact.purity.is_pure()
                     && (fact.declares_direct_function
                         || matches!(fact.kind, StatementKind::ClassDecl)
-                        || self.closed_callback_factory_result(fact)
+                        || closed_callback_factory_result
                         || self.closed_local_record_factory_result(fact)))
                     || frozen_namespace.is_some()
                     || !private_constructor_result_owners.is_empty()))
@@ -1098,23 +1132,25 @@ impl Executor<'_> {
     /// A validated factory retains the inline callback only in its fresh
     /// returned graph. Creating that graph does not publish the callback;
     /// later calls, writes, and exports still flow through the value model.
-    fn closed_callback_factory_result(&self, fact: &StatementFacts) -> bool {
+    fn closed_callback_factory_result(&self, fact: &StatementFacts) -> Option<(Id, Span)> {
         if !matches!(fact.kind, StatementKind::VarDecl)
             || fact.declared.len() != 1
             || self.index.opaque_top.contains(&fact.ordinal)
         {
-            return false;
+            return None;
         }
         let [(binding, ValueExpr::Call(callee, args, site))] =
             self.index.top_assignments[fact.ordinal.0].as_slice()
         else {
-            return false;
+            return None;
         };
         let [call] = self.index.top_calls[fact.ordinal.0].as_slice() else {
-            return false;
+            return None;
         };
-        matches!(callee.as_ref(), ValueExpr::Binding(factory)
-            if self.index.callback_factory_imports.contains(factory))
+        let ValueExpr::Binding(factory) = callee.as_ref() else {
+            return None;
+        };
+        (self.index.callback_factory_imports.contains(factory)
             && matches!(
                 args.as_slice(),
                 [ValueExpr::Origin(ValueOrigin::Function(_))]
@@ -1123,7 +1159,8 @@ impl Executor<'_> {
             && self.index.top_definite_initializers[fact.ordinal.0].contains(binding)
             && call.kind == CallKind::Call
             && !call.has_spread
-            && CallSite::from(call.span) == *site
+            && CallSite::from(call.span) == *site)
+            .then(|| (factory.clone(), call.span))
     }
 
     /// A return-only local function can put its arguments into a fresh
@@ -3400,6 +3437,16 @@ impl Executor<'_> {
                 for target in targets {
                     match target {
                         AbstractValue::CallbackFactory if inline_callback || deferred_callback => {
+                            if let ValueExpr::Binding(imported_local) = callee.as_ref()
+                                && let Some(&(owner, call_span)) = self.call_site_owners.get(span)
+                            {
+                                self.record_callback_factory_use(
+                                    imported_local,
+                                    CallbackFactoryUseKind::ReturnShape,
+                                    owner,
+                                    call_span,
+                                );
+                            }
                             let callbacks = self.callback_values(&args[0]);
                             returns.insert(self.deferred_callbacks(callbacks));
                         }
@@ -4213,7 +4260,17 @@ impl Executor<'_> {
                             || matches!(
                                 call.args.as_slice(),
                                 [ValueExpr::Origin(ValueOrigin::Function(_))]
-                            )) => {}
+                            )) =>
+                {
+                    if let ValueExpr::Binding(imported_local) = &call.callee {
+                        self.record_callback_factory_use(
+                            imported_local,
+                            CallbackFactoryUseKind::CallTiming,
+                            call.owner,
+                            call.span,
+                        );
+                    }
+                }
                 AbstractValue::InlineCallbackFactory
                     if call.kind == CallKind::Call
                         && !call.has_spread
@@ -4672,6 +4729,19 @@ pub(crate) fn annotate_synchronous_calls(
         exported_owners,
         prior_reachability_roots: Some(initial_export_roots),
         current_top_owner: None,
+        call_site_owners: index
+            .top_calls
+            .iter()
+            .flatten()
+            .chain(
+                index
+                    .callables
+                    .values()
+                    .flat_map(|callable| callable.calls.iter()),
+            )
+            .map(|call| (CallSite::from(call.span), (call.owner, call.span)))
+            .collect(),
+        proof_uses: Vec::new(),
         private_constructor_result_owners: BTreeSet::new(),
         prior_effect_owners: BTreeSet::new(),
         accepted_deferred_global_writes: BTreeSet::new(),
@@ -4731,6 +4801,7 @@ pub(crate) fn annotate_synchronous_calls(
         .zip(index.top_calls.iter().zip(&index.top_assignments))
     {
         executor.current_top_owner = Some(fact.ordinal);
+        executor.proof_uses.clear();
         // Cache keys include this owner; previous statement snapshots cannot
         // be reused and should not consume this statement's bounded budget.
         executor.cache.clear();
@@ -4768,12 +4839,29 @@ pub(crate) fn annotate_synchronous_calls(
             executor.frozen_namespace_calls.insert(proof.freeze_site);
             executor.frozen_namespace_calls.insert(proof.define_site);
         }
+        let closed_result = executor.closed_callback_factory_result(fact);
         let fact_roots = executor.fact_roots(
             fact,
             prevalidated_metadata.map(|validated| validated.target_owner),
             &executor.private_constructor_result_owners,
             frozen_namespace.as_ref(),
+            closed_result.is_some(),
         );
+        if let Some((factory, span)) = closed_result
+            && !fact_roots.contains(&fact.ordinal)
+            && !executor.exported_owners.contains(&fact.ordinal)
+            && fact.purity.is_pure()
+            && !fact.declares_direct_function
+            && frozen_namespace.is_none()
+            && executor.private_constructor_result_owners.is_empty()
+        {
+            executor.record_callback_factory_use(
+                &factory,
+                CallbackFactoryUseKind::ClosedResultRoot,
+                fact.ordinal,
+                span,
+            );
+        }
         if executor.reachability.unknown_call_seen {
             executor.extend_reachable_owners(fact_roots.iter().copied());
         } else if let Some(roots) = &mut executor.prior_reachability_roots {
@@ -4935,7 +5023,6 @@ pub(crate) fn annotate_synchronous_calls(
                     .filter(|owner| !executor.private_constructor_result_owners.contains(owner)),
             );
         }
-        effects.push(outcome.effects);
         for (id, expression) in assignments {
             if !needed.contains(id) {
                 continue;
@@ -4970,6 +5057,8 @@ pub(crate) fn annotate_synchronous_calls(
             executor.exported_runtime_values.extend(values);
             executor.prefix_revision = executor.prefix_revision.wrapping_add(1);
         }
+        outcome.effects.callback_factory_uses = std::mem::take(&mut executor.proof_uses);
+        effects.push(outcome.effects);
     }
     for (fact, effect) in facts.iter_mut().zip(effects) {
         fact.synchronous_calls = Some(effect);

@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::purity::Purity;
 use crate::reports::schema::SourceLocation;
@@ -37,7 +37,7 @@ pub enum LocalEffectPolicy {
 /// Evidence for a bare imported callable's return-only callback-factory behavior.
 /// An assertion is an author contract; an inferred wrapper depends on the
 /// defining chunk's checked source shape.
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "origin", rename_all = "snake_case")]
 pub enum CallbackFactoryEvidence {
     AuthorAssertion {

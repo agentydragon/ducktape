@@ -3,6 +3,7 @@ use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
 use swc_atoms::Atom;
 
+use crate::analysis_inputs::CallbackFactoryEvidence;
 use crate::assignment_assembly::AtomicGroupConflict;
 use crate::ids::ModuleId;
 use crate::purity::Purity;
@@ -94,6 +95,9 @@ pub struct DependencyGraphReport {
     /// Each cause is emitted once, even when many source units call it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub purity_causes: Vec<PurityCauseReport>,
+    /// Imported callable summaries whose callback-factory capability was used.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imported_callable_summaries: Vec<ImportedCallableSummaryReport>,
     pub edges: Vec<DependencyEdgeReport>,
     #[serde(rename = "module_graph")]
     pub quotient: ModuleQuotientReport,
@@ -104,6 +108,33 @@ pub struct DependencyGraphReport {
 pub struct PurityCauseReport {
     pub id: String,
     pub purity: Purity,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ImportedCallableSummaryReport {
+    pub id: String,
+    pub imported_local: String,
+    pub callback_factory_evidence: Vec<CallbackFactoryEvidence>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CallbackFactoryUseKind {
+    /// The checked call suppressed opaque callback promotion.
+    CallTiming,
+    /// The checked return shape retained callbacks in a deferred result.
+    ReturnShape,
+    /// The private initializer result was omitted as a reachability root.
+    ClosedResultRoot,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CallbackFactoryUseReport {
+    pub summary_ref: String,
+    pub kind: CallbackFactoryUseKind,
+    pub lexical_statement_ordinal: SourceUnitOrdinal,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -184,6 +215,8 @@ impl DependencyGraphReport {
 pub struct SynchronousExecutionReport {
     pub complete: bool,
     pub precision_losses: Vec<ExecutionPrecisionLoss>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub callback_factory_uses: Vec<CallbackFactoryUseReport>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]

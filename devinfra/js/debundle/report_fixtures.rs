@@ -264,6 +264,7 @@ pub fn graph_of(
         chunk_id: "x".to_string(),
         nodes,
         purity_causes: Vec::new(),
+        imported_callable_summaries: Vec::new(),
         edges,
         quotient: ModuleQuotientReport {
             nodes: module_nodes,

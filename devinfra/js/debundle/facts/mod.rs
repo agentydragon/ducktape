@@ -76,7 +76,8 @@ pub(crate) use set_iterables::{SetIterableProof, primitive_literal_property_keys
 pub(crate) use source_unit_read_closure::SourceUnitReadClosure;
 pub(crate) use statement_facts::ConstructorFacts;
 pub use statement_facts::{
-    CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryWriteWitness,
+    CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryUseFact,
+    CallbackFactoryWriteWitness,
 };
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, ValueOrigin};
 

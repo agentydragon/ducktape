@@ -1834,6 +1834,7 @@ struct ExecutionIndex {
     opaque_top: BTreeSet<SourceUnitOrdinal>,
     no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
     callback_factory_imports: BTreeSet<Id>,
+    callback_factory_summaries: BTreeMap<Id, crate::analysis_inputs::CallableSummary>,
     inline_callback_factory_imports: BTreeSet<Id>,
     callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
     /// Union used only for namespace privacy/mutation guards. Admission of the
@@ -1935,6 +1936,7 @@ impl Default for ExecutionIndex {
             opaque_top: BTreeSet::new(),
             no_sync_callback_members: BTreeMap::new(),
             callback_factory_imports: BTreeSet::new(),
+            callback_factory_summaries: BTreeMap::new(),
             inline_callback_factory_imports: BTreeSet::new(),
             callback_factory_members: BTreeMap::new(),
             audited_factory_members: BTreeMap::new(),
@@ -2078,12 +2080,13 @@ impl ExecutionIndex {
                 for specifier in &import.specifiers {
                     let local = specifier.local();
                     index.imported_bindings.insert(local.to_id());
-                    if hints
-                        .imported_callables
-                        .get(local.sym.as_ref())
-                        .is_some_and(|summary| summary.supports_callback_factory())
+                    if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
+                        && summary.supports_callback_factory()
                     {
                         index.callback_factory_imports.insert(local.to_id());
+                        index
+                            .callback_factory_summaries
+                            .insert(local.to_id(), summary.clone());
                     }
                     if hints
                         .assumptions

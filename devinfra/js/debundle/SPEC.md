@@ -1133,7 +1133,26 @@ independent of `purity`. `precision_losses` retains the reasons observed when
 execution became conservative: unresolved call targets, unsupported operations,
 recursive invocations, and depth, expansion, or callback-pool limits. Limit
 records include the configured bound. These records do not change gate acceptance
-or emitted JavaScript and do not inventory author-contract dependencies.
+or emitted JavaScript.
+
+`dependency_graph.json` includes `imported_callable_summaries` for directly
+called bare imported callback-factory summaries used by synchronous analysis.
+Each shared entry names
+the importer's local binding and preserves all `callback_factory_evidence` from
+the defining export, including asserted versus inferred origin. A source unit's
+`synchronous_execution.callback_factory_uses` references the shared entry and
+names the semantic use: `call_timing` suppresses opaque callback promotion for
+an eligible call, `return_shape` retains its callback in a deferred result, and
+`closed_result_root` omits a private initializer result from reachability roots.
+Each use gives the lexical source-unit ordinal and call-site `source_location`;
+the containing graph node is the top-level source unit whose initialization
+analysis consumed it. Nested and repeated direct calls retain their lexical site and
+deduplicate equal uses within that top-level analysis. Older graphs can omit
+these fields. A recorded use means this analyzer applied the named capability;
+it does not prove that the annotation was minimal or load-bearing for the gate,
+nor enumerate other author-contract dependencies. Calls through local aliases,
+joined values, and namespace-member contracts are outside this reporting scope.
+An absent use is not a global unused-contract verdict.
 
 Each loss identifies its lexical `statement_ordinal`. Its `source_location`
 identifies the exact indexed operation when available; otherwise it identifies

@@ -1105,6 +1105,16 @@ when available, its source location. Nested reasons retain their original source
 site. This evidence is separate from purity reasons and does not certify author
 contracts. See [the report contract](../SPEC.md#synchronous-execution-diagnostics).
 
+For a directly called imported bare callback factory, read the node's
+`synchronous_execution.callback_factory_uses`, then resolve each `summary_ref`
+in the same graph's `imported_callable_summaries`. The use names the lexical
+call site and the top-level source unit containing it names the active analysis.
+The table preserves asserted and inferred evidence without requiring
+`modules.json`. Use records show where the callback-factory capability was
+applied. Alias and joined-value calls are not attributed; absence does not
+establish an unused annotation. See the
+[report contract](../SPEC.md#synchronous-execution-diagnostics).
+
 ## Gate discipline
 
 The adapter-provided gate is authoritative. For suspicious green builds,

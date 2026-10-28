@@ -197,6 +197,17 @@ pub(crate) struct SynchronousCalls {
     pub uninitialized_reads: BTreeSet<Id>,
     pub complete: bool,
     pub precision_losses: Vec<crate::reports::schema::ExecutionPrecisionLoss>,
+    pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CallbackFactoryUseFact {
+    pub imported_local: String,
+    pub evidence: Vec<crate::analysis_inputs::CallbackFactoryEvidence>,
+    pub kind: crate::reports::schema::CallbackFactoryUseKind,
+    pub lexical_statement_ordinal: SourceUnitOrdinal,
+    pub source_location: Option<crate::reports::schema::SourceLocation>,
+    pub span: swc_common::Span,
 }
 
 impl StatementFacts {

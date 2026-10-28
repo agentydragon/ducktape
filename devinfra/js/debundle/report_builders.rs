@@ -9,7 +9,10 @@ use rayon::prelude::*;
 use swc_ecma_ast::Id;
 
 use analysis::graph::EdgeRole;
-use analysis::reports::schema::{CallbackFactoryCallbackSourceReport, LineRange};
+use analysis::reports::schema::{
+    CallbackFactoryCallbackSourceReport, CallbackFactoryUseReport, ImportedCallableSummaryReport,
+    LineRange,
+};
 use analysis::reports::{atomic_group_key, module_id_from_key, module_key, source_unit_key};
 use analysis::{
     AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingId,
@@ -59,6 +62,24 @@ pub(crate) fn build_dependency_graph_report(
     let (quotient_nodes, quotient_edges) = quotient_pair;
     let (mut nodes, edges) = nodes_edges;
     let purity_causes = collect_purity_causes(&mut nodes);
+    let mut imported_callable_summaries = BTreeMap::<String, Vec<_>>::new();
+    for source_unit in assignment_analysis.inputs().dependency_graph().iter_nodes() {
+        for proof_use in &source_unit.callback_factory_uses {
+            let previous = imported_callable_summaries
+                .insert(proof_use.imported_local.clone(), proof_use.evidence.clone());
+            assert!(previous.is_none_or(|evidence| evidence == proof_use.evidence));
+        }
+    }
+    let imported_callable_summaries = imported_callable_summaries
+        .into_iter()
+        .map(
+            |(imported_local, callback_factory_evidence)| ImportedCallableSummaryReport {
+                id: format!("imported_callable:{imported_local}"),
+                imported_local,
+                callback_factory_evidence,
+            },
+        )
+        .collect();
     let quotient_sccs =
         build_quotient_scc_reports(assignment_analysis, &quotient_nodes, &quotient_edges);
     DependencyGraphReport {
@@ -66,6 +87,7 @@ pub(crate) fn build_dependency_graph_report(
         chunk_id: assignment_analysis.inputs().chunk_id().to_string(),
         nodes,
         purity_causes,
+        imported_callable_summaries,
         edges,
         quotient: ModuleQuotientReport {
             nodes: quotient_nodes,
@@ -143,7 +165,18 @@ fn build_source_unit_nodes_and_edges(
             declared_bindings: binding_reports(assignment_analysis, node.declared.iter()),
             statement_kind: node.kind,
             purity: node.purity.clone(),
-            synchronous_execution: node.synchronous_execution.clone(),
+            synchronous_execution: node.synchronous_execution.as_ref().map(|execution| {
+                let mut report = execution.clone();
+                report.callback_factory_uses = node.callback_factory_uses.iter().map(|proof_use| {
+                    CallbackFactoryUseReport {
+                        summary_ref: format!("imported_callable:{}", proof_use.imported_local),
+                        kind: proof_use.kind,
+                        lexical_statement_ordinal: proof_use.lexical_statement_ordinal,
+                        source_location: proof_use.source_location.clone(),
+                    }
+                }).collect();
+                report
+            }),
             callback_factory_barriers: node
                 .callback_factory_barriers
                 .iter()

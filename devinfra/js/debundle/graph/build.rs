@@ -74,8 +74,13 @@ pub fn build_dependency_graph_with(
                 crate::reports::schema::SynchronousExecutionReport {
                     complete: calls.complete,
                     precision_losses: calls.precision_losses.clone(),
+                    callback_factory_uses: Vec::new(),
                 }
             }),
+            callback_factory_uses: stmt
+                .synchronous_calls
+                .as_ref()
+                .map_or_else(Vec::new, |calls| calls.callback_factory_uses.clone()),
         });
     }
 
