@@ -811,7 +811,7 @@ fn explain_from_graph(
         .iter()
         .map(|binding| binding.binding.to_string())
         .collect();
-    let mut binding_homes = homes
+    let mut binding_homes: Vec<BindingHomeReport> = homes
         .iter()
         .filter(|home| binding_ids.contains(&home.binding))
         .cloned()
