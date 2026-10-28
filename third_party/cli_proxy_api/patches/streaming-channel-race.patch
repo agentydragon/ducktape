@@ -1,6 +1,6 @@
 --- a/internal/api/middleware/response_writer.go
 +++ b/internal/api/middleware/response_writer.go
-@@ -306,13 +306,13 @@
+@@ -306,13 +306,14 @@
  	if w.isStreaming && w.streamWriter != nil {
  		if w.chunkChannel != nil {
  			close(w.chunkChannel)
@@ -11,6 +11,7 @@
  			<-w.streamDone
  			w.streamDone = nil
  		}
++		// The worker reads chunkChannel, so wait for it before clearing the field.
 +		w.chunkChannel = nil
  
  		w.streamWriter.SetFirstChunkTimestamp(w.firstChunkTimestamp)
