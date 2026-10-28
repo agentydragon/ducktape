@@ -213,6 +213,7 @@ class RunnerSandbox(Construct):
         control_service: ServiceRef | None = None,
         session_reconcile_concurrency: int | None = None,
         disable_otel_sdk: bool = False,
+        fast_executor_readiness: bool = False,
     ) -> None:
         super().__init__(scope, id)
         if vm_workspace_storage_class is not None:
@@ -239,6 +240,7 @@ class RunnerSandbox(Construct):
             egress_api_service=egress_api_service,
             session_reconcile_concurrency=session_reconcile_concurrency,
             disable_otel_sdk=disable_otel_sdk,
+            fast_executor_readiness=fast_executor_readiness,
         )
         if env.vm_sandboxes:
             launcher_relay.LauncherRelayPolicy(
@@ -312,6 +314,7 @@ class RunnerTemplate(Construct):
         egress_api_service: ServiceRef | None = None,
         session_reconcile_concurrency: int | None = None,
         disable_otel_sdk: bool = False,
+        fast_executor_readiness: bool = False,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
@@ -329,6 +332,7 @@ class RunnerTemplate(Construct):
         self.control_service = control_service
         self.session_reconcile_concurrency = session_reconcile_concurrency
         self.disable_otel_sdk = disable_otel_sdk
+        self.fast_executor_readiness = fast_executor_readiness
         self.agent_cli_env = agent_cli_environment(service_urls(env, egress_api_service=egress_api_service))
         if not env.isolated_codex_executor and executor_resources is not None:
             raise ValueError("executor_resources cannot be set when isolated Codex execution is disabled")
@@ -351,12 +355,14 @@ class RunnerTemplate(Construct):
         ]
 
     def _executor_container(self) -> k8s.Container:
-        health_probe = k8s.Probe(
-            http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_EXECUTOR_HEALTH_PORT)),
-            initial_delay_seconds=5,
-            period_seconds=5,
-            timeout_seconds=2,
-            failure_threshold=1,
+        health_get = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_EXECUTOR_HEALTH_PORT))
+        liveness_probe = k8s.Probe(
+            http_get=health_get, initial_delay_seconds=5, period_seconds=5, timeout_seconds=2, failure_threshold=1
+        )
+        readiness_probe = (
+            k8s.Probe(http_get=health_get, period_seconds=2, timeout_seconds=2, failure_threshold=1)
+            if self.fast_executor_readiness
+            else liveness_probe
         )
         return k8s.Container(
             name=_EXECUTOR_CONTAINER_NAME,
@@ -383,8 +389,8 @@ class RunnerTemplate(Construct):
                 requests={"cpu": k8s.Quantity.from_string("250m"), "memory": k8s.Quantity.from_string("512Mi")},
                 limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("2Gi")},
             ),
-            liveness_probe=health_probe,
-            readiness_probe=health_probe,
+            liveness_probe=liveness_probe,
+            readiness_probe=readiness_probe,
             volume_mounts=[
                 *self._execution_mounts(),
                 *self._isolated_executor_mounts(),

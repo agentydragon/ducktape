@@ -259,6 +259,15 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     sidecar_env = {entry["name"]: entry.get("value") for entry in pod_containers["egress-sidecar"]["env"]}
     assert sidecar_env["OTEL_SDK_DISABLED"] == "true"
     assert "OTEL_SDK_DISABLED" not in {entry["name"] for entry in pod_containers["codex-executor"].get("env", [])}
+    executor = pod_containers["codex-executor"]
+    assert executor["livenessProbe"]["initialDelaySeconds"] == 5
+    assert executor["livenessProbe"]["periodSeconds"] == 5
+    assert executor["readinessProbe"] == {
+        "httpGet": {"path": "/healthz", "port": 4502},
+        "periodSeconds": 2,
+        "timeoutSeconds": 2,
+        "failureThreshold": 1,
+    }
 
     for name, expected_image in (
         ("sandbox", "git.allegedly.works/ducktape-ci/agentplane-sandbox:unset"),
