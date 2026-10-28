@@ -30,10 +30,11 @@ The reuse boundary is deliberately small. Only literal `//package:test` labels
 with exactly one `PASSED` summary, a configuration id, and one attempt are
 eligible. The CI stream must be the current push's deterministic test
 invocation, carry the current checkout's `COMMIT_SHA`, request `//...`, finish
-successfully, and match the publication job's `--config=rbe`, `--config=ci`
-and RBE image. A cached one-attempt pass is accepted because Bazel keys test
-results by source and configuration. Missing or unreadable evidence, custom
-release flags, retries, multiple configurations, failed summaries, suites,
+successfully, match the publication job's `--config=ci`, and report the
+expected effective RBE executor settings and image. A cached one-attempt pass
+is accepted because Bazel keys test results by source and configuration.
+Missing or unreadable evidence, custom release flags, retries, multiple
+configurations, failed summaries, suites,
 external labels, wildcards, PR runs and dispatch runs preserve the publication
 test step.
 

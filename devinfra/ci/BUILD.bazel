@@ -328,6 +328,18 @@ py_test(
 )
 
 py_test(
+    name = "test_publication_test_verdicts",
+    srcs = ["test_publication_test_verdicts.py"],
+    deps = [
+        ":bes",
+        ":invocation_ids",
+        ":publication_test_verdicts",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_release_content_hash",
     srcs = ["test_release_content_hash.py"],
     deps = [

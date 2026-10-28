@@ -99,6 +99,8 @@ class Invocation:
     command: str | None = None
     requested_patterns: tuple[str, ...] | None = None
     explicit_cmd_line: tuple[str, ...] | None = None
+    #: The full parsed option list, including rc and config expansion.
+    cmd_line: tuple[str, ...] | None = None
     commit_sha: str | None = None
 
     def by_path(self) -> dict[str, Output]:
@@ -218,6 +220,7 @@ def parse(raw: bytes) -> Invocation:
     commands: list[str] = []
     requested_patterns: list[str] = []
     explicit_cmd_lines: list[tuple[str, ...] | None] = []
+    cmd_lines: list[tuple[str, ...] | None] = []
     commit_shas: list[str] = []
     for event in events:
         if "testSummary" in event:
@@ -259,6 +262,11 @@ def parse(raw: bytes) -> Invocation:
                 explicit_cmd_lines.append(tuple(explicit))
             else:
                 explicit_cmd_lines.append(None)
+            cmd_line = options.get("cmdLine")
+            if isinstance(cmd_line, list) and all(isinstance(arg, str) for arg in cmd_line):
+                cmd_lines.append(tuple(cmd_line))
+            else:
+                cmd_lines.append(None)
         if pattern := event.get("id", {}).get("pattern"):
             requested_patterns.extend(value for value in pattern.get("pattern", []) if isinstance(value, str))
         if workspace_status := event.get("workspaceStatus"):
@@ -288,6 +296,7 @@ def parse(raw: bytes) -> Invocation:
     # The file-set DAG can list the same output through multiple branches.
     command = commands[0] if len(commands) == 1 else None
     explicit_cmd_line = explicit_cmd_lines[0] if len(explicit_cmd_lines) == 1 else None
+    cmd_line = cmd_lines[0] if len(cmd_lines) == 1 else None
     commit_sha_values = set(commit_shas)
     commit_sha = (
         next(iter(commit_sha_values)) if len(commit_sha_values) == 1 and next(iter(commit_sha_values)) else None
@@ -301,6 +310,7 @@ def parse(raw: bytes) -> Invocation:
         command=command,
         requested_patterns=tuple(requested_patterns) if requested_patterns else None,
         explicit_cmd_line=explicit_cmd_line,
+        cmd_line=cmd_line,
         commit_sha=commit_sha,
     )
 
