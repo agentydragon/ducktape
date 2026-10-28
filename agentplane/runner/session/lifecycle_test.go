@@ -227,3 +227,29 @@ func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
 		t.Fatal("idle exit started a successor without new work")
 	}
 }
+
+func TestPreparationCompletionRefreshesStaleSchedulingInput(t *testing.T) {
+	s, p, m := frameTestSessionWithController(t, []string{"/bin/cat"}, true)
+	setSessionPhase(t, s, Preparing)
+	// Model the completion resource becoming visible before the worker refreshes
+	// its Session input. The native process is already live, but input is stale.
+	m.publishMu.Lock()
+	input, _, err := ReadInput(m.ctx, m.state, s.id)
+	if err == nil {
+		input.ProcessID = ""
+		input.ProcessRunning = false
+		err = publish(m.ctx, m.state, s.id, input)
+	}
+	m.publishMu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	close(done)
+	op := &operation{id: "completed-preparation", done: done}
+	s.mu.Lock()
+	s.preparation = op
+	s.mu.Unlock()
+	m.publishOperation(s.id, op, true)
+	waitSession(t, s, func(current Runtime) bool { return current.Phase == Ready && current.ProcessID == p.ID() }, "preparation ready after stale input")
+}
