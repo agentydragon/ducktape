@@ -25,8 +25,9 @@ var (
 
 // Reader reads a Session's folded state from DB and its retained history from History.
 type Reader struct {
-	DB      *sql.DB
-	History *storage.Store
+	DB                       *sql.DB
+	History                  *storage.Store
+	NativeFrameReadBatchSize int
 }
 
 func invalid(detail string) error { return fmt.Errorf("%w: %s", storage.ErrInvalidArgument, detail) }

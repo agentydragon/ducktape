@@ -37,7 +37,7 @@ func newFixture(t *testing.T) fixture {
 	t.Cleanup(func() { db.Close() })
 	history := storage.NewStore(db, false)
 	return fixture{
-		db: db, history: history, reader: &Reader{DB: db, History: history},
+		db: db, history: history, reader: &Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
 		projector: &projection.Projector{DB: db, History: history, Epoch: testEpoch, PageSize: testPageSize},
 	}
 }

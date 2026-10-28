@@ -193,6 +193,10 @@ the `ThreadEntityView` JSON browsers sync. A caller holding rows of a replaced e
 `FAILED_PRECONDITION`.
 `ReadEntityEvidence` pages the observation cursors an entity was folded from, and
 `ReadNativeFrames` the native harness frames linked to one of them, read from the raw log.
+`native_frame_read_batch_size` (default `200`, set by the YAML key or
+`AGENTPLANE_HISTORY_SERVICE_NATIVE_FRAME_READ_BATCH_SIZE`) bounds the linked sequences in each raw-history
+query. It is independent of the public `ReadNativeFrames` page limit of `200`: storage chunks for one request
+share a repeatable-read snapshot and committed-history watermark.
 
 Bazel targets: `:history-service` and `:service_image`. Settings come from `AGENTPLANE_HISTORY_SERVICE_*` environment
 variables or the YAML file named by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`config.go`, `settings.py`).

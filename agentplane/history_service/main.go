@@ -171,7 +171,8 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 	// The read store never appends, so it settles nothing.
 	history := storage.NewStore(readDB, false)
 	service := api.NewService(api.Options{
-		Reader: &reads.Reader{DB: readDB, History: history}, Wakeups: hub, Resolver: readerAuth, Callers: c.ReaderAccounts,
+		Reader:  &reads.Reader{DB: readDB, History: history, NativeFrameReadBatchSize: c.NativeFrameReadBatchSize},
+		Wakeups: hub, Resolver: readerAuth, Callers: c.ReaderAccounts,
 		RequestTimeout: seconds(c.RequestTimeoutSeconds), WatchLease: seconds(c.WatchLeaseSeconds),
 	})
 	server := grpc.NewServer(observability.GRPCServerOption())

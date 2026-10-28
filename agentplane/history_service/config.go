@@ -31,8 +31,9 @@ type config struct {
 	Ingress               ingressConfig `mapstructure:"ingress"`
 	FoldConcurrency       int           `mapstructure:"fold_concurrency"`
 	// FoldPageSize is how many entries a cycle folds per Session; the history store serves at most 1000.
-	FoldPageSize        int     `mapstructure:"fold_page_size"`
-	FoldIntervalSeconds float64 `mapstructure:"fold_interval_s"`
+	FoldPageSize             int     `mapstructure:"fold_page_size"`
+	FoldIntervalSeconds      float64 `mapstructure:"fold_interval_s"`
+	NativeFrameReadBatchSize int     `mapstructure:"native_frame_read_batch_size"`
 	// WatchLeaseSeconds is how long a watch or follow stream lasts before planned renewal.
 	WatchLeaseSeconds float64 `mapstructure:"watch_lease_s"`
 }
@@ -53,7 +54,8 @@ func defaultConfig() config {
 	return config{
 		RequestTimeoutSeconds: 15, ListenAddress: "0.0.0.0:8080",
 		Ingress:         ingressConfig{ListenAddress: "0.0.0.0:8081", SettleDeltas: true},
-		FoldConcurrency: 4, FoldPageSize: 1000, FoldIntervalSeconds: 2, WatchLeaseSeconds: 300,
+		FoldConcurrency: 4, FoldPageSize: 1000, FoldIntervalSeconds: 2,
+		NativeFrameReadBatchSize: 200, WatchLeaseSeconds: 300,
 	}
 }
 
@@ -105,6 +107,9 @@ func (c *config) validate() error {
 	}
 	if c.FoldPageSize < 1 || c.FoldPageSize > 1000 {
 		return errors.New("fold_page_size must be between 1 and 1000")
+	}
+	if c.NativeFrameReadBatchSize < 1 {
+		return errors.New("native_frame_read_batch_size must be positive")
 	}
 	if c.FoldIntervalSeconds <= 0 || c.WatchLeaseSeconds <= 0 {
 		return errors.New("fold_interval_s and watch_lease_s must be positive")

@@ -84,8 +84,6 @@ type SequenceReadPage struct {
 	Reads      []SequenceRead
 }
 
-const maxSequenceReadPage = 200
-
 type Store struct {
 	db           *sql.DB
 	settleDeltas bool
@@ -556,9 +554,10 @@ func (s *Store) ReadPage(ctx context.Context, sessionID uuid.UUID, afterCursor u
 	return page, err
 }
 
-// ReadSequences reads the next retained entry at each sequence from one retained-history snapshot.
-func (s *Store) ReadSequences(ctx context.Context, sessionID uuid.UUID, sequences []uint64) (SequenceReadPage, error) {
-	if len(sequences) == 0 || len(sequences) > maxSequenceReadPage {
+// ReadSequences reads the next retained entry at each sequence from one retained-history snapshot,
+// with at most batchSize requested sequences in each SQL query.
+func (s *Store) ReadSequences(ctx context.Context, sessionID uuid.UUID, sequences []uint64, batchSize int) (SequenceReadPage, error) {
+	if len(sequences) == 0 || batchSize < 1 {
 		return SequenceReadPage{}, invalid("sequence read page")
 	}
 	for _, sequence := range sequences {
@@ -588,57 +587,67 @@ func (s *Store) ReadSequences(ctx context.Context, sessionID uuid.UUID, sequence
 		if len(retained) == 0 {
 			return nil
 		}
-		rows, err := tx.QueryContext(ctx, `SELECT requested.sequence, candidate.cursor, candidate.payload,
-				EXISTS (SELECT FROM session_event_settled_range r
-					WHERE r.session_id = $1 AND r.first_cursor <= requested.sequence AND r.last_cursor >= requested.sequence)
-				OR EXISTS (SELECT FROM session_event_removed_range r
-					WHERE r.session_id = $1 AND r.first_cursor <= requested.sequence AND r.last_cursor >= requested.sequence)
-			FROM unnest($2::bigint[]) WITH ORDINALITY AS requested(sequence, position)
-			LEFT JOIN LATERAL (
-				SELECT e.cursor, e.payload FROM session_event e
-				WHERE e.session_id = $1 AND e.cursor >= requested.sequence AND e.cursor <= $3
-				ORDER BY e.cursor LIMIT 1
-			) candidate ON true
-			ORDER BY requested.position`, sessionID, pq.Array(retained), page.LastCursor)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		rowIndex := 0
-		for rows.Next() {
-			if rowIndex >= len(retained) {
-				return fmt.Errorf("sequence query returned more than %d rows", len(retained))
-			}
-			var sequence int64
-			var cursor sql.NullInt64
-			var payload []byte
-			var unstored bool
-			if err := rows.Scan(&sequence, &cursor, &payload, &unstored); err != nil {
+		for start := 0; start < len(retained); start += batchSize {
+			end := min(start+batchSize, len(retained))
+			if err := readSequenceChunk(ctx, tx, sessionID, page.LastCursor, retained[start:end], retainedIndexes[start:end], page.Reads); err != nil {
 				return err
 			}
-			read := &page.Reads[retainedIndexes[rowIndex]]
-			if read.Sequence != uint64(sequence) {
-				return fmt.Errorf("sequence query returned %d at position %d, want %d", sequence, rowIndex, read.Sequence)
-			}
-			read.Unstored = unstored
-			if cursor.Valid {
-				entry := &eventlogpb.EventEntry{}
-				if err := proto.Unmarshal(payload, entry); err != nil {
-					return err
-				}
-				read.NextEntry = entry
-			}
-			rowIndex++
-		}
-		if err := rows.Err(); err != nil {
-			return err
-		}
-		if rowIndex != len(retained) {
-			return fmt.Errorf("sequence query returned %d rows, want %d", rowIndex, len(retained))
 		}
 		return nil
 	})
 	return page, err
+}
+
+func readSequenceChunk(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, lastCursor uint64, sequences []int64, readIndexes []int, reads []SequenceRead) error {
+	rows, err := tx.QueryContext(ctx, `SELECT requested.sequence, candidate.cursor, candidate.payload,
+			EXISTS (SELECT FROM session_event_settled_range r
+				WHERE r.session_id = $1 AND r.first_cursor <= requested.sequence AND r.last_cursor >= requested.sequence)
+			OR EXISTS (SELECT FROM session_event_removed_range r
+				WHERE r.session_id = $1 AND r.first_cursor <= requested.sequence AND r.last_cursor >= requested.sequence)
+		FROM unnest($2::bigint[]) WITH ORDINALITY AS requested(sequence, position)
+		LEFT JOIN LATERAL (
+			SELECT e.cursor, e.payload FROM session_event e
+			WHERE e.session_id = $1 AND e.cursor >= requested.sequence AND e.cursor <= $3
+			ORDER BY e.cursor LIMIT 1
+		) candidate ON true
+		ORDER BY requested.position`, sessionID, pq.Array(sequences), lastCursor)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	rowIndex := 0
+	for rows.Next() {
+		if rowIndex >= len(sequences) {
+			return fmt.Errorf("sequence query returned more than %d rows", len(sequences))
+		}
+		var sequence int64
+		var cursor sql.NullInt64
+		var payload []byte
+		var unstored bool
+		if err := rows.Scan(&sequence, &cursor, &payload, &unstored); err != nil {
+			return err
+		}
+		read := &reads[readIndexes[rowIndex]]
+		if read.Sequence != uint64(sequence) {
+			return fmt.Errorf("sequence query returned %d at position %d, want %d", sequence, rowIndex, read.Sequence)
+		}
+		read.Unstored = unstored
+		if cursor.Valid {
+			entry := &eventlogpb.EventEntry{}
+			if err := proto.Unmarshal(payload, entry); err != nil {
+				return err
+			}
+			read.NextEntry = entry
+		}
+		rowIndex++
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if rowIndex != len(sequences) {
+		return fmt.Errorf("sequence query returned %d rows, want %d", rowIndex, len(sequences))
+	}
+	return nil
 }
 
 // readSettlements returns every settlement whose completion entry or settled range falls in the window

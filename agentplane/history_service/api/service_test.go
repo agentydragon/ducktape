@@ -86,7 +86,8 @@ func newServerTimingOut(t *testing.T, lease, requestTimeout time.Duration) testS
 	}
 	history := storage.NewStore(db, true)
 	service := NewService(Options{
-		Reader: &reads.Reader{DB: db, History: history}, Wakeups: hub, Resolver: resolver,
+		Reader:  &reads.Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
+		Wakeups: hub, Resolver: resolver,
 		Callers:        []auth.Account{{Namespace: testNamespace, Name: "test-reader"}},
 		RequestTimeout: requestTimeout, WatchLease: lease,
 	})

@@ -690,11 +690,14 @@ func TestDefaultStoreKeepsEveryEntry(t *testing.T) {
 	}
 }
 
-func TestReadSequencesBoundsRequests(t *testing.T) {
-	sequences := make([]uint64, maxSequenceReadPage+1)
-	for i := range sequences {
-		sequences[i] = uint64(i + 1)
+func TestReadSequencesRequiresAPositiveBatchAndNonzeroSequences(t *testing.T) {
+	store := NewStore(nil, false)
+	for _, batchSize := range []int{0, -1} {
+		_, err := store.ReadSequences(t.Context(), uuid.New(), []uint64{1}, batchSize)
+		assertError(t, err, ErrInvalidArgument)
 	}
-	_, err := NewStore(nil, false).ReadSequences(t.Context(), uuid.New(), sequences)
-	assertError(t, err, ErrInvalidArgument)
+	for _, sequences := range [][]uint64{nil, {}, {0}} {
+		_, err := store.ReadSequences(t.Context(), uuid.New(), sequences, 1)
+		assertError(t, err, ErrInvalidArgument)
+	}
 }

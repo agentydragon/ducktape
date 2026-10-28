@@ -238,8 +238,9 @@ func TestEvidencePagesAreBounded(t *testing.T) {
 	}
 }
 
-func TestNativeFramePagesReadAtMostTwoHundredLinks(t *testing.T) {
+func TestNativeFramePaginationKeepsItsLimitAcrossSmallStorageBatches(t *testing.T) {
 	f := newFixture(t)
+	f.reader.NativeFrameReadBatchSize = 3
 	sequences := make([]uint64, maxEvidencePage+1)
 	entries := make([]*eventlogpb.EventEntry, 0, len(sequences)+1)
 	for i := range sequences {
@@ -257,7 +258,8 @@ func TestNativeFramePagesReadAtMostTwoHundredLinks(t *testing.T) {
 	}
 	first := nativeFrames(t, f, request)
 	if len(first.Frames) != maxEvidencePage || first.NextAfterSequence == nil || *first.NextAfterSequence != maxEvidencePage {
-		t.Fatalf("first page has %d frames and next sequence %v, want 200 frames and 200", len(first.Frames), first.NextAfterSequence)
+		t.Fatalf("first page has %d frames and next sequence %v, want %d frames and %d",
+			len(first.Frames), first.NextAfterSequence, maxEvidencePage, maxEvidencePage)
 	}
 	for i, frame := range first.Frames {
 		want := uint64(i + 1)

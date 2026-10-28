@@ -117,7 +117,7 @@ func (r *Reader) ReadNativeFrames(ctx context.Context, request *historypb.ReadNa
 	if len(sequences) == 0 {
 		return response, nil
 	}
-	retained, err := r.History.ReadSequences(ctx, sessionID, sequences)
+	retained, err := r.History.ReadSequences(ctx, sessionID, sequences, r.NativeFrameReadBatchSize)
 	if err != nil {
 		return nil, err
 	}

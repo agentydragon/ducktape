@@ -53,6 +53,9 @@ class Settings(YamlFileSettings):
     # A backfill advances each Session one page per cycle; the history store serves at most 1000.
     fold_page_size: int = Field(default=1000, ge=1, le=1000)
     fold_interval_s: float = Field(default=2, gt=0)
+    native_frame_read_batch_size: int = Field(
+        default=200, ge=1, description="Maximum linked sequences per raw-history query, independent of API pagination."
+    )
     watch_lease_s: float = Field(
         default=300, gt=0, description="Seconds a WatchSessionSummaries stream lasts before planned renewal."
     )

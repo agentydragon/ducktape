@@ -74,17 +74,38 @@ func TestASettingAFileSetsToItsNonDefaultOverridesTheDefault(t *testing.T) {
 	}
 }
 
+func TestNativeFrameReadBatchSizeLoadsFromFileAndEnvironment(t *testing.T) {
+	fileSetting := requiredFile + "native_frame_read_batch_size: 17\n"
+	c, err := loadTestConfig(t, fileSetting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.NativeFrameReadBatchSize != 17 {
+		t.Fatalf("file setting = %d, want 17", c.NativeFrameReadBatchSize)
+	}
+
+	c, err = loadTestConfig(t, fileSetting, settingPrefix+"NATIVE_FRAME_READ_BATCH_SIZE=3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.NativeFrameReadBatchSize != 3 {
+		t.Fatalf("environment setting = %d, want 3", c.NativeFrameReadBatchSize)
+	}
+}
+
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
-		"unknown key":                  requiredFile + "bogus: 1\n",
-		"no readers":                   "reader_accounts: []\n" + requiredFile[strings.Index(requiredFile, "token_audience"):],
-		"no audience":                  strings.Replace(requiredFile, "token_audience: test-history-service\n", "", 1),
-		"no ingress audience":          strings.Replace(requiredFile, "  token_audience: test-runner-ingress\n", "", 1),
-		"no writer namespaces":         strings.Replace(requiredFile, "  writer_namespaces: [test-agentplane]\n", "", 1),
-		"removed listener settings":    requiredFile + "host: 0.0.0.0\nport: 8080\n",
-		"request timeout too long":     requiredFile + "request_timeout_s: 61\n",
-		"fold page larger than served": requiredFile + "fold_page_size: 1001\n",
-		"fold without concurrency":     requiredFile + "fold_concurrency: 0\n",
+		"unknown key":                      requiredFile + "bogus: 1\n",
+		"no readers":                       "reader_accounts: []\n" + requiredFile[strings.Index(requiredFile, "token_audience"):],
+		"no audience":                      strings.Replace(requiredFile, "token_audience: test-history-service\n", "", 1),
+		"no ingress audience":              strings.Replace(requiredFile, "  token_audience: test-runner-ingress\n", "", 1),
+		"no writer namespaces":             strings.Replace(requiredFile, "  writer_namespaces: [test-agentplane]\n", "", 1),
+		"removed listener settings":        requiredFile + "host: 0.0.0.0\nport: 8080\n",
+		"request timeout too long":         requiredFile + "request_timeout_s: 61\n",
+		"fold page larger than served":     requiredFile + "fold_page_size: 1001\n",
+		"fold without concurrency":         requiredFile + "fold_concurrency: 0\n",
+		"zero native frame read batch":     requiredFile + "native_frame_read_batch_size: 0\n",
+		"negative native frame read batch": requiredFile + "native_frame_read_batch_size: -1\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := loadTestConfig(t, file)
