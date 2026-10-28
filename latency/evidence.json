@@ -5845,7 +5845,7 @@
       }
     ]
   },
-  "source_devel_commit": "2045a69341b03ac0003ec5604eaebcc9582a19ef",
+  "source_devel_commit": "53c5ec8bde044fc0ca3b9959cf56f2b73baba641",
   "measurement_source_devel_commit": "f24d1e727184d750f299bbe88b89880fe4865687",
   "profile_cases": [
     {
@@ -40426,7 +40426,7 @@
   },
   "attribution": "not collected",
   "validation": {
-    "status": "passed focused source/numeric integrity checks and exact-byte desktop/mobile browser review",
+    "status": "passed focused source/numeric integrity checks and exact-byte post-merge desktop/mobile browser review",
     "prior_snapshot": {
       "status": "passed and visually reviewed",
       "report_sha256": "d951506dcf5f173519f9fc049152f1486e5a297173db78253efdbc6879e8629d",
@@ -40455,7 +40455,7 @@
       ]
     },
     "numeric_checks": "PR CI action timestamps and gate order; five baseline XML suites reconcile to case totals; isolated grouped XML has 10/10 cases and both harnesses; source pins and counts checked; new HTML anchors unique; fresh 24h core-job and 90m all-workflow run/job counts reconcile; assigned runner and first-step timestamps checked; half-open clipped occupancy/nearest-rank queues verified; four exact-head job clocks and canceled action timestamps linked",
-    "report_sha256": "2adaec9e684574802964f887c663f6e05a72d9984a6f06fa2af7da196f5d8052",
+    "report_sha256": "c8a05e28620033362d427778c1723700f8e5715709da8ac67ea08db64531161e",
     "previous_html_browser_review": {
       "runner_invocation": "84c79de3-acb5-49ae-ae7f-6d9e8721a34d",
       "bazel_invocation": "25416ace-ddcc-4f43-a660-6fc69109b860",
@@ -40482,18 +40482,18 @@
       ]
     },
     "focused_update_checks": {
-      "report_sha256": "2adaec9e684574802964f887c663f6e05a72d9984a6f06fa2af7da196f5d8052",
+      "report_sha256": "c8a05e28620033362d427778c1723700f8e5715709da8ac67ea08db64531161e",
       "historical_collection_and_cohort_fields_unchanged": true,
-      "source_devel_sha_checked_against_origin_devel": "2045a69341b03ac0003ec5604eaebcc9582a19ef",
+      "source_devel_sha_checked_against_origin_devel": "53c5ec8bde044fc0ca3b9959cf56f2b73baba641",
       "pr_head_kept_separate_from_devel_source": "88fb88609842d9c7f6d4333190d1233f0fd5302a",
       "retry_counts_and_durations_cross_checked_against_selected_json": true,
       "ci_child_option_cross_checked": "remote_retries=0",
       "visual_review": "passed"
     },
     "browser_review": {
-      "runner_invocation": "42f9946d-1ea4-4492-8df1-13e9776c9bcb",
-      "bazel_invocation": "f445d0e1-402b-4ed6-804d-13a26e48f9c7",
-      "report_sha256": "2adaec9e684574802964f887c663f6e05a72d9984a6f06fa2af7da196f5d8052",
+      "runner_invocation": "4b2a907c-14a7-43ae-b9bf-400125ce916f",
+      "bazel_invocation": "53c8a9ab-2579-481b-a101-20f817898805",
+      "report_sha256": "c8a05e28620033362d427778c1723700f8e5715709da8ac67ea08db64531161e",
       "viewports": [
         "1280x900",
         "390x844"
@@ -40518,7 +40518,7 @@
   "recommendations": [
     {
       "rank": 1,
-      "track": "temporary CI remote-retry suppression",
+      "track": "measure landed CI zero-retry policy",
       "files": [
         ".bazelrc"
       ],
@@ -40526,7 +40526,7 @@
       "expected_gain": "May suppress a same-action replacement caused by retrying a terminal CANCELLED response. No CI feedback, remote compute, or fleet saving is quantified.",
       "risk": "All Bazel remote retries in CI are disabled, which weakens recovery from unrelated transient remote errors.",
       "validation_plan": "After adoption, verify child BES options on CI invocations; inspect cancellation-linked same-digest replacements and non-cancellation remote failures; compare bounded before/after counts and restore retries if transient failures materially increase. Keep the distinct-action barrier counterexample in the acceptance matrix.",
-      "status": "Open source PR with all three required contexts passing; no merge or post-change cancellation outcome claimed.",
+      "status": "Landed in 53c5ec8bde044fc0ca3b9959cf56f2b73baba641 at 2026-10-28T04:35:45Z; no post-merge cancellation or reliability effect measured.",
       "evidence_reference": "remote_retry_mitigation",
       "source_pr_url": "https://github.com/agentydragon/ducktape/pull/12468"
     },
@@ -41676,8 +41676,8 @@
   },
   "historical_report_source_devel_commit": "bf8043f425ea1b2593cbfa914e1ef16388e7a3da",
   "remote_retry_mitigation": {
-    "recorded_at_utc": "2026-10-28T04:30:16Z",
-    "source_devel_commit": "2045a69341b03ac0003ec5604eaebcc9582a19ef",
+    "recorded_at_utc": "2026-10-28T04:39:29.364111+00:00",
+    "source_devel_commit": "53c5ec8bde044fc0ca3b9959cf56f2b73baba641",
     "historical_cohort_window_unchanged": [
       "2026-10-24T04:00:00Z",
       "2026-10-27T06:00:00Z"
@@ -41686,16 +41686,17 @@
       "file": ".bazelrc",
       "setting": "build:ci --remote_retries=0",
       "scope": "All Bazel builds using the CI config; not specific to CANCELLED.",
-      "temporary": true
+      "temporary": true,
+      "status": "landed; production effect unmeasured"
     },
     "source_pr": {
       "number": 12468,
       "url": "https://github.com/agentydragon/ducktape/pull/12468",
       "head_sha": "88fb88609842d9c7f6d4333190d1233f0fd5302a",
       "target": "devel",
-      "state_as_of_utc": "2026-10-28T04:30:16Z",
-      "state": "OPEN",
-      "merged": false,
+      "state_as_of_utc": "2026-10-28T04:39:29.364111+00:00",
+      "state": "MERGED",
+      "merged": true,
       "required_checks_as_of_utc": "2026-10-28T04:30:16Z",
       "required_checks": {
         "Build artifacts + imports check": {
@@ -41710,7 +41711,9 @@
           "state": "SUCCESS",
           "url": "https://github.com/agentydragon/ducktape/actions/runs/40632252069/job/122631100172"
         }
-      }
+      },
+      "merged_at_utc": "2026-10-28T04:35:45Z",
+      "merge_commit": "53c5ec8bde044fc0ca3b9959cf56f2b73baba641"
     },
     "configured_ci_observation": {
       "head_sha": "88fb88609842d9c7f6d4333190d1233f0fd5302a",

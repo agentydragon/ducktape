@@ -320,13 +320,13 @@
           cohort and 27 October burst windows are unchanged. The separate MCP
           scenario measurement completed at 02:00:23.832 UTC. Cancellation
           probes ran on 28 October; the evidence is linked below and is not a
-          new population census. The CI policy change is PR #12468 at head
-          <code>88fb88609842</code>, checked against devel
+          new population census. The policy was validated for PR #12468 at head
+          <code>88fb88609842</code>; the landed policy was inspected in devel
           <a
-            href="https://github.com/agentydragon/ducktape/commit/2045a69341b03ac0003ec5604eaebcc9582a19ef"
-            >2045a69341b0</a
-          >. As of 04:30:16Z, the PR was open and all three required contexts
-          passed. No landing or post-change cancellation effect is claimed.
+            href="https://github.com/agentydragon/ducktape/commit/53c5ec8bde044fc0ca3b9959cf56f2b73baba641"
+            >53c5ec8bde04</a
+          >. PR #12468 merged at 04:35:45Z with all three required contexts
+          passing. No post-merge cancellation or reliability effect is measured.
         </p>
       </header>
       <div class="cards">
@@ -345,7 +345,7 @@
         </div>
       </div>
       <div class="callout">
-        <strong>Current action:</strong> review
+        <strong>Current action:</strong> measure the landed policy in
         <a href="https://github.com/agentydragon/ducktape/pull/12468"
           >PR #12468</a
         >, which sets <code>build:ci --remote_retries=0</code> as a temporary
@@ -384,10 +384,10 @@
             ><code>88fb88609842</code></a
           >; the source reviewed for this report is devel
           <a
-            href="https://github.com/agentydragon/ducktape/commit/2045a69341b03ac0003ec5604eaebcc9582a19ef"
-            ><code>2045a69341b0</code></a
-          >. As of 04:30:16Z, the PR is open and all three required contexts
-          passed. Its CI child BES recorded
+            href="https://github.com/agentydragon/ducktape/commit/53c5ec8bde044fc0ca3b9959cf56f2b73baba641"
+            ><code>53c5ec8bde04</code></a
+          >. The PR merged at 04:35:45Z with all three required contexts
+          passing. Its validation CI child BES recorded
           <code>remote_retries=0</code> in
           <a
             href="https://app.buildbuddy.io/invocation/36fc25cf-4c8f-5e5b-a951-9d197d61e4f8"
@@ -498,15 +498,15 @@
         <p class="small">
           Full experimental conditions and selected evidence:
           <a
-            href="https://github.com/agentydragon/ducktape/blob/2045a69341b03ac0003ec5604eaebcc9582a19ef/devinfra/debug/ci_remote_cancellation/retry_comparison.md"
+            href="https://github.com/agentydragon/ducktape/blob/53c5ec8bde044fc0ca3b9959cf56f2b73baba641/devinfra/debug/ci_remote_cancellation/retry_comparison.md"
             >retry comparison</a
           >,
           <a
-            href="https://github.com/agentydragon/ducktape/blob/2045a69341b03ac0003ec5604eaebcc9582a19ef/devinfra/debug/ci_remote_cancellation/normal_path_reproduction.md"
+            href="https://github.com/agentydragon/ducktape/blob/53c5ec8bde044fc0ca3b9959cf56f2b73baba641/devinfra/debug/ci_remote_cancellation/normal_path_reproduction.md"
             >normal-path reproduction</a
           >, and
           <a
-            href="https://github.com/agentydragon/ducktape/blob/2045a69341b03ac0003ec5604eaebcc9582a19ef/devinfra/debug/ci_remote_cancellation/rpc_retry_trace.md"
+            href="https://github.com/agentydragon/ducktape/blob/53c5ec8bde044fc0ca3b9959cf56f2b73baba641/devinfra/debug/ci_remote_cancellation/rpc_retry_trace.md"
             >RPC trace</a
           >. These focused experiments are not a fleet sample.
         </p>
@@ -2219,14 +2219,14 @@
             </thead>
             <tbody>
               <tr>
-                <td>1 · Temporary CI remote-retry suppression</td>
+                <td>1 · Measure the landed zero-retry policy</td>
                 <td>
-                  Review
+                  Measure the policy from
                   <a href="https://github.com/agentydragon/ducktape/pull/12468"
                     >PR #12468</a
-                  >, which sets <code>build:ci --remote_retries=0</code>. The
-                  PR is open at head <code>88fb88609842</code>; its current CI
-                  child BES reports the explicit zero-retry option.
+                  >, which sets <code>build:ci --remote_retries=0</code>. It
+                  merged in <code>53c5ec8bde04</code>; its validation CI
+                  child BES recorded the explicit zero-retry option.
                 </td>
                 <td>
                   One plain zero-retry probe had no indexed same-action
@@ -2877,8 +2877,8 @@
           <code>215af6378b9d</code>; the selected evidence is linked in the
           <a href="#remote-retries">mitigation section</a>. The inspected
           devel source is pinned to
-          <a href="https://github.com/agentydragon/ducktape/commit/2045a69341b03ac0003ec5604eaebcc9582a19ef"
-            ><code>2045a69341b0</code></a
+          <a href="https://github.com/agentydragon/ducktape/commit/53c5ec8bde044fc0ca3b9959cf56f2b73baba641"
+            ><code>53c5ec8bde04</code></a
           >, separate from PR #12468 head
           <code>88fb88609842d9c7f6d4333190d1233f0fd5302a</code>. The PR CI
           child BES records <code>remote_retries=0</code>; all three required

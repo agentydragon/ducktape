@@ -1,11 +1,11 @@
 {
-  "source_devel_commit": "2045a69341b03ac0003ec5604eaebcc9582a19ef",
+  "source_devel_commit": "53c5ec8bde044fc0ca3b9959cf56f2b73baba641",
   "window_start_utc": "2026-10-24T04:00:00Z",
   "window_end_utc": "2026-10-28T02:00:23.832Z",
-  "published_at_utc": "2026-10-28T04:36:39.633051+00:00",
+  "published_at_utc": "2026-10-28T04:41:31.067143+00:00",
   "attribution": "not collected",
   "historical_report_source_devel_commit": "bf8043f425ea1b2593cbfa914e1ef16388e7a3da",
-  "draft_updated_at_utc": "2026-10-28T04:30:16Z",
+  "draft_updated_at_utc": "2026-10-28T04:39:29.364111+00:00",
   "supplemental_evidence": {
     "kind": "focused cancellation/retry experiments and PR configuration validation",
     "probe_window_start_utc": "2026-10-28T03:33:13.320902Z",
@@ -13,8 +13,10 @@
     "pr_validation_observed_at_utc": "2026-10-28T04:30:16Z",
     "source_pr": "https://github.com/agentydragon/ducktape/pull/12468",
     "source_pr_head_sha": "88fb88609842d9c7f6d4333190d1233f0fd5302a",
-    "source_devel_commit": "2045a69341b03ac0003ec5604eaebcc9582a19ef",
+    "source_devel_commit": "53c5ec8bde044fc0ca3b9959cf56f2b73baba641",
     "population_census_collected": false,
-    "attribution": "not collected"
+    "attribution": "not collected",
+    "source_pr_merged_at_utc": "2026-10-28T04:35:45Z",
+    "source_pr_merge_commit": "53c5ec8bde044fc0ca3b9959cf56f2b73baba641"
   }
 }
