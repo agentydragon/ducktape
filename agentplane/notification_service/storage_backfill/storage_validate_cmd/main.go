@@ -19,10 +19,8 @@ const databaseURLEnv = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
 
 const (
 	subscriptionCreationProof = "subscription-creation"
-	inboxDestinationProof     = "inbox-destination"
 
 	subscriptionCreationWriterGate = "notification-subscription-creation-typed-only-v1"
-	inboxDestinationWriterGate     = "notification-destination-typed-only-v1"
 )
 
 func main() {
@@ -35,11 +33,8 @@ func main() {
 	case subscriptionCreationProof:
 		requiredWriterGate = subscriptionCreationWriterGate
 		validate = store.ValidateSubscriptionCreationConstraints
-	case inboxDestinationProof:
-		requiredWriterGate = inboxDestinationWriterGate
-		validate = store.ValidateInboxDestinationConstraints
 	default:
-		fmt.Fprintf(os.Stderr, "pass --proof=%s or --proof=%s\n", subscriptionCreationProof, inboxDestinationProof)
+		fmt.Fprintf(os.Stderr, "pass --proof=%s\n", subscriptionCreationProof)
 		os.Exit(2)
 	}
 	if *writerGate != requiredWriterGate {

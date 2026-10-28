@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +34,37 @@ func TestMain(m *testing.M) {
 			return m.Run()
 		},
 	))
+}
+
+func newStorageIntegrationDatabase(t *testing.T) (*sql.DB, context.Context) {
+	t.Helper()
+	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db, t.Context()
+}
+
+func explainLines(ctx context.Context, tx *sql.Tx, query string, args ...any) (string, error) {
+	rows, err := tx.QueryContext(ctx, "EXPLAIN (COSTS OFF) "+query, args...)
+	if err != nil {
+		return "", err
+	}
+	var plan strings.Builder
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			_ = rows.Close()
+			return "", err
+		}
+		plan.WriteString(line)
+		plan.WriteByte('\n')
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return "", err
+	}
+	return plan.String(), nil
 }
 
 func defaultQuotas() Quotas {

@@ -85,10 +85,10 @@ rollout, drain old writers and check for any unconverted rows; the backfill comm
 instead of silently cutting over.
 
 `00005_inbox_destination_expand.sql` adds nullable relational destination columns while the service continues to
-dual-write them and reads legacy `destination_ref` JSON when needed. After every Notification Service writer runs
-the dual-write release, run `bb run //agentplane/notification_service/storage_backfill/cmd:notification-destination-backfill -- --writer-gate=notification-destination-dual-write-v1`
+dual-write them and reads legacy `destination_ref` JSON when needed. Before moving to `00011`, use the preceding
+dual-write release to run `bb run //agentplane/notification_service/storage_backfill/cmd:notification-destination-backfill -- --writer-gate=notification-destination-dual-write-v1`
 once against the service database. The command is resumable, uses short bounded batches, and preserves the JSON
-column; it is not part of service startup or readiness.
+column; it is not part of service startup or readiness. The command is retired by the later contract migration.
 
 `00008_subscription_creation_expand.sql` adds a binary typed snapshot and relational source discriminator while
 the service continues to dual-write and can still read retained `creation` JSON. After every Notification Service
@@ -116,21 +116,29 @@ inbox authorization, and read/write behavior. A later contract migration may dro
 all readers and writers use typed storage; until then, the typed-only migration retains it for the compatible
 dual-write rollback.
 
-`00012_inbox_destination_typed_only.sql` requires the inbox-destination backfill completion marker on populated
+`00011_inbox_destination_typed_only.sql` requires the inbox-destination backfill completion marker on populated
 databases, makes the retained `destination_ref` JSON nullable, and adds a not-yet-validated shape constraint for the
 relational namespace, name and UID columns. Roll the typed-only reader and writer to every Notification Service
 instance only after the `00005` backfill reports completion. The new reader uses only the relational columns, and
-new inboxes leave `destination_ref` NULL. Once every writer has the typed-only release, run
-`bb run //agentplane/notification_service/storage_backfill/storage_validate_cmd:notification-storage-validate -- --proof=inbox-destination --writer-gate=notification-destination-typed-only-v1`.
-It validates the shape constraint in a separate bounded transaction, including on an empty database. A later
-contract migration requires that validated catalog proof before making the relational fields mandatory and dropping
-the retained JSON column.
+new inboxes leave `destination_ref` NULL. Once every writer has the typed-only release, use that release's
+`notification-storage-validate --proof=inbox-destination --writer-gate=notification-destination-typed-only-v1`
+command. It validates the shape constraint in a separate bounded transaction, including on an empty database.
+
+`00013_inbox_destination_contract.sql` requires the validated destination-shape proof on populated databases. That
+catalog proof establishes every existing row and all later writes, so the migration does not scan the backfill
+checkpoint or repeat a table validation. It sets the normalized destination fields `NOT NULL`, drops
+`destination_ref` and retires the destination checkpoint columns. The validated shape constraint remains to enforce
+the namespace, name and UID length limits. A fresh empty database follows a bounded empty-table path and validates
+the constraint during migration. The migration has a five-second lock wait and does not rewrite inbox rows. Before
+applying it, finish the typed-only rollout and proof command from the preceding release. The backfill and destination
+validation commands are retired with this contract; the progress table remains for subscription-creation backfill.
 
 Before the contract migration, roll back only to the typed-capable dual-write release: it reads relational fields
 and can still read retained legacy JSON, and it repopulates JSON for new inboxes. Keep the additive columns and
-`00012` applied during rollback; its Down step refuses to run while any typed-only row lacks JSON. After rollback,
-check API ownership, inbox authorization, writes, reads and readiness. Once the contract migration drops JSON, an
-older image that depends on `destination_ref` is no longer a supported rollback.
+`00011` applied during rollback; its Down step refuses to run while any typed-only row lacks JSON. After rollback,
+check API ownership, inbox authorization, writes, reads and readiness. After `00013`, roll application code back
+only to the typed-only release and keep the contract applied; older images that depend on `destination_ref` are no
+longer supported.
 
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
 flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,

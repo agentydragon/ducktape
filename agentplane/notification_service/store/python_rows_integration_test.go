@@ -25,16 +25,12 @@ func (f fixture) insertInbox(t *testing.T, key string, ref DestinationRef, sessi
 
 func (f fixture) insertInboxAs(t *testing.T, id uuid.UUID, key string, ref DestinationRef, sessionID string) {
 	t.Helper()
-	destination, err := json.Marshal(ref)
-	if err != nil {
-		t.Fatal(err)
-	}
 	f.exec(t, `
-		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref,
+		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 			destination_namespace, destination_name, destination_uid, session_id,
 			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 0, 0, 0, 0, false, now(), now(), now())`,
-		id, f.owner.Namespace, f.owner.Name, key, string(destination), ref.Namespace, ref.Name, ref.UID, sessionID)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, now(), now(), now())`,
+		id, f.owner.Namespace, f.owner.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID)
 }
 
 // insertSubscription writes a subscription of the inbox from the creation JSON Python stored, with the columns

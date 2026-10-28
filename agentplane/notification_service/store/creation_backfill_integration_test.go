@@ -123,7 +123,7 @@ func TestSubscriptionCreationBackfillProducesTypedReadsAndPreservesIdempotency(t
 }
 
 func TestSubscriptionCreationBackfillResumesAndRepairsCompletedCursor(t *testing.T) {
-	db, ctx := newDestinationBackfillDatabase(t)
+	db, ctx := newStorageIntegrationDatabase(t)
 	allowLegacySubscriptionCreationTestRows(t, ctx, db)
 	const rowCount = subscriptionCreationBackfillBatchSize + 1
 	inboxID := insertSubscriptionBackfillInbox(t, ctx, db, "test-subscription-resume")
@@ -179,7 +179,7 @@ func TestSubscriptionCreationBackfillResumesAndRepairsCompletedCursor(t *testing
 }
 
 func TestSubscriptionCreationBackfillRejectsInvalidAndPartialRows(t *testing.T) {
-	db, ctx := newDestinationBackfillDatabase(t)
+	db, ctx := newStorageIntegrationDatabase(t)
 	allowLegacySubscriptionCreationTestRows(t, ctx, db)
 	inboxID := insertSubscriptionBackfillInbox(t, ctx, db, "test-subscription-invalid")
 	insertLegacyActionSubscriptions(t, ctx, db, inboxID, "test-subscription-invalid", 1, 1, 1)
@@ -202,7 +202,7 @@ func TestSubscriptionCreationBackfillRejectsInvalidAndPartialRows(t *testing.T) 
 }
 
 func TestSubscriptionCreationBackfillUsesNativeUUIDKeysetAndBulkUpdateIndexes(t *testing.T) {
-	db, ctx := newDestinationBackfillDatabase(t)
+	db, ctx := newStorageIntegrationDatabase(t)
 	allowLegacySubscriptionCreationTestRows(t, ctx, db)
 	const rowCount = 50_000
 	inboxID := insertSubscriptionBackfillInbox(t, ctx, db, "test-subscription-plan")
@@ -265,7 +265,7 @@ func TestBoundedSubscriptionCreationCandidatesLimitsSerializedBytes(t *testing.T
 }
 
 func TestSubscriptionCreationConstraintValidationValidatesPopulatedAndEmptyTables(t *testing.T) {
-	db, ctx := newDestinationBackfillDatabase(t)
+	db, ctx := newStorageIntegrationDatabase(t)
 	owner := newOwner()
 	if _, err := New(db, defaultQuotas()).Subscribe(ctx, owner, body("validate-populated-subscription"), nil); err != nil {
 		t.Fatalf("create typed subscription for validation: %v", err)
@@ -275,7 +275,7 @@ func TestSubscriptionCreationConstraintValidationValidatesPopulatedAndEmptyTable
 	}
 	assertSubscriptionCreationConstraintsValidated(t, ctx, db)
 
-	emptyDB, ctx := newDestinationBackfillDatabase(t)
+	emptyDB, ctx := newStorageIntegrationDatabase(t)
 	if got := countQuery(t, ctx, emptyDB, `SELECT count(*) FROM subscription`); got != 0 {
 		t.Fatalf("fresh validation database has %d subscriptions, want empty", got)
 	}
@@ -286,7 +286,7 @@ func TestSubscriptionCreationConstraintValidationValidatesPopulatedAndEmptyTable
 }
 
 func TestSubscriptionCreationConstraintValidationRejectsInvalidRetainedRowsAndResumes(t *testing.T) {
-	db, ctx := newDestinationBackfillDatabase(t)
+	db, ctx := newStorageIntegrationDatabase(t)
 	allowLegacySubscriptionCreationTestRows(t, ctx, db)
 	inboxID := insertSubscriptionBackfillInbox(t, ctx, db, "test-subscription-validation")
 	insertLegacyActionSubscriptions(t, ctx, db, inboxID, "test-subscription-validation", 1, 1, 0)
@@ -333,13 +333,11 @@ func insertSubscriptionBackfillInbox(t *testing.T, ctx context.Context, db *sql.
 	id := uuid.New()
 	ref := DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID}
 	if _, err := db.ExecContext(ctx, `INSERT INTO inbox (
-		id, owner_namespace, owner_name, destination_key, destination_ref, destination_namespace, destination_name,
+		id, owner_namespace, owner_name, destination_key, destination_namespace, destination_name,
 		destination_uid, session_id, last_cursor, acknowledged,
 		covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, 'test-namespace', $2, $3, $4::jsonb, $5, $6, $7, 'test-session', 0, 0, 0, 0, false, now(), now(), now())`,
-		id, ownerName, DestinationKey(ref, "test-session"),
-		`{"namespace":"test-namespace","name":"test-sandbox","uid":"test-uid"}`,
-		ref.Namespace, ref.Name, ref.UID); err != nil {
+		VALUES ($1, 'test-namespace', $2, $3, $4, $5, $6, 'test-session', 0, 0, 0, 0, false, now(), now(), now())`,
+		id, ownerName, DestinationKey(ref, "test-session"), ref.Namespace, ref.Name, ref.UID); err != nil {
 		t.Fatal(err)
 	}
 	return id
