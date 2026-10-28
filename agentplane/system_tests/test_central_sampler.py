@@ -56,16 +56,7 @@ async def _capture_session_diagnostics(
             }
             for entry in events.entries
         ]
-        diagnostic["history_boundary_records"] = [
-            {
-                "cursor": entry.cursor,
-                "source_id": entry.origin.source_id,
-                "sequence": entry.origin.sequence,
-                "boundary_record": str(entry.event.boundary_record),
-            }
-            for entry in events.entries
-            if entry.event.HasField("boundary_record")
-        ]
+
     except Exception as error:
         diagnostic["history_events_error"] = repr(error)
     try:
