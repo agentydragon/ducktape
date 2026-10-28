@@ -108,7 +108,11 @@ console.log(normalized);
 "#;
     let fixture = run_fixture(FixtureOpts::new(
         source,
-        vec![logical_module("native/value", &[Member::new("normalized")])],
+        vec![logical_module_with_anon(
+            "native/value",
+            &[Member::new("normalized")],
+            &["globalThis.Math.round = function(value) { return 7; };"],
+        )],
     ));
     assert_preserved_entry_output(&fixture, "7\n");
 
