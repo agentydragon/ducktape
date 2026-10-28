@@ -338,12 +338,12 @@ func TestBackfillMessageTextUsesNativeKeysetAndSetBasedPlans(t *testing.T) {
 }
 
 func TestBackfillMessageTextCompletesAnEmptyFreshDatabase(t *testing.T) {
-	db, ctx := newMessageTextBackfillDatabase(t, 20)
+	db, ctx := newMessageTextBackfillDatabase(t, 21)
 	if err := BackfillMessageText(ctx, db, 16); err != nil {
 		t.Fatal(err)
 	}
 	assertMessageTextBackfillPhase(t, fixtureForDatabase(t, db, defaultQuotas()), "backfilled")
-	assertGooseVersionApplied(t, db, 20)
+	assertGooseVersionApplied(t, db, 21)
 }
 
 func newMessageTextBackfillFixture(t *testing.T) fixture {
