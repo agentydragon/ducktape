@@ -1924,8 +1924,8 @@ fn close_raw_intrinsic_aliases(
 #[cfg(test)]
 mod iterative_alias_closure_tests {
     use super::{
-        NamespaceValueFacts, NativeReceiverRoot, ValueExpr, close_raw_intrinsic_aliases,
-        infer_mutation_receiver_aliases,
+        NamespaceValueFacts, NativeReceiverRoot, ValueExpr, close_prepublication_derived_bindings,
+        close_raw_intrinsic_aliases, infer_mutation_receiver_aliases,
     };
     use crate::analysis_inputs::NativeIntrinsic;
     use std::collections::{BTreeMap, BTreeSet};
@@ -2029,6 +2029,42 @@ mod iterative_alias_closure_tests {
             )]))
         );
         assert!(!aliases.contains_key(&array));
+    }
+
+    #[test]
+    fn prepublication_derived_bindings_wake_backward_assignment_chains() {
+        let alias = id("alias");
+        let holder = id("holder");
+        let projected = id("projected");
+        let unrelated = id("unrelated");
+        let assignments = [
+            (
+                projected.clone(),
+                ValueExpr::Member(
+                    Box::new(ValueExpr::Binding(holder.clone())),
+                    Some("member".to_owned()),
+                    true,
+                ),
+            ),
+            (
+                holder.clone(),
+                ValueExpr::ObjectLiteral(
+                    9,
+                    vec![
+                        (Some("member".to_owned()), ValueExpr::Binding(alias.clone())),
+                        (
+                            Some("other".to_owned()),
+                            ValueExpr::Binding(unrelated.clone()),
+                        ),
+                    ],
+                ),
+            ),
+        ];
+
+        assert_eq!(
+            close_prepublication_derived_bindings(&alias, &assignments),
+            BTreeSet::from([alias, holder, projected])
+        );
     }
 }
 
@@ -2715,6 +2751,51 @@ fn uses_any_binding(value: &ValueExpr, ids: &BTreeSet<Id>) -> bool {
     !bindings.is_disjoint(ids)
 }
 
+struct DerivedBindingRules {
+    dependencies: Vec<(Id, Vec<Id>)>,
+}
+
+impl IterativeRules for DerivedBindingRules {
+    type Key = Id;
+    type Fact = ();
+    type Rule = usize;
+
+    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+        let (target, sources) = &self.dependencies[*rule];
+        if sources
+            .iter()
+            .any(|source| context.read(source.clone()).is_some())
+        {
+            context.propose(target.clone(), ());
+        }
+    }
+
+    fn merge(_: &Self::Key, _: &mut Self::Fact, _: Self::Fact) -> bool {
+        false
+    }
+}
+
+fn close_prepublication_derived_bindings(
+    alias: &Id,
+    assignments: &[(Id, ValueExpr)],
+) -> BTreeSet<Id> {
+    let dependencies = assignments
+        .iter()
+        .map(|(target, value)| {
+            let mut sources = BTreeSet::new();
+            value.bindings(&mut sources);
+            (target.clone(), sources.into_iter().collect())
+        })
+        .collect::<Vec<_>>();
+    let mut inference = IterativeInference::new(DerivedBindingRules { dependencies });
+    inference.seed(alias.clone(), ());
+    inference
+        .solve(0..assignments.len())
+        .into_values()
+        .into_keys()
+        .collect()
+}
+
 fn same_property_or_fresh(value: &ValueExpr, alias: &Id, property: &str) -> bool {
     match value {
         ValueExpr::Member(receiver, Some(read), _)
@@ -2788,18 +2869,7 @@ fn confined_prepublication_alias(
     }) {
         return false;
     }
-    let mut derived = BTreeSet::from([alias.clone()]);
-    loop {
-        let before = derived.len();
-        for (id, value) in &callable.local_assignments {
-            if uses_any_binding(value, &derived) {
-                derived.insert(id.clone());
-            }
-        }
-        if derived.len() == before {
-            break;
-        }
-    }
+    let derived = close_prepublication_derived_bindings(alias, &callable.local_assignments);
     for call in &callable.calls {
         if call.kind == CallKind::Call && uses_any_binding(&call.callee, &derived)
             || matches!(call.kind, CallKind::Call | CallKind::New)
