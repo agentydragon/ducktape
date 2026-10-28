@@ -7,10 +7,10 @@ import contextlib
 import logging
 import re
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Coroutine
 from datetime import UTC, datetime, timedelta
 from importlib import resources
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 import uvicorn
@@ -182,6 +182,42 @@ class AppState:
         self.webhook_verifier: PlaidWebhookVerifier | None = None
         self.storage: PlaidLinkStorage | None = None
         self.secrets: SecretStore | None = None
+        self._lifespan_operations: set[asyncio.Task[Any]] = set()
+        self._detached_operations: set[asyncio.Task[Any]] = set()
+
+    def start_lifespan_operation[T](self, operation: Coroutine[Any, Any, T]) -> asyncio.Task[T]:
+        task = asyncio.create_task(operation)
+        self._lifespan_operations.add(task)
+        task.add_done_callback(self._lifespan_operation_finished)
+        return task
+
+    def _lifespan_operation_finished(self, task: asyncio.Task[Any]) -> None:
+        self._lifespan_operations.discard(task)
+        detached = task in self._detached_operations
+        self._detached_operations.discard(task)
+        self._log_detached_failure(task, detached=detached)
+
+    def detach_lifespan_operation(self, task: asyncio.Task[Any]) -> None:
+        if task.done():
+            self._log_detached_failure(task, detached=True)
+        else:
+            self._detached_operations.add(task)
+
+    @staticmethod
+    def _log_detached_failure(task: asyncio.Task[Any], *, detached: bool) -> None:
+        if not detached or task.cancelled():
+            return
+        error = task.exception()
+        if error is not None:
+            logger.error(
+                "Plaid SDK call failed after its request stopped waiting (exception_type=%s, endpoint=%s)",
+                type(error).__name__,
+                getattr(error, "endpoint", None),
+            )
+
+    async def drain_lifespan_operations(self) -> None:
+        while self._lifespan_operations:
+            await asyncio.gather(*tuple(self._lifespan_operations), return_exceptions=True)
 
 
 def create_app(
@@ -226,6 +262,7 @@ def create_app(
             worker_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await worker_task
+            await state.drain_lifespan_operations()
             state.client = None
             state.webhook_verifier = None
             if owned_secrets is not None:
@@ -351,7 +388,7 @@ def create_app(
         storage = require_storage()
         running = await storage.running_sync_item_ids()
         return [
-            _link_summary(link, _addable_products(client, link), sync_running=link.item_id in running)
+            _link_summary(link, await _addable_products(state, client, link), sync_running=link.item_id in running)
             for link in await storage.list_active_links()
         ]
 
@@ -394,7 +431,7 @@ def create_app(
         link = await require_storage().get_link(item_id)
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
-        return _link_summary(link, _addable_products(require_client(), link))
+        return _link_summary(link, await _addable_products(state, require_client(), link))
 
     @app.get("/api/config")
     async def web_config() -> WebConfigResponse:
@@ -405,7 +442,7 @@ def create_app(
         q: Annotated[str, Query(min_length=2, description="Institution name typeahead")],
     ) -> list[InstitutionSearchResult]:
         try:
-            found = require_client().search_institutions(q)
+            found = await _run_sdk_call(state, require_client().search_institutions, q)
         except PlaidClientError as exc:
             raise HTTPException(502, exc.public_detail()) from exc
         return [InstitutionSearchResult(institution_id=i.institution_id, name=i.name) for i in found]
@@ -415,7 +452,7 @@ def create_app(
         institution_id: Annotated[str, ApiPath(description="Plaid institution_id")],
     ) -> InstitutionProductsResponse:
         try:
-            institution = require_client().get_institution(institution_id)
+            institution = await _run_sdk_call(state, require_client().get_institution, institution_id)
         except PlaidClientError as exc:
             raise HTTPException(502, exc.public_detail()) from exc
         syncable = syncable_products(institution.products)
@@ -430,7 +467,9 @@ def create_app(
     @app.post("/api/link-token")
     async def create_link_token(body: LinkTokenRequest) -> LinkTokenResponse:
         try:
-            result = require_client().create_link_token(
+            result = await _run_sdk_call(
+                state,
+                require_client().create_link_token,
                 products=[product.value for product in body.products],
                 redirect_uri=settings.redirect_uri,
                 client_user_id="owner",
@@ -447,25 +486,30 @@ def create_app(
 
     @app.post("/api/exchange-public-token")
     async def exchange_public_token(body: ExchangePublicTokenRequest) -> LinkSummary:
-        try:
-            exchange = require_client().exchange_public_token(body.public_token)
-        except PlaidClientError as exc:
-            raise HTTPException(502, exc.public_detail()) from exc
-        secret_name = _secret_name_for_item(exchange.item_id)
-        await require_secrets().write_access_token(secret_name, exchange.access_token)
         requested = body.products
-        link = await require_storage().upsert_link(
-            item_id=exchange.item_id,
-            access_token_secret=secret_name,
-            products_requested=requested,
-            products_authorized=requested,
-            products_billed=[],
-            transaction_days_requested=body.transaction_days_requested
-            or (settings.transaction_days if Product.TRANSACTIONS.value in requested else None),
-            institution_id=body.institution_id,
-            institution_name=body.institution_name,
-            label=body.label,
-        )
+
+        async def exchange_and_persist() -> tuple[str, StoredLink]:
+            try:
+                exchange = await asyncio.to_thread(require_client().exchange_public_token, body.public_token)
+            except PlaidClientError as exc:
+                raise HTTPException(502, exc.public_detail()) from exc
+            secret_name = _secret_name_for_item(exchange.item_id)
+            await require_secrets().write_access_token(secret_name, exchange.access_token)
+            link = await require_storage().upsert_link(
+                item_id=exchange.item_id,
+                access_token_secret=secret_name,
+                products_requested=requested,
+                products_authorized=requested,
+                products_billed=[],
+                transaction_days_requested=body.transaction_days_requested
+                or (settings.transaction_days if Product.TRANSACTIONS.value in requested else None),
+                institution_id=body.institution_id,
+                institution_name=body.institution_name,
+                label=body.label,
+            )
+            return exchange.item_id, link
+
+        item_id, link = await _finish_before_cancellation(state, exchange_and_persist())
         await sync_link(
             api=require_client(),
             storage=require_storage(),
@@ -475,10 +519,10 @@ def create_app(
             windows=settings.sync_windows,
             webhook_url=settings.webhook_url,
         )
-        updated = await require_storage().get_link(exchange.item_id)
+        updated = await require_storage().get_link(item_id)
         if updated is None:
             raise RuntimeError("newly inserted Plaid link disappeared")
-        return _link_summary(updated, _addable_products(require_client(), updated))
+        return _link_summary(updated, await _addable_products(state, require_client(), updated))
 
     @app.post("/api/links/{item_id}/update-link-token")
     async def create_update_link_token(
@@ -491,7 +535,9 @@ def create_app(
         requested = _requested_products_for_update(link, body)
         additional = [product for product in requested if product not in link.products_authorized]
         try:
-            result = require_client().create_update_link_token(
+            result = await _run_sdk_call(
+                state,
+                require_client().create_update_link_token,
                 access_token=access_token,
                 redirect_uri=settings.redirect_uri,
                 client_user_id="owner",
@@ -527,7 +573,7 @@ def create_app(
             refreshed = await require_storage().get_link(item_id)
             if refreshed is not None:
                 link = refreshed
-        return _link_summary(link, _addable_products(require_client(), link))
+        return _link_summary(link, await _addable_products(state, require_client(), link))
 
     @app.post("/api/links/{item_id}/sync")
     async def sync_existing_link(item_id: Annotated[str, ApiPath(description="Plaid item_id")]) -> SyncResponse:
@@ -549,12 +595,15 @@ def create_app(
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
         access_token = await require_secrets().read_access_token(link.access_token_secret)
-        try:
-            require_client().remove_item(access_token)
-        except PlaidClientError as exc:
-            raise HTTPException(502, exc.public_detail()) from exc
-        await require_secrets().delete_access_token(link.access_token_secret)
-        await require_storage().purge_link_data(item_id)
+        async def remove_and_purge() -> None:
+            try:
+                await asyncio.to_thread(require_client().remove_item, access_token)
+            except PlaidClientError as exc:
+                raise HTTPException(502, exc.public_detail()) from exc
+            await require_secrets().delete_access_token(link.access_token_secret)
+            await require_storage().purge_link_data(item_id)
+
+        await _finish_before_cancellation(state, remove_and_purge())
         return {"status": "removed"}
 
     return app
@@ -686,12 +735,37 @@ def _merge_products(*groups: list[str]) -> list[str]:
     return merged
 
 
-def _cached_institution(client: PlaidClient, institution_id: str) -> InstitutionDetail | None:
+async def _finish_before_cancellation[T](state: AppState, operation: Coroutine[Any, Any, T]) -> T:
+    """Complete paired remote and local state changes before propagating request cancellation."""
+    task = state.start_lifespan_operation(operation)
+    cancellation_requested = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancellation_requested = True
+    result = task.result()
+    if cancellation_requested:
+        raise asyncio.CancelledError
+    return result
+
+
+async def _run_sdk_call[T](state: AppState, call: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
+    """Run one blocking SDK call off-loop and keep it owned until its worker thread finishes."""
+    task = state.start_lifespan_operation(asyncio.to_thread(call, *args, **kwargs))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        state.detach_lifespan_operation(task)
+        raise
+
+
+async def _cached_institution(state: AppState, client: PlaidClient, institution_id: str) -> InstitutionDetail | None:
     now = datetime.now(UTC)
     if (hit := _institution_cache.get(institution_id)) is not None and now - hit[0] < _INSTITUTION_TTL:
         return hit[1]
     try:
-        detail = client.get_institution(institution_id)
+        detail = await _run_sdk_call(state, client.get_institution, institution_id)
     except PlaidClientError:
         # The links list is also the repair surface, so it has to render when Plaid is unreachable.
         logger.warning("institution lookup failed for %s; hiding its add-products button", institution_id)
@@ -700,7 +774,7 @@ def _cached_institution(client: PlaidClient, institution_id: str) -> Institution
     return detail
 
 
-def _addable_products(client: PlaidClient, link: StoredLink) -> list[Product] | None:
+async def _addable_products(state: AppState, client: PlaidClient, link: StoredLink) -> list[Product] | None:
     """Products the UI could still add to this link, or None if that can't be determined.
 
     Diffed against products_authorized, matching what /update-link-token actually sends as
@@ -708,7 +782,7 @@ def _addable_products(client: PlaidClient, link: StoredLink) -> list[Product] | 
     """
     if link.institution_id is None:
         return None
-    institution = _cached_institution(client, link.institution_id)
+    institution = await _cached_institution(state, client, link.institution_id)
     if institution is None:
         return None
     return [p for p in syncable_products(institution.products) if p.value not in link.products_authorized]
