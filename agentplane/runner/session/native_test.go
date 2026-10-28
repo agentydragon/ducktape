@@ -22,6 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
 	"github.com/cosi-project/runtime/pkg/controller"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
+	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -287,6 +288,21 @@ func frameTestSession(t *testing.T, command []string) (*Session, *supervision.Ma
 }
 
 func frameTestSessionWithController(t *testing.T, command []string, controller bool) (*Session, *supervision.ManagedProcess, *Manager) {
+	return frameTestSessionWithControllerGate(t, command, controller, nil)
+}
+
+type gatedSessionController struct {
+	controller.QController
+	gate *sync.Mutex
+}
+
+func (c *gatedSessionController) Reconcile(ctx context.Context, logger *zap.Logger, runtime controller.QRuntime, ptr resource.Pointer) error {
+	c.gate.Lock()
+	defer c.gate.Unlock()
+	return c.QController.Reconcile(ctx, logger, runtime, ptr)
+}
+
+func frameTestSessionWithControllerGate(t *testing.T, command []string, withController bool, gate *sync.Mutex) (*Session, *supervision.ManagedProcess, *Manager) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	root := t.TempDir()
@@ -336,8 +352,12 @@ func frameTestSessionWithController(t *testing.T, command []string, controller b
 	if err := engine.RegisterController(&testAggregateController{}); err != nil {
 		t.Fatal(err)
 	}
-	if controller {
-		if err := engine.RegisterQController(m.Controller()); err != nil {
+	if withController {
+		var sessionController controller.QController = m.Controller()
+		if gate != nil {
+			sessionController = &gatedSessionController{QController: sessionController, gate: gate}
+		}
+		if err := engine.RegisterQController(sessionController); err != nil {
 			t.Fatal(err)
 		}
 	}
