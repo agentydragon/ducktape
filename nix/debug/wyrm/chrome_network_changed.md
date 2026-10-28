@@ -56,10 +56,17 @@ Moving containerd wouldn't help; moving Cilium would break all pod routing.
 
 ## Status: watching
 
-Watch over time whether the churn-driven resets stay gone. If `ERR_NETWORK_CHANGED`
-comes back, capture what fired it before changing anything: `ip -ts monitor address`
-on the host during a burst (which interface still gains or loses an address), and a
-`chrome://net-export` log around it. Delete this note if it is still quiet on 2026-10-25.
+On 2026-10-28 the operator reported substantially fewer resets, without confirming
+that they had stopped. Keep the investigation open. On recurrence, capture
+`ip -ts monitor address` on the host and a `chrome://net-export` log around the
+same burst before changing configuration.
+
+The deployed [Interface Flap Frequency dashboard](https://grafana.allegedly.works/d/interface-flap-frequency)
+counts `node_network_carrier_changes_total` and Loki interface-lifecycle log lines
+(see [its source](../../../cluster/cdk8s/monitoring/dashboards/interface-flap-frequency.json)).
+These do not count IPv6 address additions/removals or Chrome errors. Zero carrier
+changes therefore cannot establish that the address-churn trigger is gone;
+interface-creation log counts also are not counts of Chrome resets.
 
 ## Related
 
