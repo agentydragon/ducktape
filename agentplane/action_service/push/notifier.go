@@ -367,6 +367,29 @@ func deleteGone(ctx context.Context, conn *sql.Conn, subscription webpush.Subscr
 	return err
 }
 
+// stateWords supplies the browser's push outcome label. Keep these labels explicit so renaming a protobuf enum
+// does not change user-visible text; an unrecognized state gets a neutral label.
 func stateWords(state action_servicepb.ActionState) string {
-	return strings.ReplaceAll(strings.TrimPrefix(strings.ToLower(state.String()), "action_state_"), "_", " ")
+	switch state {
+	case action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING:
+		return "decision pending"
+	case action_servicepb.ActionState_ACTION_STATE_ALLOWED:
+		return "allowed"
+	case action_servicepb.ActionState_ACTION_STATE_DENIED:
+		return "denied"
+	case action_servicepb.ActionState_ACTION_STATE_DISPATCHING:
+		return "dispatching"
+	case action_servicepb.ActionState_ACTION_STATE_RUNNING:
+		return "running"
+	case action_servicepb.ActionState_ACTION_STATE_SUCCEEDED:
+		return "succeeded"
+	case action_servicepb.ActionState_ACTION_STATE_FAILED:
+		return "failed"
+	case action_servicepb.ActionState_ACTION_STATE_CANCELLED:
+		return "cancelled"
+	case action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN:
+		return "execution unknown"
+	default:
+		return "unknown"
+	}
 }
