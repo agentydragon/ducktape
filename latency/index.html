@@ -299,18 +299,18 @@
           28 October
         </div>
         <h1>
-          Eight guest incarnations passed shutdown checks;<br />MCP is next to
-          measure
+          Four uncached runs passed;<br />BFF decision cases were about 44s
+          shorter
         </h1>
         <p class="lede">
-          Follow-up evidence through 28 October 01:06 UTC shows clean guest and
-          KubeVirt shutdown across eight focused guest incarnations tested with
-          the native-sidecar ordering change. A separate focused smoke reached
-          absent in 15.240s. In one exact PR CI invocation, the MCP action ended
-          19.616s after the VM action, making a matched MCP scenario-reuse
-          measurement worthwhile. That is one run, not a population rate or
-          promised gate saving. The queue and PR feedback cohorts below retain
-          their original 24–27 October windows.
+          All four uncached runs passed. Baseline BFF decision-case XML took
+          93.5–95.6s; reuse took 50.3–51.2s. The grouped variant preserves
+          fresh-session denial for both harnesses. Different snapshot/startup
+          states confound total process time, so this does not establish CI or
+          fleet savings. Review the candidate and current checks in
+          <a href="https://github.com/agentydragon/ducktape/pull/12380"
+            >PR #12380</a
+          >. Earlier queue and feedback cohorts retain their original windows.
         </p>
         <p class="small">
           Historical broad sample: 24 October 04:00 → 27 October 06:00 UTC,
@@ -321,8 +321,9 @@
             href="https://github.com/agentydragon/ducktape/commit/bf8043f425ea1b2593cbfa914e1ef16388e7a3da"
             >bf8043f425ea</a
           >; it adds selected CI and manual cases, not a new population census.
-          Earlier broad-sample source and tested trees remain listed in their
-          original sections.
+          The separate four-run MCP scenario measurement completed at
+          02:00:23.832 UTC. Earlier broad-sample source and tested trees remain
+          listed in their original sections.
         </p>
       </header>
       <div class="cards">
@@ -337,24 +338,27 @@
           suspend/resume checks.
         </div>
         <div class="card">
-          Later action in one CI run<span class="metric">MCP +19.616s</span
-          >after the VM action ended; conditional action-level headroom on one
-          invocation only.
+          Mean baseline-to-reuse BFF cases<span class="metric"
+            >~44s shorter</span
+          >
+          two uncached runs per variant; this is scenario XML time, not
+          whole-test or CI completion time.
         </div>
       </div>
       <div class="callout">
-        <strong>Next:</strong> measure MCP scenario reuse on matched full-target
-        and exact-head CI runs, preserving separate fresh-session denial
-        coverage. VM phase timing, guest shutdown ordering and artifact-phase
-        overlap have landed; the new evidence supports those results without
-        estimating a fleet gain. The older 28s / 31s ideal artifact-overlap
-        estimate remains historical context, while separate runner capacity
-        stays conditional on repeated bursts. Remote cancellation ownership work
-        remains deferred this round.
+        <strong>Current action:</strong> review
+        <a href="https://github.com/agentydragon/ducktape/pull/12380"
+          >PR #12380</a
+        >
+        and its current checks. It moves the standalone manual ALLOW case after
+        DENY in the same session; fresh-session denial remains for both
+        harnesses. VM phase timing and artifact-phase overlap are complete.
+        Runner capacity remains conditional on recurring bursts, and remote
+        cancellation ownership is operator-deferred this round.
       </div>
       <nav aria-label="Report navigation">
-        <a href="#landed">Landed follow-up</a><a href="#burst">27 Oct burst</a
-        ><a href="#feedback">PR feedback</a
+        <a href="#landed">Landed follow-up</a><a href="#mcp-reuse">MCP reuse</a
+        ><a href="#burst">27 Oct burst</a><a href="#feedback">PR feedback</a
         ><a href="#changes">Since the last report</a
         ><a href="#profiles">Fresh profiles</a
         ><a href="#vm-mcp">VM/MCP follow-up</a
@@ -563,6 +567,137 @@
           may alter postprocessing or another required gate. It is not a
           population rate or forecast. Raw proof files, worker IDs and private
           paths are not published.
+        </p>
+      </section>
+      <section id="mcp-reuse">
+        <h2>MCP scenario reuse: four uncached runs through 02:00:23 UTC</h2>
+        <p>
+          This focused benchmark followed the landed-results window above; it is
+          not a new CI population census. The benchmark base was pinned to devel
+          <a
+            href="https://github.com/agentydragon/ducktape/commit/bf8043f425ea1b2593cbfa914e1ef16388e7a3da"
+            >bf8043f425ea</a
+          >; the baseline runs used that source, and the reuse runs added the
+          measured test patch. Remote fetch and reverse-patch provenance are in
+          evidence. The measured test change is now in
+          <a href="https://github.com/agentydragon/ducktape/pull/12380"
+            >PR #12380</a
+          >
+          targeting devel. Its source commit also adds README documentation;
+          benchmark execution used the pinned devel tree plus the measured test
+          patch, not that later commit as its exact source.
+        </p>
+        <p>
+          A1/A2 are the 12-item baseline: separate fresh allow and deny
+          Sandbox/session cases per harness. B1/B2 are the 10-item variant: one
+          fresh Sandbox/session per harness, with DENY then ALLOW using distinct
+          Action requests, markers and idempotency keys. The AST comparison
+          retained 45 assertion expressions and five explicit failure-call
+          expressions across the DENY/ALLOW branches; both verdict branches ran
+          for each harness. Fresh-session denial remains for both harnesses and
+          policy auto-allow scenarios remain; the standalone fresh-session
+          manual ALLOW case now runs after DENY in the same session. The change
+          removes two Sandbox/session lifecycles and two function-scoped
+          <code>operator_bff</code> OIDC logins; no delays, timeouts or
+          readiness behavior changed.
+        </p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Run / variant</th>
+                <th scope="col">Result / invocation</th>
+                <th scope="col">Process (s)</th>
+                <th scope="col">BFF decision cases (XML s)</th>
+                <th scope="col">Stack Ready (s)</th>
+                <th scope="col">CPU (s)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>A1 · baseline</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/bc16846c-9594-4dd1-b100-6b502f743447"
+                    >12/12 passed</a
+                  >
+                </td>
+                <td>449.310</td>
+                <td>4 · 95.592</td>
+                <td>71.4</td>
+                <td>599.895</td>
+              </tr>
+              <tr>
+                <td>B1 · reuse</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/a6e095cf-6de9-494b-ad58-de9616576ace"
+                    >10/10 passed</a
+                  >
+                </td>
+                <td>410.564</td>
+                <td>2 · 50.277</td>
+                <td>77.5</td>
+                <td>575.165</td>
+              </tr>
+              <tr>
+                <td>B2 · reuse</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/2d0ebc0a-7152-425a-9092-7cab47f39d80"
+                    >10/10 passed</a
+                  >
+                </td>
+                <td>583.572</td>
+                <td>2 · 51.237</td>
+                <td>233.3</td>
+                <td>1,138.878</td>
+              </tr>
+              <tr>
+                <td>A2 · baseline</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/db9da93f-e0b4-40b7-8877-1f0f62c39cb3"
+                    >12/12 passed</a
+                  >
+                </td>
+                <td>486.278</td>
+                <td>4 · 93.514</td>
+                <td>81.4</td>
+                <td>743.528</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Baseline BFF decision-case XML means 94.553s (A1 95.592s; A2 93.514s)
+          versus 50.757s for reuse (B1 50.277s; B2 51.237s), a mean difference
+          of 43.796s, about 44s shorter in these two runs per variant. Action
+          digests match within A and within B. A1/B1 shared a restored parent
+          lineage and Firecracker snapshot-configuration hash; that parent state
+          was created on 2026-10-27 at 22:39:37.9235Z. B2 started a fresh VM at
+          01:40:07.652862Z with no prior task. A2 ran on the same
+          worker/platform and Firecracker snapshot-configuration hash as B2, but
+          restored a different pre-existing snapshot with a prior task and saved
+          snapshot version 1. A2's recorded prior snapshot task was not B2. The
+          Firecracker snapshot-configuration hash differs between the A1/B1 pair
+          and B2/A2 pair; this is runtime snapshot metadata, not a change to
+          test flags. Thus full process time includes unequal startup state and
+          is not a clean treatment comparison. These runs do not establish
+          in-memory reuse, whole-action/CI improvement, or a fleet effect.
+        </p>
+        <p class="small">
+          BFF XML is a fixture-scoped subset, Stack Ready comes from the
+          existing fixture timeline, and process time uses the test action's
+          execution-start and execution-end clock. These clocks are not exact
+          additive partitions.
+        </p>
+        <p class="small">
+          The four process windows ran from 01:22:11.968Z through 02:00:22.378Z;
+          the client reported terminal completion at 02:00:23.832Z.
+          <code>--nocache_test_results</code> was used for each run. Full
+          clocks, lineage classification and run metrics are in the evidence
+          object.
         </p>
       </section>
       <section id="burst">
@@ -1941,25 +2076,29 @@
             </thead>
             <tbody>
               <tr>
-                <td>1 · Measure MCP scenario reuse</td>
+                <td>1 · Review MCP scenario-reuse PR</td>
                 <td>
-                  In <code>agentplane/system_tests/test_mcp.py</code>, compare
-                  the current separate allow/deny Sandbox cases with one fresh
-                  Sandbox per harness and distinct Action requests, markers and
-                  idempotency keys. Keep all assertions and a fresh-session
-                  denial smoke.
+                  Review
+                  <a href="https://github.com/agentydragon/ducktape/pull/12380"
+                    >PR #12380</a
+                  >
+                  and its test-source change. It keeps DENY before a distinct
+                  ALLOW request per harness, both verdict branches,
+                  fresh-session denial and the existing policy auto-allow
+                  scenarios. The source commit also adds README documentation;
+                  its test code matches the measured patch but is not the exact
+                  benchmark source SHA.
                 </td>
                 <td>
-                  One PR #12333 CI invocation ended with MCP 19.616014s after
-                  VM, giving conditional action-level headroom on that head. The
-                  earlier uncached grouped target passed 10/10. Neither
-                  establishes net end-to-end savings or a population effect.
+                  Across two runs per variant, mean BFF decision-case XML time
+                  was 43.796s lower for reuse. Action digests match within each
+                  arm; BFF case XML is a scenario subset, not whole-test
+                  completion.
                 </td>
                 <td>
-                  Run matched full-target and exact-head CI comparisons with
-                  warm/cold state recorded. Preserve both verdicts,
-                  separate-session denial coverage and state isolation; reject
-                  if flakiness or leakage appears.
+                  Review the exact test diff and current required checks linked
+                  from the PR before adoption; do not claim a whole-action, CI
+                  or fleet saving from this bounded sample.
                 </td>
               </tr>
               <tr>
@@ -2450,12 +2589,16 @@
                 <td>Scenario grouping</td>
                 <td>
                   The earlier bounded two-shard probe retains a
-                  high-compute-cost rejection. The single 28 October CI run now
-                  makes a matched MCP allow/deny Sandbox-reuse measurement
-                  worthwhile because MCP finished 19.616014s after VM. The old
-                  grouped target remains a 10/10 compatibility smoke, not a
-                  speedup. Preserve VM independent-boot coverage; shared
-                  multi-PR clusters remain untested.
+                  high-compute-cost rejection. The completed four-run uncached
+                  comparison passed all 44 test executions. BFF decision-case
+                  XML averaged about 44s shorter for reuse, while later runs had
+                  different snapshot/startup state and full-action savings
+                  remain unproven. Review the test change in
+                  <a href="https://github.com/agentydragon/ducktape/pull/12380"
+                    >PR #12380</a
+                  >; use the PR for current check status. Preserve VM
+                  independent-boot coverage; shared multi-PR clusters remain
+                  untested.
                 </td>
               </tr>
               <tr>

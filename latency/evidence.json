@@ -40485,19 +40485,37 @@
   "recommendations": [
     {
       "rank": 1,
-      "track": "matched MCP scenario-reuse measurement",
+      "track": "review MCP scenario-reuse PR #12380",
       "files": [
         "agentplane/system_tests/test_mcp.py"
       ],
-      "mechanism": "Compare the existing separate allow/deny Sandbox cases with one fresh Sandbox per harness and separate Action requests, markers, and idempotency keys for both verdicts.",
+      "mechanism": "B uses one fresh Sandbox/session per harness for DENY then ALLOW with distinct Action requests, markers and idempotency keys, removing two Sandbox/session lifecycles and two function-scoped operator_bff OIDC logins. The measured candidate retains both verdict branches without changing commands, timeouts or readiness behavior.",
       "latest_observation": {
+        "source_devel_commit": "bf8043f425ea1b2593cbfa914e1ef16388e7a3da",
+        "remote_fetch_base": "d217f55b90f715223e4e5111b9299465b8bb7a04",
+        "completed_runs": [
+          "A1",
+          "B1",
+          "B2",
+          "A2"
+        ],
+        "A1_B1_bff_xml_delta_seconds_B1_minus_A1": -45.315,
+        "interpretation": "About 44 seconds shorter in BFF decision-case XML across two runs per variant. Later full-action comparison includes different snapshot/startup state; no whole-action/CI or fleet saving is established.",
+        "A2_status": "passed 12/12",
+        "evidence_key": "mcp_reuse_measurement_2026_10_28",
+        "baseline_bff_decision_case_xml_mean_seconds": 94.553,
+        "reuse_bff_decision_case_xml_mean_seconds": 50.757,
+        "reuse_minus_baseline_bff_decision_case_xml_mean_seconds": -43.796,
+        "action_digests_match_within_each_variant": true
+      },
+      "prior_trigger_observation": {
         "pr": 12333,
         "head_sha": "ca59df9308955e6d3f03a2a169939933ce24e113",
         "invocation_url": "https://app.buildbuddy.io/invocation/bcb6aef4-e2b6-5e98-a3fb-82fde9dd63be",
         "vm_action_end_utc": "2026-10-28T00:48:07.455081480Z",
         "mcp_action_end_utc": "2026-10-28T00:48:27.071095730Z",
         "mcp_after_vm_s": 19.616014,
-        "interpretation": "Conditional action-level headroom on one invocation only; not a population rate or end-to-end saving."
+        "interpretation": "One invocation motivated the follow-up measurement; it is conditional action-level headroom, not a population rate or end-to-end saving."
       },
       "prior_compatibility_probe": {
         "invocation_url": "https://app.buildbuddy.io/invocation/7fb14a28-324e-440d-bb23-7f8d8d8acccb",
@@ -40505,8 +40523,14 @@
         "passed": 10,
         "interpretation": "One uncached run confirmed compatibility, not causal speedup or isolation equivalence."
       },
-      "coverage": "Keep both allow and deny assertions, fresh-session denial coverage, and state isolation; pytest cases fall from 12 to 10 in the grouped variant.",
-      "validation": "Run matched full-target and exact-head CI comparisons with warm/cold state recorded; compare action and required-check completion, and reject if state leakage or flakiness appears."
+      "coverage": "The AST diff retained 45 assertion expressions and five explicit failure-call expressions across the DENY/ALLOW branches; both verdict branches were exercised for each harness. Keep fresh-session denial for both harnesses, state isolation, and existing fresh policy auto-allow scenarios.",
+      "validation": "Review the exact test-source diff and current required checks linked from PR #12380 before adoption. Keep the claim bounded to BFF decision-case XML; do not generalize to whole-action, CI or fleet savings.",
+      "source_pr": {
+        "number": 12380,
+        "url": "https://github.com/agentydragon/ducktape/pull/12380",
+        "head_sha": "fe288cd5ac692064a8d82b4a3287596c0ebf9a73",
+        "target": "devel"
+      }
     },
     {
       "rank": 2,
@@ -41372,5 +41396,281 @@
     "window_start_utc": "2026-10-27T19:19:35Z",
     "window_end_utc": "2026-10-28T01:06:07Z",
     "window_note": "Focused continuation window; each source/action timestamp is recorded separately. It is not a continuous CI census."
+  },
+  "mcp_reuse_measurement_2026_10_28": {
+    "recorded_through_utc": "2026-10-28T02:00:23.832Z",
+    "scope": "Focused four-run uncached target benchmark after the landed-results follow-up. All four planned runs completed; this is not a new PR population census.",
+    "source_devel_commit": "bf8043f425ea1b2593cbfa914e1ef16388e7a3da",
+    "remote_fetch_base": "d217f55b90f715223e4e5111b9299465b8bb7a04",
+    "effective_source_note": "bbr fetched the remote base and applied the recorded reverse patch to restore the pinned local devel source tree; the remote commitSha alone does not identify the effective source tree.",
+    "target": "//agentplane/system_tests:test_mcp",
+    "command_flags": [
+      "--nocache_test_results",
+      "--test_output=errors"
+    ],
+    "planned_order": [
+      "A1",
+      "B1",
+      "B2",
+      "A2"
+    ],
+    "A_definition": "Existing 12-item target, separate fresh allow and deny Sandbox/session per harness.",
+    "B_definition": "10-item target, one fresh Sandbox/session per harness, DENY then ALLOW using distinct Action requests, markers and idempotency keys.",
+    "B_candidate_patch_sha256": "8ff68cfb1f7a05245194ed175ff297a7b8c5d9059b9e2344d70a7ff6405860f6",
+    "B_candidate_source_sha256": "7c75763728b1a03880dd96366f2eec49e5a9f6abf6ce94071ba38f27af8588dc",
+    "coverage_and_mechanism": "The AST comparison retained 45 assertion expressions and five explicit failure-call expressions across the DENY/ALLOW branches; both verdict branches were exercised for each harness. Fresh-session denial coverage remains for both harnesses; fresh policy auto-allow cases remain. The standalone fresh-session manual ALLOW scenario now runs after DENY in the same session. The variant removes two Sandbox/session setup-cleanup lifecycles and two function-scoped operator_bff OIDC logins. No command, timeout, delay or readiness change.",
+    "runs": [
+      {
+        "id": "A1",
+        "variant": "A baseline; 12-item target with separate fresh allow and deny Sandbox/session cases per harness",
+        "invocation_id": "bc16846c-9594-4dd1-b100-6b502f743447",
+        "invocation_url": "https://app.buildbuddy.io/invocation/bc16846c-9594-4dd1-b100-6b502f743447",
+        "result": {
+          "passed": 12,
+          "failed": 0,
+          "skipped": 0,
+          "errors": 0,
+          "verdict": "passed"
+        },
+        "process_seconds": 449.31,
+        "process_started_at_utc": "2026-10-28T01:22:11.968436Z",
+        "process_completed_at_utc": "2026-10-28T01:29:41.278047Z",
+        "bff_decision_case_count": 4,
+        "bff_decision_case_xml_seconds": 95.592,
+        "stack_ready_seconds": 71.4,
+        "cpu_seconds": 599.895,
+        "lineage_classification": "Same observed worker, platform, configuration and parent snapshot lineage as B1. A prior-task relationship does not prove in-memory reuse.",
+        "clocks_utc": {
+          "queued_at_utc": "2026-10-28T01:22:11.555508Z",
+          "worker_queued_at_utc": "2026-10-28T01:22:11.579026Z",
+          "worker_started_at_utc": "2026-10-28T01:22:11.617400Z",
+          "input_fetch_started_at_utc": "2026-10-28T01:22:11.728196Z",
+          "input_fetch_completed_at_utc": "2026-10-28T01:22:11.968436Z",
+          "process_started_at_utc": "2026-10-28T01:22:11.968436Z",
+          "process_completed_at_utc": "2026-10-28T01:29:41.278047Z",
+          "output_upload_started_at_utc": "2026-10-28T01:29:41.278048Z",
+          "output_upload_completed_at_utc": "2026-10-28T01:29:41.625092Z",
+          "worker_completed_at_utc": "2026-10-28T01:29:41.625092Z"
+        },
+        "action_digest": "ec66d89a0de2bfe5c18096d5ab6f58075aaea18f6bc30a6c60dfdc288554c5b2",
+        "firecracker_snapshot_configuration_hash": "ee99195ac0f03960142888ab403a42406bcb3fc863732bfccbdea70c2dfc19ac",
+        "bazel_profile_test_critical_path_component_seconds": 450.792,
+        "artifact_sha256": {
+          "xml": "bc887f98c383712cdd0b1ce70f4779fa72f58cb2eb04e467a2150326c8b9df29",
+          "log": "a90d0464e0832357e0ecef0fdc4f293b1d31aedfdc6fa2192973ef2ce24ff43c",
+          "timeline": "6084ee281b58053486b42784fa50cdb6331163d23180ddf06abbf6b1cd13724a",
+          "bazel_profile": "e0d4cc17783ce3cc9ae8f43992529c4844c6e6343f436e04d33f606e641a3876"
+        }
+      },
+      {
+        "id": "B1",
+        "variant": "B reuse; 10-item target with one fresh Sandbox/session per harness, DENY then ALLOW",
+        "invocation_id": "a6e095cf-6de9-494b-ad58-de9616576ace",
+        "invocation_url": "https://app.buildbuddy.io/invocation/a6e095cf-6de9-494b-ad58-de9616576ace",
+        "result": {
+          "passed": 10,
+          "failed": 0,
+          "skipped": 0,
+          "errors": 0,
+          "verdict": "passed"
+        },
+        "process_seconds": 410.564,
+        "process_started_at_utc": "2026-10-28T01:31:57.670521Z",
+        "process_completed_at_utc": "2026-10-28T01:38:48.234749Z",
+        "bff_decision_case_count": 2,
+        "bff_decision_case_xml_seconds": 50.277,
+        "stack_ready_seconds": 77.5,
+        "cpu_seconds": 575.165,
+        "lineage_classification": "Same observed worker, platform, configuration and parent snapshot lineage as A1. A prior-task relationship does not prove in-memory reuse.",
+        "clocks_utc": {
+          "queued_at_utc": "2026-10-28T01:31:57.287297Z",
+          "worker_queued_at_utc": "2026-10-28T01:31:57.313731Z",
+          "worker_started_at_utc": "2026-10-28T01:31:57.355082Z",
+          "input_fetch_started_at_utc": "2026-10-28T01:31:57.485720Z",
+          "input_fetch_completed_at_utc": "2026-10-28T01:31:57.670521Z",
+          "process_started_at_utc": "2026-10-28T01:31:57.670521Z",
+          "process_completed_at_utc": "2026-10-28T01:38:48.234749Z",
+          "output_upload_started_at_utc": "2026-10-28T01:38:48.234750Z",
+          "output_upload_completed_at_utc": "2026-10-28T01:38:48.704510Z",
+          "worker_completed_at_utc": "2026-10-28T01:38:48.704510Z"
+        },
+        "action_digest": "547075099c55d4960f0e65b065f168f87a982f056638a5c6c6514ea9c040af78",
+        "firecracker_snapshot_configuration_hash": "ee99195ac0f03960142888ab403a42406bcb3fc863732bfccbdea70c2dfc19ac",
+        "bazel_profile_test_critical_path_component_seconds": 411.917,
+        "artifact_sha256": {
+          "xml": "36133537d2b09a382df1714da96ee74eed17ecd3bd023e6e8a98eff21dbd8250",
+          "log": "69f9ff76734c74498c2626c0dc7f17d58226a0efaacad500f29abc87c32b651f",
+          "timeline": "8239a6f461f40829b558421ad964edf05bfd61629fd5a28fc1bb75bb46285f1e",
+          "bazel_profile": "452c3fb9f5295429e51999a3c2e43b231c53bb461a053cd4f090b68c28251218"
+        }
+      },
+      {
+        "id": "B2",
+        "variant": "B reuse; same 10-item target and scenario order as B1",
+        "invocation_id": "2d0ebc0a-7152-425a-9092-7cab47f39d80",
+        "invocation_url": "https://app.buildbuddy.io/invocation/2d0ebc0a-7152-425a-9092-7cab47f39d80",
+        "result": {
+          "passed": 10,
+          "failed": 0,
+          "skipped": 0,
+          "errors": 0,
+          "verdict": "passed"
+        },
+        "process_seconds": 583.572,
+        "process_started_at_utc": "2026-10-28T01:40:07.652623Z",
+        "process_completed_at_utc": "2026-10-28T01:49:51.224195Z",
+        "bff_decision_case_count": 2,
+        "bff_decision_case_xml_seconds": 51.237,
+        "stack_ready_seconds": 233.3,
+        "cpu_seconds": 1138.878,
+        "lineage_classification": "Different worker and configuration from A1/B1, same observed platform, and no prior task or saved snapshot metadata.",
+        "clocks_utc": {
+          "queued_at_utc": "2026-10-28T01:40:06.925604Z",
+          "worker_queued_at_utc": "2026-10-28T01:40:06.947717Z",
+          "worker_started_at_utc": "2026-10-28T01:40:06.987559Z",
+          "input_fetch_started_at_utc": "2026-10-28T01:40:07.036683Z",
+          "input_fetch_completed_at_utc": "2026-10-28T01:40:07.652623Z",
+          "process_started_at_utc": "2026-10-28T01:40:07.652623Z",
+          "process_completed_at_utc": "2026-10-28T01:49:51.224195Z",
+          "output_upload_started_at_utc": "2026-10-28T01:49:51.224195Z",
+          "output_upload_completed_at_utc": "2026-10-28T01:49:51.587524Z",
+          "worker_completed_at_utc": "2026-10-28T01:49:51.587525Z"
+        },
+        "action_digest": "547075099c55d4960f0e65b065f168f87a982f056638a5c6c6514ea9c040af78",
+        "firecracker_snapshot_configuration_hash": "b506fa68da27beb5c294cde67337516ce2589056ce68becddfc62db69e7de6d5",
+        "bazel_profile_test_critical_path_component_seconds": 585.249,
+        "artifact_sha256": {
+          "xml": "f8b5573fe3a6288bc428e2af090b101e6599895e549d315c4fadfd4788e06e97",
+          "log": "d464d3da6bffbd46a4e1e062f9d250b15a3b6b3fc3b190e91d3389bdb20e3c37",
+          "timeline": "428dd5042e135fd383973f5be998d7dd98fb81f1626998139ab68a9388e17d35",
+          "bazel_profile": "240ebbd3dfd6ed7e787a6d6abc17d1365fae98403fb01042f893ccdb9633b543"
+        }
+      },
+      {
+        "id": "A2",
+        "variant": "A baseline; 12-item target with separate fresh allow and deny Sandbox/session cases per harness",
+        "invocation_id": "db9da93f-e0b4-40b7-8877-1f0f62c39cb3",
+        "invocation_url": "https://app.buildbuddy.io/invocation/db9da93f-e0b4-40b7-8877-1f0f62c39cb3",
+        "result": {
+          "passed": 12,
+          "failed": 0,
+          "skipped": 0,
+          "errors": 0,
+          "verdict": "passed"
+        },
+        "process_seconds": 486.278,
+        "pytest_seconds": 442.92,
+        "bff_decision_case_count": 4,
+        "bff_decision_case_xml_seconds": 93.514,
+        "stack_ready_seconds": 81.4,
+        "cpu_seconds": 743.528,
+        "action_digest": "ec66d89a0de2bfe5c18096d5ab6f58075aaea18f6bc30a6c60dfdc288554c5b2",
+        "clocks_utc": {
+          "queued_at_utc": "2026-10-28T01:52:15.640718Z",
+          "worker_queued_at_utc": "2026-10-28T01:52:15.662413Z",
+          "worker_started_at_utc": "2026-10-28T01:52:15.702529Z",
+          "input_fetch_started_at_utc": "2026-10-28T01:52:15.822730Z",
+          "input_fetch_completed_at_utc": "2026-10-28T01:52:16.100510Z",
+          "process_started_at_utc": "2026-10-28T01:52:16.100510Z",
+          "process_completed_at_utc": "2026-10-28T02:00:22.378828Z",
+          "output_upload_started_at_utc": "2026-10-28T02:00:22.378828Z",
+          "output_upload_completed_at_utc": "2026-10-28T02:00:22.803530Z",
+          "worker_completed_at_utc": "2026-10-28T02:00:22.803530Z"
+        },
+        "lineage_classification": "Same physical worker, platform and Firecracker snapshot-configuration hash as B2, but A2 restored a different pre-existing snapshot with a prior task and saved snapshot version 1. Its prior task was not B2.",
+        "bazel_profile_test_critical_path_component_seconds": 487.69,
+        "artifact_sha256": {
+          "xml": "a35936b3f4643a9f7b7f18adbfc5c96d5fd2f2b5457f88ccd364ef9bc76b95f7",
+          "log": "776ddea9ee177f7d85c0f33d3298d6d2a77f3651ad080b8c6af98dd0cffa043a",
+          "timeline": "a96ec6dccf8d3123d762a9c3d94e33c9f2495bdbc576706ceea1a28a40ec4af1",
+          "bazel_profile": "81a98b7cb36f0192391504b94dafcb5810aac6c67818b5bf8a4161e21e5c1f1c"
+        }
+      }
+    ],
+    "matched_pair": {
+      "run_ids": [
+        "A1",
+        "B1"
+      ],
+      "A1_bff_decision_case_xml_seconds": 95.592,
+      "B1_bff_decision_case_xml_seconds": 50.277,
+      "B1_minus_A1_bff_decision_case_xml_seconds": -45.315,
+      "in_memory_reuse_proven": false,
+      "interpretation": "The first ordered pair shares restored parent lineage. This does not establish in-memory reuse or a causal whole-action/CI saving.",
+      "observed_worker_platform_firecracker_snapshot_configuration_and_parent_snapshot_lineage_match": true
+    },
+    "B2_comparison": {
+      "same_platform_worker_and_firecracker_configuration_as_A2": true,
+      "different_snapshot_startup_state_from_A2": true,
+      "prior_task_present": false,
+      "saved_snapshot_metadata_present": false,
+      "fresh_vm_created_at_utc": "2026-10-28T01:40:07.652862455Z",
+      "bff_decision_case_xml_seconds": 51.237,
+      "stack_ready_seconds": 233.3,
+      "interpretation": "B2 started with a fresh VM. A2 restored a different pre-existing snapshot with a prior task; B2 was not that prior task and did not warm A2."
+    },
+    "limits": [
+      "Two observations per arm are a bounded benchmark, not a flake rate or population CI estimate.",
+      "Action digests match within each source variant, but Firecracker snapshot/startup state differs outside the first A1/B1 pair.",
+      "The BFF decision-case XML means are about 44 seconds lower for B across these runs; this scenario subset is not whole-action completion or required-check time.",
+      "A1/B1 share a restored parent lineage. B2 was cold with a fresh VM; A2 restored a different pre-existing snapshot on the same worker/platform/configuration.",
+      "No in-memory reuse, whole-action/CI improvement, allocation saving or fleet effect is established; other required gates can cap feedback savings."
+    ],
+    "decision": "Review the test-source change and current checks in PR #12380. The measured evidence supports review of this bounded scenario reuse change, not a whole-action/CI/fleet claim. Do not revive the rejected extra Pod runner-recycling key from this result; remote cancellation ownership remains explicitly operator-deferred this round.",
+    "client_reported_completion_at_utc": "2026-10-28T02:00:23.832Z",
+    "source_pr": {
+      "number": 12380,
+      "url": "https://github.com/agentydragon/ducktape/pull/12380",
+      "head_sha": "fe288cd5ac692064a8d82b4a3287596c0ebf9a73",
+      "target": "devel",
+      "source_commit_is_exact_benchmark_tree": false,
+      "source_commit_note": "The PR contains the measured test-code bytes plus README documentation. Benchmark runs used pinned devel bf8043f425ea1b2593cbfa914e1ef16388e7a3da with the recorded reverse patch and, for B, the measured candidate delta."
+    },
+    "action_digest_matches": {
+      "baseline_A1_A2": "ec66d89a0de2bfe5c18096d5ab6f58075aaea18f6bc30a6c60dfdc288554c5b2",
+      "reuse_B1_B2": "547075099c55d4960f0e65b065f168f87a982f056638a5c6c6514ea9c040af78",
+      "interpretation": "The action digest is identical within each source variant; it does not control for the Firecracker snapshot/startup state observed across runs."
+    },
+    "variant_aggregate": {
+      "baseline_run_ids": [
+        "A1",
+        "A2"
+      ],
+      "reuse_run_ids": [
+        "B1",
+        "B2"
+      ],
+      "runs_per_variant": 2,
+      "all_test_executions_passed": 44,
+      "baseline_bff_decision_case_xml_mean_seconds": 94.553,
+      "reuse_bff_decision_case_xml_mean_seconds": 50.757,
+      "reuse_minus_baseline_bff_decision_case_xml_mean_seconds": -43.796,
+      "interpretation": "About 44 seconds shorter in the BFF decision-case XML subset across these two runs per variant; not whole-action completion or a CI gate saving."
+    },
+    "lineage_and_startup_state": {
+      "A1_B1": {
+        "shared_restored_parent_lineage": true,
+        "same_worker_platform_and_firecracker_snapshot_configuration_hash": true,
+        "firecracker_snapshot_configuration_hash": "ee99195ac0f03960142888ab403a42406bcb3fc863732bfccbdea70c2dfc19ac",
+        "parent_snapshot_vm_created_at_utc": "2026-10-27T22:39:37.9235Z"
+      },
+      "B2": {
+        "same_platform_as_A2": true,
+        "same_physical_worker_and_firecracker_snapshot_configuration_hash_as_A2": true,
+        "firecracker_snapshot_configuration_hash": "b506fa68da27beb5c294cde67337516ce2589056ce68becddfc62db69e7de6d5",
+        "fresh_vm_created_at_utc": "2026-10-28T01:40:07.652862455Z",
+        "prior_task_present": false,
+        "saved_snapshot_version_number": null
+      },
+      "A2": {
+        "same_platform_worker_and_firecracker_snapshot_configuration_hash_as_B2": true,
+        "firecracker_snapshot_configuration_hash": "b506fa68da27beb5c294cde67337516ce2589056ce68becddfc62db69e7de6d5",
+        "restored_preexisting_snapshot_created_at_utc": "2026-10-28T01:28:58.605123679Z",
+        "prior_task_present": true,
+        "saved_snapshot_version_number": 1,
+        "prior_task_was_B2": false
+      },
+      "interpretation": "Firecracker snapshot-configuration hashes distinguish the two run pairs; they are runtime metadata, not test-flag differences. A1/B1 share their restored parent lineage. B2 started cold with a new VM, while A2 later restored a different prior snapshot on the same worker/platform/configuration. A2 did not restore a snapshot descended from B2. Full-action comparison across later states is confounded by startup state."
+    }
   }
 }
