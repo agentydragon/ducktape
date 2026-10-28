@@ -3,290 +3,211 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CI latency · VM/MCP lifecycle profiles · 28 October 2026</title>
+    <title>CI latency · landed-change measurement · 28 October 2026</title>
     <style>
-      :root {
-        --ink: #17303b;
-        --muted: #536671;
-        --line: #d5dfe2;
-        --blue: #105b80;
-        --paper: #f5f7f8;
-        --teal: #09766e;
-      }
       * {
         box-sizing: border-box;
       }
+      html {
+        scroll-behavior: smooth;
+      }
       body {
         margin: 0;
-        background: var(--paper);
-        color: var(--ink);
+        background: #f4f6f8;
+        color: #172331;
         font:
-          16px/1.65 system-ui,
+          16px/1.6 system-ui,
           sans-serif;
       }
       main {
-        max-width: 1180px;
+        max-width: 1120px;
         margin: auto;
-        padding: 40px 30px 70px;
-      }
-      h1 {
-        font-size: clamp(31px, 4.2vw, 50px);
-        line-height: 1.12;
-        letter-spacing: -0.035em;
-        max-width: 950px;
-        margin: 14px 0 20px;
-      }
-      h2 {
-        font-size: 28px;
-        line-height: 1.25;
-        letter-spacing: -0.02em;
-        margin: 0 0 20px;
-      }
-      h3 {
-        font-size: 20px;
-        line-height: 1.3;
-        margin: 24px 0 10px;
-      }
-      p {
-        margin: 10px 0 18px;
-        max-width: 100ch;
+        padding: 36px 26px 64px;
       }
       a {
-        color: var(--blue);
-        overflow-wrap: anywhere;
+        color: #174e9b;
         text-underline-offset: 3px;
       }
-      code {
-        font-size: 0.86em;
-        overflow-wrap: anywhere;
+      header {
+        border-top: 5px solid #246257;
+        padding: 26px 0 20px;
+      }
+      h1 {
+        font-size: clamp(2rem, 5vw, 3.2rem);
+        line-height: 1.12;
+        max-width: 24ch;
+        letter-spacing: -0.03em;
+        margin: 12px 0 20px;
+      }
+      h2 {
+        font-size: 1.55rem;
+        line-height: 1.25;
+        margin: 0 0 16px;
+      }
+      h3 {
+        font-size: 1.1rem;
+      }
+      p {
+        max-width: 94ch;
+      }
+      section {
+        background: white;
+        border: 1px solid #dce3e8;
+        border-radius: 12px;
+        padding: 26px;
+        margin: 26px 0;
+        scroll-margin-top: 18px;
       }
       .eyebrow {
-        font-size: 12px;
-        letter-spacing: 0.11em;
+        font-size: 0.82rem;
+        letter-spacing: 0.09em;
         text-transform: uppercase;
-        font-weight: 750;
-        color: var(--muted);
+        font-weight: 700;
+        color: #46616a;
       }
       .lede {
-        font-size: 20px;
-        max-width: 980px;
+        font-size: 1.18rem;
+        color: #344955;
       }
-      .small,
-      figcaption {
-        font-size: 13px;
-        color: var(--muted);
+      .meta,
+      .small {
+        font-size: 0.88rem;
+        color: #4c606b;
       }
-      .cards {
+      .metrics {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 14px;
-        margin: 23px 0;
-      }
-      .card {
-        background: white;
-        border: 1px solid var(--line);
-        border-radius: 9px;
-        padding: 17px 20px;
+        margin: 22px 0;
       }
       .metric {
+        background: #e8f0ed;
+        border: 1px solid #cadcd4;
+        border-radius: 10px;
+        padding: 18px;
+      }
+      .metric strong {
         display: block;
-        font-size: 31px;
-        line-height: 1.2;
-        font-weight: 750;
-        margin: 9px 0;
+        font-size: 2rem;
+        line-height: 1.25;
+        color: #174f43;
       }
-      .callout {
-        padding: 18px 22px;
-        background: #e3efeb;
-        border-left: 5px solid var(--teal);
-        margin: 22px 0;
-        border-radius: 0 8px 8px 0;
+      .metric span {
+        display: block;
+        font-size: 0.88rem;
+        margin-top: 8px;
       }
-      .warning {
-        background: #fff0da;
-        border-left-color: #a26414;
+      .note {
+        padding: 15px 18px;
+        border-left: 4px solid #b18b28;
+        background: #fff7e3;
+      }
+      .good {
+        background: #edf5f0;
+        border-left-color: #32785b;
       }
       nav {
         display: flex;
         flex-wrap: wrap;
         gap: 10px 20px;
-        font-size: 14px;
-        margin: 25px 0;
-      }
-      section {
-        border-top: 1px solid var(--line);
-        margin-top: 38px;
-        padding-top: 28px;
+        margin: 20px 0;
       }
       table {
-        width: 100%;
         border-collapse: collapse;
-        font-size: 14px;
+        width: 100%;
+        font-size: 0.9rem;
+        min-width: 610px;
       }
       th,
       td {
+        padding: 12px 13px;
         text-align: left;
         vertical-align: top;
-        padding: 10px 12px;
-        border-bottom: 1px solid var(--line);
+        border-bottom: 1px solid #e3e8ec;
       }
       th {
-        background: #e4ecef;
+        background: #f1f5f6;
+        font-weight: 700;
       }
-      td:first-child {
-        font-weight: 650;
+      tbody tr:last-child td {
+        border-bottom: 0;
       }
-      .scroll {
-        overflow-x: auto;
-        margin: 18px 0;
+      .table-wrap {
+        overflow: auto;
+        max-width: 100%;
+        border: 1px solid #dce3e8;
+        border-radius: 8px;
+      }
+      code {
+        background: #edf1f4;
+        padding: 2px 5px;
+        border-radius: 4px;
+        font-size: 0.85em;
+        overflow-wrap: anywhere;
       }
       details {
-        background: white;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 15px 19px;
-        margin: 14px 0;
+        margin: 18px 0;
       }
       summary {
+        font-weight: 650;
         cursor: pointer;
-        font-weight: 700;
+        padding: 10px 0;
       }
       li {
         margin: 8px 0;
       }
-      .two {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-      }
       .bars {
         display: grid;
-        gap: 12px;
-        margin: 22px 0;
-      }
-      .bar-row {
-        display: grid;
-        grid-template-columns: 190px 1fr 110px;
-        gap: 10px;
-        align-items: center;
-        font-size: 14px;
-      }
-      .track {
-        background: #e0e8eb;
-        height: 24px;
-        border-radius: 4px;
-        overflow: hidden;
+        gap: 14px;
       }
       .bar {
-        height: 100%;
-        background: #277c8a;
+        display: grid;
+        grid-template-columns: 120px 1fr 90px;
+        gap: 12px;
+        align-items: center;
       }
-      .old {
-        background: #9baab2;
+      .track {
+        background: #edf1f3;
+        border-radius: 6px;
+        overflow: hidden;
       }
-      .timeline {
-        min-width: 850px;
-      }
-      .prior {
-        min-width: 740px;
+      .fill {
+        height: 24px;
+        background: #286f62;
+        border-radius: 6px;
       }
       footer {
-        font-size: 13px;
-        color: var(--muted);
+        font-size: 0.85rem;
+        color: #4c606b;
         margin-top: 32px;
-      }
-      button {
-        font: inherit;
-        color: var(--blue);
-        background: white;
-        border: 1px solid var(--line);
-        border-radius: 5px;
-        padding: 5px 10px;
-        cursor: pointer;
-      }
-      @media (max-width: 680px) {
-        main {
-          padding: 24px 16px 50px;
-        }
-        .cards,
-        .two {
-          grid-template-columns: 1fr;
-        }
-        .metric {
-          font-size: 28px;
-        }
-        .lede {
-          font-size: 18px;
-        }
-        h2 {
-          font-size: 25px;
-        }
-        .bar-row {
-          grid-template-columns: 115px 1fr 76px;
-          font-size: 12px;
-        }
-        .scroll table {
-          min-width: 650px;
-        }
-        .callout {
-          padding: 16px;
-        }
-        .card {
-          padding: 15px;
-        }
-      }
-
-      .status {
-        font-weight: 700;
-      }
-      .num {
-        font-variant-numeric: tabular-nums;
-      }
-      .reading {
-        max-width: 85ch;
-      }
-      .scroll {
-        max-width: 100%;
-      }
-      td,
-      th {
         overflow-wrap: anywhere;
       }
-      .legend {
-        font-size: 13px;
-      }
-      .evidence {
-        background: white;
-        padding: 18px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-      }
-      @media (max-width: 680px) {
-        h1 {
-          font-size: 33px;
+      @media (max-width: 600px) {
+        main {
+          padding: 20px 14px 40px;
         }
-        .scroll table {
-          min-width: 680px;
+        section {
+          padding: 18px 15px;
         }
-      }
-      #actions table {
-        table-layout: fixed;
-      }
-      #actions th:nth-child(1) {
-        width: 17%;
-      }
-      #actions th:nth-child(2) {
-        width: 29%;
-      }
-      #actions th:nth-child(3) {
-        width: 31%;
-      }
-      #actions th:nth-child(4) {
-        width: 23%;
-      }
-      @media (max-width: 680px) {
-        #actions table {
-          min-width: 1000px;
+        .metrics {
+          grid-template-columns: 1fr;
+        }
+        .metric strong {
+          font-size: 1.8rem;
+        }
+        .bar {
+          grid-template-columns: 85px 1fr 65px;
+          font-size: 0.85rem;
+        }
+        header {
+          padding-top: 18px;
+        }
+        td,
+        th {
+          padding: 10px;
+        }
+        nav {
+          font-size: 0.9rem;
         }
       }
     </style>
@@ -294,3232 +215,1017 @@
   <body>
     <main>
       <header>
-        <div class="eyebrow">
-          Ducktape · VM/MCP lifecycle profiles · 28 October 2026
-        </div>
-        <h1>Remove unused exporter shutdown waits; preserve test isolation</h1>
+        <div class="eyebrow">Ducktape · CI latency · 28 October 2026</div>
+        <h1>Retry failures are visible; VM still owns the long path.</h1>
         <p class="lede">
-          Three focused investigations produced separate candidates: about 60
-          seconds less MCP Pod cleanup, 15 seconds less VM guest cleanup, and
-          guest-image import overlapped with service startup. These are measured
-          phases, not additive CI feedback savings.
+          The landed overlap works across 197 artifact jobs. Bazel is still last
+          on 36 of 42 green later-window PR heads. Five retry-eligible remote
+          failures under zero retries make the reliability tradeoff concrete;
+          neither temporal feedback differences nor selected lifecycle phases
+          establish a combined CI saving.
         </p>
-        <p class="small">
-          Lifecycle probes use inspected devel sources
-          <code>8a24059ba92d</code> and <code>9ab44ab64b6e</code>; each
-          experiment records its patch and publication head in
-          <a href="evidence.json">evidence.json</a>. The earlier 19-invocation
-          cost sample covers CI runs created 28 October 02:21:32–04:38:37 UTC at
-          mixed tested sources, not one post-fix cohort.
+        <p class="meta">
+          Run-creation window: 03:06–06:05 UTC, 28 October 2026. Policy merge:
+          04:35:45 UTC. Job collection: 06:06:33–06:09:15 UTC. Inspected devel
+          <code>50bd44b472e3</code>. Outcomes are a collection sweep; some runs
+          completed after the creation-window cutoff. Separate combined-source
+          validation: devel run created 06:15:14 UTC, Bazel job passed 06:23:36
+          UTC.
         </p>
-      </header>
-      <section id="vm-mcp-followup">
-        <h2>Lifecycle changes with coverage intact</h2>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Candidate</th>
-                <th>Measured phase result</th>
-                <th>Conditional CI effect</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>
-                  <a href="https://github.com/agentydragon/ducktape/pull/12496"
-                    >Pod runner + sidecar exporters</a
-                  >
-                </td>
-                <td>
-                  12 cleanups: 84.36s baseline, 82.56s runner-only, 23.72s both
-                  disabled. Same ten MCP cases.
-                </td>
-                <td>
-                  About 60s less cleanup in this experiment; required-check
-                  saving depends on whether MCP gates completion.
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <a href="https://github.com/agentydragon/ducktape/pull/12495"
-                    >VM guest exporter</a
-                  >
-                </td>
-                <td>
-                  Three cleanups: 49.75s → 34.86s. Same independent Claude,
-                  Codex and OOM cases.
-                </td>
-                <td>
-                  About 15s less cleanup; guest drain and poweroff checks
-                  retained. Whole action was slower in the candidate pair
-                  because other phases varied.
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <a href="https://github.com/agentydragon/ducktape/pull/12498"
-                    >Guest image import order</a
-                  >
-                </td>
-                <td>
-                  One same-source, same-worker pair: stack Ready 221.8s →
-                  170.3s; action 636.3s → 600.4s.
-                </td>
-                <td>
-                  Roughly 22s of Deployment readiness tail overlapped. The
-                  larger 51.5s stack difference includes 29s upstream import
-                  variation; no fleet estimate.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <h3>MCP: a negative control prevents the wrong conclusion</h3>
-        <p>
-          The fixture routes OTLP toward Alloy, but contains no collector.
-          Disabling only the runner SDK left the sidecar's parallel shutdown
-          wait: case spans stayed 299.49s → 299.87s, despite an apparently 120s
-          faster test action caused by warm image loading. Disabling both SDKs
-          reduced case spans to 241.56s and cleanup to 23.72s, while Ready sums
-          remained 145.72–149.73s. The same ten cases execute with isolated
-          Sandboxes and exact-action policies. Operator login/federation cost
-          only 1.3s in the baseline and is not a worthwhile target. Full MCP,
-          fixture render, changed-library build/lint, and unchanged
-          production-manifest checks passed before publication; trace-only
-          instrumentation was removed.
-        </p>
-        <h3>VM: remove exporter delay, retain real shutdown</h3>
-        <p>
-          In the same-source control, each guest took about 5.1s from shutdown
-          request to Runner drain and logged the exporter deadline failure. With
-          <code>OTEL_SDK_DISABLED=true</code> only in the hermetic guest, drain
-          took 0.2–0.3s; all three guests still completed clean shutdown and
-          poweroff. Remaining cleanup is mainly the KubeVirt monitor/controller
-          tail, not the fixture's readiness poll. Both full three-case runs
-          passed. Control/candidate actions were 409.7s/415.3s and stack Ready
-          94.4s/120.2s, so there is no whole-invocation speedup claim from that
-          pair.
-        </p>
-        <h3>Import order: overlap work without skipping it</h3>
-        <p>
-          Existing imports already omit stored content blobs. No complete
-          reusable unpacked snapshot was proved, so no digest-based skip was
-          implemented. The guest root is not a Deployment image: import service
-          images, apply manifests, then import the guest root while services
-          start; finish before yielding to a test. Both full VM runs passed. The
-          observed worker identifier and recycling key match, but snapshot
-          identity and initial containerd state were not captured. Root import
-          itself stayed about 65s in both arms; the reorder overlaps a portion
-          of the service-ready wait. One pair supports the candidate, not a
-          population saving.
-        </p>
-        <h3>Correct source lineage before attributing effects</h3>
-        <p>
-          The original seven-action VM/MCP aggregates remain valid historical
-          costs, but four runs came from older stacked sources lacking the
-          earlier shutdown and MCP reuse behavior. Three runs have the newer
-          signatures: ten MCP cases and 16–17s VM cleanup; four have twelve MCP
-          cases and roughly 40s cleanup. The highlighted
-          <code>d852cea9</code> MCP critical path is pre-reuse and is not
-          current post-fix cost. Source ancestry is corroborated with runtime
-          signatures; <code>c23e6191</code> uses runtime signatures because its
-          synthetic history is unavailable locally. The complete seven-row table
-          and tested SHAs are in the evidence.
-        </p>
-        <p>
-          On the three post-earlier-fix samples, MCP worker completion relative
-          to VM was −20.4s, +0.4s and −31.1s. MCP-only improvements therefore
-          had almost no direct gate headroom on those exact heads. Improving
-          both can move the parallel bottleneck, but these separate experiments
-          do not establish combined or population required-check savings.
-          Remeasure matched CI heads after adoption. Raw profiles/logs stay
-          local; seven new Bazel profiles have hashes and retrieval commands in
-          the evidence.
-        </p>
-        <p>
-          Further grouping of basic and OAuth MCP scenarios is rejected for now:
-          it would introduce a union of policies and remove independent startup
-          coverage. Ready still requires the actual controller/gateway
-          conditions, not merely Pod Running.
-          <a href="https://github.com/agentydragon/ducktape/pull/12486"
-            >The Debundle scale test is now manual</a
-          >, superseding the optimized-CLI automatic-CI recommendation for that
-          workload.
-          <a href="https://github.com/agentydragon/ducktape/pull/12492"
-            >The source-lineage check recipe is merged</a
-          >.
-        </p>
-      </section>
-      <div class="callout">
-        <strong>Measured tradeoff:</strong> eight browser shards passed the same
-        48 cases with 603 fewer process-seconds and 1,281 fewer CPU-seconds in
-        one uncached pair. The slowest action rose from 132s to 196s. Repeat
-        this compute-saving candidate before rollout; no faster-CI claim
-        follows.
-      </div>
-      <nav aria-label="Slow-test report navigation">
-        <a href="#fresh-cost">Fresh test cost</a
-        ><a href="#browser-probe">Browser experiment</a
-        ><a href="#new-profiles">Profiles</a><a href="#decisions">Decisions</a
-        ><a href="#prior-report">Prior investigation</a>
-      </nav>
-      <section id="fresh-cost">
-        <h2>Rank actual fresh work, including every shard</h2>
-        <p>
-          From the latest 60 completed push runs, all eight success/failure runs
-          were selected; 52 cancellations were excluded. Twelve systematically
-          spaced success/failure PR runs were selected from 34 eligible runs in
-          the latest 60 (16 cancelled, 10 skipped). This is a focused cost
-          sample with substantial cached work and mixed changes, not a
-          representative reliability or fleet-cost census.
-        </p>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Test target</th>
-                <th>Fresh actions</th>
-                <th>Invocations</th>
-                <th>Process s, sum</th>
-                <th>CPU s, sum</th>
-                <th>Longest action, s</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><code>//agentplane/app:test_thread_browser</code></td>
-                <td>32</td>
-                <td>2</td>
-                <td>3520.6</td>
-                <td>7155.6</td>
-                <td>133.0</td>
-              </tr>
-              <tr>
-                <td>
-                  <code>//agentplane/system_tests:test_vm_sandbox_vm</code>
-                </td>
-                <td>7</td>
-                <td>7</td>
-                <td>3313.2</td>
-                <td>6088.9</td>
-                <td>687.6</td>
-              </tr>
-              <tr>
-                <td><code>//agentplane/system_tests:test_mcp</code></td>
-                <td>7</td>
-                <td>7</td>
-                <td>3019.5</td>
-                <td>4440.9</td>
-                <td>479.9</td>
-              </tr>
-              <tr>
-                <td>
-                  <code>//agentplane/system_tests:test_agent_messaging</code>
-                </td>
-                <td>7</td>
-                <td>7</td>
-                <td>1908.0</td>
-                <td>1985.9</td>
-                <td>288.1</td>
-              </tr>
-              <tr>
-                <td><code>//agentplane/system_tests:test_dispatcher</code></td>
-                <td>7</td>
-                <td>7</td>
-                <td>1592.5</td>
-                <td>2392.7</td>
-                <td>251.1</td>
-              </tr>
-              <tr>
-                <td>
-                  <code>//agentplane/system_tests:test_thread_stream</code>
-                </td>
-                <td>7</td>
-                <td>7</td>
-                <td>1455.9</td>
-                <td>2233.7</td>
-                <td>225.8</td>
-              </tr>
-              <tr>
-                <td><code>//agentplane/system_tests:test_egress</code></td>
-                <td>7</td>
-                <td>7</td>
-                <td>1371.8</td>
-                <td>2050.5</td>
-                <td>201.7</td>
-              </tr>
-              <tr>
-                <td>
-                  <code>//agentplane/system_tests:test_suspend_resume</code>
-                </td>
-                <td>7</td>
-                <td>7</td>
-                <td>1267.4</td>
-                <td>1842.8</td>
-                <td>202.8</td>
-              </tr>
-              <tr>
-                <td>
-                  <code>//agentplane/system_tests:test_launch_presets</code>
-                </td>
-                <td>7</td>
-                <td>7</td>
-                <td>1015.3</td>
-                <td>1755.9</td>
-                <td>229.1</td>
-              </tr>
-              <tr>
-                <td>
-                  <code
-                    >//agentplane/system_tests:test_session_instructions</code
-                  >
-                </td>
-                <td>7</td>
-                <td>7</td>
-                <td>936.9</td>
-                <td>1391.4</td>
-                <td>141.4</td>
-              </tr>
-              <tr>
-                <td><code>//agentplane/system_tests:test_storage</code></td>
-                <td>7</td>
-                <td>7</td>
-                <td>912.2</td>
-                <td>1467.1</td>
-                <td>146.4</td>
-              </tr>
-              <tr>
-                <td><code>//agentplane/app:test_bridge</code></td>
-                <td>4</td>
-                <td>2</td>
-                <td>617.5</td>
-                <td>760.2</td>
-                <td>159.1</td>
-              </tr>
-              <tr>
-                <td><code>//agentplane/system_tests:test_dcr</code></td>
-                <td>7</td>
-                <td>7</td>
-                <td>602.9</td>
-                <td>1215.9</td>
-                <td>90.6</td>
-              </tr>
-              <tr>
-                <td>
-                  <code>//agentplane/app:test_thread_window_browser</code>
-                </td>
-                <td>2</td>
-                <td>2</td>
-                <td>371.8</td>
-                <td>736.7</td>
-                <td>212.6</td>
-              </tr>
-              <tr>
-                <td>
-                  <code
-                    >//agentplane/notification_service/store:store_integration_test</code
-                  >
-                </td>
-                <td>5</td>
-                <td>5</td>
-                <td>269.4</td>
-                <td>784.0</td>
-                <td>62.0</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p>
-          Only originating <code>TestRunner</code> executions are counted;
-          linked work reused from another invocation is excluded. A shard is an
-          action; some rules also emit XML-generation helpers with the same
-          TestRunner mnemonic. These small helper costs are included in this
-          ranking; the Debundle body comparison below isolates
-          test.exited_prematurely actions. Aggregate process seconds measure
-          parallel worker occupancy, not elapsed feedback time; CPU seconds are
-          another resource. Cached target summaries may retain old durations.
-          The complete ranking and selected run/source identities are in
-          <a href="evidence.json">evidence.json</a>.
-        </p>
-      </section>
-      <section id="browser-probe">
-        <h2>Browser setup is the first bounded improvement</h2>
-        <p>
-          The current 16-shard suite executes 48 cases, three per process.
-          Session fixtures start PostgreSQL, Kubernetes/API support and browser
-          infrastructure; each test still gets its own Electric/app state. A
-          temporary standard-library cProfile probe over four real cases passed.
-          Pytest measured 61.67s setup for the first case versus 7.71–8.95s for
-          subsequent cases; calls took 2.37–16.26s and teardown 0.72–7.20s. This
-          motivates fewer processes without sharing per-test mutable state.
-        </p>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Arm</th>
-                <th>Cases</th>
-                <th>Process seconds, sum</th>
-                <th>CPU seconds, sum</th>
-                <th>Slowest action, s</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>
-                  <a
-                    href="https://app.buildbuddy.io/invocation/fdc386bf-4ba9-433a-adb6-a614bc40f5ce"
-                    >16 shards</a
-                  >
-                </td>
-                <td>48</td>
-                <td>1795.4</td>
-                <td>3624.7</td>
-                <td>132.0</td>
-              </tr>
-              <tr>
-                <td>
-                  <a
-                    href="https://app.buildbuddy.io/invocation/5455665f-faf9-45ea-84b7-6c1cd89effba"
-                    >8 shards</a
-                  >
-                </td>
-                <td>48</td>
-                <td>1192.3</td>
-                <td>2343.9</td>
-                <td>196.1</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p>
-          Both arms executed the identical 48 case IDs exactly once. One
-          uncached pair at the same source; only shard count changed.
-          Worker/snapshot state is not matched, so these are observed costs, not
-          a population treatment estimate. Eight shards increase the longest
-          action while avoiding eight session setups. Keep case isolation,
-          browser health checks and all captures. No CI feedback saving follows
-          when VM/MCP remains the longer parallel path.
-        </p>
-        <p>
-          Raw <code>browser.pstats</code>, the CI and experiment Bazel profiles,
-          invocation metadata, XML and logs are retained locally under
-          <code>/tmp/slow-tests-2026-10-28</code>. The public evidence records
-          profile SHA256/size and BuildBuddy retrieval commands; raw logs,
-          profiles, credentials and worker identities are not copied into this
-          branch. The profiler's cumulative coroutine entries overlap and must
-          not be summed as a timeline.
-        </p>
-      </section>
-      <section id="new-profiles">
-        <h2>Three real CI critical paths</h2>
-        <ul>
-          <li>
-            <a
-              href="https://app.buildbuddy.io/invocation/c23e6191-07bd-55e8-a0e8-b01fb197b238"
-              ><code>c23e6191</code></a
-            >: VM: 406.37s action on 439.03s path.
-          </li>
-          <li>
-            <a
-              href="https://app.buildbuddy.io/invocation/d852cea9-cd7d-5cee-9869-8f0f97e8f573"
-              ><code>d852cea9</code></a
-            >: MCP: 481.57s action on 517.63s path.
-          </li>
-          <li>
-            <a
-              href="https://app.buildbuddy.io/invocation/f1d59ab2-db51-5744-ac47-f28f28dadd9c"
-              ><code>f1d59ab2</code></a
-            >: Debundle scale: 79.26s test plus 25.17s Rust compilation on
-            105.57s path.
-          </li>
-        </ul>
-        <p>
-          The first two paths are dominated by remote process execution; their
-          reported queue fractions are 0.03% and 0.11%. The browser's roughly
-          two-minute shards are parallel work beneath those paths. The Debundle
-          scale workload is a separate tooling-PR path: it deliberately
-          constructs 4,096 value alternatives, 768 properties and 512 repeated
-          writes to exercise value sharing. Reducing those dimensions without a
-          demonstrated regression threshold could remove the scale guarantee. A
-          fresh same-source probe passed the unchanged output oracle in 74.0s
-          under fastbuild and 18.7s under opt. Bazel elapsed was 88.893s versus
-          52.511s; switching modes discarded analysis cache and opt needed six
-          fresh remote actions versus two. This one unmatched pair supports
-          investigating an optimized CLI target for these scale tests, while
-          retaining N; it does not establish fleet or cold-build savings.
-        </p>
-      </section>
-      <section id="decisions">
-        <h2>Concrete decisions and continuity</h2>
-        <ol>
-          <li>
-            <strong
-              >Evaluate eight browser shards as a compute tradeoff.</strong
+        <div class="metrics">
+          <div class="metric">
+            <strong>5 / 58</strong
+            ><span
+              >Remote errors among verified zero-retry conclusive attempts</span
             >
-            Preserve all 48 cases, per-test databases and services, and
-            screenshots. Use the pair above to choose a repeated warm/cold
-            comparison before applying a fleet-wide change. This investigation
-            makes no production shard change.
-          </li>
-          <li>
-            <strong
-              >Keep VM/MCP serial lifecycle work as the feedback
-              priority.</strong
-            >
-            Earlier scenario reuse
-            <a href="https://github.com/agentydragon/ducktape/pull/12380"
-              >#12380</a
-            >
-            is merged; remove it from the new implementation queue. The prior
-            roughly 44s BFF XML benefit remains a bounded historical
-            measurement. No blanket system-test sharding is recommended: the
-            prior experiment increased worker/CPU cost.
-          </li>
-          <li>
-            <strong>Debundle scale test moved to explicit runs.</strong>
-            <a href="https://github.com/agentydragon/ducktape/pull/12486"
-              >#12486</a
-            >
-            is merged. Full dimensions and Node oracle remain unchanged; the
-            prior optimized-mode pair is historical, and no optimized-CLI change
-            is queued for automatic CI.
-          </li>
-          <li>
-            <strong
-              >Retain the Trinity reduction as a manual-workload result.</strong
-            >
-            <a href="https://github.com/agentydragon/ducktape/pull/12455"
-              >#12455</a
-            >
-            reduces 75 full-population calls to 30, preserving 474 historical
-            windows and moving structural checks to small synthetic cases. Its
-            explicit manual run passed; it does not shorten default CI because
-            that target is excluded.
-          </li>
-        </ol>
-        <p>
-          The prior broad cohorts, queue/capacity limitations, artifact-phase
-          overlap, guest teardown, VM/MCP profiles, rejected experiments and all
-          open follow-ups remain in the complete snapshot below with their
-          original windows. Capacity and cancellation are explicitly deferred
-          from this test-cost investigation. Their historical recommendations
-          are not fresh findings or authorization to alter workflow policy.
-        </p>
-      </section>
-      <details id="prior-report">
-        <summary>
-          Complete prior report — snapshot including retry mitigation, published
-          04:41 UTC; superseded recommendations labelled above
-        </summary>
-        <header>
-          <div class="eyebrow">
-            Ducktape · latency refresh · focused remote-retry mitigation
-            follow-up through 28 October
           </div>
-          <h2>
-            Zero retries suppressed one requeue;<br />later work still ran
-          </h2>
-          <p class="lede">
-            A controlled plain-action comparison found no replacement during
-            65.271s with remote retries disabled; its default-retry control
-            requeued the same action and completed it. A separate RPC trace
-            captured terminal <code>CANCELLED</code> followed by a fresh
-            same-action <code>Execute</code> 105ms later. The zero-retry barrier
-            case still ran a newly enabled action after cancellation. This
-            supports the temporary CI policy in
-            <a href="https://github.com/agentydragon/ducktape/pull/12468"
-              >PR #12468</a
-            >, but does not make cancellation a fence or establish a CI/fleet
-            benefit. Earlier queue and feedback cohorts retain their original
-            windows.
-          </p>
-          <p class="small">
-            The 24 October 04:00 → 27 October 06:00 UTC historical feedback
-            cohort and 27 October burst windows are unchanged. The separate MCP
-            scenario measurement completed at 02:00:23.832 UTC. Cancellation
-            probes ran on 28 October; the evidence is linked below and is not a
-            new population census. The policy was validated for PR #12468 at
-            head
-            <code>88fb88609842</code>; the landed policy was inspected in devel
-            <a
-              href="https://github.com/agentydragon/ducktape/commit/53c5ec8bde044fc0ca3b9959cf56f2b73baba641"
-              >53c5ec8bde04</a
-            >. PR #12468 merged at 04:35:45Z with all three required contexts
-            passing. No post-merge cancellation or reliability effect is
-            measured.
-          </p>
-        </header>
-        <div class="cards">
-          <div class="card">
-            Plain action, retries disabled<span class="metric">65.271s</span>no
-            indexed same-action replacement observed after cancellation; one
-            controlled run.
+          <div class="metric">
+            <strong>25s</strong
+            ><span
+              >Median policy/build overlap; 197 successful artifact jobs</span
+            >
           </div>
-          <div class="card">
-            Canceled action RPC to fresh Execute<span class="metric">105ms</span
-            >same digest in the child-only control; replacement passed.
-          </div>
-          <div class="card">
-            New action after cancellation<span class="metric">30.057s</span
-            >barrier control completed distinct work with retries disabled.
+          <div class="metric">
+            <strong>36 / 42</strong
+            ><span
+              >Green later-window PR heads whose last required check was
+              Bazel</span
+            >
           </div>
         </div>
-        <div class="callout">
-          <strong>Current action:</strong> measure the landed policy in
-          <a href="https://github.com/agentydragon/ducktape/pull/12468"
-            >PR #12468</a
-          >, which sets <code>build:ci --remote_retries=0</code> as a temporary
-          CI mitigation. It can suppress the same-action retry path exercised by
-          the plain-action probe. It also disables Bazel remote retries for
-          other transient failures in CI, and the analysis-barrier probe shows
-          that later distinct work can still run. Measure both outcomes after
-          the policy is in use; no feedback or compute saving is currently
-          measured.
-        </div>
-        <nav aria-label="Report navigation">
-          <a href="#remote-retries">Remote retry mitigation</a>
-          <a href="#landed">Landed follow-up</a
-          ><a href="#mcp-reuse">MCP reuse</a><a href="#burst">27 Oct burst</a
-          ><a href="#feedback">PR feedback</a
-          ><a href="#changes">Since the last report</a
-          ><a href="#profiles">Fresh profiles</a
-          ><a href="#vm-mcp">VM/MCP follow-up</a
-          ><a href="#experiments">Experiments</a
-          ><a href="#actions">Next tracks &amp; gains</a
-          ><a href="#capacity">Queues &amp; cost</a
-          ><a href="#continuity">Prior-work inventory</a
-          ><a href="#method">Methods</a>
+        <nav aria-label="Report sections">
+          <a href="#policy">Retry policy</a><a href="#burst">Check clocks</a
+          ><a href="#vm-mcp">Critical paths</a><a href="#actions">Decisions</a
+          ><a href="#methods">Methods</a><a href="#continuity">Prior work</a>
         </nav>
-        <section id="remote-retries">
-          <h2>
-            Temporary CI retry mitigation: one path narrowed, cancellation
-            remains open
-          </h2>
-          <p>
-            The focused experiments support setting
-            <code>build:ci --remote_retries=0</code> in
-            <a href="https://github.com/agentydragon/ducktape/pull/12468"
-              >PR #12468</a
-            >. Its head is
-            <a
-              href="https://github.com/agentydragon/ducktape/commit/88fb88609842d9c7f6d4333190d1233f0fd5302a"
-              ><code>88fb88609842</code></a
-            >; the source reviewed for this report is devel
-            <a
-              href="https://github.com/agentydragon/ducktape/commit/53c5ec8bde044fc0ca3b9959cf56f2b73baba641"
-              ><code>53c5ec8bde04</code></a
-            >. The PR merged at 04:35:45Z with all three required contexts
-            passing. Its validation CI child BES recorded
-            <code>remote_retries=0</code> in
-            <a
-              href="https://app.buildbuddy.io/invocation/36fc25cf-4c8f-5e5b-a951-9d197d61e4f8"
-              >invocation 36fc25cf</a
-            >. This confirms the config reaches a PR CI invocation; it does not
-            measure cancellation behavior, CI failures, compute use, or feedback
-            latency after adoption.
-          </p>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Probe</th>
-                  <th scope="col">Observed result</th>
-                  <th scope="col">What it establishes</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>
-                    Plain action, retries <code>0</code>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/dca0ce25-0e5f-41af-a168-c4c58ff47c30"
-                      >outer invocation</a
-                    >
-                  </td>
-                  <td>
-                    No indexed replacement for 65.271s after cancellation; child
-                    BES recorded <code>remote_retries=0</code>. 104 valid
-                    snapshots retained the original canceled execution.
-                  </td>
-                  <td>
-                    One tested case without a same-action replacement in the
-                    observation window. Synthetic cancellation metadata does not
-                    prove the original worker physically stopped.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    Plain action, default retries
-                    <a
-                      href="https://app.buildbuddy.io/invocation/ccb7b465-4e14-4348-b52c-c7f9f429b7ad"
-                      >outer invocation</a
-                    >
-                  </td>
-                  <td>
-                    The same action digest was queued about 8.159s after
-                    cancellation checks, then ran 30.033s and returned the
-                    expected output.
-                  </td>
-                  <td>
-                    A default-retry control for the plain case. One pair does
-                    not estimate retry frequency or CI savings.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    Analysis barrier, retries <code>0</code>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/8db50d25-6e6b-405b-8f31-4d7f43263012"
-                      >outer invocation</a
-                    >
-                  </td>
-                  <td>
-                    After cancellation checks, the controller released the
-                    barrier marker. A different newly enabled action then ran
-                    for 30.057s and produced its expected output.
-                  </td>
-                  <td>
-                    Disabling Bazel retries does not prevent later distinct
-                    submissions from an invocation that remains active.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    Child-only RPC trace
-                    <a
-                      href="https://app.buildbuddy.io/invocation/5c2bf3a3-8200-42a9-9c3c-99b2b6cdfe76"
-                      >outer invocation</a
-                    >
-                  </td>
-                  <td>
-                    Terminal action status was <code>CANCELLED</code> inside an
-                    RPC with transport status <code>OK</code>. A fresh
-                    same-digest <code>Execute</code> began 105ms after the first
-                    RPC closed and completed successfully.
-                  </td>
-                  <td>
-                    Directly confirms this retry mechanism in the child-only
-                    control. It did not capture the normal outer cancellation
-                    sequence or the historical CI incident.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p>
-            The source setting applies to remote retry handling for builds using
-            the CI config; it is not limited to <code>CANCELLED</code>. Its
-            operational cost is weaker recovery from unrelated transient remote
-            errors. Keep the change temporary and evaluate actual CI child BES
-            options, same-digest replacement executions after cancellation, and
-            non-cancellation remote failures once the policy is in use. The
-            focused probe comparison measures neither those rates nor end-to-end
-            PR feedback. Do not treat a terminal cancellation response or a
-            successful cancel RPC as proof that all worker activity stopped.
-          </p>
-          <p class="small">
-            Full experimental conditions and selected evidence:
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/53c5ec8bde044fc0ca3b9959cf56f2b73baba641/devinfra/debug/ci_remote_cancellation/retry_comparison.md"
-              >retry comparison</a
-            >,
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/53c5ec8bde044fc0ca3b9959cf56f2b73baba641/devinfra/debug/ci_remote_cancellation/normal_path_reproduction.md"
-              >normal-path reproduction</a
-            >, and
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/53c5ec8bde044fc0ca3b9959cf56f2b73baba641/devinfra/debug/ci_remote_cancellation/rpc_retry_trace.md"
-              >RPC trace</a
-            >. These focused experiments are not a fleet sample.
-          </p>
-        </section>
-        <section id="landed">
-          <h2>Landed changes and focused results through 28 October</h2>
-          <p>
-            This follow-up reviews devel
-            <a
-              href="https://github.com/agentydragon/ducktape/commit/bf8043f425ea1b2593cbfa914e1ef16388e7a3da"
-              >bf8043f425ea</a
-            >
-            and selected runs only. It does not refresh the historical queue,
-            PR-head or runner-occupancy populations. The older VM/MCP profiles
-            remain below with their 27 October window.
-          </p>
-          <p>
-            Current branch rules were re-read at this source: the same three
-            required contexts remain, with zero required approvals and no strict
-            up-to-date, code-owner, last-push or thread-resolution requirement.
-            Extra approval for unattributed changes still applies. This policy
-            read does not update the earlier full-readiness sample.
-          </p>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Change / evidence</th>
-                  <th scope="col">Observed result</th>
-                  <th scope="col">Boundary</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12308"
-                      >VM phase timing · #12308</a
-                    ><br /><a
-                      href="https://github.com/agentydragon/ducktape/commit/9291858f047beac448a1dad1432c539cefb16c95"
-                      ><code>9291858f047b</code></a
-                    >
-                  </td>
-                  <td>
-                    Merged before this follow-up; the earlier recommendation to
-                    add phase timing is complete.
-                  </td>
-                  <td>
-                    Instrumentation does not by itself establish a VM or
-                    feedback speedup.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12333"
-                      >Guest ACPI and PVC-virtiofs native-sidecar ordering ·
-                      #12333</a
-                    ><br /><a
-                      href="https://github.com/agentydragon/ducktape/commit/fdcd5e21a095524c629bf39c869cc1301035ae57"
-                      ><code>fdcd5e21a095</code></a
-                    >
-                  </td>
-                  <td>
-                    PR CI passed three VM cases; all three recorded guest
-                    shutdown completion, kernel poweroff and a KubeVirt domain
-                    stopped for shutdown, with zero grace expiry or forced
-                    destruction. Manual storage and suspend/resume cases passed
-                    on exact head
-                    <code>ca59df930895</code>; five guest incarnations shut down
-                    cleanly.
-                  </td>
-                  <td>
-                    One CI invocation plus two manual cases. The total eight
-                    guest incarnations are focused acceptance evidence, not a
-                    fleet reliability rate.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12358"
-                      >Parallel policy/build group · #12358</a
-                    ><br /><a
-                      href="https://github.com/agentydragon/ducktape/commit/bf8043f425ea1b2593cbfa914e1ef16388e7a3da"
-                      ><code>bf8043f425ea</code></a
-                    >
-                  </td>
-                  <td>
-                    On workflow run
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40612528573"
-                      >40612528573</a
-                    >, both parallel steps started at 01:02:18Z; the build ended
-                    at 01:02:40Z while policy ended at 01:02:48Z. The following
-                    fetch ran 01:02:48–01:02:52Z and Nix import passed
-                    01:03:01–01:03:22Z.
-                  </td>
-                  <td>
-                    About 22s overlap at 1s timestamp resolution. This confirms
-                    the landed ordering on one job; there is no matched job or
-                    PR feedback speedup claim. Implementation is complete; the
-                    prior 28s / 31s estimate is historical, not a measured
-                    saving.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40612528573/job/122567262410"
-                      >Exact artifact job</a
-                    >
-                  </td>
-                  <td>
-                    PR head <code>92c65660efb9</code>; policy and build
-                    completed before fetch and import, with the import check
-                    passing.
-                  </td>
-                  <td>One run; no population estimate or causal comparison.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <h3>VM lifecycle probe details</h3>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Probe</th>
-                  <th scope="col">Delete-accepted to absent / scenario time</th>
-                  <th scope="col">Shutdown evidence</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/c7d1affd-a5eb-44f0-b09b-bf63ae1dcae4"
-                      >Earlier baseline</a
-                    >
-                  </td>
-                  <td>40.463s; grace 30.037s; domain stop to absent 9.343s</td>
-                  <td>Forced destruction recorded.</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/034a8932-15f0-4fac-9428-5ace91f8632a"
-                      >Focused smoke</a
-                    >
-                  </td>
-                  <td>15.240s</td>
-                  <td>
-                    Guest and KubeVirt shutdown completed cleanly. This
-                    candidate smoke ran before merge with temporary observation
-                    code. Differing probe context prevents treating the delta as
-                    a controlled treatment effect.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/bcb6aef4-e2b6-5e98-a3fb-82fde9dd63be"
-                      >PR #12333 CI</a
-                    >
-                    · head <code>ca59df930895</code>
-                  </td>
-                  <td>
-                    PR head <code>ca59df930895</code>, tested merge candidate
-                    <code>d7463aaaea34</code>; three VM case tails: 15.220560s,
-                    15.463325s and 15.895159s
-                  </td>
-                  <td>
-                    Three guest shutdowns completed; all reported
-                    shutdown-complete, poweroff and domain-shutdown, with zero
-                    grace expiry and forced destruction. The MCP action ended
-                    19.616014s after the VM action in this same invocation.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/1e778d8e-9ef3-4cf0-becc-77b60e486bf1"
-                      >Manual exact-head checks</a
-                    >
-                  </td>
-                  <td>
-                    Storage case passed in 389s; suspend/resume case passed in
-                    415s
-                  </td>
-                  <td>
-                    Five guest incarnations shut down cleanly; all five
-                    completed and drained with poweroff and zero grace expiry or
-                    forced destruction. Together with CI, the eight guest proofs
-                    show clean completion and zero forced destruction.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="small">
-            Across the eight guest proof records, shutdown was complete and
-            drained with poweroff, with zero grace expiry or forced destruction.
-            The MCP-versus-VM end clocks are 00:48:27.071095730Z and
-            00:48:07.455081480Z in one CI invocation. The 19.616014s gap is
-            conditional headroom for that action ordering only; a source change
-            may alter postprocessing or another required gate. It is not a
-            population rate or forecast. Raw proof files, worker IDs and private
-            paths are not published.
-          </p>
-        </section>
-        <section id="mcp-reuse">
-          <h2>
-            MCP scenario reuse: historical four-run benchmark through 02:00:23
-            UTC
-          </h2>
-          <p>
-            This focused benchmark followed the landed-results window above; it
-            is not a new CI population census. The benchmark base was pinned to
-            devel
-            <a
-              href="https://github.com/agentydragon/ducktape/commit/bf8043f425ea1b2593cbfa914e1ef16388e7a3da"
-              >bf8043f425ea</a
-            >; the baseline runs used that source, and the reuse runs added the
-            measured test patch. Remote fetch and reverse-patch provenance are
-            in evidence. The test change merged to devel at 2026-10-28T02:14:31Z
-            in
-            <a
-              href="https://github.com/agentydragon/ducktape/commit/992061945204a40b22de67c3f3ac953c2e52a3ec"
-              >commit 992061945204</a
-            >. The source PR commit also adds README documentation; benchmark
-            execution used the pinned devel tree plus the measured test patch,
-            not that later commit as its exact source. These four-run
-            measurements remain historical, and post-landing fleet-effect
-            validation is open.
-          </p>
-          <p>
-            A1/A2 are the 12-item baseline: separate fresh allow and deny
-            Sandbox/session cases per harness. B1/B2 are the 10-item variant:
-            one fresh Sandbox/session per harness, with DENY then ALLOW using
-            distinct Action requests, markers and idempotency keys. The AST
-            comparison retained 45 assertion expressions and five explicit
-            failure-call expressions across the DENY/ALLOW branches; both
-            verdict branches ran for each harness. Fresh-session denial remains
-            for both harnesses and policy auto-allow scenarios remain; the
-            standalone fresh-session manual ALLOW case now runs after DENY in
-            the same session. The change removes two Sandbox/session lifecycles
-            and two function-scoped
-            <code>operator_bff</code> OIDC logins; no delays, timeouts or
-            readiness behavior changed.
-          </p>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Run / variant</th>
-                  <th scope="col">Result / invocation</th>
-                  <th scope="col">Process (s)</th>
-                  <th scope="col">BFF decision cases (XML s)</th>
-                  <th scope="col">Stack Ready (s)</th>
-                  <th scope="col">CPU (s)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>A1 · baseline</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/bc16846c-9594-4dd1-b100-6b502f743447"
-                      >12/12 passed</a
-                    >
-                  </td>
-                  <td>449.310</td>
-                  <td>4 · 95.592</td>
-                  <td>71.4</td>
-                  <td>599.895</td>
-                </tr>
-                <tr>
-                  <td>B1 · reuse</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/a6e095cf-6de9-494b-ad58-de9616576ace"
-                      >10/10 passed</a
-                    >
-                  </td>
-                  <td>410.564</td>
-                  <td>2 · 50.277</td>
-                  <td>77.5</td>
-                  <td>575.165</td>
-                </tr>
-                <tr>
-                  <td>B2 · reuse</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/2d0ebc0a-7152-425a-9092-7cab47f39d80"
-                      >10/10 passed</a
-                    >
-                  </td>
-                  <td>583.572</td>
-                  <td>2 · 51.237</td>
-                  <td>233.3</td>
-                  <td>1,138.878</td>
-                </tr>
-                <tr>
-                  <td>A2 · baseline</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/db9da93f-e0b4-40b7-8877-1f0f62c39cb3"
-                      >12/12 passed</a
-                    >
-                  </td>
-                  <td>486.278</td>
-                  <td>4 · 93.514</td>
-                  <td>81.4</td>
-                  <td>743.528</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p>
-            Baseline BFF decision-case XML means 94.553s (A1 95.592s; A2
-            93.514s) versus 50.757s for reuse (B1 50.277s; B2 51.237s), a mean
-            difference of 43.796s, about 44s shorter in these two runs per
-            variant. Action digests match within A and within B. A1/B1 shared a
-            restored parent lineage and Firecracker snapshot-configuration hash;
-            that parent state was created on 2026-10-27 at 22:39:37.9235Z. B2
-            started a fresh VM at 01:40:07.652862Z with no prior task. A2 ran on
-            the same worker/platform and Firecracker snapshot-configuration hash
-            as B2, but restored a different pre-existing snapshot with a prior
-            task and saved snapshot version 1. A2's recorded prior snapshot task
-            was not B2. The Firecracker snapshot-configuration hash differs
-            between the A1/B1 pair and B2/A2 pair; this is runtime snapshot
-            metadata, not a change to test flags. Thus full process time
-            includes unequal startup state and is not a clean treatment
-            comparison. These runs do not establish in-memory reuse,
-            whole-action/CI improvement, or a fleet effect.
-          </p>
-          <p class="small">
-            BFF XML is a fixture-scoped subset, Stack Ready comes from the
-            existing fixture timeline, and process time uses the test action's
-            execution-start and execution-end clock. These clocks are not exact
-            additive partitions.
-          </p>
-          <p class="small">
-            The four process windows ran from 01:22:11.968Z through
-            02:00:22.378Z; the client reported terminal completion at
-            02:00:23.832Z.
-            <code>--nocache_test_results</code> was used for each run. Full
-            clocks, lineage classification and run metrics are in the evidence
-            object.
-          </p>
-        </section>
-        <section id="burst">
-          <h2>27 October burst: required jobs waited for shared runners</h2>
-          <p>
-            In the fixed <strong>19:00–20:30 UTC</strong> window, completed jobs
-            from this repository occupied
-            <strong
-              >20 GitHub-hosted <code>ubuntu-latest</code> runners for
-              60m53s</strong
-            >
-            in total. All 600 assigned jobs overlapping the window had that
-            runner label and the GitHub Actions runner group. This is a
-            repository-visible occupancy peak, not proof of the account plan or
-            total account-wide use. The 17:00–20:30 all-workflow census includes
-            a two-hour lookback; occupancy remains a lower bound if earlier or
-            unfinished jobs overlapped.
-          </p>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Required job / assigned attempts</th>
-                  <th scope="col">Other 22.5h queue p50 / p90</th>
-                  <th scope="col">Busy 90m queue p50 / p90</th>
-                  <th scope="col">Busy runtime p50 / p90</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>PR Bazel · 87 / 86</td>
-                  <td>2s / 32s</td>
-                  <td>130s / 293s</td>
-                  <td>322s / 915s</td>
-                </tr>
-                <tr>
-                  <td>PR artifacts · 85 / 87</td>
-                  <td>2s / 3s</td>
-                  <td>132s / 366s</td>
-                  <td>138s / 188s</td>
-                </tr>
-                <tr>
-                  <td>PR pre-commit · 157 / 108</td>
-                  <td>2s / 12s</td>
-                  <td>115s / 267s</td>
-                  <td>66s / 77s</td>
-                </tr>
-                <tr>
-                  <td>Trusted-fork Bazel · 71 / 17</td>
-                  <td>2s / 5s</td>
-                  <td>124s / 675s</td>
-                  <td>368s / 1333s</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="small">
-            The full core-job census covers [26 October 20:30, 27 October 20:30)
-            UTC: 1,447 CI, artifact, pre-commit and trusted-fork workflow runs,
-            4,182 job-attempt records. Only completed attempts with a positive
-            runner ID and valid created → started → completed order enter
-            duration percentiles. The 90-minute cohort is inside the 24-hour
-            census; the comparison column excludes it. Queue begins at
-            <em>job creation</em>, which can follow workflow creation, and is
-            not push-to-green time. Cancelled and failed assigned jobs are
-            included; skipped and unassigned attempts are excluded from duration
-            percentiles and retained in
-            <a href="evidence.json">the evidence</a>.
-          </p>
-          <h3>What occupied the observed runners</h3>
-          <p>
-            Completed positive-runner intervals yield 1,703 occupied
-            runner-minutes clipped to the busy window. PR Bazel uses 546,
-            trusted-fork jobs 214, PR artifacts 200, devel release/push-images
-            jobs 167, and PR pre-commit 115. Visual announce and publish
-            together use
-            <strong>93 runner-minutes, 5.4% of measured occupancy</strong>. A
-            visual job is present for 2,252 of the 3,653 seconds at the observed
-            peak of 20, but its presence does not establish that it delayed a
-            particular required job. Visual <code>publish</code> jobs themselves
-            have a 2,589s / 3,286s queue p50/p90 (n=99 assigned): they are also
-            waiting through this burst.
-          </p>
-          <p>
-            For the 86 assigned PR Bazel attempts created in the busy window,
-            the synchronous
-            <code>Test + Build + lint</code> GitHub step consumes
-            <strong>34,008 of 35,617 occupied runner-seconds (95.5%)</strong>.
-            That step calls BuildBuddy remote execution; its duration includes
-            remote allocation, Bazel analysis, test/build actions and return.
-            The data do not split those phases or identify BuildBuddy worker
-            saturation. Shortening a real remote critical path would free GitHub
-            runner time as well as improve that PR's gate; making the call
-            asynchronous would require a trustworthy terminal check and
-            publication handoff. Existing PR concurrency already cancels
-            superseded heads, whereas devel publication deliberately preserves
-            in-flight pushes. The 86 Bazel attempts represent 84 run IDs / 84
-            workflow-reported head SHAs across 45 head branches, with 24
-            assigned cancellations, so a simple cancellation switch is not a
-            supported remedy.
-          </p>
-          <h3>Four exact-head examples</h3>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">PR, PR head</th>
-                  <th scope="col">Bazel queue → finish</th>
-                  <th scope="col">Artifact queue → finish</th>
-                  <th scope="col">Last required job</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12244"
-                      >#12244</a
-                    >
-                    · <code>c1c5d90e</code>
-                  </td>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40570304333/job/122422418201"
-                      >293s → 19:41:06</a
-                    >
-                  </td>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40570304342/job/122422418765"
-                      >61s → 19:37:29</a
-                    >
-                  </td>
-                  <td>Bazel</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12248"
-                      >#12248</a
-                    >
-                    · <code>829eb998</code>
-                  </td>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40570475031/job/122422995092"
-                      >31s → 19:48:54</a
-                    >
-                  </td>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40570474854/job/122422997886"
-                      >343s → 19:43:14</a
-                    >
-                  </td>
-                  <td>Bazel</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12254"
-                      >#12254</a
-                    >
-                    · <code>550e794b</code>
-                  </td>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40570852262/job/122424319197"
-                      >93s → 19:40:49</a
-                    >
-                  </td>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40570851954/job/122424320346"
-                      >193s → 19:43:19</a
-                    >
-                  </td>
-                  <td>Artifacts</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12270"
-                      >#12270</a
-                    >
-                    · <code>50526a19</code>
-                  </td>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40575392392/job/122440334822"
-                      >70s → 20:14:03</a
-                    >
-                  </td>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40575392215/job/122440945270"
-                      >403s → 20:18:37</a
-                    >
-                  </td>
-                  <td>Artifacts</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="small">
-            Times are UTC; each cell links the exact job attempt. For #12270,
-            the artifact job was created at 20:09:53, assigned at 20:16:36, and
-            finished at 20:18:37. A queued API snapshot had exposed a misleading
-            earlier
-            <code>started_at</code>; the completed job's
-            <code>Set up job</code> step confirms actual assignment. The
-            artifact wait overlaps 20 occupied repository-visible jobs for 338
-            of its 403 seconds, while a visual job is present for only 154
-            seconds. These are job clocks, not complete auto-merge or
-            agent-receipt clocks.
-          </p>
-          <p>
-            <strong>Disposition:</strong> the independent artifact-phase overlap
-            landed in PR
-            <a href="https://github.com/agentydragon/ducktape/pull/12358"
-              >#12358</a
-            >; its single observed job overlaps policy and build for about 22s
-            at one-second resolution, with no matched savings claim. The
-            19:00–20:30 burst still supports only a conditional capacity
-            investigation if similar peaks recur. The newer MCP action ordering
-            that motivates the next matched scenario-reuse measurement is
-            recorded in the focused results above.
-          </p>
-        </section>
-        <section id="feedback">
-          <h2>Historical PR feedback cohort: 24–27 October</h2>
-          <p>
-            100 systematically spaced PR numbers from 374 devel-base PRs updated
-            in the 24 October 04:00 → 27 October 06:00 UTC window. Each
-            observation uses one exact latest head and all check attempts.
-            <strong>This is a survivor sample, not a reliability rate.</strong>
-            Superseded heads remain in the Actions/job census. Start is earliest
-            matching workflow creation; stop is first reconstructed all-success
-            state of the three required contexts.
-          </p>
-          <div class="scroll">
+      </header>
+      <section id="policy">
+        <h2>Zero retries has an observed recovery tradeoff</h2>
+        <p>
+          <strong
+            >Five remote-execution failures occurred among 58 verified
+            zero-retry attempts (8.6%).</strong
+          >
+          Three were Firecracker VM pause socket refusals; one was an executor
+          OOM; one was transport EOF with a server-shutdown GOAWAY. All five
+          surfaced as remote <code>UNAVAILABLE</code>. Four later workflow
+          attempts succeeded on the identical tested source, still using zero
+          retries; the OOM rerun was canceled.
+        </p>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Scrollable evidence table"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Effective policy</th>
+                <th scope="col">Conclusive attempts</th>
+                <th scope="col">Successful attempts</th>
+                <th scope="col">Failed attempts</th>
+                <th scope="col">Interpretation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>0</td>
+                <td>58</td>
+                <td>47</td>
+                <td>11</td>
+                <td>5 remote UNAVAILABLE;6 test/build failures</td>
+              </tr>
+              <tr>
+                <td>Bazel default 5</td>
+                <td>5</td>
+                <td>4</td>
+                <td>1</td>
+                <td>Old tested sources; one schema/test failure</td>
+              </tr>
+              <tr>
+                <td>Unknown</td>
+                <td>6</td>
+                <td>6</td>
+                <td>0</td>
+                <td>
+                  No indexed test child; job success alone does not prove test
+                  execution
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          This is an observed failure cost alongside the intended cancellation
+          mitigation. It does <strong>not</strong> prove five avoidable failures
+          or that default retries would have recovered them automatically.
+          <a
+            href="https://github.com/bazelbuild/bazel/blob/9.2.0/src/main/java/com/google/devtools/build/lib/remote/RemoteRetrier.java#L48-L79"
+            >Pinned Bazel 9.2 retry classifier</a
+          >
+          treats UNAVAILABLE as transient; zero removes that opportunity. The
+          five default-policy attempts are not a matched control. No production
+          policy is changed by this report.
+        </p>
+        <p class="note">
+          Do not make blanket zero retries permanent on the strength of the
+          cancellation probe alone. The recovery tradeoff is now observed;
+          realized canceled-work savings are still unquantified. Keep the policy
+          decision separate from the three cleanup-failed attempts (two remote
+          executions) and four source/test failures.
+        </p>
+      </section>
+      <section id="burst">
+        <h2>Queues improved; Bazel still gates most green heads</h2>
+        <p>
+          These are temporal comparisons around the policy merge, not matched
+          treatment estimates. Queue/runtime columns cover assigned completed
+          attempts, including assigned cancellations. The counts preserve
+          failures later hidden by successful reruns.
+        </p>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Scrollable evidence table"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Temporal bin</th>
+                <th scope="col">PR job</th>
+                <th scope="col">Attempts</th>
+                <th scope="col">Outcomes</th>
+                <th scope="col">Queue p50 / p90 s</th>
+                <th scope="col">Runtime p50 / p90 s</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>pre temporal bin</td>
+                <td>bazel-ci / Test &amp; Build</td>
+                <td>108</td>
+                <td>
+                  {&#x27;success&#x27;: 64, &#x27;cancelled&#x27;: 39,
+                  &#x27;failure&#x27;: 5}
+                </td>
+                <td>71 / 280</td>
+                <td>224 / 640</td>
+              </tr>
+              <tr>
+                <td>pre temporal bin</td>
+                <td>Pre-commit checks</td>
+                <td>122</td>
+                <td>
+                  {&#x27;success&#x27;: 100, &#x27;cancelled&#x27;: 21,
+                  &#x27;failure&#x27;: 1}
+                </td>
+                <td>68 / 213</td>
+                <td>63 / 68</td>
+              </tr>
+              <tr>
+                <td>pre temporal bin</td>
+                <td>Build artifacts + imports check</td>
+                <td>107</td>
+                <td>{&#x27;success&#x27;: 89, &#x27;cancelled&#x27;: 18}</td>
+                <td>58 / 216</td>
+                <td>84 / 114</td>
+              </tr>
+              <tr>
+                <td>post temporal bin</td>
+                <td>bazel-ci / Test &amp; Build</td>
+                <td>72</td>
+                <td>
+                  {&#x27;in_progress&#x27;: 1, &#x27;success&#x27;: 44,
+                  &#x27;cancelled&#x27;: 16, &#x27;failure&#x27;: 11}
+                </td>
+                <td>27 / 113</td>
+                <td>302 / 805</td>
+              </tr>
+              <tr>
+                <td>post temporal bin</td>
+                <td>Pre-commit checks</td>
+                <td>68</td>
+                <td>
+                  {&#x27;success&#x27;: 61, &#x27;cancelled&#x27;: 6,
+                  &#x27;failure&#x27;: 1}
+                </td>
+                <td>13 / 107</td>
+                <td>63 / 71</td>
+              </tr>
+              <tr>
+                <td>post temporal bin</td>
+                <td>Build artifacts + imports check</td>
+                <td>65</td>
+                <td>
+                  {&#x27;success&#x27;: 58, &#x27;cancelled&#x27;: 6,
+                  &#x27;failure&#x27;: 1}
+                </td>
+                <td>6 / 128</td>
+                <td>82 / 97</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Exact-head required-check proxy</h3>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Scrollable evidence table"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Temporal bin</th>
+                <th scope="col">Green / observed heads</th>
+                <th scope="col">Proxy p50 / p90 s</th>
+                <th scope="col">Last required check</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>nominal-pre-policy</td>
+                <td>63 / 118</td>
+                <td>356 / 788</td>
+                <td>
+                  {&#x27;bazel-ci / Test &amp; Build&#x27;: 51, &#x27;Build
+                  artifacts + imports check&#x27;: 4, &#x27;Pre-commit
+                  checks&#x27;: 8}
+                </td>
+              </tr>
+              <tr>
+                <td>nominal-post-policy</td>
+                <td>42 / 61</td>
+                <td>370 / 1,081</td>
+                <td>
+                  {&#x27;bazel-ci / Test &amp; Build&#x27;: 36, &#x27;Build
+                  artifacts + imports check&#x27;: 6}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          In the later bin, Bazel is last on 36/42 green heads; artifacts are
+          last on 6/42. The later proxy is 370s / 1,081s p50/p90. The earlier
+          proxy is 356s / 788s. This difference is descriptive; changed tests,
+          source lineages, reruns and cache state prevent assigning it to remote
+          retries or an individual optimization.
+        </p>
+        <details>
+          <summary>Later-bin PR classes and missing classifications</summary>
+          <div
+            class="table-wrap"
+            tabindex="0"
+            role="region"
+            aria-label="Scrollable evidence table"
+          >
             <table>
               <thead>
                 <tr>
                   <th scope="col">Changed-path class</th>
-                  <th scope="col">Sampled</th>
-                  <th scope="col">Green</th>
-                  <th scope="col">Proxy p50 / p90 (s)</th>
-                  <th scope="col">Other heads</th>
-                  <th scope="col">Forks</th>
-                  <th scope="col">Full readiness / agent receipt n</th>
+                  <th scope="col">Green / heads</th>
+                  <th scope="col">Proxy p50 / p90 s</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td>Agentplane backend</td>
-                  <td>7</td>
-                  <td>6</td>
-                  <td>652 / 1490</td>
-                  <td>1 failed</td>
-                  <td>4</td>
-                  <td>0 / 0</td>
+                  <td>6 / 6</td>
+                  <td>662 / 1,960</td>
                 </tr>
                 <tr>
                   <td>build/CI/tooling</td>
-                  <td>31</td>
-                  <td>31</td>
-                  <td>206 / 286</td>
-                  <td>—</td>
-                  <td>1</td>
-                  <td>0 / 0</td>
+                  <td>5 / 5</td>
+                  <td>213 / 343</td>
                 </tr>
                 <tr>
                   <td>cdk8s</td>
-                  <td>32</td>
-                  <td>29</td>
-                  <td>151 / 291</td>
-                  <td>2 no in-window head run, 1 failed</td>
-                  <td>10</td>
-                  <td>0 / 0</td>
+                  <td>2 / 2</td>
+                  <td>852 / 1,458</td>
                 </tr>
                 <tr>
                   <td>docs-only</td>
-                  <td>4</td>
-                  <td>4</td>
-                  <td>123 / 146</td>
-                  <td>—</td>
-                  <td>0</td>
-                  <td>0 / 0</td>
+                  <td>1 / 1</td>
+                  <td>102 / 102</td>
                 </tr>
                 <tr>
                   <td>frontend/UI</td>
-                  <td>13</td>
-                  <td>13</td>
-                  <td>412 / 610</td>
-                  <td>—</td>
-                  <td>4</td>
-                  <td>0 / 0</td>
+                  <td>1 / 1</td>
+                  <td>583 / 583</td>
                 </tr>
                 <tr>
                   <td>k3s/system-tests</td>
-                  <td>4</td>
-                  <td>4</td>
-                  <td>195 / 710</td>
-                  <td>—</td>
-                  <td>4</td>
-                  <td>0 / 0</td>
+                  <td>2 / 3</td>
+                  <td>567 / 616</td>
                 </tr>
                 <tr>
-                  <td>other code/config</td>
-                  <td>1</td>
-                  <td>0</td>
-                  <td>n=0</td>
-                  <td>1 no in-window head run</td>
-                  <td>0</td>
-                  <td>0 / 0</td>
-                </tr>
-                <tr>
-                  <td>other infrastructure</td>
-                  <td>8</td>
-                  <td>7</td>
-                  <td>112 / 181</td>
-                  <td>1 no in-window head run</td>
-                  <td>0</td>
-                  <td>0 / 0</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="small">
-            Mixed changes inherit the first matching class: docs → k3s/system
-            tests → cdk8s → build/CI → frontend → Agentplane backend →
-            infrastructure → other. Frontend now includes all
-            <code>/frontend/</code> directories and <code>.tsx</code>, broader
-            than the older Agentplane-focused classifier. Class sizes are small
-            and workload composition differs.
-          </p>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Population</th>
-                  <th scope="col">Sampled / green</th>
-                  <th scope="col">Feedback proxy p50 / p90 (s)</th>
-                  <th scope="col">Interpretation</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Same repository</td>
-                  <td>77 / 73</td>
-                  <td>151 / 415</td>
-                  <td>
-                    Different workloads; trust-path difference is not a causal
-                    penalty estimate.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Fork</td>
-                  <td>23 / 21</td>
-                  <td>273 / 1023</td>
-                  <td>
-                    Different workloads; trust-path difference is not a causal
-                    penalty estimate.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <h3>Required-check order and historical comparison</h3>
-          <p>
-            Bazel last: 71 heads; artifacts last: 20; pre-commit last: 3.
-            Bazel-last headroom is 92s / 533s p50/p90 on those 71 heads. The
-            preceding October 22–23 core sample was 228s / 708s (n=77), and its
-            small post-removal pilot had Bazel last on 17/19 green heads. The
-            current 182s / 604s distribution is descriptively lower; changes in
-            fork use, selected tests, cache state and PR mix prevent assigning
-            that difference to a particular intervention.
-          </p>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">PR / class</th>
-                  <th scope="col">Exact head</th>
-                  <th scope="col">Start proxy UTC</th>
-                  <th scope="col">Pre-commit +s</th>
-                  <th scope="col">Artifacts +s</th>
-                  <th scope="col">Bazel +s</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12053"
-                      >#12053</a
-                    >
-                    · docs-only
-                  </td>
-                  <td><code>d4309cc1130e</code></td>
-                  <td>2026-10-25T23:08:59Z</td>
-                  <td>65</td>
-                  <td>124</td>
-                  <td>78</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12074"
-                      >#12074</a
-                    >
-                    · other infrastructure
-                  </td>
-                  <td><code>e717f25e0e35</code></td>
-                  <td>2026-10-26T00:40:11Z</td>
-                  <td>62</td>
-                  <td>112</td>
-                  <td>82</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/11883"
-                      >#11883</a
-                    >
-                    · cdk8s
-                  </td>
-                  <td><code>b2a9a02f60dd</code></td>
-                  <td>2026-10-24T22:00:59Z</td>
-                  <td>72</td>
-                  <td>110</td>
-                  <td>151</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/11836"
-                      >#11836</a
-                    >
-                    · frontend/UI
-                  </td>
-                  <td><code>2c1bd183a692</code></td>
-                  <td>2026-10-24T16:03:21Z</td>
-                  <td>69</td>
-                  <td>110</td>
-                  <td>412</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12171"
-                      >#12171</a
-                    >
-                    · Agentplane backend
-                  </td>
-                  <td><code>e1bc7f83485e</code></td>
-                  <td>2026-10-27T03:08:48Z</td>
-                  <td>70</td>
-                  <td>98</td>
-                  <td>674</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12167"
-                      >#12167</a
-                    >
-                    · k3s/system-tests
-                  </td>
-                  <td><code>dab7132bb5a1</code></td>
-                  <td>2026-10-27T01:58:20Z</td>
-                  <td>74</td>
-                  <td>128</td>
-                  <td>215</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <h3>
-            Earlier status publication is observable; agent receipt is not
-          </h3>
-          <p>
-            On 69 sampled heads with live status history, GitHub records the
-            first terminal
-            <code>BuildBuddy / Bazel tests (live)</code> status at 136s / 400s
-            p50/p90 after the workflow proxy. Pending status publication is 14s
-            / 33s. These server timestamps are independently useful feedback,
-            but do not measure first API queryability, webhook delivery, inbox
-            admission or harness receipt. Full-policy readiness and
-            agent-receipt distributions both remain n=0.
-          </p>
-          <p>
-            One bounded live observation saw
-            <a
-              href="https://app.buildbuddy.io/invocation/ce79f38a-928c-592b-b17f-3106ab356aa9"
-              >the critical-path log</a
-            >
-            accessible at 06:19:59 while its GitHub job was still running; it
-            ended at 06:20:06. Both log endpoints were verified accessible at
-            06:22:16. Earlier GitHub log probes were invalid because the CLI
-            rejected terminal escape sequences. Therefore no GitHub log-delay
-            percentile or 130-second access-delay claim follows.
-          </p>
-        </section>
-        <section id="changes">
-          <h2>What changed, and what has actually been measured</h2>
-          <p class="small">
-            Unless a later merged change is named, the durations and population
-            counts in this chronology belong to the prior broad 24 October 04:00
-            → 27 October 06:00 UTC sample. The new selected results are
-            separated in the landed-follow-up section above.
-          </p>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Intervention</th>
-                  <th scope="col">Current disposition / comparison limits</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>
-                    Workstation check removal
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/11737"
-                      >#11737</a
-                    >
-                  </td>
-                  <td>
-                    Still absent. Current same-repo source-artifact jobs run at
-                    107s / 118s p50/p90 (n=70 assigned attempts); fork source
-                    jobs are 101s / 116s (n=93). The earlier no-host pilot was
-                    114s / 128s (n=23); populations are unmatched.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    Frontend/API split
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/11506"
-                      >#11506</a
-                    >
-                    and renderer isolation
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/11746"
-                      >#11746</a
-                    >
-                    /
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/11747"
-                      >#11747</a
-                    >
-                  </td>
-                  <td>
-                    Retained in source. Historical bundle reverse-dependencies
-                    fell 14 → 0; deterministic fixture outputs and MCP-only
-                    invalidation were proven then. No matched causal speedup is
-                    claimed here.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    VM recycling key
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/11769"
-                      >#11769</a
-                    >
-                  </td>
-                  <td>
-                    Present on VM tests. Prior matched pair: imports 198.0 →
-                    11.7s, execution 468.5 → 319.0s on one worker. The
-                    broad-window VM case imported by +58.6s and reached stack
-                    Ready at +112.8s, but three test cases still occupied ~480s
-                    including setup. The later PR CI case is measured below.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    k3s ownership
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/11871"
-                      >#11871</a
-                    >
-                  </td>
-                  <td>
-                    Stack moved from <code>agentplane/x/k3s_env</code> to
-                    <code>agentplane/system_tests/k3s</code>. Current automatic
-                    VM coverage includes the added Codex OOM case; it is not the
-                    old two-case workload.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    Live BuildBuddy feedback
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/11827"
-                      >#11827</a
-                    >
-                    /
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/11851"
-                      >#11851</a
-                    >
-                    /
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/11854"
-                      >#11854</a
-                    >
-                  </td>
-                  <td>
-                    Informational status links the deterministic test
-                    invocation, supports early failed-target feedback and treats
-                    no-test selections as success. Native Test &amp; Build
-                    remains required.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    Orchestration wait deadline
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12189"
-                      >#12189</a
-                    >
-                  </td>
-                  <td>
-                    Merged after the measurement window. Authorization uses the
-                    overall read budget; the requested wait starts afterward and
-                    recognizes deadline expiry without hiding earlier backend
-                    timeouts. Three fresh full MCP runs passed at the exact
-                    merged tree after the broad window; recurrence reduction
-                    remains unmeasured.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    k3s xtables lock
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12248"
-                      >#12248</a
-                    >
-                  </td>
-                  <td>
-                    Merged after the broad window. The real held/released-lock
-                    probe and later successful PR CI support the specific
-                    check/append behavior; no population latency or failure-rate
-                    effect is assigned.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    Dispatcher cleanup
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12167"
-                      >#12167</a
-                    >
-                  </td>
-                  <td>
-                    The historical failed dispatcher cleanup in the earlier
-                    profile was fixed in this merged PR. The separate
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12244"
-                      >#12244</a
-                    >
-                    diagnostics PR is still open; its passing fresh scenarios do
-                    not measure a population recurrence rate.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12308"
-                      >VM phase timing · #12308</a
-                    >
-                  </td>
-                  <td>
-                    Merged before the latest follow-up. The previously
-                    recommended phase-timing work is complete; focused lifecycle
-                    results are summarized <a href="#landed">above</a>.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12333"
-                      >Guest ACPI and PVC-virtiofs ordering · #12333</a
-                    >
-                  </td>
-                  <td>
-                    Merged as <code>fdcd5e21a095</code>. Selected CI and manual
-                    results show eight clean guest shutdowns and no forced
-                    destruction; this does not estimate fleet reliability or
-                    causality.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12358"
-                      >Artifact policy/build overlap · #12358</a
-                    >
-                  </td>
-                  <td>
-                    Merged as <code>bf8043f425ea</code>. One fresh job shows
-                    about 22s overlap at 1s resolution; the historical 28s / 31s
-                    ideal estimate is no longer pending implementation, and
-                    matched savings remain unmeasured.
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12244"
-                      >Dispatcher cleanup diagnostics · #12244</a
-                    >
-                  </td>
-                  <td>
-                    Still open with green checks; not landed. The cancellation
-                    source and helper remain unchanged and acknowledgment-only,
-                    and exact remote worker stop is unproven.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-        <section id="profiles">
-          <h2>
-            Earlier Bazel profiles: serial system work dominated the selected
-            runs
-          </h2>
-          <p>
-            Seven actual inner CI test profiles across five workflows/attempt
-            pairs, plus two no-affected-target controls. Cases were selected at
-            fast/median/slow workflow-duration positions, with explicit rerun
-            examples, not from arbitrary recent developer invocations. All
-            columns below are seconds. Rows are sequential intervals; analysis
-            and execution inside Bazel overlap.
-          </p>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Linked job</th>
-                  <th scope="col">GH queue</th>
-                  <th scope="col">GH setup</th>
-                  <th scope="col">Remote step → test</th>
-                  <th scope="col">Inner test</th>
-                  <th scope="col">Test end → job end</th>
-                  <th scope="col">Invocation / tested source</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40383976168/job/121787359025"
-                      >40383976168 / attempt 1</a
-                    >
-                  </td>
-                  <td>1</td>
-                  <td>11</td>
-                  <td>77.9</td>
-                  <td>752.3</td>
-                  <td>8.9</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/7d08c8f3-2186-5057-9b1f-08aa7a98a740"
-                      >7d08c8f3</a
-                    ><br /><code>1393bc64da85</code>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40383976168/job/121821491211"
-                      >40383976168 / attempt 2</a
-                    >
-                  </td>
-                  <td>2</td>
-                  <td>12</td>
-                  <td>90.3</td>
-                  <td>227.6</td>
-                  <td>12.2</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/786f259e-a8b7-5444-b806-a23f7ebf07eb"
-                      >786f259e</a
-                    ><br /><code>1393bc64da85</code>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40418624485/job/121907103864"
-                      >40418624485 / attempt 1</a
-                    >
-                  </td>
-                  <td>32</td>
-                  <td>10</td>
-                  <td>no inner test</td>
-                  <td>—</td>
-                  <td>—</td>
-                  <td>No affected targets; source/log evidence retained.</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40425421732/job/121930258880"
-                      >40425421732 / attempt 1</a
-                    >
-                  </td>
-                  <td>2</td>
-                  <td>12</td>
-                  <td>56.1</td>
-                  <td>167.1</td>
-                  <td>10.8</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/a050fe2e-ff79-5700-b59c-bf56d42b99ed"
-                      >a050fe2e</a
-                    ><br /><code>8b7b0256a56a</code>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40433409976/job/121956281226"
-                      >40433409976 / attempt 1</a
-                    >
-                  </td>
-                  <td>1</td>
-                  <td>11</td>
-                  <td>59.5</td>
-                  <td>563.3</td>
-                  <td>10.2</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/a8593254-3603-51b7-880f-51685cdc95c0"
-                      >a8593254</a
-                    ><br /><code>215d9e2737f4</code>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40452073074/job/122016945105"
-                      >40452073074 / attempt 1</a
-                    >
-                  </td>
-                  <td>2</td>
-                  <td>10</td>
-                  <td>60.5</td>
-                  <td>640.8</td>
-                  <td>9.7</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/41080de6-d1a0-5a9e-a67f-dff68255c5bf"
-                      >41080de6</a
-                    ><br /><code>dff690af0438</code>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40452498221/job/122018221784"
-                      >40452498221 / attempt 1</a
-                    >
-                  </td>
-                  <td>2</td>
-                  <td>10</td>
-                  <td>no inner test</td>
-                  <td>—</td>
-                  <td>—</td>
-                  <td>No affected targets; source/log evidence retained.</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40457828797/job/122035183500"
-                      >40457828797 / attempt 1</a
-                    >
-                  </td>
-                  <td>2</td>
-                  <td>10</td>
-                  <td>59.7</td>
-                  <td>562.7</td>
-                  <td>4.6</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/9ba054ed-664f-5a81-981e-3b365a5268d9"
-                      >9ba054ed</a
-                    ><br /><code>a31e93dfa297</code>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/actions/runs/40457828797/job/122038766551"
-                      >40457828797 / attempt 2</a
-                    >
-                  </td>
-                  <td>2</td>
-                  <td>10</td>
-                  <td>79.2</td>
-                  <td>569.2</td>
-                  <td>9.6</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/9a80d2fa-9d90-531c-b0a4-a3fad67ba017"
-                      >9a80d2fa</a
-                    ><br /><code>a31e93dfa297</code>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="small">
-            Remote step → test includes remote allocation, repository/tool setup
-            and affected-target queries. Hosted VM queue, boot and setup are not
-            individually timed. The API’s batched GitHub log timestamps do not
-            resolve them. Warm outer-repo messages do not prove analysis-cache
-            reuse.
-          </p>
-          <h3>Confirmed longest paths</h3>
-          <ul>
-            <li>
-              <a
-                href="https://app.buildbuddy.io/invocation/a8593254-3603-51b7-880f-51685cdc95c0"
-                >a8593254</a
-              >: 559.16s path; 521.16s is <code>test_vm_sandbox_vm</code>. Bazel
-              analysis is 2.63s and overlaps execution. XML reports Claude
-              234.9s, Codex 105.6s and OOM 139.8s; the first includes shared
-              fixture setup.
-            </li>
-            <li>
-              <a
-                href="https://app.buildbuddy.io/invocation/41080de6-d1a0-5a9e-a67f-dff68255c5bf"
-                >41080de6</a
-              >: 592.33s path, including a 527.45s VM action and Go
-              compilation/image prerequisites. Optimizing a noncritical Python
-              layer would not erase this chain.
-            </li>
-            <li>
-              <a
-                href="https://app.buildbuddy.io/invocation/9a80d2fa-9d90-531c-b0a4-a3fad67ba017"
-                >9a80d2fa</a
-              >: a 564.33s MCP action owns nearly all the 564.48s path. Its
-              fixture is Ready at +178s; the remaining scenario sequence is
-              material too.
-            </li>
-            <li>
-              <a
-                href="https://app.buildbuddy.io/invocation/a050fe2e-ff79-5700-b59c-bf56d42b99ed"
-                >a050fe2e</a
-              >: finance UI path 163.92s = TypeScript/build prerequisites plus a
-              116.43s visual action. It is a browser workload, not a k3s stack.
-            </li>
-          </ul>
-          <p>
-            RBE queue p90 for these cases is about 0.06–0.10s. The long VM/MCP
-            chains have very little remote queue delay; more RBE slots cannot
-            remove serial test/setup work. Executor saturation is not
-            established.
-          </p>
-          <h3>Recovery also changes the feedback clock</h3>
-          <p>
-            The dispatcher failure in run 40383976168 consumed an 850s GitHub
-            job, then the next assigned attempt began 3,106s later and passed in
-            342s. This interval is not identified as operator delay: attempt
-            trigger timestamps/actors and the available logs are discussed in
-            the reliability report. The MCP rerun in 40457828797 changes the
-            critical test from VM to MCP; reducing one action must account for
-            the next action and the artifact gate.
-          </p>
-        </section>
-        <section id="vm-mcp">
-          <h2>
-            Earlier VM/MCP profile: 27 October, before the latest landed changes
-          </h2>
-          <p>
-            This earlier selected PR profile and its BFF grouping probe end at
-            21:09:22 UTC on 27 October, before the latest sidecar and
-            artifact-overlap commits. Its single VM-dominant head and zero
-            direct MCP headroom were true for that head. The 28 October CI run
-            has the reverse action order and a 19.616014s MCP tail; see the
-            separate
-            <a href="#landed">landed-results follow-up</a>. The newer
-            observation changes which matched measurement is worthwhile, not the
-            population summary.
-          </p>
-          <p>
-            The post-window
-            <a
-              href="https://github.com/agentydragon/ducktape/actions/runs/40570475031"
-              >PR #12248 run</a
-            >
-            is a completed, successful, single-attempt
-            <code>pull_request</code> run for head <code>829eb998db81</code>.
-            Its inner
-            <a
-              href="https://app.buildbuddy.io/invocation/df2e4956-215a-5bd7-9642-ec3e0aa7490c"
-              >Bazel invocation</a
-            >
-            tested synthetic merge <code>b2976d93ae3c</code>; its target groups
-            list 17 affected targets and 12 reported test results, including
-            fresh one-run, one-attempt VM and MCP results. This is a selected
-            real CI case, not a developer benchmark. The three standalone MCP
-            runs below test the exact merged
-            <a
-              href="https://github.com/agentydragon/ducktape/commit/f0036950097ee1bac22cece2589d8f77d80017f4"
-              >wait-deadline source</a
-            >
-            through a mirrored checkout; BuildBuddy's base-repo metadata alone
-            names <code>bf040daee4ef</code>, so the linked
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/4f4fd6f8b1c3f12c19dd347718c2323ce77b6122/agentplane/debug/2026_10_27_orchestration_wait_deadline_measurement.md"
-              >measurement note</a
-            >
-            supplies the local-tree and patch evidence.
-          </p>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Execution</th>
-                  <th scope="col">Pytest duration / result</th>
-                  <th scope="col">Fixture timeline, seconds after start</th>
-                  <th scope="col">Cases after first</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/df2e4956-215a-5bd7-9642-ec3e0aa7490c"
-                      >PR CI VM</a
-                    >
-                  </td>
-                  <td>548.08s; 3/3 passed</td>
-                  <td>
-                    node Ready 15.2; images imported 91.4; stack Ready 133.7
-                  </td>
-                  <td>Codex turn 116.7s; OOM containment 155.4s</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/df2e4956-215a-5bd7-9642-ec3e0aa7490c"
-                      >PR CI MCP</a
-                    >
-                  </td>
-                  <td>480.38s; 12/12 passed</td>
-                  <td>
-                    node Ready 9.5; images imported 74.9; stack Ready 114.0
-                  </td>
-                  <td>339.0s across 11 cases</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/402e9a99-9e56-4d2a-81c7-878f122a401b"
-                      >Merged MCP, 1 run</a
-                    >
-                  </td>
-                  <td>740.48s; 12/12 passed</td>
-                  <td>
-                    node Ready 45.1; images imported 339.8; stack Ready 373.2
-                  </td>
-                  <td>337.8s across 11 cases</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/0a0f8696-8c78-416b-8e9c-a2f4fef05df4"
-                      >Merged MCP, run 1/2</a
-                    >
-                  </td>
-                  <td>601.82s; 12/12 passed</td>
-                  <td>
-                    node Ready 20.1; images imported 197.3; stack Ready 231.9
-                  </td>
-                  <td>341.0s across 11 cases</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/0a0f8696-8c78-416b-8e9c-a2f4fef05df4"
-                      >Merged MCP, run 2/2</a
-                    >
-                  </td>
-                  <td>611.91s; 12/12 passed</td>
-                  <td>
-                    node Ready 20.1; images imported 179.2; stack Ready 216.1
-                  </td>
-                  <td>351.1s across 11 cases</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="small">
-            Pytest's first XML case includes session-scoped stack setup; its
-            duration is not a standalone scenario cost. Setup milestones are
-            logged relative to the stack timeline, not a partition that can be
-            subtracted exactly from pytest or action time. Later case durations
-            are direct XML sums. The standalone MCP remote test actions took
-            783.0s, 635.7s and 642.7s respectively. Each was fresh with one
-            attempt and no cached test result; these runs measure acceptance
-            exposure, not PR feedback.
-          </p>
-          <p>
-            In that PR CI profile, VM and MCP test summaries start only 15ms
-            apart (19:38:16.881 and 19:38:16.866 UTC). The VM test summary ends
-            71.93s after MCP; the originating remote workers finish 74.12s
-            apart. Bazel's 618.95s critical path includes 617.91s on the VM
-            action, whose process runs 591.98s; remote queue before its worker
-            starts is 0.13s. Thus shortening MCP alone would not advance this
-            head's Bazel result with VM unchanged. Even deleting the whole
-            116.7s second VM case, which would lose coverage, cannot save more
-            than roughly 74s here before MCP becomes the next action. The other
-            two required checks already finished on this exact head: pre-commit
-            at 19:39:19 and artifacts at 19:43:14 UTC, while the native Bazel
-            job finished at 19:48:54. They do not tighten this action-level
-            ceiling for this head. A source change could alter postprocessing or
-            other gates, so this remains a conditional bound, not a measured
-            feedback gain or fleet estimate. Remote action CPU and worker time
-            overlap these wall clocks and are not added to them.
-          </p>
-          <p>
-            The
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/bddd9cd74d9cc1e3aaa80ba2662c633884ab761e/agentplane/system_tests/k3s/stack.py"
-              >stack fixture</a
-            >
-            imports OCI layouts serially and waits for Deployments before cases
-            run. The
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/bddd9cd74d9cc1e3aaa80ba2662c633884ab761e/agentplane/system_tests/conftest.py"
-              >Sandbox fixture</a
-            >
-            creates, waits Ready, then suspends and deletes each Sandbox after
-            its case. The PR CI VM XML records three distinct cases; the
-            retained k3s log records three corresponding
-            <code>virt-launcher</code> Pods reaching Running in 19.76s, 19.24s
-            and 17.07s. Those Pod timings prove repeated launches, not the
-            complete guest-ready or cleanup cost. The second and third VM cases
-            still take 116.7s and 155.4s. The
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/bddd9cd74d9cc1e3aaa80ba2662c633884ab761e/agentplane/system_tests/test_mcp.py"
-              >MCP suite</a
-            >
-            similarly opens a fresh Sandbox for each of its 12 cases. Its 11
-            post-first cases consume 337.8–351.1s in all four fresh executions
-            despite stack Ready ranging 114.0–373.2s. Faster imports alone
-            cannot remove that stable serial scenario floor. Within those runs,
-            the four BFF decision cases total 95.7–102.7s and the two launcher
-            cases total 109.6–117.4s; the latter exercise multiple orchestration
-            requests and must retain their early-wait and sandbox-ownership
-            checks.
-          </p>
-          <p>
-            A narrow next source experiment is to run both operator allow and
-            deny branches in
-            <code>test_agent_mcp_bff_decision</code> through one fresh Sandbox
-            per harness, with a new Action request, marker and idempotency key
-            for each branch. Preserve both harnesses, pending/terminal state,
-            operator identity, execution/no-execution, duplicate-decision and
-            stale-version assertions. This removes two Sandbox create/teardown
-            cycles, but reduces the pytest count from 12 to 10 and makes deny
-            follow allow on the same Session. The two old denial-case durations
-            total 47.3–49.3s across the observed runs, so their entire duration
-            is only an impossible upper bound on any saving. Keep a
-            fresh-session denial smoke elsewhere if that ordering is a required
-            contract. An isolated
-            <a
-              href="https://app.buildbuddy.io/invocation/7fb14a28-324e-440d-bb23-7f8d8d8acccb"
-              >uncached full-target probe</a
-            >
-            of the temporary source patch passed 10/10 cases, including both
-            verdicts inside each harness case. Its pytest log reports 414.75s,
-            with stack Ready at +97.9s. This proves compatibility in one fresh
-            run, not a causal speedup or equivalent isolation. Next compare
-            matched warm/cold full-target and exact-head CI runs; reject if
-            state leakage or flakiness appears. Keeping separate VM launches for
-            the Claude, Codex and OOM paths retains current coverage. A
-            VM-sharing change needs an explicit decision about independent-boot
-            coverage before it can be recommended.
-          </p>
-          <p>
-            The earlier <a href="#shard-results">two-shard spike</a> covered
-            every case once but increased remote execution-seconds 1.74× and
-            CPU-seconds 2.31× for an unmatched 14.6s invocation difference. Its
-            higher cost and different workers/snapshot states still rule out
-            blanket sharding. The merged
-            <a href="https://github.com/agentydragon/ducktape/pull/12167"
-              >dispatcher correction</a
-            >
-            addresses the historical failed cleanup path; the
-            <a href="https://github.com/agentydragon/ducktape/pull/12244"
-              >cleanup diagnostics PR</a
-            >
-            remains open and is a separate follow-up, not evidence of a current
-            recurring dispatcher failure. The merged
-            <a href="https://github.com/agentydragon/ducktape/pull/12248"
-              >iptables fix</a
-            >
-            addresses the recorded xtables-lock race; it is no longer an action
-            to propose.
-          </p>
-        </section>
-        <section id="experiments">
-          <h2>Bounded experiments, with controls and limits</h2>
-          <p class="small">
-            These Docker, sharding and artifact-feasibility experiments belong
-            to the 24–27 October snapshot and precede the later PR #12333 and
-            #12358 merges recorded above.
-          </p>
-          <h3>Docker initialization opt-out: compatible, benefit unproved</h3>
-          <p>
-            Four cache-bypassed <code>test_launch_presets</code> actions ran in
-            A/B/B/A order on source tree <code>f24d1e727184</code>, with Python
-            importtime profiling. Both baseline actions restored one worker’s
-            existing seed; opt-out first initialized a different worker, then
-            restored its own prior snapshot. All four passed.
-          </p>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Arm</th>
-                  <th scope="col">Invocation</th>
-                  <th scope="col">Remote execution (s)</th>
-                  <th scope="col">Snapshot state</th>
-                  <th scope="col">Stack Ready</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>baseline</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/5b904de0-5d8f-4e29-9ec0-b6ad3d374e01"
-                      >5b904de0</a
-                    >
-                  </td>
-                  <td>167.1</td>
-                  <td>restored seed</td>
-                  <td>72.4s</td>
-                </tr>
-                <tr>
-                  <td>Docker opt-out</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/5b904de0-5d8f-4e29-9ec0-b6ad3d374e02"
-                      >5b904de0</a
-                    >
-                  </td>
-                  <td>221.1</td>
-                  <td>new VM</td>
-                  <td>148.2s</td>
-                </tr>
-                <tr>
-                  <td>Docker opt-out</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/5b904de0-5d8f-4e29-9ec0-b6ad3d374e03"
-                      >5b904de0</a
-                    >
-                  </td>
-                  <td>124.1</td>
-                  <td>restored seed</td>
-                  <td>45.5s</td>
-                </tr>
-                <tr>
-                  <td>baseline</td>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/5b904de0-5d8f-4e29-9ec0-b6ad3d374e04"
-                      >5b904de0</a
-                    >
-                  </td>
-                  <td>156.0</td>
-                  <td>restored seed</td>
-                  <td>64.7s</td>
+                  <td>unknown</td>
+                  <td>25 / 43</td>
+                  <td>370 / 926</td>
                 </tr>
               </tbody>
             </table>
           </div>
           <p>
-            The 221.1s cold opt-out is not evidence of a regression; its warm
-            124.1s is not evidence of a speedup. Worker and cache state differ.
-            Keep <code>test.init-dockerd=false</code> as a low-priority
-            compatibility candidate, with no savings assigned. The inherited
-            2–6s Docker-readiness counters overlap other preparation.
+            Only18 / 61 heads have a matching collected PR base/head comparison;
+            43 remain unknown. These small strata are not representative fleet
+            estimates. No fork or agent-receipt distribution is inferred.
           </p>
-          <h3>Two-shard VM/MCP spike</h3>
-          <p>
-            The first forced-sharding attempt
-            <a
-              href="https://app.buildbuddy.io/invocation/5b904de0-5d8f-4e29-9ec0-b6ad3d374e05"
-              >5b904de0</a
-            >
-            failed before scenarios: <code>pytest_bazel</code> emitted shard
-            arguments but the pytest sharding plugin was absent. One localized
-            retry uses the repository wrapper’s <code>shard_count=2</code>,
-            which loads <code>util.testing.sharding</code>. Production
-            configuration is unchanged.
-          </p>
-          <div id="shard-results">
-            <p>
-              Both arms pass all
-              <strong>15 distinct cases exactly once</strong>: 12 MCP cases and
-              three VM cases. Sharded invocation
-              <a
-                href="https://app.buildbuddy.io/invocation/5b904de0-5d8f-4e29-9ec0-b6ad3d374e06"
-                >06</a
-              >
-              takes 493.551s; unsharded control
-              <a
-                href="https://app.buildbuddy.io/invocation/5b904de0-5d8f-4e29-9ec0-b6ad3d374e07"
-                >07</a
-              >
-              takes 508.136s. The 14.585s difference comes with
-              <strong
-                >1.74× remote execution-seconds and 2.31× CPU-seconds</strong
-              >
-              in this pair.
-            </p>
-            <div class="scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Arm</th>
-                    <th>VM actions (s)</th>
-                    <th>MCP actions (s)</th>
-                    <th>Remote execution-seconds</th>
-                    <th>CPU-seconds</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Two shards</td>
-                    <td>410.4 / 426.6</td>
-                    <td>369.0 / 485.5</td>
-                    <td>1,691.5</td>
-                    <td>3,592.7</td>
-                  </tr>
-                  <tr>
-                    <td>Unsharded</td>
-                    <td>504.0</td>
-                    <td>466.3</td>
-                    <td>970.4</td>
-                    <td>1,557.3</td>
-                  </tr>
-                </tbody>
-              </table>
+        </details>
+      </section>
+      <section id="artifacts">
+        <h2>Artifact overlap is sustained in actual jobs</h2>
+        <p>
+          <strong>197 successful artifact jobs</strong> ran the policy check and
+          source build concurrently; fetching began after both finished in all
+          197. Median overlap was25s, p90 29s. The later temporal bin alone has
+          81 such jobs, with 25s /28s p50/p90 overlap. The native join remains
+          intact.
+        </p>
+        <div class="bars" aria-label="Observed concurrent interval, seconds">
+          <div class="bar">
+            <span>Median</span>
+            <div class="track">
+              <div class="fill" style="width: 54.3%"></div>
             </div>
-            <p>
-              Workers, snapshot state and input downloads differ. The sharded
-              actions download about 10.91GB in total versus 65.43MB for the
-              control. A bounded CAS audit (40 directory reads) verifies
-              identical file digests and symlinks across all four shard/control
-              pairs; input roots differ only in empty test-output directory
-              layout. Automatic git mirroring records different base commits, so
-              the verified runtime inputs are stronger evidence than that
-              metadata field. This is a successful coverage/compatibility spike
-              and an observed cost tradeoff,
-              <strong>not a matched 14.6-second treatment effect</strong>. Do
-              not adopt blanket two-shard execution from this result. The prior
-              0–180s forecast is withdrawn as a rollout recommendation; a
-              controlled warm/cold comparison is only worthwhile if the
-              additional compute cost is acceptable.
-            </p>
+            <strong>25s</strong>
           </div>
-          <h3>Independent artifact phases: concurrent feasibility passed</h3>
-          <p>
-            At the time of this earlier experiment, the workflow serialized
-            generated-policy Nix checks before the remote source-artifact build.
-            The policy commands do not consume the built artifacts; artifact
-            imports do, and remain after the join. A local coordinator launched
-            the unchanged three-policy Nix command and all 18 in-gate source
-            targets concurrently, awaited both, and retained return codes
-            <code>[0,0]</code>.
-            <a
-              href="https://app.buildbuddy.io/invocation/5b904de0-5d8f-4e29-9ec0-b6ad3d374e08"
-              >5b904de0</a
+          <div class="bar">
+            <span>p90</span>
+            <div class="track"><div class="fill" style="width: 63%"></div></div>
+            <strong>29s</strong>
+          </div>
+          <div class="bar">
+            <span>Maximum</span>
+            <div class="track">
+              <div class="fill" style="width: 100%"></div>
+            </div>
+            <strong>46s</strong>
+          </div>
+        </div>
+        <p class="small">
+          These are overlap intervals at one-second resolution, not matched
+          job-time or PR-feedback savings. Artifact fetching/import work remains
+          after the join. Most green heads are Bazel-gated; affected-artifact
+          selection stays lower priority.
+        </p>
+      </section>
+      <section id="vm-mcp">
+        <h2>The current inspected long path is VM work</h2>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Scrollable evidence table"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">CI case</th>
+                <th scope="col">Actual tested source / invocation</th>
+                <th scope="col">Job s</th>
+                <th scope="col">Critical path s</th>
+                <th scope="col">Dominant action</th>
+                <th scope="col">Process / queue fraction</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40640975200"
+                    >PR12244</a
+                  >
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/6e7a25b6-7b4f-5ac1-9594-7b24a764fbf0"
+                    >2b1b7cd26665</a
+                  >
+                </td>
+                <td>288</td>
+                <td>197.99</td>
+                <td>//agentplane/system_tests:test_dispatcher<br />197.92s</td>
+                <td>99.43% /0.03%</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40640592787"
+                    >PR #12495</a
+                  >
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/dd28a444-46c0-503b-9846-89d5cfc623de"
+                    >f750413bb839</a
+                  >
+                </td>
+                <td>565</td>
+                <td>469.46</td>
+                <td>
+                  //agentplane/system_tests:test_vm_sandbox_vm<br />468.73s
+                </td>
+                <td>99.56% /0.01%</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40640643174"
+                    >PR #12496</a
+                  >
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/fe650106-1918-50f9-9191-f0438239690c"
+                    >de2631564c86</a
+                  >
+                </td>
+                <td>581</td>
+                <td>494.66</td>
+                <td>
+                  //agentplane/system_tests:test_vm_sandbox_vm<br />449.68s
+                </td>
+                <td>99.36% /0.03%</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40642731109"
+                    >Combined devel · supplemental</a
+                  >
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/79bbe88d-97c9-500b-ba37-e11dfb5395e7"
+                    >50bd44b472e3</a
+                  >
+                </td>
+                <td>494</td>
+                <td>410.22</td>
+                <td>
+                  //agentplane/system_tests:test_vm_sandbox_vm<br />408.93s
+                </td>
+                <td>99.33% /0.01%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The first three are completed, successful actual PR CI validations
+          with explicit zero-retry configuration and source-parent proof,
+          selected for dispatcher, VM and MCP changes. They are not random or
+          matched before/after runs. All four raw Bazel profiles were downloaded
+          and hashed; retrieval commands are in the evidence. The combined devel
+          row is a separate post-window validation, excluded from all earlier
+          denominators.
+        </p>
+        <p>
+          In MCP exporter PR #12496’s same invocation, MCP’s target ended
+          06:01:38.662Z and VM’s target ended 06:03:31.726Z:
+          <strong>MCP finished 113.064s before VM</strong>. The critical path
+          was 494.66s, including 449.68s VM work and 44.35s guest fixture
+          rendering. MCP ran all 10 cases; VM retained all 3 independent cases.
+          Faster MCP alone could not move that invocation’s final test
+          completion while VM stayed unchanged.
+        </p>
+        <p>
+          VM exporter PR #12495’s three cleanup spans were 12.305s, 11.939s
+          and11.834s; the MCP PR’s pre-VM-exporter source had 16.301s, 16.814s
+          and16.839s. This is an observational cross-run contrast, not a matched
+          causal effect. The earlier roughly 40s tails came from older sources
+          and must not be mixed into the comparison.
+        </p>
+        <p class="note">
+          MCP exporter removal merged at 06:04:10Z; VM exporter removal merged
+          at 06:07:24Z, after the fixed census window and its initial db1895
+          source review. The db1895 devel run was still in progress at its
+          observation and did not contain the later VM merge.
+          <strong>No combined-adoption CI saving is measured.</strong>
+          Import-order PR #12498 merged at 06:15:11Z, after the fixed collection
+          window; its population effect is not measured here.
+        </p>
+        <h3>First completed combined-source validation</h3>
+        <p>
+          Devel run 40642731109, created 06:15:14Z, tested exact source
+          50bd44b472e3 containing all three VM/MCP/import-order merges. Its
+          Bazel job passed at 06:23:36Z; downstream release/image jobs were
+          still running at their 06:25:24 snapshot. The full test invocation
+          passed: MCP 10 cases in 317.415s; VM 3 cases in 407.485s. MCP finished
+          92.522s before VM. VM cleanup spans were 11.487/12.082/12.480s; stack
+          Ready was 110.5s. This is one adopted-source validation, with a
+          410.22s VM-dominated critical path, not a controlled or population
+          saving.
+        </p>
+      </section>
+      <section id="cancellation">
+        <h2>Six natural cancellations do not establish saved compute</h2>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Scrollable evidence table"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Run</th>
+                <th scope="col">Actual retries</th>
+                <th scope="col">Helper acknowledgment</th>
+                <th scope="col">Queues after displayed ack second</th>
+                <th scope="col">Same-action matches</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40633319279/job/122634492385"
+                    >40633319279</a
+                  >
+                </td>
+                <td>5 (Bazel default)</td>
+                <td>acknowledged</td>
+                <td>2</td>
+                <td>2</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40635807771/job/122642381154"
+                    >40635807771</a
+                  >
+                </td>
+                <td>0</td>
+                <td>acknowledged</td>
+                <td>0</td>
+                <td>0</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40635986882/job/122642950835"
+                    >40635986882</a
+                  >
+                </td>
+                <td>0</td>
+                <td>acknowledged</td>
+                <td>9</td>
+                <td>0</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40636378504/job/122644190323"
+                    >40636378504</a
+                  >
+                </td>
+                <td>0</td>
+                <td>unknown no acknowledgment line</td>
+                <td>0</td>
+                <td>0</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40638208952/job/122650001441"
+                    >40638208952</a
+                  >
+                </td>
+                <td>0</td>
+                <td>acknowledged</td>
+                <td>0</td>
+                <td>0</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40640883995/job/122658482846"
+                    >40640883995</a
+                  >
+                </td>
+                <td>0</td>
+                <td>acknowledged</td>
+                <td>0</td>
+                <td>0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Six evenly spaced picks from 12 assigned canceled Bazel jobs. Five
+          retain a test-child acknowledgment; one remains unknown. The default-5
+          child has two indexed COMPLETED/OK-status same-digest records queued
+          8–9s after the acknowledgment. A zero-retry child has nine later
+          records with distinct digests from its 49 canceled records, plus 25
+          queues in the displayed acknowledgment second. This is consistent with
+          the earlier distinction between retrying an action and submitting
+          different work; it does not estimate either frequency. The same-second
+          25 have uncertain ordering. Other three acknowledged cases have no
+          later indexed queue records.
+        </p>
+        <p>
+          These are selected indexing/timestamp observations, not client RPC
+          retry traces, fresh output proofs or complete consumer-ownership
+          checks. GitHub/worker clocks were not calibrated; no physical
+          worker-stop time, actual hosted lease or recovered worker-seconds is
+          measured. A missing acknowledgment is not a successful cancellation.
+        </p>
+      </section>
+      <section id="actions">
+        <h2>Concrete next actions</h2>
+        <ol>
+          <li>
+            <strong
+              >Reproduce the journal/quiesce failure at its owner
+              boundary.</strong
             >
-            is the artifact build.
-          </p>
-          <p>
-            This populated-store/cache smoke established coexistence, not a
-            GitHub-host speedup or a rerun of the artifact import checks. The
-            source change later landed in
-            <a href="https://github.com/agentydragon/ducktape/pull/12358"
-              >PR #12358</a
-            >. The PR validation job showed about 22s of policy/build overlap at
-            one-second timestamp resolution, then fetched artifacts and passed
-            Nix import checks. That verifies the selected job sequence; it is
-            not a matched speedup. The historical 28s / 31s ideal overlap from
-            147 paired intervals is retained as context, not a pending
-            implementation estimate. Full affected-artifact selection remains
-            deferred because it is more complex and the remaining gate headroom
-            is small.
-          </p>
-        </section>
-        <section id="actions">
-          <h2>Recommended tracks and expected gains</h2>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Rank / track</th>
-                  <th scope="col">Concrete action</th>
-                  <th scope="col">Expected gain / affected population</th>
-                  <th scope="col">Effort, confidence and falsification</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>1 · Measure the landed zero-retry policy</td>
-                  <td>
-                    Measure the policy from
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12468"
-                      >PR #12468</a
-                    >, which sets <code>build:ci --remote_retries=0</code>. It
-                    merged in <code>53c5ec8bde04</code>; its validation CI child
-                    BES recorded the explicit zero-retry option.
-                  </td>
-                  <td>
-                    One plain zero-retry probe had no indexed same-action
-                    replacement for 65.271s, while its default control requeued
-                    and completed. This is targeted mechanism evidence, not
-                    measured CI compute or feedback savings.
-                  </td>
-                  <td>
-                    Temporary and broad: all Bazel remote retries in CI are
-                    disabled, including recovery from unrelated transient remote
-                    failures. The barrier control still ran later distinct work.
-                    After adoption, compare cancellation-linked same-digest
-                    replacements and non-cancellation remote failures; revert if
-                    transient failures materially rise.
-                  </td>
-                </tr>
-                <tr>
-                  <td>2 · Separate capacity only if bursts recur</td>
-                  <td>
-                    Confirm the eligible GitHub runner pool and account-wide
-                    occupancy, then test a bounded separate-capacity pilot for a
-                    nonrequired job with the same trust boundary. Keep devel
-                    release/image pushes non-cancelling.
-                  </td>
-                  <td>
-                    The historical 27 October busy window had PR Bazel queue
-                    130s / 293s p50/p90 and 20 repository-visible runners
-                    occupied for 60m53s. No quiet-period gain follows; visual
-                    publication was 5.4% of measured busy-window occupancy.
-                  </td>
-                  <td>
-                    Conditional operational cost. A repository-visible peak does
-                    not identify the account plan. Proceed only if the same
-                    burst recurs and eligible isolated capacity exists; compare
-                    matched PR gate queues.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="small">
-            <strong>Cancellation ownership remains unresolved:</strong> the
-            temporary zero-retry policy targets the same-action retry path, but
-            the barrier control shows later distinct work can still run. The
-            helper records request acknowledgment, not terminal quiescence, and
-            the exact physical worker stop remains unproven. The
-            <a href="https://github.com/agentydragon/ducktape/pull/12244"
-              >#12244 diagnostics PR</a
+            Use controlled transaction cancellation and reopen checks in the
+            runner journal/session lifecycle tests; keep admission identity and
+            exact drain acknowledgment. This targets the cleanup failure seen in
+            three job attempts across two unique remote executions, rather than
+            masking their timeout.
+          </li>
+          <li>
+            <strong>Make the retry-policy tradeoff explicit.</strong> Five of 58
+            known-zero attempts ended in retry-eligible remote errors;
+            cancellation savings remain unmeasured. Decide whether to retain
+            zero with that manual-rerun cost or restore useful retries while
+            accepting the demonstrated cancellation race. A selective
+            cancellation-safe retry policy is preferable in principle, but no
+            supported flag separating these statuses has been established and
+            the Bazel backport was declined. Do not silently change policy from
+            this report.
+          </li>
+          <li>
+            <strong
+              >Extend the combined-adoption sample before another VM/MCP
+              optimization.</strong
             >
-            remains a separate open diagnostics change. Neither the mitigation
-            nor the earlier probe establishes reclaimed remote work or a
-            feedback saving.
-          </p>
-        </section>
-        <section id="capacity">
-          <h2>Earlier queue and remote-compute baseline</h2>
-          <p>
-            The following distributions retain the original 26–27 October 06:00
-            UTC snapshot and its earlier daily busy buckets. They are historical
-            context for the fresh 19:00–20:30 UTC burst above, not a merged
-            cohort.
-          </p>
-          <p>
-            Latest-day PR jobs, created through workflows in [26 October 06:00,
-            27 October 06:00) UTC. Assigned and completed jobs only for duration
-            distributions; cancelled/failed attempts remain in the outcome
-            counts. The fork artifact bridge is a short result-forwarding job,
-            separate from its real source-artifact job.
-          </p>
-          <div class="scroll">
+            One full devel validation now passes. Collect further completed
+            actual-source runs containing both<a
+              href="https://github.com/agentydragon/ducktape/pull/12495"
+              >#12495</a
+            >
+            and<a href="https://github.com/agentydragon/ducktape/pull/12496"
+              >#12496</a
+            >; verify runtime cases and phase spans. Include the later
+            import-order merge<a
+              href="https://github.com/agentydragon/ducktape/pull/12498"
+              >#12498</a
+            >
+            only when actual tested source contains it; keep its
+            import/readiness proof separate from population savings.
+          </li>
+        </ol>
+        <p>
+          Artifact phase overlap is implemented and sustained. Browser shard
+          reduction remains an optional compute tradeoff; more GitHub/RBE
+          capacity is not justified by these selected process-dominated
+          profiles.
+        </p>
+      </section>
+      <section id="methods">
+        <h2>Sources, clocks and limits</h2>
+        <p>
+          The collection recursively split all-workflow run queries below
+          GitHub’s 1,000-result cap: <strong>2,279 distinct runs</strong>, with
+          all attempts’ job detail for
+          <strong>975 core runs / 2,618 jobs</strong>. Core scope is CI,
+          trusted-fork CI, pre-commit and artifact workflows. No all-workflow
+          runner-occupancy or account-capacity census was collected. Run
+          membership uses creation time; job outcomes were read during the later
+          sweep. Attempts and distinct heads are separate units.
+        </p>
+        <p>
+          Assigned-completed duration statistics require a positive runner ID
+          and valid ordered timestamps. Cancellations are excluded from
+          success/failure denominators and retained in outcome tables.
+          Percentiles use nearest rank; GitHub timestamps resolve one second.
+          The two temporal bins have different workloads and source histories.
+          Effective policy is established from actual Bazel options, rather than
+          assigned by creation time.
+        </p>
+        <p>
+          Same-repository PR feedback is a
+          <strong>latest-head survivor proxy</strong>: earliest matching core
+          workflow creation to completion of the latest successful native jobs
+          for all three required contexts. It is not push-to-green or full
+          auto-merge readiness. Fork heads are excluded from that linkage
+          because their workflow head metadata can name the base. Changed-path
+          classes use exact head/event-base comparisons where available;
+          unknowns remain explicit.
+        </p>
+        <p>
+          Live rules still require <code>bazel-ci / Test &amp; Build</code>,
+          <code>Pre-commit checks</code> and
+          <code>Build artifacts + imports check</code>, with zero required
+          approvals and no strict up-to-date/thread-resolution requirement.
+          Drafts, conflicts and extra approval for unattributed changes can
+          still block merge. The legacy branch-protection endpoint returned 404;
+          the active branch-rules endpoint supplies these requirements.
+        </p>
+        <p>
+          Remote queue, process/worker time, CPU, artifact overlap and
+          required-check wall time are different units. Shared/cached executions
+          and synthetic cancellation timestamps cannot prove physical worker
+          shutdown or reclaimed compute. Agent-visible API availability,
+          webhook/inbox/harness receipt and full-policy readiness remain
+          unmeasured. Raw logs, profiles, worker identities and credentials stay
+          local; public evidence contains reviewed aggregates, source/action
+          links and artifact hashes.
+        </p>
+      </section>
+      <section id="continuity">
+        <h2>What happened to the earlier recommendations</h2>
+        <p>
+          The complete latest reports at <code>e199f995abea</code>, both
+          manifests and relevant evidence were reviewed before collecting this
+          sample. These dispositions preserve earlier results with their
+          original conditions; they do not merge historical denominators with
+          the new pilot.
+        </p>
+        <details>
+          <summary>Prior-work inventory and deferred tracks</summary>
+          <div
+            class="table-wrap"
+            tabindex="0"
+            role="region"
+            aria-label="Scrollable evidence table"
+          >
             <table>
               <thead>
                 <tr>
-                  <th scope="col">Job population</th>
-                  <th scope="col">Assigned complete n</th>
-                  <th scope="col">Queue p50 / p90 (s)</th>
-                  <th scope="col">Runtime p50 / p90 (s)</th>
-                  <th scope="col">All attempt outcomes</th>
-                  <th scope="col">Invalid queue timestamps excluded</th>
+                  <th scope="col">Track</th>
+                  <th scope="col">Disposition and remaining boundary</th>
+                  <th scope="col">Reference</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td>bazel-ci / Test &amp; Build</td>
-                  <td>165</td>
-                  <td>2 / 16</td>
-                  <td>177 / 650</td>
+                  <td>Exporter shutdown waits</td>
                   <td>
-                    {&#x27;success&#x27;: 100, &#x27;cancelled&#x27;: 38,
-                    &#x27;failure&#x27;: 29}
+                    MCP PR #12496 merged at 06:04:10 Z; VM PR #12495 merged
+                    after the source pin. Prior controlled MCP cleanup sums
+                    84.36→23.72 s with both SDKs disabled, runner-only 82.56 s;
+                    ten identical cases retained. VM cleanup 49.75→34.86 s while
+                    whole action 409.7→415.3 s. These are focused phase results;
+                    combined landed CI effect remains unmeasured.
                   </td>
-                  <td>0</td>
-                </tr>
-                <tr>
-                  <td>Pre-commit checks</td>
-                  <td>161</td>
-                  <td>2 / 3</td>
-                  <td>63 / 70</td>
-                  <td>
-                    {&#x27;success&#x27;: 144, &#x27;failure&#x27;: 10,
-                    &#x27;cancelled&#x27;: 8}
-                  </td>
-                  <td>0</td>
-                </tr>
-                <tr>
-                  <td>same-repo artifact job</td>
-                  <td>70</td>
-                  <td>2 / 14</td>
-                  <td>107 / 118</td>
-                  <td>{&#x27;success&#x27;: 61, &#x27;cancelled&#x27;: 9}</td>
-                  <td>0</td>
-                </tr>
-                <tr>
-                  <td>nix-wheel-check / Build artifacts + imports check</td>
-                  <td>93</td>
-                  <td>2 / 5</td>
-                  <td>101 / 116</td>
-                  <td>{&#x27;success&#x27;: 86, &#x27;cancelled&#x27;: 7}</td>
-                  <td>4</td>
-                </tr>
-                <tr>
-                  <td>fork artifact bridge</td>
-                  <td>99</td>
-                  <td>2 / 3</td>
-                  <td>3 / 4</td>
-                  <td>{&#x27;success&#x27;: 86, &#x27;failure&#x27;: 13}</td>
-                  <td>4</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p>
-            12 assigned job records in the full selected snapshot report
-            creation after start, apparently on jobs retained during reruns.
-            Negative intervals are excluded from queue statistics, never
-            converted to zero. Four affect fork source-artifact queues and four
-            affect the bridge. They do not invalidate start/end runner
-            occupancy.
-          </p>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Daily busiest fixed 90-minute bucket</th>
-                  <th scope="col">CI arrivals</th>
-                  <th scope="col">Bazel jobs</th>
-                  <th scope="col">Queue p50 / p90 / max (s)</th>
-                  <th scope="col">Completed peak</th>
-                  <th scope="col">Minutes ≥20</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>2026-10-24T15:00:00Z → 16:30</td>
-                  <td>56</td>
-                  <td>54</td>
-                  <td>2 / 45 / 108</td>
-                  <td>20</td>
-                  <td>6.0</td>
-                </tr>
-                <tr>
-                  <td>2026-10-25T01:30:00Z → 03:00</td>
-                  <td>72</td>
-                  <td>66</td>
-                  <td>3 / 98 / 239</td>
-                  <td>20</td>
-                  <td>20.2</td>
-                </tr>
-                <tr>
-                  <td>2026-10-26T00:00:00Z → 01:30</td>
-                  <td>72</td>
-                  <td>72</td>
-                  <td>2 / 20 / 297</td>
-                  <td>20</td>
-                  <td>11.7</td>
-                </tr>
-                <tr>
-                  <td>2026-10-27T03:00:00Z → 04:30</td>
-                  <td>32</td>
-                  <td>32</td>
-                  <td>2 / 32 / 133</td>
-                  <td>20</td>
-                  <td>2.6</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p>
-            Each bucket was chosen by CI arrivals before looking at queues, with
-            a 45-minute all-workflow lookback. The 25 October burst reaches 20
-            completed-job slots for 20.2 minutes with Bazel queue p90 98s. That
-            supports burst contention, not an account-plan or hidden scheduler
-            claim. CodeQL remains <code>not-configured</code>.
-          </p>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Workflow cost, latest day</th>
-                  <th scope="col">Occupied runner-hours</th>
-                  <th scope="col">Coverage</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>ci.yml</td>
-                  <td>26.14</td>
-                  <td>Core run-creation census; lower bound</td>
-                </tr>
-                <tr>
-                  <td>nix-wheel-check.yml</td>
-                  <td>4.40</td>
-                  <td>Core run-creation census; lower bound</td>
-                </tr>
-                <tr>
-                  <td>pre-commit.yml</td>
-                  <td>5.48</td>
-                  <td>Core run-creation census; lower bound</td>
-                </tr>
-                <tr>
-                  <td>trusted-fork-pr-ci.yml</td>
-                  <td>11.55</td>
-                  <td>Core run-creation census; lower bound</td>
-                </tr>
-                <tr>
-                  <td>pr-visuals-publish.yml</td>
-                  <td>1.35</td>
-                  <td>Busy-window sample only</td>
-                </tr>
-                <tr>
-                  <td>nix-attic-push.yml</td>
-                  <td>0.79</td>
-                  <td>Busy-window sample only</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Inner CI test case</th>
-                  <th scope="col">Originating executions</th>
-                  <th scope="col">Remote execution-seconds</th>
-                  <th scope="col">CPU-seconds</th>
-                  <th scope="col">RBE queue p90 (s)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
                   <td>
                     <a
-                      href="https://app.buildbuddy.io/invocation/7d08c8f3-2186-5057-9b1f-08aa7a98a740"
-                      >7d08c8f3</a
+                      href="https://github.com/agentydragon/ducktape/pull/12496"
+                      >Prior evidence / change</a
                     >
                   </td>
-                  <td>49</td>
-                  <td>4591</td>
-                  <td>7133</td>
-                  <td>0.103</td>
                 </tr>
                 <tr>
+                  <td>Guest image import order</td>
+                  <td>
+                    PR #12498 merged at 06:15:11Z, after the collection window
+                    and pinned source. One pair: stack Ready 221.8→170.3 s,
+                    action 636.3→600.4 s; about 22 s service-readiness tail
+                    overlapped, while 29 s varied upstream. Root import
+                    remained~65 s. Retain full imports and final readiness; no
+                    digest-based skip or fleet estimate.
+                  </td>
                   <td>
                     <a
-                      href="https://app.buildbuddy.io/invocation/786f259e-a8b7-5444-b806-a23f7ebf07eb"
-                      >786f259e</a
+                      href="https://github.com/agentydragon/ducktape/pull/12498"
+                      >Prior evidence / change</a
                     >
                   </td>
-                  <td>1</td>
-                  <td>208</td>
-                  <td>256</td>
-                  <td>0.103</td>
                 </tr>
                 <tr>
+                  <td>Browser shards / manual scale tests</td>
+                  <td>
+                    Eight versus 16 shards retained 48 cases: process
+                    1795.4→1192.3 s, CPU 3624.7→2343.9 s, slowest 132→196 s in
+                    one pair. Repeat only as a compute tradeoff. Debundle scale
+                    moved to manual in#12486; optimized-CLI automatic-CI
+                    proposal is superseded. Trinity#12455 is also a
+                    manual-workload improvement.
+                  </td>
                   <td>
                     <a
-                      href="https://app.buildbuddy.io/invocation/a050fe2e-ff79-5700-b59c-bf56d42b99ed"
-                      >a050fe2e</a
+                      href="https://github.com/agentydragon/ducktape/pull/12486"
+                      >Prior evidence / change</a
                     >
                   </td>
-                  <td>22</td>
-                  <td>349</td>
-                  <td>384</td>
-                  <td>0.065</td>
                 </tr>
                 <tr>
+                  <td>VM/MCP landed work</td>
                   <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/a8593254-3603-51b7-880f-51685cdc95c0"
-                      >a8593254</a
-                    >
+                    Phase timing#12308, guest shutdown/storage ordering#12333
+                    and MCP decision reuse#12380 are complete. Prior acceptance:
+                    eight clean VM incarnations; BFF XML~44 s shorter across two
+                    runs per arm, with unequal startup/snapshot state. Preserve
+                    independent Claude/Codex/OOM boots and fresh-session denial;
+                    further basic/OAuth grouping was rejected because it changes
+                    policy/startup isolation.
                   </td>
-                  <td>64</td>
-                  <td>2960</td>
-                  <td>4578</td>
-                  <td>0.069</td>
-                </tr>
-                <tr>
                   <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/41080de6-d1a0-5a9e-a67f-dff68255c5bf"
-                      >41080de6</a
-                    >
-                  </td>
-                  <td>165</td>
-                  <td>6774</td>
-                  <td>9995</td>
-                  <td>0.065</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/9ba054ed-664f-5a81-981e-3b365a5268d9"
-                      >9ba054ed</a
-                    >
-                  </td>
-                  <td>145</td>
-                  <td>7980</td>
-                  <td>11381</td>
-                  <td>0.066</td>
-                </tr>
-                <tr>
-                  <td>
-                    <a
-                      href="https://app.buildbuddy.io/invocation/9a80d2fa-9d90-531c-b0a4-a3fad67ba017"
-                      >9a80d2fa</a
-                    >
-                  </td>
-                  <td>1</td>
-                  <td>561</td>
-                  <td>984</td>
-                  <td>0.059</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="small">
-            Runner occupancy is clipped [start,end) completed positive-runner-ID
-            intervals. Runs created before the window can be absent unless
-            captured by a burst lookback; unfinished intervals are excluded.
-            Noncore workflow costs are lower-bound busy samples; do not compare
-            them to a full-day census. Remote execution intervals overlap; CPU
-            is a separate resource. Cached/linked executions are excluded from
-            the originating-execution table. None of these units can be added to
-            feedback wall time or treated as billed attribution.
-          </p>
-        </section>
-        <section id="continuity">
-          <h2>Continuity with the complete previous investigation</h2>
-          <p>
-            Complete prior HTML, disclosures, manifest and substantive evidence
-            were reviewed at
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/4a0bd596cc050f613067608beae1ef11be05a91e/latency/index.html"
-              >4a0bd596cc05</a
-            >. Earlier measurements retain their original October 20–24 windows;
-            the current sample does not retroactively replace them.
-          </p>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Previous substantive track</th>
-                  <th scope="col">Current disposition</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>API-only fixture image</td>
-                  <td>
-                    Resolved in
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/11506"
-                      >#11506</a
-                    >; historical graph cut 14 → 0 retained, no causal
-                    population saving.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Deterministic rendering / MCP variant</td>
-                  <td>
-                    Resolved in
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/11747"
-                      >#11747</a
-                    >
-                    /
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/11746"
-                      >#11746</a
-                    >; output-byte and invalidation proofs retained.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Image bytecode / consumed layers</td>
-                  <td>
-                    Lower priority: historical 23.24s bytecode path retained;
-                    current representative Go/VM paths are dominated elsewhere.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Source-artifact affected selection / phase overlap</td>
-                  <td>
-                    Selection remains deferred under the historical 20/94
-                    artifact-last count and 14s/33s margin. The simpler
-                    policy/build overlap landed in
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12358"
-                      >#12358</a
-                    >; one job showed about 22s overlap at 1s resolution, with
-                    no matched savings claim. The earlier 28s / 31s estimate
-                    remains historical; implementation is complete.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Remote cancellation quiescence</td>
-                  <td>
-                    Follow-up reproduced a default same-digest replacement and a
-                    child-only <code>CANCELLED</code>-to-fresh-
-                    <code>Execute</code> trace 105ms apart. In one plain
-                    comparison, <code>--remote_retries=0</code> left no indexed
-                    replacement for 65.271s; a barrier control still ran a later
-                    distinct action. Temporary CI policy is in
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12468"
-                      >PR #12468</a
-                    >. Exact producer stop, complete consumer ownership, and
-                    effect on fleet work remain unknown; no saved compute or
-                    feedback benefit is assigned.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Immutable image seeds</td>
-                  <td>
-                    Deferred behind measured serial scenario work. VM key is
-                    distinct from immutable seed support; preserve fresh state
-                    and trusted digest identity.
-                  </td>
-                </tr>
-                <tr>
-                  <td>VM critical-path phase timing</td>
-                  <td>
-                    <a
-                      href="https://github.com/agentydragon/ducktape/pull/12308"
-                      >PR #12308</a
-                    >
-                    merged with the phase-timing instrumentation. Remove the
-                    previous measurement task from the action list; no VM timing
-                    speedup is inferred from the merge itself.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Suitable VM workers / recycling</td>
-                  <td>
-                    VM key landed; one-pair lineage benefit retained. Extra pod
-                    key still has no demonstrated benefit. The new guest ACPI
-                    and PVC-virtiofs sidecar ordering passes the focused
-                    eight-incarnation shutdown check, but establishes no KVM or
-                    executor-class capability and no fleet reliability rate.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Scoped fixtures / runner helpers</td>
-                  <td>
-                    Partial ownership extraction retained. Broad conftest
-                    imports remain; no new configured-closure or latency saving
-                    claimed.
-                  </td>
-                </tr>
-                <tr>
-                  <td>DCR component fixture</td>
-                  <td>
-                    Deferred: retain full ingress/discovery smoke while moving
-                    component-only contracts; current workload priority is
-                    VM/MCP.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Mypy type-only inputs</td>
-                  <td>
-                    Retained as separate cold-sweep work; no
-                    batching/internal-cache correctness proof. Historical 1,032s
-                    broad sweep remains historical.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Actions Go retirement</td>
-                  <td>
-                    Resolved in source; do not recommend finishing a completed
-                    migration or infer live rollout proof.
-                  </td>
-                </tr>
-                <tr>
-                  <td>BFF / app removal / MCP edge</td>
-                  <td>
-                    MCP edge is now a separate Go service in source.
-                    App/history/auth state ownership remains; no wholesale
-                    app-removal saving assumed.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Leaf-rule selection</td>
-                  <td>
-                    Deferred: both-revision graph proof and full fallback still
-                    required. No blanket
-                    <code>.bzl</code> filter narrowing.
-                  </td>
-                </tr>
-                <tr>
-                  <td>Scenario grouping</td>
-                  <td>
-                    The earlier bounded two-shard probe retains a
-                    high-compute-cost rejection. The four-run uncached
-                    comparison is historical: all 44 test executions passed and
-                    BFF decision-case XML averaged 43.796s shorter for reuse,
-                    but different later snapshot/startup states confound
-                    whole-action effects. The test change merged via
                     <a
                       href="https://github.com/agentydragon/ducktape/pull/12380"
-                      >PR #12380</a
+                      >Prior evidence / change</a
                     >
-                    at commit
+                  </td>
+                </tr>
+                <tr>
+                  <td>Reliability / source selection</td>
+                  <td>
+                    iptables lock handling#12248, deadline fix#12189 and
+                    selected replay#12254, pre-commit merge-parent
+                    selector#12270, and cleanup-diagnostic preservation#12244
+                    are merged. Deadline replay 0/3 and real-lock tests are
+                    bounded acceptance, not recurrence-rate estimates.
+                    Diagnostic preservation does not repair a stuck cleanup
+                    state.
+                  </td>
+                  <td>
                     <a
-                      href="https://github.com/agentydragon/ducktape/commit/992061945204a40b22de67c3f3ac953c2e52a3ec"
-                      >992061945204</a
-                    >. Post-landing CI/fleet effect remains unmeasured. Preserve
-                    VM independent-boot coverage; shared multi-PR clusters
-                    remain untested.
+                      href="https://github.com/agentydragon/ducktape/pull/12244"
+                      >Prior evidence / change</a
+                    >
                   </td>
                 </tr>
                 <tr>
-                  <td>Fixture probes / runfiles bytecode</td>
+                  <td>Cancellation ownership</td>
                   <td>
-                    Docker probe completed here without a demonstrated gain.
-                    Prior compilation budget 6–8s remains historical; scoped
-                    precompile/toolchain repair deferred behind larger paths.
+                    Zero retries#12468 suppresses one client retry path. RPC
+                    control resubmitted 105 ms after CANCELLED; a distinct gated
+                    action still ran with zero retries. Producer-stop
+                    evidence#12482 is merged: one normal same-server completion
+                    receipt within 2.302 s; blocked case inconclusive; matched
+                    native-client kill fixed within 0.731 s on Bazel 10
+                    development. Hosted lease/stop trace requires an operator.
+                    Backport declined; no Bazel upgrade or support request is
+                    queued.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/pull/12482"
+                      >Prior evidence / change</a
+                    >
                   </td>
                 </tr>
                 <tr>
-                  <td>Pinned Nix source cache</td>
+                  <td>Artifact checks / capacity</td>
                   <td>
-                    Host guard remains removed.
-                    Prepared-container/combined-evaluation rejection retained;
-                    no new evidence reverses it.
+                    Native policy/build overlap#12358 is complete and remeasured
+                    here. Affected-artifact selection remains deferred behind
+                    the small artifact-last population. Prior burst reached 20
+                    repository-visible runners for 60 m 53 s; visual publication
+                    used 5.4% of measured occupancy. Capacity remains
+                    conditional on repeat bursts and verified eligible
+                    account-wide capacity; no account plan or hosted-executor
+                    saturation is established.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/pull/12358"
+                      >Prior evidence / change</a
+                    >
                   </td>
                 </tr>
                 <tr>
-                  <td>Nonrequired publication capacity</td>
+                  <td>Image and workspace reuse</td>
                   <td>
-                    Fresh burst remeasures this: visual announce/publish used
-                    5.4% of observed occupied time. A genuinely
-                    separate-capacity pilot remains conditional; do not cancel
-                    publishing pushes.
+                    VM recycling key#11769 remains; historical imports
+                    198.0→11.7 s are one matched pair, not a fleet effect. Extra
+                    Pod key had no benefit. Immutable seeds remain deferred.
+                    ctr-local, parallel import and no-unpack probes did not
+                    support adoption. Docker opt-out passed four unequal-state
+                    runs without a demonstrated gain. Six warmed full/empty
+                    workspace pairs added~10.18 s, without reproducing 91.068 s
+                    pre-attachment stall.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/latency/index.html"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Fixture graph and selection</td>
+                  <td>
+                    API image#11506 and deterministic rendering/MCP
+                    variants#11746/#11747 are retained; graph cut 14→0 is
+                    historical. k 3 s ownership#11871 and Go Actions retirement
+                    are complete. Scoped fixtures and DCR component fixtures
+                    remain partial/deferred; preserve full ingress/discovery
+                    smoke. Leaf-rule narrowing still needs both-revision graph
+                    proof and fallback. Broad mypy batching/internal caches
+                    remain unproved.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/latency/index.html"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Rejected cost/latency shortcuts</td>
+                  <td>
+                    Two-shard VM/MCP pair increased worker-seconds 1.74× and CPU
+                    2.31× for an unmatched 14.6 s wall difference; do not adopt
+                    blanket sharding. No VM boot coverage is removed. Prepared
+                    Nix check container/combined evaluation remains rejected;
+                    host guard stays removed. Cold bytecode/mypy work,
+                    publication-tail work and changed-consumer invalidation
+                    remain lower priority than measured required gates.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/latency/index.html"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Older implemented optimizations</td>
+                  <td>
+                    Bridge sharding, PostgreSQL templates, Props prefetch,
+                    shallow checkout, warm Bazel, parse-once YAML, Gazelle
+                    consolidation and marker/policy cache work retain their
+                    original source/window evidence. Their fleet savings are not
+                    remeasured here. App/history/auth ownership migrations
+                    retain independent correctness gates; no wholesale
+                    app-removal saving is assumed.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/latency/index.html"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Historical reliability leads</td>
+                  <td>
+                    October 24–27 baseline:2/345 mainline failures,29/129
+                    conclusive PR attempts; five selected same-source recoveries
+                    are not a flake rate. CAS eviction, CPU-bound scale timeouts
+                    and pre-command startup timeouts are distinct. Old
+                    notification/Python and RunnerBridge mechanisms moved
+                    owners; do not revive retired-path fixes. Native journal,
+                    receipt idempotency, projection readiness and visual capture
+                    invariants remain. Source-only Casino/debounce/FreeCAD leads
+                    were not re-audited here; Augur port callers migrated and
+                    D-Bus example is absent.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/reliability/index.html"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Feedback visibility</td>
+                  <td>
+                    Live BuildBuddy status#11827/#11851/#11854 and
+                    pagination/source-lineage tooling are retained. Status
+                    timestamps, API availability, webhook delivery, inbox
+                    admission, harness receipt and complete auto-merge readiness
+                    are distinct. This refresh observes native check/job clocks;
+                    no delivery schedule, Mimir metric, Shapley allocation or
+                    hosted Pages deployment was created.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/latency/index.html"
+                      >Prior evidence / change</a
+                    >
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <details>
-            <summary>Older experiments and unresolved follow-ups</summary>
-            <p>
-              Bridge sharding (84s single-pair path benefit at ~32% more worker
-              wall time), indexing/PostgreSQL templates (147.3→41.3s pair),
-              Props concurrent prefetch (25–42s focused benefit), shallow
-              checkout, warm Bazel and parse-once YAML remain landed historical
-              results. Gazelle consolidation, marker/policy cache substitutions,
-              verdict reuse and visual artifact discovery/fetch improvements
-              remain retained; their fleet savings are not remeasured here.
-              Same-derivation Nix image substitution, publisher-tail work and
-              changed-consumer invalidation remain deferred behind required-gate
-              evidence.
-            </p>
-            <p>
-              Prior <code>ctr --local</code>, parallel imports and no-unpack
-              experiments do not justify revival: no useful paired local-import
-              win, parallel imports were slower, and no-unpack shifts first-use
-              cost. Mypy batching/internal caches remain separate unproved
-              proposals.
-            </p>
-            <p>
-              The old 91.068s pre-attachment stall was not reproduced by six
-              matched full/empty-tree actions: full tree added a repeatable
-              ~10.18s on a warmed worker. This was not a deployable saving. New
-              generator timeout worker evidence in the reliability report renews
-              the hosted-preparation follow-up; no client-side timeout increase
-              or invented host-stage cause follows. App/state migrations,
-              real-model acceptance and layered VM/KVM alternatives retain their
-              own correctness gates.
-            </p>
-          </details>
-        </section>
-        <section id="method">
-          <h2>Clocks, source and coverage limits</h2>
-          <p>
-            Run census: <strong>11,418 distinct workflow runs</strong> in
-            recursively split uncapped windows. Job details: 3,461 selected runs
-            / 8,867 distinct jobs, comprising all core workflows created in the
-            latest 24 hours plus four all-workflow burst samples. PR sample:
-            100/374 latest heads. The collection used cached reads from an
-            initial sweep, resumed after one transient TLS failure; final sweep
-            06:24:12–06:30:16 UTC on October 27, with earlier census reads
-            beginning around 06:15. This is not atomic.
-          </p>
-          <p>
-            Fresh queue collection: all 1,822 runs created from 17:00–20:30 UTC
-            across every workflow were recursively split below GitHub's
-            1,000-result cap, and all attempts' 3,880 jobs were paged in a
-            20:56:42–21:03:30 UTC sweep. The 24-hour core census [26 October
-            20:30, 27 October 20:30) covers 1,447 runs and 4,182 distinct job
-            attempts, with job detail finishing at 21:08:37 UTC. Its overlap
-            with the busy sample reused those job records. Runs are grouped by
-            run creation; queue and job populations by job creation. The
-            all-workflow occupancy uses a two-hour lookback and completed
-            positive-runner intervals, so it is a lower bound. The review
-            inspected workflow source at
-            <code>c5223008de030c30ecbb8b4774754dfd221a2bae</code>; relevant
-            workflow files are unchanged from the earlier
-            <code>bddd9cd74d9c</code> review. Raw API payloads and job logs
-            remain private; the evidence publishes aggregates and immutable
-            job/invocation links.
-          </p>
-          <p>
-            Rules re-read live: three required contexts —
-            <code>Build artifacts + imports check</code>,
-            <code>Pre-commit checks</code>,
-            <code>bazel-ci / Test &amp; Build</code>; zero required approvals,
-            no strict up-to-date/code-owner/last-push/thread requirement. Linear
-            history, draft/conflicts and extra approval for unattributed changes
-            can still block readiness. Forks outside the explicit trusted-author
-            set wait for the protected environment. A skipped native fork job is
-            not a successful test verdict.
-          </p>
-          <p>
-            Percentiles use nearest rank. All durations are seconds except
-            labeled runner-hours / worker/CPU units. Actual push time,
-            historical complete-policy eligibility, first queryability,
-            webhook/inbox/harness receipt and clock-skew bounds are unavailable.
-            GitHub timestamps have one-second resolution; bounded availability
-            observations were about 20 seconds apart. No scheduled monitoring or
-            Shapley attribution was collected.
-          </p>
-          <p>
-            The VM/MCP follow-up uses one selected post-window passing PR CI
-            head, three fresh standalone MCP runs and one temporary source-patch
-            compatibility probe; its source review is pinned to
-            <code>bddd9cd74d9cc1e3aaa80ba2662c633884ab761e</code>. It does not
-            update the earlier 100-head distributions, runner-hour census or
-            agent receipt. Profiles, raw payloads, logs, worker identities and
-            temporary source patches remain local. Reviewed evidence records
-            aggregate values, exact source/job/invocation links, experiments and
-            limitations. The unchanged skill <code>evidence.sh</code> recipes
-            were run as supporting data; their stock scope is the selected
-            snapshot and raw queue handling is not used in corrected headline
-            statistics. Collection/analysis scripts used at most four parallel
-            readers and followed test-result group pagination.
-          </p>
-          <p>
-            The cancellation mitigation follow-up is a separate focused
-            experiment, not a refresh of the historical PR feedback or runner
-            cohorts. The normal-path reproduction used source
-            <code>aa9196b606ac</code>, the retry comparison
-            <code>9fac91535c64</code>, and the child-only RPC trace
-            <code>215af6378b9d</code>; the selected evidence is linked in the
-            <a href="#remote-retries">mitigation section</a>. The inspected
-            devel source is pinned to
-            <a
-              href="https://github.com/agentydragon/ducktape/commit/53c5ec8bde044fc0ca3b9959cf56f2b73baba641"
-              ><code>53c5ec8bde04</code></a
-            >, separate from PR #12468 head
-            <code>88fb88609842d9c7f6d4333190d1233f0fd5302a</code>. The PR CI
-            child BES records <code>remote_retries=0</code>; all three required
-            contexts passed by 04:30:16Z. This proves the option reached that
-            validation invocation, not that it changed CI cancellation outcomes.
-            No cancellation-rate, retry-rate, worker-time or PR-feedback cohort
-            was collected for this update.
-          </p>
-          <p>
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/.github/workflows/ci.yml"
-              >.github/workflows/ci.yml</a
-            >
-            ·
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/.github/workflows/bazel-ci.yml"
-              >.github/workflows/bazel-ci.yml</a
-            >
-            ·
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/.github/workflows/trusted-fork-pr-ci.yml"
-              >.github/workflows/trusted-fork-pr-ci.yml</a
-            >
-            ·
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/.github/workflows/nix-wheel-check.yml"
-              >.github/workflows/nix-wheel-check.yml</a
-            >
-            ·
-            <a
-              href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/agentplane/notification_service/docs/api.md"
-              >agentplane/notification_service/docs/api.md</a
-            >
-          </p>
-        </section>
-        <footer>
-          Ducktape CI reports · standalone HTML, no hosted Pages deployment ·
-          <a href="evidence.json">reviewed evidence</a> ·
-          <a href="manifest.json">manifest</a> ·
-          <a href="../reliability/index.html">companion report</a>
-        </footer>
-      </details>
+        </details>
+        <p>
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/latency/index.html"
+            >Complete previous latency snapshot</a
+          >
+          ·
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/reliability/index.html"
+            >Complete previous reliability snapshot</a
+          >
+        </p>
+      </section>
+      <footer>
+        <a href="../reliability/index.html">Companion report</a> ·
+        <a href="evidence.json">Reviewed evidence</a> ·
+        <a href="manifest.json">Source and window</a><br />Standalone HTML; no
+        hosted Pages deployment or scheduled monitoring.
+      </footer>
     </main>
   </body>
 </html>
