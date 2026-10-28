@@ -2884,6 +2884,18 @@ impl ExecutionIndex {
     /// completed native-write census. Callable candidates are input facts;
     /// their returned-record constructors participate in the same native
     /// identity and integrity proofs as local-class fields.
+    fn completed_native_rules(&self) -> SemanticRules {
+        SemanticRules {
+            native_census_complete: true,
+            mutated_intrinsics: self.mutated_intrinsic_roots.clone(),
+            dynamic_scope: !self.dynamic_scope_owners.is_empty(),
+            native_dependencies: crate::analysis_inputs::ProofDependencies {
+                value_inputs: self.native_integrity_value_input_refs.clone(),
+            },
+            ..SemanticRules::default()
+        }
+    }
+
     pub(crate) fn prepare_semantic_facts(
         &self,
         flow: &ChunkValueFlow,
@@ -2965,12 +2977,6 @@ impl ExecutionIndex {
             classes,
             sets,
             collection_bindings,
-            native_census_complete: true,
-            mutated_intrinsics: self.mutated_intrinsic_roots.clone(),
-            dynamic_scope: !self.dynamic_scope_owners.is_empty(),
-            native_dependencies: crate::analysis_inputs::ProofDependencies {
-                value_inputs: self.native_integrity_value_input_refs.clone(),
-            },
             binding_context: NativeBindingContext {
                 declared_bindings,
                 shadowed_globals: shadowed.clone(),
@@ -2978,6 +2984,7 @@ impl ExecutionIndex {
             },
             native_call_identity_candidates,
             callables,
+            ..self.completed_native_rules()
         }))
     }
 
@@ -4628,19 +4635,10 @@ impl ExecutionIndex {
         index
     }
 
-    fn collection_intrinsic_is_unmodified(&self, constructor: &str) -> bool {
-        let root = match constructor {
-            "Map" => IntrinsicRoot::Map,
-            "Set" => IntrinsicRoot::Set,
-            "WeakMap" => IntrinsicRoot::WeakMap,
-            "WeakSet" => IntrinsicRoot::WeakSet,
-            _ => return false,
-        };
-        self.dynamic_scope_owners.is_empty()
-            && !self
-                .mutated_intrinsic_roots
-                .contains(&IntrinsicRoot::GlobalObject)
-            && !self.mutated_intrinsic_roots.contains(&root)
+    fn native_integrity_is_proven(&self, root: IntrinsicRoot) -> bool {
+        self.semantic_facts
+            .as_ref()
+            .is_some_and(|facts| facts.fact(&SemanticKey::NativeIntegrity(root)).is_some())
     }
 
     pub(crate) fn locate_native_integrity_witnesses(
@@ -7349,7 +7347,7 @@ pub(crate) fn infer_callable_capabilities(
     index.mutated_intrinsic_roots = integrity.mutated.clone();
     index.native_integrity_value_input_refs = integrity.consumed_value_inputs.clone();
     let mut result = InferredCallableCapabilities {
-        map_integrity: index.collection_intrinsic_is_unmodified("Map"),
+        map_integrity: false,
         callback_factories: BTreeMap::new(),
         returned_records: BTreeMap::new(),
         namespace_wrappers: BTreeMap::new(),
@@ -7382,7 +7380,12 @@ pub(crate) fn infer_callable_capabilities(
         );
         result.returned_records = infer_returned_records(&index, &exported_locals);
         result.namespace_wrappers = infer_namespace_wrappers(&index, &exported_locals);
+    } else {
+        index.semantic_facts = Some(Arc::new(SemanticFacts::solve(
+            index.completed_native_rules(),
+        )));
     }
+    result.map_integrity = index.native_integrity_is_proven(IntrinsicRoot::Map);
     result
 }
 

@@ -4,7 +4,7 @@ use super::super::value_model::{
     AbstractValue, ArrayIteration, ArrayIterationMethod, CallSite, Captured, CapturedContext,
     Context, DenseArray, FrozenNamespaceProof, OwnPropertyDescriptorSyntax, ValueExpr, Values,
 };
-use super::native_calls::{CallInputs, CallReturn, NativeCallModel, native_call_model};
+use super::native_calls::{CallInputs, CallReturn, NativeCallModel};
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, IntrinsicRoot, LocalConstructor,
     RetainedCallbackCall,
@@ -15,7 +15,7 @@ use crate::facts::callable_inference::CallableInferenceInputs;
 use crate::facts::fresh_receiver::fresh_mutation_callables;
 use crate::facts::item_views::TopLevelItemView;
 use crate::facts::local_effect_targets::MetadataDecorateCall;
-use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
+use crate::facts::semantic_inference::SemanticKey;
 use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
 use crate::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryUseFact,
@@ -3916,7 +3916,7 @@ impl Executor<'_> {
         args.is_empty()
             && matches!(callee, ValueExpr::Binding(id)
             if self.index.returned_record_summaries.contains_key(id)
-                && self.index.collection_intrinsic_is_unmodified("Map"))
+                && self.index.native_integrity_is_proven(IntrinsicRoot::Map))
     }
 
     fn promote_foreign_record(&mut self, outcome: &mut Outcome) {
@@ -5412,13 +5412,6 @@ impl PreparedSynchronousCallIndex {
 
     pub(crate) fn local_class_heap_proof(&self) -> crate::facts::LocalClassHeapProof {
         self.index.local_class_construction_proof.heap_proof()
-    }
-
-    pub(crate) fn semantic_facts(&self) -> &Arc<SemanticFacts> {
-        self.index
-            .semantic_facts
-            .as_ref()
-            .expect("prepared synchronous analysis has semantic facts")
     }
 }
 

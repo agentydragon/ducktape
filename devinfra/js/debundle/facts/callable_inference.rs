@@ -44,31 +44,33 @@ pub(crate) struct CallableInferenceInputs {
 
 impl CallableInferenceInputs {
     pub(crate) fn keys(&self) -> Vec<SemanticKey> {
-        self.functions
-            .iter()
-            .flat_map(|(binding, facts)| {
-                facts.values.iter().filter_map(move |value| {
-                    let ValueOrigin::Function(function) = value else {
-                        return None;
-                    };
-                    Some([
-                        SemanticKey::CallbackFactory {
-                            binding: binding.clone(),
-                            function,
-                        },
-                        SemanticKey::ReturnedRecord {
-                            binding: binding.clone(),
-                            function,
-                        },
-                        SemanticKey::NamespaceWrapper {
-                            binding: binding.clone(),
-                            function,
-                        },
-                    ])
-                })
-            })
-            .flatten()
-            .collect()
+        let mut keys = Vec::new();
+        for (binding, facts) in &self.functions {
+            for value in facts.values.iter() {
+                let ValueOrigin::Function(function) = value else {
+                    continue;
+                };
+                if self.callback_factories.contains(&function) {
+                    keys.push(SemanticKey::CallbackFactory {
+                        binding: binding.clone(),
+                        function,
+                    });
+                }
+                if self.records.contains_key(&function) {
+                    keys.push(SemanticKey::ReturnedRecord {
+                        binding: binding.clone(),
+                        function,
+                    });
+                }
+                if self.namespace_wrappers.contains_key(&function) {
+                    keys.push(SemanticKey::NamespaceWrapper {
+                        binding: binding.clone(),
+                        function,
+                    });
+                }
+            }
+        }
+        keys
     }
 
     /// Source candidates identify possible bodies. Only a required identity
