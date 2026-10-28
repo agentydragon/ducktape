@@ -17,16 +17,6 @@ component checklist rather than being copied here: haku-console's tool/API backl
   strategy so a failed replacement does not discard the last serving version. The 2026-07-14
   authority cutover is the regression case: new config restarted the old incompatible server and
   caused an outage until image automation caught up.
-- **Prove retry-safe tool-call admission.** Add fault injection for "the durable admission commit
-  succeeded, the HTTP/MCP response was lost, and the caller retried." Specify and implement a
-  caller-visible idempotency key scoped by canonical Operator and Agent binding if the current path
-  can create two executions. Preserve the exact binding generation in the deduplication boundary.
-- **Recover tool calls stranded in `RUNNING` without guessing their external outcome.** Add fault
-  injection for a pod/process loss both after the `RUNNING` commit but before backend execution and
-  after backend success but before terminal persistence. Specify an explicit unknown-outcome state
-  plus attempt/lease ownership, surface stale calls to the Operator, and reconcile them without
-  blindly retrying non-idempotent tools. A timeout alone must not turn an unknown external outcome
-  into either success, failure, or a second execution.
 - **Add public-client abuse controls if public DCR remains enabled.** Bound enrollment and
   registration attempts with Haku-side rate limits and transaction quotas. FastMCP continues to
   own protocol validation and TTLs; Haku owns enrollment interaction and activation limits.
@@ -40,9 +30,6 @@ slices over the deployed schema, not another identity migration:
   name/status, safe client metadata, scopes, binding generations, creation time, last-authenticated
   time, and reconnect history. Do not call inactivity "disconnected" or expose secrets/raw OAuth
   metadata. The existing schema is sufficient for this slice; do not block it on schema cleanup.
-- **Agent-filtered tool-call history:** add an optional canonical `agent_id` backend filter and UI
-  control. Apply authenticated `operator_id` first and Agent scope second. A foreign Agent UUID
-  returns an empty result rather than revealing existence.
 - **Lifecycle controls:** stage Operator-owned revoke/disable, rename, and tombstone/reconnect
   history as separate API + UI + audit slices. Distinguish revoking one binding/grant from disabling
   the Agent and all usable bindings. Keep names required, normalized, and globally unique; decide
@@ -52,9 +39,9 @@ slices over the deployed schema, not another identity migration:
 
 - After the Connected Agents read contract provides evidence about which joins really hurt,
   simplify the authority schema: remove the deferred name-reservation ownership cycle and
-  speculative client-software fields, consider the relational `operator_id`-or-`binding_id`
-  discriminated union directly on tool calls, remove deployment-only `secret_reference`, and prune
-  redundant trigger functions while retaining genuine cross-row security invariants. This is a
+  speculative client-software fields, and prune redundant trigger functions while retaining
+  genuine cross-row security invariants. Historical tool-call tables and static Agent credential
+  rows remain retained for history; this work concerns only the live identity graph. This is a
   deliberate migration, not a five-second cleanup.
 
 ## Google connection ownership and Airlock
@@ -68,7 +55,7 @@ slices over the deployed schema, not another identity migration:
 
 - **Keep Airlock credential-only while it remains:** it may own provider consent, refresh-token
   custody, and access-token publication. Do not add MCP ingress, tool execution, agent policy, or
-  an operator-approval queue back to it; those are Haku Console responsibilities.
+  an operator-approval queue back to it; those Console surfaces are retired.
 - **Typed auth configuration:** replace optional-heavy incoming/outgoing auth configurations with
   role-specific discriminated models and typed scope domains, atomically per consumer. Keep
   credentialed-facade and identity-delegation constructors separate.
@@ -152,19 +139,6 @@ The console design + action model live in `console/README.md`; the free-form-UI
 contract in `console/docs/containment.md`. (The launch-routine button itself
 has shipped on the capability tier — see the README.)
 
-- **Finish moving launch off the capability tier onto MCP approvals.** The `haku_routine`
-  in-process MCP server (`console/tools/routine.py`, tool `launch_routine`) now fires the
-  routine through the standard approval queue; the bespoke `capabilities.py` launch path and
-  the `requestLaunch` bridge verb are kept only for the transition. Remaining:
-  1. **haku-state:** migrate haku-ui to submit a `launch_routine` tool call through its backend
-     (the path it already uses for other tool calls) instead of posting `requestLaunch` over the
-     bridge; drop its `requestLaunch` usage + its own launch dialog (the approval drawer renders
-     the prompt now).
-  2. **ducktape:** once haku-ui is migrated, delete the launch-routine capability endpoint +
-     `LaunchRoutineRequest`, the `requestLaunch`/`launchResult` bridge protocol verbs
-     (`haku/shared/bridge_protocol/`), and the shell's launch `ConfirmDialog` branch; relocate the
-     shared `GET /api/capabilities/csrf` endpoint (used by the approval + operator-auth flows) so
-     `capabilities.py` can be removed.
 - **Recent routine executions + one-in-flight guard.** A read-only panel listing recent
   runs of the claude-code-web routine (status, start time, link), and a guard that blocks
   a second launch while one is in flight so a stray click can't fan out sessions. Both

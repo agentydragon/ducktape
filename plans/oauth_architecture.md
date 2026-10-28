@@ -1,10 +1,12 @@
 # OAuth and identity work across Ducktape
 
-- **Status:** Haku's canonical Operator/Agent authority and enrollment cutover is complete and
-  deployed. This file plans only remaining work.
-- **Updated:** 2026-07-16
+- **Status:** Haku Console's former MCP OAuth ingress and tool-call execution/approval surfaces are
+  retired. The Console retains canonical Operator/Agent identity data and its Operator-facing
+  Agent catalog; static Agent reconciliation is retired. This file tracks remaining identity and
+  cross-component OAuth/security work.
+- **Updated:** 2026-10-28
 - **Implemented contract:**
-  <../haku/console/README.md#canonical-agent-authority-and-enrollment>
+  <../haku/console/README.md#canonical-agent-authority>
 - **Tactical Haku backlog:** <../haku/console/TODO.md>
 
 Git and the closed prototype PRs are the archive for P0-P5. The former execution diary, spike
@@ -17,10 +19,10 @@ Keep these ownership boundaries:
 
 | Component         | Owns                                                                                                                                            | Does not own                                                  |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Authentik         | Human/machine authentication, IdP policy, upstream issuance and exchange                                                                        | Haku Agents, names, approval policy, or application lifecycle |
+| Authentik         | Human/machine authentication, IdP policy, upstream issuance and exchange                                                                        | Haku Agents, names, or application lifecycle                  |
 | FastMCP           | MCP discovery, client metadata/registration, transactions, redirect/PKCE validation, callback, codes, local token families, bearer verification | Haku's Operator-authenticated product interaction             |
 | FastAPI/Starlette | Route composition, application dependencies, browser sessions, CSRF, Jinja rendering                                                            | MCP authorization-server protocol state                       |
-| Haku              | Canonical Operator/Agent domain, enrollment, grants/bindings, lifecycle, downstream hub, policy, UI, and audit                                  | Generic Authentik/FastMCP infrastructure                      |
+| Haku              | Canonical Operator/Agent domain, enrollment, grants/bindings, lifecycle, downstream hub, UI, and audit                                          | Generic Authentik/FastMCP infrastructure                      |
 | `mcp_infra`       | Narrow typed protocol composition, direct JWT verification, credentialed facades, identity-preserving exchange                                  | Haku product policy                                           |
 | Airlock           | OAuth provider connections, refresh-token custody, and access-token publication                                                                 | MCP ingress, tool execution, approval, or Haku Agent identity |
 
@@ -37,10 +39,6 @@ The remaining work must preserve these distinctions:
 - Private Postgres/Valkey/Kubernetes Secret storage is an accepted credential boundary. Additional
   application encryption is optional, not a prerequisite.
 
-FastMCP `3.4.4` is the current pinned engine, not a permanent ceiling. Haku's accepted compatibility
-surface is one private `_code_store` read/delete plus version-pinned claim, scope-translation, and
-transparent-refresh hooks. Reconsider the design only if an upgrade would require callback
-interception, transaction-store access, copied issuance, broader private state, or route overrides.
 A DCR-capable IdP alone is not a reason to switch authorization servers: DCR registers software and
 does not supply Haku's Agent ceremony or lifecycle.
 
@@ -69,13 +67,14 @@ Acceptance:
 
 ### C1: simplify the authority schema after Connected Agents
 
-The deployed graph is safe but implements too much of its state machine twice: once in the
-transactional authority and again through 33 `haku_0009_*` PostgreSQL functions retained in the
-deployed `0010` baseline. Simplify the entities after H1 establishes the Connected Agents read
-contract and shows which joins are genuine friction, but before H3 lifecycle mutations make the
-current graph a product dependency. Then delete triggers made unnecessary by the smaller graph.
-Retain ordinary `NOT NULL`/`CHECK`/unique/FK constraints, the one-active-binding index, same-Agent
-predecessor integrity, and genuinely cross-row security rules.
+The current `0135` schema baseline retains 33 `haku_0009_*` PostgreSQL functions alongside the
+transactional authority. Simplify the live identity entities after H1 establishes the Connected
+Agents read contract and shows which joins are genuine friction, but before H2 lifecycle mutations
+make the current graph a product dependency. Migration `0138` retired static Agents; their retained
+rows are history, not active reconciliation input. Historical tool-call tables and rows are also
+retained and are outside this schema cleanup. Delete only triggers made unnecessary by changes to
+the live identity graph. Retain ordinary `NOT NULL`/`CHECK`/unique/FK constraints, the
+one-active-binding index, same-Agent predecessor integrity, and genuinely cross-row security rules.
 
 Recommended terminal shape:
 
@@ -88,17 +87,12 @@ Recommended terminal shape:
   immutable client ID and optional display-name snapshot needed by the enrollment interaction and
   grant. Do not store unprovable DCR/CIMD provenance, a write-only metadata hash, or an always-null
   icon.
-- Put nullable `operator_id` and `binding_id` FKs directly on `mcp_tool_calls` with
-  `CHECK (num_nonnulls(operator_id, binding_id) = 1)`. This remains a relational discriminated union
-  and removes the mandatory one-to-one principal table and completeness triggers.
-- Remove deployment-only `secret_reference` from static credential authority; fingerprint
-  uniqueness already prevents reuse across Agents.
 - Keep Agent, credential binding, and grant as separate entities. Reconsider redundant Agent status
   transitions only when disable/delete semantics are specified; do not derive away a future
   Agent-level policy control prematurely.
 
 This is not a five-second-stamp PR. Stage it after H1, with one schema migration and focused
-invariant tests, before H3 makes lifecycle contracts depend on the current graph.
+invariant tests, before H2 makes lifecycle contracts depend on the current graph.
 
 ### Haku product sequence
 
@@ -107,19 +101,13 @@ These are vertical product PRs, not another identity migration:
 | Order | Slice                           | Boundary and acceptance                                                                                                                                                                                                                                                                              |
 | ----- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | H1    | Connected Agents                | Operator-scoped API and trusted-console UI together. Derive name, client metadata, scopes, binding status/generation, timestamps, and reconnect history through canonical joins. Do not call inactivity “disconnected” or claim DCR/CIMD provenance that current public FastMCP inputs cannot prove. |
-| H2    | Agent-filtered history          | Backend `agent_id` filter plus UI control. Apply authenticated `operator_id` first and Agent scope second; include sibling-Agent and cross-Operator negative tests.                                                                                                                                  |
-| H3a   | Revoke and disable              | Operator-owned API, UI, audit representation, and negative tests. Distinguish revoking a legacy binding from disabling the Agent and all usable bindings; keep the public control scoped to the Agent rather than an internal grant identifier.                                                      |
-| H3b   | Rename                          | Atomically replace the Agent's required normalized, globally unique name. Add append-only rename audit only if the product needs history; retired names need not remain authority-bearing reservations.                                                                                              |
-| H3c   | Tombstone and reconnect history | Add explicit delete/tombstone semantics and cleanup/history UI after revoke/disable and rename semantics are stable.                                                                                                                                                                                 |
-| H4    | Per-Agent approval policy       | Store typed policy by canonical Agent, with the current global policy as inherited/default. Reuse `AgentActor`; do not change OAuth identity or tenant routing.                                                                                                                                      |
-| H5    | Per-Agent tool surface          | Derive `tools/list` from the verified binding and policy, emit `tools/list_changed` after policy edits, and never key authority on unverified `client_id`.                                                                                                                                           |
-
-The per-tool-call deep link is an independent console improvement tracked in
-<../haku/console/TODO.md>.
+| H2a   | Revoke and disable              | Operator-owned API, UI, audit representation, and negative tests. Distinguish revoking one credential binding/grant from disabling the Agent and all usable bindings; keep the public control scoped to the Agent rather than an internal grant identifier.                                          |
+| H2b   | Rename                          | Atomically replace the Agent's required normalized, globally unique name. Add append-only rename audit only if the product needs history; retired names need not remain authority-bearing reservations.                                                                                              |
+| H2c   | Tombstone and reconnect history | Add explicit delete/tombstone semantics and cleanup/history UI after revoke/disable and rename semantics are stable.                                                                                                                                                                                 |
 
 ### Independent security and consolidation lanes
 
-These do not block H1-H3:
+These do not block H1-H2:
 
 | Lane                             | Work                                                                                                                                                                                                                       |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -141,7 +129,6 @@ or cleanup prerequisite.
 | Agent keyed by `client_id`, username, display name, or token JTI          | Local UUID Agent plus explicit grant/binding evidence                               |
 | Equal bare `sub` values treated as global identity                        | Exact identities linked only through configured trust-domain anchors                |
 | Optional-heavy caller/auth shapes and string discriminator dispatch       | Enums and discriminated unions narrowed with `isinstance` or `match`                |
-| Copied owner/name/grant fields in tool-call principals                    | Exact `operator_id`-or-`binding_id` provenance plus canonical joins                 |
 | Product HTML in generic auth infrastructure or Python strings             | Haku-owned Jinja templates with autoescape and structured values                    |
 | Parent FastAPI dependency assumed to secure mounted FastMCP routes        | FastMCP provider/middleware for `/mcp`; explicit dependencies for parent routes     |
 | Transient storage/network failures translated to `401` or `invalid_grant` | Classified retryable service failures without mutating grant state                  |
@@ -151,14 +138,12 @@ or cleanup prerequisite.
 
 ## Acceptance gates
 
-- Every new Agent read, filter, lifecycle route, event, cache, and idempotency key begins with
+- Every new Agent read, lifecycle route, event, or cache begins with
   canonical Operator ownership and includes Agent/binding scope where applicable.
-- Every lifecycle operation revalidates the submitted binding at decision/execution time; a
-  replacement credential never inherits queued authority.
+- Every lifecycle operation revalidates the current Agent and binding state at commit time; a
+  stale or superseded binding cannot authorize the mutation.
 - UI metadata comes from canonical joins and is treated as untrusted presentation. Secrets and raw
   OAuth material never enter API models, logs, traces, or test artifacts.
-- FastMCP repins run the exact-version adapter plus mounted enrollment/token/refresh/revocation
-  contract suite before rollout.
 - Release automation validates and promotes one server/static/config tuple.
 - Airlock changes prove credentials work only on intended route surfaces and anonymous provider
   initiation fails.
