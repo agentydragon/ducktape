@@ -25,6 +25,22 @@ py_binary(
     deps = [":export_tool_schemas"],
 )
 
+genrule(
+    name = "tool_arguments_schema",
+    outs = ["tool_arguments.schema.json"],
+    cmd = "$(location :export_tool_schemas_bin) > $@",
+    tools = [":export_tool_schemas_bin"],
+    visibility = ["//haku/console/frontend:__pkg__"],
+)
+
+genrule(
+    name = "tool_results_schema",
+    outs = ["tool_results.schema.json"],
+    cmd = "$(location :export_tool_schemas_bin) --results > $@",
+    tools = [":export_tool_schemas_bin"],
+    visibility = ["//haku/console/frontend:__pkg__"],
+)
+
 py_test(
     name = "test_export_tool_schemas",
     size = "medium",
