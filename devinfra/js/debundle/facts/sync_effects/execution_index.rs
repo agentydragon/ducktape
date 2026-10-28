@@ -8292,6 +8292,8 @@ mod runtime_inference;
 
 #[path = "runtime_callbacks.rs"]
 mod runtime_callbacks;
+#[path = "runtime_models.rs"]
+mod runtime_models;
 
 #[path = "native_calls.rs"]
 mod native_calls;

@@ -331,7 +331,7 @@ struct CheckedLocalConstructorFactory {
 }
 
 #[derive(Clone, Copy)]
-struct ValidatedMetadataDecoration {
+pub(super) struct ValidatedMetadataDecoration {
     target_owner: SourceUnitOrdinal,
 }
 
@@ -1349,6 +1349,32 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captures: &Context,
         outcome: &mut Outcome,
     ) -> bool {
+        let result = self.request(RuntimeOperation::Model(
+            super::runtime_models::ModelOperation::ExecuteArrayIteration {
+                span,
+                environment: env.clone(),
+                captures: captures.clone(),
+                outcome: Box::new(std::mem::take(outcome)),
+            },
+        ));
+        let RuntimeValue::Model(super::runtime_models::ModelResult::ArrayIteration {
+            handled,
+            outcome: model_outcome,
+        }) = result
+        else {
+            unreachable!("array iteration models produce iteration results");
+        };
+        *outcome = *model_outcome;
+        handled
+    }
+
+    pub(super) fn execute_array_iteration_transfer(
+        &mut self,
+        span: CallSite,
+        env: &Context,
+        captures: &Context,
+        outcome: &mut Outcome,
+    ) -> bool {
         let Some((proof, source, dense, key, captured)) =
             self.array_iteration_plan(span, env, captures)
         else {
@@ -1630,6 +1656,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn summarize_metadata_decoration(
+        &mut self,
+        application: &MetadataDecorateCall,
+        validated: ValidatedMetadataDecoration,
+        owner: SourceUnitOrdinal,
+        outcome: &mut Outcome,
+    ) {
+        let result = self.request(RuntimeOperation::Model(
+            super::runtime_models::ModelOperation::SummarizeMetadataDecoration {
+                application: application.clone(),
+                validated,
+                owner,
+                outcome: Box::new(std::mem::take(outcome)),
+            },
+        ));
+        let RuntimeValue::Model(super::runtime_models::ModelResult::MetadataDecoration {
+            outcome: model_outcome,
+        }) = result
+        else {
+            unreachable!("metadata decoration models produce updated outcomes");
+        };
+        *outcome = *model_outcome;
+    }
+
+    pub(super) fn summarize_metadata_decoration_transfer(
         &mut self,
         application: &MetadataDecorateCall,
         _validated: ValidatedMetadataDecoration,
@@ -3412,6 +3462,25 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn construct_local_class(
+        &mut self,
+        key: u32,
+        args: &[Values],
+    ) -> Option<(Outcome, AbstractValue)> {
+        let result = self.request(RuntimeOperation::Model(
+            super::runtime_models::ModelOperation::ConstructLocalClass {
+                key,
+                arguments: args.to_vec(),
+            },
+        ));
+        let RuntimeValue::Model(super::runtime_models::ModelResult::LocalClassConstruction(result)) =
+            result
+        else {
+            unreachable!("local class models produce construction results");
+        };
+        *result
+    }
+
+    pub(super) fn construct_local_class_transfer(
         &mut self,
         key: u32,
         args: &[Values],

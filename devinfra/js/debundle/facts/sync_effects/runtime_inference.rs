@@ -7,6 +7,7 @@ use super::Call;
 use super::interpreter::{ExecutionInputs, ExecutionState, Executor, Outcome, OwnPropertyQuery};
 use super::runtime_callbacks::{self, CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
+use super::runtime_models::{self, ModelOperation, ModelResult};
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::statement_facts::SynchronousCalls;
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
@@ -55,6 +56,7 @@ enum OperationKind {
     OwnProperty,
     Heap,
     Callbacks,
+    Model,
 }
 
 pub(super) enum RuntimeOperation {
@@ -77,6 +79,7 @@ pub(super) enum RuntimeOperation {
         outcome: Box<Outcome>,
     },
     Callbacks(CallbackOperation),
+    Model(ModelOperation),
 }
 
 pub(super) enum RuntimeValue {
@@ -84,6 +87,7 @@ pub(super) enum RuntimeValue {
     Values(Values),
     Outcome(Box<Outcome>),
     Callbacks(CallbackResult),
+    Model(ModelResult),
 }
 
 struct RuntimeRequest {
@@ -152,6 +156,7 @@ impl RuntimeQueries<'_, '_> {
             RuntimeOperation::Invoke { .. } => OperationKind::Invoke,
             RuntimeOperation::Call { .. } => OperationKind::Call,
             RuntimeOperation::Callbacks(_) => OperationKind::Callbacks,
+            RuntimeOperation::Model(_) => OperationKind::Model,
         };
         let point = self.child_point(kind);
         let mut context = self.context.borrow_mut();
@@ -344,6 +349,9 @@ impl RuntimeRules<'_, '_> {
             } => {
                 executor.execute_call_transfer(&call, &environment, &captures, &mut outcome);
                 RuntimeValue::Outcome(outcome)
+            }
+            RuntimeOperation::Model(operation) => {
+                RuntimeValue::Model(runtime_models::dispatch(&mut executor, operation))
             }
             RuntimeOperation::Callbacks(operation) => {
                 RuntimeValue::Callbacks(runtime_callbacks::dispatch(&mut executor, operation))

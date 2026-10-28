@@ -52,6 +52,7 @@ fn recognized_local_effect_target(
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct MetadataDecorateCall {
     pub helper: Id,
     pub target: Id,
