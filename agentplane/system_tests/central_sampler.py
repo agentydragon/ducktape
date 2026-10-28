@@ -235,7 +235,7 @@ async def _create_sampler(connection: k8s.ApiClient, config: Settings) -> None:
         k8s.V1ClusterRoleBinding(
             metadata=k8s.V1ObjectMeta(name=SERVICE),
             role_ref=k8s.V1RoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name=SERVICE),
-            subjects=[k8s.V1Subject(kind="ServiceAccount", name=SERVICE, namespace=namespace())],
+            subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name=SERVICE, namespace=namespace())],
         )
     )
     values = config.model_dump(mode="json", exclude_none=True)
