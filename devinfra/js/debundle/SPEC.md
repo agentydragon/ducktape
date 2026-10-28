@@ -690,6 +690,18 @@ recognized native replacement invalidates both. This uses the existing local
 and whole-program native census and does not change the catalogue's A11
 assumption for other whitelist admissions.
 
+When a Set or local-class purity certificate consumes a captured value input,
+the resulting pure verdict carries the exact `value_inputs` references in its
+`dependencies` field. Those references are unioned through pure local calls,
+binding initializers, and inferred cross-module exports, including fixpoint
+rounds where the verdict stays pure but learns another dependency. Empty
+dependency sets are omitted, preserving the existing `{ "kind": "pure" }`
+report shape. An author `pure_exports` assertion remains its own axiom and
+does not acquire captured-value references from unrelated inference. The
+dependency field records only the premise used by the purity proof; it does
+not assert that the initializer is pure, reentry-free, non-throwing, fresh, or
+available before its source executes.
+
 At-init callback analysis also records possible implicit primitive conversions
 from arithmetic, relational and loose-equality operators, the left operand of
 `in`, numeric unary operators, updates and non-logical compound assignments.

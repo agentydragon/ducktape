@@ -190,7 +190,7 @@ fn attach_cause_refs(
         let index = causes.len();
         causes.push(PurityCauseReport {
             id: id.clone(),
-            purity: Purity::Pure,
+            purity: Purity::pure(),
         });
         let mut callee = (**cause).clone();
         attach_cause_refs(&mut callee, ids, causes);

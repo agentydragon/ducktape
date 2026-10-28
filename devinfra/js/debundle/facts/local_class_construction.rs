@@ -93,10 +93,6 @@ impl LocalClassConstructionProof {
         self.classes.contains_key(&class)
     }
 
-    pub(crate) fn contains_construction(&self, span: Span) -> bool {
-        self.constructions.contains_key(&span.lo.0)
-    }
-
     pub(crate) fn dependencies_for_class(&self, class: u32) -> Option<&ProofDependencies> {
         self.dependencies.get(&class)
     }
@@ -169,7 +165,7 @@ pub(crate) struct LocalClassHeapProof {
 
 impl LocalClassHeapProof {
     pub(crate) fn contains_construction(&self, span: Span) -> bool {
-        self.constructions.contains_key(&span.lo.0)
+        self.dependencies_for_construction(span).is_some()
     }
 
     pub(crate) fn dependencies_for_construction(&self, span: Span) -> Option<&ProofDependencies> {

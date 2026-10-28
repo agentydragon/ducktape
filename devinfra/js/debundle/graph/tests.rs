@@ -131,7 +131,7 @@ mod from_report_tests {
             source_location: None,
             declared_bindings: Vec::new(),
             statement_kind: StatementKind::VarDecl,
-            purity: Purity::Pure,
+            purity: Purity::pure(),
             callback_factory_barriers: Vec::new(),
             heap_native_integrity_uses: Vec::new(),
             synchronous_execution: None,

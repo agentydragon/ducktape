@@ -22,11 +22,12 @@
 //!   verdict types.
 //! - `classifier` — `classify_expr_purity` and its expression /
 //!   member / call / fluent-chain / property recursion, plus
-//!   `classify_var_decl_purity` and `class_has_static_observable`.
+//!   `classify_var_decl_purity` and `classify_class_static_purity`.
 //! - `builtin_calls` — `new`-expression, iterable-arg, and
 //!   `Object.*` builtin admission helpers and the result-primitive /
 //!   safe-key predicates.
 
+pub(crate) use crate::analysis_inputs::ProofDependencies;
 pub(crate) use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) use petgraph::algo::tarjan_scc;

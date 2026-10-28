@@ -111,11 +111,9 @@ impl ChunkCodeGraph {
     ///    finalized. Within an SCC (the only place mutual
     ///    recursion shows up), iterate via a worklist: re-classify
     ///    a function only when one of its same-SCC callees has
-    ///    changed. Each function in an SCC is reclassified at
-    ///    most twice (`Pure → Unknown` or `Pure → Impure`, both
-    ///    terminal), so per-SCC work is `O(scc_size · body_size)`,
-    ///    and total work is `O(N · body_size)` for the whole
-    ///    chunk regardless of recursion depth.
+    ///    changed. A function may be reclassified when a same-SCC
+    ///    callee gains dependencies; the dependency domain is finite,
+    ///    and each function becomes `NotPure` at most once.
     pub(crate) fn build(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
@@ -268,7 +266,7 @@ impl ChunkCodeGraph {
                 (
                     f.name.clone(),
                     ChunkBinding::Function {
-                        purity: Arc::new(Purity::Pure),
+                        purity: Arc::new(Purity::pure()),
                     },
                 )
             })
@@ -358,17 +356,21 @@ impl ChunkCodeGraph {
             let mut new_purity =
                 classify_function_body(&functions[i], shadowed, declared_pure, self);
             let name = &functions[i].name;
-            let was_pure = self
-                .function_purity(name)
-                .expect("seeded by build")
-                .is_pure();
-            // Monotone fixed-point: Pure → NotPure is the only
-            // useful transition. Once a function is classified
-            // NotPure, re-classifying with concatenated reasons
-            // would diverge (the reason list grows every
-            // iteration), so we settle on the first NotPure
-            // verdict and stop.
-            if was_pure && !new_purity.is_pure() {
+            let previous = self.function_purity(name).expect("seeded by build").clone();
+            // Monotone fixed-point: pure verdicts may gain proof
+            // dependencies as callees converge. Once a function is
+            // classified NotPure, re-classifying with concatenated
+            // reasons would diverge (the reason list grows every
+            // iteration), so settle on the first NotPure verdict.
+            if previous.is_pure() {
+                new_purity = new_purity.with_dependencies(
+                    previous
+                        .dependencies()
+                        .expect("pure verdict has dependencies"),
+                );
+            }
+            let should_update = previous.is_pure() && &new_purity != previous.as_ref();
+            if should_update {
                 if let Some(locate) = locate.as_deref_mut()
                     && let Purity::NotPure { reasons } = &mut new_purity
                 {
@@ -418,13 +420,16 @@ impl ChunkCodeGraph {
         &self.ts_enum_named_data_candidates
     }
 
-    pub(crate) fn has_proven_set_iterable(&self, span: Span) -> bool {
-        self.set_iterable_proof.contains_constructor(span)
+    pub(crate) fn set_iterable_dependencies(&self, span: Span) -> Option<&ProofDependencies> {
+        self.set_iterable_proof.dependencies_for_constructor(span)
     }
 
-    pub(crate) fn has_proven_local_class_construction(&self, span: Span) -> bool {
+    pub(crate) fn local_class_construction_dependencies(
+        &self,
+        span: Span,
+    ) -> Option<&ProofDependencies> {
         self.local_class_construction_proof
-            .contains_construction(span)
+            .dependencies_for_construction(span)
     }
 
     pub(crate) fn is_declared_pure_new(&self, name: &str) -> bool {
@@ -705,9 +710,9 @@ fn classify_function_body(
         .params
         .iter()
         .filter_map(|pat| param_destructuring_purity(pat))
-        .fold(Purity::Pure, Purity::worst);
+        .fold(Purity::pure(), Purity::worst);
     let mut collector = BodyPurityCollector {
-        purity: Purity::Pure,
+        purity: Purity::pure(),
         fresh_record: graph.fresh_record_proof(function.key),
         shadowed,
         local_shadowed,
@@ -793,7 +798,7 @@ impl Visit for BodyPurityCollector<'_> {
             self.declared_pure,
             self.graph,
         );
-        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(p);
+        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(p);
     }
 
     // Statement-level effects that don't surface as an Impure /
@@ -803,7 +808,7 @@ impl Visit for BodyPurityCollector<'_> {
     // process. Both make the enclosing function not Pure.
     fn visit_throw_stmt(&mut self, node: &ThrowStmt) {
         let throw_reason = Purity::from_reason(PurityRule::ThrowStmt, node.span);
-        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(throw_reason);
+        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(throw_reason);
         // Still recurse so the thrown expression contributes its
         // own purity (e.g. `throw io()` should also see the call).
         node.arg.visit_with(self);
@@ -811,7 +816,7 @@ impl Visit for BodyPurityCollector<'_> {
 
     fn visit_debugger_stmt(&mut self, node: &DebuggerStmt) {
         let dbg_reason = Purity::from_reason(PurityRule::DebuggerStmt, node.span);
-        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(dbg_reason);
+        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(dbg_reason);
     }
 
     // Iteration statements fire user code beyond their
@@ -828,7 +833,7 @@ impl Visit for BodyPurityCollector<'_> {
             node.span,
             "for-of fires the iterator protocol on the iterated value".to_string(),
         );
-        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(reason);
+        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(reason);
         node.visit_children_with(self);
     }
 
@@ -838,7 +843,7 @@ impl Visit for BodyPurityCollector<'_> {
             node.span,
             "for-in enumeration can fire proxy traps on the enumerated value".to_string(),
         );
-        self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(reason);
+        self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(reason);
         node.visit_children_with(self);
     }
 
@@ -847,7 +852,7 @@ impl Visit for BodyPurityCollector<'_> {
     // init expression's own classification doesn't cover.
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
         if let Some(reason) = param_destructuring_purity(&node.name) {
-            self.purity = std::mem::replace(&mut self.purity, Purity::Pure).worst(reason);
+            self.purity = std::mem::replace(&mut self.purity, Purity::pure()).worst(reason);
         }
         node.visit_children_with(self);
     }

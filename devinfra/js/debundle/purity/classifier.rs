@@ -37,7 +37,7 @@ pub(crate) fn classify_var_decl_purity(
                 && graph.is_plain_data(name)
                 && is_ts_enum_iife_init_for_binding(init, name)
             {
-                Some(Purity::Pure)
+                Some(Purity::pure())
             } else {
                 Some(classify_expr_purity(
                     init,
@@ -48,7 +48,7 @@ pub(crate) fn classify_var_decl_purity(
                 ))
             }
         })
-        .fold(Purity::Pure, Purity::worst)
+        .fold(Purity::pure(), Purity::worst)
 }
 
 pub(crate) fn classify_expr_purity(
@@ -59,9 +59,9 @@ pub(crate) fn classify_expr_purity(
     graph: &ChunkCodeGraph,
 ) -> Purity {
     match expr {
-        Expr::Lit(_) => Purity::Pure,
-        Expr::Ident(_) => Purity::Pure,
-        Expr::This(_) | Expr::MetaProp(_) => Purity::Pure,
+        Expr::Lit(_) => Purity::pure(),
+        Expr::Ident(_) => Purity::pure(),
+        Expr::This(_) | Expr::MetaProp(_) => Purity::pure(),
         // Template interpolation runs ToString on each interpolated
         // value — an object operand fires user `toString` /
         // `[Symbol.toPrimitive]`. Each interpolation must therefore
@@ -83,21 +83,15 @@ pub(crate) fn classify_expr_purity(
                     ))
                 }
             })
-            .fold(Purity::Pure, Purity::worst),
-        Expr::Fn(_) | Expr::Arrow(_) => Purity::Pure,
-        Expr::Class(class_expr) => {
-            if class_has_static_observable(
-                &class_expr.class,
-                shadowed,
-                local_shadowed,
-                declared_pure,
-                graph,
-            ) {
-                Purity::from_reason(PurityRule::ClassStaticObservable, class_expr.class.span)
-            } else {
-                Purity::Pure
-            }
-        }
+            .fold(Purity::pure(), Purity::worst),
+        Expr::Fn(_) | Expr::Arrow(_) => Purity::pure(),
+        Expr::Class(class_expr) => classify_class_static_purity(
+            &class_expr.class,
+            shadowed,
+            local_shadowed,
+            declared_pure,
+            graph,
+        ),
         Expr::Paren(p) => {
             classify_expr_purity(&p.expr, shadowed, local_shadowed, declared_pure, graph)
         }
@@ -214,7 +208,7 @@ pub(crate) fn classify_expr_purity(
             .exprs
             .iter()
             .map(|e| classify_expr_purity(e, shadowed, local_shadowed, declared_pure, graph))
-            .fold(Purity::Pure, Purity::worst),
+            .fold(Purity::pure(), Purity::worst),
         Expr::Array(arr) => {
             classify_array_literal_purity(arr, shadowed, local_shadowed, declared_pure, graph)
         }
@@ -222,7 +216,7 @@ pub(crate) fn classify_expr_purity(
             .props
             .iter()
             .map(|prop| classify_prop_purity(prop, shadowed, local_shadowed, declared_pure, graph))
-            .fold(Purity::Pure, Purity::worst),
+            .fold(Purity::pure(), Purity::worst),
         Expr::Member(member) => {
             classify_member_purity(member, shadowed, local_shadowed, declared_pure, graph)
         }
@@ -287,7 +281,7 @@ pub(crate) fn classify_expr_purity(
                             ))
                         }
                     })
-                    .fold(Purity::Pure, Purity::worst)
+                    .fold(Purity::pure(), Purity::worst)
             } else {
                 Purity::from_reason(PurityRule::TaggedTpl, t.span)
             }
@@ -321,7 +315,7 @@ fn classify_array_literal_purity(
                 graph,
             )
         })
-        .fold(Purity::Pure, Purity::worst)
+        .fold(Purity::pure(), Purity::worst)
 }
 
 fn classify_array_literal_element_purity(
@@ -385,7 +379,7 @@ pub(crate) fn classify_fresh_array_spread_source(
                         graph,
                     )
                 })
-                .fold(Purity::Pure, Purity::worst)
+                .fold(Purity::pure(), Purity::worst)
         } else {
             classify_array_literal_purity(arr, shadowed, local_shadowed, declared_pure, graph)
         }),
@@ -438,7 +432,7 @@ fn classify_member_purity(
         && (PURE_STATIC_PROPS.contains(&(recv, prop))
             || PURE_STATIC_FUNCTION_REFS.contains(&(recv, prop)))
     {
-        return Purity::Pure;
+        return Purity::pure();
     }
     if let Expr::Ident(recv) = member.obj.as_ref()
         && graph.is_plain_data(recv.sym.as_ref())
@@ -449,7 +443,7 @@ fn classify_member_purity(
         && !local_shadowed.contains(recv.sym.as_ref())
     {
         return match &member.prop {
-            MemberProp::Ident(_) | MemberProp::PrivateName(_) => Purity::Pure,
+            MemberProp::Ident(_) | MemberProp::PrivateName(_) => Purity::pure(),
             // Computed access runs ToPropertyKey on the key VALUE
             // before the (accessor-free) lookup on the PlainData
             // receiver — an object key fires user `toString` /
@@ -559,7 +553,7 @@ pub(crate) fn classify_fluent_chain(
             if graph.is_fluent_binding(ident.sym.as_ref())
                 && !local_shadowed.contains(ident.sym.as_ref()) =>
         {
-            Some(Purity::Pure)
+            Some(Purity::pure())
         }
         Expr::Member(member) => match &member.prop {
             MemberProp::Ident(_) | MemberProp::PrivateName(_) => {
@@ -624,7 +618,7 @@ pub(crate) fn classify_fluent_chain(
 /// side-effect classification.
 fn known_function_call_purity(callee: &std::sync::Arc<Purity>, name: &str, span: Span) -> Purity {
     if callee.is_pure() {
-        Purity::Pure
+        callee.as_ref().clone()
     } else {
         Purity::NotPure {
             reasons: vec![
@@ -718,7 +712,7 @@ fn classify_callee_call(
         declared_pure,
         graph,
     ) {
-        return Purity::Pure;
+        return all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
     }
     // Chunk-local function declaration: consult the per-chunk
     // function-body purity cache. `Pure` callee + Pure args → Pure;
@@ -781,7 +775,7 @@ fn classify_callee_call(
             graph,
         )
     {
-        return Purity::Pure;
+        return all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
     }
     // `globalCallable(args)` against PURE_GLOBAL_CALLS.
     if let Expr::Ident(ident) = callee_expr
@@ -812,7 +806,7 @@ fn classify_callee_call(
             .iter()
             .all(|arg| arg.spread.is_none() && is_primitive_literal(&arg.expr))
     {
-        return Purity::Pure;
+        return Purity::pure();
     }
     let detail = callee_summary(callee_expr);
     Purity::from_reason_opt_detail(PurityRule::UnknownCall, call_span, detail)
@@ -844,9 +838,9 @@ pub(crate) fn all_args_pure(
                 .map(|sp| Purity::from_reason(PurityRule::ArraySpread, sp));
             let body =
                 classify_expr_purity(&arg.expr, shadowed, local_shadowed, declared_pure, graph);
-            spread.unwrap_or(Purity::Pure).worst(body)
+            spread.unwrap_or(Purity::pure()).worst(body)
         })
-        .fold(Purity::Pure, Purity::worst)
+        .fold(Purity::pure(), Purity::worst)
 }
 
 fn classify_prop_purity(
@@ -869,7 +863,7 @@ fn classify_prop_purity(
                 ))
         }
         PropOrSpread::Prop(prop) => match prop.as_ref() {
-            Prop::Shorthand(_) => Purity::Pure,
+            Prop::Shorthand(_) => Purity::pure(),
             Prop::KeyValue(kv) => {
                 classify_propname_purity(&kv.key, shadowed, local_shadowed, declared_pure, graph)
                     .worst(classify_expr_purity(
@@ -919,7 +913,7 @@ fn classify_propname_purity(
 ) -> Purity {
     match name {
         PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => {
-            Purity::Pure
+            Purity::pure()
         }
         // Defining a property under a computed key runs
         // ToPropertyKey on the key value — an object key fires user
@@ -948,9 +942,9 @@ fn classify_propname_purity(
     }
 }
 
-/// Whether a class declaration runs observable code at class-decl
-/// time. Eagerly-evaluated class parts (aligned with the fact
-/// collector's `visit_eager_member_parts` / `visit_class_decl`):
+/// Purity of a class definition's eager parts. Eagerly-evaluated class
+/// parts are aligned with the fact collector's
+/// `visit_eager_member_parts` / `visit_class_decl`:
 ///
 /// * **decorators** (class-level or member-level) — decorator
 ///   application CALLS the decorator function at class-definition
@@ -972,61 +966,122 @@ fn classify_propname_purity(
 ///
 /// Static blocks always run. Instance field/accessor initializers,
 /// constructor and method bodies are lazy and not consulted.
-pub(crate) fn class_has_static_observable(
+pub(crate) fn classify_class_static_purity(
     class: &Class,
     shadowed: &BTreeSet<&'static str>,
     local_shadowed: &BTreeSet<String>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
-) -> bool {
-    let value_impure = |v: &Expr| {
-        !classify_expr_purity(v, shadowed, local_shadowed, declared_pure, graph).is_pure()
-    };
-    let key_observable = |key: &PropName| match key {
-        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => false,
-        PropName::Computed(c) => {
-            value_impure(&c.expr)
-                || !is_safe_property_key(
-                    &c.expr,
+) -> Purity {
+    let observable = || Purity::from_reason(PurityRule::ClassStaticObservable, class.span);
+    let mut purity = Purity::pure();
+    if !class.decorators.is_empty() {
+        return observable();
+    }
+    if let Some(super_class) = class.super_class.as_deref() {
+        let part =
+            classify_expr_purity(super_class, shadowed, local_shadowed, declared_pure, graph);
+        if !part.is_pure() {
+            return observable();
+        }
+        purity = purity.worst(part);
+    }
+    for member in &class.body {
+        let member_purity = match member {
+            ClassMember::StaticBlock(_) => return observable(),
+            ClassMember::Method(method) => {
+                if !method.function.decorators.is_empty() {
+                    return observable();
+                }
+                classify_propname_purity(
+                    &method.key,
                     shadowed,
                     local_shadowed,
-                    &graph.primitive_const_bindings,
-                    &graph.symbol_const_bindings,
+                    declared_pure,
+                    graph,
                 )
-        }
-    };
-    if !class.decorators.is_empty() {
-        return true;
+            }
+            ClassMember::PrivateMethod(method) => {
+                if !method.function.decorators.is_empty() {
+                    return observable();
+                }
+                Purity::pure()
+            }
+            ClassMember::Constructor(_) => Purity::pure(),
+            ClassMember::ClassProp(prop) => {
+                if !prop.decorators.is_empty() {
+                    return observable();
+                }
+                let key_purity = classify_propname_purity(
+                    &prop.key,
+                    shadowed,
+                    local_shadowed,
+                    declared_pure,
+                    graph,
+                );
+                if !key_purity.is_pure() {
+                    return observable();
+                }
+                let value_purity = if prop.is_static {
+                    prop.value.as_deref().map(|value| {
+                        classify_expr_purity(value, shadowed, local_shadowed, declared_pure, graph)
+                    })
+                } else {
+                    None
+                };
+                if value_purity.as_ref().is_some_and(|part| !part.is_pure()) {
+                    return observable();
+                }
+                key_purity.worst(value_purity.unwrap_or_else(Purity::pure))
+            }
+            ClassMember::PrivateProp(prop) => {
+                if !prop.decorators.is_empty() {
+                    return observable();
+                }
+                let value_purity = if prop.is_static {
+                    prop.value.as_deref().map(|value| {
+                        classify_expr_purity(value, shadowed, local_shadowed, declared_pure, graph)
+                    })
+                } else {
+                    None
+                };
+                if value_purity.as_ref().is_some_and(|part| !part.is_pure()) {
+                    return observable();
+                }
+                value_purity.unwrap_or_else(Purity::pure)
+            }
+            ClassMember::AutoAccessor(accessor) => {
+                if !accessor.decorators.is_empty() {
+                    return observable();
+                }
+                let key_purity = match &accessor.key {
+                    Key::Public(name) => classify_propname_purity(
+                        name,
+                        shadowed,
+                        local_shadowed,
+                        declared_pure,
+                        graph,
+                    ),
+                    Key::Private(_) => Purity::pure(),
+                };
+                if !key_purity.is_pure() {
+                    return observable();
+                }
+                let value_purity = if accessor.is_static {
+                    accessor.value.as_deref().map(|value| {
+                        classify_expr_purity(value, shadowed, local_shadowed, declared_pure, graph)
+                    })
+                } else {
+                    None
+                };
+                if value_purity.as_ref().is_some_and(|part| !part.is_pure()) {
+                    return observable();
+                }
+                key_purity.worst(value_purity.unwrap_or_else(Purity::pure))
+            }
+            ClassMember::TsIndexSignature(_) | ClassMember::Empty(_) => Purity::pure(),
+        };
+        purity = purity.worst(member_purity);
     }
-    if let Some(super_class) = class.super_class.as_deref()
-        && value_impure(super_class)
-    {
-        return true;
-    }
-    class.body.iter().any(|member| match member {
-        ClassMember::StaticBlock(_) => true,
-        ClassMember::Method(method) => {
-            !method.function.decorators.is_empty() || key_observable(&method.key)
-        }
-        ClassMember::PrivateMethod(method) => !method.function.decorators.is_empty(),
-        ClassMember::Constructor(_) => false,
-        ClassMember::ClassProp(prop) => {
-            !prop.decorators.is_empty()
-                || key_observable(&prop.key)
-                || (prop.is_static && prop.value.as_deref().is_some_and(value_impure))
-        }
-        ClassMember::PrivateProp(prop) => {
-            !prop.decorators.is_empty()
-                || (prop.is_static && prop.value.as_deref().is_some_and(value_impure))
-        }
-        ClassMember::AutoAccessor(accessor) => {
-            !accessor.decorators.is_empty()
-                || (match &accessor.key {
-                    Key::Public(name) => key_observable(name),
-                    Key::Private(_) => false,
-                })
-                || (accessor.is_static && accessor.value.as_deref().is_some_and(value_impure))
-        }
-        ClassMember::TsIndexSignature(_) | ClassMember::Empty(_) => false,
-    })
+    purity
 }

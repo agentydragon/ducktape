@@ -9,7 +9,7 @@ pub(crate) fn item_purity(
     has_local_effect: bool,
 ) -> Purity {
     match kind {
-        StatementKind::Import | StatementKind::FnDecl => Purity::Pure,
+        StatementKind::Import | StatementKind::FnDecl => Purity::pure(),
         // `export { ... }` / `export * from ...` / `export default
         // function` run no code at init — but `export default <expr>`
         // evaluates the expression and `export default class` runs
@@ -26,23 +26,19 @@ pub(crate) fn item_purity(
                 )
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(_)) => match class_of_item(item) {
-                Some(c)
-                    if class_has_static_observable(
-                        c,
-                        shadowed,
-                        &BTreeSet::new(),
-                        &hints.assumptions.declared_pure,
-                        graph,
-                    ) =>
-                {
-                    Purity::from_reason(PurityRule::ClassStaticObservable, c.span)
-                }
-                _ => Purity::Pure,
+                Some(class) => classify_class_static_purity(
+                    class,
+                    shadowed,
+                    &BTreeSet::new(),
+                    &hints.assumptions.declared_pure,
+                    graph,
+                ),
+                None => Purity::pure(),
             },
-            _ => Purity::Pure,
+            _ => Purity::pure(),
         },
-        StatementKind::VarDecl if has_trusted_initializer_purity(item, hints) => Purity::Pure,
-        StatementKind::VarDecl if has_local_effect => Purity::Pure,
+        StatementKind::VarDecl if has_trusted_initializer_purity(item, hints) => Purity::pure(),
+        StatementKind::VarDecl if has_local_effect => Purity::pure(),
         // Top-level (non-function-body) scope: a chunk-top read of a
         // PlainData const is legitimately pure, so no PlainData name is
         // lexically shadowed here.
@@ -56,22 +52,18 @@ pub(crate) fn item_purity(
                     graph,
                 )
             })
-            .unwrap_or(Purity::Pure),
+            .unwrap_or(Purity::pure()),
         StatementKind::ClassDecl => match class_of_item(item) {
-            Some(c)
-                if class_has_static_observable(
-                    c,
-                    shadowed,
-                    &BTreeSet::new(),
-                    &hints.assumptions.declared_pure,
-                    graph,
-                ) =>
-            {
-                Purity::from_reason(PurityRule::ClassStaticObservable, c.span)
-            }
-            _ => Purity::Pure,
+            Some(class) => classify_class_static_purity(
+                class,
+                shadowed,
+                &BTreeSet::new(),
+                &hints.assumptions.declared_pure,
+                graph,
+            ),
+            None => Purity::pure(),
         },
-        StatementKind::SideEffect if has_local_effect => Purity::Pure,
+        StatementKind::SideEffect if has_local_effect => Purity::pure(),
         StatementKind::SideEffect => match item {
             ModuleItem::Stmt(Stmt::Expr(expr)) => classify_expr_purity(
                 &expr.expr,

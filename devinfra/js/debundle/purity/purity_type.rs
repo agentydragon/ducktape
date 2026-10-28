@@ -1,4 +1,5 @@
 use super::*;
+use crate::analysis_inputs::ProofDependencies;
 use std::sync::Arc;
 
 /// Two-state expression-level purity with structured reasons.
@@ -23,8 +24,13 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Purity {
-    Pure,
-    NotPure { reasons: Vec<PurityReason> },
+    Pure {
+        #[serde(default, skip_serializing_if = "ProofDependencies::is_empty")]
+        dependencies: ProofDependencies,
+    },
+    NotPure {
+        reasons: Vec<PurityReason>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,16 +159,45 @@ impl PurityRule {
 }
 
 impl Purity {
-    pub fn is_pure(&self) -> bool {
-        matches!(self, Purity::Pure)
+    pub fn pure() -> Self {
+        Self::Pure {
+            dependencies: ProofDependencies::default(),
+        }
     }
 
-    /// Combine two purity verdicts. `Pure` is the identity;
-    /// concatenating `NotPure` reasons preserves every offending
-    /// sub-expression in source order.
+    pub fn is_pure(&self) -> bool {
+        matches!(self, Purity::Pure { .. })
+    }
+
+    pub fn dependencies(&self) -> Option<&ProofDependencies> {
+        match self {
+            Self::Pure { dependencies } => Some(dependencies),
+            Self::NotPure { .. } => None,
+        }
+    }
+
+    pub fn with_dependencies(mut self, additional: &ProofDependencies) -> Self {
+        if let Self::Pure { dependencies } = &mut self {
+            dependencies.extend(additional);
+        }
+        self
+    }
+
+    /// Combine two purity verdicts. Pure results union the proof
+    /// dependencies that justified them; concatenating `NotPure`
+    /// reasons preserves every offending sub-expression in source order.
     pub fn worst(self, other: Self) -> Self {
         match (self, other) {
-            (Purity::Pure, x) | (x, Purity::Pure) => x,
+            (
+                Self::Pure { mut dependencies },
+                Self::Pure {
+                    dependencies: other_dependencies,
+                },
+            ) => {
+                dependencies.extend(&other_dependencies);
+                Self::Pure { dependencies }
+            }
+            (Self::Pure { .. }, other) | (other, Self::Pure { .. }) => other,
             (Purity::NotPure { reasons: mut a }, Purity::NotPure { reasons: b }) => {
                 a.extend(b);
                 Purity::NotPure { reasons: a }
@@ -210,5 +245,53 @@ impl PurityReason {
                 _ => None,
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis_inputs::ValueInputRef;
+
+    fn dependency(chunk: &str, index: usize) -> ProofDependencies {
+        ProofDependencies {
+            value_inputs: BTreeSet::from([ValueInputRef {
+                defining_chunk: chunk.to_string(),
+                input_index: index,
+            }]),
+        }
+    }
+
+    #[test]
+    fn combining_pure_results_unions_dependencies() {
+        let combined = Purity::pure()
+            .with_dependencies(&dependency("static/provider", 0))
+            .worst(Purity::pure().with_dependencies(&dependency("static/other", 1)));
+
+        assert_eq!(
+            combined.dependencies(),
+            Some(&ProofDependencies {
+                value_inputs: BTreeSet::from([
+                    ValueInputRef {
+                        defining_chunk: "static/provider".to_string(),
+                        input_index: 0,
+                    },
+                    ValueInputRef {
+                        defining_chunk: "static/other".to_string(),
+                        input_index: 1,
+                    },
+                ]),
+            })
+        );
+    }
+
+    #[test]
+    fn empty_pure_dependencies_preserve_existing_wire_shape() {
+        let serialized = serde_json::to_value(Purity::pure()).unwrap();
+        assert_eq!(serialized, serde_json::json!({ "kind": "pure" }));
+        assert_eq!(
+            serde_json::from_value::<Purity>(serde_json::json!({ "kind": "pure" })).unwrap(),
+            Purity::pure()
+        );
     }
 }

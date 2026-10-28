@@ -39,7 +39,7 @@ pub(crate) use crate::SourceLocation;
 pub(crate) use crate::analysis_inputs::{AnalysisInputs, KnownEffect, LocalEffectPolicy};
 pub(crate) use crate::purity::{
     ChunkCodeGraph, Purity, PurityRule, RedundantPureMemberHint, RedundantPurityHint,
-    SHADOW_TRACKED_GLOBALS, class_has_static_observable, classify_expr_purity,
+    SHADOW_TRACKED_GLOBALS, classify_class_static_purity, classify_expr_purity,
     classify_var_decl_purity, detect_redundant_pure_member_hints, detect_redundant_purity_hints,
 };
 

@@ -13,15 +13,13 @@
 //!
 //! ## Algorithm — greatest fixpoint
 //!
-//! Purity forms a two-point lattice `Pure ⊐ NotPure`. Every function export
-//! starts optimistic (`Pure`); each round rebuilds every module's
-//! `ChunkCodeGraph` with the imported purities resolved from the *current*
-//! export verdicts, reads each export's local function purity, and **demotes**
-//! any that turned out impure. Demotion is monotone (a verdict only ever moves
-//! `Pure → NotPure`) over a finite domain, so the iteration converges; the
-//! result is the greatest (most-pure) sound fixpoint. Starting optimistic is
-//! what lets a function that is pure except for calling a same-cycle peer stay
-//! `Pure`.
+//! A verdict moves from optimistic `Pure` toward `NotPure`; pure verdicts may
+//! also gain a finite set of author-input dependencies. Each round rebuilds
+//! every module's `ChunkCodeGraph` with imported purities from the current
+//! export summaries. It demotes newly impure exports and unions dependencies
+//! into still-pure exports, so both changes are monotone and the iteration
+//! converges. Starting optimistic is what lets a function that is pure except
+//! for calling a same-cycle peer stay `Pure`.
 //!
 //! Soundness is conservative by construction: an import whose target module or
 //! export is absent (external/vendor module not analyzed, a non-function
@@ -191,6 +189,17 @@ impl<'a> ModulePurityFacts<'a> {
     }
 }
 
+/// Merge one inferred function-body verdict into an optimistic export summary.
+/// Still-pure summaries retain every consumed proof dependency; a newly
+/// impure body demotes the summary and terminates further updates.
+fn merge_inferred_export_purity(current: &Arc<Purity>, inferred: &Purity) -> Option<Purity> {
+    if !current.is_pure() {
+        return None;
+    }
+    let updated = current.as_ref().clone().worst(inferred.clone());
+    (updated != **current).then_some(updated)
+}
+
 /// Compute, per module, the imported-binding purity map to feed that module's
 /// `ChunkCodeGraph::build_full`. See the module docs for the fixpoint.
 ///
@@ -233,7 +242,7 @@ pub fn resolve_imported_purities(
             }
             export_purity.insert(
                 (module.clone(), export_name.clone()),
-                Arc::new(Purity::Pure),
+                Arc::new(Purity::pure()),
             );
             pinned.insert((module.clone(), export_name.clone()));
         }
@@ -268,7 +277,7 @@ pub fn resolve_imported_purities(
         let mut has_function_exports = false;
         for (export, local) in inferred_exports {
             if graph.function_purity(local).is_some() {
-                export_purity.insert((key.clone(), export.clone()), Arc::new(Purity::Pure));
+                export_purity.insert((key.clone(), export.clone()), Arc::new(Purity::pure()));
                 has_function_exports = true;
             }
         }
@@ -283,12 +292,10 @@ pub fn resolve_imported_purities(
     }
 
     // Greatest-fixpoint: rebuild every module with the current cross-module
-    // verdicts and demote any function export that is impure under them. A
-    // verdict only moves Pure → NotPure, so this terminates. Modules whose
-    // resolved imported map did not change since their last build cannot
-    // produce new demotions, so they are skipped — this bounds the total
-    // rebuild work to (initial pass) + (one rebuild per demotion-affected
-    // module per round) instead of (all modules × rounds).
+    // verdicts, demote newly impure exports, and add dependencies to still-pure
+    // exports. Both the verdict transition and dependency union are monotone
+    // over finite domains. Modules whose imported summaries did not change
+    // since their last build cannot produce new results, so they are skipped.
     let mut last_inputs: BTreeMap<&ModuleKey, BTreeMap<String, Arc<Purity>>> = BTreeMap::new();
     loop {
         let mut changed = false;
@@ -309,8 +316,10 @@ pub fn resolve_imported_purities(
                 let Some(purity) = graph.function_purity(local) else {
                     continue;
                 };
-                if export_purity[&slot_key].is_pure() && !purity.is_pure() {
-                    export_purity.insert(slot_key, purity.clone());
+                if let Some(updated) =
+                    merge_inferred_export_purity(&export_purity[&slot_key], purity)
+                {
+                    export_purity.insert(slot_key, Arc::new(updated));
                     changed = true;
                 }
             }
@@ -811,6 +820,7 @@ fn resolve_asserted_export_bindings(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analysis_inputs::{ProofDependencies, ValueInputRef};
     use swc_common::{FileName, Span, sync::Lrc};
     use swc_ecma_ast::{Expr, Module, NewExpr};
     use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
@@ -852,6 +862,31 @@ mod tests {
                 .map(|(name, local)| ((*name).to_string(), (*local).to_string()))
                 .collect(),
             source: None,
+        }
+    }
+
+    fn function_purity_with_imports(
+        source: &str,
+        local: &str,
+        imported: &BTreeMap<String, Arc<Purity>>,
+    ) -> Purity {
+        let module = parse(source);
+        let facts = facts(&module, &[], &[("out", local)]);
+        let prepared = facts.prepare(None);
+        facts
+            .build_graph(&prepared, imported)
+            .function_purity(local)
+            .expect("function is indexed")
+            .as_ref()
+            .clone()
+    }
+
+    fn value_input_dependencies(provider: &str, input_index: usize) -> ProofDependencies {
+        ProofDependencies {
+            value_inputs: BTreeSet::from([ValueInputRef {
+                defining_chunk: provider.to_string(),
+                input_index,
+            }]),
         }
     }
 
@@ -954,7 +989,60 @@ mod tests {
         // With the assertion on the defining chunk: pure, at every importer.
         let asserted =
             BTreeMap::from([("lib".to_string(), BTreeSet::from(["observer".to_string()]))]);
-        assert!(resolve_imported_purities(&modules, &asserted, None)["app"]["observer"].is_pure());
+        let resolved = resolve_imported_purities(&modules, &asserted, None);
+        assert!(resolved["app"]["observer"].is_pure());
+        assert_eq!(
+            resolved["app"]["observer"].dependencies(),
+            Some(&ProofDependencies::default()),
+            "the separate pure_exports axiom must not acquire inferred captured-value dependencies"
+        );
+    }
+
+    #[test]
+    fn pure_export_fixpoint_unions_dependencies_and_importers_retain_them() {
+        let first = value_input_dependencies("static/provider-a.js", 1);
+        let second = value_input_dependencies("static/provider-b.js", 3);
+        let current = Arc::new(Purity::pure().with_dependencies(&first));
+        let newly_inferred = Purity::pure().with_dependencies(&second);
+        let merged = merge_inferred_export_purity(&current, &newly_inferred)
+            .expect("new proof dependency must update a still-pure export");
+        assert_eq!(
+            merged.dependencies(),
+            Some(&ProofDependencies {
+                value_inputs: BTreeSet::from([
+                    ValueInputRef {
+                        defining_chunk: "static/provider-a.js".to_string(),
+                        input_index: 1,
+                    },
+                    ValueInputRef {
+                        defining_chunk: "static/provider-b.js".to_string(),
+                        input_index: 3,
+                    },
+                ]),
+            })
+        );
+        assert!(
+            merge_inferred_export_purity(&Arc::new(merged.clone()), &newly_inferred).is_none(),
+            "an unchanged summary must converge"
+        );
+
+        let first_import = BTreeMap::from([("upstream".to_string(), Arc::new(merged))]);
+        let middle = function_purity_with_imports(
+            "export function forward() { return upstream(); }",
+            "forward",
+            &first_import,
+        );
+        assert_eq!(
+            middle.dependencies(),
+            first_import["upstream"].dependencies()
+        );
+        let second_import = BTreeMap::from([("middle".to_string(), Arc::new(middle))]);
+        let leaf = function_purity_with_imports(
+            "export function forwardAgain() { return middle(); }",
+            "forwardAgain",
+            &second_import,
+        );
+        assert_eq!(leaf.dependencies(), second_import["middle"].dependencies());
     }
 
     #[test]

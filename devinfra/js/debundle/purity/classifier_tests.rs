@@ -1,7 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
-use crate::facts::{compute_shadowed_globals, top_level_item_views};
+use crate::analysis_inputs::{ProofDependencies, ValueInputRef};
+use crate::facts::{
+    ChunkValueFlow, DynamicScopeFact, LocalClassConstructionProof, SetIterableProof,
+    compute_shadowed_globals, top_level_item_views,
+};
 use swc_common::{FileName, sync::Lrc};
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 
@@ -58,6 +62,49 @@ fn classify_with_graph(
 
 fn string_set(items: &[&str]) -> BTreeSet<String> {
     items.iter().map(|s| (*s).to_string()).collect()
+}
+
+fn value_input_dependencies(provider: &str, input_index: usize) -> ProofDependencies {
+    ProofDependencies {
+        value_inputs: BTreeSet::from([ValueInputRef {
+            defining_chunk: provider.to_string(),
+            input_index,
+        }]),
+    }
+}
+
+fn graph_with_conditioned_set_proof(
+    module: &Module,
+    dependencies: &ProofDependencies,
+    declared_pure_new: &BTreeSet<String>,
+) -> ChunkCodeGraph {
+    let views = top_level_item_views(&module.body);
+    let shadowed = compute_shadowed_globals(&views);
+    let flow = ChunkValueFlow::analyze(&views);
+    let plain_data = collect_plain_data_bindings(&views, &shadowed, &flow);
+    let plain_arrays = collect_plain_array_bindings(&views, &shadowed);
+    let set_proof = SetIterableProof::analyze(
+        &views,
+        &shadowed,
+        &flow,
+        &plain_data,
+        DynamicScopeFact::analyze(&views),
+    )
+    .with_dependencies(dependencies.clone());
+    ChunkCodeGraph::build_full_with_prepared_plain_data(
+        &views,
+        &shadowed,
+        &BTreeSet::new(),
+        declared_pure_new,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeSet::new(),
+        &set_proof,
+        &LocalClassConstructionProof::default(),
+        &plain_data,
+        &plain_arrays,
+        None,
+    )
 }
 
 /// Run the classifier against `src` after computing the
@@ -753,7 +800,7 @@ fn immutable_symbol_const_is_safe_only_as_a_computed_key() {
 }
 
 /// Parse a single class declaration with decorators /
-/// auto-accessors enabled and run `class_has_static_observable`
+/// auto-accessors enabled and run `classify_class_static_purity`
 /// on it with empty shadow/annotation context.
 fn class_observable(src: &str) -> bool {
     let cm: Lrc<swc_common::SourceMap> = Default::default();
@@ -777,13 +824,14 @@ fn class_observable(src: &str) -> bool {
             _ => None,
         })
         .expect("expected a class declaration");
-    class_has_static_observable(
+    !classify_class_static_purity(
         class,
         &BTreeSet::new(),
         &BTreeSet::new(),
         &BTreeSet::new(),
         &ChunkCodeGraph::default(),
     )
+    .is_pure()
 }
 
 #[test]
@@ -1328,10 +1376,171 @@ fn impure_verdict() -> Purity {
 fn imported_pure_callee_makes_call_pure() {
     // The oracle resolved `memo` (an imported function) as pure, so
     // `memo(arg)` classifies pure when the args are pure.
-    assert!(classify_with_imported_purities("", "memo(x)", &[("memo", Purity::Pure)]).is_pure());
+    assert!(classify_with_imported_purities("", "memo(x)", &[("memo", Purity::pure())]).is_pure());
     assert!(
-        classify_with_imported_purities("", "memo(() => {})", &[("memo", Purity::Pure)]).is_pure()
+        classify_with_imported_purities("", "memo(() => {})", &[("memo", Purity::pure())])
+            .is_pure()
     );
+}
+
+#[test]
+fn conditioned_constructor_dependencies_flow_through_local_calls_and_bindings() {
+    let module = parse(
+        "const values = [1];\n\
+         class Box { static value = new Set(values); }\n\
+         function make() { return new Set(values); }\n\
+         function wrap() { return make(); }\n\
+         function left() { return right(); }\n\
+         function right() { return new Set(values) && left(); }\n\
+         const made = wrap();",
+    );
+    let views = top_level_item_views(&module.body);
+    let shadowed = compute_shadowed_globals(&views);
+    let dependencies = value_input_dependencies("static/provider.js", 0);
+    let graph = graph_with_conditioned_set_proof(&module, &dependencies, &BTreeSet::new());
+
+    let ModuleItem::Stmt(Stmt::Decl(Decl::Class(class))) = &module.body[1] else {
+        panic!("expected static class declaration");
+    };
+    assert_eq!(
+        classify_class_static_purity(
+            &class.class,
+            &shadowed,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &graph,
+        )
+        .dependencies(),
+        Some(&dependencies),
+        "safe eager class fields must retain their conditioned proof premise"
+    );
+
+    for function in ["make", "wrap", "left", "right"] {
+        let purity = graph.function_purity(function).expect("function indexed");
+        assert!(purity.is_pure(), "{function} remains pure");
+        assert_eq!(purity.dependencies(), Some(&dependencies), "{function}");
+    }
+    let ModuleItem::Stmt(Stmt::Decl(Decl::Var(result))) = module.body.last().unwrap() else {
+        panic!("expected final initializer");
+    };
+    let initializer = result.decls[0].init.as_deref().unwrap();
+    let purity = classify_expr_purity(
+        initializer,
+        &shadowed,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &graph,
+    );
+    assert_eq!(purity.dependencies(), Some(&dependencies));
+    assert_eq!(
+        classify_var_decl_purity(
+            result,
+            &shadowed,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &graph,
+        )
+        .dependencies(),
+        Some(&dependencies),
+        "the declaration-level binding initializer retains its premise"
+    );
+}
+
+#[test]
+fn nested_conditioned_arguments_keep_dependencies_across_pure_builtins() {
+    let module = parse(
+        "const values = [1];\n\
+         function make() { return new Set(values); }\n\
+         const proxy = new Proxy({ value: make() }, {});\n\
+         const mapped = new Map([[make(), 'value']]);\n\
+         const entries = Object.entries({ value: make() });\n\
+         const facade = Object.defineProperty(\
+             { __proto__: null, value: make() },\
+             Symbol.toStringTag,\
+             { value: make() },\
+         );\n\
+         const declared = new Container(make());",
+    );
+    let dependencies = value_input_dependencies("static/provider.js", 5);
+    let graph = graph_with_conditioned_set_proof(
+        &module,
+        &dependencies,
+        &BTreeSet::from(["Container".to_string()]),
+    );
+    let views = top_level_item_views(&module.body);
+    let shadowed = compute_shadowed_globals(&views);
+    for expression in [
+        "new Proxy({ value: make() }, {})",
+        "new Map([[make(), 'value']])",
+        "Object.entries({ value: make() })",
+        "Object.defineProperty({ __proto__: null, value: make() }, Symbol.toStringTag, { value: make() })",
+        "new Container(make())",
+    ] {
+        let purity = classify_last_const(
+            "const values = [1]; function make() { return new Set(values); }",
+            expression,
+            |_, _, init| {
+                classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+            },
+        );
+        assert!(purity.is_pure(), "{expression} remains pure");
+        assert_eq!(purity.dependencies(), Some(&dependencies), "{expression}");
+    }
+}
+
+#[test]
+fn conditioned_local_class_dependencies_reach_the_construction_expression() {
+    let module = parse("class Box { state = new Set(); }\nconst instance = new Box();");
+    let views = top_level_item_views(&module.body);
+    let shadowed = compute_shadowed_globals(&views);
+    let flow = ChunkValueFlow::analyze(&views);
+    let plain_data = collect_plain_data_bindings(&views, &shadowed, &flow);
+    let plain_arrays = collect_plain_array_bindings(&views, &shadowed);
+    let dependencies = value_input_dependencies("static/provider.js", 2);
+    let class_proof = LocalClassConstructionProof::analyze(
+        &views,
+        &shadowed,
+        &flow,
+        DynamicScopeFact::analyze(&views),
+    )
+    .with_native_dependencies(|_| Some(dependencies.clone()));
+    let graph = ChunkCodeGraph::build_full_with_prepared_plain_data(
+        &views,
+        &shadowed,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeSet::new(),
+        &SetIterableProof::default(),
+        &class_proof,
+        &plain_data,
+        &plain_arrays,
+        None,
+    );
+    let ModuleItem::Stmt(Stmt::Decl(Decl::Var(result))) = module.body.last().unwrap() else {
+        panic!("expected final initializer");
+    };
+    let purity = classify_expr_purity(
+        result.decls[0].init.as_deref().unwrap(),
+        &shadowed,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &graph,
+    );
+    assert!(purity.is_pure());
+    assert_eq!(purity.dependencies(), Some(&dependencies));
+}
+
+#[test]
+fn imported_pure_callee_preserves_conditioned_dependencies() {
+    let dependencies = value_input_dependencies("static/provider.js", 4);
+    let purity = classify_with_imported_purities(
+        "",
+        "memo(x)",
+        &[("memo", Purity::pure().with_dependencies(&dependencies))],
+    );
+    assert_eq!(purity.dependencies(), Some(&dependencies));
 }
 
 #[test]
@@ -1344,7 +1553,7 @@ fn imported_pure_callee_still_classifies_arguments() {
     // `memo` is pure, but a possibly-object operand coerced in the arg
     // keeps the whole call impure — args are classified independently.
     assert!(
-        !classify_with_imported_purities("", "memo(A + 1)", &[("memo", Purity::Pure)]).is_pure()
+        !classify_with_imported_purities("", "memo(A + 1)", &[("memo", Purity::pure())]).is_pure()
     );
 }
 

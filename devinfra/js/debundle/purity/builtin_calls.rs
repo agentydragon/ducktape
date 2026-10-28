@@ -81,10 +81,10 @@ pub(crate) fn classify_new_expr_purity(
     };
     let arg_count = new_expr.args.as_ref().map_or(0, Vec::len);
     if !local_shadowed.contains(callee.sym.as_ref())
-        && graph.has_proven_local_class_construction(new_expr.span)
+        && let Some(dependencies) = graph.local_class_construction_dependencies(new_expr.span)
         && arg_count == 0
     {
-        return Purity::Pure;
+        return Purity::pure().with_dependencies(dependencies);
     }
     if let Some(name) = PURE_BUILTIN_NEW_NO_ARGS
         .iter()
@@ -94,7 +94,7 @@ pub(crate) fn classify_new_expr_purity(
         && !local_shadowed.contains(name)
         && arg_count == 0
     {
-        return Purity::Pure;
+        return Purity::pure();
     }
     // `new X("literal")` against PURE_BUILTIN_NEW_STRING_LITERAL_ARG.
     // The argument must be a string LITERAL (no spread): the
@@ -113,7 +113,7 @@ pub(crate) fn classify_new_expr_purity(
         && args[0].spread.is_none()
         && matches!(args[0].expr.as_ref(), Expr::Lit(Lit::Str(_)))
     {
-        return Purity::Pure;
+        return Purity::pure();
     }
     if PURE_BUILTIN_NEW_OBJECT_LITERAL_ARGS.contains(&callee.sym.as_ref())
         && !shadowed.contains(callee.sym.as_ref())
@@ -126,7 +126,7 @@ pub(crate) fn classify_new_expr_purity(
     {
         let arg_purity = all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
         if arg_purity.is_pure() {
-            return Purity::Pure;
+            return arg_purity;
         }
         return Purity::from_reason_with_detail(
             PurityRule::UnknownNew,
@@ -143,7 +143,7 @@ pub(crate) fn classify_new_expr_purity(
     if callee.sym.as_ref() == "Set"
         && !shadowed.contains("Set")
         && !local_shadowed.contains("Set")
-        && graph.has_proven_set_iterable(new_expr.span)
+        && let Some(dependencies) = graph.set_iterable_dependencies(new_expr.span)
         && let Some(args) = new_expr.args.as_ref()
         && args.len() == 1
         && args[0].spread.is_none()
@@ -151,7 +151,7 @@ pub(crate) fn classify_new_expr_purity(
     {
         let arg_purity = all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
         if arg_purity.is_pure() {
-            return Purity::Pure;
+            return arg_purity.with_dependencies(dependencies);
         }
         return Purity::from_reason_with_detail(
             PurityRule::UnknownNew,
@@ -185,7 +185,7 @@ pub(crate) fn classify_new_expr_purity(
             graph,
         );
         if inner.is_pure() {
-            return Purity::Pure;
+            return inner;
         }
         return Purity::from_reason_with_detail(
             PurityRule::UnknownNew,
@@ -203,7 +203,7 @@ pub(crate) fn classify_new_expr_purity(
         let args = new_expr.args.as_deref().unwrap_or(&[]);
         let arg_purity = all_args_pure(args, shadowed, local_shadowed, declared_pure, graph);
         if arg_purity.is_pure() {
-            return Purity::Pure;
+            return arg_purity;
         }
         return Purity::from_reason_with_detail(
             PurityRule::UnknownNew,
@@ -223,7 +223,7 @@ pub(crate) fn classify_new_expr_purity(
 }
 
 /// Classify the iterable arg of `new Set([...])` / `new Map([[k,v],...])`.
-/// Returns `Purity::Pure` only when the arg is an Array literal with
+/// Returns `Purity::pure()` only when the arg is an Array literal with
 /// every element a Pure expression (no holes; spreads only when the
 /// source is a fresh Array literal, optionally behind a pure
 /// conditional; for `Map`, every expanded element is a 2-element
@@ -263,7 +263,7 @@ fn classify_array_literal_for_iterable(
                 graph,
             )
         })
-        .fold(Purity::Pure, Purity::worst)
+        .fold(Purity::pure(), Purity::worst)
 }
 
 pub(crate) fn classify_iterable_element(
@@ -343,7 +343,7 @@ fn classify_map_entry(
                 classify_expr_purity(&e.expr, shadowed, local_shadowed, declared_pure, graph)
             }
         })
-        .fold(Purity::Pure, Purity::worst)
+        .fold(Purity::pure(), Purity::worst)
 }
 
 pub(crate) fn is_pure_object_define_property_on_fresh_namespace(
