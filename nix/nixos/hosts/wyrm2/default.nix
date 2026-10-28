@@ -590,10 +590,6 @@ in
   };
 
   # User configuration
-  # Let logind grant sound-device access to the active seat. Static audio-group
-  # access lets the SSH-started audio service compete with the login greeter.
-  ducktape.operator.staticAudioAccess = false;
-
   users.users.${username} = {
     shell = pkgs.zsh;
     openssh.authorizedKeys.keys = sshKeys ++ [ keys.wyrm2McpAgentydragon ];

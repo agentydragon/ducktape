@@ -159,7 +159,6 @@ in
     extraGroups = [
       "networkmanager"
       "video"
-      "audio"
     ];
   };
 

@@ -273,6 +273,4 @@ in
     group = "root";
     source = "${pkgs.spice-gtk}/bin/spice-client-glib-usb-acl-helper";
   };
-
-  # User groups provided by base.nix: wheel, networkmanager, video, audio
 }

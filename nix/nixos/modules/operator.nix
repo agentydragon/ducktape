@@ -10,61 +10,47 @@
 #
 # Importing this is now how a host says a human lives on it.
 {
-  config,
   pkgs,
   lib,
   username,
   ...
 }:
 {
-  options.ducktape.operator.staticAudioAccess = lib.mkOption {
-    type = lib.types.bool;
-    default = true;
-    description = ''
-      Grant the operator direct sound-device access through the audio group,
-      including outside an active local session. Disable to rely on logind's
-      active-seat device ACLs.
-    '';
-  };
-
-  config = {
-    # No password is set here; `passwd` on first boot. That is why sudo below asks for one.
-    users.users.${username} = {
-      isNormalUser = true;
-      home = "/home/${username}";
-      description = username;
-      extraGroups = [
-        "wheel"
-        "networkmanager"
-        "video"
-      ]
-      ++ lib.optional config.ducktape.operator.staticAudioAccess "audio";
-    };
-
-    # Root-equivalent, not a convenience: a trusted Nix user can override daemon settings on its own
-    # connections, so this belongs with `wheel` rather than with the flakes/GC settings in base.nix.
-    nix.settings.trusted-users = [
-      username
-      "root"
-    ];
-
-    security.sudo.wheelNeedsPassword = true;
-    security.sudo.extraConfig = lib.mkAfter ''
-      # Show asterisks while typing sudo passwords.
-      Defaults pwfeedback
-    '';
-
-    # Overkill for a single virtio NIC, which is why `bootstrap` used to mkForce it back off.
-    networking.networkmanager.enable = lib.mkDefault true;
-
-    # Lets whoever is debugging the machine read kernel logs without sudo. Deliberately not a
-    # default for hosts that exist to confine something.
-    boot.kernel.sysctl."kernel.dmesg_restrict" = 0;
-
-    # Interactive conveniences. Machine-facing tools (git, curl, openssl) stay in base.nix.
-    environment.systemPackages = with pkgs; [
-      vim
-      wget
+  # No password is set here; `passwd` on first boot. That is why sudo below asks for one.
+  users.users.${username} = {
+    isNormalUser = true;
+    home = "/home/${username}";
+    description = username;
+    extraGroups = [
+      "wheel"
+      "networkmanager"
+      "video"
     ];
   };
+
+  # Root-equivalent, not a convenience: a trusted Nix user can override daemon settings on its own
+  # connections, so this belongs with `wheel` rather than with the flakes/GC settings in base.nix.
+  nix.settings.trusted-users = [
+    username
+    "root"
+  ];
+
+  security.sudo.wheelNeedsPassword = true;
+  security.sudo.extraConfig = lib.mkAfter ''
+    # Show asterisks while typing sudo passwords.
+    Defaults pwfeedback
+  '';
+
+  # Overkill for a single virtio NIC, which is why `bootstrap` used to mkForce it back off.
+  networking.networkmanager.enable = lib.mkDefault true;
+
+  # Lets whoever is debugging the machine read kernel logs without sudo. Deliberately not a
+  # default for hosts that exist to confine something.
+  boot.kernel.sysctl."kernel.dmesg_restrict" = 0;
+
+  # Interactive conveniences. Machine-facing tools (git, curl, openssl) stay in base.nix.
+  environment.systemPackages = with pkgs; [
+    vim
+    wget
+  ];
 }
