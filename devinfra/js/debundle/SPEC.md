@@ -802,8 +802,8 @@ The canonical execution index can discharge a direct member mutation's native
 alias roots when an unconditional local initializer dominates that receiver
 read. It retains source-positioned definitions, applies overwrite kills, and
 rejects reaching assignments or rebinding from another activation. Receiver parameter cells,
-loops, exceptional transfers, labels, async/generator bodies and dynamic scope
-retain the existing census fallback. Destructuring and reflective mutation
+loops, exceptional transfers, labels, unindexed object-literal accessors,
+async/generator bodies and dynamic scope retain the existing census fallback. Destructuring and reflective mutation
 calls are outside this initial proof's evaluation-order boundary.
 
 Supported initializer results are fresh object literals, direct construction of
