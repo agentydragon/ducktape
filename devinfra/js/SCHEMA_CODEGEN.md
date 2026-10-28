@@ -44,6 +44,42 @@ targets are supported. The generated declarations preserve `rootTypes: true` and
 run a compiler action. `ts_library` consumes those declarations for type checking and does not emit
 them as JavaScript source.
 
+## OpenAPI Zod source
+
+`openapi_zod` converts a declared OpenAPI file into the Zod TypeScript source selected by a local
+Hey API config. The config and every local schema/config reference are declared inputs. Compile the
+generated source with an ordinary `ts_library`; for an `.mts` source it emits both `.mjs` and
+`.d.mts` for JavaScript and TypeScript consumers:
+
+```starlark
+load("//devinfra/js:openapi_zod.bzl", "openapi_zod")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+
+openapi_zod(
+    name = "schema_zod_codegen",
+    schema = ":openapi_schema",
+    config = "openapi-ts.config.mjs",
+    schema_files = [":referenced_schema"],
+    config_files = [":local_config_helper"],
+    out = "api/schema.zod.mts",
+)
+
+ts_library(
+    name = "schema_zod",
+    srcs = [":schema_zod_codegen"],
+    tsconfig = ":tsconfig",
+    deps = ["//:node_modules/zod"],
+)
+```
+
+The config is an ES module with one default-exported configuration object. List local modules it
+imports in `config_files` and imported runtime packages in `config_deps`. The converter uses Hey
+API's config-file API with the declared schema path; plugin settings stay in the config.
+
+Both OpenAPI launchers use the shared remote-reference guard. They fail closed if a generator
+attempts HTTP resolution during the build. The production packages expose the conversion interfaces;
+generator-specific fixtures and no-fetch proof live in the separate schema spike PR #12342.
+
 Remote references are disabled during generation. Schema exporters remain responsible for their
 source contract and serialization choices; this rule does not normalize schema dialects or merge
 OpenAPI and JSON Schema inputs. Reference interpretation otherwise follows the pinned OpenAPI

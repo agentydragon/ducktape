@@ -5,9 +5,10 @@ handlers are registered with their real request/response models without
 needing a live database. `app.openapi()` only inspects route signatures —
 handler bodies (which would touch the store) are never invoked here.
 
-The output JSON feeds `//study_casino/frontend/lib:schema_zod`,
-which runs `@hey-api/openapi-ts --plugins zod` to produce
-`lib/api/schema.zod.mjs` for the frontend's fetch-boundary validators.
+The output JSON is a declared OpenAPI artifact consumed by the frontend's
+file-input Zod converter and normal TypeScript compilation. The `.mts` source
+emits `lib/api/schema.zod.mjs` plus declarations for the plain-JavaScript
+fetch-boundary consumer.
 """
 
 from __future__ import annotations
