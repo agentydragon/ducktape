@@ -5,10 +5,12 @@
 //! their own surrounding purity/effect checks.
 
 use super::*;
+use crate::analysis_inputs::ProofDependencies;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SetIterableProof {
     constructor_starts: BTreeSet<u32>,
+    dependencies: ProofDependencies,
 }
 
 impl SetIterableProof {
@@ -76,11 +78,24 @@ impl SetIterableProof {
             flow,
             plain_data_bindings,
         ));
-        Self { constructor_starts }
+        Self {
+            constructor_starts,
+            dependencies: ProofDependencies::default(),
+        }
     }
 
     pub(crate) fn contains_constructor(&self, span: Span) -> bool {
         self.constructor_starts.contains(&span.lo.0)
+    }
+
+    pub(crate) fn with_dependencies(mut self, dependencies: ProofDependencies) -> Self {
+        self.dependencies = dependencies;
+        self
+    }
+
+    pub(crate) fn dependencies_for_constructor(&self, span: Span) -> Option<&ProofDependencies> {
+        self.contains_constructor(span)
+            .then_some(&self.dependencies)
     }
 }
 
