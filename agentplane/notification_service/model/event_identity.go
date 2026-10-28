@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/google/uuid"
 )
@@ -185,7 +184,7 @@ func DecodeEventIdentity(data []byte) (EventIdentity, error) {
 		); err != nil {
 			return nil, err
 		}
-		if !slices.Contains(knownEvents, wire.Event) {
+		if !IsGitHubWebhookEvent(wire.Event) {
 			return nil, fmt.Errorf("unknown GitHub event %q", wire.Event)
 		}
 		return GitHubEvent{

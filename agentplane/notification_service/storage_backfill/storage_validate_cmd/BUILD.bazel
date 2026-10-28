@@ -1,0 +1,12 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
+
+go_binary(
+    name = "notification-storage-validate",
+    srcs = ["main.go"],
+    deps = [
+        "//agentplane/notification_service/store",
+        "//agentplane/postgres/go/migrate",
+    ],
+)

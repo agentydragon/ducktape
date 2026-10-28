@@ -130,9 +130,10 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 			AND NOT EXISTS (
 				SELECT 1 FROM subscription_match m
 				JOIN entry e ON e.inbox_id = `+inbox+` AND e.cursor = m.cursor
-				WHERE m.subscription_id = `+subscription+` AND e.event = jsonb_build_object(
-					'provider', 'github', 'app_id', d.app_id, 'delivery_id', d.delivery_id,
-					'repository_id', d.repository_id, 'event', d.event, 'action', d.action))
+				WHERE m.subscription_id = `+subscription+` AND e.identity_provider = 'github'
+					AND e.github_app_id = d.app_id AND e.github_delivery_id = d.delivery_id
+					AND e.github_repository_id = d.repository_id AND e.github_event = d.event
+					AND e.github_action IS NOT DISTINCT FROM d.action)
 		ORDER BY d.position LIMIT `+strconv.Itoa(GitHubDeliveryPageSize), args...)
 	if err != nil {
 		return nil, err

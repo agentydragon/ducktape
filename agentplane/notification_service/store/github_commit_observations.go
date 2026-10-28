@@ -350,19 +350,16 @@ func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx *sql.Tx, 
 	if recording.Subject.Kind != "pull_request" {
 		return 0, false, nil
 	}
-	var creation []byte
 	var creationProto sql.Null[[]byte]
 	var sourceProvider sql.NullString
 	var idempotencyKey string
 	var after int64
-	if err := tx.QueryRowContext(ctx, `SELECT
-		CASE WHEN creation_proto IS NULL AND source_provider IS NULL THEN creation END,
-		creation_proto, source_provider, idempotency_key, github_commit_after_sequence
+	if err := tx.QueryRowContext(ctx, `SELECT creation_proto, source_provider, idempotency_key, github_commit_after_sequence
 		FROM subscription WHERE id = $1`, recording.SubscriptionID).
-		Scan(&creation, &creationProto, &sourceProvider, &idempotencyKey, &after); err != nil {
+		Scan(&creationProto, &sourceProvider, &idempotencyKey, &after); err != nil {
 		return 0, false, err
 	}
-	body, err := decodeStoredSubscriptionCreation(recording.SubscriptionID, creation, creationProto, sourceProvider, idempotencyKey)
+	body, err := decodeStoredSubscriptionCreation(recording.SubscriptionID, creationProto, sourceProvider, idempotencyKey)
 	if err != nil {
 		return 0, false, err
 	}
@@ -451,9 +448,10 @@ func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx *sql.Tx, 
 			AND e.sequence > ` + sequence + `
 			AND NOT EXISTS (SELECT 1 FROM subscription_match m JOIN entry existing
 				ON existing.inbox_id = ` + args.add(inboxID) + ` AND existing.cursor = m.cursor
-				WHERE m.subscription_id = ` + args.add(recording.SubscriptionID) + ` AND existing.event = jsonb_build_object(
-					'provider', 'github_observation', 'app_id', e.app_id, 'repository_id', e.repository_id,
-					'event', e.event, 'sequence', e.sequence))
+				WHERE m.subscription_id = ` + args.add(recording.SubscriptionID) + `
+					AND existing.identity_provider = 'github_observation'
+					AND existing.github_app_id = e.app_id AND existing.github_repository_id = e.repository_id
+					AND existing.github_event = e.event AND existing.github_observation_sequence = e.sequence)
 		ORDER BY e.sequence LIMIT ` + limit
 	rows, err = tx.QueryContext(ctx, query, args...)
 	if err != nil {

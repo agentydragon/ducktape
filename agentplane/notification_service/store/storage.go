@@ -142,24 +142,17 @@ func decodeSubscriptionCreation(data []byte, idempotencyKey, provider string) (m
 }
 
 func decodeStoredSubscriptionCreation(
-	id uuid.UUID, legacy []byte, typed sql.Null[[]byte], provider sql.NullString, idempotencyKey string,
+	id uuid.UUID, typed sql.Null[[]byte], provider sql.NullString, idempotencyKey string,
 ) (model.Subscribe, error) {
 	if typed.Valid != provider.Valid {
 		return model.Subscribe{}, fmt.Errorf("subscription %s has incomplete typed creation fields", id)
 	}
-	if typed.Valid {
-		creation, err := decodeSubscriptionCreation(typed.V, idempotencyKey, provider.String)
-		if err != nil {
-			return model.Subscribe{}, fmt.Errorf("subscription %s typed creation: %w", id, err)
-		}
-		return creation, nil
+	if !typed.Valid {
+		return model.Subscribe{}, fmt.Errorf("subscription %s has no typed creation", id)
 	}
-	if legacy == nil {
-		return model.Subscribe{}, fmt.Errorf("subscription %s has no stored creation", id)
-	}
-	var creation model.Subscribe
-	if err := decode(legacy, &creation); err != nil {
-		return model.Subscribe{}, fmt.Errorf("subscription %s creation: %w", id, err)
+	creation, err := decodeSubscriptionCreation(typed.V, idempotencyKey, provider.String)
+	if err != nil {
+		return model.Subscribe{}, fmt.Errorf("subscription %s typed creation: %w", id, err)
 	}
 	return creation, nil
 }

@@ -62,8 +62,7 @@ type InboxPage struct {
 	Notice  *Notice
 }
 
-const inboxColumns = `id, CASE WHEN destination_namespace IS NULL AND destination_name IS NULL AND destination_uid IS NULL
-	THEN destination_ref END, destination_namespace, destination_name, destination_uid,
+const inboxColumns = `id, destination_namespace, destination_name, destination_uid,
 	session_id, last_cursor, acknowledged, covered, expired_through, retired, delivery_error`
 
 type rowScanner interface{ Scan(...any) error }
@@ -71,17 +70,16 @@ type rowScanner interface{ Scan(...any) error }
 // scanInbox reads inboxColumns, then any columns the query adds into extra.
 func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	var inbox Inbox
-	var destination []byte
 	var namespace, name, uid sql.NullString
 	var deliveryError sql.NullString
 	if err := row.Scan(append([]any{
-		&inbox.ID, &destination, &namespace, &name, &uid, &inbox.SessionID, &inbox.LastCursor, &inbox.Acknowledged,
+		&inbox.ID, &namespace, &name, &uid, &inbox.SessionID, &inbox.LastCursor, &inbox.Acknowledged,
 		&inbox.Covered, &inbox.ExpiredThrough, &inbox.Retired, &deliveryError,
 	}, extra...)...); err != nil {
 		return Inbox{}, err
 	}
 	var err error
-	inbox.DestinationRef, err = storedDestinationRef(inbox.ID, destination, namespace, name, uid)
+	inbox.DestinationRef, err = destinationRefFromColumns(inbox.ID, namespace, name, uid)
 	if err != nil {
 		return Inbox{}, err
 	}
@@ -91,25 +89,18 @@ func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	return inbox, nil
 }
 
-func storedDestinationRef(id uuid.UUID, destination []byte, namespace, name, uid sql.NullString) (model.DestinationRef, error) {
-	if namespace.Valid && name.Valid && uid.Valid {
-		return model.DestinationRef{Namespace: namespace.String, Name: name.String, UID: uid.String}, nil
-	}
-	if namespace.Valid || name.Valid || uid.Valid {
+func destinationRefFromColumns(id uuid.UUID, namespace, name, uid sql.NullString) (model.DestinationRef, error) {
+	if !namespace.Valid || !name.Valid || !uid.Valid {
 		return model.DestinationRef{}, fmt.Errorf("inbox %s has incomplete normalized destination fields", id)
 	}
-	var ref model.DestinationRef
-	if err := decode(destination, &ref); err != nil {
-		return model.DestinationRef{}, fmt.Errorf("inbox %s destination_ref: %w", id, err)
-	}
-	return ref, nil
+	return model.DestinationRef{Namespace: namespace.String, Name: name.String, UID: uid.String}, nil
 }
 
 // owned is the owner's inbox, locked for update when lock is set. An inbox of another owner is not found.
 func owned(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, owner Owner, lock bool) (Inbox, error) {
 	query := `SELECT ` + inboxColumns + ` FROM inbox
 		WHERE id = $1 AND owner_namespace = $2 AND owner_name = $3
-			AND coalesce(destination_uid, destination_ref ->> 'uid') = $4`
+			AND destination_uid = $4`
 	if lock {
 		query += ` FOR UPDATE`
 	}
@@ -136,7 +127,7 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner model.Service
 		var count int
 		if err := tx.QueryRowContext(ctx, `
 			SELECT count(*) FROM inbox WHERE owner_namespace = $1 AND owner_name = $2
-				AND coalesce(destination_uid, destination_ref ->> 'uid') = $3`,
+				AND destination_uid = $3`,
 			owner.Namespace, owner.Name, ref.UID).Scan(&count); err != nil {
 			return Inbox{}, err
 		}
@@ -146,18 +137,13 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner model.Service
 	} else if err != nil {
 		return Inbox{}, err
 	}
-	destination, err := json.Marshal(ref)
-	if err != nil {
-		return Inbox{}, err
-	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref,
+		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 			destination_namespace, destination_name, destination_uid, session_id,
 			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 0, 0, 0, 0, false, $10, $10, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, $9, $9, $9)
 		ON CONFLICT DO NOTHING`,
-		uuid.New(), owner.Namespace, owner.Name, key, string(destination), ref.Namespace, ref.Name, ref.UID,
-		sessionID, written); err != nil {
+		uuid.New(), owner.Namespace, owner.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, written); err != nil {
 		return Inbox{}, err
 	}
 	inbox, err := scanInbox(tx.QueryRowContext(ctx,
@@ -177,7 +163,7 @@ func (s *Store) ListInboxes(ctx context.Context, owner Owner) ([]Inbox, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+inboxColumns+` FROM inbox
 		WHERE owner_namespace = $1 AND owner_name = $2
-			AND coalesce(destination_uid, destination_ref ->> 'uid') = $3 ORDER BY id LIMIT 1000`,
+			AND destination_uid = $3 ORDER BY id LIMIT 1000`,
 		owner.Account.Namespace, owner.Account.Name, owner.SandboxUID)
 	if err != nil {
 		return nil, err
@@ -225,7 +211,8 @@ func (s *Store) Read(ctx context.Context, owner Owner, inboxID uuid.UUID, after 
 
 func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, limit int) ([]Entry, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT cursor, event, payload FROM entry WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
+		`SELECT cursor, `+eventIdentityReadColumns+`, payload FROM entry
+			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inbox.ID, after, limit)
 	if err != nil {
 		return nil, err
@@ -234,11 +221,14 @@ func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, lim
 	var entries []Entry
 	for rows.Next() {
 		var entry Entry
-		var event, payload []byte
-		if err := rows.Scan(&entry.Cursor, &event, &payload); err != nil {
+		var identity eventIdentityRead
+		var payload []byte
+		destinations := append([]any{&entry.Cursor}, identity.destinations()...)
+		destinations = append(destinations, &payload)
+		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
-		if entry.Event, err = model.DecodeEventIdentity(event); err != nil {
+		if entry.Event, err = identity.event(); err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inbox.ID, entry.Cursor, err)
 		}
 		if payload == nil {
@@ -349,14 +339,11 @@ func (s *Store) Retire(ctx context.Context, owner Owner, inboxID uuid.UUID) erro
 // the next cursor unless it already holds one, and the subscription's match with it. The caller holds the
 // inbox's row locked for update in tx.
 func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscriptionID uuid.UUID, event model.EventIdentity, payload json.RawMessage) error {
-	identity, err := json.Marshal(event)
+	cursor, found, err := eventIdentityLookup(ctx, tx, inboxID, event)
 	if err != nil {
 		return err
 	}
-	var cursor int64
-	err = tx.QueryRowContext(ctx, `SELECT cursor FROM entry WHERE inbox_id = $1 AND event = $2::jsonb`,
-		inboxID, string(identity)).Scan(&cursor)
-	if errors.Is(err, sql.ErrNoRows) {
+	if !found {
 		var messages int64
 		if err := tx.QueryRowContext(ctx,
 			`SELECT last_cursor, (SELECT count(*) FROM message WHERE inbox_id = $1) FROM inbox WHERE id = $1`,
@@ -373,8 +360,6 @@ func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscripti
 		if err := insertEntry(ctx, tx, inboxID, cursor, event, payload, now()); err != nil {
 			return err
 		}
-	} else if err != nil {
-		return err
 	}
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO subscription_match (subscription_id, cursor) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -459,7 +444,7 @@ func expirePayloads(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, expiredT
 	if through == expiredThrough {
 		return nil
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE entry SET payload = NULL WHERE inbox_id = $1 AND cursor > $2 AND cursor <= $3`,
+	if _, err := tx.ExecContext(ctx, `UPDATE entry SET payload = NULL, action_state = NULL, action_at = NULL, action_actor_kind = NULL, action_actor_namespace = NULL, action_actor_name = NULL, action_actor_issuer = NULL, action_actor_subject = NULL, mergeability_repository = NULL, mergeability_base_ref = NULL, mergeability_head_sha = NULL, mergeability_base_sha = NULL, mergeability_previous = NULL, mergeability_current = NULL, mergeability_observed_at = NULL, mergeability_observed_at_submicro_nanos = NULL, merge_commit_sha = NULL, merge_commit_base_sha = NULL, merge_commit_head_sha = NULL, message_body = NULL, message_from_session = NULL WHERE inbox_id = $1 AND cursor > $2 AND cursor <= $3`,
 		inboxID, expiredThrough, through); err != nil {
 		return err
 	}

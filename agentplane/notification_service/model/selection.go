@@ -74,3 +74,9 @@ func GitHubCIEvents() []EventName {
 func GitHubReferenceEvents() []EventName {
 	return slices.Clone(refEvents)
 }
+
+// IsGitHubWebhookEvent reports whether event is a supported native GitHub webhook name.
+// Agentplane-generated observation selectors, such as mergeability_changed, are excluded.
+func IsGitHubWebhookEvent(event EventName) bool {
+	return slices.Contains(knownEvents, event)
+}

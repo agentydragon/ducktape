@@ -117,7 +117,7 @@ func TestGitHubSubscriptionStateIsSourceSpecific(t *testing.T) {
 	subscription := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	for _, column := range []string{"actions_after_sequence = 0", "github_start_position = NULL", "github_app_id = NULL"} {
 		_, err := g.db.ExecContext(t.Context(), `UPDATE subscription SET `+column+` WHERE id = $1`, subscription.ID)
-		requireConstraint(t, err, "23514", "subscription_source_state")
+		requireConstraint(t, err, "23514", "subscription_typed_source_state")
 	}
 }
 
@@ -134,12 +134,13 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 	}
 	var provider string
 	var hasTypedCreation bool
-	if err := g.db.QueryRowContext(t.Context(), `SELECT source_provider, creation_proto IS NOT NULL
-		FROM subscription WHERE id = $1`, original.ID).Scan(&provider, &hasTypedCreation); err != nil {
+	var legacyCreationNull bool
+	if err := g.db.QueryRowContext(t.Context(), `SELECT source_provider, creation_proto IS NOT NULL, creation IS NULL
+		FROM subscription WHERE id = $1`, original.ID).Scan(&provider, &hasTypedCreation, &legacyCreationNull); err != nil {
 		t.Fatal(err)
 	}
-	if provider != "github" || !hasTypedCreation {
-		t.Fatalf("new GitHub subscription storage = (provider %q, typed %t), want typed GitHub creation", provider, hasTypedCreation)
+	if provider != "github" || !hasTypedCreation || !legacyCreationNull {
+		t.Fatalf("new GitHub subscription storage = (provider %q, typed %t, legacy JSON NULL %t), want typed GitHub creation without legacy JSON", provider, hasTypedCreation, legacyCreationNull)
 	}
 
 	reordered := created
@@ -157,10 +158,8 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 		t.Fatalf("a replay with the filters reordered and repeated made subscription %s, not %s", replayed.ID, original.ID)
 	}
 
-	// The typed creation is authoritative even while legacy JSON remains for rollback.
-	g.exec(t, `
-		UPDATE subscription SET creation = jsonb_set(creation, '{source,repository}', '"legacy-json-value"')
-		WHERE id = $1`, original.ID)
+	// The typed creation is authoritative even when the retained legacy column contains invalid creation JSON.
+	g.exec(t, `UPDATE subscription SET creation = '{}'::jsonb WHERE id = $1`, original.ID)
 	stored, err := g.GetSubscription(t.Context(), g.incarnation(), original.ID)
 	if err != nil || !model.SourcesEqual(stored.Source, created.Source) {
 		t.Fatalf("stored typed GitHub creation = %+v, %v; want %+v", stored.Source, err, created.Source)
