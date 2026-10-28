@@ -130,17 +130,22 @@ struct CallbackFallbackSummary {
     rebind_additions: Vec<Id>,
 }
 
-type InvocationSignature = (
-    u32,
-    Vec<Values>,
-    Option<CapturedContext>,
-    bool,
-    u64,
-    u64,
-    Option<SourceUnitOrdinal>,
-);
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct InvocationSignature {
+    callable: u32,
+    arguments: Vec<Values>,
+    captured_context: Option<CapturedContext>,
+    fresh_checked_constructor: bool,
+    reachability_revision: u64,
+    prefix_revision: u64,
+    top_owner: Option<SourceUnitOrdinal>,
+}
 
-type ActiveInvocation = (u32, Option<SourceUnitOrdinal>);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct ActiveInvocation {
+    callable: u32,
+    top_owner: Option<SourceUnitOrdinal>,
+}
 
 // Callable cycles can keep changing their argument/capture snapshots and thus
 // evade the state-specific memoization key. Bound recursive analysis separately
@@ -3859,9 +3864,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 | AbstractValue::Closure(key, _) => *key,
                 _ => return false,
             };
-            self.state
-                .active
-                .contains(&(key, self.state.current_top_owner))
+            self.state.active.contains(&ActiveInvocation {
+                callable: key,
+                top_owner: self.state.current_top_owner,
+            })
         });
         for callback in callbacks.clone() {
             if reentrant_pool
@@ -4805,21 +4811,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if callable_opaque {
             self.note_unknown_execution(callable_owner);
         }
-        let signature = (
-            key,
-            args.clone(),
-            captured.clone(),
+        let signature = InvocationSignature {
+            callable: key,
+            arguments: args.clone(),
+            captured_context: captured.clone(),
             fresh_checked_constructor,
-            self.state.reachability.revision,
-            self.state.prefix_revision,
-            self.state.current_top_owner,
-        );
+            reachability_revision: self.state.reachability.revision,
+            prefix_revision: self.state.prefix_revision,
+            top_owner: self.state.current_top_owner,
+        };
         if self.state.array_iteration_depth == 0
             && let Some(cached) = self.state.cache.get(&signature)
         {
             return cached.clone();
         }
-        let active_invocation = (key, self.state.current_top_owner);
+        let active_invocation = ActiveInvocation {
+            callable: key,
+            top_owner: self.state.current_top_owner,
+        };
         if self.state.active.contains(&active_invocation)
             || self.state.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH
             || self.state.invocation_count >= MAX_SYNCHRONOUS_INVOCATIONS
@@ -5690,11 +5699,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
 fn callback_source_units_for_signature(
     callback_argument_exprs: &BTreeMap<usize, ValueExpr>,
-    signature: &spec::RetainedCallbackSignature,
+    callback_signature: &spec::RetainedCallbackSignature,
     flow: &ChunkValueFlow,
 ) -> Option<BTreeSet<SourceUnitOrdinal>> {
     let mut source_units = BTreeSet::new();
-    for position in &signature.callback_arguments {
+    for position in &callback_signature.callback_arguments {
         let expression = callback_argument_exprs.get(position)?;
         let values: BTreeSet<_> = match expression {
             ValueExpr::Binding(binding) => flow.values_of_binding(binding).into_iter().collect(),
@@ -5918,22 +5927,30 @@ pub(crate) fn annotate_synchronous_calls(
             .rejected_namespace_call_arguments
             .get(namespace)
             .cloned();
-        for signature in candidate.call.signatures.iter().filter(|signature| {
-            // `retained_callback_invocation` already applies these guards to
-            // the parsed call. Keep them explicit here so a configured but
-            // inapplicable overload can never be reported as the match.
-            signature.argument_count == candidate.call.argument_count
-                && signature.callback_arguments.iter().all(|position| {
-                    *position < candidate.call.argument_count
-                        && candidate
-                            .call
-                            .callback_argument_exprs
-                            .contains_key(position)
-                })
-        }) {
+        for callback_signature in candidate
+            .call
+            .signatures
+            .iter()
+            .filter(|callback_signature| {
+                // `retained_callback_invocation` already applies these guards to
+                // the parsed call. Keep them explicit here so a configured but
+                // inapplicable overload can never be reported as the match.
+                callback_signature.argument_count == candidate.call.argument_count
+                    && callback_signature
+                        .callback_arguments
+                        .iter()
+                        .all(|position| {
+                            *position < candidate.call.argument_count
+                                && candidate
+                                    .call
+                                    .callback_argument_exprs
+                                    .contains_key(position)
+                        })
+            })
+        {
             let callback_source_units = callback_source_units_for_signature(
                 &candidate.call.callback_argument_exprs,
-                signature,
+                callback_signature,
                 flow,
             );
             facts[candidate.owner.0]
@@ -5941,8 +5958,8 @@ pub(crate) fn annotate_synchronous_calls(
                 .push(CallbackFactoryBarrierFact {
                     namespace_binding: namespace.0.to_string(),
                     member: member.clone(),
-                    argument_count: signature.argument_count,
-                    callback_arguments: signature.callback_arguments.clone(),
+                    argument_count: callback_signature.argument_count,
+                    callback_arguments: callback_signature.callback_arguments.clone(),
                     callback_source_units,
                     rejection: match &witness {
                         Some(witness) => CallbackFactoryBarrierRejection::NamespaceMemberWrite {
