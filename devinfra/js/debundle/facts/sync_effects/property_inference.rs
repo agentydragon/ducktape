@@ -28,7 +28,6 @@ pub(super) enum CapturedPropertyDescriptor {
 
 #[derive(Debug, Clone)]
 pub(super) struct OwnPropertyNamesProjection {
-    pub(super) source_object: u32,
     pub(super) names: Vec<String>,
 }
 
@@ -212,7 +211,7 @@ impl<'a> RuleSet for OwnPropertyRules<'a> {
                 if !matches!(
                     context.require(OwnPropertyKey::SourceOrigin(*source_object))?,
                     OwnPropertyFact::SourceOrigin(object) if object == source_object
-                ) || !Self::valid_shape(&self.shape)
+                ) || !Self::valid_shape(self.shape)
                 {
                     return None;
                 }
@@ -227,17 +226,11 @@ impl<'a> RuleSet for OwnPropertyRules<'a> {
                 if *source_object != self.source_object || self.tainted {
                     return None;
                 }
-                let current_keys: BTreeSet<_> = self
+                if !self
                     .prefix_properties
                     .keys()
-                    .map(|property| property.as_deref())
-                    .collect();
-                let expected_keys: BTreeSet<_> = shape
-                    .properties
-                    .keys()
-                    .map(|name| Some(name.as_str()))
-                    .collect();
-                if current_keys != expected_keys
+                    .map(Option::as_deref)
+                    .eq(shape.properties.keys().map(|name| Some(name.as_str())))
                     || self.prefix_properties.values().any(Values::is_empty)
                 {
                     return None;
@@ -280,7 +273,6 @@ impl<'a> RuleSet for OwnPropertyRules<'a> {
                 }
                 Some(OwnPropertyFact::NamesProjection(
                     OwnPropertyNamesProjection {
-                        source_object: *source_object,
                         names: state.ordered_names.clone(),
                     },
                 ))
@@ -356,9 +348,7 @@ pub(super) fn infer_own_property_projection(
         value_input_refs: judgment.dependencies().value_inputs.clone(),
     };
     let projection = match inference.into_value(&key)? {
-        OwnPropertyFact::NamesProjection(projection) => {
-            OwnPropertyProjection::Names(projection)
-        }
+        OwnPropertyFact::NamesProjection(projection) => OwnPropertyProjection::Names(projection),
         OwnPropertyFact::DescriptorProjection(projection) => {
             OwnPropertyProjection::Descriptors(projection)
         }
