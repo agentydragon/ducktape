@@ -749,14 +749,12 @@ func TestDependencyOutagesAreSanitizedAndDoNotForwardWorkloadCredentials(t *test
 	})
 }
 
-func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
+func TestRealBinaryStartsWithYAMLAndRuntimeSecret(t *testing.T) {
 	binary, err := runfiles.Rlocation("ducktape/agentplane/llm_ingress/server_/server")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The token is only good for the environment's audience, so the API server accepting it shows
-	// the environment overrode the YAML audience.
-	_, tokenA := workload(t, "test-sandbox-a", "test-environment-audience")
+	_, tokenA := workload(t, "test-sandbox-a", "test-file-audience")
 	target, _, err := rest.DefaultServerUrlFor(api.Config)
 	if err != nil {
 		t.Fatal(err)
@@ -801,32 +799,26 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 	if err := os.WriteFile(kubeconfig, []byte(kubeconfigYAML), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	settings := filepath.Join(directory, "settings.yaml")
-	settingsYAML := "allowed_service_account_namespaces: [" + testNamespace + "]\n" +
-		"token_audience: test-yaml-audience\n" +
-		"models:\n  - model: configured/model\n    total_context_budget_tokens: 8192\n" +
-		"log_levels:\n  root: INFO\n"
-	if err := os.WriteFile(settings, []byte(settingsYAML), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	_ = listener.Close()
+	settings := writeSettings(t, "allowed_service_account_namespaces: ["+testNamespace+"]\n"+
+		"token_audience: test-file-audience\n"+
+		"host: 127.0.0.1\nport: "+strconv.Itoa(port)+"\n"+
+		"kubeconfig: "+kubeconfig+"\n"+
+		"litellm_url: "+backendServer.URL+"\n"+
+		"models:\n  - model: configured/model\n    total_context_budget_tokens: 8192\n"+
+		"log_levels:\n  root: INFO\n")
 
 	var logs bytes.Buffer
 	command := exec.Command(binary)
 	command.Env = []string{
 		"OTEL_SDK_DISABLED=true",
 		configFileEnv + "=" + settings,
-		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=" + testBackendKey,
-		"AGENTPLANE_LLM_INGRESS_HOST=127.0.0.1",
-		"AGENTPLANE_LLM_INGRESS_PORT=" + strconv.Itoa(port),
-		"AGENTPLANE_LLM_INGRESS_KUBECONFIG=" + kubeconfig,
-		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=test-environment-audience",
-		"AGENTPLANE_LLM_INGRESS_LITELLM_URL=" + backendServer.URL,
+		litellmKeyEnv + "=" + testBackendKey,
 	}
 	command.Stdout = &logs
 	command.Stderr = &logs

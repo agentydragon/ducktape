@@ -1,4 +1,4 @@
-"""Ingress file settings and environment references form one valid runtime configuration."""
+"""The mounted ingress settings and runtime Secret form a valid configuration."""
 
 from typing import Any
 
@@ -12,9 +12,7 @@ from agentplane.llm_ingress.configpb import config_pb2
 from cluster.cdk8s.agentplane import staging
 
 
-def test_rendered_ingress_config_is_completed_by_environment_and_secret(
-    staging_manifests: list[dict[str, Any]],
-) -> None:
+def test_rendered_ingress_config_is_completed_by_secret(staging_manifests: list[dict[str, Any]]) -> None:
     deployment = one(
         doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "llm-ingress"
     )
@@ -37,14 +35,6 @@ def test_rendered_ingress_config_is_completed_by_environment_and_secret(
         "key": "api-key",
     }
     config = ParseDict(content, config_pb2.Config())
-    ParseDict(
-        {
-            name.removeprefix(prefix).lower(): entry["value"]
-            for name, entry in environment.items()
-            if name.startswith(prefix) and name != prefix + "CONFIG_FILE" and "value" in entry
-        },
-        config,
-    )
     config.litellm_key = "test-secret-supplied-at-runtime"
     protovalidate.validate(config)
 

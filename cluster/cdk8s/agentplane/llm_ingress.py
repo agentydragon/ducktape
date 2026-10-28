@@ -45,7 +45,7 @@ from util.protobuf import message_dict
 # gazelle:include_dep @pypi//protobuf
 
 _CONFIG_FILE_ENV = "AGENTPLANE_LLM_INGRESS_CONFIG_FILE"
-_ENV_PREFIX = "AGENTPLANE_LLM_INGRESS_"
+_LITELLM_KEY_ENV = "AGENTPLANE_LLM_INGRESS_LITELLM_KEY"
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "llm-ingress"
@@ -124,13 +124,16 @@ class LlmIngress(Construct):
                 data={_CODEX_CATALOG_PATH.name: catalog},
             )
         )
-        # This file is a source fragment. Startup validates it together with the
-        # environment, including the actual Secret; its nested file values are complete.
+        # The file omits the runtime Secret; its nested model and attribution values are complete.
         content = config_pb2.Config(
             allowed_service_account_namespaces=[env.namespace],
             central_sampler_accounts=(
                 [f"{env.namespace}/{central_sampler.NAME}"] if env.central_sampler is not None else []
             ),
+            token_audience=WORKLOAD_TOKEN_AUDIENCE,
+            litellm_url=self.litellm_url,
+            host="0.0.0.0",
+            port=self.service.pod_port,
             log_llm_requests=env.llm_ingress.log_llm_requests,
             models=env.llm_ingress.models,
             attribution=env.llm_ingress.attribution,
@@ -190,16 +193,12 @@ class LlmIngress(Construct):
             image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             env_variables={
-                f"{_ENV_PREFIX}TOKEN_AUDIENCE": EnvValue.from_value(WORKLOAD_TOKEN_AUDIENCE),
-                f"{_ENV_PREFIX}LITELLM_URL": EnvValue.from_value(self.litellm_url),
-                f"{_ENV_PREFIX}HOST": EnvValue.from_value("0.0.0.0"),
-                f"{_ENV_PREFIX}PORT": EnvValue.from_value(str(self.service.pod_port)),
                 **{
                     name: EnvValue.from_value(value)
                     for name, value in telemetry.service_environment(self.env.namespace, _NAME).items()
                 },
                 # The only real model credential in this service; runners never mount it.
-                f"{_ENV_PREFIX}LITELLM_KEY": SecretRef(
+                _LITELLM_KEY_ENV: SecretRef(
                     namespace=self.env.namespace, name=self.env.llm_ingress.litellm_key_secret_name
                 )
                 .key("api-key")

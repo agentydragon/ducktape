@@ -9,18 +9,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/llm_ingress/configpb"
 )
 
-func loadTestConfig(t *testing.T, environ []string) (*configpb.Config, error) {
+const testRuntimeSecret = "test-runtime-secret-never-include-in-errors"
+
+func loadTestConfig(t *testing.T, path string) (*configpb.Config, error) {
 	t.Helper()
-	for _, entry := range os.Environ() {
-		name, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(name, settingPrefix) {
-			t.Setenv(name, "")
-		}
-	}
-	for _, entry := range environ {
-		name, value, _ := strings.Cut(entry, "=")
-		t.Setenv(name, value)
-	}
+	t.Setenv(configFileEnv, path)
+	t.Setenv(litellmKeyEnv, testRuntimeSecret)
 	return loadConfig()
 }
 
@@ -33,11 +27,10 @@ func writeSettings(t *testing.T, contents string) string {
 	return path
 }
 
-func TestLoadConfigPrecedence(t *testing.T) {
+func TestLoadConfigReadsFileAndRuntimeSecret(t *testing.T) {
 	path := writeSettings(t, `allowed_service_account_namespaces: [yaml-namespace]
 token_audience: yaml-audience
 litellm_url: http://127.0.0.1:8100/prefix
-litellm_key: yaml-secret
 log_llm_requests: true
 port: 6060
 codex_model_catalog_file: /yaml/codex_models.json
@@ -45,21 +38,15 @@ models:
   - model: test/model
     total_context_budget_tokens: 8192
 `)
-	c, err := loadTestConfig(t, []string{
-		configFileEnv + "=" + path,
-		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=env-audience",
-		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=env-secret",
-		"AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=false",
-		"AGENTPLANE_LLM_INGRESS_PORT=7070",
-	})
+	c, err := loadTestConfig(t, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.TokenAudience != "env-audience" || c.GetPort() != 7070 || c.LitellmKey != "env-secret" || c.GetLogLlmRequests() ||
+	if c.TokenAudience != "yaml-audience" || c.GetPort() != 6060 || c.LitellmKey != testRuntimeSecret || !c.GetLogLlmRequests() ||
 		len(c.AllowedServiceAccountNamespaces) != 1 || c.AllowedServiceAccountNamespaces[0] != "yaml-namespace" ||
 		c.LitellmUrl != "http://127.0.0.1:8100/prefix" || len(c.Models) != 1 || c.Models[0].TotalContextBudgetTokens != 8192 ||
 		c.CodexModelCatalogFile != "/yaml/codex_models.json" {
-		t.Fatalf("unexpected merged config: %+v", c)
+		t.Fatal("settings file and runtime Secret were not loaded correctly")
 	}
 }
 
@@ -67,7 +54,6 @@ func TestAttributionConfig(t *testing.T) {
 	base := `allowed_service_account_namespaces: [test-namespace]
 token_audience: test-audience
 litellm_url: http://127.0.0.1:8100
-litellm_key: test-secret
 `
 	for _, test := range []struct {
 		name  string
@@ -86,7 +72,7 @@ litellm_key: test-secret
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			path := writeSettings(t, base+test.yaml)
-			c, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
+			c, err := loadTestConfig(t, path)
 			if test.fails {
 				if err == nil {
 					t.Fatalf("invalid attribution accepted: %+v", c.Attribution)
@@ -121,10 +107,9 @@ func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
 			path := writeSettings(t, "allowed_service_account_namespaces: [test-namespace]\n"+
 				"token_audience: test-audience\n"+
 				"litellm_url: http://127.0.0.1:8100\n"+
-				"litellm_key: never-include-this-secret\n"+
 				"models:\n  - model: test/model\n    total_context_budget_tokens: "+value+"\n")
-			_, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
-			if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
+			_, err := loadTestConfig(t, path)
+			if err == nil || strings.Contains(err.Error(), testRuntimeSecret) {
 				t.Fatalf("got unsafe or missing config error: %v", err)
 			}
 		})
@@ -135,40 +120,34 @@ func TestLoadConfigRejectsUnknownFileSettingsWithoutEchoingValues(t *testing.T) 
 	base := `allowed_service_account_namespaces: [test-namespace]
 token_audience: test-audience
 litellm_url: http://127.0.0.1:8100
-litellm_key: never-include-this-secret
 models: []
 `
 	path := writeSettings(t, base+`unknown_setting: never-include-this-secret
 `)
-	_, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
-	if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
+	_, err := loadTestConfig(t, path)
+	if err == nil || strings.Contains(err.Error(), "never-include-this-secret") || strings.Contains(err.Error(), testRuntimeSecret) {
 		t.Fatalf("got unsafe or missing config error: %v", err)
 	}
 }
 
-func TestLoadConfigPreservesDefaultsAndScalarEnvironmentContract(t *testing.T) {
-	const base = "allowed_service_account_namespaces: [test-namespace]\ntoken_audience: test-audience\nlitellm_url: http://backend.example.test:4000\nlitellm_key: never-include-this-secret\n"
+func TestLoadConfigDefaultsAndInvalidFileSettings(t *testing.T) {
+	const base = "allowed_service_account_namespaces: [test-namespace]\ntoken_audience: test-audience\nlitellm_url: http://backend.example.test:4000\n"
 	for _, test := range []struct {
 		name, yaml string
-		env        []string
 		port       int32
 		fails      bool
 	}{
 		{name: "omitted defaults", port: 8080},
-		{name: "empty environment ignored", env: []string{settingPrefix + "PORT="}, port: 8080},
 		{name: "ephemeral port", yaml: "port: 0\n", port: 0},
-		{name: "lists remain file only", env: []string{settingPrefix + "ALLOWED_SERVICE_ACCOUNT_NAMESPACES=ignored"}, port: 8080},
-		{name: "invalid port override", env: []string{settingPrefix + "PORT=never-include-this-secret"}, fails: true},
-		{name: "invalid boolean override", env: []string{settingPrefix + "LOG_LLM_REQUESTS=never-include-this-secret"}, fails: true},
 		{name: "duplicate YAML key", yaml: "host: other.example.test\nhost: never-include-this-secret\n", fails: true},
 		{name: "empty host", yaml: "host: ''\n", fails: true},
 		{name: "port outside range", yaml: "port: 65536\n", fails: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			path := writeSettings(t, base+test.yaml)
-			c, err := loadTestConfig(t, append(test.env, configFileEnv+"="+path))
+			c, err := loadTestConfig(t, path)
 			if test.fails {
-				if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
+				if err == nil || strings.Contains(err.Error(), "never-include-this-secret") || strings.Contains(err.Error(), testRuntimeSecret) {
 					t.Fatalf("unsafe or missing config error: %v", err)
 				}
 				return
@@ -177,8 +156,18 @@ func TestLoadConfigPreservesDefaultsAndScalarEnvironmentContract(t *testing.T) {
 				t.Fatal(err)
 			}
 			if c.GetHost() != "0.0.0.0" || c.GetPort() != test.port || c.GetLogLlmRequests() || c.AllowedServiceAccountNamespaces[0] != "test-namespace" {
-				t.Fatal("settings defaults or environment precedence changed")
+				t.Fatal("omitted listener settings must use defaults and explicit zero must remain zero")
 			}
 		})
+	}
+}
+
+func TestLoadConfigRequiresRuntimeSecret(t *testing.T) {
+	path := writeSettings(t, "allowed_service_account_namespaces: [test-namespace]\n"+
+		"token_audience: test-audience\nlitellm_url: http://backend.example.test:4000\n")
+	t.Setenv(configFileEnv, path)
+	t.Setenv(litellmKeyEnv, "")
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("startup accepted a missing runtime Secret")
 	}
 }

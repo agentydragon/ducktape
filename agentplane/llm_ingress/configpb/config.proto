@@ -19,6 +19,7 @@ message Config {
   string litellm_url = 7 [(buf.validate.field).string = {
     uri: true, pattern: "^https?://[^/?#@]+(/[^?#]*)?$"
   }];
+  // Runtime credential supplied by AGENTPLANE_LLM_INGRESS_LITELLM_KEY after reading the file.
   string litellm_key = 8 [(buf.validate.field).string.min_len = 1];
   map<string, string> log_levels = 9 [(buf.validate.field).map.values.string = {
     in: ["DEBUG", "INFO", "WARNING", "ERROR"]

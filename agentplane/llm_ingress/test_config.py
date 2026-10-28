@@ -13,6 +13,8 @@ from util.protobuf import message_dict
 def test_source_fragment_serializes_without_claiming_complete_validation() -> None:
     content = config_pb2.Config(
         allowed_service_account_namespaces=["config-test"],
+        token_audience="test-audience",
+        litellm_url="http://backend.example.test:4000",
         models=[config_pb2.ModelConfig(model="test/model", total_context_budget_tokens=262144)],
         attribution=config_pb2.AttributionConfig(
             json_headers=[
@@ -23,14 +25,9 @@ def test_source_fragment_serializes_without_claiming_complete_validation() -> No
             ]
         ),
     )
-    with pytest.raises(protovalidate.ValidationError):
-        protovalidate.validate(content)
     rendered = message_dict(content)
     assert "litellm_key" not in rendered
-    assert "litellm_url" not in rendered
-    assert "token_audience" not in rendered
     assert rendered["attribution"]["json_headers"][0]["fields"][0] == {"key": "Pod.Name", "source": "pod_name"}
-    assert content.litellm_key == ""
 
 
 @pytest.mark.parametrize(

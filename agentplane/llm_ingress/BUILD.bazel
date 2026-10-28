@@ -48,7 +48,6 @@ go_library(
         "@io_k8s_client_go//tools/clientcmd",
         "@io_opentelemetry_go_otel//baggage",
         "@org_golang_google_protobuf//proto",
-        "@org_golang_google_protobuf//reflect/protoreflect",
     ],
 )
 

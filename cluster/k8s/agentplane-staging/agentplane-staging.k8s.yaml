@@ -1235,7 +1235,11 @@ data:
     central_sampler_accounts:
       - agentplane-staging/central-sampler
     codex_model_catalog_file: /etc/agentplane-llm-ingress-codex/codex_models.json
+    host: 0.0.0.0
+    litellm_url: http://litellm.litellm.svc.cluster.local:4000
     log_llm_requests: true
+    port: 8080
+    token_audience: agentplane-egress
 immutable: false
 ---
 apiVersion: apps/v1
@@ -1272,14 +1276,6 @@ spec:
       automountServiceAccountToken: true
       containers:
         - env:
-            - name: AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE
-              value: agentplane-egress
-            - name: AGENTPLANE_LLM_INGRESS_LITELLM_URL
-              value: http://litellm.litellm.svc.cluster.local:4000
-            - name: AGENTPLANE_LLM_INGRESS_HOST
-              value: 0.0.0.0
-            - name: AGENTPLANE_LLM_INGRESS_PORT
-              value: "8080"
             - name: OTEL_SERVICE_NAME
               value: llm-ingress
             - name: OTEL_RESOURCE_ATTRIBUTES
