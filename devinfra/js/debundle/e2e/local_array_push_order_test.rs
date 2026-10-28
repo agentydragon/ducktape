@@ -398,3 +398,21 @@ fn lazy_array_origins_keep_opaque_calls_live_before_lexical_allocation() {
     assert_preserved_entry_output(&fixture, "0 0\n");
     assert_sequenced_edge(&fixture.dependency_graph(), 3, 2);
 }
+
+#[test]
+fn fresh_allocation_still_preserves_an_earlier_binding_tdz_observation() {
+    let source = "function read() { try { return values[0]; } catch (error) { return error.name; } }\nconst before = read();\nconst values = [42];\nconsole.log(before, values[0]);\n";
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("reader", &[Member::new("read"), Member::new("before")]),
+                logical_module("values", &[Member::new("values")]),
+            ],
+        ),
+        &["reader", "values"],
+        &[],
+    );
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "ReferenceError 42\n");
+}

@@ -587,9 +587,10 @@ globalThis`) marks the bindings it flows into (transitively,
   every read or mutation. Allocation alone does not depend on preceding
   opaque operations or reset content writers/readers: one source origin can
   represent multiple runtime allocations. Opaque calls before the first live
-  eager literal-origin array do not start an array-content chain. Any lazy allocation origin
-  is conservatively live initially because hoisted or escaped functions may
-  create it before its lexical statement. It follows aliases through the chunk value-flow
+  eager literal-origin array do not start an array-content chain. Any lazy
+  allocation origin is conservatively live initially because hoisted or escaped
+  functions may create it before its lexical statement. It follows aliases
+  through the chunk value-flow
   facts and promotes first-order reads from directly invoked chunk functions,
   including pure readers that the S-chain intentionally omits. Per-array
   last-writer and readers-since-write frontiers preserve read-after-write,

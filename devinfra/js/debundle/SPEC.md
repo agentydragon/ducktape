@@ -107,8 +107,9 @@ opaque barriers remain connected even through unsupported protocols. Allocation
 alone does not depend on preceding opaque operations or reset existing content
 writers/readers: one source origin can represent multiple runtime arrays.
 Before any recognized eager literal-origin array exists, opaque operations do
-not start an array-content chain. Lazy literal-allocation origins are conservatively live from the start because
-hoisted or escaped functions may allocate before their lexical statement. This ordering also applies to pure readers:
+not start an array-content chain. Lazy literal-allocation origins are
+conservatively live from the start because hoisted or escaped functions may
+allocate before their lexical statement. This ordering also applies to pure readers:
 call purity does not make an observed array's contents immutable. It is emitted
 in both strict and dataflow-aware S-chain modes.
 
@@ -130,6 +131,7 @@ heap-effect capability; this contract adds no author flag or purity exemption.
 The census tracks `ArrayLit` source origins, not arbitrary arrays returned by
 `Array()`, `Object.entries`, or foreign imports; it does not claim full heap
 ordering coverage.
+
 These are scheduling dependencies only; they do not certify call purity,
 no-reentry, property-descriptor integrity, or prototype integrity.
 `trusted_dataflow_summaries` does not weaken these barriers. Unrecognized or
