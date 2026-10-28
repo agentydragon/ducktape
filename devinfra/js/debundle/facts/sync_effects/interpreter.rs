@@ -584,11 +584,9 @@ impl Executor<'_> {
     }
 
     fn descriptor_map_callbacks(&self, site: CallSite) -> Values {
-        let mut callbacks = Values::new();
-        self.visit_stored_references(&AbstractValue::OwnDescriptorMap(site), true, |reference| {
-            callbacks.insert(reference.clone());
-        });
-        callbacks
+        self.own_descriptor_maps
+            .get(&site)
+            .map_or_else(Values::new, |map| map.retained_values.clone())
     }
 
     fn applied_getters(&self, receivers: &Values, property: Option<&str>) -> Values {
@@ -3167,11 +3165,8 @@ impl Executor<'_> {
             if !visited.insert(value.clone()) {
                 continue;
             }
-            match &value {
-                AbstractValue::Origin(ValueOrigin::Object(object)) => {
-                    objects.insert(*object);
-                }
-                _ => {}
+            if let AbstractValue::Origin(ValueOrigin::Object(object)) = &value {
+                objects.insert(*object);
             }
             self.visit_stored_references(&value, true, |reference| {
                 pending.push(reference.clone());
@@ -3187,15 +3182,11 @@ impl Executor<'_> {
             if !visited.insert(value.clone()) {
                 continue;
             }
-            match &value {
-                AbstractValue::Origin(ValueOrigin::Class(key))
-                | AbstractValue::ClassMembers(key) => {
-                    self.escaped_class_capabilities.insert(*key);
-                }
-                AbstractValue::Instance(key, _) => {
-                    self.escaped_class_capabilities.insert(*key);
-                }
-                _ => {}
+            if let AbstractValue::Origin(ValueOrigin::Class(key))
+            | AbstractValue::ClassMembers(key)
+            | AbstractValue::Instance(key, _) = &value
+            {
+                self.escaped_class_capabilities.insert(*key);
             }
             self.visit_stored_references(&value, true, |reference| {
                 pending.push(reference.clone());
