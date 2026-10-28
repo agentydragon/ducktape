@@ -1,21 +1,26 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button, Card, Center, Group, Loader, SimpleGrid, Stack, Tabs, Text, Title } from "@mantine/core";
 
-import CoverageHeatmap from "$components/stats/CoverageHeatmap";
-import DefinitionsTable from "$components/stats/DefinitionsTable";
-import DistributionChart from "$components/stats/DistributionChart";
-import SummaryCards from "$components/stats/SummaryCards";
+import CoverageHeatmap from "../components/stats/CoverageHeatmap";
+import DefinitionsTable from "../components/stats/DefinitionsTable";
+import DistributionChart from "../components/stats/DistributionChart";
+import SummaryCards from "../components/stats/SummaryCards";
 import { useNavigate } from "react-router";
-import { useRunModal } from "$lib/runModalContext";
-import { toast } from "$lib/toast";
-import type { RunModalPrefill } from "$lib/types";
-import type { CoverageResponse, OverviewResponse } from "$lib/schema";
-import { fetchCoverage, fetchOverview } from "$lib/api/client";
+import { useRunModal } from "../lib/runModalContext";
+import { toast } from "../lib/toast";
+import type { RunModalPrefill } from "../lib/types";
+import type { CoverageResponse, OverviewResponse } from "../lib/schema";
+import { fetchCoverage, fetchOverview } from "../lib/api/client";
 
 interface Props {
   initialData?: OverviewResponse;
 }
+
+type CoverageRequest =
+  | { split: "valid" | "train"; status: "loading" }
+  | { split: "valid" | "train"; status: "loaded"; data: CoverageResponse }
+  | { split: "valid" | "train"; status: "error" };
 
 export default function OverviewPage({ initialData }: Props) {
   const navigate = useNavigate();
@@ -24,9 +29,7 @@ export default function OverviewPage({ initialData }: Props) {
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   const [analysisSplit, setAnalysisSplit] = useState<"valid" | "train">("valid");
-  const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
-  const [analysisLoading, setAnalysisLoading] = useState(false);
-  const analysisRequestId = useRef(0);
+  const [coverageRequest, setCoverageRequest] = useState<CoverageRequest | null>(null);
 
   useEffect(() => {
     if (initialData) return;
@@ -52,24 +55,22 @@ export default function OverviewPage({ initialData }: Props) {
 
   useEffect(() => {
     if (!overview) return;
-    const requestId = ++analysisRequestId.current;
-    setAnalysisLoading(true);
+    let current = true;
+    setCoverageRequest({ split: analysisSplit, status: "loading" });
 
     void fetchCoverage(analysisSplit)
       .then((data) => {
-        if (requestId === analysisRequestId.current) setCoverage(data);
+        if (current) setCoverageRequest({ split: analysisSplit, status: "loaded", data });
       })
       .catch((reason: unknown) => {
-        if (requestId === analysisRequestId.current) {
+        if (current) {
+          setCoverageRequest({ split: analysisSplit, status: "error" });
           toast.error(reason instanceof Error ? reason.message : "Failed to load analysis");
         }
-      })
-      .finally(() => {
-        if (requestId === analysisRequestId.current) setAnalysisLoading(false);
       });
 
     return () => {
-      analysisRequestId.current += 1;
+      current = false;
     };
   }, [overview, analysisSplit]);
 
@@ -92,6 +93,8 @@ export default function OverviewPage({ initialData }: Props) {
   }
   if (error) return <Text c="red">{error}</Text>;
   if (!overview) return null;
+
+  const currentCoverageRequest = coverageRequest?.split === analysisSplit ? coverageRequest : null;
 
   return (
     <Stack gap="md">
@@ -117,31 +120,35 @@ export default function OverviewPage({ initialData }: Props) {
           </Tabs>
         </Group>
 
-        {analysisLoading ? (
+        {!currentCoverageRequest || currentCoverageRequest.status === "loading" ? (
           <Center mih={100}>
             <Loader size="sm" />
             <Text c="dimmed">Loading analysis...</Text>
           </Center>
-        ) : coverage ? (
+        ) : currentCoverageRequest.status === "loaded" ? (
           <Stack gap="md">
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
               <DistributionChart
-                values={coverage.max_recall_values}
+                values={currentCoverageRequest.data.max_recall_values}
                 title="Max Recall Distribution"
                 numBuckets={10}
                 valueFormat={(value) => `${(value * 100).toFixed(0)}%`}
                 color="rgb(59, 130, 246)"
               />
               <DistributionChart
-                values={coverage.tp_count_values}
+                values={currentCoverageRequest.data.tp_count_values}
                 title="TP Occurrence Count Distribution"
                 numBuckets={8}
                 valueFormat={(value) => value.toFixed(0)}
                 color="rgb(34, 197, 94)"
               />
             </SimpleGrid>
-            {coverage.definitions.length > 0 && (
-              <CoverageHeatmap definitions={coverage.definitions} examples={coverage.examples} cells={coverage.cells} />
+            {currentCoverageRequest.data.definitions.length > 0 && (
+              <CoverageHeatmap
+                definitions={currentCoverageRequest.data.definitions}
+                examples={currentCoverageRequest.data.examples}
+                cells={currentCoverageRequest.data.cells}
+              />
             )}
           </Stack>
         ) : null}
