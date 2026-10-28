@@ -50,7 +50,7 @@ def test_litellm_proxy_binary_imports_server(tmp_path: Path) -> None:
 
 
 async def test_litellm_proxy_config_registers_custom_provider_before_router_build(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_litellm_provider: None
 ) -> None:
     handler_path = tmp_path / "tana/litellm_proxy/custom_handler.py"
     handler_path.parent.mkdir(parents=True)
@@ -83,28 +83,18 @@ async def test_litellm_proxy_config_registers_custom_provider_before_router_buil
             raise AssertionError("non-streaming test should not call astream_completion")
             yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
 
-    original_custom_provider_map = list(litellm.custom_provider_map)
-    original_provider_list = list(litellm.provider_list)
-    original_custom_providers = list(litellm._custom_providers)
-    original_model_list_set = set(litellm.model_list_set)
-    try:
-        litellm.custom_provider_map = []
-        litellm.provider_list = [provider for provider in litellm.provider_list if provider != "tana"]
-        litellm._custom_providers = [provider for provider in litellm._custom_providers if provider != "tana"]
-        litellm.model_list_set.discard("tana")
+    litellm.custom_provider_map = []
+    litellm.provider_list = [provider for provider in litellm.provider_list if provider != "tana"]
+    litellm._custom_providers = [provider for provider in litellm._custom_providers if provider != "tana"]
+    litellm.model_list_set.discard("tana")
 
-        router, _, _ = await ProxyConfig().load_config(router=None, config_file_path=str(config_path))
+    router, _, _ = await ProxyConfig().load_config(router=None, config_file_path=str(config_path))
 
-        assert router is not None
-        monkeypatch.setattr(TanaLiteLLM, "_make_client", lambda _self, _config: FakeClient())
-        response = await router.acompletion(model="gpt-4o-mini", messages=[{"role": "user", "content": "hi"}])
+    assert router is not None
+    monkeypatch.setattr(TanaLiteLLM, "_make_client", lambda _self, _config: FakeClient())
+    response = await router.acompletion(model="gpt-4o-mini", messages=[{"role": "user", "content": "hi"}])
 
-        assert response.choices[0].message.content == "pong"
-    finally:
-        litellm.custom_provider_map = original_custom_provider_map
-        litellm.provider_list = original_provider_list
-        litellm._custom_providers = original_custom_providers
-        litellm.model_list_set = original_model_list_set
+    assert response.choices[0].message.content == "pong"
 
 
 async def test_litellm_router_forwards_local_reasoning_default_in_http_payload(
@@ -177,7 +167,11 @@ class _KnownLiteLLMContractGapError(RuntimeError):
     ],
 )
 async def test_anthropic_http_stream_tool_result_continuation_uses_tana_provider(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, include_usage: bool, require_cache_control: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_litellm_provider: None,
+    include_usage: bool,
+    require_cache_control: bool,
 ) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(get_required_path("_main/tana/litellm_proxy/testdata/custom_provider.yaml").read_text())
@@ -221,120 +215,106 @@ async def test_anthropic_http_stream_tool_result_continuation_uses_tana_provider
     monkeypatch.setenv("DO_NOT_TRACK", "1")
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
-    old_custom_provider_map = list(litellm.custom_provider_map)
-    old_provider_list = list(litellm.provider_list)
-    old_custom_providers = list(litellm._custom_providers)
-    old_model_list_set = set(litellm.model_list_set)
-    try:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handle_tana_request)) as tana_http:
-            monkeypatch.setattr(custom_handler, "tana_handler", TanaLiteLLM())
-            monkeypatch.setattr(
-                TanaLiteLLM,
-                "_make_client",
-                lambda _self, _config: TanaProxyClient(
-                    TanaProxyConfig(
-                        firebase_api_key="test-firebase-key", functions_base_url="https://tana.invalid/functions"
-                    ),
-                    http_client=tana_http,
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle_tana_request)) as tana_http:
+        monkeypatch.setattr(custom_handler, "tana_handler", TanaLiteLLM())
+        monkeypatch.setattr(
+            TanaLiteLLM,
+            "_make_client",
+            lambda _self, _config: TanaProxyClient(
+                TanaProxyConfig(
+                    firebase_api_key="test-firebase-key", functions_base_url="https://tana.invalid/functions"
                 ),
-            )
+                http_client=tana_http,
+            ),
+        )
 
-            async with (
-                serve_app_in_loop(proxy_server.app) as origin,
-                AsyncAnthropic(api_key="sk-test", base_url=origin, max_retries=0) as client,
-            ):
-                system: list[TextBlockParam] = [
-                    {"type": "text", "text": "You are a coding assistant."},
-                    {
-                        "type": "text",
-                        "text": "Keep the workspace context intact.",
-                        "cache_control": {"type": "ephemeral"},
+        async with (
+            serve_app_in_loop(proxy_server.app) as origin,
+            AsyncAnthropic(api_key="sk-test", base_url=origin, max_retries=0) as client,
+        ):
+            system: list[TextBlockParam] = [
+                {"type": "text", "text": "You are a coding assistant."},
+                {"type": "text", "text": "Keep the workspace context intact.", "cache_control": {"type": "ephemeral"}},
+            ]
+            tools: list[ToolParam] = [
+                {
+                    "name": "lookup_fact",
+                    "description": "Look up a fact.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"topic": {"type": "string"}},
+                        "required": ["topic"],
                     },
-                ]
-                tools: list[ToolParam] = [
-                    {
-                        "name": "lookup_fact",
-                        "description": "Look up a fact.",
-                        "input_schema": {
-                            "type": "object",
-                            "properties": {"topic": {"type": "string"}},
-                            "required": ["topic"],
-                        },
-                    }
-                ]
-                user_message: MessageParam = {"role": "user", "content": "Find a fact about Tana."}
-                async with client.messages.stream(
-                    model="gpt-4o-mini", max_tokens=128, system=system, tools=tools, messages=[user_message]
-                ) as stream:
-                    tool_message = await stream.get_final_message()
-
-                tool_use = next(block for block in tool_message.content if block.type == "tool_use")
-                assert tool_message.stop_reason == "tool_use"
-                assert tool_use.name == "lookup_fact"
-                assert tool_use.input == {"topic": "Tana"}
-
-                tool_use_param: ToolUseBlockParam = {
-                    "type": "tool_use",
-                    "id": tool_use.id,
-                    "name": tool_use.name,
-                    "input": tool_use.input,
                 }
-                assistant_message: MessageParam = {"role": "assistant", "content": [tool_use_param]}
-                tool_result_message: MessageParam = {
-                    "role": "user",
-                    "content": [
-                        {"type": "tool_result", "tool_use_id": tool_use.id, "content": "Tana is a knowledge workspace."}
-                    ],
-                }
-                continuation_messages: list[MessageParam] = [user_message, assistant_message, tool_result_message]
-                continuation_request = client.messages.create(
-                    model="gpt-4o-mini", max_tokens=128, system=system, tools=tools, messages=continuation_messages
-                )
-                if include_usage:
-                    continuation = await continuation_request
-                else:
-                    with pytest.raises(APIStatusError) as error_info:
-                        await continuation_request
-                    error = error_info.value
-                    assert error.status_code == 500
-                    assert "ModelResponse" in error.response.text
-                    assert "usage" in error.response.text
-                    raise _KnownLiteLLMContractGapError(
-                        "LiteLLM 1.103.0 Anthropic adapter fails on a provider-supported response without usage"
-                    ) from error
+            ]
+            user_message: MessageParam = {"role": "user", "content": "Find a fact about Tana."}
+            async with client.messages.stream(
+                model="gpt-4o-mini", max_tokens=128, system=system, tools=tools, messages=[user_message]
+            ) as stream:
+                tool_message = await stream.get_final_message()
 
-        text_block = next(block for block in continuation.content if block.type == "text")
-        assert text_block.text == "Tana is a knowledge workspace."
-        assert [path for path, _body in requests] == ["/functions/llmProxyNext", "/functions/llmProxyNext"]
-        streamed_body = requests[0][1]
-        assert streamed_body["isStreaming"] is True
-        system_messages = [message for message in streamed_body["args"]["messages"] if message["role"] == "system"]
-        system_payload = json.dumps(system_messages)
-        assert "Keep the workspace context intact." in system_payload
-        assert streamed_body["dynamicTools"][0]["name"] == "lookup_fact"
+            tool_use = next(block for block in tool_message.content if block.type == "tool_use")
+            assert tool_message.stop_reason == "tool_use"
+            assert tool_use.name == "lookup_fact"
+            assert tool_use.input == {"topic": "Tana"}
 
-        continuation_body = requests[1][1]
-        assert continuation_body["isStreaming"] is False
-        assert any(
-            message["role"] == "assistant" and "tool-call" in json.dumps(message)
-            for message in continuation_body["args"]["messages"]
-        )
-        assert any(
-            message["role"] == "tool"
-            and "tool-result" in json.dumps(message)
-            and "Tana is a knowledge workspace." in json.dumps(message)
-            for message in continuation_body["args"]["messages"]
-        )
-        if require_cache_control and "cacheControl" not in system_payload:
-            raise _KnownLiteLLMContractGapError(
-                "LiteLLM 1.103.0 /v1/messages drops system cache_control before the custom provider: "
-                + json.dumps(system_messages, sort_keys=True)
+            tool_use_param: ToolUseBlockParam = {
+                "type": "tool_use",
+                "id": tool_use.id,
+                "name": tool_use.name,
+                "input": tool_use.input,
+            }
+            assistant_message: MessageParam = {"role": "assistant", "content": [tool_use_param]}
+            tool_result_message: MessageParam = {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": tool_use.id, "content": "Tana is a knowledge workspace."}
+                ],
+            }
+            continuation_messages: list[MessageParam] = [user_message, assistant_message, tool_result_message]
+            continuation_request = client.messages.create(
+                model="gpt-4o-mini", max_tokens=128, system=system, tools=tools, messages=continuation_messages
             )
-    finally:
-        litellm.custom_provider_map = old_custom_provider_map
-        litellm.provider_list = old_provider_list
-        litellm._custom_providers = old_custom_providers
-        litellm.model_list_set = old_model_list_set
+            if include_usage:
+                continuation = await continuation_request
+            else:
+                with pytest.raises(APIStatusError) as error_info:
+                    await continuation_request
+                error = error_info.value
+                assert error.status_code == 500
+                assert "ModelResponse" in error.response.text
+                assert "usage" in error.response.text
+                raise _KnownLiteLLMContractGapError(
+                    "LiteLLM 1.103.0 Anthropic adapter fails on a provider-supported response without usage"
+                ) from error
+
+    text_block = next(block for block in continuation.content if block.type == "text")
+    assert text_block.text == "Tana is a knowledge workspace."
+    assert [path for path, _body in requests] == ["/functions/llmProxyNext", "/functions/llmProxyNext"]
+    streamed_body = requests[0][1]
+    assert streamed_body["isStreaming"] is True
+    system_messages = [message for message in streamed_body["args"]["messages"] if message["role"] == "system"]
+    system_payload = json.dumps(system_messages)
+    assert "Keep the workspace context intact." in system_payload
+    assert streamed_body["dynamicTools"][0]["name"] == "lookup_fact"
+
+    continuation_body = requests[1][1]
+    assert continuation_body["isStreaming"] is False
+    assert any(
+        message["role"] == "assistant" and "tool-call" in json.dumps(message)
+        for message in continuation_body["args"]["messages"]
+    )
+    assert any(
+        message["role"] == "tool"
+        and "tool-result" in json.dumps(message)
+        and "Tana is a knowledge workspace." in json.dumps(message)
+        for message in continuation_body["args"]["messages"]
+    )
+    if require_cache_control and "cacheControl" not in system_payload:
+        raise _KnownLiteLLMContractGapError(
+            "LiteLLM 1.103.0 /v1/messages drops system cache_control before the custom provider: "
+            + json.dumps(system_messages, sort_keys=True)
+        )
 
 
 if __name__ == "__main__":
