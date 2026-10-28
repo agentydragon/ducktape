@@ -51,6 +51,36 @@ The first three rows ran an earlier teardown, which removed the Pods while k3s w
 same. In the last row the node took 33 s to become Ready, against 9–17 s elsewhere, and the import was cold:
 a VM stack keeps its layers on disk, so a pod stack after it deletes them and rebuilds the store in memory.
 
+## VM guest root import ordering, 2026-10-28
+
+On source `9ab44ab64b`, one candidate run with the import reorder (code diff SHA-256
+`0b06e1f5188b98ac7031b58244a1f4122d41599326248482630a577d806179c0`, uploaded by `bbr`
+as a working-tree patch) and one unchanged control ran the same
+`test_vm_sandbox_vm` target with `--nocache_test_results`. Both passed all three cases.
+They used the same observed BuildBuddy worker identifier, but that does not establish the same
+Firecracker guest or starting containerd snapshot. The candidate ran first.
+
+| Seconds after stack start              | Candidate [b262742f](https://app.buildbuddy.io/invocation/b262742f-68dd-40ba-9bf4-17d6333c984f) | Control [6afbeff6](https://app.buildbuddy.io/invocation/6afbeff6-c996-4682-9e8b-291c4ec9cdcf) |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------: | --------------------------------------------------------------------------------------------: |
+| Node Ready                             |                                                                                            11.4 |                                                                                          12.8 |
+| KubeVirt and Kyverno applied           |                                                                                            26.3 |                                                                                          30.9 |
+| Service and guest boot images imported |                                                                                            93.9 |                                                                                         122.9 |
+| Fixture manifests applied              |                                                                                           100.1 |                                                                                         195.1 |
+| Guest root import duration             |                                                                                            65.1 |                                                                                          64.9 |
+| Guest root import ended                |                                                                                           165.2 |                                                                                         187.8 |
+| Deployments Available                  |                                                                                           169.1 |                                                                                         220.9 |
+| Stack ready                            |                                                                                           170.3 |                                                                                         221.8 |
+| Whole test action duration             |                                                                                           600.4 |                                                                                         636.3 |
+| Whole test action CPU seconds          |                                                                                          1217.9 |                                                                                        1261.5 |
+
+The candidate applied manifests before importing the guest root. Deployment readiness then
+proceeded during the 65-second import; only 3.9 seconds elapsed from its end to Deployments Available.
+In the control, 25.8 seconds elapsed from manifest application to that milestone.
+The 51.5-second stack-ready difference also includes 29 seconds of variation before the guest-root
+import, so it is not an isolated estimate of the reorder's effect. One pair cannot establish a
+population-wide action or CPU saving. Neither run recorded the exact pre-import image target,
+content, and unpacked snapshot state needed to prove a safe digest-based import skip.
+
 ## Image layers in memory, 2026-10-21
 
 The [containerd import tail](https://github.com/agentydragon/ducktape/blob/7fd9f16f7d/agentplane/x/k3s_env/README.md#containerd-import-tail) profile found unpacking bound by filesystem writes.

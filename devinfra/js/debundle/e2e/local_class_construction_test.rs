@@ -34,6 +34,98 @@ export { a, b, c, Registry };
     assert_preserved_entry_output(&fixture, "1 clear\n");
 }
 
+#[test]
+fn void_zero_field_does_not_fabricate_callback_reentry() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const saved = () => later;
+globalThis.saved = saved;
+class Checker {
+  result = void 0;
+  isAllowed() { return true; }
+}
+globalThis.savedChecker = Checker;
+class Command {
+  constructor(config, checker) { this.config = config; this.checker = checker; }
+  execute() { return this.config.execute(); }
+}
+function create(config) { return new Command(config, new Checker()); }
+const command = create({ execute: () => later });
+const later = 7;
+console.log(command.execute());
+export { saved, Checker, Command, create, command, later };
+"#,
+        vec![
+            logical_module_with_anon(
+                "command",
+                &[
+                    Member::new("saved"),
+                    Member::new("Checker"),
+                    Member::new("Command"),
+                    Member::new("create"),
+                    Member::new("command"),
+                ],
+                &[
+                    "globalThis.saved = saved;",
+                    "globalThis.savedChecker = Checker;",
+                ],
+            ),
+            logical_module("value", &[Member::new("later")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "7\n");
+}
+
+fn expect_callback_reentry_for_class(checker: &str, prelude: &str) {
+    let source = format!(
+        r#"const saved = () => later;
+globalThis.saved = saved;
+{prelude}
+{checker}
+globalThis.savedChecker = Checker;
+class Command {{
+  constructor(config, checker) {{ this.config = config; this.checker = checker; }}
+}}
+function create(config) {{ return new Command(config, new Checker()); }}
+const command = create({{ execute: () => later }});
+const later = 7;
+export {{ saved, Checker, Command, create, command, later }};
+"#
+    );
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("command", &[Member::new("command")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        ),
+        &["command", "value"],
+        &[],
+    );
+}
+
+#[test]
+fn void_effectful_and_property_operands_keep_callback_reentry() {
+    expect_callback_reentry_for_class("class Checker { result = void globalThis.saved(); }", "");
+    expect_callback_reentry_for_class(
+        "class Checker { result = void receiver.value; }",
+        "const receiver = { get value() { globalThis.saved(); } };",
+    );
+    expect_callback_reentry_for_class(
+        "class Checker { result = void receiver[key]; }",
+        r#"const receiver = { value: 1 };
+const key = { [Symbol.toPrimitive]() { globalThis.saved(); return "value"; } };"#,
+    );
+}
+
+#[test]
+fn an_invoking_explicit_constructor_keeps_callback_reentry() {
+    expect_callback_reentry_for_class(
+        "class Checker { result = void 0; constructor() { globalThis.saved(); } }",
+        "",
+    );
+}
+
 fn assert_unproven_construction_stays_sequenced(prefix: &str, class: &str, initializer: &str) {
     let source = format!(
         r#"globalThis.events = [];

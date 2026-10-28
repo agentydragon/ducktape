@@ -268,6 +268,34 @@ impl Executor<'_> {
                 .any(|root| matches!(root, IntrinsicRoot::GlobalObject | IntrinsicRoot::Object))
     }
 
+    /// Freezing a newly created ordinary data object examines its own
+    /// descriptors, but cannot invoke the values stored in those descriptors.
+    /// Keep the returned object identity so a later consumer can still reach
+    /// callbacks stored in its fields. Expression effects are indexed and
+    /// executed separately before this call.
+    fn fresh_freeze_argument<'b>(
+        &self,
+        callee: &ValueExpr,
+        args: &'b [ValueExpr],
+    ) -> Option<&'b ValueExpr> {
+        let ValueExpr::Member(receiver, Some(method), true) = callee else {
+            return None;
+        };
+        let ValueExpr::Binding(object_intrinsic) = receiver.as_ref() else {
+            return None;
+        };
+        let [argument @ ValueExpr::ObjectLiteral(object, _)] = args else {
+            return None;
+        };
+        (method == "freeze"
+            && object_intrinsic.0.as_ref() == "Object"
+            && !self.flow.is_declared(object_intrinsic)
+            && !self.shadowed.contains("Object")
+            && self.ordinary_object_prototype_intact()
+            && self.index.plain_data_objects.contains(object))
+        .then_some(argument)
+    }
+
     fn primitive_math_round_call(&self, call: &Call, args: &[Values]) -> bool {
         let ValueExpr::Member(receiver, Some(property), true) = &call.callee else {
             return false;
@@ -3405,6 +3433,9 @@ impl Executor<'_> {
                 if self.frozen_namespace_calls.contains(span) {
                     return self.evaluate(&args[0], env, captures);
                 }
+                if let Some(argument) = self.fresh_freeze_argument(callee, args) {
+                    return self.evaluate(argument, env, captures);
+                }
                 if let Some((proof, _, _, _, _)) = self.array_iteration_plan(*span, env, captures) {
                     return if proof.method == ArrayIterationMethod::ForEach {
                         BTreeSet::from([AbstractValue::Undefined])
@@ -3916,6 +3947,14 @@ impl Executor<'_> {
             && self
                 .frozen_namespace_calls
                 .contains(&CallSite::from(call.span))
+        {
+            return;
+        }
+        if call.kind == CallKind::Call
+            && !call.has_spread
+            && self
+                .fresh_freeze_argument(&call.callee, &call.args)
+                .is_some()
         {
             return;
         }

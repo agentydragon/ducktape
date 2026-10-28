@@ -11,6 +11,8 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
@@ -18,6 +20,100 @@ import (
 )
 
 const lifecycleTestTimeout = 10 * time.Second
+
+type preparationDuringQuiesceAdapter struct {
+	harness.Adapter
+	started chan struct{}
+	release chan struct{}
+	session *Session
+}
+
+func (a preparationDuringQuiesceAdapter) Handshake(context.Context) (string, error) {
+	close(a.started)
+	<-a.release
+	// A native reply can win the reply/cancellation race after cancellation is signaled.
+	return "test-native-session", nil
+}
+
+func (a preparationDuringQuiesceAdapter) Recover(ctx context.Context) error {
+	close(a.started)
+	<-a.release
+	return a.session.Emit(ctx, observation(&eventpb.HarnessStderr{Text: "test replayed response"}), nil)
+}
+
+func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
+	for _, phase := range []string{"handshake", "recovery"} {
+		t.Run(phase, func(t *testing.T) {
+			s, process := frameTestSession(t, []string{"/bin/cat"})
+			r := s.runner
+			if err := r.store.AdoptIncarnation("test-incarnation"); err != nil {
+				t.Fatal(err)
+			}
+			registerTestSession(t, s)
+			setRuntimePhase(t, s, executionPreparing)
+			adapter := preparationDuringQuiesceAdapter{started: make(chan struct{}), release: make(chan struct{}), session: s}
+			t.Cleanup(func() {
+				select {
+				case <-adapter.release:
+				default:
+					close(adapter.release)
+				}
+			})
+			s.readers.Add(2)
+			go s.readStdout(process, adapter)
+			go s.readStderr(process)
+			preparing := make(chan context.Context, 1)
+			s.startOperation(&s.preparation, func(ctx context.Context) error {
+				preparing <- ctx
+				if phase == "recovery" {
+					return s.recoverAdapter(ctx, adapter)
+				}
+				return s.prepare(ctx, adapter, process.PID())
+			})
+			s.mu.Lock()
+			preparation := s.preparation
+			s.mu.Unlock()
+			ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+			defer cancel()
+			select {
+			case <-adapter.started:
+			case <-ctx.Done():
+				t.Fatal("preparation did not start")
+			}
+			if _, err := r.SubmitInput(ctx, &runnerservicepb.SubmitInputRequest{SessionId: s.id, CommandId: "test-input", Text: "test input"}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := r.Quiesce(ctx, &runnerpb.QuiesceRequest{}); err != nil {
+				t.Fatal(err)
+			}
+			preparationCtx := <-preparing
+			select {
+			case <-preparationCtx.Done():
+			case <-ctx.Done():
+				t.Fatal("quiesce did not cancel preparation")
+			}
+			close(adapter.release)
+			select {
+			case <-preparation.done:
+			case <-ctx.Done():
+				t.Fatal("quiesce did not join preparation")
+			}
+			if _, err := s.journal.GetCommand(ctx, "test-input"); err != nil {
+				t.Fatalf("quiesce cancellation poisoned the admitted journal: %v; runtime=%+v", err, r.lifecycle.status())
+			}
+			waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == stageFlushing }, "quiesce to seal the admitted journal")
+			command, err := s.journal.GetCommand(ctx, "test-input")
+			if err != nil || command == nil || command.TerminalCursor == nil {
+				t.Fatalf("undispatched admission was not settled: command=%+v err=%v", command, err)
+			}
+			seal := s.journal.SealState()
+			if err := r.lifecycle.publishAck(s.id, IngressAcknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
+				t.Fatal(err)
+			}
+			waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == stageQuiesced }, "quiesce completion")
+		})
+	}
+}
 
 func lifecycleTestSession(t *testing.T) (*Runner, *Session) {
 	t.Helper()

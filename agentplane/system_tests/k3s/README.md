@@ -157,7 +157,10 @@ production NixOS systemd unit or force exec-server death/restart.
 
 KubeVirt's and Kyverno's images are Bazel-pulled layouts (`vm_sandboxes/`, pinned in `MODULE.bazel`),
 imported before their releases are applied, so no Pod pulls them; the releases roll out while the
-stack's own images import.
+fixture images import. Fixture images (services, migrations, shared runner and optional MCP fixtures)
+and VM guest images are collected separately. Both guest boot and root images import after the fixture
+manifests are applied, while their Deployments start. The stack finishes those imports before yielding
+to a test that can create a VM Sandbox. Deployments must use fixture images, never guest images.
 
 ## Gotchas
 

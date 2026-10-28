@@ -481,10 +481,15 @@ def running_stack(
     """
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"]))
-    layouts = sorted(get_required_path("_main/agentplane/system_tests/k3s").glob("*_layout.rloc"))
-    layouts.append(get_required_path(os.environ["K3S_RUNNER_LAYOUT_RLOCATION"]))
+    fixture_layouts = sorted(get_required_path("_main/agentplane/system_tests/k3s").glob("*_layout.rloc"))
+    fixture_layouts.append(get_required_path(os.environ["K3S_RUNNER_LAYOUT_RLOCATION"]))
     if fixture.mcp_fixtures is not None:
-        layouts.extend(get_required_path(path) for path in os.environ["K3S_MCP_FIXTURE_LAYOUTS"].split())
+        fixture_layouts.extend(get_required_path(path) for path in os.environ["K3S_MCP_FIXTURE_LAYOUTS"].split())
+    fixture_images = {_ci_image(rloc): rloc for rloc in fixture_layouts}
+    guest_images: dict[str, Path] = {}
+    if fixture.vm_sandboxes:
+        guest_layouts = sorted(get_required_path("_main/agentplane/system_tests/k3s/guest").glob("*_layout.rloc"))
+        guest_images = {_ci_image(rloc): rloc for rloc in guest_layouts}
 
     work = Path(tempfile.mkdtemp())
     k3s = K3s(work, get_required_path(os.environ["K3S_BINARY_RLOCATION"]))
@@ -515,20 +520,21 @@ def running_stack(
             models,
             mcp,
         )
-        if fixture.vm_sandboxes:
-            layouts += sorted(get_required_path("_main/agentplane/system_tests/k3s/guest").glob("*_layout.rloc"))
-        images = {_ci_image(rloc): rloc for rloc in layouts}
-        if missing := _deployment_images(fixture.objects) - images.keys():
+        deployment_images = _deployment_images(fixture.objects)
+        if used := deployment_images & guest_images.keys():
+            raise ValueError(f"Guest images are used by Deployments: {sorted(used)}")
+        if missing := deployment_images - fixture_images.keys():
             raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")
         if fixture.vm_sandboxes:
             releases = vm_sandboxes.releases()
             # Their images first, so they roll out while the stack's own import; a Pod that starts before
             # its image is in containerd pulls it from the registry.
-            k3s.import_images(vm_sandboxes.images(releases), timeline)
+            infrastructure_images = vm_sandboxes.images(releases)
+            k3s.import_images(infrastructure_images, timeline)
             vm_sandboxes.install(k3s.kubectl, releases)
             timeline.mark("KubeVirt and Kyverno applied")
-        k3s.import_images(images, timeline)
-        timeline.mark("images imported")
+        k3s.import_images(fixture_images, timeline)
+        timeline.mark("fixture images imported" if guest_images else "images imported")
         for crd in crds:
             k3s.kubectl("apply", "-f", str(crd))
         if fixture.vm_sandboxes:
@@ -544,6 +550,10 @@ def running_stack(
         print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
         logger.info("applied %s objects", len(rest))
         timeline.mark("manifests applied")
+        if guest_images:
+            # Both guest images are used only by Sandboxes the test creates after this stack is ready.
+            k3s.import_images(guest_images, timeline)
+            timeline.mark("images imported")
 
         failed: list[str] = []
         deployments = [d["metadata"]["name"] for d in rest if d["kind"] == "Deployment"]

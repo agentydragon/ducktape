@@ -111,6 +111,8 @@ debundle_e2e_test(name = "no_reentry_callback_test")
 
 debundle_e2e_test(name = "empty_collection_timing_test")
 
+debundle_e2e_test(name = "fresh_freeze_callback_timing_test")
+
 debundle_e2e_test(name = "math_round_timing_test")
 
 debundle_e2e_test(

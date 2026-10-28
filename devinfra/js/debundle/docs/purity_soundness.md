@@ -336,6 +336,25 @@ and intrinsics outside the analyzed chunk. The paired CLI controls live in
 while an early consumer, opaque consumer, mutated key, or changed array species
 keeps the callback effects visible.
 
+## Callback timing for a fresh frozen record
+
+Synchronous callback analysis recognizes a direct call to the unshadowed
+standard `Object.freeze` with exactly one fresh ordinary object literal. The
+existing execution index must prove static own data properties, with no spread,
+computed key, accessor, or `__proto__` setter. Whole-chunk dynamic scope or a
+visible write to `Object` or the global object disables the proof. The call
+still evaluates its argument and every nested effect in order; only the
+speculative callback execution by `Object.freeze` is omitted. The abstract
+return is the same fresh object, retaining any callback stored in a field for
+later access or publication.
+
+Under A11, `Object.freeze` applies `SetIntegrityLevel` to the fresh ordinary
+object. Its own-key and descriptor operations do not invoke the values stored
+in data properties. The proof says nothing about freezing a Proxy, an escaped
+object, or an uncertain argument. `fresh_freeze_callback_timing_test` checks a
+split accepted after the proof, retained callback invocation, and early reads
+through both an effectful argument and a Proxy trap.
+
 ## `PURE_STATIC_PROPS` — disposal symbols
 
 `Symbol.dispose` and `Symbol.asyncDispose` are well-known Symbol values, just
@@ -455,10 +474,13 @@ The source-derived local-class certificate is shared by purity classification
 and synchronous execution. Its class-shape gate excludes explicit constructors,
 inheritance, decorators, computed keys, static fields/blocks, and initializer
 expressions that might read or invoke user code. The accepted initializers are
-absent values, primitive literals, `!` of a numeric/boolean literal, deferred
-function/arrow allocation, and `new Set`/`Map`/`WeakSet`/`WeakMap` without
-arguments when the intrinsic binding is unshadowed. The latter reuses the
-existing no-argument built-in admission; it does not admit iterator arguments.
+absent values, primitive literals, `void 0` with a numeric zero literal
+operand, `!` of a numeric/boolean literal, deferred function/arrow allocation,
+and `new Set`/`Map`/`WeakSet`/`WeakMap` without arguments when the intrinsic
+binding is unshadowed. The latter reuses the existing no-argument built-in
+admission; it does not admit iterator arguments. `void` evaluates its operand
+before discarding the value, so calls, property reads, computed keys, and other
+non-literal operands remain excluded; see the [ECMAScript void operator](https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-void-operator).
 An ordinary getter's body is deferred and is not evaluated by construction.
 
 Purity requires an exact direct top-level `new` initializer after the class

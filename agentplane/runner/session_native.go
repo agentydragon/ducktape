@@ -51,18 +51,22 @@ func (s *Session) startHarness(ctx context.Context) error {
 	}
 }
 
-func recoverAdapter(ctx context.Context, adapter harness.Adapter) error {
+func (s *Session) recoverAdapter(ctx context.Context, adapter harness.Adapter) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if recovery, ok := adapter.(harness.RecoveryAdapter); ok {
-		if err := recovery.Recover(ctx); err != nil {
+		// Finish translating retained replies before honoring preparation cancellation.
+		if err := recovery.Recover(s.runner.ctx); err != nil {
 			return fmt.Errorf("recover pending native requests: %w", err)
 		}
 	}
-	return nil
+	return ctx.Err()
 }
 
 // startProcess runs this Session's own native harness process.
 func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapter) error {
-	if err := recoverAdapter(ctx, adapter); err != nil {
+	if err := s.recoverAdapter(ctx, adapter); err != nil {
 		return err
 	}
 	command, err := adapter.Command()
@@ -118,7 +122,7 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 	}
 	server := s.runner.codexAppServer
 	adapter := codex.New(s)
-	if err := recoverAdapter(ctx, adapter); err != nil {
+	if err := s.recoverAdapter(ctx, adapter); err != nil {
 		return err
 	}
 	// Frames for every hosted Session, and the exit of a start it makes, can reach this one as soon as
@@ -166,7 +170,8 @@ func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int)
 	if err := s.runner.store.Write(s.id, record); err != nil {
 		return err
 	}
-	if err := s.Emit(ctx, observation(&eventpb.HarnessStarted{Resumed: resuming, Pid: int32(pid)}), nil); err != nil {
+	// The native handshake succeeded; persist its observation even if preparation was canceled.
+	if err := s.Emit(s.runner.ctx, observation(&eventpb.HarnessStarted{Resumed: resuming, Pid: int32(pid)}), nil); err != nil {
 		return err
 	}
 	if !resuming {
@@ -181,7 +186,7 @@ func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int)
 		if err != nil {
 			return err
 		}
-		if err := s.Emit(ctx, observation(report), nil); err != nil {
+		if err := s.Emit(s.runner.ctx, observation(report), nil); err != nil {
 			return err
 		}
 	}
@@ -337,10 +342,14 @@ func equalBudget(a, b *int) bool { return a == nil && b == nil || a != nil && b 
 var errStaleInterrupt = errors.New("the target turn ended before interruption was sent")
 
 func (s *Session) SendNative(ctx context.Context, frame json.RawMessage) error {
-	if err := s.Emit(ctx, observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_TO_HARNESS, Line: string(frame)}), nil); err != nil {
+	return s.sendNative(ctx, ctx, frame)
+}
+
+func (s *Session) sendNative(ctx, journalCtx context.Context, frame json.RawMessage) error {
+	if err := s.Emit(journalCtx, observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_TO_HARNESS, Line: string(frame)}), nil); err != nil {
 		return err
 	}
-	if err := s.journal.CommitBatch(ctx); err != nil {
+	if err := s.journal.CommitBatch(journalCtx); err != nil {
 		return err
 	}
 	s.deliverReplies()
@@ -373,6 +382,9 @@ func (s *Session) SendNative(ctx context.Context, frame json.RawMessage) error {
 // run on the stdout reader that delivers the reply. Runtime commands use send-and-observe
 // transitions instead, so their scheduler never waits here for a native response.
 func (s *Session) RequestNativeHandshake(ctx context.Context, frame json.RawMessage, match func(json.RawMessage) bool) (harness.NativeReceipt, error) {
+	if err := ctx.Err(); err != nil {
+		return harness.NativeReceipt{}, err
+	}
 	waiter := &nativeWaiter{matches: match, result: make(chan nativeResult, 1)}
 	s.mu.Lock()
 	s.waiters = append(s.waiters, waiter)
@@ -387,7 +399,8 @@ func (s *Session) RequestNativeHandshake(ctx context.Context, frame json.RawMess
 			}
 		}
 	}()
-	if err := s.SendNative(ctx, frame); err != nil {
+	// Preparation cancellation bounds native I/O and waiting, while its journal remains runner-owned.
+	if err := s.sendNative(ctx, s.runner.ctx, frame); err != nil {
 		return harness.NativeReceipt{}, err
 	}
 	select {

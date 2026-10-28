@@ -971,7 +971,9 @@ local function from plain object-literal data sources. A local class declaration
 also has a narrow constructor path: its binding may only be used as a direct
 `new` target or as the right operand of `instanceof`, and the class may have no
 superclass, decorators, static initializers, computed method keys, or setter.
-Instance fields may be empty or initialize a deferred function. The constructor
+Instance fields may be uninitialized or use an initializer accepted by the
+shared implicit-class certificate, including the exact inert `void 0` form;
+arbitrary `void` operands remain excluded. The constructor
 may only assign identifiers, literals, or properties read from fresh plain data
 objects to static `this` properties, including comma sequences and simple
 nullish/equality expressions and Boolean negation of these values. Negation
