@@ -21,9 +21,10 @@ bbr build //util/frontend/x/typed_eslint:floating \
 
 `good` awaits a Promise imported from another library and one imported from a generated
 declaration. `worker` extends a separate config with WebWorker types. Neither package declares
-a lint source filegroup. The experimental rules_lint patch stages the generated config and its
-extended configs, exposes its path through `BAZEL_ESLINT_TSCONFIG`, and gives typed reports
-distinct names so the normal and experimental aspects can run together.
+a lint source filegroup. The rules_ts patch wraps the generated config in `ts_config`, with its
+extended config in `deps`. The aspect gathers these through its existing `JsInfo` inputs.
+The remaining rules_lint patch exposes the config path through `BAZEL_ESLINT_TSCONFIG` and gives
+typed reports distinct names so the normal and experimental aspects can run together.
 
 See [the investigation](../../../debug/typed_eslint_aspect.md) for proof, real-target coverage,
 observed cost, and the remaining adoption gates.
