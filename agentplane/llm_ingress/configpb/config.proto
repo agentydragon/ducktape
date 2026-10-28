@@ -26,6 +26,9 @@ message Config {
   // Absence uses 0.0.0.0:8080; an explicitly configured port zero binds an ephemeral port.
   optional string host = 10 [(buf.validate.field).string.min_len = 1];
   optional int32 port = 11 [(buf.validate.field).int32 = {gte: 0, lte: 65535}];
+  // Path to a kubeconfig for the Kubernetes client that authenticates callers via
+  // TokenReview. Empty uses in-cluster ServiceAccount credentials; an explicit
+  // path supports running outside Kubernetes, including process integration tests.
   string kubeconfig = 12;
   // Authenticated namespace/name accounts that may assert x-agentplane-session-id.
   repeated string central_sampler_accounts = 13 [(buf.validate.field).repeated.items.string.min_len = 1];
