@@ -23,13 +23,16 @@ bbr build //devinfra/lint/x/typed_eslint/fixtures:floating \
   --//devinfra/lint/x/typed_eslint:enabled --keep_going
 ```
 
-`ts_library` wraps each generated config in `ts_config`, with its base config in `deps`,
+The spike adds a temporary `ts_config` wrapper to `ts_library`, with the base config in `deps`,
 and supplies that wrapper as a library dependency. The aspect's existing `JsInfo` gathering
 therefore supplies the generated config and its extended configs. Neither the aspect nor
 rules_ts needs a new upstream patch, and callers need no additional lint source filegroups.
 
+This adapter depends on the generated config's filename. The compiler already exposes
+TsConfigInfo; a supported lint integration using its config metadata remains unverified.
+The compilation wrapper should eventually contain only compilation policy.
+
 The flag defaults to false. Existing whole-program typed lint tests remain enabled.
 There is one ESLint aspect and one set of report names in either mode.
 
-See [the investigation](investigation.md) for commands, evidence, cost,
-and the remaining adoption gates.
+See [the investigation](investigation.md) for commands, evidence, and observed cost.
