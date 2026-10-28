@@ -3,16 +3,49 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"testing"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/entrystoragepb"
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/proto"
+	"github.com/lib/pq"
 )
+
+func TestNativeEntryContentRejectsIncompleteAndWrongSourceRows(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, body("native-content-shape"))
+	action := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
+	mergeability := model.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 1}
+	message := model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "account"}}
+	for _, event := range []model.EventIdentity{action, mergeability, message} {
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
+	}
+	checks := []struct {
+		name, update, constraint string
+		cursor                   int
+	}{
+		{"null provider with content", `UPDATE entry SET identity_provider = NULL WHERE inbox_id = $1 AND cursor = $2`, "", 1},
+		{"wrong source", `UPDATE entry SET message_body = 'hello' WHERE inbox_id = $1 AND cursor = $2`, "entry_message_content_source", 1},
+		{"null actor kind", `UPDATE entry SET action_actor_kind = NULL, action_actor_namespace = 'ns', action_actor_name = 'name', action_actor_issuer = NULL, action_actor_subject = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_action_content_shape", 1},
+		{"empty caller namespace", `UPDATE entry SET action_actor_kind = 'caller', action_actor_namespace = '', action_actor_name = 'name', action_actor_issuer = NULL, action_actor_subject = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_action_actor_length", 1},
+		{"null mergeability residual", `UPDATE entry SET mergeability_observed_at_submicro_nanos = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_mergeability_content_shape", 2},
+		{"null mergeability state", `UPDATE entry SET mergeability_previous = NULL WHERE inbox_id = $1 AND cursor = $2`, "entry_mergeability_content_shape", 2},
+		{"partial merge commit", `UPDATE entry SET merge_commit_sha = 'sha' WHERE inbox_id = $1 AND cursor = $2`, "entry_mergeability_content_shape", 2},
+		{"oversize message", `UPDATE entry SET message_body = repeat('x', 262145) WHERE inbox_id = $1 AND cursor = $2`, "entry_message_body_bytes", 3},
+		{"long source session", `UPDATE entry SET message_from_session = repeat('x', 201) WHERE inbox_id = $1 AND cursor = $2`, "entry_message_from_session_length", 3},
+		{"long sender namespace", `UPDATE entry SET message_sender_namespace = repeat('x', 64) WHERE inbox_id = $1 AND cursor = $2`, "entry_message_sender_length", 3},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			_, err := f.db.ExecContext(t.Context(), check.update, subscription.InboxID, check.cursor)
+			var refused *pq.Error
+			if !errors.As(err, &refused) || string(refused.Code) != "23514" || (check.constraint != "" && string(refused.Constraint) != check.constraint) {
+				t.Fatalf("update error = %v, want constraint %s", err, check.constraint)
+			}
+		})
+	}
+}
 
 func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
@@ -100,48 +133,35 @@ func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t
 		t.Errorf("message identity columns = %+v", got[7])
 	}
 	for i, wantNull := range []bool{false, true, true, true, true, false, false, false} {
-		var isNull bool
-		var encoded []byte
-		if err := f.db.QueryRowContext(t.Context(), `SELECT typed_payload IS NULL, typed_payload
-			FROM entry WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1).Scan(&isNull, &encoded); err != nil {
+		var content entryContentStorage
+		if err := f.db.QueryRowContext(t.Context(), `SELECT `+entryContentReadColumns+`
+			FROM entry WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1).Scan(content.destinations()...); err != nil {
 			t.Fatal(err)
 		}
-		if isNull != wantNull {
-			t.Errorf("event %d typed_payload IS NULL = %t, want %t", i, isNull, wantNull)
-			continue
-		}
 		if wantNull {
+			if content.actionAt != nil || content.mergeabilityObservedAt != nil || content.messageBody != nil {
+				t.Errorf("event %d unexpectedly has native content: %+v", i, content)
+			}
 			continue
 		}
-		var content entrystoragepb.EntryContent
-		if err := proto.Unmarshal(encoded, &content); err != nil {
-			t.Fatalf("event %d typed payload is not protobuf: %v", i, err)
-		}
-		switch event := events[i].(type) {
+		switch events[i].(type) {
 		case model.ActionsEvent:
-			action := content.GetAction()
-			wantAt := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-			wantActor := &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{
-				Issuer: "https://issuer.example", Subject: "subject-123",
-			}}}
-			if action == nil || action.GetState() != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING ||
-				action.GetAt() == nil || !action.GetAt().AsTime().Equal(wantAt) || !proto.Equal(action.GetActor(), wantActor) {
-				t.Errorf("Action typed content = %v", content.GetAction())
+			if content.actionAt == nil || content.actionActorKind == nil || *content.actionActorKind != "operator" ||
+				content.actionActorIssuer == nil || *content.actionActorIssuer != "https://issuer.example" {
+				t.Errorf("Action native content = %+v", content)
 			}
 		case model.GitHubMergeabilityEvent, model.GitHubMergeabilitySnapshotEvent:
-			mergeability := content.GetMergeability()
-			if mergeability == nil || mergeability.GetRepository() != "owner/repository" ||
-				mergeability.GetPreviousMergeability() != entrystoragepb.GitHubMergeabilityState_GITHUB_MERGEABILITY_STATE_UNKNOWN ||
-				mergeability.GetMergeability() != entrystoragepb.GitHubMergeabilityState_GITHUB_MERGEABILITY_STATE_CONFLICTING {
-				t.Errorf("mergeability typed content = %v", mergeability)
+			if content.mergeabilityRepository == nil || *content.mergeabilityRepository != "owner/repository" ||
+				content.mergeabilityPrevious == nil || *content.mergeabilityPrevious != "UNKNOWN" ||
+				content.mergeabilityCurrent == nil || *content.mergeabilityCurrent != "CONFLICTING" {
+				t.Errorf("mergeability native content = %+v", content)
 			}
 		case model.MessageEvent:
-			message := content.GetMessage()
-			if message == nil || message.GetBody() != "stored message" || message.FromSession == nil || *message.FromSession != "sender-session" {
-				t.Errorf("message typed content = %v", message)
+			if content.messageBody == nil || *content.messageBody != "stored message" || content.messageFromSession == nil || *content.messageFromSession != "sender-session" {
+				t.Errorf("message native content = %+v", content)
 			}
 		default:
-			t.Fatalf("unexpected event in typed content test: %T", event)
+			t.Fatalf("unexpected event in native content test: %T", events[i])
 		}
 	}
 }

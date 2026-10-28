@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -12,10 +13,8 @@ import (
 	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/entrystoragepb"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
-	"google.golang.org/protobuf/proto"
 )
 
 func TestBackfillEntryContentConvertsSourceVariantsAndClearsExpiredBytes(t *testing.T) {
@@ -44,15 +43,12 @@ func TestBackfillEntryContentConvertsSourceVariantsAndClearsExpiredBytes(t *test
 			payload = actionContentPayload(t, action.Sequence, actors[i])
 		}
 		if _, ok := event.(model.GitHubMergeabilityEvent); ok {
-			payload = `{"repository":"owner/repository","pullRequestNumber":3,"baseRef":"main","headSha":"head","baseSha":"base","previousMergeability":"UNKNOWN","mergeability":"CONFLICTING","observedAt":"2026-01-01T00:00:00Z","mergeCommit":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","baseSha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","headSha":"cccccccccccccccccccccccccccccccccccccccc"}}`
+			payload = `{"repository":"owner/repository","pullRequestNumber":3,"baseRef":"main","headSha":"head","baseSha":"base","previousMergeability":"UNKNOWN","mergeability":"CONFLICTING","observedAt":"2026-01-01T00:00:00.123456789Z","mergeCommit":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","baseSha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","headSha":"cccccccccccccccccccccccccccccccccccccccc"}}`
 		}
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payload)
-		if _, err := f.db.ExecContext(t.Context(), `UPDATE entry SET typed_payload = NULL
-			WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1); err != nil {
-			t.Fatal(err)
-		}
+		clearNativeEntryContent(t, f.db, subscription.InboxID, int64(i+1))
 	}
-	// Model an older cleanup replica: its JSON is already expired, but it left typed bytes behind below the
+	// Model an older cleanup replica: its JSON is already expired, but it left native fields behind below the
 	// inbox's retained-prefix cursor. The backfill must clear the physical bytes before the typed-reader release.
 	expired := model.ActionsEvent{RequestID: requestID, Sequence: 99}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, expired, actionContentPayload(t, expired.Sequence, operator))
@@ -74,76 +70,42 @@ func TestBackfillEntryContentConvertsSourceVariantsAndClearsExpiredBytes(t *test
 		t.Fatal(err)
 	}
 	for cursor, event := range events {
-		var encoded []byte
+		var content entryContentStorage
 		var payload sql.NullString
-		if err := f.db.QueryRowContext(t.Context(), `SELECT typed_payload, payload::text FROM entry
-			WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, cursor+1).Scan(&encoded, &payload); err != nil {
+		destinations := append(content.destinations(), &payload)
+		if err := f.db.QueryRowContext(t.Context(), `SELECT `+entryContentReadColumns+`, payload::text FROM entry
+			WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, cursor+1).Scan(destinations...); err != nil {
 			t.Fatal(err)
 		}
-		if legacy := legacyPayloads[int64(cursor+1)]; payload.Valid != legacy.Valid || payload.String != legacy.String {
-			t.Errorf("cursor %d legacy JSON after backfill = (%t, %q), want (%t, %q)",
-				cursor+1, payload.Valid, payload.String, legacy.Valid, legacy.String)
+		legacy := legacyPayloads[int64(cursor+1)]
+		if payload.Valid != legacy.Valid || payload.String != legacy.String {
+			t.Errorf("cursor %d legacy JSON changed during backfill", cursor+1)
 		}
-		if _, ok := event.(model.GitHubEvent); ok {
-			if encoded != nil {
-				t.Errorf("GitHub webhook typed payload = %x, want SQL NULL", encoded)
-			}
-			continue
-		}
-		if _, ok := event.(model.GitHubObservationEvent); ok {
-			if encoded != nil {
-				t.Errorf("GitHub observation typed payload = %x, want SQL NULL", encoded)
-			}
-			var observation map[string]any
-			if err := json.Unmarshal([]byte(legacyPayloads[int64(cursor+1)].String), &observation); err != nil {
-				t.Fatalf("decode native GitHub observation payload: %v", err)
-			}
-			if observation["repositoryId"] != float64(2) || observation["headSha"] != "0123456789abcdef0123456789abcdef01234567" {
-				t.Errorf("GitHub observation payload changed during backfill: %s", legacyPayloads[int64(cursor+1)].String)
-			}
-			continue
-		}
-		var content entrystoragepb.EntryContent
-		if err := proto.Unmarshal(encoded, &content); err != nil {
-			t.Fatalf("cursor %d typed content is not protobuf: %v", cursor+1, err)
-		}
-		switch event := event.(type) {
-		case model.ActionsEvent:
-			action := content.GetAction()
-			wantActor := actors[cursor]
-			if action == nil || action.GetState() != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING ||
-				action.GetAt() == nil || !action.GetAt().AsTime().Equal(time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)) ||
-				!proto.Equal(action.GetActor(), wantActor) {
-				t.Errorf("cursor %d Action content = %v, want actor %v", cursor+1, action, wantActor)
-			}
-		case model.GitHubMergeabilityEvent, model.GitHubMergeabilitySnapshotEvent:
-			mergeability := content.GetMergeability()
-			if mergeability == nil || mergeability.GetRepository() != "owner/repository" ||
-				mergeability.GetBaseRef() != "main" || mergeability.GetHeadSha() != "head" || mergeability.GetBaseSha() != "base" ||
-				mergeability.GetPreviousMergeability() != entrystoragepb.GitHubMergeabilityState_GITHUB_MERGEABILITY_STATE_UNKNOWN ||
-				mergeability.GetMergeability() != entrystoragepb.GitHubMergeabilityState_GITHUB_MERGEABILITY_STATE_CONFLICTING {
-				t.Errorf("cursor %d mergeability content = %v", cursor+1, mergeability)
-			}
-			if _, ok := event.(model.GitHubMergeabilityEvent); ok {
-				mergeCommit := mergeability.GetMergeCommit()
-				if mergeCommit == nil || mergeCommit.GetSha() != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ||
-					mergeCommit.GetBaseSha() != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ||
-					mergeCommit.GetHeadSha() != "cccccccccccccccccccccccccccccccccccccccc" {
-					t.Errorf("cursor %d merge commit content = %v", cursor+1, mergeCommit)
-				}
-			}
-		case model.MessageEvent:
-			message := content.GetMessage()
-			if message == nil || message.GetBody() != "stored message" || message.FromSession == nil || *message.FromSession != "sender-session" {
-				t.Errorf("cursor %d message content = %v", cursor+1, message)
+		switch event.(type) {
+		case model.GitHubEvent, model.GitHubObservationEvent:
+			if content.actionAt != nil || content.mergeabilityObservedAt != nil || content.messageBody != nil {
+				t.Errorf("cursor %d unexpected native content: %+v", cursor+1, content)
 			}
 		default:
-			t.Fatalf("unexpected event type %T", event)
+			reconstructed, err := content.payload(event)
+			if err != nil {
+				t.Fatalf("cursor %d reconstruct content: %v", cursor+1, err)
+			}
+			var got, want any
+			if err := json.Unmarshal(reconstructed, &got); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal([]byte(legacy.String), &want); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("cursor %d reconstructed content = %s, want %s", cursor+1, reconstructed, legacy.String)
+			}
 		}
 	}
 	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND cursor = $2
-		AND payload IS NULL AND typed_payload IS NULL`, subscription.InboxID, expiredCursor); got != 1 {
-		t.Fatalf("expired entry has both payload representations NULL = %d, want 1", got)
+		AND payload IS NULL AND action_at IS NULL AND mergeability_observed_at IS NULL AND message_body IS NULL`, subscription.InboxID, expiredCursor); got != 1 {
+		t.Fatalf("expired entry retained native content: %d", got)
 	}
 	var phase string
 	if err := f.db.QueryRowContext(t.Context(), `SELECT phase FROM notification_entry_content_backfill WHERE singleton`).Scan(&phase); err != nil {
@@ -166,7 +128,7 @@ func TestBackfillEntryContentBoundsBytesAndProcessesOversizedPayloadAlone(t *tes
 		}}}
 		payload := actionContentPayload(t, event.Sequence, actor)
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payload)
-		f.exec(t, `UPDATE entry SET typed_payload = NULL WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1)
+		clearNativeEntryContent(t, f.db, subscription.InboxID, int64(i+1))
 	}
 	conn, err := f.db.Conn(t.Context())
 	if err != nil {
@@ -191,7 +153,7 @@ func TestBackfillEntryContentBoundsBytesAndProcessesOversizedPayloadAlone(t *tes
 		t.Fatalf("byte-bounded first batch stopped at cursor %d, want 2", lastCursor)
 	}
 	firstBatchBytes := f.count(t, `SELECT COALESCE(sum(octet_length(payload::text)), 0)::int FROM entry
-		WHERE inbox_id = $1 AND cursor <= 2 AND typed_payload IS NOT NULL`, subscription.InboxID)
+		WHERE inbox_id = $1 AND cursor <= 2 AND action_at IS NOT NULL`, subscription.InboxID)
 	if int64(firstBatchBytes) > entryContentBackfillBatchBytes {
 		conn.Close()
 		t.Fatalf("first batch converted %d serialized bytes, limit is %d", firstBatchBytes, entryContentBackfillBatchBytes)
@@ -214,7 +176,7 @@ func TestBackfillEntryContentBoundsBytesAndProcessesOversizedPayloadAlone(t *tes
 		conn.Close()
 		t.Fatalf("oversized payload batch stopped at cursor %d, want it processed alone at 3", lastCursor)
 	}
-	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND cursor = 4 AND typed_payload IS NOT NULL`, subscription.InboxID); got != 0 {
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND cursor = 4 AND action_at IS NOT NULL`, subscription.InboxID); got != 0 {
 		conn.Close()
 		t.Fatalf("row after oversized payload was converted in the same batch: %d", got)
 	}
@@ -224,8 +186,8 @@ func TestBackfillEntryContentBoundsBytesAndProcessesOversizedPayloadAlone(t *tes
 	if err := BackfillEntryContent(t.Context(), f.db, 16); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND typed_payload IS NOT NULL`, subscription.InboxID); got != len(paddingSizes) {
-		t.Fatalf("typed Action payloads after resuming = %d, want %d", got, len(paddingSizes))
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND action_at IS NOT NULL`, subscription.InboxID); got != len(paddingSizes) {
+		t.Fatalf("native Action payloads after resuming = %d, want %d", got, len(paddingSizes))
 	}
 }
 
@@ -273,7 +235,7 @@ func TestBackfillEntryContentValidatesBeforePublishingCompletion(t *testing.T) {
 	}
 	insertBackfilledEntry(t, f.db, subscription.InboxID, 2, lateIdentity, entryPayloadForTest(t, late))
 	err = validateEntryContentBackfill(t.Context(), conn)
-	if err == nil || !strings.Contains(err.Error(), "typed-source entries remain without typed bytes") {
+	if err == nil || !strings.Contains(err.Error(), "native-source entries remain without native content") {
 		conn.Close()
 		t.Fatalf("incomplete validation error = %v", err)
 	}
@@ -305,7 +267,7 @@ func TestBackfillEntryContentDoesNotResurrectPayloadExpiredWhileWaitingForRowLoc
 	subscription := f.subscribe(t, body("entry-content-expiry-race"))
 	event := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
-	f.exec(t, `UPDATE entry SET typed_payload = NULL WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
+	clearNativeEntryContent(t, f.db, subscription.InboxID, 1)
 	cleanupTx, err := f.db.BeginTx(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -352,7 +314,7 @@ func TestBackfillEntryContentDoesNotResurrectPayloadExpiredWhileWaitingForRowLoc
 		t.Fatal(err)
 	}
 	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND cursor = 1
-		AND payload IS NULL AND typed_payload IS NULL`, subscription.InboxID); got != 1 {
+		AND payload IS NULL AND action_at IS NULL`, subscription.InboxID); got != 1 {
 		t.Fatalf("raced expiry left both payload forms NULL = %d, want 1", got)
 	}
 }
@@ -376,12 +338,12 @@ func TestBackfillEntryContentFailureRetainsPayloadAndCursor(t *testing.T) {
 		`{"sequence":2,"state":"decision_pending","at":"not-a-timestamp","actor":null}`)
 	err = BackfillEntryContent(t.Context(), f.db, 1)
 	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("inbox %s entry 2", subscription.InboxID)) {
-		t.Fatalf("invalid typed content error = %v, want location inbox %s cursor 2", err, subscription.InboxID)
+		t.Fatalf("invalid native content error = %v, want location inbox %s cursor 2", err, subscription.InboxID)
 	}
-	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND cursor = 1 AND typed_payload IS NOT NULL`, subscription.InboxID); got != 1 {
-		t.Fatalf("first committed row typed bytes = %d, want 1", got)
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND cursor = 1 AND action_at IS NOT NULL`, subscription.InboxID); got != 1 {
+		t.Fatalf("first committed row native fields = %d, want 1", got)
 	}
-	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND cursor = 2 AND payload IS NOT NULL AND typed_payload IS NULL`, subscription.InboxID); got != 1 {
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND cursor = 2 AND payload IS NOT NULL AND action_at IS NULL`, subscription.InboxID); got != 1 {
 		t.Fatalf("failed row legacy evidence retained = %d, want 1", got)
 	}
 	var lastCursor int64
@@ -401,9 +363,9 @@ func TestEntryContentBackfillUsesPrimaryKeyForFirstAndLaterScansAndBulkUpdate(t 
 		SELECT $1, cursor, jsonb_build_object('provider', 'actions', 'request_id', $2::text, 'sequence', cursor),
 			jsonb_build_object('sequence', cursor), now(), 'actions', $2::uuid, cursor
 		FROM generate_series(1, 12000) AS series(cursor)`, subscription.InboxID, requestID)
-	f.exec(t, `INSERT INTO entry (inbox_id, cursor, event, payload, created_at, identity_provider, actions_request_id, actions_sequence, typed_payload)
+	f.exec(t, `INSERT INTO entry (inbox_id, cursor, event, payload, created_at, identity_provider, actions_request_id, actions_sequence, action_state, action_at)
 		SELECT $1, cursor, jsonb_build_object('provider', 'actions', 'request_id', $2::text, 'sequence', cursor),
-			NULL, now(), 'actions', $2::uuid, cursor, decode('0a00', 'hex')
+			NULL, now(), 'actions', $2::uuid, cursor, 1, now()
 		FROM generate_series(12001, 12002) AS series(cursor)`, subscription.InboxID, requestID)
 	f.exec(t, `ANALYZE entry`)
 	var estimatedRows float64
@@ -437,13 +399,6 @@ func TestEntryContentBackfillUsesPrimaryKeyForFirstAndLaterScansAndBulkUpdate(t 
 			args: []any{pq.Array([]string{subscription.InboxID.String()}), pq.Array([]int64{6000, 6001})}, allowSort: true,
 		},
 		{
-			name: "bulk typed-content update", query: entryContentBackfillUpdate,
-			args: []any{
-				pq.Array([]string{subscription.InboxID.String()}), pq.Array([]int64{6000, 6001}),
-				pq.ByteaArray{[]byte{0x0a, 0x00}, []byte{0x0a, 0x00}},
-			},
-		},
-		{
 			name: "bulk expired cleanup", query: entryContentExpiredUpdate,
 			args: []any{pq.Array([]string{subscription.InboxID.String()}), pq.Array([]int64{12001, 12002})},
 		},
@@ -470,4 +425,12 @@ func actionContentPayload(t *testing.T, sequence int64, actor *action_servicepb.
 		t.Fatal(err)
 	}
 	return string(encoded)
+}
+
+func clearNativeEntryContent(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor int64) {
+	t.Helper()
+	if _, err := db.ExecContext(t.Context(), `UPDATE entry SET action_state = NULL, action_at = NULL, action_actor_kind = NULL, action_actor_namespace = NULL, action_actor_name = NULL, action_actor_issuer = NULL, action_actor_subject = NULL, mergeability_repository = NULL, mergeability_base_ref = NULL, mergeability_head_sha = NULL, mergeability_base_sha = NULL, mergeability_previous = NULL, mergeability_current = NULL, mergeability_observed_at = NULL, mergeability_observed_at_submicro_nanos = NULL, merge_commit_sha = NULL, merge_commit_base_sha = NULL, merge_commit_head_sha = NULL, message_body = NULL, message_from_session = NULL
+		WHERE inbox_id = $1 AND cursor = $2`, inboxID, cursor); err != nil {
+		t.Fatal(err)
+	}
 }

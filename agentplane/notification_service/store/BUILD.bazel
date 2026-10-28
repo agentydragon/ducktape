@@ -37,7 +37,6 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/store",
     deps = [
         "//agentplane/action_service:action_service_go_proto",
-        "//agentplane/notification_service:entry_storage_go_proto",
         "//agentplane/notification_service:storage_go_proto",
         "//agentplane/notification_service/model",
         "//agentplane/postgres/go:postgres",
@@ -110,7 +109,6 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
-        "//agentplane/notification_service:entry_storage_go_proto",
         "//agentplane/notification_service/migrations",
         "//agentplane/notification_service/model",
         "//agentplane/postgres/go/wakeups",

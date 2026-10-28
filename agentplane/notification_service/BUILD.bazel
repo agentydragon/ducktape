@@ -61,18 +61,6 @@ proto_library(
     ],
 )
 
-# Internal relational entry content. It is intentionally private: callers still receive the existing Notifications
-# API payloads, reconstructed by the owning service at the API boundary.
-proto_library(
-    name = "entry_storage_proto",
-    srcs = ["entry_storage.proto"],
-    visibility = ["//agentplane/notification_service:__subpackages__"],
-    deps = [
-        "//agentplane/action_service:action_service_proto",
-        "@protobuf//:timestamp_proto",
-    ],
-)
-
 proto_library(
     name = "storage_proto",
     srcs = ["storage.proto"],
@@ -123,17 +111,6 @@ go_proto_library(
     deps = [
         ":notifications_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
-    ],
-)
-
-go_proto_library(
-    name = "entry_storage_go_proto",
-    compilers = ["@io_bazel_rules_go//proto:go_proto"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/entrystoragepb",
-    proto = ":entry_storage_proto",
-    visibility = ["//agentplane/notification_service:__subpackages__"],
-    deps = [
-        "//agentplane/action_service:action_service_go_proto",
     ],
 )
 

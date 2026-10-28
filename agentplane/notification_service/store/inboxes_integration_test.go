@@ -221,8 +221,8 @@ func TestRetentionGapIsVisibleAndReplayKeepsTheTombstone(t *testing.T) {
 	for _, event := range events {
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 	}
-	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND typed_payload IS NOT NULL`, subscription.InboxID); got != 3 {
-		t.Fatalf("%d entries have typed payloads before expiry, want 3", got)
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND action_at IS NOT NULL`, subscription.InboxID); got != 3 {
+		t.Fatalf("%d entries have native Action content before expiry, want 3", got)
 	}
 	f.exec(t, `UPDATE entry SET created_at = now() - interval '31 days' WHERE inbox_id = $1`, subscription.InboxID)
 	f.cleanAll(t)
@@ -234,8 +234,8 @@ func TestRetentionGapIsVisibleAndReplayKeepsTheTombstone(t *testing.T) {
 	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND payload IS NULL`, subscription.InboxID); got != 3 {
 		t.Fatalf("%d entries without a payload, want 3", got)
 	}
-	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND typed_payload IS NULL`, subscription.InboxID); got != 3 {
-		t.Fatalf("%d entries without typed content after expiry, want 3", got)
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND action_at IS NULL AND action_state IS NULL`, subscription.InboxID); got != 3 {
+		t.Fatalf("%d entries without native Action content after expiry, want 3", got)
 	}
 	// A late overlapping subscription replaying the expired events finds their identities and adds none.
 	late := creation

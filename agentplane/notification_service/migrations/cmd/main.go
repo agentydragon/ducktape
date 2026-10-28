@@ -19,7 +19,7 @@ import (
 const (
 	databaseURLEnv                       = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
 	requiredEventIdentityWriterGate      = "notification-event-identity-dual-write-v1"
-	requiredEntryContentWriterGate       = "notification-entry-typed-payload-dual-write-v1"
+	requiredEntryContentWriterGate       = "notification-entry-native-content-dual-write-v1"
 	defaultEntryContentBackfillBatchSize = 512
 	maxEntryContentBackfillBatchSize     = 4096
 )
