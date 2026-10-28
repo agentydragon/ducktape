@@ -76,7 +76,7 @@ func TestCleanupGitHubDeliveriesRetainsSnapshotsAndInboxCopies(t *testing.T) {
 	if got := len(g.read(t, late.InboxID, 0).Entries); got != 2 {
 		t.Fatalf("late subscriber received %d total entries after retention, want current conflict and lifecycle snapshots", got)
 	}
-	lifecycle := observationEntries(t, g.read(t, late.InboxID, 0).Entries)
+	lifecycle := prStateObservationEntries(t, g.read(t, late.InboxID, 0).Entries)
 	if len(lifecycle) != 1 {
 		t.Fatalf("lifecycle snapshots = %d, want one", len(lifecycle))
 	}

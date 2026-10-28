@@ -561,7 +561,7 @@ func TestLateSubscriberGetsCurrentConflictSnapshotAfterHeadChanges(t *testing.T)
 	if len(allEntries) != 2 {
 		t.Fatalf("new subscriber received %d total entries, want current conflict and lifecycle snapshots", len(allEntries))
 	}
-	lifecycle := observationEntries(t, allEntries)
+	lifecycle := prStateObservationEntries(t, allEntries)
 	if len(lifecycle) != 1 {
 		t.Fatalf("lifecycle snapshots = %d, want one", len(lifecycle))
 	}

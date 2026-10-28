@@ -10,6 +10,18 @@ import (
 	"github.com/google/uuid"
 )
 
+func prStateObservationEntries(t *testing.T, entries []Entry) []Entry {
+	t.Helper()
+	var observations []Entry
+	for _, entry := range entries {
+		if event, ok := entry.Event.(GitHubObservationEvent); ok &&
+			(event.Event == EventPullRequest || event.Event == EventPullRequestReview) {
+			observations = append(observations, entry)
+		}
+	}
+	return observations
+}
+
 func testPRReview(id int64, state GitHubReviewState, sha string) GitHubReviewObservation {
 	return GitHubReviewObservation{
 		ID: id, Reviewer: GitHubReviewer{ID: 41, Login: "reviewer"}, State: state,
@@ -99,7 +111,7 @@ func TestGitHubPRReviewPollAndWebhookDeduplicateInEitherOrderAndSnapshotLateSubs
 			}
 			g.reconcileSubscription(t, first)
 			g.reconcileSubscription(t, second)
-			entries := observationEntries(t, g.read(t, g.inbox, 0).Entries)
+			entries := prStateObservationEntries(t, g.read(t, g.inbox, 0).Entries)
 			if len(entries) != 1 {
 				t.Fatalf("shared inbox review observations = %d, want one", len(entries))
 			}
@@ -123,7 +135,7 @@ func TestGitHubPRReviewPollAndWebhookDeduplicateInEitherOrderAndSnapshotLateSubs
 			lateDestination.Name = "late-review-observer"
 			late := g.followIn(t, lateDestination, source, "review-late")
 			g.reconcileSubscription(t, late)
-			lateEntries := observationEntries(t, g.read(t, late.InboxID, 0).Entries)
+			lateEntries := prStateObservationEntries(t, g.read(t, late.InboxID, 0).Entries)
 			if len(lateEntries) != 1 {
 				t.Fatalf("late current review snapshot = %d, want one", len(lateEntries))
 			}
@@ -154,7 +166,7 @@ func TestGitHubPRReviewDismissalTransitionsAndActionFilters(t *testing.T) {
 	g.pollReviews(t, submitted.Subject, []GitHubReviewObservation{approved})
 	g.reconcileSubscription(t, submitted)
 	g.reconcileSubscription(t, dismissed)
-	if got := len(observationEntries(t, g.read(t, g.inbox, 0).Entries)); got != 1 {
+	if got := len(prStateObservationEntries(t, g.read(t, g.inbox, 0).Entries)); got != 1 {
 		t.Fatalf("submitted-only review observations after approval = %d, want one", got)
 	}
 
@@ -162,7 +174,7 @@ func TestGitHubPRReviewDismissalTransitionsAndActionFilters(t *testing.T) {
 	g.pollReviews(t, submitted.Subject, []GitHubReviewObservation{dismissal})
 	g.reconcileSubscription(t, submitted)
 	g.reconcileSubscription(t, dismissed)
-	entries := observationEntries(t, g.read(t, g.inbox, 0).Entries)
+	entries := prStateObservationEntries(t, g.read(t, g.inbox, 0).Entries)
 	if len(entries) != 2 {
 		t.Fatalf("review state transitions = %d, want approved and dismissed", len(entries))
 	}
@@ -196,7 +208,7 @@ func TestGitHubPRReviewDismissalTransitionsAndActionFilters(t *testing.T) {
 	late := g.followIn(t, lateDestination, g.source(PullRequestSubject{Number: 7},
 		EventFilter{Event: EventPullRequestReview}), "dismissed-current")
 	g.reconcileSubscription(t, late)
-	lateEntries := observationEntries(t, g.read(t, late.InboxID, 0).Entries)
+	lateEntries := prStateObservationEntries(t, g.read(t, late.InboxID, 0).Entries)
 	if len(lateEntries) != 1 {
 		t.Fatalf("late review current snapshot = %d, want one current fact", len(lateEntries))
 	}
@@ -232,7 +244,7 @@ func TestGitHubPRLifecyclePollRecoveryPreservesRealActions(t *testing.T) {
 	})
 	g.ingest(t, lifecycleDelivery(g, 7, GitHubPullRequestClosed, commitA, "main", "closed"))
 	g.reconcileSubscription(t, closed)
-	closedEntries := observationEntries(t, g.read(t, closed.InboxID, 0).Entries)
+	closedEntries := prStateObservationEntries(t, g.read(t, closed.InboxID, 0).Entries)
 	if len(closedEntries) != 1 {
 		t.Fatalf("recovered closed lifecycle entries = %d, want one", len(closedEntries))
 	}
@@ -263,7 +275,7 @@ func TestGitHubPRLifecyclePollRecoveryPreservesRealActions(t *testing.T) {
 	})
 	g.ingest(t, lifecycleDelivery(g, 8, GitHubPullRequestOpen, commitC, "main", "reopened"))
 	g.reconcileSubscription(t, reopened)
-	if got := len(observationEntries(t, g.read(t, reopened.InboxID, 0).Entries)); got != 0 {
+	if got := len(prStateObservationEntries(t, g.read(t, reopened.InboxID, 0).Entries)); got != 0 {
 		t.Errorf("same-state reopened generated observations = %d, want zero", got)
 	}
 	if got := g.count(t, `SELECT count(*) FROM subscription_match m JOIN entry e
@@ -334,7 +346,7 @@ func TestGitHubPRStateRetentionKeepsCurrentAndInboxCopies(t *testing.T) {
 	})
 	g.pollReviews(t, sub.Subject, []GitHubReviewObservation{testPRReview(7004, ReviewCommented, commitB)})
 	g.reconcileSubscription(t, sub)
-	before := observationEntries(t, g.read(t, sub.InboxID, 0).Entries)
+	before := prStateObservationEntries(t, g.read(t, sub.InboxID, 0).Entries)
 	if len(before) != 1 {
 		t.Fatalf("pre-retention inbox observations = %d, want one", len(before))
 	}
@@ -352,7 +364,7 @@ func TestGitHubPRStateRetentionKeepsCurrentAndInboxCopies(t *testing.T) {
 		g.app, g.repository, 7); got != 1 {
 		t.Errorf("retained review current rows = %d, want one", got)
 	}
-	if got := len(observationEntries(t, g.read(t, sub.InboxID, 0).Entries)); got != 1 {
+	if got := len(prStateObservationEntries(t, g.read(t, sub.InboxID, 0).Entries)); got != 1 {
 		t.Errorf("retained inbox observation copies = %d, want one", got)
 	}
 
@@ -360,7 +372,7 @@ func TestGitHubPRStateRetentionKeepsCurrentAndInboxCopies(t *testing.T) {
 	lateDestination.Name = "after-review-retention"
 	late := g.followIn(t, lateDestination, source, "late-after-retention")
 	g.reconcileSubscription(t, late)
-	lateEntries := observationEntries(t, g.read(t, late.InboxID, 0).Entries)
+	lateEntries := prStateObservationEntries(t, g.read(t, late.InboxID, 0).Entries)
 	if len(lateEntries) != 1 || lateEntries[0].Event.(GitHubObservationEvent).Sequence != sequence {
 		t.Errorf("late post-retention snapshots = %+v, want current identity sequence %d", lateEntries, sequence)
 	}
