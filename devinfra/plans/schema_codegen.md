@@ -9,10 +9,10 @@ design-base commit [`6eb2ffc2131fff18eaedcbdcf12d23aa93187edf`](https://github.c
 Links to the former macro files point to that baseline because those files are removed by the
 implementation. The “after” map describes the combined target state, including the direct named
 imports migrated in [PR #12418](https://github.com/agentydragon/ducktape/pull/12418). The file-input
-converters and their declaration packaging are stacked in [#12477](https://github.com/agentydragon/ducktape/pull/12477)
-(OpenAPI declarations) → [#12484](https://github.com/agentydragon/ducktape/pull/12484) (JSON Schema
-declarations) → [#12489](https://github.com/agentydragon/ducktape/pull/12489) (OpenAPI Zod); this
-spike follows that production stack.
+OpenAPI declarations landed in [#12477](https://github.com/agentydragon/ducktape/pull/12477). The
+remaining stack is OpenAPI Zod in [#12489](https://github.com/agentydragon/ducktape/pull/12489) →
+JSON Schema declarations in [#12484](https://github.com/agentydragon/ducktape/pull/12484) → this
+spike in [#12342](https://github.com/agentydragon/ducktape/pull/12342).
 
 ## Baseline inputs, outputs, and owners
 
