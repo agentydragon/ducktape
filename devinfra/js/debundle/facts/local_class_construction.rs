@@ -100,8 +100,20 @@ fn safe_implicit_class(class: &Class, shadowed: &BTreeSet<&'static str>) -> bool
             method.kind != MethodKind::Setter
                 && !matches!(method.key, PropName::Computed(_))
                 && method.function.decorators.is_empty()
+                && method
+                    .function
+                    .params
+                    .iter()
+                    .all(|param| param.decorators.is_empty())
         }
-        ClassMember::PrivateMethod(method) => method.function.decorators.is_empty(),
+        ClassMember::PrivateMethod(method) => {
+            method.function.decorators.is_empty()
+                && method
+                    .function
+                    .params
+                    .iter()
+                    .all(|param| param.decorators.is_empty())
+        }
         ClassMember::ClassProp(prop) => {
             !prop.is_static
                 && prop.decorators.is_empty()
@@ -127,8 +139,15 @@ fn safe_implicit_class(class: &Class, shadowed: &BTreeSet<&'static str>) -> bool
 fn safe_field_value(value: &Expr, shadowed: &BTreeSet<&'static str>) -> bool {
     match value.unwrap_parens() {
         Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
-        | Expr::Fn(_)
         | Expr::Arrow(_) => true,
+        Expr::Fn(function) => {
+            function.function.decorators.is_empty()
+                && function
+                    .function
+                    .params
+                    .iter()
+                    .all(|param| param.decorators.is_empty())
+        }
         Expr::Unary(unary) if unary.op == UnaryOp::Bang => {
             matches!(
                 unary.arg.unwrap_parens(),
