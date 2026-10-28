@@ -34,6 +34,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/store",
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/notification_service:storage_go_proto",
         "//agentplane/notification_service/model",
         "//agentplane/postgres/go:postgres",
         "//agentplane/proto:event_log_go_proto",
