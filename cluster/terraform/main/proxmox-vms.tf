@@ -125,9 +125,8 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     memory = 256
   }
 
-  # cache=never: virtiofsd with cache=auto leaks memory — it caches all accessed
-  # files with no eviction, growing to 10+ GiB over days. On a 128 GiB host with
-  # 96 GiB pinned for this VM, that starves ZFS ARC and causes system-wide stalls.
+  # Keep cache=never on new/replacement mounts: directory scans previously grew
+  # virtiofsd memory until the host stalled. See docs/atlas_vm_memory.md.
   virtiofs {
     mapping = "tankshare"
     cache   = "never"

@@ -253,8 +253,6 @@ Not the cause of freezes, but worth optimizing eventually.
 ## Related
 
 - <../../../debug/atlas/wyrm_gpu_lockup.md> — prior RTX 5090 lockup investigation
-- <../../../debug/atlas/virtiofsd_cache_policies.md> — the still-live virtiofs cache
-  reference (wyrm2 carries wyrm's virtiofs mounts): `cache=metadata`/`auto`
-  leak FDs and shared memory unboundedly (450k FDs / 60 GiB shmem-rss until
-  the host OOM-kills the KVM process — the wyrm VM 100 saga, chronology in
-  git history); `cache=never` fixed it, both there and on wyrm2's recurrence.
+- [Atlas VM memory safeguards](../../../docs/atlas_vm_memory.md) — keep the
+  `cache=never` policy when replacing VMs or mounts; the host-memory warning
+  survives the resolved QXL investigation.
