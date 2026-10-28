@@ -680,7 +680,14 @@ impl GraphProvenance {
                     "--out-root" => {
                         let original = absolute(Path::new(&value))?;
                         let mapped = self.translate_rooted_path(&original, current)?;
-                        fresh_regeneration_output(&mapped)?
+                        let previous = match mapped {
+                            Some(mapped) => mapped,
+                            None => match current.spec.as_deref() {
+                                Some(spec) => absolute(spec)?.join("debundle-output"),
+                                None => original,
+                            },
+                        };
+                        fresh_regeneration_output(&previous)?
                     }
                     _ => {
                         let original = absolute(Path::new(&value))?;
@@ -704,7 +711,11 @@ impl GraphProvenance {
         Ok((argv, cwd))
     }
 
-    fn translate_rooted_path(&self, path: &Path, current: &CurrentRoots) -> Result<PathBuf> {
+    fn translate_rooted_path(
+        &self,
+        path: &Path,
+        current: &CurrentRoots,
+    ) -> Result<Option<PathBuf>> {
         let path = absolute(path)?;
         let mut selected: Option<(usize, PathBuf)> = None;
         let mut consider = |old: &Path, new: Option<&Path>| -> Result<()> {
@@ -726,7 +737,7 @@ impl GraphProvenance {
         for (name, old) in &self.roots.packages {
             consider(old, current.packages.get(name).map(PathBuf::as_path))?;
         }
-        Ok(selected.map_or(path, |(_, translated)| translated))
+        Ok(selected.map(|(_, translated)| translated))
     }
 
     pub fn verify(&self, current: &CurrentRoots) -> Result<()> {

@@ -144,6 +144,142 @@ fn delegated_workers_replay_after_original_inputs_are_removed_and_edit_independe
 }
 
 #[test]
+fn unmapped_output_replay_stays_inside_relocated_spec_root() {
+    let fixture = run_tree_fixture(
+        &TreeFixture {
+            chunks: &[("main", "const value = 1; console.log(value);\n")],
+            module_roots: &[("main", "main")],
+            modules: &[(
+                "main/value.yaml",
+                "members: [{selector: {binding: {name: value}}}]\n",
+            )],
+        },
+        &[],
+    );
+    assert!(fixture.result.status.success(), "{}", fixture.result.stderr);
+    fs::remove_dir_all(&fixture.out_root).unwrap();
+
+    let original_output_parent = TempDir::new().unwrap();
+    let original_out = original_output_parent.path().join("outside output");
+    let original = Command::new(debundler_path())
+        .args(["run", "--tree-config"])
+        .arg(fixture.root().join("spec_config.yaml"))
+        .arg("--tree-modules")
+        .arg(fixture.root().join("modules"))
+        .arg("--tree-vendor-marks")
+        .arg(fixture.root().join("vendor_marks.yaml"))
+        .arg("--tree-source-root")
+        .arg(fixture.root())
+        .arg("--out-root")
+        .arg(&original_out)
+        .output()
+        .unwrap();
+    assert!(
+        original.status.success(),
+        "{}",
+        String::from_utf8_lossy(&original.stderr)
+    );
+    let original_graph = original_out.join("reports/tree/main/dependency_graph.json");
+    let workers = TempDir::new().unwrap();
+    let destination = workers.path().join("worker");
+    let report = create(&original_graph, &destination);
+
+    let spec_root = Path::new(report["spec_root"].as_str().unwrap());
+    let graph_source_root = Path::new(report["graph_source_root"].as_str().unwrap());
+    let source_root = Path::new(report["source_root"].as_str().unwrap());
+    let modules = Path::new(report["modules"].as_str().unwrap()).join("main");
+    let graph = Path::new(report["graph"].as_str().unwrap());
+    fs::remove_dir_all(fixture.root()).unwrap();
+    fs::remove_dir_all(&original_out).unwrap();
+    assert!(!fixture.root().exists());
+    assert!(!original_out.exists());
+
+    let module = modules.join("value.yaml");
+    let mut yaml = fs::read_to_string(&module).unwrap();
+    yaml.push_str("# changed after snapshot\n");
+    fs::write(&module, yaml).unwrap();
+    let stale = Command::new(debundler_path())
+        .args(["--spec-root"])
+        .arg(spec_root)
+        .arg("--graph-source-root")
+        .arg(graph_source_root)
+        .args(["coverage", "--graph"])
+        .arg(graph)
+        .arg("--modules")
+        .arg(&modules)
+        .arg("--source-root")
+        .arg(source_root)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        stale.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&stale.stderr)
+    );
+    let rejection: Value = serde_json::from_slice(&stale.stdout).unwrap();
+    assert_eq!(rejection["kind"], "graph_compatibility");
+    assert_eq!(rejection["mismatch"]["reason"], "file");
+    let argv: Vec<_> = rejection["mismatch"]["regenerate_command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arg| arg.as_str().unwrap())
+        .collect();
+    let out_root = Path::new(argv[argv.iter().position(|arg| *arg == "--out-root").unwrap() + 1]);
+    assert!(
+        out_root.starts_with(spec_root),
+        "suggested output {} is outside relocated spec root {}",
+        out_root.display(),
+        spec_root.display()
+    );
+    assert!(
+        !out_root.exists(),
+        "recipe planning created its output root"
+    );
+    assert_eq!(
+        rejection["mismatch"]["regenerate_cwd"].as_str().unwrap(),
+        spec_root.to_str().unwrap()
+    );
+
+    let replay = Command::new(argv[0])
+        .args(&argv[1..])
+        .current_dir(spec_root)
+        .output()
+        .unwrap();
+    assert!(
+        replay.status.success(),
+        "{}",
+        String::from_utf8_lossy(&replay.stderr)
+    );
+    let refreshed_graph = out_root.join("reports/tree/main/dependency_graph.json");
+    assert!(refreshed_graph.is_file());
+    assert!(out_root.join("app/main/entry.js").is_file());
+    let refreshed = Command::new(debundler_path())
+        .args(["--spec-root"])
+        .arg(spec_root)
+        .arg("--graph-source-root")
+        .arg(graph_source_root)
+        .args(["coverage", "--graph"])
+        .arg(&refreshed_graph)
+        .arg("--modules")
+        .arg(&modules)
+        .arg("--source-root")
+        .arg(source_root)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(
+        refreshed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&refreshed.stderr)
+    );
+    assert!(!fixture.root().exists());
+    assert!(!original_out.exists());
+}
+
+#[test]
 fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
     let fixture = run_tree_fixture(
         &TreeFixture {

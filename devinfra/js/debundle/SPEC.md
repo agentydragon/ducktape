@@ -112,10 +112,16 @@ existed remains a historical report only.
 A command that combines a saved graph with current spec or source checks the
 recorded baseline before reading claims or writing edits. It refuses changed,
 added, deleted, or mismapped inputs and reports the mismatch with a regeneration
-command that uses a fresh output directory. An accepted edit evaluates its
-candidate assignment against the saved dependency analysis; the graph remains
-the **pre-edit** snapshot and the next graph-backed edit requires another
-`debundle run`. A batch edit checks one
+command that uses a fresh output directory. The recipe translates an output
+root when a supplied current spec, source, or package root maps it. If no
+supplied relocation root maps the output and a current spec root is supplied,
+it chooses an unused `debundle-output-regenerated` directory under that spec
+root, adding a numeric suffix on collision. Without a current spec root, an
+unmapped output uses an unused `-regenerated` sibling beside the recorded
+output, adding a numeric suffix on collision. An accepted edit
+evaluates its candidate assignment against the saved dependency analysis; the
+graph remains the **pre-edit** snapshot and the next graph-backed edit requires
+another `debundle run`. A batch edit checks one
 starting snapshot and one combined candidate. Graph-only historical views do
 not certify current input compatibility.
 
