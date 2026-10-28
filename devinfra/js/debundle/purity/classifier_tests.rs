@@ -80,7 +80,8 @@ fn graph_with_conditioned_set_proof(
 ) -> ChunkCodeGraph {
     let views = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&views);
-    let flow = ChunkValueFlow::analyze(&views);
+    let candidate_roots = plain_data_candidate_roots(&views);
+    let flow = ChunkValueFlow::analyze_with_candidates(&views, &candidate_roots);
     let plain_data = collect_plain_data_bindings(&views, &shadowed, &flow);
     let plain_arrays = collect_plain_array_bindings(&views, &shadowed);
     let dynamic_scope = DynamicScopeFact::analyze(&views);
@@ -1570,7 +1571,8 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
     let module = parse("class Box { state = new Set(); }\nconst instance = new Box();");
     let views = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&views);
-    let flow = ChunkValueFlow::analyze(&views);
+    let candidate_roots = plain_data_candidate_roots(&views);
+    let flow = ChunkValueFlow::analyze_with_candidates(&views, &candidate_roots);
     let plain_data = collect_plain_data_bindings(&views, &shadowed, &flow);
     let plain_arrays = collect_plain_array_bindings(&views, &shadowed);
     let dependencies = value_input_dependencies("static/provider.js", 2);

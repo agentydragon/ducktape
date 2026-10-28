@@ -172,7 +172,9 @@ where
         })
         .collect();
     apply_global_escape_taint(&body, &global_object_names, &mut per_statement);
-    let value_flow = ChunkValueFlow::analyze(&body);
+    let mut candidate_roots = crate::purity::plain_data_candidate_roots(&body);
+    candidate_roots.extend(super::array_content_effects::array_candidate_roots(&body));
+    let value_flow = ChunkValueFlow::analyze_with_candidates(&body, &candidate_roots);
     let plain_data_bindings =
         crate::purity::collect_plain_data_bindings(&body, &shadowed, &value_flow);
     let dynamic_scope = DynamicScopeFact::analyze(&body);

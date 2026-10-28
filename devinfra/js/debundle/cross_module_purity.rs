@@ -94,7 +94,8 @@ impl<'a> ModulePurityFacts<'a> {
     ) -> PreparedModulePurityFacts<'a> {
         let views = top_level_item_views(self.body);
         let shadowed = compute_shadowed_globals(&views);
-        let value_flow = ChunkValueFlow::analyze(&views);
+        let candidate_roots = crate::purity::plain_data_candidate_roots(&views);
+        let value_flow = ChunkValueFlow::analyze_with_candidates(&views, &candidate_roots);
         let plain_data_bindings = collect_plain_data_bindings(&views, &shadowed, &value_flow);
         let plain_array_bindings = collect_plain_array_bindings(&views, &shadowed);
         let dynamic_scope = crate::facts::DynamicScopeFact::analyze(&views);

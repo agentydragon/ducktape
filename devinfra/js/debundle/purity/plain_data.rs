@@ -32,6 +32,65 @@ use super::*;
 ///
 /// Returns the list of qualified names; the caller registers them as
 /// `ChunkBinding::PlainData` in the graph.
+type PlainDataInitGroups<'a> = BTreeMap<String, Vec<(&'a Expr, VarDeclKind)>>;
+
+fn plain_data_init_groups<'a>(body: &'a [TopLevelItemView<'_>]) -> PlainDataInitGroups<'a> {
+    let mut inits_by_name = BTreeMap::new();
+    for item in body {
+        for (name, init, kind) in plain_data_var_candidates(item.as_module_item()) {
+            inits_by_name
+                .entry(name)
+                .or_insert_with(Vec::new)
+                .push((init, kind));
+        }
+    }
+    inits_by_name
+}
+
+fn plain_data_candidate_names(inits_by_name: &PlainDataInitGroups<'_>) -> BTreeSet<String> {
+    inits_by_name
+        .iter()
+        .filter(|(name, inits)| {
+            inits
+                .iter()
+                .all(|(init, kind)| is_plain_data_init(init, name, *kind))
+        })
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
+fn plain_data_object_roots(
+    inits_by_name: &PlainDataInitGroups<'_>,
+    candidates: &BTreeSet<String>,
+) -> BTreeSet<crate::facts::ValueOrigin> {
+    let mut objects = BTreeSet::new();
+    for name in candidates {
+        let inits = &inits_by_name[name];
+        let candidate_objects: BTreeSet<_> = inits
+            .iter()
+            .filter_map(|(init, _)| match init.unwrap_parens() {
+                Expr::Object(object) => Some(crate::facts::ValueOrigin::Object(object.span.lo.0)),
+                Expr::Array(array) => Some(crate::facts::ValueOrigin::Object(array.span.lo.0)),
+                _ => None,
+            })
+            .collect();
+        if candidate_objects.len() == inits.len() {
+            objects.extend(candidate_objects);
+        }
+    }
+    objects
+}
+
+/// Candidate roots needed by PlainData's escape scan. This prepass lets value
+/// flow seed candidate reachability before its single shared solve.
+pub(crate) fn plain_data_candidate_roots(
+    body: &[TopLevelItemView<'_>],
+) -> BTreeSet<crate::facts::ValueOrigin> {
+    let inits_by_name = plain_data_init_groups(body);
+    let candidates = plain_data_candidate_names(&inits_by_name);
+    plain_data_object_roots(&inits_by_name, &candidates)
+}
+
 pub(crate) fn collect_plain_data_bindings(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
@@ -41,21 +100,8 @@ pub(crate) fn collect_plain_data_bindings(
     // The same name can have multiple inits for `var`-bound bindings
     // (`var X = a; var X = b;`); every init must independently pass
     // the plain-literal shape check or the name disqualifies.
-    let mut inits_by_name: BTreeMap<String, Vec<(&Expr, VarDeclKind)>> = BTreeMap::new();
-    for item in body {
-        for (name, init, kind) in plain_data_var_candidates(item.as_module_item()) {
-            inits_by_name.entry(name).or_default().push((init, kind));
-        }
-    }
-    let candidates: BTreeSet<String> = inits_by_name
-        .iter()
-        .filter(|(name, inits)| {
-            inits
-                .iter()
-                .all(|(init, kind)| is_plain_data_init(init, name, *kind))
-        })
-        .map(|(name, _)| name.clone())
-        .collect();
+    let inits_by_name = plain_data_init_groups(body);
+    let candidates = plain_data_candidate_names(&inits_by_name);
     if candidates.is_empty() {
         return Vec::new();
     }
@@ -81,21 +127,7 @@ pub(crate) fn collect_plain_data_bindings(
             Some((top_level_ids[name].clone(), keys))
         })
         .collect();
-    let mut objects = BTreeSet::new();
-    for name in &candidates {
-        let inits = &inits_by_name[name];
-        let candidate_objects: BTreeSet<_> = inits
-            .iter()
-            .filter_map(|(init, _)| match init.unwrap_parens() {
-                Expr::Object(object) => Some(crate::facts::ValueOrigin::Object(object.span.lo.0)),
-                Expr::Array(array) => Some(crate::facts::ValueOrigin::Object(array.span.lo.0)),
-                _ => None,
-            })
-            .collect();
-        if candidate_objects.len() == inits.len() {
-            objects.extend(candidate_objects);
-        }
-    }
+    let objects = plain_data_object_roots(&inits_by_name, &candidates);
     let mut object_to_names = BTreeMap::new();
     let mut return_exempt = BTreeSet::new();
     for (object, names) in value_flow.aliases_by_object(&objects) {
@@ -679,7 +711,7 @@ pub(crate) struct PlainDataWriteScanner<'a> {
     shadowing_scopes: Vec<BTreeSet<String>>,
     parameter_scopes: Vec<BTreeSet<String>>,
     value_flow: Option<&'a crate::facts::ChunkValueFlow>,
-    candidate_index: Option<crate::facts::CandidateObjectIndex>,
+    candidate_index: Option<crate::facts::CandidateObjectIndex<'a>>,
     object_to_names: BTreeMap<crate::facts::ValueOrigin, BTreeSet<String>>,
     return_exempt: BTreeSet<String>,
     primitive_members: BTreeMap<Id, BTreeSet<String>>,

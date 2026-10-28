@@ -17,7 +17,7 @@ pub(crate) fn annotate_array_content_effects(
     for item in body {
         item.as_module_item().visit_with(&mut origins);
     }
-    let candidates = origins.0.iter().copied().map(ValueOrigin::Object).collect();
+    let candidates = array_candidate_roots_from_origins(&origins.0);
     let reachability = value_flow.candidate_object_index(&candidates);
     for (item, fact) in body.iter().zip(facts) {
         let mut collector = ArrayContentCollector {
@@ -41,6 +41,18 @@ pub(crate) fn annotate_array_content_effects(
     }
 }
 
+pub(crate) fn array_candidate_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<ValueOrigin> {
+    let mut origins = ArrayOriginCollector::default();
+    for item in body {
+        item.as_module_item().visit_with(&mut origins);
+    }
+    array_candidate_roots_from_origins(&origins.0)
+}
+
+fn array_candidate_roots_from_origins(origins: &BTreeSet<u32>) -> BTreeSet<ValueOrigin> {
+    origins.iter().copied().map(ValueOrigin::Object).collect()
+}
+
 #[derive(Default)]
 struct ArrayOriginCollector(BTreeSet<u32>);
 
@@ -54,7 +66,7 @@ impl Visit for ArrayOriginCollector {
 struct ArrayContentCollector<'a> {
     value_flow: &'a ChunkValueFlow,
     local_class_heap_proof: &'a LocalClassHeapProof,
-    array_reachability: &'a CandidateObjectIndex,
+    array_reachability: &'a CandidateObjectIndex<'a>,
     array_origins: &'a BTreeSet<u32>,
     effects: ArrayContentEffects,
     heap_native_integrity_uses: BTreeSet<crate::reports::schema::NativeIntegrityUse>,

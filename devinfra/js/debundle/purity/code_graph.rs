@@ -176,7 +176,9 @@ impl ChunkCodeGraph {
         fluent_bindings: &BTreeSet<String>,
         locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
-        let value_flow = crate::facts::ChunkValueFlow::analyze(body);
+        let candidate_roots = plain_data_candidate_roots(body);
+        let value_flow =
+            crate::facts::ChunkValueFlow::analyze_with_candidates(body, &candidate_roots);
         let plain_data_bindings = collect_plain_data_bindings(body, shadowed, &value_flow);
         let plain_array_bindings = collect_plain_array_bindings(body, shadowed);
         let dynamic_scope = DynamicScopeFact::analyze(body);

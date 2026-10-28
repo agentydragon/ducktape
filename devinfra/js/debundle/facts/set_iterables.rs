@@ -390,7 +390,8 @@ mod tests {
         let module = parse(src);
         let body = top_level_item_views(&module.body);
         let shadowed = compute_shadowed_globals(&body);
-        let flow = ChunkValueFlow::analyze(&body);
+        let candidate_roots = crate::purity::plain_data_candidate_roots(&body);
+        let flow = ChunkValueFlow::analyze_with_candidates(&body, &candidate_roots);
         let plain_data = collect_plain_data_bindings(&body, &shadowed, &flow);
         let proof = SetIterableShapes::analyze(
             &body,

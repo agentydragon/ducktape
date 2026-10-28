@@ -83,6 +83,7 @@ const rooted = return_cycle();
     let foreign = ValueOrigin::Object(foreign_span);
     assert!(candidates.insert(foreign));
 
+    let flow = ChunkValueFlow::analyze_with_candidates(&body, &candidates);
     let actual = flow.candidate_object_index_maps_for_test(&candidates);
     let expected = flow.candidate_object_index_reference_for_test(&candidates);
     assert_eq!(actual, expected);
