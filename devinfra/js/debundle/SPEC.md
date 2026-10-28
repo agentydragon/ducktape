@@ -679,6 +679,19 @@ Known local return graphs keep their callable captures and a possible undefined
 result. Optional calls do not acquire assertions scoped to ordinary direct-call
 syntax.
 
+Without an author assertion, a direct named import may receive an inferred
+callback-factory summary from its defining entry file. The export must have one
+stable identity: a hoisted function declaration or a definite top-level
+function initializer. Its synchronous body only returns a fresh ordinary
+zero-argument function. The admitted importer call supplies exactly one inline
+callback; any other ordinary identifier parameters are omitted. The returned
+function may capture only those parameters and its own locals; indexed calls,
+writes and property reads must not introduce an additional callback capability.
+The summary defers the supplied callback after a successful factory return,
+while preserving eager import order, possible pre-initialization throws, and
+the factory call's ordinary effects and purity classification. Other call
+shapes and unproven source behavior use conservative timing.
+
 `chunk_export_purity.<defining chunk>.callback_factory_exports` lists named
 exports whose calls are audited to defer a single callback argument.
 `callback_factory_members` lists static members on an imported namespace with
