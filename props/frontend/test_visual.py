@@ -85,7 +85,7 @@ async def test_llm_request_anthropic(visual: VisualHarness, capture_name: str) -
         sections = shot.locator(".p-4.space-y-3")
         await expect(sections).to_have_count(2)
         await view.capture("LLMRequestsAnthropicRequest", target=sections.nth(0))
-        await shot.locator(".agentplane-code-block-placeholder").last.scroll_into_view_if_needed()
+        await sections.nth(1).scroll_into_view_if_needed()
         code = shot.locator(".agentplane-code-block .cm-content")
         await expect(code).to_have_count(2)
         await view.capture("LLMRequestsAnthropicResponse", target=sections.nth(1))
