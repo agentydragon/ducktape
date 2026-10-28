@@ -52,6 +52,7 @@ pub struct SourceUnit {
     pub kind: StatementKind,
     pub purity: Purity,
     pub callback_factory_barriers: Vec<CallbackFactoryBarrierFact>,
+    pub heap_native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
     pub synchronous_execution: Option<crate::reports::schema::SynchronousExecutionReport>,
     pub native_prototype_mutations:
         std::sync::Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,
@@ -185,6 +186,7 @@ impl DependencyGraph {
                 kind: n.statement_kind,
                 purity: n.purity.clone(),
                 callback_factory_barriers: Vec::new(),
+                heap_native_integrity_uses: n.heap_native_integrity_uses.clone(),
                 synchronous_execution: None,
                 native_prototype_mutations: std::sync::Arc::default(),
                 native_integrity_witnesses: std::sync::Arc::default(),

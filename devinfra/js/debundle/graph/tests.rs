@@ -110,12 +110,15 @@ mod from_report_tests {
     //! `DependencyEdgeReport.role`; the peel planner reconstructs it
     //! here. Both ends must agree so the planner's gate runs the same
     //! cross-module-at-init filter the materializer's gate does.
+    use std::collections::BTreeSet;
+
     use source_identity::SourceUnitOrdinal;
 
+    use crate::analysis_inputs::ValueInputRef;
     use crate::purity::Purity;
     use crate::reports::schema::{
         AtomicGraphReport, DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport,
-        ModuleQuotientReport, SourceUnitReport,
+        ModuleQuotientReport, NativeIntegrityGuard, NativeIntegrityUse, SourceUnitReport,
     };
     use crate::{
         DepKind, DependencyEdgeId, DependencyGraph, EdgeRole, SourceUnitId, StatementKind,
@@ -130,6 +133,7 @@ mod from_report_tests {
             statement_kind: StatementKind::VarDecl,
             purity: Purity::Pure,
             callback_factory_barriers: Vec::new(),
+            heap_native_integrity_uses: Vec::new(),
             synchronous_execution: None,
             destination: crate::ModuleKey("residual".to_string()),
         }
@@ -208,5 +212,45 @@ mod from_report_tests {
         assert_eq!(err.endpoint, "unit:999");
         assert_eq!(err.edge_id, "dependency_edge:0");
         assert!(err.to_string().contains("unit:999"), "{err}");
+    }
+
+    #[test]
+    fn heap_native_integrity_uses_round_trip_and_old_wire_defaults_empty() {
+        let expected = NativeIntegrityUse {
+            guard: NativeIntegrityGuard::LocalClassConstruction,
+            value_input_refs: BTreeSet::from([ValueInputRef {
+                defining_chunk: "static/provider".to_string(),
+                input_index: 2,
+            }]),
+        };
+        let mut report = report_with_edge("unit:0", None);
+        report.nodes[1].heap_native_integrity_uses = vec![expected.clone()];
+
+        let wire = serde_json::to_value(&report).unwrap();
+        assert!(wire["nodes"][0].get("heap_native_integrity_uses").is_none());
+        let parsed: DependencyGraphReport = serde_json::from_value(wire.clone()).unwrap();
+        let graph = DependencyGraph::from_report(&parsed).unwrap();
+        assert_eq!(
+            graph
+                .iter_nodes()
+                .nth(1)
+                .unwrap()
+                .heap_native_integrity_uses,
+            vec![expected]
+        );
+
+        let mut old_wire = wire;
+        for node in old_wire["nodes"].as_array_mut().unwrap() {
+            node.as_object_mut()
+                .unwrap()
+                .remove("heap_native_integrity_uses");
+        }
+        let old_report: DependencyGraphReport = serde_json::from_value(old_wire).unwrap();
+        let old_graph = DependencyGraph::from_report(&old_report).unwrap();
+        assert!(
+            old_graph
+                .iter_nodes()
+                .all(|node| node.heap_native_integrity_uses.is_empty())
+        );
     }
 }

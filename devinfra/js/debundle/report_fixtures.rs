@@ -125,6 +125,7 @@ pub fn source_unit_report(
         statement_kind: StatementKind::VarDecl,
         purity: Purity::Pure,
         callback_factory_barriers: Vec::new(),
+        heap_native_integrity_uses: Vec::new(),
         synchronous_execution: None,
         destination,
     }

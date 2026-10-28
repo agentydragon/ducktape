@@ -133,6 +133,11 @@ its own opaque heap effect and constructor-body promotion. Other calls or
 constructors in the same statement, including another invocation of that callee,
 keep their own effects. Callee and argument evaluation, binding initialization
 order, and deferred method/callback effects remain independently constrained.
+When native receiver refinements condition this heap certificate, the exact
+construction source unit reports the consumed input references in
+`heap_native_integrity_uses`. Source-only certificates have no such use, and
+configured inputs that the proof did not consume are not reported. Empty uses
+are omitted from JSON and default to empty when reading older reports.
 This adds no author flag or purity exemption.
 The census tracks `ArrayLit` source origins, not arbitrary arrays returned by
 `Array()`, `Object.entries`, or foreign imports; it does not claim full heap
@@ -904,12 +909,12 @@ elsewhere in the analyzed program remain effective.
 
 The census records each input reference actually consumed by a receiver
 refinement. Those dependencies flow into successful native guards, native-call
-identity uses and inferred imported returned-record certificates and uses.
-Native Set-iteration and local-class field proofs that require a native premise
-stay conservative while such dependencies are present; source-only local-class
-proofs with no native field premise remain available. The source digest binds
-the input to parsed bytes, but it does not establish the external runtime audit,
-code outside the analyzed prefix, or host behavior.
+identity uses, inferred imported returned-record certificates and uses, and
+local-class heap certificates. The report associates each use with the source
+unit where the certified construction removes its opaque heap barrier. A
+source-only local-class proof carries no value-input use. The source digest
+binds the input to parsed bytes, but it does not establish the external runtime
+audit, code outside the analyzed prefix, or host behavior.
 
 ## Ordinary own descriptor inspection
 

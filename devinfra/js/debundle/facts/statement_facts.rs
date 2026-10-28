@@ -156,6 +156,9 @@ pub struct StatementFacts {
     /// are distinct from binding effects: mutating an array changes its
     /// contents, not the binding that names it.
     pub(crate) array_contents: ArrayContentEffects,
+    /// Author-conditioned native premises consumed by certified local-class
+    /// heap construction at this source unit.
+    pub heap_native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
     pub purity: Purity,
     pub kind: StatementKind,
 }

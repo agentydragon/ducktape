@@ -638,6 +638,7 @@ fn assemble_statement_facts(
         cell_writes_summarizable,
         dataflow_summarizable,
         array_contents: super::ArrayContentEffects::default(),
+        heap_native_integrity_uses: Vec::new(),
         purity,
         kind,
     }

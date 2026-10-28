@@ -26,12 +26,15 @@ pub(crate) fn annotate_array_content_effects(
             array_reachability: &reachability,
             array_origins: &origins.0,
             effects: ArrayContentEffects::default(),
+            heap_native_integrity_uses: BTreeSet::new(),
             lazy_depth: 0,
             past_await: false,
             may_skip_await_depth: 0,
         };
         item.as_module_item().visit_with(&mut collector);
         fact.array_contents = collector.effects;
+        fact.heap_native_integrity_uses =
+            collector.heap_native_integrity_uses.into_iter().collect();
         if fact.kind == StatementKind::Export {
             record_opaque(&mut fact.array_contents.opaque, 0, false);
         }
@@ -54,6 +57,7 @@ struct ArrayContentCollector<'a> {
     array_reachability: &'a CandidateObjectIndex,
     array_origins: &'a BTreeSet<u32>,
     effects: ArrayContentEffects,
+    heap_native_integrity_uses: BTreeSet<crate::reports::schema::NativeIntegrityUse>,
     lazy_depth: u32,
     past_await: bool,
     may_skip_await_depth: u32,
@@ -316,7 +320,19 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_new_expr(&mut self, node: &NewExpr) {
-        if !self.local_class_heap_proof.contains_construction(node.span) {
+        if let Some(dependencies) = self
+            .local_class_heap_proof
+            .dependencies_for_construction(node.span)
+        {
+            if !dependencies.is_empty() {
+                self.heap_native_integrity_uses.insert(
+                    crate::reports::schema::NativeIntegrityUse {
+                        guard: crate::reports::schema::NativeIntegrityGuard::LocalClassConstruction,
+                        value_input_refs: dependencies.value_inputs.clone(),
+                    },
+                );
+            }
+        } else {
             // Only this operation's body is certified. Other invocations of
             // the same callee still contribute their own promotion/barrier.
             self.record_call_target(&node.callee);

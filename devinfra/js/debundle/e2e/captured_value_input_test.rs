@@ -5,7 +5,7 @@ use debundle_e2e_support::*;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-const PROVIDER: &str = "import { readLater } from './app.js';\nvar captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { get touched() { globalThis.runtimeSettings.events.push('getter'); return true; } });\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
+const PROVIDER: &str = "import { readLater } from './app.js';\nvar captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { get touched() { globalThis.runtimeSettings.events.push('getter'); return true; } });\nclass Store { entries = new Set(); }\nconst store = new Store();\nclass PlainStore { ready = 0; }\nconst plainStore = new PlainStore();\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
 const OPAQUE: &str = "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { value: 'ready', child: new Map() }; } };\n";
 const PROVIDER_CHUNKS: &[(&str, &str)] = &[("static/peer", PROVIDER)];
 // The raw fixture entry is `static/app.js`; the emitted entry is
@@ -128,6 +128,43 @@ fn unmaterialized_provider_value_input_restores_only_the_captured_receiver() {
     assert!(
         array_guard_use,
         "native guard must report its author-conditioned input: {graph}"
+    );
+
+    let source_units = graph["nodes"]
+        .as_array()
+        .expect("dependency graph source units");
+    let store_construction = source_units
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|bindings| {
+                    bindings.iter().any(|binding| binding["binding"] == "store")
+                })
+        })
+        .expect("the native-backed local class construction source unit");
+    let heap_uses = store_construction["heap_native_integrity_uses"]
+        .as_array()
+        .expect("heap proof dependencies should be reported on the construction source unit");
+    assert_eq!(heap_uses.len(), 1, "{graph}");
+    assert_eq!(heap_uses[0]["guard"], "local_class_construction");
+    assert!(input_refs(&heap_uses[0]["value_input_refs"]), "{graph}");
+
+    let plain_store_construction = source_units
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|bindings| {
+                    bindings
+                        .iter()
+                        .any(|binding| binding["binding"] == "plainStore")
+                })
+        })
+        .expect("the source-only local class construction source unit");
+    assert!(
+        plain_store_construction["heap_native_integrity_uses"].is_null(),
+        "a configured input unused by this source-only proof must not be reported: {graph}"
     );
 
     let native_call_use = graph["nodes"].as_array().unwrap().iter().any(|node| {
