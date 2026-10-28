@@ -71,6 +71,106 @@ func marshalEntryContent(event EventIdentity, payload json.RawMessage) ([]byte, 
 	return encoded, nil
 }
 
+// entryPayloadFromStoredContent recreates the public JSON payload from typed storage. GitHub webhook payloads are
+// already native JSON; the other providers have no legacy JSON fallback after their backfill gate completes.
+func entryPayloadFromStoredContent(event EventIdentity, legacyPayload, typedPayload []byte, legacyPayloadPresent bool) (json.RawMessage, error) {
+	if _, ok := event.(GitHubEvent); ok {
+		if typedPayload != nil {
+			return nil, errors.New("GitHub webhook has an unexpected typed payload")
+		}
+		if !legacyPayloadPresent || legacyPayload == nil {
+			return nil, errors.New("payload expired before the inbox's expired prefix")
+		}
+		return json.RawMessage(legacyPayload), nil
+	}
+	if typedPayload == nil {
+		if !legacyPayloadPresent {
+			return nil, errors.New("payload expired before the inbox's expired prefix")
+		}
+		return nil, errors.New("typed content is missing; complete the entry content backfill before deploying this reader")
+	}
+	var content entrystoragepb.EntryContent
+	if err := proto.Unmarshal(typedPayload, &content); err != nil {
+		return nil, fmt.Errorf("decode typed entry content: %w", err)
+	}
+	switch event := event.(type) {
+	case ActionsEvent:
+		action := content.GetAction()
+		if action == nil || action.GetAt() == nil {
+			return nil, errors.New("typed Action content is incomplete")
+		}
+		if err := action.GetAt().CheckValid(); err != nil {
+			return nil, fmt.Errorf("typed Action content at: %w", err)
+		}
+		payload := ActionEvent{
+			Sequence: event.Sequence, State: action.GetState(), At: action.GetAt().AsTime(), Actor: action.GetActor(),
+		}
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("encode Action JSON payload: %w", err)
+		}
+		return encoded, nil
+	case GitHubMergeabilityEvent:
+		return mergeabilityPayloadFromStoredContent(content.GetMergeability(), event.PullRequestNumber)
+	case GitHubMergeabilitySnapshotEvent:
+		return mergeabilityPayloadFromStoredContent(content.GetMergeability(), event.PullRequestNumber)
+	case MessageEvent:
+		message := content.GetMessage()
+		if message == nil {
+			return nil, errors.New("typed message content is incomplete")
+		}
+		encoded, err := json.Marshal(struct {
+			Body        string  `json:"body"`
+			FromSession *string `json:"from_session,omitempty"`
+		}{Body: message.GetBody(), FromSession: message.FromSession})
+		if err != nil {
+			return nil, fmt.Errorf("encode message JSON payload: %w", err)
+		}
+		return encoded, nil
+	default:
+		return nil, fmt.Errorf("unsupported event identity type %T", event)
+	}
+}
+
+func mergeabilityPayloadFromStoredContent(content *entrystoragepb.MergeabilityContent, pullRequestNumber int64) (json.RawMessage, error) {
+	if content == nil || content.GetObservedAt() == nil {
+		return nil, errors.New("typed mergeability content is incomplete")
+	}
+	if err := content.GetObservedAt().CheckValid(); err != nil {
+		return nil, fmt.Errorf("typed mergeability observed_at: %w", err)
+	}
+	previous, err := mergeabilityStateFromStorage(content.GetPreviousMergeability())
+	if err != nil {
+		return nil, fmt.Errorf("typed previous mergeability: %w", err)
+	}
+	current, err := mergeabilityStateFromStorage(content.GetMergeability())
+	if err != nil {
+		return nil, fmt.Errorf("typed mergeability: %w", err)
+	}
+	encoded, err := json.Marshal(mergeabilityPayload{
+		Repository: content.GetRepository(), PullRequestNumber: pullRequestNumber,
+		BaseRef: content.GetBaseRef(), HeadSHA: content.GetHeadSha(), BaseSHA: content.GetBaseSha(),
+		PreviousMergeability: previous, Mergeability: current, ObservedAt: content.GetObservedAt().AsTime(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode mergeability JSON payload: %w", err)
+	}
+	return encoded, nil
+}
+
+func mergeabilityStateFromStorage(state entrystoragepb.GitHubMergeabilityState) (GitHubMergeableState, error) {
+	switch state {
+	case entrystoragepb.GitHubMergeabilityState_GITHUB_MERGEABILITY_STATE_UNKNOWN:
+		return GitHubMergeabilityUnknown, nil
+	case entrystoragepb.GitHubMergeabilityState_GITHUB_MERGEABILITY_STATE_MERGEABLE:
+		return GitHubMergeable, nil
+	case entrystoragepb.GitHubMergeabilityState_GITHUB_MERGEABILITY_STATE_CONFLICTING:
+		return GitHubConflicting, nil
+	default:
+		return "", fmt.Errorf("unknown mergeability state %d", state)
+	}
+}
+
 func mergeabilityContentFromJSON(payload json.RawMessage, identityNumber int64) (*entrystoragepb.MergeabilityContent, error) {
 	var wire struct {
 		Repository           *string    `json:"repository"`

@@ -167,6 +167,22 @@ func TestSandboxStatusSummarizesWhatAwaitsAcknowledgementWithoutItsContent(t *te
 	requireEqual(t, len(inbox.PendingEntries), 0)
 }
 
+func TestSandboxStatusSummarizesTypedContentWhenLegacyJSONConflicts(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	ref := uniqueSandbox()
+	f.sandboxUID = ref.UID
+	subscription := f.subscribeIn(t, "typed-summary", uniqueSession(), ref)
+	event := ActionsEvent{RequestID: subscription.Source.(ActionsSource).RequestID, Sequence: 1}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
+	f.exec(t, `UPDATE entry SET payload = '{"state":"legacy_conflict"}' WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
+
+	inbox := f.onlyInbox(t, ref)
+	requireEqual(t, inbox.PendingEntries, []EntrySummary{{
+		Cursor: 1, CreatedAt: f.entryCreatedAt(t, subscription.InboxID, 1), Provider: EntryFromActions,
+		Summary: fmt.Sprintf("Action %s · event 1 · decision_pending", event.RequestID),
+	}})
+}
+
 func TestSandboxStatusDescribesAtMostAHundredPendingEntries(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	ref := uniqueSandbox()

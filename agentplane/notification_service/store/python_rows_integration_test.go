@@ -175,7 +175,11 @@ func TestEntriesPythonWroteAreReadAndNotAppendedAgain(t *testing.T) {
 	subscription := f.subscribe(t, body("first"))
 	vectors := loadGolden(t).Events
 	for i, vector := range vectors {
-		insertBackfilledEntry(t, f.db, subscription.InboxID, int64(i+1), vector.Event, "{}")
+		event, err := DecodeEventIdentity(vector.Event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		insertContentBackfilledEntry(t, f.db, subscription.InboxID, int64(i+1), vector.Event, entryPayloadForTest(t, event))
 	}
 	f.exec(t, `UPDATE inbox SET last_cursor = $2 WHERE id = $1`, subscription.InboxID, len(vectors))
 

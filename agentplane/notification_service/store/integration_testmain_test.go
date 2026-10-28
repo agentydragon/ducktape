@@ -133,6 +133,26 @@ func insertBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor i
 	}
 }
 
+// insertContentBackfilledEntry models a retained non-expired row after both identity and content backfills.
+func insertContentBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor int64, eventJSON []byte, payload string) {
+	t.Helper()
+	event, err := DecodeEventIdentity(eventJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	typedPayload, err := marshalEntryContent(event, json.RawMessage(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertBackfilledEntry(t, db, inboxID, cursor, eventJSON, payload)
+	if typedPayload == nil {
+		return
+	}
+	if _, err := db.ExecContext(t.Context(), `UPDATE entry SET typed_payload = $3 WHERE inbox_id = $1 AND cursor = $2`, inboxID, cursor, typedPayload); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func entryPayloadForTest(t *testing.T, event EventIdentity) string {
 	t.Helper()
 	var value any
