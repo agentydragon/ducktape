@@ -76,7 +76,7 @@ CwdPolicy = Annotated[ModelChooses | DefaultValue | AlwaysSetTo, Field(discrimin
 
 
 class ContainerExecServerConfig(BaseModel):
-    """Container configuration; image must supply GNU-compatible /usr/bin/timeout.
+    """Container configuration; image must supply GNU coreutils /usr/bin/timeout.
 
     Required timeout options: --signal=KILL and fractional-second durations.
     Session startup also requires /bin/sh and sleep infinity.
