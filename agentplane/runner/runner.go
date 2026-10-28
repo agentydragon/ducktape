@@ -3,8 +3,8 @@ package runner
 import (
 	"context"
 	"errors"
+	"maps"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
 
@@ -12,7 +12,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
-	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
@@ -38,9 +37,7 @@ type Runner struct {
 	store               *retained.Store
 	bootID              string
 	mu                  sync.Mutex
-	createMu            sync.Mutex
-	loadMu              sync.Mutex
-	sessions            map[string]*Session
+	sessions            *sessionManager
 	bootstrapHost       *bootstrap.Host
 	codexAppServer      *codexappserver.Host
 	codexExecServer     *execserver.Host
@@ -122,7 +119,7 @@ func newRunner(config Config, adapters *execserver.Adapters) (*Runner, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &Runner{config: config, owner: owner, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, sessions: map[string]*Session{}, changes: make(chan struct{}), fatal: make(chan error, 1)}
+	r := &Runner{config: config, owner: owner, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, changes: make(chan struct{}), fatal: make(chan error, 1)}
 	r.scripts, err = scripts.New(scripts.Config{
 		HarnessEnvironment: config.HarnessEnvironment,
 		LaunchProcess: func(ctx context.Context, owner string, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
@@ -141,8 +138,43 @@ func newRunner(config Config, adapters *execserver.Adapters) (*Runner, error) {
 		return nil, err
 	}
 	r.lifecycle = lifecycle
+	r.sessions = newSessionManager(r)
 	go lifecycle.run()
 	return r, nil
+}
+
+func newSessionManager(r *Runner) *sessionManager {
+	config, store, lifecycle := r.config, r.store, r.lifecycle
+	if config.Claude != nil {
+		claude := *config.Claude
+		config.Claude = &claude
+	}
+	if config.DebugCheckpoint != nil {
+		checkpoint := *config.DebugCheckpoint
+		config.DebugCheckpoint = &checkpoint
+	}
+	return &sessionManager{
+		ctx: r.ctx, store: store, workspaceRoot: config.WorkspaceRoot,
+		destination: config.Launch.Destination,
+		dependencies: sessionDependencies{
+			ctx: r.ctx, state: lifecycle.state, store: store,
+			claude: config.Claude, harnessEnvironment: maps.Clone(config.HarnessEnvironment),
+			debugCheckpoint: config.DebugCheckpoint, scripts: r.scripts, codexAppServer: r.codexAppServer,
+			bootstrapHost: r.bootstrapHost, ensureWorkspace: r.ensureWorkspace,
+			launchProcess: func(ctx context.Context, owner string, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+				return r.launchProcess(ctx, owner, r.supervisor, processConfig)
+			},
+			resolveModelConfig: config.ResolveModelConfig,
+			publish:            lifecycle.publishSession,
+			publishOperation: func(id string, op *operation, done bool) {
+				lifecycle.operationResult(id, sessionControllerName, op, done)
+			},
+			changed: r.changed, fail: r.fail,
+		},
+		publishSeal: lifecycle.publishSeal, publishAck: lifecycle.publishAck,
+		publish: lifecycle.publishSession, changed: r.changed,
+		sessions: map[string]*Session{},
+	}
 }
 
 func (r *Runner) changed() {
@@ -172,33 +204,9 @@ func (r *Runner) fail(err error) {
 	}
 }
 
-func (r *Runner) inventory() []*Session {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	sessions := make([]*Session, 0, len(r.sessions))
-	for _, s := range r.sessions {
-		sessions = append(sessions, s)
-	}
-	sort.Slice(sessions, func(i, j int) bool { return sessions[i].id < sessions[j].id })
-	return sessions
-}
-
 func (r *Runner) Startup(ctx context.Context) error {
-	ids, err := r.store.SessionIDs()
-	if err != nil {
+	if err := r.sessions.startup(ctx); err != nil {
 		return err
-	}
-	for _, id := range ids {
-		s, err := r.load(ctx, id)
-		if err != nil {
-			return err
-		}
-		if err := s.recover(ctx); err != nil {
-			return err
-		}
-		if err := r.resumeRecovered(s); err != nil {
-			return err
-		}
 	}
 	if r.bootstrapHost.Configured() {
 		if err := r.bootstrapHost.Request(ctx); err != nil {
@@ -209,79 +217,9 @@ func (r *Runner) Startup(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runner) load(ctx context.Context, id string) (*Session, error) {
-	r.loadMu.Lock()
-	defer r.loadMu.Unlock()
-	r.mu.Lock()
-	s := r.sessions[id]
-	r.mu.Unlock()
-	if s != nil {
-		return s, nil
-	}
-	record, err := r.store.Read(id)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := workspace.Resolve(record.CWD, r.config.WorkspaceRoot); err != nil {
-		return nil, err
-	}
-	directory, err := r.store.Directory(id)
-	if err != nil {
-		return nil, err
-	}
-	journal, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceID)
-	if err != nil {
-		return nil, err
-	}
-	s = newSession(r, id, &record, journal)
-	if err := s.load(ctx); err != nil {
-		_ = journal.Close()
-		return nil, err
-	}
-	r.mu.Lock()
-	r.sessions[id] = s
-	r.mu.Unlock()
-	if err := r.lifecycle.publishSeal(s); err != nil {
-		return nil, err
-	}
-	ack, err := r.store.ReadAcknowledgement(id)
-	if err != nil {
-		return nil, err
-	}
-	if ack != nil {
-		if err := r.lifecycle.publishAck(id, *ack); err != nil {
-			return nil, err
-		}
-	}
-	r.lifecycle.publishSession(s, false)
-	if err := r.reopen(ctx, s); err != nil {
-		return nil, err
-	}
-	r.changed()
-	return s, nil
-}
-
-func (r *Runner) resumeRecovered(s *Session) error {
-	if r.store.Lameduck() || s.journal.SealState() != nil {
-		return nil
-	}
-	commands, err := s.journal.PendingCommands(r.ctx)
-	if err != nil {
-		return err
-	}
-	turns, err := s.journal.UnreconciledProcessLostTurns(r.ctx)
-	if err != nil {
-		return err
-	}
-	if len(commands) > 0 || len(turns) > 0 {
-		s.requestExecution()
-	}
-	return nil
-}
-
 func (r *Runner) adoptIncarnation(ctx context.Context, uid string) error {
-	r.createMu.Lock()
-	defer r.createMu.Unlock()
+	r.sessions.createMu.Lock()
+	defer r.sessions.createMu.Unlock()
 	// A replacement incarnation can reconnect while the old one is still
 	// draining. Finish its native effects and seals before resetting demand;
 	// ingress acknowledgement belongs to the old incarnation and need not wait.
@@ -316,43 +254,13 @@ func (r *Runner) adoptIncarnation(ctx context.Context, uid string) error {
 	if err != nil {
 		return err
 	}
-	for _, s := range r.inventory() {
-		if err := r.reopen(ctx, s); err != nil {
+	for _, s := range r.sessions.inventory() {
+		if err := r.sessions.reopen(ctx, s); err != nil {
 			return err
 		}
-		if err := r.resumeRecovered(s); err != nil {
+		if err := r.sessions.resumeRecovered(s); err != nil {
 			return err
 		}
-	}
-	r.changed()
-	return nil
-}
-
-func (r *Runner) reopen(ctx context.Context, s *Session) error {
-	uid, known := r.store.IncarnationUID()
-	seal := s.journal.SealState()
-	if !known || r.store.Lameduck() || seal == nil || seal.IncarnationUID == uid {
-		return nil
-	}
-	if err := s.journal.Reopen(ctx, uid); err != nil {
-		return err
-	}
-	ack, err := r.store.ReadAcknowledgement(s.id)
-	if err != nil {
-		return err
-	}
-	if ack == nil {
-		ack = &retained.Acknowledgement{}
-	}
-	ack.Sealed = false
-	if err := r.store.WriteAcknowledgement(s.id, *ack); err != nil {
-		return err
-	}
-	if err := r.lifecycle.publishAck(s.id, *ack); err != nil {
-		return err
-	}
-	if err := r.lifecycle.publishSeal(s); err != nil {
-		return err
 	}
 	r.changed()
 	return nil
@@ -426,7 +334,7 @@ func (r *Runner) Close() error {
 		<-r.lifecycle.done
 		r.lifecycle.workers.Wait()
 		var errs []error
-		for _, s := range r.inventory() {
+		for _, s := range r.sessions.inventory() {
 			s.work.Wait()
 			errs = append(errs, s.journal.Close())
 		}

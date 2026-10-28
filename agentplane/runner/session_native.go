@@ -43,9 +43,9 @@ func (s *Session) startHarness(ctx context.Context) error {
 	harnessKind := s.record.Harness
 	s.mu.Unlock()
 	switch {
-	case harnessKind == runnerpb.Harness_HARNESS_CLAUDE && s.runner.config.Claude != nil:
-		return s.startProcess(ctx, claude.New(s, *s.runner.config.Claude))
-	case harnessKind == runnerpb.Harness_HARNESS_CODEX && s.runner.codexAppServer != nil:
+	case harnessKind == runnerpb.Harness_HARNESS_CLAUDE && s.deps.claude != nil:
+		return s.startProcess(ctx, claude.New(s, *s.deps.claude))
+	case harnessKind == runnerpb.Harness_HARNESS_CODEX && s.deps.codexAppServer != nil:
 		return s.startOnCodexServer(ctx)
 	default:
 		return errors.New("this runner is not configured for the selected harness")
@@ -58,7 +58,7 @@ func (s *Session) recoverAdapter(ctx context.Context, adapter harness.Adapter) e
 	}
 	if recovery, ok := adapter.(harness.RecoveryAdapter); ok {
 		// Finish translating retained replies before honoring preparation cancellation.
-		if err := recovery.Recover(s.runner.ctx); err != nil {
+		if err := recovery.Recover(s.deps.ctx); err != nil {
 			return fmt.Errorf("recover pending native requests: %w", err)
 		}
 	}
@@ -78,17 +78,17 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 	if err != nil {
 		return err
 	}
-	env := maps.Clone(s.runner.config.HarnessEnvironment)
+	env := maps.Clone(s.deps.harnessEnvironment)
 	if env == nil {
 		env = map[string]string{}
 	}
 	maps.Copy(env, s.environment())
 	maps.Copy(env, harnessEnv)
-	cwd, err := s.runner.ensureWorkspace(ctx, s.Session().Cwd)
+	cwd, err := s.deps.ensureWorkspace(ctx, s.Session().Cwd)
 	if err != nil {
 		return err
 	}
-	process, err := s.runner.launchProcess(ctx, sessionControllerName+"/"+s.id, s.runner.supervisor, supervision.ProcessConfig{Command: command, Dir: cwd, Env: env})
+	process, err := s.deps.launchProcess(ctx, sessionControllerName+"/"+s.id, supervision.ProcessConfig{Command: command, Dir: cwd, Env: env})
 	if err != nil {
 		return err
 	}
@@ -115,12 +115,12 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 	return nil
 }
 
-// startOnCodexServer hosts this Session's thread on the Runner's shared Codex app-server.
+// startOnCodexServer hosts this Session's thread on the shared Codex app-server.
 func (s *Session) startOnCodexServer(ctx context.Context) error {
-	if _, err := s.runner.ensureWorkspace(ctx, s.Session().Cwd); err != nil {
+	if _, err := s.deps.ensureWorkspace(ctx, s.Session().Cwd); err != nil {
 		return err
 	}
-	server := s.runner.codexAppServer
+	server := s.deps.codexAppServer
 	adapter := codex.New(s)
 	if err := s.recoverAdapter(ctx, adapter); err != nil {
 		return err
@@ -130,18 +130,17 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 	s.mu.Lock()
 	s.adapter = adapter
 	s.nativeStop = stopNone
+	exitEpoch := s.codexExitEpoch
 	s.mu.Unlock()
 	attachment := s.appServerAttachment()
 	p, err := server.Host(ctx, attachment)
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	s.process = p.Process()
-	s.codexAppServer = p
-	s.codexAttachment = attachment
-	s.processID = p.ID()
-	s.mu.Unlock()
+	if err := s.installCodexProcess(p, exitEpoch); err != nil {
+		p.Release(attachment)
+		return err
+	}
 	err = server.WithThreadHandshake(func() error { return s.prepare(ctx, adapter, p.PID()) })
 	if err != nil {
 		p.Release(attachment)
@@ -152,6 +151,20 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 		s.mu.Unlock()
 		return fmt.Errorf("harness startup failed: %w", err)
 	}
+	return nil
+}
+
+// An End callback may finish after Host has selected a process but before it returns to
+// this Session. Do not attach that already-exited incarnation after the callback cleared it.
+func (s *Session) installCodexProcess(p *codexappserver.Process, exitEpoch uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.codexExitEpoch != exitEpoch {
+		return errors.New("Codex app-server exited before the Session could attach")
+	}
+	s.process = p.Process()
+	s.codexAppServer = p
+	s.processID = p.ID()
 	return nil
 }
 
@@ -198,11 +211,11 @@ func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int)
 	record := *s.record
 	s.mu.Unlock()
 	resuming := s.runtimeState().Resuming
-	if err := s.runner.store.Write(s.id, record); err != nil {
+	if err := s.deps.store.Write(s.id, record); err != nil {
 		return err
 	}
 	// The native handshake succeeded; persist its observation even if preparation was canceled.
-	if err := s.Emit(s.runner.ctx, observation(&eventpb.HarnessStarted{Resumed: resuming, Pid: int32(pid)}), nil); err != nil {
+	if err := s.Emit(s.deps.ctx, observation(&eventpb.HarnessStarted{Resumed: resuming, Pid: int32(pid)}), nil); err != nil {
 		return err
 	}
 	if !resuming {
@@ -217,7 +230,7 @@ func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int)
 		if err != nil {
 			return err
 		}
-		if err := s.Emit(s.runner.ctx, observation(report), nil); err != nil {
+		if err := s.Emit(s.deps.ctx, observation(report), nil); err != nil {
 			return err
 		}
 	}
@@ -253,17 +266,17 @@ func (s *Session) dispatchControl(ctx context.Context) error {
 			defer s.work.Done()
 			// The reconciliation context may end as soon as this controller pass
 			// returns. Native control RPCs belong to the Session host lifetime.
-			err := s.dispatch(s.runner.ctx, command)
+			err := s.dispatch(s.deps.ctx, command)
 			s.mu.Lock()
 			op.err = err
 			delete(s.controlDispatches, command.CommandId)
 			close(op.done)
 			s.mu.Unlock()
 			if err != nil {
-				s.runner.fail(err)
+				s.deps.fail(err)
 			}
 			s.wake()
-			s.runner.changed()
+			s.deps.changed()
 		}(command, op)
 	}
 	return nil
@@ -301,7 +314,7 @@ func (s *Session) dispatch(ctx context.Context, c *commandpb.Command) error {
 		if model.Model == snapshot.Model {
 			return s.NoopCommand(ctx, c.CommandId, "the requested model is already active", nil)
 		}
-		budget, e := s.runner.config.ResolveModelConfig(ctx, s.record.Harness, model.Model)
+		budget, e := s.deps.resolveModelConfig(ctx, s.record.Harness, model.Model)
 		if e != nil {
 			return s.FailCommand(ctx, c.CommandId, e.Error(), nil)
 		}
@@ -432,7 +445,7 @@ func (s *Session) RequestNativeHandshake(ctx context.Context, frame json.RawMess
 		}
 	}()
 	// Preparation cancellation bounds native I/O and waiting, while its journal remains runner-owned.
-	if err := s.sendNative(ctx, s.runner.ctx, frame); err != nil {
+	if err := s.sendNative(ctx, s.deps.ctx, frame); err != nil {
 		return harness.NativeReceipt{}, err
 	}
 	select {
@@ -498,7 +511,7 @@ func (s *Session) readStdout(process *supervision.ManagedProcess, adapter harnes
 		n, err := process.Stdout().Read(buffer)
 		if n > 0 {
 			pending = append(pending, buffer[:n]...)
-			if e := s.journal.WithBatch(s.runner.ctx, func(ctx context.Context) error {
+			if e := s.journal.WithBatch(s.deps.ctx, func(ctx context.Context) error {
 				for {
 					i := bytes.IndexByte(pending, '\n')
 					if i < 0 {
@@ -527,7 +540,7 @@ func (s *Session) readStdout(process *supervision.ManagedProcess, adapter harnes
 		}
 		if err != nil {
 			if err == io.EOF && len(pending) > 0 {
-				if e := s.journal.WithBatch(s.runner.ctx, func(ctx context.Context) error { return s.receive(ctx, bytes.TrimRight(pending, "\r"), adapter) }); e != nil {
+				if e := s.journal.WithBatch(s.deps.ctx, func(ctx context.Context) error { return s.receive(ctx, bytes.TrimRight(pending, "\r"), adapter) }); e != nil {
 					readErr = e
 				} else {
 					s.wake()
@@ -541,17 +554,17 @@ func (s *Session) readStdout(process *supervision.ManagedProcess, adapter harnes
 		}
 	}
 	if readErr != nil {
-		s.runner.fail(readErr)
+		s.deps.fail(readErr)
 		if err := process.Stop(context.Background()); err != nil {
-			s.runner.fail(err)
+			s.deps.fail(err)
 		}
 	}
 	code, err := process.Wait(context.Background())
 	if err != nil {
-		s.runner.fail(err)
+		s.deps.fail(err)
 	}
-	if err := s.harnessEnded(s.runner.ctx, code); err != nil {
-		s.runner.fail(err)
+	if err := s.harnessEnded(s.deps.ctx, code); err != nil {
+		s.deps.fail(err)
 	}
 }
 
@@ -561,14 +574,14 @@ func (s *Session) readStderr(process *supervision.ManagedProcess) {
 	for {
 		n, err := process.Stderr().Read(buffer)
 		if n > 0 {
-			if e := s.Emit(s.runner.ctx, observation(&eventpb.HarnessStderr{Text: string(bytes.ToValidUTF8(buffer[:n], []byte("�")))}), nil); e != nil {
-				s.runner.fail(e)
+			if e := s.Emit(s.deps.ctx, observation(&eventpb.HarnessStderr{Text: string(bytes.ToValidUTF8(buffer[:n], []byte("�")))}), nil); e != nil {
+				s.deps.fail(e)
 				return
 			}
 		}
 		if err != nil {
 			if err != io.EOF {
-				s.runner.fail(err)
+				s.deps.fail(err)
 			}
 			return
 		}
@@ -577,6 +590,7 @@ func (s *Session) readStderr(process *supervision.ManagedProcess) {
 
 func (s *Session) harnessEnded(ctx context.Context, code int) error {
 	s.mu.Lock()
+	s.codexExitEpoch++
 	waiting := s.waiters
 	s.waiters = nil
 	for _, reply := range s.replies {

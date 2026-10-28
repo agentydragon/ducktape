@@ -59,12 +59,12 @@ func (l *lifecycle) forgetOperation(op *operation) {
 // operationHost bridges bounded native effects into COSI without retrying them.
 // A claimed slot remains owned until its controller consumes the completion.
 type operationHost struct {
-	l          *lifecycle
-	mu         *sync.Mutex
-	workers    *sync.WaitGroup
-	session    string
-	controller string
-	refresh    func()
+	ctx     context.Context
+	mu      *sync.Mutex
+	workers *sync.WaitGroup
+	publish func(*operation, bool)
+	refresh func()
+	changed func()
 }
 
 func (h operationHost) start(slot **operation, work func(context.Context) error) {
@@ -73,12 +73,12 @@ func (h operationHost) start(slot **operation, work func(context.Context) error)
 		h.mu.Unlock()
 		return
 	}
-	ctx, cancel := context.WithCancel(h.l.runner.ctx)
+	ctx, cancel := context.WithCancel(h.ctx)
 	op := &operation{id: uuid.NewString(), cancel: cancel, done: make(chan struct{})}
 	*slot = op
 	h.workers.Add(1)
 	h.mu.Unlock()
-	h.l.operationResult(h.session, h.controller, op, false)
+	h.publish(op, false)
 	if h.refresh != nil {
 		h.refresh()
 	}
@@ -90,13 +90,13 @@ func (h operationHost) start(slot **operation, work func(context.Context) error)
 		op.err = err
 		// Publish before making the slot consumable, so a late completion cannot
 		// recreate a result that its controller has already removed.
-		h.l.operationResult(h.session, h.controller, op, true)
+		h.publish(op, true)
 		close(op.done)
 		h.mu.Unlock()
 		if h.refresh != nil {
 			h.refresh()
 		}
-		h.l.runner.changed()
+		h.changed()
 	}()
 }
 
@@ -113,8 +113,9 @@ func takeOperation(mu *sync.Mutex, slot **operation) (*operation, bool) {
 
 func (s *Session) startOperation(slot **operation, work func(context.Context) error) {
 	operationHost{
-		l: s.runner.lifecycle, mu: &s.mu, workers: &s.work,
-		session: s.id, controller: sessionControllerName, refresh: s.wake,
+		ctx: s.deps.ctx, mu: &s.mu, workers: &s.work,
+		publish: func(op *operation, done bool) { s.deps.publishOperation(s.id, op, done) },
+		refresh: s.wake, changed: s.deps.changed,
 	}.start(slot, work)
 }
 
@@ -127,7 +128,11 @@ func (s *Session) takeOperation(slot **operation) (*operation, bool) {
 }
 
 func (l *lifecycle) startHostOperation(mu *sync.Mutex, slot **operation, controller string, work func(context.Context) error) {
-	operationHost{l: l, mu: mu, workers: &l.workers, controller: controller}.start(slot, work)
+	operationHost{
+		ctx: l.runner.ctx, mu: mu, workers: &l.workers,
+		publish: func(op *operation, done bool) { l.operationResult("", controller, op, done) },
+		changed: l.runner.changed,
+	}.start(slot, work)
 }
 
 func (l *lifecycle) takeHostOperation(mu *sync.Mutex, slot **operation) (*operation, bool) {

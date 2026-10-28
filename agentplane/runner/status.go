@@ -30,7 +30,7 @@ func (r *Runner) ListSessions(ctx context.Context, _ *runnerpb.ListSessionsReque
 		}
 	}
 	result := &runnerpb.ListSessionsResponse{}
-	for _, s := range r.inventory() {
+	for _, s := range r.sessions.inventory() {
 		a := s.attached()
 		result.Sessions = append(result.Sessions, &runnerpb.SessionSummary{SessionId: a.SessionId, Spec: a.Spec, LastCursor: a.LastCursor, HarnessState: a.HarnessState, ActiveTurnId: a.ActiveTurnId, SetupState: a.SetupState, LaunchOutcome: a.LaunchOutcome})
 	}
@@ -39,7 +39,7 @@ func (r *Runner) ListSessions(ctx context.Context, _ *runnerpb.ListSessionsReque
 
 func (r *Runner) GetStatus(_ context.Context, _ *runnerpb.GetStatusRequest) (*runnerpb.RunnerStatus, error) {
 	result := &runnerpb.RunnerStatus{RunnerBootId: r.bootID}
-	for _, s := range r.inventory() {
+	for _, s := range r.sessions.inventory() {
 		s.mu.Lock()
 		execution := runnerpb.SessionExecutionState_SESSION_EXECUTION_STATE_DORMANT
 		ready := s.readyLocked()
@@ -82,7 +82,7 @@ func (r *Runner) GetStatus(_ context.Context, _ *runnerpb.GetStatusRequest) (*ru
 }
 
 func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
-	sessions := r.inventory()
+	sessions := r.sessions.inventory()
 	var blockers []*sandboxpb.AutosuspendBlocker
 	setup := false
 	for _, s := range sessions {
@@ -166,7 +166,7 @@ func (s *Session) attached() *runnerpb.Attached {
 	if s.process != nil && s.process.Running() {
 		harness = runnerpb.HarnessState_HARNESS_STATE_RUNNING
 	}
-	uid, known := s.runner.store.IncarnationUID()
+	uid, known := s.deps.store.IncarnationUID()
 	var incarnation *string
 	if known {
 		incarnation = &uid

@@ -79,7 +79,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		return err
 	}
 	for _, id := range ids {
-		if _, err := c.l.runner.load(ctx, id); err != nil {
+		if _, err := c.l.runner.sessions.load(ctx, id); err != nil {
 			return err
 		}
 	}
@@ -87,7 +87,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		current.Stage = runnerlifecycle.Halting
 		return write()
 	}
-	sessions := c.l.runner.inventory()
+	sessions := c.l.runner.sessions.inventory()
 	for _, s := range sessions {
 		runtime, _, err := lifecycleRead[sessionRuntimeSpec](ctx, r, s.id)
 		if err != nil {

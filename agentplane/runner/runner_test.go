@@ -83,7 +83,7 @@ func TestSessionEnvironmentCarriesItsOwnDestination(t *testing.T) {
 		}
 	}
 	for id, destination := range want {
-		session, err := r.load(context.Background(), id)
+		session, err := r.sessions.load(context.Background(), id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -113,7 +113,7 @@ func TestInvalidInputAndStaleTurnNeverAdmitCommands(t *testing.T) {
 	if _, err := r.InterruptTurn(context.Background(), &runnerservicepb.InterruptTurnRequest{SessionId: "session-1", CommandId: "stale", TurnId: "not-active"}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("stale interrupt error = %v, want FailedPrecondition", err)
 	}
-	session := r.sessions["session-1"]
+	session := r.sessions.get("session-1")
 	if cursor := session.journal.LastCursor(); cursor != 0 {
 		t.Fatalf("rejected commands advanced journal to %d", cursor)
 	}
@@ -132,7 +132,7 @@ func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 	if _, err := r.SubmitInput(context.Background(), &runnerservicepb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
-	session := r.sessions["session-1"]
+	session := r.sessions.get("session-1")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for {
@@ -188,8 +188,8 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session := &Session{runner: r, id: "session-1", pending: map[string]bool{}}
-	r.sessions = map[string]*Session{session.id: session}
+	session := &Session{deps: sessionDependencies{ctx: r.ctx, state: r.lifecycle.state, store: store}, id: "session-1", pending: map[string]bool{}}
+	r.sessions = &sessionManager{ctx: r.ctx, store: store, sessions: map[string]*Session{session.id: session}}
 	if err := r.lifecycle.state.Create(ctx, lifecycleResourceFor(session.id, sessionRuntimeSpec{}), state.WithCreateOwner(sessionControllerName)); err != nil {
 		t.Fatal(err)
 	}
@@ -318,10 +318,10 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 	setupStarted := filepath.Join(stateDir, "setup-started")
 	setupRelease := filepath.Join(stateDir, "setup-release")
 	setupCount := filepath.Join(stateDir, "setup-count")
-	bootstrap := fmt.Sprintf(": > %s\nwhile [ ! -f %s ]; do sleep 0.01; done\nprintf b >> %s", shellQuote(bootstrapStarted), shellQuote(bootstrapRelease), shellQuote(bootstrapCount))
+	bootstrapScript := fmt.Sprintf(": > %s\nwhile [ ! -f %s ]; do sleep 0.01; done\nprintf b >> %s", shellQuote(bootstrapStarted), shellQuote(bootstrapRelease), shellQuote(bootstrapCount))
 	setup := fmt.Sprintf(": > %s\nwhile [ ! -f %s ]; do sleep 0.01; done\nprintf s >> %s", shellQuote(setupStarted), shellQuote(setupRelease), shellQuote(setupCount))
 	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, workspace, &bootstrap, "/bin/false")
+	config := lifecycleConfig(t, proxy.URL, workspace, &bootstrapScript, "/bin/false")
 	config.StateDir = stateDir
 	r, err := New(config)
 	if err != nil {

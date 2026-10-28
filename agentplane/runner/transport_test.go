@@ -503,7 +503,7 @@ func newPushSession(t *testing.T, count int) (*Runner, *Session) {
 	if err := runner.store.Write("push-session", record); err != nil {
 		t.Fatal(err)
 	}
-	session, err := runner.load(context.Background(), "push-session")
+	session, err := runner.sessions.load(context.Background(), "push-session")
 	if err != nil {
 		t.Fatal(err)
 	}

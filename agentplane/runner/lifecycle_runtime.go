@@ -149,7 +149,8 @@ func (l *lifecycle) setDesiredState(mode runnerlifecycle.Mode, sealUID string) e
 		// Drop old execution requests while admission is still closed. Recovery
 		// publishes fresh demand after eligible journals have reopened.
 		l.publishMu.Lock()
-		for id := range l.runner.sessions {
+		for _, session := range l.runner.sessions.inventory() {
+			id := session.id
 			input, _, err := lifecycleRead[sessionInputSpec](l.runner.ctx, l.state, id)
 			if err != nil {
 				l.publishMu.Unlock()

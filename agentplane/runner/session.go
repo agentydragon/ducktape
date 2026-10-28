@@ -9,11 +9,14 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
+	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
+	"github.com/cosi-project/runtime/pkg/state"
 	"go.uber.org/zap"
 )
 
@@ -25,11 +28,12 @@ const (
 )
 
 type Session struct {
-	runner                                                 *Runner
+	deps                                                   sessionDependencies
 	id                                                     string
 	record                                                 *retained.Record
 	journal                                                *journal.Journal
 	mu                                                     sync.Mutex
+	loading                                                bool
 	admitMu                                                sync.Mutex
 	writeMu                                                sync.Mutex
 	process                                                *supervision.ManagedProcess
@@ -57,10 +61,33 @@ type Session struct {
 	// codexAppServer is the shared app-server incarnation hosting this Codex Session's thread.
 	codexAppServer  *codexappserver.Process
 	codexAttachment *codexappserver.Attachment
+	codexExitEpoch  uint64
 }
 
-func newSession(r *Runner, id string, record *retained.Record, journal *journal.Journal) *Session {
-	s := &Session{runner: r, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, controlDispatches: map[string]*operation{}, interrupts: map[string]string{}, launch: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED}
+// Session dependencies name only the capabilities that one session needs. The Runner
+// admission barrier and registry are deliberately absent.
+type sessionDependencies struct {
+	ctx                context.Context
+	state              state.State
+	store              *retained.Store
+	destination        string
+	claude             *harness.LaunchConfig
+	harnessEnvironment map[string]string
+	debugCheckpoint    *DebugCheckpointConfig
+	scripts            *scripts.Runner
+	codexAppServer     *codexappserver.Host
+	bootstrapHost      *bootstrap.Host
+	ensureWorkspace    func(context.Context, string) (string, error)
+	launchProcess      func(context.Context, string, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
+	resolveModelConfig func(context.Context, runnerpb.Harness, string) (*int, error)
+	publish            func(*Session, bool)
+	publishOperation   func(string, *operation, bool)
+	changed            func()
+	fail               func(error)
+}
+
+func newSession(deps sessionDependencies, id string, record *retained.Record, journal *journal.Journal) *Session {
+	s := &Session{deps: deps, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, controlDispatches: map[string]*operation{}, interrupts: map[string]string{}, launch: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED}
 	if record.SetupScriptSHA256 != nil {
 		s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
 	}
@@ -83,7 +110,7 @@ func (s *Session) Session() harness.SessionSnapshot {
 // environment is this Session's own harness environment: its notification destination, which the
 // `agentplane` command reads as AGENTPLANE_DESTINATION.
 func (s *Session) environment() map[string]string {
-	return map[string]string{"AGENTPLANE_DESTINATION": s.runner.config.Launch.Destination(s.id)}
+	return map[string]string{"AGENTPLANE_DESTINATION": s.deps.destination}
 }
 
 func (s *Session) hostedAdapter() harness.Adapter {
@@ -93,11 +120,7 @@ func (s *Session) hostedAdapter() harness.Adapter {
 }
 func (s *Session) Journal() harness.AdapterJournal { return s.journal }
 func (s *Session) ensureReady(ctx context.Context) error {
-	if err := s.runner.lifecycle.waitFor(ctx, func() (bool, error) {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		return s.setup != runnerpb.SetupState_SETUP_STATE_RUNNING, nil
-	}); err != nil {
+	if err := s.waitSetup(ctx); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -109,7 +132,7 @@ func (s *Session) ensureReady(ctx context.Context) error {
 	if setup == runnerpb.SetupState_SETUP_STATE_FAILED || setup == runnerpb.SetupState_SETUP_STATE_INTERRUPTED || setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
 		return errors.New("session setup failed or was interrupted; create a new session")
 	}
-	if err := s.runner.bootstrapHost.Wait(ctx); err != nil {
+	if err := s.deps.bootstrapHost.Wait(ctx); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -308,7 +331,7 @@ func (s *Session) sealJournal(ctx context.Context) error {
 	if err := s.settleUndispatched(ctx, "the Sandbox was quiesced before this command was dispatched"); err != nil {
 		return err
 	}
-	uid, err := s.runner.store.RequireIncarnationUID()
+	uid, err := s.deps.store.RequireIncarnationUID()
 	if err != nil {
 		return err
 	}
@@ -317,7 +340,7 @@ func (s *Session) sealJournal(ctx context.Context) error {
 }
 
 func (s *Session) directory() string {
-	directory, err := s.runner.store.Directory(s.id)
+	directory, err := s.deps.store.Directory(s.id)
 	if err != nil {
 		panic(err)
 	}

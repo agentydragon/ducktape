@@ -48,12 +48,11 @@ func (a preparationDuringQuiesceAdapter) Recover(ctx context.Context) error {
 func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 	for _, phase := range []string{"handshake", "recovery"} {
 		t.Run(phase, func(t *testing.T) {
-			s, process := frameTestSession(t, []string{"/bin/cat"})
-			r := s.runner
+			s, process, r := frameTestSession(t, []string{"/bin/cat"})
 			if err := r.store.AdoptIncarnation("test-incarnation"); err != nil {
 				t.Fatal(err)
 			}
-			registerTestSession(t, s)
+			registerTestSession(t, r, s)
 			setRuntimePhase(t, s, executionPreparing)
 			adapter := preparationDuringQuiesceAdapter{started: make(chan struct{}), release: make(chan struct{}), session: s}
 			t.Cleanup(func() {
@@ -127,7 +126,7 @@ func lifecycleTestSession(t *testing.T) (*Runner, *Session) {
 	if _, err := r.OpenSession(context.Background(), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	return r, r.sessions["session-1"]
+	return r, r.sessions.get("session-1")
 }
 
 func waitLifecycle(t *testing.T, r *Runner, predicate func() bool, want string) {
@@ -170,7 +169,22 @@ func setRuntimeReady(t *testing.T, s *Session) {
 
 func setRuntimePhase(t *testing.T, s *Session, phase executionPhase) {
 	t.Helper()
-	if err := setSessionRuntimePhaseForTest(s.runner, s, phase); err != nil {
+	ctx, cancel := context.WithTimeout(s.deps.ctx, lifecycleTestTimeout)
+	defer cancel()
+	ptr := lifecycleResourceFor(s.id, sessionRuntimeSpec{}).Metadata()
+	if _, err := safe.StateWatchFor[*typed.Resource[sessionRuntimeSpec, lifecycleExtension[sessionRuntimeSpec]]](ctx, s.deps.state, ptr,
+		state.WithEventTypes(state.Created, state.Updated)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[sessionRuntimeSpec, lifecycleExtension[sessionRuntimeSpec]]) error {
+		current := value.TypedSpec()
+		current.Phase = phase
+		s.mu.Lock()
+		current.ProcessID = s.processID
+		s.mu.Unlock()
+		return nil
+	}, state.WithUpdateOwner(sessionControllerName))
+	if err != nil {
 		t.Fatal(err)
 	}
 }
@@ -201,16 +215,15 @@ func modifyLifecycleForTest[T lifecycleSpec[T]](ctx context.Context, r *Runner, 
 	return err
 }
 
-func registerTestSession(t *testing.T, s *Session) {
+func registerTestSession(t *testing.T, r *Runner, s *Session) {
 	t.Helper()
-	r := s.runner
-	r.mu.Lock()
-	if old := r.sessions[s.id]; old != nil && old != s {
-		r.mu.Unlock()
+	r.sessions.mu.Lock()
+	if old := r.sessions.sessions[s.id]; old != nil && old != s {
+		r.sessions.mu.Unlock()
 		t.Fatalf("Session %q is already registered", s.id)
 	}
-	r.sessions[s.id] = s
-	r.mu.Unlock()
+	r.sessions.sessions[s.id] = s
+	r.sessions.mu.Unlock()
 
 	s.mu.Lock()
 	input := sessionInputSpec{
@@ -478,7 +491,7 @@ func TestPreparationCompletingAfterCloseCannotMakeSessionReady(t *testing.T) {
 func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// COSI publishers and their resource watchers must share this bubble.
-		s, previous := frameTestSession(t, []string{"/bin/true"})
+		s, previous, _ := frameTestSession(t, []string{"/bin/true"})
 		if _, err := previous.Wait(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -557,13 +570,13 @@ func TestNewIncarnationWaitsForTeardown(t *testing.T) {
 }
 
 func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
-	s, p := frameTestSession(t, []string{"/bin/sh", "-c", "cat >/dev/null"})
+	s, p, r := frameTestSession(t, []string{"/bin/sh", "-c", "cat >/dev/null"})
 	s.mu.Lock()
 	s.processID = "completed-command-process"
 	s.mu.Unlock()
-	registerTestSession(t, s)
-	waitLifecycle(t, s.runner, func() bool {
-		_, found, _ := lifecycleRead[sessionRuntimeSpec](s.runner.ctx, s.runner.lifecycle.state, s.id)
+	registerTestSession(t, r, s)
+	waitLifecycle(t, r, func() bool {
+		_, found, _ := lifecycleRead[sessionRuntimeSpec](r.ctx, r.lifecycle.state, s.id)
 		return found
 	}, "initial Session runtime")
 	setRuntimeReady(t, s)
@@ -575,7 +588,7 @@ func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.wake()
-	waitLifecycle(t, s.runner, func() bool {
+	waitLifecycle(t, r, func() bool {
 		current := s.runtimeState()
 		return current.Phase == executionDormant && current.Attempt == 2
 	}, "idle process exit to consume completed demand")

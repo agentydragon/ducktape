@@ -101,7 +101,7 @@ func (s *Session) recordEvent(ctx context.Context, e *eventpb.Event, sources []u
 		return nil, err
 	}
 	s.apply(entry, ids)
-	s.runner.changed()
+	s.deps.changed()
 	return entry, nil
 }
 
@@ -185,7 +185,7 @@ func (s *Session) ModelChanged(ctx context.Context, id, model string, sources []
 	s.record.Model = model
 	record := *s.record
 	s.mu.Unlock()
-	if err := s.runner.store.Write(s.id, record); err != nil {
+	if err := s.deps.store.Write(s.id, record); err != nil {
 		return err
 	}
 	_, err = s.recordEvent(ctx, observation(&eventpb.ModelChanged{CommandId: id, PreviousModel: previous, Model: model}), sources, []string{id})
@@ -205,7 +205,7 @@ func (s *Session) ReasoningEffortChanged(ctx context.Context, id, effort string,
 	s.record.ReasoningEffort = effort
 	record := *s.record
 	s.mu.Unlock()
-	if err := s.runner.store.Write(s.id, record); err != nil {
+	if err := s.deps.store.Write(s.id, record); err != nil {
 		return err
 	}
 	_, err = s.recordEvent(ctx, observation(&eventpb.ReasoningEffortChanged{CommandId: id, PreviousEffort: previous, Effort: effort}), sources, []string{id})
@@ -241,7 +241,7 @@ func (s *Session) ConfirmUserMessage(ctx context.Context, c harness.UserMessageC
 }
 
 func (s *Session) checkpoint(ctx context.Context, name, id string) error {
-	configured := s.runner.config.DebugCheckpoint
+	configured := s.deps.debugCheckpoint
 	if configured == nil || configured.Name != name || configured.CommandID != id {
 		return nil
 	}
@@ -260,7 +260,7 @@ func (s *Session) checkpoint(ctx context.Context, name, id string) error {
 }
 
 func (s *Session) checkpointNativeResponse(ctx context.Context, line []byte) error {
-	configured := s.runner.config.DebugCheckpoint
+	configured := s.deps.debugCheckpoint
 	if configured == nil || configured.Name != "before-native-response-recorded" {
 		return nil
 	}

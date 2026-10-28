@@ -11,16 +11,16 @@ import (
 // runSetup performs one claimed script operation. The Session controller owns
 // whether it runs; cancellation of an admission or preparation cannot cancel it.
 func (s *Session) runSetup(ctx context.Context, script string) error {
-	err := s.runner.bootstrapHost.Wait(ctx)
+	err := s.deps.bootstrapHost.Wait(ctx)
 	if err == nil {
 		err = s.Emit(ctx, observation(&eventpb.SetupStarted{}), nil)
 	}
 	if err == nil {
-		cwd, e := s.runner.ensureWorkspace(ctx, s.Session().Cwd)
+		cwd, e := s.deps.ensureWorkspace(ctx, s.Session().Cwd)
 		err = e
 		if err == nil {
 			var code int
-			code, err = s.runner.scripts.Run(ctx, sessionControllerName+"/"+s.id+"/setup", script, cwd, func(stdout bool, data []byte) error {
+			code, err = s.deps.scripts.Run(ctx, sessionControllerName+"/"+s.id+"/setup", script, cwd, func(stdout bool, data []byte) error {
 				out := &eventpb.SetupOutput{}
 				if stdout {
 					out.Stream = &eventpb.SetupOutput_Stdout{Stdout: data}

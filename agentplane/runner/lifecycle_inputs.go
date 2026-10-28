@@ -1,7 +1,13 @@
 package runner
 
 import (
+	"context"
+	"fmt"
+
+	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
+	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -70,12 +76,20 @@ func (l *lifecycle) publishSession(s *Session, demand bool) {
 	input.Cursor = s.journal.LastCursor()
 	l.runner.fail(publishLifecycle(l, s.id, input))
 }
-func (s *Session) wake()             { s.runner.lifecycle.publishSession(s, false) }
-func (s *Session) requestExecution() { s.runner.lifecycle.publishSession(s, true) }
+
+func (s *Session) wake() {
+	s.mu.Lock()
+	loading := s.loading
+	s.mu.Unlock()
+	if !loading {
+		s.deps.publish(s, false)
+	}
+}
+func (s *Session) requestExecution() { s.deps.publish(s, true) }
 func (s *Session) runtimeState() sessionRuntimeSpec {
-	value, _, err := lifecycleRead[sessionRuntimeSpec](s.runner.ctx, s.runner.lifecycle.state, s.id)
+	value, _, err := lifecycleRead[sessionRuntimeSpec](s.deps.ctx, s.deps.state, s.id)
 	if err != nil {
-		s.runner.fail(err)
+		s.deps.fail(err)
 	}
 	return value
 }
@@ -86,5 +100,31 @@ func (s *Session) readyLocked() bool {
 }
 
 func (s *Session) executionClosed() bool {
-	return !s.runner.lifecycle.accepting() || s.journal.SealState() != nil
+	desired, _, err := runnerlifecycle.ReadDesired(s.deps.ctx, s.deps.state)
+	if err != nil {
+		s.deps.fail(err)
+		return true
+	}
+	return desired.Mode != runnerlifecycle.Running || s.deps.store.Lameduck() || s.journal.SealState() != nil
+}
+
+func (s *Session) waitSetup(ctx context.Context) error {
+	s.mu.Lock()
+	pending := s.setup == runnerpb.SetupState_SETUP_STATE_RUNNING
+	s.mu.Unlock()
+	if !pending {
+		return nil
+	}
+	_, err := safe.StateWatchFor[*typed.Resource[sessionInputSpec, lifecycleExtension[sessionInputSpec]]](
+		ctx, s.deps.state, lifecycleResourceFor(s.id, sessionInputSpec{}).Metadata(),
+		state.WithEventTypes(state.Created, state.Updated),
+		state.WithCondition(func(value resource.Resource) (bool, error) {
+			input, ok := value.(*typed.Resource[sessionInputSpec, lifecycleExtension[sessionInputSpec]])
+			if !ok {
+				return false, fmt.Errorf("unexpected Session input resource %T", value)
+			}
+			return input.TypedSpec().Setup != runnerpb.SetupState_SETUP_STATE_RUNNING, nil
+		}),
+	)
+	return err
 }

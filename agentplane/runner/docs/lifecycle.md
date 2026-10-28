@@ -15,7 +15,7 @@ connections, or other native state.
 | ---------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | Runner desired state and input           | Runner host                                     | Lifecycle mode, incarnation seal UID, generation, and active admission count.                               |
 | Runner runtime                           | Runner lifecycle controller                     | Runner-wide stage and terminal controller error.                                                            |
-| Session input                            | Runner/Session host                             | Demand and snapshots of journal cursor, setup, process, active turn, and queued or running inspections.     |
+| Session input                            | Session host                                    | Demand and snapshots of journal cursor, setup, process, active turn, and queued or running inspections.     |
 | Session runtime                          | Session QController                             | Execution phase, attempt, resume flag, process incarnation, and desired-state generation.                   |
 | Codex exec-server input and runtime      | Exec-server host and QController                | Demand, process intent, readiness/health deadlines, restart backoff and stop outcome.                       |
 | Process desired state                    | Requesting controller or `supervision.Host`     | Immutable owner, generation, start deadline and cleanup timeout for one launch.                             |
@@ -27,6 +27,14 @@ connections, or other native state.
 | Journal seal and ingress acknowledgement | Runner/transport host                           | In-memory mirrors of the durable journal seal and persisted ingress acknowledgement.                        |
 | Native process effects                   | `supervision.Controller` and `supervision.Host` | Start, observe and fence every Runner-managed native execution domain.                                      |
 | Protocol and journal effects             | Runner, Session, Codex app-server, and journal  | Handshake, frame routing, dispatch, interruption, inspection, sealing, and persistence.                     |
+
+The same-package `sessionManager` owns the Session registry, serialized creation and load,
+durable journal reconstruction, and startup recovery. It reconciles retained setup and turn state
+before publishing the first schedulable Session input. Its map mutex protects only registry access;
+publication and recovery run after releasing it. The Runner mutex remains the synchronous admission
+and quiesce barrier around accepting checks and durable reservation. Each Session holds its own
+context, store, journal, launch configuration, and narrow lifecycle publication capabilities;
+it reads lifecycle state directly instead of reaching through Runner.
 
 Controller roles cover Runner, Session, native process lifetime, Codex exec-server, Codex app-server, and Sandbox bootstrap. The reusable process-lifetime controller is supplied by `supervision/` and registered in the Runner's lifecycle engine. The `lifecycle/` package defines only the Runner-wide desired-state and aggregate-status resources, with typed COSI readers and writers shared by these controllers. The `bootstrap/` package owns its input, runtime, operation result, log, and one-shot effect while receiving the Runner's admission guard and shared process facilities explicitly.
 The renamed resource kinds are `RunnerDesiredStates.agentplane`,

@@ -57,9 +57,7 @@ func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger
 }
 
 func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr resource.Pointer) error {
-	c.l.runner.mu.Lock()
-	s := c.l.runner.sessions[ptr.ID()]
-	c.l.runner.mu.Unlock()
+	s := c.l.runner.sessions.get(ptr.ID())
 	if s == nil {
 		return nil
 	}
@@ -82,7 +80,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	write := func() error {
 		changed, err := lifecycleWrite(ctx, r, s.id, current)
 		if changed {
-			s.runner.changed()
+			s.deps.changed()
 		}
 		return err
 	}
@@ -104,7 +102,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		if op.err != nil {
 			current.Error = op.err.Error()
-			s.runner.fail(op.err)
+			s.deps.fail(op.err)
 			if err := write(); err != nil {
 				return err
 			}
@@ -228,7 +226,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		if current.Phase == executionHalted && outer.Stage >= runnerlifecycle.Stopping && !current.ProcessStopped {
 			s.mu.Lock()
-			shared := s.runner.codexAppServer != nil && s.record.Harness == runnerpb.Harness_HARNESS_CODEX
+			shared := s.deps.codexAppServer != nil && s.record.Harness == runnerpb.Harness_HARNESS_CODEX
 			s.mu.Unlock()
 			if shared {
 				status, found, err := codexappserver.ReadRuntime(ctx, r)
@@ -301,12 +299,12 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 				}
 			}
 			if err != nil && !errors.Is(err, context.Canceled) {
-				if failure := s.settleUndispatched(s.runner.ctx, "harness startup failed before this command was dispatched: "+err.Error()); failure != nil {
-					s.runner.fail(failure)
+				if failure := s.settleUndispatched(s.deps.ctx, "harness startup failed before this command was dispatched: "+err.Error()); failure != nil {
+					s.deps.fail(failure)
 					return failure
 				}
-				if failure := s.Emit(s.runner.ctx, observation(&eventpb.HarnessLaunchFailed{Reason: err.Error()}), nil); failure != nil {
-					s.runner.fail(failure)
+				if failure := s.Emit(s.deps.ctx, observation(&eventpb.HarnessLaunchFailed{Reason: err.Error()}), nil); failure != nil {
+					s.deps.fail(failure)
 					return failure
 				}
 			}

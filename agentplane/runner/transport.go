@@ -287,7 +287,7 @@ func (r *Runner) ingressLoop(ctx context.Context, endpoint Endpoint) error {
 	defer func() { cancel(); pushes.Wait() }()
 	for {
 		changed := r.changesSince()
-		for _, s := range r.inventory() {
+		for _, s := range r.sessions.inventory() {
 			if active[s.id] {
 				continue
 			}

@@ -57,14 +57,14 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	}
 	// Serialize reservation identity, but never hold the quiesce barrier across the
 	// HTTP model lookup: quiesce can reject a late creation before its durable write.
-	r.createMu.Lock()
-	defer r.createMu.Unlock()
+	r.sessions.createMu.Lock()
+	defer r.sessions.createMu.Unlock()
 	exists, err := r.store.Exists(request.SessionId)
 	if err != nil {
 		return nil, rpcError(err)
 	}
 	if exists {
-		s, err := r.load(r.ctx, request.SessionId)
+		s, err := r.sessions.load(r.ctx, request.SessionId)
 		if err != nil {
 			return nil, rpcError(err)
 		}
@@ -92,20 +92,23 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	if err != nil {
 		return nil, rpcError(err)
 	}
-	r.mu.Lock()
-	if !r.lifecycle.accepting() {
+	admitted := false
+	s, err := r.sessions.reserveFresh(r.ctx, request.SessionId, func() error {
+		r.mu.Lock()
+		if !r.lifecycle.accepting() {
+			r.mu.Unlock()
+			return status.Error(codes.Aborted, "this Sandbox is quiesced")
+		}
+		r.admissions++
+		admitted = true
+		writeErr := r.store.Write(request.SessionId, record)
 		r.mu.Unlock()
-		return nil, status.Error(codes.Aborted, "this Sandbox is quiesced")
+		r.admissionChanged()
+		return writeErr
+	})
+	if admitted {
+		defer func() { r.mu.Lock(); r.admissions--; r.mu.Unlock(); r.admissionChanged() }()
 	}
-	r.admissions++
-	err = r.store.Write(request.SessionId, record)
-	r.mu.Unlock()
-	r.admissionChanged()
-	defer func() { r.mu.Lock(); r.admissions--; r.mu.Unlock(); r.admissionChanged() }()
-	if err != nil {
-		return nil, rpcError(err)
-	}
-	s, err := r.load(r.ctx, request.SessionId)
 	if err != nil {
 		return nil, rpcError(err)
 	}
@@ -148,7 +151,7 @@ func (r *Runner) admit(id string, c *commandpb.Command) (*eventlogpb.EventEntry,
 	if !exists {
 		return nil, status.Error(codes.NotFound, "no such session")
 	}
-	s, err := r.load(r.ctx, id)
+	s, err := r.sessions.load(r.ctx, id)
 	if err != nil {
 		return nil, rpcError(err)
 	}
@@ -236,6 +239,6 @@ func (s *Session) admit(ctx context.Context, command *commandpb.Command, lameduc
 	} else if !lameduck && !closed {
 		s.requestExecution()
 	}
-	s.runner.changed()
+	s.deps.changed()
 	return entry, nil
 }

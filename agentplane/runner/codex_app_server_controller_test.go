@@ -172,7 +172,7 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 	config := Config{StateDir: stateDir, Codex: &codexConfig, CodexExecServer: &codexExecServerConfig}
 	r := &Runner{
 		config: config, ctx: ctx, cancel: cancel, owner: owner, store: store,
-		sessions: map[string]*Session{}, changes: make(chan struct{}), fatal: make(chan error, 1),
+		changes: make(chan struct{}), fatal: make(chan error, 1),
 	}
 	// Configure every native host before lifecycle controllers or their goroutines exist.
 	r.supervisor = supervision.NewSubprocessSupervisor(owner.File())
@@ -184,6 +184,7 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 		t.Fatal(err)
 	}
 	r.lifecycle = lifecycle
+	r.sessions = newSessionManager(r)
 	go lifecycle.run()
 	if err := r.store.AdoptIncarnation("codex-synctest"); err != nil {
 		t.Fatal(err)

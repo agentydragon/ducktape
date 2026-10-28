@@ -38,7 +38,7 @@ func (a frameTestAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sequ
 	return a.onFrame(ctx, raw, sequence)
 }
 
-func frameTestSession(t *testing.T, command []string) (*Session, *supervision.ManagedProcess) {
+func frameTestSession(t *testing.T, command []string) (*Session, *supervision.ManagedProcess, *Runner) {
 	t.Helper()
 	r, err := New(Config{StateDir: t.TempDir()})
 	if err != nil {
@@ -59,7 +59,9 @@ func frameTestSession(t *testing.T, command []string) (*Session, *supervision.Ma
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := newSession(r, "session", &record, journal)
+	deps := r.sessions.dependencies
+	deps.destination = r.sessions.destination("session")
+	s := newSession(deps, "session", &record, journal)
 	p, err := r.launchProcess(context.Background(), sessionControllerName+"/"+s.id, r.supervisor, supervision.ProcessConfig{Command: command, Dir: record.CWD, Env: map[string]string{}})
 	if err != nil {
 		t.Fatal(err)
@@ -81,11 +83,11 @@ func frameTestSession(t *testing.T, command []string) (*Session, *supervision.Ma
 			t.Error(err)
 		}
 	})
-	return s, p
+	return s, p, r
 }
 
 func TestNativeReplyWaitsForTranslationCommit(t *testing.T) {
-	s, p := frameTestSession(t, []string{"/bin/sh", "-c", `while IFS= read -r line; do printf '%s\n' "$line"; done`})
+	s, p, _ := frameTestSession(t, []string{"/bin/sh", "-c", `while IFS= read -r line; do printf '%s\n' "$line"; done`})
 	received, release := make(chan struct{}), make(chan struct{})
 	adapter := frameTestAdapter{onFrame: func(ctx context.Context, raw json.RawMessage, sequence uint64) error {
 		if s.journal.LastCursor() != 1 {
@@ -146,7 +148,7 @@ func TestNativeReplyWaitsForTranslationCommit(t *testing.T) {
 }
 
 func TestDispatchKeepsUncertainNativeWritePendingAndDoesNotResend(t *testing.T) {
-	s, _ := frameTestSession(t, []string{"/bin/cat"})
+	s, _, _ := frameTestSession(t, []string{"/bin/cat"})
 	ctx := context.Background()
 	command := &commandpb.Command{
 		CommandId: "input-1",
@@ -161,7 +163,7 @@ func TestDispatchKeepsUncertainNativeWritePendingAndDoesNotResend(t *testing.T) 
 	s.mu.Unlock()
 	// This primitive test drives dispatch directly, so it has no Session input
 	// for the controller to reconcile. Seed only its readiness observation.
-	if err := s.runner.lifecycle.state.Create(ctx,
+	if err := s.deps.state.Create(ctx,
 		lifecycleResourceFor(s.id, sessionRuntimeSpec{Phase: executionReady}),
 		state.WithCreateOwner(sessionControllerName)); err != nil {
 		t.Fatal(err)
@@ -188,7 +190,7 @@ func TestDispatchKeepsUncertainNativeWritePendingAndDoesNotResend(t *testing.T) 
 }
 
 func TestRecoveryKeepsDispatchedInterruptPending(t *testing.T) {
-	s, _ := frameTestSession(t, []string{"/bin/cat"})
+	s, _, _ := frameTestSession(t, []string{"/bin/cat"})
 	ctx := context.Background()
 	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "turn-1"}), nil); err != nil {
 		t.Fatal(err)
@@ -217,7 +219,7 @@ func TestRecoveryKeepsDispatchedInterruptPending(t *testing.T) {
 
 func TestNativeHandshakeWaitCancellationLeavesLateResponseJournaled(t *testing.T) {
 	script := `while IFS= read -r line; do printf '{"received":true}\n'; IFS= read -r release; [ "$release" = '{"release":true}' ] || exit 1; printf '%s\n' "$line"; done`
-	s, p := frameTestSession(t, []string{"/bin/sh", "-c", script})
+	s, p, _ := frameTestSession(t, []string{"/bin/sh", "-c", script})
 	received := make(chan struct{})
 	lateReplyReceived := make(chan struct{})
 	adapter := frameTestAdapter{onFrame: func(ctx context.Context, raw json.RawMessage, sequence uint64) error {
@@ -273,7 +275,7 @@ func TestNativeHandshakeWaitCancellationLeavesLateResponseJournaled(t *testing.T
 }
 
 func TestStdoutRetainsFinalFrameWithoutNewline(t *testing.T) {
-	s, p := frameTestSession(t, []string{"/bin/sh", "-c", `printf '{"final":true}\r'`})
+	s, p, _ := frameTestSession(t, []string{"/bin/sh", "-c", `printf '{"final":true}\r'`})
 	adapter := frameTestAdapter{onFrame: func(context.Context, json.RawMessage, uint64) error { return nil }}
 	s.readers.Add(1)
 	go s.readStdout(p, adapter)
@@ -295,7 +297,9 @@ func TestConfirmationReplayKeepsTerminalReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := newSession(r, "session-1", &record, journal)
+	deps := r.sessions.dependencies
+	deps.destination = r.sessions.destination("session-1")
+	s := newSession(deps, "session-1", &record, journal)
 	command := &commandpb.Command{CommandId: "input-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
 	if _, _, err := journal.Admit(ctx, command, ""); err != nil {
 		t.Fatal(err)
@@ -341,12 +345,12 @@ func (a *rpcReconciliationAdapter) Reconcile(ctx context.Context, turn string, _
 }
 
 func TestInterruptedReconciliationLeavesStdoutFreeForHistoryRPC(t *testing.T) {
-	s, p := frameTestSession(t, []string{"/bin/sh", "-c", `while IFS= read -r line; do printf '%s\n' "$line"; done`})
+	s, p, r := frameTestSession(t, []string{"/bin/sh", "-c", `while IFS= read -r line; do printf '%s\n' "$line"; done`})
 	adapter := &rpcReconciliationAdapter{session: s}
 	s.mu.Lock()
 	s.adapter = adapter
 	s.mu.Unlock()
-	registerTestSession(t, s)
+	registerTestSession(t, r, s)
 	setRuntimeReady(t, s)
 	if err := s.Emit(context.Background(), observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
 		t.Fatal(err)
