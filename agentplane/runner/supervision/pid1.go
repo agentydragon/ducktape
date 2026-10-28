@@ -187,7 +187,9 @@ func (b *pid1Backend) start(ctx context.Context, p *Process) error {
 	err = cmd.Start()
 	if err == nil {
 		b.cmd = cmd
-		b.reaper.children[cmd.Process.Pid] = b
+		// Process.Release sets cmd.Process.Pid=-1 as soon as the reaper runs.
+		p.setNativePID(cmd.Process.Pid)
+		b.reaper.children[p.PID()] = b
 	}
 	b.reaper.mu.Unlock()
 	closeFiles(stdinReader, stdoutWriter, stderrWriter)
@@ -196,10 +198,9 @@ func (b *pid1Backend) start(ctx context.Context, p *Process) error {
 		return fmt.Errorf("start PID1 native process: %w", err)
 	}
 	p.attachStreams(stdinWriter, stdoutReader, stderrReader)
-	p.setNativePID(cmd.Process.Pid)
 	go b.finish(p)
 	if err := ctx.Err(); err != nil {
-		b.signal(syscall.SIGKILL)
+		b.signal(p, syscall.SIGKILL)
 		_, waitErr := p.Wait(context.Background())
 		return errors.Join(err, waitErr)
 	}
@@ -231,11 +232,11 @@ func (b *pid1Backend) finish(p *Process) {
 	p.completeWith(code, exit.err)
 }
 
-func (b *pid1Backend) signal(signal syscall.Signal) {
+func (b *pid1Backend) signal(p *Process, signal syscall.Signal) {
 	b.reaper.mu.Lock()
 	defer b.reaper.mu.Unlock()
-	if b.reaper.children[b.cmd.Process.Pid] == b {
-		_ = signalProcessGroup(b.cmd.Process.Pid, signal)
+	if b.reaper.children[p.PID()] == b {
+		_ = signalProcessGroup(p.PID(), signal)
 	}
 }
 
@@ -243,7 +244,7 @@ func (b *pid1Backend) stop(ctx context.Context, p *Process, grace time.Duration)
 	if err := p.CloseStdin(); err != nil && !errors.Is(err, os.ErrClosed) {
 		return err
 	}
-	b.signal(syscall.SIGTERM)
+	b.signal(p, syscall.SIGTERM)
 	timer := time.NewTimer(max(grace, 0))
 	defer timer.Stop()
 	select {
@@ -251,10 +252,10 @@ func (b *pid1Backend) stop(ctx context.Context, p *Process, grace time.Duration)
 		_, err := p.Wait(context.Background())
 		return err
 	case <-ctx.Done():
-		b.signal(syscall.SIGKILL)
+		b.signal(p, syscall.SIGKILL)
 		return ctx.Err()
 	case <-timer.C:
-		b.signal(syscall.SIGKILL)
+		b.signal(p, syscall.SIGKILL)
 	}
 	_, err := p.Wait(ctx)
 	return err

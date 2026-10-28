@@ -216,6 +216,9 @@ func provePID1Waits(t *testing.T, ctx context.Context, supervisor *Supervisor) {
 		if err := p.Start(ctx); err != nil {
 			t.Fatal(err)
 		}
+		if p.PID() <= 1 {
+			t.Fatalf("fast native published an invalid PID: %d", p.PID())
+		}
 		code, err := p.Wait(ctx)
 		if code != 42 || err != nil {
 			t.Fatalf("fast native result = (%d, %v)", code, err)
