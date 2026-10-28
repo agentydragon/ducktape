@@ -96,8 +96,7 @@ type EventFilter struct {
 	Actions []string
 }
 
-// Validate checks the destination reference's namespace, name and UID bounds.
-func (r DestinationRef) Validate() error {
+func (r DestinationRef) validate() error {
 	return errors.Join(
 		CheckText("destination_ref.namespace", r.Namespace, 1, 63),
 		CheckText("destination_ref.name", r.Name, 1, 63),
@@ -108,7 +107,7 @@ func (r DestinationRef) Validate() error {
 // Validate checks the bounds and patterns of the creation.
 func (s Subscribe) Validate() error {
 	if err := errors.Join(
-		s.DestinationRef.Validate(),
+		s.DestinationRef.validate(),
 		CheckText("session_id", s.SessionID, 1, 200),
 		CheckText("idempotency_key", s.IdempotencyKey, 1, 200),
 	); err != nil {

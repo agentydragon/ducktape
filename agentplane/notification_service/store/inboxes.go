@@ -211,7 +211,8 @@ func (s *Store) Read(ctx context.Context, owner Owner, inboxID uuid.UUID, after 
 
 func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, limit int) ([]Entry, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT cursor, `+eventIdentityReadColumns+`, payload FROM entry
+		`SELECT cursor, `+eventIdentityReadColumns+`,
+			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, `+entryContentReadColumns+` FROM entry
 			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inbox.ID, after, limit)
 	if err != nil {
@@ -223,18 +224,20 @@ func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, lim
 		var entry Entry
 		var identity eventIdentityRead
 		var payload []byte
+		var content entryContentStorage
 		destinations := append([]any{&entry.Cursor}, identity.destinations()...)
 		destinations = append(destinations, &payload)
+		destinations = append(destinations, content.destinations()...)
 		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
 		if entry.Event, err = identity.event(); err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inbox.ID, entry.Cursor, err)
 		}
-		if payload == nil {
-			return nil, fmt.Errorf("inbox %s entry %d: payload expired before the inbox's expired prefix", inbox.ID, entry.Cursor)
+		entry.Payload, err = entryPayloadFromRead(entry.Event, payload, content)
+		if err != nil {
+			return nil, fmt.Errorf("inbox %s entry %d: %w", inbox.ID, entry.Cursor, err)
 		}
-		entry.Payload = payload
 		entries = append(entries, entry)
 	}
 	if err := rows.Err(); err != nil {
