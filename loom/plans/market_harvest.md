@@ -1,8 +1,8 @@
 # G1 market harvest — verified source survey + pipeline design
 
-Status: **investigation + design** (2026-06-09). Every endpoint, count, and
-boundary below was verified with live requests or actual downloads on
-2026-06-09 (keyless, from a datacenter IP); extrapolations are marked as such.
+Status: **investigation + design** (2026-06-09; Kalshi and Metaculus access
+rechecked 2026-10-28). The June endpoint probes, counts, and boundaries below
+are dated observations, not current API guarantees. Extrapolations are marked.
 Consumes: `loom/gym/task.py` (Task schema), `loom/gym/model_cutoffs.py`
 (admissibility). Feeds: the market-resolved task family (program plan G1).
 
@@ -12,8 +12,8 @@ Consumes: `loom/gym/task.py` (Task schema), `loom/gym/model_cutoffs.py`
 | ------------- | ------------------------- | ------------------------------------------- | -------------- | -------------- | -------------------------------------------------------- |
 | Manifold      | yes (API + bulk dump)     | full site to 2024-07-06 (dump); API onward  | ✅ verified    | ✅ verified    | **primary backfill source**; needs heavy quality filters |
 | Polymarket    | yes (Gamma + CLOB + data) | markets to 2020; price history only ~2023+  | ✅ verified    | ✅ verified    | **primary for `as_of ≥ 2023`**, dominant for 2024-07+    |
-| Kalshi        | yes (trade-api v2)        | **purged** — settled catalog ≈ last ~30–60d | ✅ recent only | none           | forward-capture only (fold into M2)                      |
-| Metaculus     | **no** — 403 keyless      | n/a                                         | n/a            | n/a            | deferred; free account token required                    |
+| Kalshi        | yes (trade-api v2)        | historical API serves some pre-2024 markets | ✅ sampled old | none           | backfill candidate; coverage/scale need a sweep          |
+| Metaculus     | **no** — 403 keyless      | restricted even with a default account      | unverified     | unverified     | deferred; request data access before relying on it       |
 | ForecastBench | yes (GitHub, CC BY-SA)    | 2024-07 onward, biweekly 500-question sets  | freeze value   | no             | cross-check + extra tasks; not a dossier source          |
 
 ## Per-platform findings
@@ -150,16 +150,23 @@ data-api). No documented public read limit.
   — verified: daily candles with `yes_bid`/`yes_ask` OHLC, last-trade
   `price`, `volume_fp`, `open_interest_fp`.
 
-**Critical finding — the settled back catalog is purged.** Verified
-exhaustively: only **68** settled markets closing before 2025-07-01 are
-served (8 in 2024-05, 60 in 2024-10); known 2022–2023 tickers
-(`FED-23DEC-T5.50`, `CPI-22DEC-A0.1`) return `not_found`; dropping the status
-filter reveals only 147 pre-2024-09 markets (139 zombie `closed`, 8
-`finalized`). Mass retention starts only weeks back (12k+ settled in 2026-05
-alone). **Historical backfill via the public API is impossible; Kalshi is
-forward-capture only** (the M2 snapshot/resolution store).
+**June live-endpoint finding, superseded for backfill decisions.** The June
+`/markets` sweep returned only **68** settled markets closing before
+2025-07-01 (8 in 2024-05, 60 in 2024-10); old tickers including
+`FED-23DEC-T5.50` returned `not_found` there. This measured the live endpoint,
+not the full historical catalog. Kalshi now [documents a separate historical
+API](https://docs.kalshi.com/getting_started/historical_data): markets and
+candlesticks older than `/historical/cutoff` leave the live endpoints and must
+be read from `/historical/markets` and
+`/historical/markets/{ticker}/candlesticks`. On 2026-10-28, keyless requests
+returned HTTP 200 for `/historical/markets/FED-23DEC-T5.50` (created
+2022-11-02, closed 2023-12-13) and 18 daily candles for a sample window in
+November–December 2023. `/historical/markets/CPI-22DEC-A0.1` still returned 404. This proves some old backfill is available, not its completeness or
+usable yield. The historical list supports ticker, event, and series filters,
+but [does not document close-time filters](https://docs.kalshi.com/api-reference/historical/get-historical-markets);
+a scale sweep must page and filter dates client-side.
 
-Other Kalshi gotchas, verified: the latest-1000 settled page was 100%
+Other June Kalshi gotchas, observed on the live API: the latest-1000 settled page was 100%
 `KXMVE*` sports-parlay autogen (series/category filtering is mandatory);
 series tickers were mass-renamed to `KX*` (old markets answer to the new
 series via `event → series_ticker`, e.g. `RHGOLD-24-Q1` → `KXRHGOLD`);
@@ -170,10 +177,13 @@ datacenter IPs instantly. ~100 API requests, zero throttling.
 ### Metaculus
 
 `GET /api/posts/?statuses=resolved...` and legacy `GET /api2/questions/...`
-both return **403: "The API is only available to authenticated users"** —
-including single-question reads. A token is free (account registration), so
-this is a soft gate, but it fails this investigation's no-keys constraint and
-needs a user decision before use. Worth revisiting: Metaculus has thousands
+both returned **403: "The API is only available to authenticated users"** —
+including single-question reads. The [current API access policy](https://www.metaculus.com/api/)
+requires authentication for all endpoints; a default account also has
+restricted access to closed-question text, resolution values, and community
+prediction history. A free token alone does not establish the data needed for
+this harvest. Request a project grant or broader data access before designing
+around this source. Worth revisiting: Metaculus has thousands
 of resolved questions with unusually clean resolution criteria, dated
 community-prediction history (the natural crowd baseline), and long horizons
 (good for the older model windows). **Deferred, not rejected.**
@@ -304,7 +314,7 @@ tuning is data, not vibes:
      and daily sports wholesale); `umaResolutionStatus == resolved`; drop
      `[Single Market]` duplicates of event legs (keep the event-level
      categorical instead).
-   - Kalshi (forward): exclude `KXMVE*` parlays and sub-daily series;
+   - Kalshi (historical + forward): exclude `KXMVE*` parlays and sub-daily series;
      `volume_fp` floor; join `event → series → category` and keep a curated
      category allowlist (Economics, Politics, Science, Companies, …).
 2. **Self-resolving / personal / joke (Manifold-specific, the heavy one)**:
@@ -351,7 +361,7 @@ number; calibrate early on the labeled sample).
   lifetime filters → order **3–8k markets** over the window → **~5–10k
   tasks**. Manifold API era adds an estimated few hundred quality
   markets/month (post-2024 activity declined; needs one counting sweep to
-  pin down). Kalshi contributes only from M2's start date forward.
+  pin down). Kalshi's historical yield is unestimated pending a sweep.
 - Either window upgrades the gym by ~2 orders of magnitude over today's ~100
   admissible tasks per model, and adds the first non-financial cohorts.
 
@@ -359,17 +369,17 @@ number; calibrate early on the labeled sample).
 
 ### Modules (`loom/harvest/`, new package; gym stays network-free)
 
-| module             | responsibility                                                                                        |
-| ------------------ | ----------------------------------------------------------------------------------------------------- |
-| `manifold_dump.py` | fetch/verify the three dump zips, stream-parse, emit normalized records                               |
-| `manifold_api.py`  | post-2024-07 sweep (`search-markets` paging) + per-market `bets`/`comments` backfill for survivors    |
-| `polymarket.py`    | gamma keyset sweep (markets + events), CLOB `prices-history` per `clobTokenId`, comments per event    |
-| `kalshi.py`        | forward settled sweep (cursor, client-side close windows), candlesticks, `event→series` category join |
-| `record.py`        | normalized Pydantic records: `MarketRecord`, `PricePoint`, `CommentRecord` (platform-tagged)          |
-| `quality.py`       | mechanical + self-resolving + clarity filters; emits (record, verdict, reason)                        |
-| `dedup.py`         | embedding clustering → `cluster_id`                                                                   |
-| `snapshots.py`     | grid `as_of` selection, price-as-of, dossier assembly + the leakage assertions                        |
-| `store.py`         | S3 IO under the `harvest/` prefix (below)                                                             |
+| module             | responsibility                                                                                                   |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `manifold_dump.py` | fetch/verify the three dump zips, stream-parse, emit normalized records                                          |
+| `manifold_api.py`  | post-2024-07 sweep (`search-markets` paging) + per-market `bets`/`comments` backfill for survivors               |
+| `polymarket.py`    | gamma keyset sweep (markets + events), CLOB `prices-history` per `clobTokenId`, comments per event               |
+| `kalshi.py`        | historical + live settled sweeps (cursor, client-side close windows), candlesticks, `event→series` category join |
+| `record.py`        | normalized Pydantic records: `MarketRecord`, `PricePoint`, `CommentRecord` (platform-tagged)                     |
+| `quality.py`       | mechanical + self-resolving + clarity filters; emits (record, verdict, reason)                                   |
+| `dedup.py`         | embedding clustering → `cluster_id`                                                                              |
+| `snapshots.py`     | grid `as_of` selection, price-as-of, dossier assembly + the leakage assertions                                   |
+| `store.py`         | S3 IO under the `harvest/` prefix (below)                                                                        |
 
 Task minting lives gym-side as `loom/gym/market_tasks.py` (mirrors
 `series_tasks.py`): reads the normalized store, emits `Task` objects +
@@ -386,7 +396,7 @@ s3://loom-gym/harvest/
   raw/polymarket/<sweep-date>/{markets,events}.jsonl.gz
   raw/polymarket/<sweep-date>/prices/<clobTokenId>.json
   raw/polymarket/<sweep-date>/comments/<eventId>.jsonl.gz
-  raw/kalshi/<sweep-date>/...                                     # forward-capture; shared layout with M2 snapshots
+  raw/kalshi/<sweep-date>/...                                     # historical backfill + M2 forward snapshots
   norm/v1/{markets,prices,comments}.parquet                       # the queryable layer (polars, matches WorldSet stack)
   tasks/<mint-version>/tasks.jsonl + dossiers/<task_id>/*         # exactly what the gym consumes
 ```
@@ -418,12 +428,14 @@ Remaining mirror work:
    history + comments for filter survivors; negRisk categorical minting.
 3. **H3 — Manifold API era**: post-dump sweep; per-market bets fetch is the
    slow part (~1–2 requests/market within 500/min) — restrict to survivors.
-4. **H4 — Kalshi forward capture**: fold into the M2 snapshot CronJob (same
-   store); Kalshi tasks accrue from M2 start date onward.
+4. **H4 — Kalshi historical coverage sweep + forward capture**: use the
+   historical API to measure old-market coverage, candle availability, and
+   quality-filter yield before estimating tasks. Fold ongoing capture into
+   the M2 snapshot CronJob (same store).
 5. **H5 — clarity-filter calibration + dedup**: hand-label sample, tune
    filters 2–4, publish per-filter rejection stats in the harvest report.
-6. **Deferred**: Metaculus (needs user OK for a free account token —
-   community-prediction history is the best crowd baseline of any source);
+6. **Deferred**: Metaculus (needs a data-access grant beyond a default token;
+   community-prediction history would be a valuable crowd baseline);
    ForecastBench cross-check (assert our pipeline reproduces their
    freeze values for shared markets); Wayback-pinned linked articles;
    AMM-era Polymarket prices via Polygon subgraph.
@@ -446,9 +458,11 @@ CC BY-SA 4.0 (attribution + share-alike if redistributed).
   `0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917` /
   event `903193` (Trump 2024; price history + comments + trades verified);
   AMM-era no-history example `245033`.
-- Kalshi: candlesticks on `KXUE-CAN26MAY-7.4` (series `KXUE`); purge probes
-  via `RHGOLD-24-Q1-1.6` (event `RHGOLD-24-Q1` → series `KXRHGOLD`) and
-  `not_found` on `FED-23DEC-T5.50`.
+- Kalshi (June live API): candlesticks on `KXUE-CAN26MAY-7.4` (series
+  `KXUE`); `RHGOLD-24-Q1-1.6` (event `RHGOLD-24-Q1` → series `KXRHGOLD`)
+  and `not_found` on `FED-23DEC-T5.50`. October historical API: the same
+  `FED-23DEC-T5.50` returns market metadata and old candles; the old CPI
+  ticker `CPI-22DEC-A0.1` remains `not_found`.
 - Metaculus: 403 on `/api/posts/?statuses=resolved` and
   `/api2/questions/8632/`.
 - ForecastBench: `datasets/question_sets/2026-06-07-llm.json` (500
