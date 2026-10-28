@@ -144,6 +144,7 @@ mod from_report_tests {
             nodes: vec![node("unit:0", 0), node("unit:1", 1), node("unit:2", 2)],
             purity_causes: Vec::new(),
             native_integrity_witnesses: Vec::new(),
+            native_receiver_certificates: Vec::new(),
             imported_callable_summaries: Vec::new(),
             edges: vec![DependencyEdgeReport {
                 id: "dependency_edge:0".to_string(),

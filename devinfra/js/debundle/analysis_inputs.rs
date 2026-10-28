@@ -169,6 +169,7 @@ pub enum NativeIntrinsic {
 pub struct NativeIntegrity {
     pub mutated: BTreeSet<NativeIntrinsic>,
     pub witnesses: Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
+    pub certificates: Arc<Vec<crate::reports::schema::NativeReceiverCertificate>>,
 }
 
 #[derive(Debug, Clone, Default)]

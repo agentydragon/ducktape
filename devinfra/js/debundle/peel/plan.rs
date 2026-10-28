@@ -269,6 +269,8 @@ pub struct PlanWorkReport {
 #[derive(Debug, Clone, Serialize)]
 pub struct ExplainReport {
     pub native_integrity_witnesses: Vec<analysis::reports::schema::NativeMutationWitness>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_receiver_certificates: Vec<analysis::reports::schema::NativeReceiverCertificate>,
     pub query: QueryReport,
     pub source_unit_ids: Vec<String>,
     pub source_units: Vec<SourceUnitReport>,
@@ -1034,13 +1036,14 @@ fn explain_from_graph(
     limited_source_unit_ids.sort();
     limited_source_unit_ids.sort_by_key(|id| !preferred_source_unit_ids.contains(id));
 
-    let mut affected_roots: BTreeSet<_> = source_units
+    let evaluated_failed_roots: BTreeSet<_> = source_units
         .iter()
         .chain(&neighbor_source_units)
         .filter_map(|unit| unit.synchronous_execution.as_ref())
         .flat_map(|execution| &execution.native_integrity_checks)
         .flat_map(|check| check.affected_roots.iter().copied())
         .collect();
+    let mut affected_roots = evaluated_failed_roots.clone();
     loop {
         let before = affected_roots.len();
         for witness in &graph.native_integrity_witnesses {
@@ -1058,11 +1061,35 @@ fn explain_from_graph(
         .filter(|witness| !witness.affected_roots.is_disjoint(&affected_roots))
         .cloned()
         .collect();
+    let displayed_source_unit_ids: BTreeSet<String> = source_unit_set
+        .iter()
+        .cloned()
+        .chain(
+            neighbor_source_units
+                .iter()
+                .map(|source_unit| source_unit.id.clone()),
+        )
+        .collect();
+    let mut native_receiver_certificates: Vec<_> = graph
+        .native_receiver_certificates
+        .iter()
+        .filter(|certificate| {
+            let is_selected_local_unit = certificate.chunk_id == graph.chunk_id
+                && displayed_source_unit_ids
+                    .contains(&format!("unit:{}", certificate.statement_ordinal.0));
+            is_selected_local_unit
+                || !certificate
+                    .previously_affected_roots
+                    .is_disjoint(&evaluated_failed_roots)
+        })
+        .cloned()
+        .collect();
     let mut sections = BTreeMap::new();
     apply_limits!(
         args.limit,
         sections,
         (native_integrity_witnesses, "native_integrity_witnesses"),
+        (native_receiver_certificates, "native_receiver_certificates"),
         (limited_source_unit_ids, "source_unit_ids"),
         (source_units, "source_units"),
         (neighbor_source_units, "neighbor_source_units"),
@@ -1081,6 +1108,7 @@ fn explain_from_graph(
 
     Ok(ExplainReport {
         native_integrity_witnesses,
+        native_receiver_certificates,
         query,
         source_unit_ids: limited_source_unit_ids,
         source_units,

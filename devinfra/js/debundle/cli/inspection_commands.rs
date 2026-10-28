@@ -862,6 +862,46 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
             witness.source_location
         ));
     }
+    for certificate in &report.native_receiver_certificates {
+        out.push_str(&format!(
+            "  native receiver {}:unit:{} binding={} previously_affected_roots={:?} location={:?} initializer={:?}\n",
+            certificate.chunk_id,
+            certificate.statement_ordinal.0,
+            certificate.receiver_binding,
+            certificate.previously_affected_roots,
+            certificate.source_location,
+            certificate.initializer_location
+        ));
+        for origin in &certificate.origins {
+            match origin {
+                analysis::reports::schema::NativeReceiverOrigin::ObjectLiteral => {
+                    out.push_str("    origin object_literal\n");
+                }
+                analysis::reports::schema::NativeReceiverOrigin::Constructor {
+                    binding,
+                    source_location,
+                    ..
+                } => {
+                    out.push_str(&format!(
+                        "    origin constructor binding={} location={:?}\n",
+                        binding, source_location
+                    ));
+                }
+                analysis::reports::schema::NativeReceiverOrigin::Wrapper {
+                    binding,
+                    source_location,
+                    constructor,
+                    constructor_location,
+                    ..
+                } => {
+                    out.push_str(&format!(
+                        "    origin wrapper binding={} location={:?} constructor={} constructor_location={:?}\n",
+                        binding, source_location, constructor, constructor_location
+                    ));
+                }
+            }
+        }
+    }
 
     out.push_str(&format!(
         "{:?} {:?}\n",
