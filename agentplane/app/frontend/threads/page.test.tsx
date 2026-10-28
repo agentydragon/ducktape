@@ -946,7 +946,7 @@ it("shows why a refused resume of a suspended Sandbox failed", async () => {
 
 // A send to a suspended Sandbox wakes it: it is Running again with no Pod and no Ready condition until
 // the controller has started the incarnation.
-const waking: SandboxView = { ...inventorySandbox(), phase: "Creating", pod: null, status: null };
+const waking: SandboxView = { ...autosuspendSandbox(null), phase: "Creating", pod: null, status: null };
 
 it.each([
   ["a current", true, "Sandbox is starting. Submitted commands will queue until it is ready."],
@@ -960,15 +960,34 @@ it.each([
   inventoryFresh = fresh;
   const container = await render();
   expect(container.querySelector('[role="status"]')?.textContent).toBe(notice);
+  expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe(
+    fresh ? "Autosuspend waiting: Sandbox starting" : "Autosuspend timing unavailable"
+  );
   expect(composer(container).disabled).toBe(!fresh);
 });
 
+it.each([null, "2026-01-01T12:12:00Z"])(
+  "explains startup while the incarnation waits for runner readiness, with deadline %s",
+  async (deadline) => {
+    const starting = autosuspendSandbox(deadline);
+    sandboxes = [
+      { ...starting, status: { conditions: [{ type: "Ready", status: "False", reason: "AwaitingRunner" }] } },
+    ];
+    const hint = (await render()).querySelector(".agentplane-composer-autosuspend");
+    expect(hint?.textContent).toBe("Autosuspend waiting: Sandbox starting");
+    expect(hint?.getAttribute("title")).not.toContain("Next suspension attempt");
+  }
+);
+
 it("does not call a failed Pod a Sandbox that is starting", async () => {
-  const running = inventorySandbox();
+  const running = autosuspendSandbox(null);
   sandboxes = [{ ...running, status: null, pod: running.pod && { ...running.pod, status: { phase: "Failed" } } }];
   const container = await render();
   expect(container.querySelector('[role="status"]')?.textContent).toBe(
     "Last observed Sandbox and Pod: Failed. Showing retained Thread history; controls are disabled."
+  );
+  expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe(
+    "Autosuspend timing unavailable"
   );
 });
 

@@ -397,8 +397,9 @@ browser's clock. While runner work prevents idleness, it shows the runner's busy
 the hint lists every reason and links to the responsible Thread for Session work, including a
 Session outside the current Thread listing. The reasons describe active turns, pending commands,
 setup, activation, bootstrap and command admission; terminals and background processes do not count.
-Stale inventory shows timing as unavailable. These facts use the existing heartbeat, Lease and
-Sandbox watches; browser countdown ticks send no requests.
+During startup, including message-triggered wake, the hint identifies the Sandbox as starting;
+the countdown waits for readiness. Stale inventory shows timing as unavailable. These facts use the
+existing heartbeat, Lease and Sandbox watches; browser countdown ticks send no requests.
 
 ## Shutdown
 

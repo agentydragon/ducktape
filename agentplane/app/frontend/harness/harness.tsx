@@ -1014,6 +1014,37 @@ function autosuspendBusy(): void {
   };
 }
 
+function autosuspendStarting(): void {
+  autosuspendCountdown();
+  const ready = SANDBOXES.find((candidate) => candidate.name === "ready-sandbox");
+  if (!ready) throw new Error("Missing ready Sandbox fixture");
+  SANDBOXES.push({
+    ...ready,
+    name: "starting-sandbox",
+    uid: "0f9c1d2e-0000-4000-8000-000000000077",
+    service_account: { namespace: ready.namespace, name: "starting-sandbox" },
+    phase: "Creating",
+    pod: null,
+    status: null,
+    idle_suspend_at: null,
+    autosuspend_blockers: [],
+  });
+  const countdownThread = mapThread;
+  mapThread = (thread) => {
+    const mapped = countdownThread(thread);
+    return thread.id === IDLE_THREAD
+      ? {
+          ...mapped,
+          sandbox: "starting-sandbox",
+          name: "Thread waiting for Sandbox startup",
+          harness_state: "HARNESS_STATE_STOPPED",
+          feed_status: "ended",
+        }
+      : mapped;
+  };
+  rememberDispatch(IDLE_THREAD);
+}
+
 let mapThread = (thread: ThreadView): ThreadView => thread;
 
 // A 32x32 checkerboard, 95 bytes: a real image, small enough to inline.
@@ -3338,6 +3369,7 @@ const visualHarness = {
   },
   autosuspendCountdown,
   autosuspendBusy,
+  autosuspendStarting,
   addProvisioningSandbox,
   addSuspendedSandboxes,
   queueOpenResponse(): void {

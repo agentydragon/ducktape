@@ -1,5 +1,5 @@
 import type { SandboxView } from "../sandboxes/client";
-import { sandboxReady, sandboxSuspended } from "../sandbox_status";
+import { sandboxReady, sandboxStarting, sandboxSuspended } from "../sandbox_status";
 
 export interface AutosuspendHint {
   text: string;
@@ -53,12 +53,12 @@ export function autosuspendHint(sandbox: SandboxView | undefined, fresh: boolean
 
   const suspendAfter = sandbox.idle_suspend_after_seconds;
   if (suspendAfter === null || suspendAfter === undefined) return { text: "Autosuspend off", deadline: null };
-  if (!Number.isFinite(suspendAfter) || suspendAfter < 60 || sandbox.phase !== "Running") {
+  if (!Number.isFinite(suspendAfter) || suspendAfter < 60) {
     return { text: "Autosuspend timing unavailable", deadline: null };
   }
 
   const deadline = sandbox.idle_suspend_at;
-  if (deadline === null || deadline === undefined) {
+  if (sandbox.phase === "Running" && (deadline === null || deadline === undefined)) {
     const blockers = sandbox.autosuspend_blockers ?? [];
     const first = blockers[0];
     if (first) {
@@ -69,15 +69,16 @@ export function autosuspendHint(sandbox: SandboxView | undefined, fresh: boolean
         blockers,
       };
     }
-    return {
-      text: sandboxReady(sandbox)
-        ? `Autosuspend after ${compactDuration(suspendAfter)} idle`
-        : "Autosuspend timing unavailable",
-      deadline: null,
-    };
   }
 
-  if (!sandboxReady(sandbox)) return { text: "Autosuspend timing unavailable", deadline: null };
+  if (sandboxStarting(sandbox)) return { text: "Autosuspend waiting: Sandbox starting", deadline: null };
+  if (sandbox.phase !== "Running" || !sandboxReady(sandbox)) {
+    return { text: "Autosuspend timing unavailable", deadline: null };
+  }
+  if (deadline === null || deadline === undefined) {
+    return { text: `Autosuspend after ${compactDuration(suspendAfter)} idle`, deadline: null };
+  }
+
   const deadlineMs = Date.parse(deadline);
   if (!Number.isFinite(deadlineMs)) return { text: "Autosuspend timing unavailable", deadline: null };
   if (deadlineMs <= now) return { text: "Autosuspend pending", deadline };

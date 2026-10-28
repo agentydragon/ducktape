@@ -91,6 +91,19 @@ async def test_composer_autosuspend_busy(view: VisualPage, app: AgentplaneFixtur
     await view.capture(name="blockers")
 
 
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_composer_autosuspend_starting(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.AUTOSUSPEND_STARTING)
+    await app.mount_thread(IDLE_THREAD)
+    await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
+    hint = view.page.locator(
+        ".agentplane-composer-autosuspend:visible, .agentplane-composer-autosuspend-mobile:visible"
+    )
+    await expect(hint).to_have_text("Autosuspend waiting: Sandbox starting")
+    await expect(view.page.get_by_text("Continue when the Sandbox is ready.", exact=True)).to_be_visible()
+    await view.capture()
+
+
 @pytest.mark.parametrize(
     ("viewport", "color_scheme"),
     [(DESKTOP, "light"), (MOBILE, "light"), (DESKTOP, "dark")],
