@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
