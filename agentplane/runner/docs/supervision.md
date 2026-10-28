@@ -37,7 +37,9 @@ transport and stderr diagnostics. `ExecStartEx` disables manager argument expans
 literal dollar signs, specifiers and shell source. The configured environment values are passed
 explicitly; systemd adds service metadata but does not inherit Runner-only variables. Login
 environment defaults are disabled. Start waits for the manager's completed start job, so a rejected
-`execve` is a launch failure. The unit reference retains exit information until cleanup completes.
+`execve` is a launch failure. `RemainAfterExit=yes` and `CollectMode=inactive` retain successful
+and failed exit information until Runner reads it and stops the unit. Ordinary stops signal the
+unit first, preserving that evidence before cleanup.
 
 ## Completion and crash fencing
 

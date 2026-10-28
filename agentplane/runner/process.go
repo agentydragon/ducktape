@@ -533,3 +533,10 @@ func ValidateFrameLine(line []byte) error {
 	}
 	return nil
 }
+
+func (p *Process) backendDescription() string {
+	if p.systemd != nil {
+		return p.systemd.name + ": " + p.systemd.diagnostics()
+	}
+	return p.ExitDescription()
+}

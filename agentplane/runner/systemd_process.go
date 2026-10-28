@@ -14,7 +14,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// systemdProcess is a retained transient service. Its private name is allocated
+// systemdProcess retains exit evidence through RemainAfterExit and CollectMode:
+// successful exits stay active/exited and failures stay loaded until Stop/fence.
+// Its private name is allocated
 // before StartTransientUnit; no retry can accidentally allocate another launch.
 type systemdProcess struct {
 	conn    *dbus.Conn
@@ -32,13 +34,13 @@ func (p *Process) startSystemd(ctx context.Context) error {
 	}
 	conn, err := connectSystemd()
 	if err != nil {
-		return p.cleanupFailedStart(err)
+		return p.cleanupFailedStart(fmt.Errorf("connect native systemd manager: %w", err))
 	}
 	backend := &systemdProcess{conn: conn, name: policy.scope + uuid.NewString() + ".service", signals: make(chan *dbus.Signal, 32)}
 	conn.Signal(backend.signals)
 	if err = systemdCall(ctx, conn, "Subscribe").Err; err != nil {
 		conn.Close()
-		return p.cleanupFailedStart(err)
+		return p.cleanupFailedStart(fmt.Errorf("subscribe native systemd manager: %w (%s)", err, systemdErrorKind(err)))
 	}
 	stdinReader, stdinWriter, err := os.Pipe()
 	if err != nil {
@@ -75,10 +77,12 @@ func (p *Process) startSystemd(ctx context.Context) error {
 	// ExecStartEx disables manager-side $ expansion. Native argv (including shell
 	// programs) must be delivered verbatim, with expansion owned by the native process.
 	props = append(props, policy.identityProperties()...)
+	// AddRef requires the API bus and cannot be used on the private manager peer.
+	// Lifecycle retention preserves status until we consume it before Stop.
 	props = append(
 		props,
 		property("Description", "Agentplane native launch "+backend.name), property("Type", "exec"), property("Restart", "no"), property("Slice", policy.Slice),
-		property("BindsTo", []string{policy.parentUnit()}), property("After", []string{policy.parentUnit()}), property("AddRef", true), property("RemainAfterExit", true),
+		property("BindsTo", []string{policy.parentUnit()}), property("After", []string{policy.parentUnit()}), property("RemainAfterExit", true), property("CollectMode", "inactive"),
 		property("ExecStartEx", []systemdExec{{executable, command, []string{"no-env-expand"}}}), property("Environment", environment(p.config.Env)), property("WorkingDirectory", p.config.Dir),
 		property("StandardInputFileDescriptor", dbus.UnixFD(stdinReader.Fd())), property("StandardOutputFileDescriptor", dbus.UnixFD(stdoutWriter.Fd())), property("StandardErrorFileDescriptor", dbus.UnixFD(stderrWriter.Fd())),
 		property("PrivateTmp", false), property("ProtectSystem", "strict"), property("ReadWritePaths", []string{"/state", "/tmp"}), property("UMask", uint32(7)), property("LockPersonality", true), property("ProtectKernelModules", true), property("ProtectKernelLogs", true),
@@ -104,7 +108,7 @@ func (p *Process) startSystemd(ctx context.Context) error {
 		fenceErr := p.fenceSystemdUntilCertain()
 		backend.release()
 		closeFiles(stdinWriter, stdoutReader, stderrReader)
-		return p.cleanupFailedStart(errors.Join(fmt.Errorf("start systemd native unit %s: %w", backend.name, err), fenceErr))
+		return p.cleanupFailedStart(errors.Join(fmt.Errorf("start systemd native unit %s: %w (%s)", backend.name, err, systemdErrorKind(err)), fenceErr))
 	}
 	if err = ctx.Err(); err != nil {
 		fenceErr := p.fenceSystemdUntilCertain()
@@ -112,16 +116,23 @@ func (p *Process) startSystemd(ctx context.Context) error {
 		closeFiles(stdinWriter, stdoutReader, stderrReader)
 		return p.cleanupFailedStart(errors.Join(err, fenceErr))
 	}
+	signalsSeen := 0
+	lastSignal := ""
 	// StartTransientUnit acknowledges enqueueing. JobRemoved("done") establishes
 	// that Type=exec crossed execve successfully, even for an already-exited helper.
 	for err == nil {
 		select {
 		case <-ctx.Done():
-			err = ctx.Err()
+			err = fmt.Errorf("wait systemd start job %s for %s: %w (%s; signals=%d last=%s)", job, backend.name, ctx.Err(), backend.diagnostics(), signalsSeen, lastSignal)
 		case signal, ok := <-backend.signals:
 			if !ok {
 				err = errors.New("systemd bus closed during launch")
 				break
+			}
+			signalsSeen++
+			lastSignal = signal.Name
+			if signal.Name == managerInterface+".JobRemoved" && len(signal.Body) == 4 {
+				lastSignal = fmt.Sprintf("%s job=%v unit=%v result=%v", signal.Name, signal.Body[1], signal.Body[2], signal.Body[3])
 			}
 			if signal.Name != managerInterface+".JobRemoved" || len(signal.Body) != 4 || signal.Body[1] != job {
 				continue
@@ -133,7 +144,7 @@ func (p *Process) startSystemd(ctx context.Context) error {
 			}
 			service, observeErr := systemdProperties(ctx, conn, backend.name, serviceInterface)
 			if observeErr != nil {
-				err = observeErr
+				err = fmt.Errorf("observe executed systemd unit %s: %w", backend.name, observeErr)
 				break
 			}
 			pid, _ := service["ExecMainPID"].Value().(uint32)
@@ -155,7 +166,6 @@ func (b *systemdProcess) release() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = systemdCall(ctx, b.conn, "ResetFailedUnit", b.name).Err
-	_ = systemdCall(ctx, b.conn, "UnrefUnit", b.name).Err
 	b.conn.RemoveSignal(b.signals)
 	_ = b.conn.Close()
 }
@@ -229,7 +239,9 @@ func (p *Process) reapSystemd() {
 func (p *Process) stopSystemd(ctx context.Context, grace time.Duration) error {
 	_ = p.CloseStdin()
 	b := p.systemd
-	if err := systemdCall(ctx, b.conn, "StopUnit", b.name, "replace").Err; err != nil && !systemdMissing(err) {
+	// Signal first: StopUnit could collect an inactive unit before the reaper
+	// reads ExecMainStatus. RemainAfterExit/CollectMode retain signal results.
+	if err := systemdCall(ctx, b.conn, "KillUnit", b.name, "all", int32(15)).Err; err != nil && !systemdMissing(err) {
 		return err
 	}
 	timer := time.NewTimer(max(grace, 0))
@@ -275,4 +287,21 @@ func (b *systemdProcess) waitChange() bool {
 		}
 	}
 	return false
+}
+
+// diagnostics reports lifecycle evidence only, never argv or environment secrets.
+func (b *systemdProcess) diagnostics() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	unit, unitErr := systemdProperties(ctx, b.conn, b.name, unitInterface)
+	service, serviceErr := systemdProperties(ctx, b.conn, b.name, serviceInterface)
+	return fmt.Sprintf("active=%v sub=%v unit_job=%v main_pid=%v exec_pid=%v exec_code=%v exec_status=%v result=%v unit_error=%v service_error=%v", unit["ActiveState"].Value(), unit["SubState"].Value(), unit["Job"].Value(), service["MainPID"].Value(), service["ExecMainPID"].Value(), service["ExecMainCode"].Value(), service["ExecMainStatus"].Value(), service["Result"].Value(), unitErr, serviceErr)
+}
+
+func systemdErrorKind(err error) string {
+	var remote dbus.Error
+	if errors.As(err, &remote) {
+		return "dbus_error=" + remote.Name
+	}
+	return fmt.Sprintf("error_type=%T", err)
 }

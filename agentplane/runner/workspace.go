@@ -97,7 +97,7 @@ func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, policy *VMP
 		return "", err
 	}
 	if err := process.Start(ctx); err != nil {
-		return "", err
+		return "", fmt.Errorf("start workspace helper: %w", err)
 	}
 	stdoutDone := make(chan struct{})
 	stderrDone := make(chan struct{})
@@ -115,8 +115,9 @@ func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, policy *VMP
 	}
 	code, waitErr := process.Wait(ctx)
 	if waitErr != nil {
+		description := process.backendDescription()
 		_ = process.Stop(context.Background(), stopGrace)
-		return "", waitErr
+		return "", fmt.Errorf("wait workspace helper (%s): %w", description, waitErr)
 	}
 	<-stdoutDone
 	<-stderrDone

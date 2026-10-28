@@ -41,6 +41,11 @@ func TestSystemdKernelFixture(t *testing.T) {
 	if err := policy.prepare(config); err != nil {
 		t.Fatal(err)
 	}
+	policy.startTransient = func(c context.Context, bus *dbus.Conn, name string, props []systemdProperty) (dbus.ObjectPath, error) {
+		job, err := startTransientSystemdUnit(c, bus, name, props)
+		t.Logf("native launch enqueue: unit=%s job=%s error=%v kind=%s", name, job, err, systemdErrorKind(err))
+		return job, err
+	}
 	dir, err := os.MkdirTemp("/tmp", "systemd-proof-")
 	if err != nil {
 		t.Fatal(err)
@@ -192,6 +197,9 @@ func TestSystemdKernelFixture(t *testing.T) {
 		if _, err := p.Wait(ctx); err == nil {
 			t.Fatal("invalid start lost error")
 		}
+		if p.systemd == nil {
+			t.Fatal("invalid launch never reached manager")
+		}
 		assertSystemdProofEmpty(t, ctx, conn, p.systemd.name)
 	})
 	t.Run("lost_reply_and_canceled_start", func(t *testing.T) {
@@ -284,6 +292,24 @@ func TestSystemdKernelFixture(t *testing.T) {
 		}
 		assertSystemdProofEmpty(t, ctx, conn, p.systemd.name)
 	})
+
+	t.Run("ordinary_stop_retains_graceful_exit_status", func(t *testing.T) {
+		p := startSystemdProof(t, ctx, policy, dir, "trap 'exit 23' TERM; printf ready; while :; do sleep 1; done")
+		ready := make([]byte, 5)
+		if _, err := io.ReadFull(p.Stdout(), ready); err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr := readProofStreams(p)
+		if err := p.Stop(ctx, stopGrace); err != nil {
+			t.Fatal(err)
+		}
+		if code, err := p.Wait(ctx); err != nil || code != 23 {
+			t.Fatalf("gracefulstop exit=%d error=%v want23", code, err)
+		}
+		<-stdout
+		<-stderr
+		assertSystemdProofEmpty(t, ctx, conn, p.systemd.name)
+	})
 	t.Run("ordinary_stop_waits_for_domain", func(t *testing.T) {
 		p := startSystemdProof(t, ctx, policy, dir, "trap '' TERM; printf ready; sleep 60 & wait")
 		ready := make([]byte, 5)
@@ -293,6 +319,9 @@ func TestSystemdKernelFixture(t *testing.T) {
 		stdout, stderr := readProofStreams(p)
 		if err := p.Stop(ctx, 50*time.Millisecond); err != nil {
 			t.Fatal(err)
+		}
+		if code, err := p.Wait(ctx); err != nil || code != 137 {
+			t.Fatalf("forcedstop exit=%d error=%v want137", code, err)
 		}
 		<-stdout
 		<-stderr
@@ -359,7 +388,7 @@ func assertSystemdProofEmpty(t *testing.T, ctx context.Context, conn *dbus.Conn,
 }
 
 func proofUnitProperties(executable string, args []string, slice string) []systemdProperty {
-	return []systemdProperty{property("Type", "exec"), property("ExecStartEx", []systemdExec{{executable, args, []string{"no-env-expand"}}}), property("Slice", slice), property("RemainAfterExit", true), property("AddRef", true), property("KillMode", "control-group"), property("TimeoutStopUSec", uint64(stopGrace/time.Microsecond))}
+	return []systemdProperty{property("Type", "exec"), property("ExecStartEx", []systemdExec{{executable, args, []string{"no-env-expand"}}}), property("Slice", slice), property("RemainAfterExit", true), property("CollectMode", "inactive"), property("KillMode", "control-group"), property("TimeoutStopUSec", uint64(stopGrace/time.Microsecond))}
 }
 
 func assertKernelBudget(t *testing.T, group string, limits ResourceLimits) {
