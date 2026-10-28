@@ -14,19 +14,31 @@ var subscriptionCreationConstraints = []string{
 	"subscription_creation_typed_required",
 }
 
+var inboxDestinationConstraints = []string{"inbox_destination_fields_valid"}
+
 // ValidateSubscriptionCreationConstraints proves the typed storage invariants after every writer has moved to
 // typed-only storage. Each constraint is validated and committed independently so a long scan does not hold a
 // transaction open across other proofs. It is safe to rerun after interruption.
 func ValidateSubscriptionCreationConstraints(ctx context.Context, db *sql.DB) error {
-	for _, constraint := range subscriptionCreationConstraints {
-		if err := validateSubscriptionCreationConstraint(ctx, db, constraint); err != nil {
-			return fmt.Errorf("validate subscription constraint %s: %w", constraint, err)
+	return validateStorageConstraints(ctx, db, "subscription", subscriptionCreationConstraints)
+}
+
+// ValidateInboxDestinationConstraints proves the normalized destination shape after every writer has moved to
+// typed-only storage. It validates even on an empty table so future writes are covered by a catalog proof.
+func ValidateInboxDestinationConstraints(ctx context.Context, db *sql.DB) error {
+	return validateStorageConstraints(ctx, db, "inbox", inboxDestinationConstraints)
+}
+
+func validateStorageConstraints(ctx context.Context, db *sql.DB, table string, constraints []string) error {
+	for _, constraint := range constraints {
+		if err := validateStorageConstraint(ctx, db, table, constraint); err != nil {
+			return fmt.Errorf("validate %s constraint %s: %w", table, constraint, err)
 		}
 	}
 	return nil
 }
 
-func validateSubscriptionCreationConstraint(ctx context.Context, db *sql.DB, constraint string) error {
+func validateStorageConstraint(ctx context.Context, db *sql.DB, table, constraint string) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -41,20 +53,20 @@ func validateSubscriptionCreationConstraint(ctx context.Context, db *sql.DB, con
 
 	var validated bool
 	err = tx.QueryRowContext(ctx, `SELECT convalidated FROM pg_constraint
-		WHERE conrelid = 'subscription'::regclass AND conname = $1`, constraint).Scan(&validated)
+		WHERE conrelid = $1::regclass AND conname = $2`, table, constraint).Scan(&validated)
 	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("constraint is missing; apply the subscription creation typed-only migration first")
+		return fmt.Errorf("constraint is missing; apply the typed-only storage migration first")
 	}
 	if err != nil {
 		return fmt.Errorf("inspect validation state: %w", err)
 	}
 	if !validated {
-		// constraint is selected only from the static allowlist above, so it cannot contain user input.
-		if _, err := tx.ExecContext(ctx, `ALTER TABLE subscription VALIDATE CONSTRAINT `+constraint); err != nil {
+		// Table and constraint are selected only from static allowlists above, so they cannot contain user input.
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE `+table+` VALIDATE CONSTRAINT `+constraint); err != nil {
 			return fmt.Errorf("run VALIDATE CONSTRAINT: %w", err)
 		}
 		if err := tx.QueryRowContext(ctx, `SELECT convalidated FROM pg_constraint
-			WHERE conrelid = 'subscription'::regclass AND conname = $1`, constraint).Scan(&validated); err != nil {
+			WHERE conrelid = $1::regclass AND conname = $2`, table, constraint).Scan(&validated); err != nil {
 			return fmt.Errorf("recheck validation state: %w", err)
 		}
 		if !validated {

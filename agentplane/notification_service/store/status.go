@@ -236,9 +236,9 @@ func (s *Store) SandboxStatus(ctx context.Context, ref DestinationRef, debounce 
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		status.ObservedAt = now()
 		inboxes, nextWork, err := inboxesOf(ctx, tx, `
-			WHERE coalesce(destination_namespace, destination_ref->>'namespace') = $1
-				AND coalesce(destination_name, destination_ref->>'name') = $2
-				AND coalesce(destination_uid, destination_ref->>'uid') = $3
+			WHERE destination_namespace = $1
+				AND destination_name = $2
+				AND destination_uid = $3
 			ORDER BY session_id, id LIMIT $4`, ref.Namespace, ref.Name, ref.UID, maxInboxesPerSandbox)
 		if err != nil {
 			return err
@@ -393,7 +393,7 @@ func (s *Store) SessionNoticeStates(ctx context.Context, namespace string, sessi
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		states.ObservedAt = now()
 		inboxes, _, err := inboxesOf(ctx, tx, `
-			WHERE coalesce(destination_namespace, destination_ref->>'namespace') = $1 AND NOT retired
+			WHERE destination_namespace = $1 AND NOT retired
 				AND session_id IN (SELECT jsonb_array_elements_text($2::jsonb))
 			ORDER BY session_id, id`, namespace, string(wanted))
 		if err != nil {

@@ -333,10 +333,13 @@ func insertSubscriptionBackfillInbox(t *testing.T, ctx context.Context, db *sql.
 	id := uuid.New()
 	ref := DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID}
 	if _, err := db.ExecContext(ctx, `INSERT INTO inbox (
-		id, owner_namespace, owner_name, destination_key, destination_ref, session_id, last_cursor, acknowledged,
+		id, owner_namespace, owner_name, destination_key, destination_ref, destination_namespace, destination_name,
+		destination_uid, session_id, last_cursor, acknowledged,
 		covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, 'test-namespace', $2, $3, $4::jsonb, 'test-session', 0, 0, 0, 0, false, now(), now(), now())`,
-		id, ownerName, DestinationKey(ref, "test-session"), `{"namespace":"test-namespace","name":"test-sandbox","uid":"test-uid"}`); err != nil {
+		VALUES ($1, 'test-namespace', $2, $3, $4::jsonb, $5, $6, $7, 'test-session', 0, 0, 0, 0, false, now(), now(), now())`,
+		id, ownerName, DestinationKey(ref, "test-session"),
+		`{"namespace":"test-namespace","name":"test-sandbox","uid":"test-uid"}`,
+		ref.Namespace, ref.Name, ref.UID); err != nil {
 		t.Fatal(err)
 	}
 	return id

@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// These tests write rows the way the retired Python service did, from the golden vectors it produced, and hold the
-// store to finding and reading them: the store takes over a database that Python filled.
+// These tests write rows the retired Python service produced, with the destination columns populated as the
+// production backfill does, and hold the store to finding and reading them.
 
 func (f fixture) insertInbox(t *testing.T, key string, ref DestinationRef, sessionID string) uuid.UUID {
 	t.Helper()
@@ -30,10 +30,11 @@ func (f fixture) insertInboxAs(t *testing.T, id uuid.UUID, key string, ref Desti
 		t.Fatal(err)
 	}
 	f.exec(t, `
-		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref, session_id,
+		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref,
+			destination_namespace, destination_name, destination_uid, session_id,
 			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6, 0, 0, 0, 0, false, now(), now(), now())`,
-		id, f.owner.Namespace, f.owner.Name, key, string(destination), sessionID)
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 0, 0, 0, 0, false, now(), now(), now())`,
+		id, f.owner.Namespace, f.owner.Name, key, string(destination), ref.Namespace, ref.Name, ref.UID, sessionID)
 }
 
 // insertSubscription writes a subscription of the inbox from the creation JSON Python stored, with the columns

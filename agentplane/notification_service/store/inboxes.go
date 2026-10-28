@@ -61,8 +61,7 @@ type InboxPage struct {
 	Notice  *Notice
 }
 
-const inboxColumns = `id, CASE WHEN destination_namespace IS NULL AND destination_name IS NULL AND destination_uid IS NULL
-	THEN destination_ref END, destination_namespace, destination_name, destination_uid,
+const inboxColumns = `id, destination_namespace, destination_name, destination_uid,
 	session_id, last_cursor, acknowledged, covered, expired_through, retired, delivery_error`
 
 type rowScanner interface{ Scan(...any) error }
@@ -70,17 +69,16 @@ type rowScanner interface{ Scan(...any) error }
 // scanInbox reads inboxColumns, then any columns the query adds into extra.
 func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	var inbox Inbox
-	var destination []byte
 	var namespace, name, uid sql.NullString
 	var deliveryError sql.NullString
 	if err := row.Scan(append([]any{
-		&inbox.ID, &destination, &namespace, &name, &uid, &inbox.SessionID, &inbox.LastCursor, &inbox.Acknowledged,
+		&inbox.ID, &namespace, &name, &uid, &inbox.SessionID, &inbox.LastCursor, &inbox.Acknowledged,
 		&inbox.Covered, &inbox.ExpiredThrough, &inbox.Retired, &deliveryError,
 	}, extra...)...); err != nil {
 		return Inbox{}, err
 	}
 	var err error
-	inbox.DestinationRef, err = storedDestinationRef(inbox.ID, destination, namespace, name, uid)
+	inbox.DestinationRef, err = destinationRefFromColumns(inbox.ID, namespace, name, uid)
 	if err != nil {
 		return Inbox{}, err
 	}
@@ -90,25 +88,18 @@ func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	return inbox, nil
 }
 
-func storedDestinationRef(id uuid.UUID, destination []byte, namespace, name, uid sql.NullString) (DestinationRef, error) {
-	if namespace.Valid && name.Valid && uid.Valid {
-		return DestinationRef{Namespace: namespace.String, Name: name.String, UID: uid.String}, nil
-	}
-	if namespace.Valid || name.Valid || uid.Valid {
+func destinationRefFromColumns(id uuid.UUID, namespace, name, uid sql.NullString) (DestinationRef, error) {
+	if !namespace.Valid || !name.Valid || !uid.Valid {
 		return DestinationRef{}, fmt.Errorf("inbox %s has incomplete normalized destination fields", id)
 	}
-	var ref DestinationRef
-	if err := decode(destination, &ref); err != nil {
-		return DestinationRef{}, fmt.Errorf("inbox %s destination_ref: %w", id, err)
-	}
-	return ref, nil
+	return DestinationRef{Namespace: namespace.String, Name: name.String, UID: uid.String}, nil
 }
 
 // owned is the owner's inbox, locked for update when lock is set. An inbox of another owner is not found.
 func owned(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, owner Owner, lock bool) (Inbox, error) {
 	query := `SELECT ` + inboxColumns + ` FROM inbox
 		WHERE id = $1 AND owner_namespace = $2 AND owner_name = $3
-			AND coalesce(destination_uid, destination_ref ->> 'uid') = $4`
+			AND destination_uid = $4`
 	if lock {
 		query += ` FOR UPDATE`
 	}
@@ -135,7 +126,7 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner ServiceAccoun
 		var count int
 		if err := tx.QueryRowContext(ctx, `
 			SELECT count(*) FROM inbox WHERE owner_namespace = $1 AND owner_name = $2
-				AND coalesce(destination_uid, destination_ref ->> 'uid') = $3`,
+				AND destination_uid = $3`,
 			owner.Namespace, owner.Name, ref.UID).Scan(&count); err != nil {
 			return Inbox{}, err
 		}
@@ -145,18 +136,13 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner ServiceAccoun
 	} else if err != nil {
 		return Inbox{}, err
 	}
-	destination, err := json.Marshal(ref)
-	if err != nil {
-		return Inbox{}, err
-	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref,
+		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 			destination_namespace, destination_name, destination_uid, session_id,
 			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 0, 0, 0, 0, false, $10, $10, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, $9, $9, $9)
 		ON CONFLICT DO NOTHING`,
-		uuid.New(), owner.Namespace, owner.Name, key, string(destination), ref.Namespace, ref.Name, ref.UID,
-		sessionID, written); err != nil {
+		uuid.New(), owner.Namespace, owner.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, written); err != nil {
 		return Inbox{}, err
 	}
 	inbox, err := scanInbox(tx.QueryRowContext(ctx,
@@ -176,7 +162,7 @@ func (s *Store) ListInboxes(ctx context.Context, owner Owner) ([]Inbox, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+inboxColumns+` FROM inbox
 		WHERE owner_namespace = $1 AND owner_name = $2
-			AND coalesce(destination_uid, destination_ref ->> 'uid') = $3 ORDER BY id LIMIT 1000`,
+			AND destination_uid = $3 ORDER BY id LIMIT 1000`,
 		owner.Account.Namespace, owner.Account.Name, owner.SandboxUID)
 	if err != nil {
 		return nil, err

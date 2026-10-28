@@ -94,10 +94,11 @@ the command reports completion, roll out the typed-only release to every reader 
 snapshot and leaves new `creation` JSON rows NULL; the JSON column remains as a rollback copy for rows created by
 earlier releases. The migration also replaces JSON-dependent source constraints with typed source constraints.
 After every writer runs the typed-only release, run
-`bb run //agentplane/notification_service/storage_backfill/subscription_creation_validate_cmd:notification-subscription-creation-validate -- --writer-gate=notification-subscription-creation-typed-only-v1`.
-This resumable command validates each typed constraint in its own transaction with a short lock wait. Run it even
-on an empty database so later writes have validated proofs; a later contract migration may use an empty-table
-fast path, but requires all four catalog proofs before dropping the retained JSON column on a populated database.
+`bb run //agentplane/notification_service/storage_backfill/storage_validate_cmd:notification-storage-validate -- --proof=subscription-creation --writer-gate=notification-subscription-creation-typed-only-v1`.
+This command validates each typed constraint in its own transaction with a short lock wait and is safe to rerun.
+Run it even on an empty database so later writes have validated proofs; a later contract migration may use an
+empty-table fast path, but requires all four catalog proofs before dropping the retained JSON column on a populated
+database.
 
 Before the typed-only release, roll back to the dual-write release while retaining all additive migrations and
 columns; it prefers typed snapshots and can read rows written by the typed-only release. Do not roll back to an image
@@ -106,6 +107,22 @@ Down step requires every row to have a JSON creation again. After the rollback r
 inbox authorization, and read/write behavior. A later contract migration may drop the unused JSON column only after
 all readers and writers use typed storage; until then, the typed-only migration retains it for the compatible
 dual-write rollback.
+
+`00012_inbox_destination_typed_only.sql` requires the inbox-destination backfill completion marker on populated
+databases, makes the retained `destination_ref` JSON nullable, and adds a not-yet-validated shape constraint for the
+relational namespace, name and UID columns. Roll the typed-only reader and writer to every Notification Service
+instance only after the `00005` backfill reports completion. The new reader uses only the relational columns, and
+new inboxes leave `destination_ref` NULL. Once every writer has the typed-only release, run
+`bb run //agentplane/notification_service/storage_backfill/storage_validate_cmd:notification-storage-validate -- --proof=inbox-destination --writer-gate=notification-destination-typed-only-v1`.
+It validates the shape constraint in a separate bounded transaction, including on an empty database. A later
+contract migration requires that validated catalog proof before making the relational fields mandatory and dropping
+the retained JSON column.
+
+Before the contract migration, roll back only to the typed-capable dual-write release: it reads relational fields
+and can still read retained legacy JSON, and it repopulates JSON for new inboxes. Keep the additive columns and
+`00012` applied during rollback; its Down step refuses to run while any typed-only row lacks JSON. After rollback,
+check API ownership, inbox authorization, writes, reads and readiness. Once the contract migration drops JSON, an
+older image that depends on `destination_ref` is no longer a supported rollback.
 
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
 flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,
