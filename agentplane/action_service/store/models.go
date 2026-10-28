@@ -469,7 +469,7 @@ func (a *ActionIdentity) UnmarshalJSON(data []byte) error {
 	if err := decodeFields(data, (*plain)(a), "group", "name"); err != nil {
 		return err
 	}
-	return a.validate()
+	return a.Validate()
 }
 
 func (e *PolicyEvidence) UnmarshalJSON(data []byte) error {
