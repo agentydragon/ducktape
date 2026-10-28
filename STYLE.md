@@ -85,22 +85,22 @@ The date is when it was added, never a deadline. The gate is a date, version, tr
 
 One library per job. An unlisted job reuses what other Go services import before adding a library, and adds its row.
 
-| Job        | Use                                                                                                         |
-| ---------- | ----------------------------------------------------------------------------------------------------------- |
-| Logging    | `log/slog` JSON on stderr; controller-runtime via `ctrl.SetLogger(logr.FromSlogHandler(...))`. Never `zap`. |
-| Settings   | `spf13/viper` layered; `yaml.v3` with `KnownFields(true)` for file-only settings with literal keys.         |
-| HTTP       | Stdlib `net/http`; no router.                                                                               |
-| Tests      | Stdlib `testing`.                                                                                           |
-| PostgreSQL | `lib/pq`, `goose` migrations.                                                                               |
-| UUIDs      | `google/uuid`.                                                                                              |
-| YAML       | `gopkg.in/yaml.v3`.                                                                                         |
-| Retry      | `sethvargo/go-retry`; callers own error classification and progress resets.                                 |
-| Cgroups    | `containerd/cgroups/v3/cgroup2`.                                                                            |
-| GitHub     | `google/go-github` (REST) with `bradleyfalzon/ghinstallation` (App JWTs, installation tokens).              |
-| Schemas    | `santhosh-tekuri/jsonschema/v6`, with a loader of your own: the default one reads local files.              |
-| TTL cache  | `apimachinery/pkg/util/cache.Expiring`; `x/sync/singleflight` shares a lookup between callers.              |
-| Sets       | `apimachinery/pkg/util/sets`.                                                                               |
-| Casefold   | `x/text/cases.Fold`.                                                                                        |
+| Job        | Use                                                                                                                                                            |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Logging    | `log/slog` JSON on stderr; controller-runtime via `ctrl.SetLogger(logr.FromSlogHandler(...))`. Agentplane runner uses `zap` directly because COSI requires it. |
+| Settings   | `spf13/viper` layered; `yaml.v3` with `KnownFields(true)` for file-only settings with literal keys.                                                            |
+| HTTP       | Stdlib `net/http`; no router.                                                                                                                                  |
+| Tests      | Stdlib `testing`.                                                                                                                                              |
+| PostgreSQL | `lib/pq`, `goose` migrations.                                                                                                                                  |
+| UUIDs      | `google/uuid`.                                                                                                                                                 |
+| YAML       | `gopkg.in/yaml.v3`.                                                                                                                                            |
+| Retry      | `sethvargo/go-retry`; callers own error classification and progress resets.                                                                                    |
+| Cgroups    | `containerd/cgroups/v3/cgroup2`.                                                                                                                               |
+| GitHub     | `google/go-github` (REST) with `bradleyfalzon/ghinstallation` (App JWTs, installation tokens).                                                                 |
+| Schemas    | `santhosh-tekuri/jsonschema/v6`, with a loader of your own: the default one reads local files.                                                                 |
+| TTL cache  | `apimachinery/pkg/util/cache.Expiring`; `x/sync/singleflight` shares a lookup between callers.                                                                 |
+| Sets       | `apimachinery/pkg/util/sets`.                                                                                                                                  |
+| Casefold   | `x/text/cases.Fold`.                                                                                                                                           |
 
 ## Build System (Bazel)
 

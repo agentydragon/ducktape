@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"net"
 	"net/http"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/sethvargo/go-retry"
+	"go.uber.org/zap"
 )
 
 // A nil executor config selects Codex's local execution. ContainerSocket selects
@@ -175,7 +175,7 @@ func (e *codexExecutor) start(ctx context.Context) (*executorInstance, error) {
 		for {
 			n, err := p.Stderr().Read(buffer)
 			if n > 0 {
-				slog.Info("Codex executor stderr", "text", string(buffer[:n]))
+				zap.L().Info("Codex executor stderr", zap.String("text", string(buffer[:n])))
 			}
 			if err != nil {
 				return
@@ -215,14 +215,14 @@ func (e *codexExecutor) run(ctx context.Context) {
 			// retrying at its backoff. Publish the reason for callers waiting on it, and name it
 			// once per outage rather than at every attempt.
 			if e.setRefusal(refusal) {
-				slog.Error("Codex executor refused to start", "error", refusal)
+				zap.L().Error("Codex executor refused to start", zap.Error(refusal))
 			}
 		} else {
 			e.setRefusal(nil)
 		}
 		if err == nil {
 			e.setReady(true)
-			slog.Info("Codex executor ready", "url", e.config.URL)
+			zap.L().Info("Codex executor ready", zap.String("url", e.config.URL))
 			err = monitorExecutor(ctx, e.config.URL, instance.done)
 		}
 		e.setReady(false)
@@ -242,7 +242,7 @@ func (e *codexExecutor) run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		slog.Warn("Codex executor lost; restarting without replay", "error", err)
+		zap.L().Warn("Codex executor lost; restarting without replay", zap.Error(err))
 		return retry.RetryableError(err)
 	})
 }
@@ -272,7 +272,7 @@ func monitorExecutorHealth(ctx context.Context, done <-chan error, probe func(co
 			failures++
 			// A tool memcg OOM can stall RPC briefly while the kernel selects its victim.
 			// Fencing on that first timeout would discard the surviving server's tool result.
-			slog.Warn("Codex executor health probe failed", "consecutive_failures", failures, "error", err)
+			zap.L().Warn("Codex executor health probe failed", zap.Int("consecutive_failures", failures), zap.Error(err))
 			if failures >= 3 {
 				return fmt.Errorf("executor failed %d consecutive health probes: %w", failures, err)
 			}

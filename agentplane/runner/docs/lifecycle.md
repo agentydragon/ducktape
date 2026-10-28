@@ -6,7 +6,8 @@ acknowledgements, and state-owner lock remain the durable authorities.
 
 ## State and owners
 
-Each Runner creates one namespaced, in-memory COSI runtime. Its resources contain comparable intent
+Each Runner creates one namespaced, in-memory COSI runtime. The runner and COSI use the same Zap
+logger, configured by the executable for JSON on stderr. Its resources contain comparable intent
 and progress values. They do not contain process handles, adapters, cancellation functions, journal
 connections, or other native state.
 

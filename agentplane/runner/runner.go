@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -141,7 +141,7 @@ func (r *Runner) fail(err error) {
 	if err == nil {
 		return
 	}
-	slog.Error("runner operation failed", "error", err)
+	zap.L().Error("runner operation failed", zap.Error(err))
 	select {
 	case r.fatal <- err:
 	default:
@@ -183,7 +183,7 @@ func (r *Runner) Startup(ctx context.Context) error {
 			}
 			// Keep serving durable reservations; activation reports the conflicting
 			// bootstrap without executing it or abandoning admitted commands.
-			slog.Error("the Sandbox selected a different bootstrap script", "error", err)
+			zap.L().Error("the Sandbox selected a different bootstrap script", zap.Error(err))
 		}
 	}
 	r.changed()
@@ -698,7 +698,7 @@ func (r *Runner) ListSessions(ctx context.Context, _ *runnerpb.ListSessionsReque
 			minimum = stageClosed
 		}
 		if err := r.lifecycle.wait(ctx, minimum); err != nil {
-			return nil, status.FromContextError(err).Err()
+			return nil, rpcError(err)
 		}
 	}
 	result := &runnerpb.ListSessionsResponse{}

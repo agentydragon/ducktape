@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"sync"
 	"time"
@@ -22,6 +21,7 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -834,7 +834,7 @@ func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adap
 		return err
 	}
 	if !json.Valid(line) || len(bytes.TrimSpace(line)) == 0 || bytes.TrimSpace(line)[0] != '{' {
-		slog.Warn("non-object frame on harness stdout", "session", s.id, "sequence", entry.Origin.Sequence)
+		zap.L().Warn("non-object frame on harness stdout", zap.String("session", s.id), zap.Uint64("sequence", entry.Origin.Sequence))
 		return nil
 	}
 	frame := append(json.RawMessage(nil), line...)
@@ -845,7 +845,7 @@ func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adap
 		if errors.Is(err, context.Canceled) || errors.As(err, &storageErr) {
 			return err
 		}
-		slog.Error("native frame translation failed", "session", s.id, "sequence", entry.Origin.Sequence, "error", err)
+		zap.L().Error("native frame translation failed", zap.String("session", s.id), zap.Uint64("sequence", entry.Origin.Sequence), zap.Error(err))
 	}
 	s.mu.Lock()
 	waiting := s.waiters[:0]
@@ -1128,7 +1128,7 @@ func (s *Session) halt(ctx context.Context, reason stopReason) {
 	if process != nil && process.Running() && adapter != nil && turn != "" {
 		interruptCtx := context.WithValue(ctx, interruptTargetKey{}, turn)
 		if err := adapter.Interrupt(interruptCtx, turn); err != nil && !errors.Is(err, errStaleInterrupt) {
-			slog.Warn("teardown interrupt failed", "session", s.id, "error", err)
+			zap.L().Warn("teardown interrupt failed", zap.String("session", s.id), zap.Error(err))
 		}
 		waitCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		for s.Session().ActiveTurnID == turn && process.Running() {
@@ -1248,7 +1248,7 @@ func (s *Session) startSetup(script string) {
 			}
 		}
 		if err != nil {
-			slog.Error("session setup interrupted", "session", s.id, "error", err)
+			zap.L().Error("session setup interrupted", zap.String("session", s.id), zap.Error(err))
 			if e := s.Emit(s.runner.ctx, observation(&eventpb.SetupInterrupted{}), nil); e != nil {
 				s.runner.fail(e)
 			}

@@ -5,12 +5,17 @@ import (
 	"database/sql"
 	"embed"
 	"io/fs"
-	"log/slog"
 
 	"github.com/pressly/goose/v3"
+	"go.uber.org/zap"
 )
 
 const journalMigrationTableName = "runner_goose_version"
+
+type gooseZapLogger struct{ logger *zap.SugaredLogger }
+
+func (l gooseZapLogger) Printf(format string, args ...any) { l.logger.Infof(format, args...) }
+func (l gooseZapLogger) Fatalf(format string, args ...any) { l.logger.Fatalf(format, args...) }
 
 //go:embed journal_migrations/*.sql
 var journalMigrationFiles embed.FS
@@ -24,7 +29,7 @@ func migrateJournalSchema(ctx context.Context, db *sql.DB) error {
 		goose.DialectSQLite3, db, files,
 		goose.WithTableName(journalMigrationTableName),
 		goose.WithDisableGlobalRegistry(true),
-		goose.WithSlog(slog.Default()),
+		goose.WithLogger(gooseZapLogger{logger: zap.L().Sugar()}),
 	)
 	if err != nil {
 		return err

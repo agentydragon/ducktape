@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,6 +14,7 @@ import (
 	"github.com/containerd/cgroups/v3/cgroup2"
 	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
+	"go.uber.org/zap"
 
 	"golang.org/x/sys/unix"
 )
@@ -221,10 +221,10 @@ func (c *AgentCgroups) ioLimits(limits ResourceLimits) ([]cgroup2.Entry, error) 
 }
 
 func logCgroupMemoryDiagnostics(path string) {
-	fields := []any{"cgroup", path}
+	fields := []zap.Field{zap.String("cgroup", path)}
 	contents, err := os.ReadFile(filepath.Join(path, "memory.events"))
 	if err != nil {
-		fields = append(fields, "memory_events_error", err.Error())
+		fields = append(fields, zap.String("memory_events_error", err.Error()))
 	} else {
 		events := map[string]uint64{}
 		for _, line := range strings.Split(strings.TrimSpace(string(contents)), "\n") {
@@ -237,15 +237,15 @@ func logCgroupMemoryDiagnostics(path string) {
 				events[parts[0]] = value
 			}
 		}
-		fields = append(fields, "memory_events", events)
+		fields = append(fields, zap.Any("memory_events", events))
 	}
 	peak, err := os.ReadFile(filepath.Join(path, "memory.peak"))
 	if err != nil {
-		fields = append(fields, "memory_peak_error", err.Error())
+		fields = append(fields, zap.String("memory_peak_error", err.Error()))
 	} else if value, parseErr := strconv.ParseUint(strings.TrimSpace(string(peak)), 10, 64); parseErr != nil {
-		fields = append(fields, "memory_peak_error", parseErr.Error())
+		fields = append(fields, zap.String("memory_peak_error", parseErr.Error()))
 	} else {
-		fields = append(fields, "memory_peak_bytes", value)
+		fields = append(fields, zap.Uint64("memory_peak_bytes", value))
 	}
-	slog.New(slog.NewJSONHandler(os.Stderr, nil)).Info("agent process cgroup memory diagnostics", fields...)
+	zap.L().Info("agent process cgroup memory diagnostics", fields...)
 }

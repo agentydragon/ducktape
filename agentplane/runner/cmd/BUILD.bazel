@@ -9,5 +9,7 @@ go_binary(
     deps = [
         "//agentplane/observability",
         "//agentplane/runner",
+        "@org_uber_go_zap//:zap",
+        "@org_uber_go_zap//zapcore",
     ],
 )

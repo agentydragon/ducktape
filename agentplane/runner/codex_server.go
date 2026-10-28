@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -20,6 +19,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // codexServer runs the Runner's one Codex app-server, started when a Codex Session first needs it. Each
@@ -288,7 +288,7 @@ func (c *codexServer) readStderr(p *codexProcess) {
 			text := string(bytes.ToValidUTF8(buffer[:n], []byte("�")))
 			hosts := p.router.Hosts()
 			if len(hosts) == 0 {
-				slog.Info("Codex app-server stderr", "process", p.id, "text", text)
+				zap.L().Info("Codex app-server stderr", zap.String("process", p.id), zap.String("text", text))
 			}
 			for _, s := range hosts {
 				if e := s.Emit(c.runner.ctx, observation(&eventpb.HarnessStderr{Text: text}), nil); e != nil {

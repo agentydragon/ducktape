@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"net"
 	"net/url"
@@ -14,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"go.uber.org/zap"
 )
 
 // Configuration is the file contract used by every Runner deployment. Sandbox
@@ -53,7 +53,7 @@ func (e EnvironmentVariables) resolve(environ map[string]string) (map[string]str
 		if value, ok := environ[name]; ok {
 			child[name] = value
 		} else {
-			slog.Warn("inherited variable is absent from Runner environment", "name", name)
+			zap.L().Warn("inherited variable is absent from Runner environment", zap.String("name", name))
 		}
 	}
 	for name, value := range e.Values {

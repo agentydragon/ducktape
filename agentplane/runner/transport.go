@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +16,7 @@ import (
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/sethvargo/go-retry"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/codes"
@@ -86,7 +86,7 @@ func retryStream(ctx context.Context, name string, attempt func(context.Context)
 		if code := status.Code(lastError); code == codes.PermissionDenied || code == codes.FailedPrecondition {
 			wait = 30 * time.Second
 		}
-		slog.Warn("runner stream lost", "stream", name, "error", lastError, "retry_after", wait)
+		zap.L().Warn("runner stream lost", zap.String("stream", name), zap.Error(lastError), zap.Duration("retry_after", wait))
 		return wait, stop
 	})
 	err := retry.Do(ctx, waits, func(ctx context.Context) error {

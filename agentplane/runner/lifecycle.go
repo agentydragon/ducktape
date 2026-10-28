@@ -223,7 +223,7 @@ type lifecycle struct {
 
 func newLifecycle(r *Runner) (*lifecycle, error) {
 	store := state.WrapCore(namespaced.NewState(inmem.Build))
-	engine, err := cosiruntime.NewRuntime(store, cosiLogger())
+	engine, err := cosiruntime.NewRuntime(store, zap.L().Named("lifecycle"))
 	if err != nil {
 		return nil, err
 	}
@@ -659,9 +659,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			}
 			if err != nil && !errors.Is(err, context.Canceled) {
 				if failure := s.settleUndispatched(s.runner.ctx, "harness startup failed before this command was dispatched: "+err.Error()); failure != nil {
+					s.runner.fail(failure)
 					return failure
 				}
 				if failure := s.Emit(s.runner.ctx, observation(&eventpb.HarnessLaunchFailed{Reason: err.Error()}), nil); failure != nil {
+					s.runner.fail(failure)
 					return failure
 				}
 			}
