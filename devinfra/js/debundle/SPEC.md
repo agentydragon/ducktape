@@ -166,7 +166,7 @@ empty `affected_roots`, and `unreachable_branch` evidence naming the defining
 wrapper, consuming import, wrapper call, callback and guard locations. Deferred
 nested bodies and unsupported contexts keep their conservative witnesses.
 This does not change purity, callback effects, exceptions or loader return
-property reads. See [the checked shapes and fallback boundaries](docs/purity_soundness.md#source-callback-arguments-and-unreachable-native-writes).
+property reads.
 
 Each `dependency_graph.json` written by `debundle run` carries input provenance:
 SHA-256 of the executable engine and the exact bytes read for the tree config,
