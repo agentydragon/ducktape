@@ -7,8 +7,8 @@ real generators and consumers.
 The inventory below and the whole-repository “before” map record the production state at immutable
 design-base commit [`6eb2ffc2131fff18eaedcbdcf12d23aa93187edf`](https://github.com/agentydragon/ducktape/commit/6eb2ffc2131fff18eaedcbdcf12d23aa93187edf).
 Links to the former macro files point to that baseline because those files are removed by the
-implementation. The “after” map describes the combined target state, including the separate
-follow-up that removes maintained indexed-model alias modules.
+implementation. The “after” map describes the combined target state, including the direct named
+imports migrated in [PR #12418](https://github.com/agentydragon/ducktape/pull/12418).
 
 ## Baseline inputs, outputs, and owners
 
@@ -331,8 +331,8 @@ mark file-input converters, explicit schema artifacts, named model exports, and 
 of generated Zod. The unchanged paths are repeated in full so this map stands on its own. It
 introduces no universal schema IR: OpenAPI 3, standalone JSON Schema, protobuf descriptors, Swagger
 2, Discovery, and Kubernetes structural schemas stay distinct. The converter and owner-artifact
-migration is implemented; generated named exports are available, while the remaining maintained
-indexed-model alias modules are scheduled for a separate stacked follow-up.
+migration is implemented, and [PR #12418](https://github.com/agentydragon/ducktape/pull/12418)
+migrated maintained model consumers to direct imports from generated named exports.
 
 The HTTP owner exports one named OpenAPI artifact for both declarations and Zod. Model/tool owners
 export standalone JSON Schema directly, including SSH; the synthetic HTTP operation disappears.
@@ -640,8 +640,9 @@ A general recursive reference resolver or schema normalization framework is not 
 ### Generate named model exports
 
 The operation map remains necessary for typed HTTP calls, while model consumers can write
-`import type { InvoiceResponse } from "./api/schema"`. The generator owns these direct named exports;
-maintained alias-only source files are removed in the separate follow-up noted above.
+`import type { InvoiceResponse } from "./api/schema"`. The generator owns these direct named exports.
+[PR #12418](https://github.com/agentydragon/ducktape/pull/12418) removed maintained alias-only
+source files and migrated their consumers to direct imports.
 
 The spike exercises the existing `openapi-typescript` root-export options:
 
@@ -763,9 +764,9 @@ The implementation burned down the proposed migration gates as follows:
    not issue requests, while local references and absolute `$id` file inputs work.
 4. Deleted the superseded executable-input macros and `strip_ts_types` after the final callers
    migrated. Their old definitions are linked from the immutable baseline inventory above.
-5. The generated root model exports are validated. Removing the remaining maintained indexed-model
-   alias modules is intentionally a separate stacked follow-up; exceptional derived types and
-   naming-collision cases remain owner-maintained there.
+5. Validated generated root model exports and migrated maintained indexed-model consumers to direct
+   imports in [PR #12418](https://github.com/agentydragon/ducktape/pull/12418). Exceptional derived
+   types and naming-collision cases remain owner-maintained.
 
 The implementation keeps the existing wire contracts and pinned generator versions. The selected
 production schema targets, owning renderer tests, frontend type/lint targets, and changed-file hooks
