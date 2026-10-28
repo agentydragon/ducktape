@@ -35,12 +35,13 @@ use swc_ecma_ast::ModuleItem;
 use crate::SourceLocation;
 use crate::analysis_inputs::{
     CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments, DeferredRecordMember,
-    NamespaceWrapperSummary, NativeIntegrity, ResolvedBindingValueInput, ReturnedRecordSummary,
-    SelectedBindingValueInput,
+    NamespaceWrapperSummary, NativeIntegrity, ProofDependencies, ResolvedBindingValueInput,
+    ReturnedRecordSummary, SelectedBindingValueInput,
 };
 use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
 };
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{
     ChunkCodeGraph, Purity, PurityEffectRules, PurityMode, collect_plain_array_bindings,
     collect_plain_data_bindings,
@@ -379,6 +380,159 @@ pub struct ResolvedCallableSummaries {
     pub value_inputs: BTreeMap<ModuleKey, Vec<ResolvedBindingValueInput>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct CallableExportKey {
+    module: ModuleKey,
+    export: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct CallableImportKey {
+    module: ModuleKey,
+    local: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum CallableFactKey {
+    Export(CallableExportKey),
+    Import(CallableImportKey),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct CallableImportProjection {
+    imported: CallableImportKey,
+    provider: CallableExportKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum CallableProjectionRule {
+    Export(CallableExportKey),
+    Import(CallableImportProjection),
+}
+
+struct CallableProjectionRules {
+    exports: BTreeMap<CallableExportKey, CallableSummary>,
+    imports: Vec<CallableImportProjection>,
+}
+
+impl CallableProjectionRules {
+    fn new(
+        exports: BTreeMap<CallableExportKey, CallableSummary>,
+        modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    ) -> Self {
+        let imports = modules
+            .iter()
+            .flat_map(|(module, facts)| {
+                facts
+                    .imports
+                    .iter()
+                    .map(|(local, target)| CallableImportProjection {
+                        imported: CallableImportKey {
+                            module: module.clone(),
+                            local: local.clone(),
+                        },
+                        provider: CallableExportKey {
+                            module: target.module.clone(),
+                            export: target.export.clone(),
+                        },
+                    })
+            })
+            .collect();
+        Self { exports, imports }
+    }
+
+    fn producers(&self) -> BTreeSet<CallableProjectionRule> {
+        self.exports
+            .keys()
+            .cloned()
+            .map(CallableProjectionRule::Export)
+            .chain(
+                self.imports
+                    .iter()
+                    .cloned()
+                    .map(CallableProjectionRule::Import),
+            )
+            .collect()
+    }
+}
+
+impl IterativeRules for CallableProjectionRules {
+    type Key = CallableFactKey;
+    type Fact = CallableSummary;
+    type Rule = CallableProjectionRule;
+
+    fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
+        match rule {
+            CallableProjectionRule::Export(key) => {
+                let Some(summary) = self.exports.get(key) else {
+                    return;
+                };
+                context.assume(&callable_summary_dependencies(summary));
+                context.propose(CallableFactKey::Export(key.clone()), summary.clone());
+            }
+            CallableProjectionRule::Import(projection) => {
+                let provider = CallableFactKey::Export(projection.provider.clone());
+                let Some(summary) = context.read(provider).cloned() else {
+                    return;
+                };
+                context.propose(
+                    CallableFactKey::Import(projection.imported.clone()),
+                    summary,
+                );
+            }
+        }
+    }
+
+    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        let previous = current.clone();
+        current.merge(contribution);
+        *current != previous
+    }
+}
+
+fn callable_summary_dependencies(summary: &CallableSummary) -> ProofDependencies {
+    let mut dependencies = ProofDependencies::default();
+    if let Some(record) = &summary.returned_record {
+        dependencies
+            .value_inputs
+            .extend(record.inference.value_input_refs.iter().cloned());
+    }
+    if let Some(wrapper) = &summary.namespace_wrapper {
+        dependencies
+            .value_inputs
+            .extend(wrapper.inference.value_input_refs.iter().cloned());
+    }
+    dependencies
+}
+
+fn solve_callable_import_projections(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    exports: BTreeMap<CallableExportKey, CallableSummary>,
+) -> BTreeMap<ModuleKey, BTreeMap<String, CallableSummary>> {
+    let rules = CallableProjectionRules::new(exports, modules);
+    let producers = rules.producers();
+    let solved = IterativeInference::new(rules).solve(producers);
+    modules
+        .iter()
+        .map(|(module, facts)| {
+            let bindings = facts
+                .imports
+                .keys()
+                .filter_map(|local| {
+                    let key = CallableFactKey::Import(CallableImportKey {
+                        module: module.clone(),
+                        local: local.clone(),
+                    });
+                    solved
+                        .get(&key)
+                        .map(|judgment| (local.clone(), judgment.value().clone()))
+                })
+                .collect();
+            (module.clone(), bindings)
+        })
+        .collect()
+}
+
 pub fn resolve_imported_callable_summaries(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
@@ -387,17 +541,23 @@ pub fn resolve_imported_callable_summaries(
     let required: BTreeSet<_> = modules
         .values()
         .flat_map(|facts| facts.imports.values())
-        .map(|target| (target.module.clone(), target.export.clone()))
+        .map(|target| CallableExportKey {
+            module: target.module.clone(),
+            export: target.export.clone(),
+        })
         .collect();
-    let mut factories: BTreeMap<(ModuleKey, String), CallableSummary> = BTreeMap::new();
+    let mut export_summaries: BTreeMap<CallableExportKey, CallableSummary> = BTreeMap::new();
     for (module, exports) in asserted {
         for export in exports {
             if modules
                 .get(module)
                 .is_some_and(|facts| facts.exports.contains_key(export))
             {
-                factories.insert(
-                    (module.clone(), export.clone()),
+                export_summaries.insert(
+                    CallableExportKey {
+                        module: module.clone(),
+                        export: export.clone(),
+                    },
                     CallableSummary::callback_factory(CallbackFactoryEvidence::AuthorAssertion {
                         defining_module: module.clone(),
                         export: export.clone(),
@@ -416,7 +576,12 @@ pub fn resolve_imported_callable_summaries(
         let locals = facts
             .exports
             .iter()
-            .filter(|(export, _)| required.contains(&(module.clone(), (*export).clone())))
+            .filter(|(export, _)| {
+                required.contains(&CallableExportKey {
+                    module: module.clone(),
+                    export: (*export).clone(),
+                })
+            })
             .map(|(_, local)| local.clone())
             .collect();
         let views = top_level_item_views(facts.body);
@@ -476,14 +641,25 @@ pub fn resolve_imported_callable_summaries(
                 wrapper: evidence,
                 object_arguments: objects.clone(),
             });
-            factories
-                .entry((module.clone(), export.clone()))
+            export_summaries
+                .entry(CallableExportKey {
+                    module: module.clone(),
+                    export: export.clone(),
+                })
                 .or_default()
                 .merge(summary);
         }
     }
+    // This projection is the source-only input to native branch refinement.
+    // Generic inferred callback factories are deliberately added after the
+    // completed all-module native census and cannot flow back into it.
+    let source_only_imports = solve_callable_import_projections(modules, export_summaries.clone());
     for (module, facts) in &mut prepared {
-        facts.refine_native_branches(&project_callable_summaries(&modules[*module], &factories));
+        facts.refine_native_branches(
+            source_only_imports
+                .get(module.as_str())
+                .expect("every prepared module has an import projection"),
+        );
         facts.locate_native_writes(module, modules[*module].source.as_ref());
     }
     let native_integrity = crate::facts::sync_effects::execution_index::resolve_native_integrity(
@@ -509,14 +685,17 @@ pub fn resolve_imported_callable_summaries(
         };
         let callback_factories = &capabilities.callback_factories;
         for (export, local) in &facts.exports {
-            let key = (module.clone(), export.clone());
-            if !required.contains(&key) || factories.contains_key(&key) {
+            let key = CallableExportKey {
+                module: module.clone(),
+                export: export.clone(),
+            };
+            if !required.contains(&key) || export_summaries.contains_key(&key) {
                 continue;
             }
             let Some(&function_start) = callback_factories.get(local) else {
                 continue;
             };
-            factories
+            export_summaries
                 .entry(key)
                 .or_default()
                 .merge(CallableSummary::callback_factory(
@@ -562,14 +741,17 @@ pub fn resolve_imported_callable_summaries(
                 })
             };
             for (export, local) in &facts.exports {
-                let key = (module.clone(), export.clone());
+                let key = CallableExportKey {
+                    module: module.clone(),
+                    export: export.clone(),
+                };
                 if !required.contains(&key) {
                     continue;
                 }
                 let Some(record) = records.get(local) else {
                     continue;
                 };
-                factories
+                export_summaries
                     .entry(key)
                     .or_default()
                     .merge(CallableSummary::returned_record(ReturnedRecordSummary {
@@ -594,7 +776,10 @@ pub fn resolve_imported_callable_summaries(
     }
     for (module, facts) in modules {
         for (export, local) in &facts.exports {
-            let key = (module.clone(), export.clone());
+            let key = CallableExportKey {
+                module: module.clone(),
+                export: export.clone(),
+            };
             if !required.contains(&key) {
                 continue;
             }
@@ -611,7 +796,7 @@ pub fn resolve_imported_callable_summaries(
                     start_column: Some(column),
                 })
             });
-            factories
+            export_summaries
                 .entry(key)
                 .or_default()
                 .merge(CallableSummary::namespace_wrapper(
@@ -625,33 +810,12 @@ pub fn resolve_imported_callable_summaries(
                 ));
         }
     }
-    let imported_callables = modules
-        .iter()
-        .map(|(module, facts)| {
-            let bindings = project_callable_summaries(facts, &factories);
-            (module.clone(), bindings)
-        })
-        .collect();
+    let imported_callables = solve_callable_import_projections(modules, export_summaries);
     Ok(ResolvedCallableSummaries {
         imported_callables,
         native_integrity: Some(native_integrity),
         value_inputs: resolved_value_inputs,
     })
-}
-
-fn project_callable_summaries(
-    facts: &ModulePurityFacts<'_>,
-    summaries: &BTreeMap<(ModuleKey, String), CallableSummary>,
-) -> BTreeMap<String, CallableSummary> {
-    facts
-        .imports
-        .iter()
-        .filter_map(|(local, target)| {
-            summaries
-                .get(&(target.module.clone(), target.export.clone()))
-                .map(|summary| (local.clone(), summary.clone()))
-        })
-        .collect()
 }
 
 /// Resolve author-asserted inline-only callback factories through the same
