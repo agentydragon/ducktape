@@ -15,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/claude"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex"
 	harness "github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"go.uber.org/zap"
 )
@@ -425,7 +426,7 @@ func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adap
 	if err := adapter.OnFrame(ctx, frame, entry.Origin.Sequence); err != nil {
 		// Native protocols may acquire fields independently of the runner. Preserve the
 		// original frame and report the translation failure; storage failures stop us.
-		var storageErr *JournalStorageError
+		var storageErr *journal.StorageError
 		if errors.Is(err, context.Canceled) || errors.As(err, &storageErr) {
 			return err
 		}

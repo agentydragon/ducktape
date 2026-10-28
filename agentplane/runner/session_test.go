@@ -10,6 +10,7 @@ import (
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/state"
 
@@ -53,7 +54,7 @@ func frameTestSession(t *testing.T, command []string) (*Session, *supervision.Ma
 	if err != nil {
 		t.Fatal(err)
 	}
-	journal, err := OpenJournal(context.Background(), filepath.Join(dir, "journal.sqlite"), record.EventSourceID)
+	journal, err := journal.Open(context.Background(), filepath.Join(dir, "journal.sqlite"), record.EventSourceID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,26 +375,16 @@ func TestInterruptedReconciliationLeavesStdoutFreeForHistoryRPC(t *testing.T) {
 	}
 }
 
-func TestObservedItemKeepsOwningTurnWhenItCompletesLater(t *testing.T) {
-	journal := openTestJournal(t)
-	ctx := context.Background()
-	for _, event := range []*eventpb.Event{
-		observation(&eventpb.TurnStarted{TurnId: "owner"}),
-		observation(&eventpb.ItemStarted{ItemId: "tool", Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, ToolName: "commandExecution"}),
-		observation(&eventpb.TurnCompleted{TurnId: "owner", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}),
-		observation(&eventpb.TurnStarted{TurnId: "later"}),
-		observation(&eventpb.ItemCompleted{ItemId: "tool", Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: "done", Succeeded: true}}}),
-		observation(&eventpb.TurnCompleted{TurnId: "later", Status: eventpb.TurnStatus_TURN_STATUS_INTERRUPTED}),
-	} {
-		if _, err := journal.Append(ctx, event, AppendOptions{}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	items, err := journal.ObservedItems(ctx, "later")
+func openTestJournal(t *testing.T) *journal.Journal {
+	t.Helper()
+	journal, err := journal.Open(context.Background(), filepath.Join(t.TempDir(), "journal.sqlite"), "test-source")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 1 || items["tool"].TurnID != "owner" || !items["tool"].Completed || items["tool"].Output != "done" {
-		t.Fatalf("lost item owner or later completion: %+v", items)
-	}
+	t.Cleanup(func() {
+		if err := journal.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return journal
 }

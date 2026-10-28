@@ -1,4 +1,4 @@
-package runner
+package journal
 
 import (
 	"context"
@@ -17,11 +17,11 @@ type gooseZapLogger struct{ logger *zap.SugaredLogger }
 func (l gooseZapLogger) Printf(format string, args ...any) { l.logger.Infof(format, args...) }
 func (l gooseZapLogger) Fatalf(format string, args ...any) { l.logger.Fatalf(format, args...) }
 
-//go:embed journal_migrations/*.sql
+//go:embed migrations/*.sql
 var journalMigrationFiles embed.FS
 
 func migrateJournalSchema(ctx context.Context, db *sql.DB) error {
-	files, err := fs.Sub(journalMigrationFiles, "journal_migrations")
+	files, err := fs.Sub(journalMigrationFiles, "migrations")
 	if err != nil {
 		return err
 	}

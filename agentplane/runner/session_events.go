@@ -10,6 +10,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	harness "github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -95,7 +96,7 @@ func (s *Session) recordEvent(ctx context.Context, e *eventpb.Event, sources []u
 		s.writeMu.Lock()
 		defer s.writeMu.Unlock()
 	}
-	entry, err := s.journal.Append(ctx, e, AppendOptions{Sources: sources, TerminalCommandIDs: ids})
+	entry, err := s.journal.Append(ctx, e, journal.AppendOptions{Sources: sources, TerminalCommandIDs: ids})
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +223,7 @@ func (s *Session) ConfirmUserMessage(ctx context.Context, c harness.UserMessageC
 			return err
 		}
 		if record == nil {
-			return fmt.Errorf("%w %q", ErrUnknownCommand, id)
+			return fmt.Errorf("%w %q", journal.ErrUnknownCommand, id)
 		}
 		pending = pending || record.TerminalCursor == nil
 	}

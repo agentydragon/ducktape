@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/sethvargo/go-retry"
@@ -91,7 +92,7 @@ func retryStream(ctx context.Context, name string, attempt func(context.Context)
 	})
 	err := retry.Do(ctx, waits, func(ctx context.Context) error {
 		progress, err := attempt(ctx)
-		var storage *JournalStorageError
+		var storage *journal.StorageError
 		var local *localStreamError
 		if err == nil || errors.As(err, &storage) || errors.As(err, &local) {
 			return err

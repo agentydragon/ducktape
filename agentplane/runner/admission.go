@@ -11,6 +11,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -180,11 +181,11 @@ func rpcError(err error) error {
 		return err
 	}
 	switch {
-	case errors.Is(err, ErrCommandConflict):
+	case errors.Is(err, journal.ErrCommandConflict):
 		return status.Error(codes.AlreadyExists, err.Error())
-	case errors.Is(err, ErrActiveTurnChanged):
+	case errors.Is(err, journal.ErrActiveTurnChanged):
 		return status.Error(codes.FailedPrecondition, err.Error())
-	case errors.Is(err, ErrJournalSealed):
+	case errors.Is(err, journal.ErrSealed):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return status.Error(codes.Unavailable, err.Error())

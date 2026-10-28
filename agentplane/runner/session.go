@@ -10,6 +10,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"go.uber.org/zap"
 )
@@ -25,7 +26,7 @@ type Session struct {
 	runner                                                 *Runner
 	id                                                     string
 	record                                                 *SessionRecord
-	journal                                                *Journal
+	journal                                                *journal.Journal
 	mu                                                     sync.Mutex
 	admitMu                                                sync.Mutex
 	writeMu                                                sync.Mutex
@@ -55,7 +56,7 @@ type Session struct {
 	codexAppServer *codexAppServerProcess
 }
 
-func newSession(r *Runner, id string, record *SessionRecord, journal *Journal) *Session {
+func newSession(r *Runner, id string, record *SessionRecord, journal *journal.Journal) *Session {
 	s := &Session{runner: r, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, controlDispatches: map[string]*operation{}, interrupts: map[string]string{}, launch: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED}
 	if record.SetupScriptSHA256 != nil {
 		s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING

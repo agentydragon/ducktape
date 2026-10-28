@@ -1,4 +1,4 @@
-package runner
+package journal
 
 import (
 	"context"
@@ -23,18 +23,18 @@ import (
 const journalPageSize = 128
 
 var (
-	ErrCommandConflict       = errors.New("command ID reused for different work")
-	ErrActiveTurnChanged     = errors.New("target turn is no longer active")
-	ErrJournalFailed         = errors.New("journal failed; reopen it for recovery")
-	ErrJournalSealed         = errors.New("journal is sealed")
-	ErrUnknownCommand        = errors.New("unknown command ID")
-	ErrJournalChangedOutside = errors.New("journal changed outside its owner; reopen it for recovery")
+	ErrCommandConflict   = errors.New("command ID reused for different work")
+	ErrActiveTurnChanged = errors.New("target turn is no longer active")
+	ErrFailed            = errors.New("journal failed; reopen it for recovery")
+	ErrSealed            = errors.New("journal is sealed")
+	ErrUnknownCommand    = errors.New("unknown command ID")
+	ErrChangedOutside    = errors.New("journal changed outside its owner; reopen it for recovery")
 )
 
-type JournalStorageError struct{ Err error }
+type StorageError struct{ Err error }
 
-func (e *JournalStorageError) Error() string { return "journal transaction failed: " + e.Err.Error() }
-func (e *JournalStorageError) Unwrap() error { return e.Err }
+func (e *StorageError) Error() string { return "journal transaction failed: " + e.Err.Error() }
+func (e *StorageError) Unwrap() error { return e.Err }
 
 type RecoveryState struct {
 	ThroughCursor  uint64
@@ -79,8 +79,8 @@ type journalBatch struct {
 	sequence     uint64
 }
 
-// OpenJournal applies pending schema migrations before recovering retained EventEntry rows.
-func OpenJournal(ctx context.Context, path, sourceID string) (*Journal, error) {
+// Open applies pending schema migrations before recovering retained EventEntry rows.
+func Open(ctx context.Context, path, sourceID string) (*Journal, error) {
 	if sourceID == "" {
 		return nil, errors.New("journal source ID is required")
 	}
@@ -371,7 +371,7 @@ func (j *Journal) checkWritableLocked() error {
 		return errors.New("journal is closed")
 	}
 	if j.failure != nil {
-		return fmt.Errorf("%w: %v", ErrJournalFailed, j.failure)
+		return fmt.Errorf("%w: %v", ErrFailed, j.failure)
 	}
 	return nil
 }
@@ -470,7 +470,7 @@ func (j *Journal) CommitBatch(ctx context.Context) error {
 		batch.active = false
 		j.failure = err
 		j.notifyLocked()
-		return &JournalStorageError{Err: err}
+		return &StorageError{Err: err}
 	}
 	j.publishLocked(batch.appended, batch.sealChanged, batch.sealOverride)
 	batch.active = false
@@ -507,7 +507,7 @@ func (j *Journal) ensureBatch(ctx context.Context, batch *journalBatch) error {
 	if _, err := j.conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		j.failure = err
 		j.notifyLocked()
-		return &JournalStorageError{Err: err}
+		return &StorageError{Err: err}
 	}
 	batch.active = true
 	return nil
@@ -550,21 +550,21 @@ func (j *Journal) write(ctx context.Context, operation func(*journalBatch) error
 	if _, err := j.conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		j.failure = err
 		j.notifyLocked()
-		return &JournalStorageError{Err: err}
+		return &StorageError{Err: err}
 	}
 	if err := operation(batch); err != nil {
 		_, rollbackErr := j.conn.ExecContext(context.Background(), "ROLLBACK")
 		if isStorageError(err) || rollbackErr != nil {
 			j.failure = errors.Join(err, rollbackErr)
 			j.notifyLocked()
-			return &JournalStorageError{Err: j.failure}
+			return &StorageError{Err: j.failure}
 		}
 		return err
 	}
 	if _, err := j.conn.ExecContext(ctx, "COMMIT"); err != nil {
 		j.failure = err
 		j.notifyLocked()
-		return &JournalStorageError{Err: err}
+		return &StorageError{Err: err}
 	}
 	j.publishLocked(batch.appended, batch.sealChanged, batch.sealOverride)
 	return nil
@@ -575,21 +575,21 @@ func (j *Journal) failBatchLocked(batch *journalBatch, err error) error {
 	batch.active = false
 	j.failure = errors.Join(err, rollbackErr)
 	j.notifyLocked()
-	return &JournalStorageError{Err: j.failure}
+	return &StorageError{Err: j.failure}
 }
 
 func isStorageError(err error) bool {
-	var storageErr *JournalStorageError
+	var storageErr *StorageError
 	return errors.As(err, &storageErr)
 }
 
 func storageError(op string, err error) error {
-	return &JournalStorageError{Err: fmt.Errorf("%s: %w", op, err)}
+	return &StorageError{Err: fmt.Errorf("%s: %w", op, err)}
 }
 
 func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *eventpb.Event, options AppendOptions, allowSealed bool) (*eventlogpb.EventEntry, error) {
 	if batch.sealOverride != nil && !allowSealed {
-		return nil, ErrJournalSealed
+		return nil, ErrSealed
 	}
 	if event == nil || event.ProtoReflect().WhichOneof(event.ProtoReflect().Descriptor().Oneofs().ByName("observation")) == nil {
 		return nil, errors.New("journal Event requires an observation")
@@ -603,7 +603,7 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 		last = maximum.Int64
 	}
 	if last < 0 || uint64(last) != j.state.ThroughCursor+uint64(len(batch.appended)) {
-		return nil, ErrJournalChangedOutside
+		return nil, ErrChangedOutside
 	}
 	if last == math.MaxInt64 {
 		return nil, errors.New("journal cursor exhausted")
@@ -635,7 +635,7 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 		return nil, storageError("read journal checkpoint", err)
 	}
 	if checkpointSource != j.sourceID || through != last {
-		return nil, storageError("validate journal checkpoint", ErrJournalChangedOutside)
+		return nil, storageError("validate journal checkpoint", ErrChangedOutside)
 	}
 	nextState := RecoveryState{ThroughCursor: uint64(through), HarnessRunning: harnessRunning, ActiveTurnID: activeTurn}
 	applyCheckpoint(&nextState, entry)
@@ -751,7 +751,7 @@ func (j *Journal) Admit(ctx context.Context, command *commandpb.Command, expecte
 			return storageError("look up command", lookupErr)
 		}
 		if batch.sealOverride != nil {
-			return ErrJournalSealed
+			return ErrSealed
 		}
 		if expectedActiveTurnID != "" {
 			var activeTurn string

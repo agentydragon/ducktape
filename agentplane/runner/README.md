@@ -40,11 +40,12 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   each frame in the Sessions that `codex/router.go` assigns it to.
 - `transport.go`: the outbound control tunnel and independent per-Session ingress
   pushes, including heartbeat, replay, acknowledgement and backpressure.
-- `journal.go`, `native_requests.go`, `journal_migrations/` and `store.go`: the Goose-managed SQLite
-  schema, verbatim protobuf Event blobs, native request records with foreign-key links
-  to their originating commands, session metadata, ingress acknowledgements and ownership lock.
-  Transactions use `database/sql` with the cgo-free SQLite driver. Outcomes and all
-  coalesced command receipts commit together; publication and startup handshake replies follow commit.
+- `journal/`: the Goose-managed SQLite schema, verbatim protobuf Event blobs, native request records
+  with foreign-key links to their originating commands, and recovery queries. It depends on the
+  neutral harness contract and protobuf types, with no dependency on `Runner`. Transactions use
+  `database/sql` with the cgo-free SQLite driver. Outcomes and all coalesced command receipts commit
+  together; publication and startup handshake replies follow commit.
+- `store.go`: durable session metadata, ingress acknowledgements, incarnation markers and ownership lock.
 - `supervision/`: the shared native-process API, COSI process resources and controller, host registry,
   and private systemd/subprocess backends. Runner wires its `Host` and controller into the same COSI
   engine as its lifecycle controllers; the package owns streams, exit observation and
@@ -136,7 +137,8 @@ default ACL and private `.home` directory.
 
 `//agentplane/runner:runner_test` and `//agentplane/runner/codex:codex_test` run with Go's race detector. The
 Codex router test drives parallel sessions through shared host, request, and thread routing state. The
-runner suite includes its journal, process, and Session tests. The VM fixture runs the separate
+journal suite (`//agentplane/runner/journal:journal_test`) also runs with the race detector;
+the runner suite covers process and Session integration. The VM fixture runs the separate
 pure-Go `//agentplane/runner/supervision:runner_systemd_fixture` test binary against its real systemd manager before starting
 Runner. It exercises streams and credentials, resource mapping, lost launch replies, Runner death,
 detached descendants and scoped startup fencing; VM system tests exercise actual tools and OOM.
@@ -176,8 +178,9 @@ runs the runner as its own process so a crash takes its harnesses with it. No te
 image (<image.nix>), which carries nixpkgs' harnesses rather than these pinned ones; its header
 says what to run after a bump.
 
-`persistence_test.go` checks retained-state compatibility, command deduplication,
-transaction publication, coalesced receipts, rollback, and seals. `session_test.go`
+`journal/journal_test.go` checks retained journal compatibility, command deduplication,
+transaction publication, coalesced receipts, rollback, and seals. `persistence_test.go` checks
+session metadata and initialization log compatibility. `session_test.go`
 checks native reply publication after translation commits and final frames at EOF.
 `transport_test.go` exercises real loopback gRPC replay, durable acknowledgements,
 the ingress window, and seal ordering. `process_test.go` checks parent-death fencing,
@@ -186,7 +189,7 @@ These are not physical power-loss tests.
 
 ## Native continuation evidence
 
-`recovery.go` reconstructs observed item content from the journal's indexed turn boundaries.
+`journal/recovery.go` reconstructs observed item content from the journal's indexed turn boundaries.
 The adapters compare it with native continuation evidence and emit `ConversationReconciled`;
 the app only folds that neutral report.
 

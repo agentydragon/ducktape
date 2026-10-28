@@ -12,6 +12,7 @@ import (
 	"time"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/google/uuid"
@@ -200,7 +201,7 @@ func (r *Runner) load(ctx context.Context, id string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	journal, err := OpenJournal(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceID)
+	journal, err := journal.Open(ctx, filepath.Join(directory, "journal.sqlite"), record.EventSourceID)
 	if err != nil {
 		return nil, err
 	}

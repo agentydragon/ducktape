@@ -15,6 +15,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -241,7 +242,7 @@ func TestIngressReplayPersistsAcknowledgementAndResumesSameSourceAndCursors(t *t
 
 	newEntry, err := session.journal.Append(ctx, &eventpb.Event{
 		Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "after reconnect"}},
-	}, AppendOptions{})
+	}, journal.AppendOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -510,7 +511,7 @@ func newPushSession(t *testing.T, count int) (*Runner, *Session) {
 		for index := 0; index < count; index++ {
 			_, err := session.journal.Append(batchCtx, &eventpb.Event{
 				Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: fmt.Sprintf("line %d", index)}},
-			}, AppendOptions{})
+			}, journal.AppendOptions{})
 			if err != nil {
 				return err
 			}
@@ -557,7 +558,7 @@ func assertEntries(t *testing.T, got, want []*eventlogpb.EventEntry) {
 
 func TestStreamRetryPreservesLocalFailures(t *testing.T) {
 	for _, failure := range []error{
-		&JournalStorageError{Err: errors.New("journal failed")},
+		&journal.StorageError{Err: errors.New("journal failed")},
 		&localStreamError{err: errors.New("acknowledgement failed")},
 	} {
 		calls := 0
