@@ -428,17 +428,21 @@ environment gives the service its own `actions` database and login role on the n
 CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
 separate from the integration app's database.
 
-The migration image's default command only applies Goose migrations. The typed Action storage
-backfill is an explicit offline operation: first roll out the dual-writing Action Service version to
-every writer, then run the migration image with
-`backfill-storage --confirm-all-writers-dual-write` against the same `actions` database. The
-confirmation flag is required; the backfill can be rerun after interruption. It is not part of
-serving startup or readiness. Wait for the command to exit successfully; that run verifies that every
-present legacy Action identity, actor, and policy-evidence value has a typed copy. Roll out the
-typed-reader Action Service only after that verification and after every writer runs the dual-writing
-version. That reader version continues to write both representations so it can be rolled back to the
-prior JSON-reading version. Retain the legacy columns until the rollback window has ended and a later
-contract step removes them.
+The migration image's default command only applies short Goose DDL; it does not run the full-table backfill or
+constraint validation. First roll out the dual-writing Action Service version to every writer, then run the
+migration image with `backfill-storage --confirm-all-writers-dual-write` against the same `actions` database. The
+confirmation flag is required; the backfill can be rerun after interruption. Wait for it to exit successfully so
+every present legacy Action identity, actor, and policy-evidence value has a typed copy. Then roll out the
+typed-reader version, which still writes both representations.
+
+The typed-only writer version can roll out after every replica is running that typed-reader version. It stops
+writing the legacy `action`, `actor` and `policy_evidence` JSON columns, so rollback after that point is to the
+typed-reader image. After every writer runs the typed-only version, run the migration image with
+`validate-storage --confirm-all-writers-typed-only`. This explicit offline command validates the full-table
+constraints one table at a time and records the writer rollout attestation; it can resume after interruption.
+Neither backfill nor validation runs in serving startup or readiness. Keep the legacy columns through the
+rollback window. A later, separately gated contract step removes them only after this attestation and PostgreSQL's
+validated constraints are present.
 
 ## MCP executor transports
 

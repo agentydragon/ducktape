@@ -15,6 +15,7 @@ import (
 
 func TestBackfillActionStoragePreservesRowsAndResumesAfterFailure(t *testing.T) {
 	f := newFixture(t)
+	f.dropActionStorageProofConstraints(t)
 	const rowCount = 514
 	if _, err := f.db.ExecContext(t.Context(), `
 		INSERT INTO action_request (id, idempotency_key, action, arguments, state, version, created_at, updated_at,
@@ -217,6 +218,7 @@ func TestBackfillActionStoragePreservesRowsAndResumesAfterFailure(t *testing.T) 
 
 func TestBackfillActionStorageLockTimeoutCanResume(t *testing.T) {
 	f := newFixture(t)
+	f.dropActionStorageProofConstraints(t)
 	id := sequentialUUID(1)
 	if _, err := f.db.ExecContext(t.Context(), `INSERT INTO action_request
 		(id, idempotency_key, action, arguments, state, version, created_at, updated_at, title, description,
