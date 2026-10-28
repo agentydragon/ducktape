@@ -121,6 +121,40 @@ def _rbe_flags() -> list[str]:
     return flags
 
 
+def _run_bazel(
+    command: str, *, role: str, targets: list[str], extra_flags: tuple[str, ...] = (), check: bool = True
+) -> subprocess.CompletedProcess[str]:
+    """Run one named CI phase with its common Bazel flags."""
+    _announce_bazel_command(role)
+    return _run(
+        [
+            "bazel",
+            command,
+            f"--invocation_id={os.environ[f'{role.upper()}_INVOCATION_ID']}",
+            "--keep_going",
+            *_rbe_flags(),
+            *extra_flags,
+            *targets,
+        ],
+        check=check,
+    )
+
+
+def _race_targets(temp_dir: Path, test_query: Path) -> Path | None:
+    """Write the in-scope Go test labels, or return None when there are none."""
+    query = temp_dir / "go-test-query.txt"
+    query.write_text(
+        f'let go_tests = kind("go_test rule", {test_query.read_text().strip()}) in '
+        '$go_tests except attr("tags", "manual|live_openai_api", $go_tests)\n'
+    )
+    go_tests = _capture(["bazel", "query", f"--query_file={query}"])
+    if not go_tests.strip():
+        return None
+    targets = temp_dir / "race-targets.txt"
+    targets.write_text(go_tests)
+    return targets
+
+
 def _select_targets(temp_dir: Path) -> tuple[bool, list[str], Path]:
     """Select full or bazel-diff affected targets and write the test query."""
     test_query = temp_dir / "test-query.txt"
@@ -215,74 +249,30 @@ def main() -> int:
             _probe("before-test")
             if test_target_count == 0:
                 print("No test targets in scope -- skipping bazel test.")
-                _announce_bazel_command("build")
-                _run(
-                    [
-                        "bazel",
-                        "build",
-                        f"--invocation_id={os.environ['BUILD_INVOCATION_ID']}",
-                        "--keep_going",
-                        *_rbe_flags(),
-                        *targets,
-                    ]
-                )
-                _probe("after-build")
+            else:
+                test_rc = _run_bazel("test", role="test", targets=targets, check=False).returncode
+                if test_rc == 4 and not full_sweep:
+                    print("No runnable tests after tag filtering in the affected set; continuing to build.")
+                    test_rc = 0
+                if test_rc != 0:
+                    return test_rc
+                _probe("after-test")
+
+            _run_bazel("build", role="build", targets=targets)
+            _probe("after-build")
+            if test_target_count == 0:
                 return 0
 
-            _announce_bazel_command("test")
-            test_result = _run(
-                [
-                    "bazel",
-                    "test",
-                    f"--invocation_id={os.environ['TEST_INVOCATION_ID']}",
-                    "--keep_going",
-                    *_rbe_flags(),
-                    *targets,
-                ],
-                check=False,
-            )
-            test_rc = test_result.returncode
-            if test_rc == 4 and not full_sweep:
-                print("No runnable tests after tag filtering in the affected set; continuing to build.")
-                test_rc = 0
-            if test_rc != 0:
-                return test_rc
-
-            _probe("after-test")
-            _announce_bazel_command("build")
-            _run(
-                [
-                    "bazel",
-                    "build",
-                    f"--invocation_id={os.environ['BUILD_INVOCATION_ID']}",
-                    "--keep_going",
-                    *_rbe_flags(),
-                    *targets,
-                ]
-            )
-            _probe("after-build")
-            go_test_query = temp_dir / "go-test-query.txt"
-            go_test_set = f'kind("go_test rule", {test_query.read_text().strip()})'
-            go_test_query.write_text(f'{go_test_set} except attr("tags", "manual|live_openai_api", {go_test_set})\n')
-            go_tests = _capture(["bazel", "query", f"--query_file={go_test_query}"])
-            if not go_tests.strip():
+            race_targets = _race_targets(temp_dir, test_query)
+            if race_targets is None:
                 print("No Go tests in scope -- skipping race detection.")
                 return 0
 
-            race_targets = temp_dir / "race-targets.txt"
-            race_targets.write_text(go_tests)
-            _announce_bazel_command("race")
-            race_result = _run(
-                [
-                    "bazel",
-                    "test",
-                    f"--invocation_id={os.environ['RACE_INVOCATION_ID']}",
-                    "--keep_going",
-                    *_rbe_flags(),
-                    "--build_metadata=DISABLE_TARGET_TRACKING=true",
-                    "--@io_bazel_rules_go//go/config:race",
-                    f"--target_pattern_file={race_targets}",
-                ],
+            race_result = _run_bazel(
+                "test",
+                role="race",
+                targets=[f"--target_pattern_file={race_targets}"],
+                extra_flags=("--build_metadata=DISABLE_TARGET_TRACKING=true", "--@io_bazel_rules_go//go/config:race"),
                 check=False,
             )
             if race_result.returncode == 4:

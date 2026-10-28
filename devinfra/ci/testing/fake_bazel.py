@@ -24,11 +24,17 @@ def main() -> None:
             (log_dir / "go-test-query.log").write_text(query)
             print(os.environ.get("FAKE_GO_TESTS", ""))
         elif query_arg.endswith("test-query.txt"):
-            print("//ci:normal_test")
+            tests = os.environ.get("FAKE_TESTS", "//ci:normal_test")
+            if tests:
+                print(tests)
         else:
             raise SystemExit(f"unexpected query file: {query_arg}")
     elif args and args[0] in {"test", "build"}:
-        if "--@io_bazel_rules_go//go/config:race" in args:
+        is_race = "--@io_bazel_rules_go//go/config:race" in args
+        role = "race" if is_race else args[0]
+        with (log_dir / "phases.log").open("a") as log:
+            log.write(f"{role}\n")
+        if is_race:
             (log_dir / "race-args.log").write_text("\n".join(args))
             race_target_file = next(arg.split("=", 1)[1] for arg in args if arg.startswith("--target_pattern_file="))
             (log_dir / "race-targets.log").write_text(Path(race_target_file).read_text())
@@ -40,6 +46,7 @@ def main() -> None:
                 (log_dir / "affected-targets.log").write_text(Path(target_file).read_text())
         else:
             (log_dir / "build-args.log").write_text("\n".join(args))
+        raise SystemExit(int(os.environ.get(f"FAKE_{role.upper()}_EXIT", "0")))
     else:
         raise SystemExit(f"unexpected bazel args: {args}")
 

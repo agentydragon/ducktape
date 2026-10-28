@@ -78,7 +78,7 @@ jobs:
     outputs:
       # The race invocation is linked for diagnostics and cancellation, but its
       # differently configured outputs are not publication evidence.
-      bazel_invocation_ids: ${{ steps.bb-remote.outputs.bazel_invocation_ids && format('{0},{1}', steps.invocation-ids.outputs.test, steps.invocation-ids.outputs.build) || '' }}
+      bazel_invocation_ids: ${{ steps.bb-remote.outputs.bazel_invocation_ids && steps.invocation-ids.outputs.publication || '' }}
       test_invocation_id: ${{ steps.invocation-ids.outputs.test }}
       test_source_commit: ${{ steps.source.outputs.sha }}
     environment: ${{ inputs.environment || null }}
@@ -136,11 +136,16 @@ jobs:
       - name: Derive BuildBuddy invocation IDs
         id: invocation-ids
         run: |
+          publication_ids=""
           for role in test build race; do
             id=$(python3 devinfra/ci/invocation_ids.py \
               --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --role "$role")
             echo "$role=$id" >> "$GITHUB_OUTPUT"
+            if [[ "$role" == test || "$role" == build ]]; then
+              publication_ids="${publication_ids:+$publication_ids,}$id"
+            fi
           done
+          echo "publication=$publication_ids" >> "$GITHUB_OUTPUT"
 
       # Commit statuses update before the reusable Test & Build job finishes, so
       # the PR check surface can link directly to the deterministic test invocation.
