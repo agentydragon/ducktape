@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/cosi"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
-	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
@@ -99,33 +99,15 @@ func resourceFor[T resourceSpec[T]](namespace resource.Namespace, id string, val
 
 func readResource[T resourceSpec[T]](ctx context.Context, reader controller.Reader, namespace resource.Namespace, id string) (T, bool, error) {
 	var zero T
-	r, err := safe.ReaderGet[*typed.Resource[T, resourceExtension[T]]](ctx, reader, resourceFor(namespace, id, zero).Metadata())
-	if state.IsNotFoundError(err) {
-		return zero, false, nil
-	}
-	if err != nil {
-		return zero, false, err
-	}
-	return *r.TypedSpec(), true, nil
+	return cosi.Read(ctx, reader, resourceFor(namespace, id, zero))
 }
 
 func writeResource[T resourceSpec[T]](ctx context.Context, writer controller.ReaderWriter, namespace resource.Namespace, id string, value T) (bool, error) {
-	old, found, err := readResource[T](ctx, writer, namespace, id)
-	if err != nil || found && old == value {
-		return false, err
-	}
-	err = safe.WriterModify(ctx, writer, resourceFor(namespace, id, value), func(r *typed.Resource[T, resourceExtension[T]]) error {
-		*r.TypedSpec() = value
-		return nil
-	})
-	return err == nil, err
+	return cosi.Write(ctx, writer, resourceFor(namespace, id, value), value)
 }
 
 func publishResource[T resourceSpec[T]](ctx context.Context, store state.State, namespace resource.Namespace, id string, value T) error {
-	return safe.StateModify(ctx, store, resourceFor(namespace, id, value), func(r *typed.Resource[T, resourceExtension[T]]) error {
-		*r.TypedSpec() = value
-		return nil
-	}, state.WithUpdateOwner(hostOwner))
+	return cosi.Publish(ctx, store, resourceFor(namespace, id, value), value, hostOwner)
 }
 
 // ReadDesiredState reads an attempt from the caller's existing COSI runtime.

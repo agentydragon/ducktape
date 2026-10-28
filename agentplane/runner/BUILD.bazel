@@ -528,6 +528,7 @@ go_library(
         "//agentplane/runner/codexappserver",
         "//agentplane/runner/codexexecserver",
         "//agentplane/runner/control",
+        "//agentplane/runner/cosi",
         "//agentplane/runner/harness",
         "//agentplane/runner/ingress",
         "//agentplane/runner/journal",

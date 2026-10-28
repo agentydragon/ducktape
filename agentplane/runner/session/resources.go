@@ -5,12 +5,12 @@ import (
 	"context"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/cosi"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
-	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
@@ -89,33 +89,15 @@ func componentResource[T componentSpec[T]](id string, value T) *typed.Resource[T
 
 func componentRead[T componentSpec[T]](ctx context.Context, reader controller.Reader, id string) (T, bool, error) {
 	var zero T
-	value, err := safe.ReaderGetByID[*typed.Resource[T, componentExtension[T]]](ctx, reader, id)
-	if state.IsNotFoundError(err) {
-		return zero, false, nil
-	}
-	if err != nil {
-		return zero, false, err
-	}
-	return *value.TypedSpec(), true, nil
+	return cosi.Read(ctx, reader, componentResource(id, zero))
 }
 
 func componentWrite[T componentSpec[T]](ctx context.Context, writer controller.ReaderWriter, id string, value T) (bool, error) {
-	old, found, err := componentRead[T](ctx, writer, id)
-	if err != nil || found && old == value {
-		return false, err
-	}
-	err = safe.WriterModify(ctx, writer, componentResource(id, value), func(current *typed.Resource[T, componentExtension[T]]) error {
-		*current.TypedSpec() = value
-		return nil
-	})
-	return err == nil, err
+	return cosi.Write(ctx, writer, componentResource(id, value), value)
 }
 
 func publish[T componentSpec[T]](ctx context.Context, writer state.State, id string, value T) error {
-	return safe.StateModify(ctx, writer, componentResource(id, value), func(current *typed.Resource[T, componentExtension[T]]) error {
-		*current.TypedSpec() = value
-		return nil
-	}, state.WithUpdateOwner(HostOwner))
+	return cosi.Publish(ctx, writer, componentResource(id, value), value, HostOwner)
 }
 
 func ReadInput(ctx context.Context, reader controller.Reader, id string) (Input, bool, error) {

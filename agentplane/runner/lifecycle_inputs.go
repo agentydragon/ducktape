@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/cosi"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -29,10 +30,7 @@ func (l *lifecycle) publishAck(id string, ack retained.Acknowledgement) error {
 
 // Host publishers serialize compound snapshots; COSI handles conflicts and no-op updates.
 func publishLifecycle[T lifecycleSpec[T]](l *lifecycle, id string, value T) error {
-	return safe.StateModify(l.runner.ctx, l.state, lifecycleResourceFor(id, value), func(r *typed.Resource[T, lifecycleExtension[T]]) error {
-		*r.TypedSpec() = value
-		return nil
-	}, state.WithUpdateOwner("runner-host"))
+	return cosi.Publish(l.runner.ctx, l.state, lifecycleResourceFor(id, value), value, "runner-host")
 }
 
 func (l *lifecycle) admissionCount(ctx context.Context) (int, error) {

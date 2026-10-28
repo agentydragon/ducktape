@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/cosi"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
-	"github.com/cosi-project/runtime/pkg/resource/typed"
-	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
@@ -182,17 +181,11 @@ func (h *Host) takeProbe() (*operation.Operation, bool) {
 
 func (h *Host) publishOperation(op *operation.Operation, done bool) error {
 	value := operationResult{Controller: ControllerName, Done: done}
-	return safe.StateModify(h.ctx, h.state, componentResource(op.ID(), value), func(current *typed.Resource[operationResult, componentExtension[operationResult]]) error {
-		*current.TypedSpec() = value
-		return nil
-	}, state.WithUpdateOwner(HostOwner))
+	return cosi.Publish(h.ctx, h.state, componentResource(op.ID(), value), value, HostOwner)
 }
 
 func safeModifyInput(ctx context.Context, writer state.State, value Input) error {
-	err := safe.StateModify(ctx, writer, componentResource(ResourceID, value), func(current *typed.Resource[Input, componentExtension[Input]]) error {
-		*current.TypedSpec() = value
-		return nil
-	}, state.WithUpdateOwner(HostOwner))
+	err := cosi.Publish(ctx, writer, componentResource(ResourceID, value), value, HostOwner)
 	if err != nil {
 		return fmt.Errorf("publish Codex exec-server input: %w", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/cosi"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -42,26 +43,11 @@ func lifecycleResourceFor[T lifecycleSpec[T]](id string, value T) *typed.Resourc
 
 func lifecycleRead[T lifecycleSpec[T]](ctx context.Context, reader controller.Reader, id string) (T, bool, error) {
 	var zero T
-	r, err := safe.ReaderGetByID[*typed.Resource[T, lifecycleExtension[T]]](ctx, reader, id)
-	if state.IsNotFoundError(err) {
-		return zero, false, nil
-	}
-	if err != nil {
-		return zero, false, err
-	}
-	return *r.TypedSpec(), true, nil
+	return cosi.Read(ctx, reader, lifecycleResourceFor(id, zero))
 }
 
 func lifecycleWrite[T lifecycleSpec[T]](ctx context.Context, writer controller.ReaderWriter, id string, value T) (bool, error) {
-	old, found, err := lifecycleRead[T](ctx, writer, id)
-	if err != nil || found && old == value {
-		return false, err
-	}
-	err = safe.WriterModify(ctx, writer, lifecycleResourceFor(id, value), func(r *typed.Resource[T, lifecycleExtension[T]]) error {
-		*r.TypedSpec() = value
-		return nil
-	})
-	return err == nil, err
+	return cosi.Write(ctx, writer, lifecycleResourceFor(id, value), value)
 }
 
 type runnerInputSpec struct {

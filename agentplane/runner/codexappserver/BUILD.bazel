@@ -17,6 +17,7 @@ go_library(
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner/codex",
         "//agentplane/runner/codexexecserver",
+        "//agentplane/runner/cosi",
         "//agentplane/runner/harness",
         "//agentplane/runner/lifecycle",
         "//agentplane/runner/operation",

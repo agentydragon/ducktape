@@ -18,6 +18,7 @@ go_library(
         "//agentplane/runner/claude",
         "//agentplane/runner/codex",
         "//agentplane/runner/codexappserver",
+        "//agentplane/runner/cosi",
         "//agentplane/runner/harness",
         "//agentplane/runner/journal",
         "//agentplane/runner/lifecycle",
