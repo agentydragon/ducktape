@@ -52,7 +52,7 @@ def analyze(data):
 
     parsed_heads = []
     head_ids = set()
-    gate_names = None
+    gate_names: set[str] = set()
     for index, head in enumerate(heads):
         label = f"heads[{index}]"
         if not isinstance(head, dict):
@@ -68,7 +68,7 @@ def analyze(data):
             _name(gate, f"{label}.gates key"): _seconds(seconds, f"{label}.gates[{gate!r}]")
             for gate, seconds in gates.items()
         }
-        if gate_names is None:
+        if index == 0:
             gate_names = set(parsed_gates)
         elif set(parsed_gates) != gate_names:
             raise ValueError("all heads must have the same complete gate set")
