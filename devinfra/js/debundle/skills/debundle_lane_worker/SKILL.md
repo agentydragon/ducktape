@@ -92,9 +92,9 @@ propose` and `modules apply` so each sees only the graph chunk's mapped
 
 6. Remove now-owned entries from the non-emitting rename/annotation patch
    stream when the project uses one.
-7. Run the proposed-assignment gate, then the adapter's regeneration,
-   uniqueness and runtime checks, plus CI when applicable. Record each result
-   separately.
+7. Keep the edit command's proposed-assignment gate result. Regenerate before
+   any further graph-backed checking, then run the adapter's uniqueness and
+   runtime checks, plus CI when applicable. Record each result separately.
 8. Commit one reviewable branch and report the result.
 
 Export the exact YAML delta from the worker snapshot into the branch as the

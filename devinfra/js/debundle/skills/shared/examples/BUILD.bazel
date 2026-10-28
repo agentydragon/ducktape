@@ -1,0 +1,32 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+exports_files(
+    ["isolated_edit.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "isolated_edit",
+    srcs = ["isolated_edit.py"],
+)
+
+py_test(
+    name = "isolated_edit_test",
+    srcs = ["isolated_edit_test.py"],
+    data = glob(["fixture/**"]) + [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "DEBUNDLE_HANDOFF_ENGINE": "$(rlocationpath //devinfra/js/debundle)",
+        "DEBUNDLE_HANDOFF_NODE": "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
+    },
+    deps = [
+        ":isolated_edit",
+        "//:conftest",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)

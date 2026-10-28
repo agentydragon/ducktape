@@ -7,6 +7,10 @@ load("//skills:defs.bzl", "skill_mapping")
 # test fails on a link that does not.
 DEBUNDLE_REFERENCES = [
     skill_mapping(
+        srcs = ["//devinfra/js/debundle/skills/shared/examples:isolated_edit.py"],
+        prefix = "references/examples",
+    ),
+    skill_mapping(
         srcs = [
             "//devinfra/js/debundle:README.md",
             "//devinfra/js/debundle:SPEC.md",

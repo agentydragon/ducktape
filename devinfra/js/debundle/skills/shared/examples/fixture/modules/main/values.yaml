@@ -1,0 +1,3 @@
+members:
+  - selector: { binding: { name: initialValue } }
+  - selector: { binding: { name: increment } }
