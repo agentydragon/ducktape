@@ -39,6 +39,8 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
     shutil.copytree(Path(fixture_config).parent, original)
     original_output = run([node, str(original / "source/main.js")], tmp_path).stdout
     output = tmp_path / "baseline output"
+    packages = tmp_path / "package inputs"
+    packages.mkdir()
     run(
         [
             engine,
@@ -51,6 +53,8 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
             str(original / "vendor_marks.yaml"),
             "--tree-source-root",
             str(original),
+            "--packages-root",
+            str(packages),
             "--out-root",
             str(output),
         ],
@@ -71,9 +75,11 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
 
     worker = snapshot("worker copy")
     integration = snapshot("integration copy")
+    assert "__packages_root__" in worker["graph_package_roots"]
     # Both copies must remain usable without their original spec, source or graph.
     shutil.rmtree(original)
     shutil.rmtree(output)
+    shutil.rmtree(packages)
     evidence = undeclared_outputs_dir() / "delegation"
     evidence.mkdir()
     worker_records = evidence / "worker"
@@ -109,7 +115,7 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
     assert (evidence / "stale-query.invocation.json").is_file()
     refusal = json.loads((evidence / "stale-query.stdout").read_text())
     assert refusal["kind"] == "graph_compatibility"
-    assert refusal["mismatch"]["reason"] == "file"
+    assert refusal["mismatch"]["reason"] == "yaml_membership"
 
     # Verify the receiving baseline BEFORE applying the reviewed YAML delta.
     recorded_run(

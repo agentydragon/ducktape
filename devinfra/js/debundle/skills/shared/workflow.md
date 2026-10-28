@@ -55,6 +55,10 @@ For each snapshot-backed lane worker, also supply:
   baseline pipeline, proposed-assignment, post-edit, runtime and CI results
   distinct; mark an inapplicable check with its reason.
 
+Name the command that establishes selector uniqueness, including when the full
+pipeline already covers it. Capture pre-edit verification's actual result and
+streams too; terminal output alone is not a durable handoff record.
+
 The adapter supplies the exact operation-specific chunk and YAML scope. Do
 not infer a module subtree from a chunk ID; follow the CLI guide for the flags
 each verb accepts.
