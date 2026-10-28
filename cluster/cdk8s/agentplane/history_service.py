@@ -24,7 +24,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE, Settings
+from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE, IngressSettings, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database, egress
@@ -119,13 +119,13 @@ class HistoryService(Construct):
             "reader_accounts": sorted(callers, key=lambda reader: (reader.namespace, reader.name)),
             "token_audience": TOKEN_AUDIENCE,
             "listen_address": f"0.0.0.0:{endpoint.pod_port}",
-            "ingress": {
-                "token_audience": RUNNER_INGRESS_AUDIENCE,
+            "ingress": IngressSettings(
+                token_audience=RUNNER_INGRESS_AUDIENCE,
                 # Sandboxes run in the environment's own namespace.
-                "writer_namespaces": [env.namespace],
-                "listen_address": f"0.0.0.0:{ingress.pod_port}",
-                "settle_deltas": env.settle_deltas,
-            },
+                writer_namespaces=frozenset((env.namespace,)),
+                listen_address=f"0.0.0.0:{ingress.pod_port}",
+                settle_deltas=env.settle_deltas,
+            ),
         }
         config = SettingsFile(
             self,

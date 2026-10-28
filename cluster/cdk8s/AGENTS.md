@@ -69,7 +69,7 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   `cli_args`, `env_name`, `validate_settings_fragment`, `checked_value`) so a renamed
   field fails at synth. For a complete settings file, construct the full model with
   typed keyword arguments and pass it to `yaml_config` before `SettingsFile`.
-  `yaml_config` and `json5_config` serialize models recursively, including models nested in
+  `yaml_config` and `json_config` serialize models recursively, including models nested in
   source mappings and lists, emitting only explicitly set model fields. Keep models typed
   until this text boundary; use `model_dump` only for an explicit field projection or
   different serialization policy.

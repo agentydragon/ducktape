@@ -294,7 +294,7 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
 # Rendered by the kustomization.yaml's configMapGenerator: the content hash in its name makes a
 # settings change a new template for the onboarding Job, which Flux then replaces and so re-runs.
 _ONBOARDING_SETTINGS_CONTENT = {
-    "endpoint": _ENDPOINT.model_dump(),
+    "endpoint": _ENDPOINT,
     "owner_username": _OWNER_USERNAME,
     "owner_display_name": "Home Assistant Local Administrator",
     "http_config": onboarding.HttpConfig(
@@ -307,8 +307,8 @@ _ONBOARDING_SETTINGS_CONTENT = {
         ip_ban_enabled=True,
         ssl_profile="modern",
         use_x_frame_options=True,
-    ).model_dump(),
-    "core_config": onboarding.CoreConfig(time_zone="America/Los_Angeles").model_dump(exclude_none=True),
+    ),
+    "core_config": onboarding.CoreConfig(time_zone="America/Los_Angeles"),
 }
 _ONBOARDING_SETTINGS = ConfigMapArgs(
     name=_ONBOARDING,
@@ -394,11 +394,7 @@ def _token_provisioner(scope: Construct) -> None:
             k8s.PolicyRule(api_groups=[""], resources=["secrets"], verbs=["create"]),
         ],
     )
-    content: dict[str, object] = {
-        "endpoint": _ENDPOINT.model_dump(),
-        "owner_username": _OWNER_USERNAME,
-        "tokens": [token.model_dump(exclude_defaults=True) for token in _TOKENS],
-    }
+    content: dict[str, object] = {"endpoint": _ENDPOINT, "owner_username": _OWNER_USERNAME, "tokens": _TOKENS}
     settings = _settings_config_map(scope, _TOKEN_PROVISIONER, validate_settings_fragment(tokens.Settings, content))
     k8s.KubeRoleBinding(
         scope,

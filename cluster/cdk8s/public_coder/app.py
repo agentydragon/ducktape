@@ -22,7 +22,7 @@ from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.egress.resources import placeholder_of
 from cluster.cdk8s import agent_access_profiles as access, namespaces
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.config_format import json5_config
+from cluster.cdk8s.config_format import json_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.generation import config_map_chart, write_charts
@@ -66,7 +66,7 @@ def chart(app: App) -> Chart:
         chart_name=_CONFIG_MAP_NAME,
         configmap_name=_CONFIG_MAP_NAME,
         namespace=NAMESPACE,
-        data={"openclaw.json5": json5_config(public_coder_config.config())},
+        data={"openclaw.json5": json_config(public_coder_config.config())},
     )
 
 

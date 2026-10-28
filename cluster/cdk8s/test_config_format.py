@@ -9,7 +9,7 @@ import pytest_bazel
 import yaml
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_serializer
 
-from cluster.cdk8s.config_format import json5_config, yaml_config
+from cluster.cdk8s.config_format import json_config, yaml_config
 from util.settings_contract import validate_settings_fragment
 
 
@@ -37,14 +37,14 @@ class _Aliased(BaseModel):
     account: str = Field(serialization_alias="accountName")
 
 
-@pytest.mark.parametrize("format", ["yaml", "json5"])
+@pytest.mark.parametrize("format", ["yaml", "json"])
 def test_nested_models_remain_typed_until_rendering(format: str) -> None:
     peer = _Peer(url=AnyHttpUrl("http://peer.invalid"), token_file=Path("/tokens/peer"), optional=None, account="app")
     content: dict[str, Any] = {"peer": peer, "peers": [peer], "named_peers": {"worker": peer}}
     fragment = validate_settings_fragment(_Settings, content)
-    rendered = yaml.safe_load(yaml_config(fragment)) if format == "yaml" else json.loads(json5_config(fragment))
+    rendered = yaml.safe_load(yaml_config(fragment)) if format == "yaml" else json.loads(json_config(fragment))
     expected: dict[str, Any] = {"url": "http://peer.invalid/", "token_file": "file:/tokens/peer", "account": "app"}
-    if format == "json5":
+    if format == "json":
         expected["optional"] = None
     assert rendered == {"peer": expected, "peers": [expected], "named_peers": {"worker": expected}}
     assert fragment is content
@@ -53,17 +53,17 @@ def test_nested_models_remain_typed_until_rendering(format: str) -> None:
     assert peer.model_fields_set == {"url", "token_file", "optional", "account"}
 
 
-@pytest.mark.parametrize("format", ["yaml", "json5"])
+@pytest.mark.parametrize("format", ["yaml", "json"])
 def test_complete_model_uses_the_same_serialization_boundary(format: str) -> None:
     peer = _Peer(url=AnyHttpUrl("http://peer.invalid"), token_file=Path("/tokens/peer"), retries=3)
-    rendered = yaml.safe_load(yaml_config(peer)) if format == "yaml" else json.loads(json5_config(peer))
+    rendered = yaml.safe_load(yaml_config(peer)) if format == "yaml" else json.loads(json_config(peer))
     assert rendered == {"url": "http://peer.invalid/", "token_file": "file:/tokens/peer", "retries": 3}
 
 
-@pytest.mark.parametrize("format", ["yaml", "json5"])
+@pytest.mark.parametrize("format", ["yaml", "json"])
 def test_models_control_their_serialization_aliases(format: str) -> None:
     content = {"peer": _Aliased(account="app")}
-    rendered = yaml.safe_load(yaml_config(content)) if format == "yaml" else json.loads(json5_config(content))
+    rendered = yaml.safe_load(yaml_config(content)) if format == "yaml" else json.loads(json_config(content))
     assert rendered == {"peer": {"accountName": "app"}}
 
 

@@ -40,7 +40,7 @@ from agentplane.action_service.orchestration_v1.binding import (
     PresetSession,
     PresetSessionSpec,
 )
-from agentplane.action_service.settings import Settings
+from agentplane.action_service.settings import ServicePeer, Settings
 from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
@@ -330,16 +330,16 @@ class Actions(Construct):
         groups = dict(props.action_groups)
         if props.orchestration_v1 is not None:
             groups[ORCHESTRATION_GROUP] = _orchestration_group(env, props.orchestration_v1)
-            content["session_dispatcher"] = {
-                "target": f"{dispatcher.fqdn}:{dispatcher.port.number}",
-                "token_file": f"{_PEER_TOKEN_DIR}/dispatcher",
-                "request_timeout_s": _PEER_TIMEOUT_SECONDS,
-            }
-            content["history_service"] = {
-                "target": f"{history.fqdn}:{history.pod_port}",
-                "token_file": f"{_PEER_TOKEN_DIR}/history",
-                "request_timeout_s": _PEER_TIMEOUT_SECONDS,
-            }
+            content["session_dispatcher"] = ServicePeer(
+                target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
+                token_file=f"{_PEER_TOKEN_DIR}/dispatcher",
+                request_timeout_s=_PEER_TIMEOUT_SECONDS,
+            )
+            content["history_service"] = ServicePeer(
+                target=f"{history.fqdn}:{history.pod_port}",
+                token_file=f"{_PEER_TOKEN_DIR}/history",
+                request_timeout_s=_PEER_TIMEOUT_SECONDS,
+            )
         content["action_groups"] = groups
         settings = SettingsFile(
             self,
