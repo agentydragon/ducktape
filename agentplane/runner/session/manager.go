@@ -175,6 +175,7 @@ func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained boo
 			return nil, err
 		}
 	}
+	s.notifyBlockers()
 	m.publishSession(s, false)
 	if err := m.Reopen(ctx, s); err != nil {
 		return nil, err

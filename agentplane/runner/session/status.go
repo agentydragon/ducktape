@@ -124,3 +124,26 @@ func (s *Session) AutosuspendBlockers() []*sandboxpb.AutosuspendBlocker {
 func (s *Session) Status() (*runnerpb.SessionStatus, *runnerpb.HarnessProcessStatus) {
 	return s.Observe().Status()
 }
+
+// blockerNotification remembers only which autosuspend predicates have already
+// signaled Runner's observers. Status and admission always read the authorities.
+type blockerNotification struct {
+	active  bool
+	pending bool
+	setup   runnerpb.SetupState
+}
+
+func (s *Session) notifyBlockers() {
+	s.mu.Lock()
+	current := blockerNotification{
+		active:  s.activeTurn != "" || s.journal.RecoveryState().ActiveTurnID != "",
+		pending: len(s.pending) > 0,
+		setup:   s.setup,
+	}
+	changed := current != s.notifiedBlockers
+	s.notifiedBlockers = current
+	s.mu.Unlock()
+	if changed {
+		s.deps.changed()
+	}
+}

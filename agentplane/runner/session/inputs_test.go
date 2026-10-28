@@ -1,7 +1,9 @@
 package session
 
 import (
+	"context"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -91,5 +93,44 @@ func TestSessionInputTracksNativeDispatchReadinessWithoutJournalEvent(t *testing
 	}
 	if s.journal.LastCursor() != before {
 		t.Fatal("readiness test unexpectedly emitted an Event")
+	}
+}
+
+func TestJournalNotificationsOnlySignalBlockerTransitions(t *testing.T) {
+	ctx, root, _, store, manager := runnerTestManager(t, nil, func(string) string { return "destination" })
+	s := runnerTestReserve(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
+	// Establish the initial notification predicates before observing transitions.
+	s.notifyBlockers()
+	var notifications atomic.Int32
+	s.deps.changed = func() { notifications.Add(1) }
+	for _, text := range []string{"first", "second"} {
+		if err := s.Emit(ctx, observation(&eventpb.HarnessStderr{Text: text}), nil); err != nil {
+			t.Fatal(err)
+		}
+		s.wake()
+	}
+	if notifications.Load() != 0 {
+		t.Fatal("raw history woke aggregate observers")
+	}
+	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
+		t.Fatal(err)
+	}
+	if notifications.Load() != 1 {
+		t.Fatal("active turn did not notify observers")
+	}
+	if err := s.journal.WithBatch(ctx, func(ctx context.Context) error {
+		if err := s.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
+			return err
+		}
+		if notifications.Load() != 1 {
+			t.Error("idle notification escaped before turn completion committed")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.wake()
+	if notifications.Load() != 2 {
+		t.Fatal("committed idle transition did not notify observers")
 	}
 }

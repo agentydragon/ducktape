@@ -42,6 +42,8 @@ type pendingSubmitAdapter struct {
 	submits int
 }
 
+func (*pendingSubmitAdapter) BlocksCommandDispatch() bool { return false }
+
 func (a *pendingSubmitAdapter) Submit(context.Context, string, string) error {
 	a.submits++
 	return &harness.NativeResponsePendingError{Cause: context.DeadlineExceeded}
@@ -386,6 +388,8 @@ type rpcReconciliationAdapter struct {
 	harness.Adapter
 	session *Session
 }
+
+func (*rpcReconciliationAdapter) BlocksCommandDispatch() bool { return false }
 
 func (a *rpcReconciliationAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sequence uint64) error {
 	if string(raw) == `{"interrupt":true}` {

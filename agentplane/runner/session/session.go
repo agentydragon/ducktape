@@ -33,6 +33,7 @@ type Session struct {
 	journal                                                *journal.Journal
 	mu                                                     sync.Mutex
 	loading                                                bool
+	notifiedBlockers                                       blockerNotification
 	admitMu                                                sync.Mutex
 	writeMu                                                sync.Mutex
 	process                                                *supervision.ManagedProcess

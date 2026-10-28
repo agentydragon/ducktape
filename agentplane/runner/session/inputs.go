@@ -15,11 +15,12 @@ import (
 func (m *Manager) publishSession(s *Session, demand bool) {
 	m.publishMu.Lock()
 	defer m.publishMu.Unlock()
-	input, _, err := componentRead[Input](m.ctx, m.state, s.id)
+	input, found, err := componentRead[Input](m.ctx, m.state, s.id)
 	if err != nil {
 		m.fail(err)
 		return
 	}
+	previous := input
 	if demand {
 		input.Demand++
 	}
@@ -34,11 +35,6 @@ func (m *Manager) publishSession(s *Session, demand bool) {
 	adapter := s.adapter
 	s.mu.Unlock()
 	input.DispatchBlocked = adapter == nil || adapter.BlocksCommandDispatch()
-	previous, found, err := componentRead[Input](m.ctx, m.state, s.id)
-	if err != nil {
-		m.fail(err)
-		return
-	}
 	if !found || previous != input {
 		m.fail(publish(m.ctx, m.state, s.id, input))
 	}
@@ -58,6 +54,7 @@ func (s *Session) wake() {
 	loading := s.loading
 	s.mu.Unlock()
 	if !loading {
+		s.notifyBlockers()
 		s.deps.publish(s, false)
 	}
 }

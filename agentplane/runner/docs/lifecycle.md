@@ -93,7 +93,9 @@ journals retain the Runner observation notification.
 QControllers declare primary inputs, mapped dependencies, exclusive outputs, and concurrency. The
 `session` QController maps Runner desired/runtime changes to every Session, app-server runtime changes
 only to Codex Sessions, and operation results to their owning Session. Equal Session inputs are not republished.
-Journal cursor changes do not schedule lifecycle work: ingress follows the journal's own commit
+Journal-only Events do not notify aggregate Runner observers; blocker transitions do, including
+the committed idle transition after a native batch. Last model activity remains derived by History
+from admitted journal Events. Journal cursor changes do not schedule lifecycle work: ingress follows the journal's own commit
 notification. Native reply batches still refresh typed dispatch readiness, because an adapter can
 release queued commands without emitting a normalized Event. The aggregate Runner subscribes to the
 separate inspection drain input rather than all Session dispatch inputs.

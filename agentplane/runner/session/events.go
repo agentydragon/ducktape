@@ -101,7 +101,7 @@ func (s *Session) recordEvent(ctx context.Context, e *eventpb.Event, sources []u
 		return nil, err
 	}
 	s.apply(entry, ids)
-	s.deps.changed()
+	s.notifyBlockers()
 	return entry, nil
 }
 
