@@ -432,6 +432,7 @@ pub(super) fn finish_logical_chunk(
     let analysis_inputs: AnalysisInputs = {
         let mut inputs = AnalysisInputs {
             assumptions: declared_assumptions,
+            native_integrity: cross_module_purities.native_integrity.clone(),
             ..AnalysisInputs::default()
         };
         inputs.assumptions.host_no_reentry = host_no_reentry.cloned();

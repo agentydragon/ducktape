@@ -3995,3 +3995,97 @@ fn unused_or_ineligible_source_record_factory_has_no_graph_proof_use() {
         }));
     }
 }
+
+const SOURCE_RECORD_NAMESPACE_PEER: &str = "import { readLater } from './app.js';\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
+
+fn source_record_namespace_opts<'a>(chunks: &'a [(&'a str, &'a str)]) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        "import { factory } from './peer.js';\nimport './namespace.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, readLater().name);\nexport { queue, Later };\n",
+        vec![
+            logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+            logical_module("later", &[Member::new("Later")]),
+        ],
+    ).with_extra_chunks(chunks)
+}
+
+fn source_record_with_global_namespace(namespace: &str) -> Fixture {
+    run_fixture(source_record_namespace_opts(&[
+        ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+        ("static/namespace", namespace),
+    ]))
+}
+
+#[test]
+fn source_record_native_integrity_preserves_symbol_namespace_writes() {
+    let fixture = source_record_with_global_namespace(
+        "const namespace = Symbol.for('example.registry');\nconst alias = namespace;\nexport function publish(value) { globalThis[alias] = value; }\nexport function clear() { delete globalThis[namespace]; }\n",
+    );
+    assert_preserved_entry_output(&fixture, "0 Later\n");
+}
+
+#[test]
+fn source_record_native_integrity_preserves_closed_entries_namespace_writes() {
+    let fixture = source_record_with_global_namespace(
+        "export function publish() { const root = globalThis; for (const [key, value] of Object.entries({ first: 1, second: 2 })) { Object.defineProperty(root, key, { value, configurable: true }); } }\n",
+    );
+    assert_preserved_entry_output(&fixture, "0 Later\n");
+}
+
+#[test]
+fn source_record_native_integrity_rejects_unknown_or_rebound_keys() {
+    for namespace in [
+        "export function publish(key, value) { globalThis[key] = value; }",
+        "const key = 'Map'; export function publish(value) { globalThis[key] = value; }",
+        "let key = Symbol.for('example.registry'); export function replace() { key = 'Map'; } export function publish(value) { globalThis[key] = value; }",
+        "let key = Symbol.for('example.registry'); export function replace() { [key] = ['Map']; } export function publish(value) { globalThis[key] = value; }",
+        "let key = Symbol.for('example.registry'); export function publish(value) { for (key of ['Map']) globalThis[key] = value; }",
+        "export function publish(key, value) { globalThis[key] = value; var key = Symbol.for('example.registry'); }",
+        "export function publish(Symbol, value) { const key = Symbol.for('example.registry'); globalThis[key] = value; }",
+        "export function publish(Object) { for (const [key, value] of Object.entries({ safe: 1 })) globalThis[key] = value; }",
+        "export function publish() { for (let [key, value] of Object.entries({ safe: 1 })) { key = 'Map'; globalThis[key] = value; } }",
+        "export function publish() { for (const [key, value] of Object.entries({ Map: 1 })) globalThis[key] = value; }",
+        "export function publish() { for (const [key, value] of Object.entries({ ['safe']: 1 })) globalThis[key] = value; }",
+        "export function publish() { for (const [key, value] of Object.entries({ get safe() { return 1; } })) globalThis[key] = value; }",
+        "export function publish() { for (const [key = 'Map', value] of Object.entries({ safe: 1 })) globalThis[key] = value; }",
+        "const key = Symbol.for('example.registry'); export function mutate() { Map[key] = 1; }",
+        "export function mutate() { Map++; }",
+    ] {
+        expect_atomic_conflict_rejection(
+            source_record_namespace_opts(&[
+                ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+                ("static/namespace", namespace),
+            ]),
+            &["queue", "later"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn source_record_native_integrity_checks_other_chunk_operation_replacement() {
+    for (namespace, replacement) in [
+        (
+            "const key = Symbol.for('example.registry'); export function publish(value) { globalThis[key] = value; }",
+            "export function replace() { Symbol.for = () => 'Map'; }",
+        ),
+        (
+            "export function publish() { for (const [key, value] of Object.entries({ safe: 1 })) globalThis[key] = value; }",
+            "export function replace() { Object.entries = () => [['Map', 1]]; }",
+        ),
+        (
+            "export function publish() { for (const [key, value] of Object.entries({ safe: 1 })) globalThis[key] = value; }",
+            "export function replace() { Array.prototype[Symbol.iterator] = function* () { yield 'Map'; }; }",
+        ),
+    ] {
+        let namespace = format!("import './replacement.js';\n{namespace}");
+        expect_atomic_conflict_rejection(
+            source_record_namespace_opts(&[
+                ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+                ("static/namespace", &namespace),
+                ("static/replacement", replacement),
+            ]),
+            &["queue", "later"],
+            &[],
+        );
+    }
+}

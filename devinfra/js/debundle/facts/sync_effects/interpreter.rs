@@ -2187,8 +2187,9 @@ impl Executor<'_> {
             // even if they occur after this call or in a lazy callable.
             let mutated = self
                 .index
-                .intrinsic_mutation_receivers
+                .intrinsic_writes
                 .iter()
+                .map(|write| &write.receiver)
                 .any(mutating_receiver)
                 || self
                     .index

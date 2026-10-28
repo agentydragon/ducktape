@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use analysis::analysis_inputs::CallableSummary;
+use analysis::analysis_inputs::{CallableSummary, NativeIntegrity};
 use analysis::cross_module_purity::{
     ModulePurityFacts, ResolvedImport, resolve_asserted_callback_factory_members,
     resolve_asserted_fluent_bindings, resolve_asserted_inline_callback_factories,
@@ -77,6 +77,8 @@ pub(super) struct CrossModulePurities {
     pub(super) constructors: BTreeMap<String, BTreeSet<String>>,
     /// Per-chunk bare imported callable summaries with their defining evidence.
     pub(super) imported_callables: BTreeMap<String, BTreeMap<String, CallableSummary>>,
+    /// Source-derived native mutation census shared by every analyzed chunk.
+    pub(super) native_integrity: Option<NativeIntegrity>,
     pub(super) inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) retained_callback_factories:
@@ -532,6 +534,8 @@ pub(super) fn collect_cross_module_imported_purities(
             }
         }
     }
+    let callable_summaries =
+        resolve_imported_callable_summaries(&modules, &asserted_callback_factories);
     CrossModulePurities {
         no_reentry_callback_exports: resolve_asserted_no_reentry_callbacks(
             &modules,
@@ -598,10 +602,8 @@ pub(super) fn collect_cross_module_imported_purities(
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
         constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
-        imported_callables: resolve_imported_callable_summaries(
-            &modules,
-            &asserted_callback_factories,
-        ),
+        imported_callables: callable_summaries.imported_callables,
+        native_integrity: callable_summaries.native_integrity,
         inline_callback_factories: resolve_asserted_inline_callback_factories(
             &modules,
             &asserted_inline_callback_factories,

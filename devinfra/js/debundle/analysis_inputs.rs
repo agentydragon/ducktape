@@ -120,6 +120,30 @@ impl CallableSummary {
     }
 }
 
+/// Intrinsic families whose visible writes constrain inferred native operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum NativeIntrinsic {
+    GlobalObject,
+    Error,
+    Object,
+    Array,
+    Math,
+    RegExp,
+    Symbol,
+    Promise,
+    Map,
+    Set,
+    WeakMap,
+    WeakSet,
+}
+
+/// Source-derived whole-program native integrity. This is an inferred premise,
+/// never an author assertion or a serialized spec option.
+#[derive(Debug, Clone, Default)]
+pub struct NativeIntegrity {
+    pub mutated: BTreeSet<NativeIntrinsic>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisAssumptions {
     /// Version-scoped author assertion for exact host operations.
@@ -192,6 +216,7 @@ pub struct AnalysisAssumptions {
 /// call summaries and the caller-selected local-effect policy.
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisInputs {
+    pub native_integrity: Option<NativeIntegrity>,
     pub assumptions: AnalysisAssumptions,
     pub local_effect_policy: LocalEffectPolicy,
     /// Cross-module purity verdicts for this chunk's imported function

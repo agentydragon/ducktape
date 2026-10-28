@@ -38,7 +38,8 @@ use swc_ecma_ast::ModuleItem;
 
 use crate::SourceLocation;
 use crate::analysis_inputs::{
-    CallableSummary, CallbackFactoryEvidence, DeferredRecordMember, ReturnedRecordSummary,
+    CallableSummary, CallbackFactoryEvidence, DeferredRecordMember, NativeIntegrity,
+    ReturnedRecordSummary,
 };
 use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
@@ -321,10 +322,15 @@ pub fn resolve_imported_purities(
 /// Callback transfer is independent of purity, including asserted purity.
 /// Compose checked source call timing and returned capabilities separately
 /// from author assertions. Missing exports and unsupported bodies stay opaque.
+pub struct ResolvedCallableSummaries {
+    pub imported_callables: BTreeMap<ModuleKey, BTreeMap<String, CallableSummary>>,
+    pub native_integrity: Option<NativeIntegrity>,
+}
+
 pub fn resolve_imported_callable_summaries(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
-) -> BTreeMap<ModuleKey, BTreeMap<String, CallableSummary>> {
+) -> ResolvedCallableSummaries {
     let required: BTreeSet<_> = modules
         .values()
         .flat_map(|facts| facts.imports.values())
@@ -351,9 +357,8 @@ pub fn resolve_imported_callable_summaries(
             }
         }
     }
-    let mut inferred: BTreeMap<_, _> = modules
+    let prepared: BTreeMap<_, _> = modules
         .iter()
-        .filter(|(module, _)| required.iter().any(|(target, _)| target == *module))
         .map(|(module, facts)| {
             let locals = facts
                 .exports
@@ -364,8 +369,25 @@ pub fn resolve_imported_callable_summaries(
             let views = top_level_item_views(facts.body);
             (
                 module,
+                crate::facts::sync_effects::execution_index::prepare_callable_capabilities(
+                    &views, locals,
+                ),
+            )
+        })
+        .collect();
+    let native_integrity = crate::facts::sync_effects::execution_index::resolve_native_integrity(
+        prepared.values().map(|facts| facts.native_writes()),
+    );
+    let inferred: BTreeMap<_, _> = prepared
+        .into_iter()
+        .map(|(module, prepared)| {
+            let views = top_level_item_views(modules[module].body);
+            (
+                module,
                 crate::facts::sync_effects::execution_index::infer_callable_capabilities(
-                    &views, &locals,
+                    &views,
+                    prepared,
+                    &native_integrity,
                 ),
             )
         })
@@ -405,26 +427,9 @@ pub fn resolve_imported_callable_summaries(
                 ));
         }
     }
-    // Only a real record candidate needs the program-wide native premise.
-    // Other chunks contribute their canonical write census without value flow.
     let needs_map_integrity = inferred
         .values()
         .any(|summary| !summary.returned_records.is_empty());
-    if needs_map_integrity {
-        for (module, facts) in modules {
-            if inferred.contains_key(module) {
-                continue;
-            }
-            let views = top_level_item_views(facts.body);
-            inferred.insert(
-                module,
-                crate::facts::sync_effects::execution_index::infer_callable_capabilities(
-                    &views,
-                    &BTreeSet::new(),
-                ),
-            );
-        }
-    }
     // A source-composed native premise must survive every analyzed chunk's
     // canonical intrinsic-write census, including the importing chunk.
     if needs_map_integrity
@@ -474,7 +479,7 @@ pub fn resolve_imported_callable_summaries(
             }
         }
     }
-    modules
+    let imported_callables = modules
         .iter()
         .map(|(module, facts)| {
             let bindings = facts
@@ -488,7 +493,11 @@ pub fn resolve_imported_callable_summaries(
                 .collect();
             (module.clone(), bindings)
         })
-        .collect()
+        .collect();
+    ResolvedCallableSummaries {
+        imported_callables,
+        native_integrity: Some(native_integrity),
+    }
 }
 
 /// Resolve author-asserted inline-only callback factories through the same
@@ -929,7 +938,7 @@ mod tests {
             ("lib".to_string(), BTreeSet::from(["audited".to_string()])),
             ("vendor".to_string(), BTreeSet::from(["wrap".to_string()])),
         ]);
-        let resolved = resolve_imported_callable_summaries(&modules, &asserted);
+        let resolved = resolve_imported_callable_summaries(&modules, &asserted).imported_callables;
         assert_eq!(
             resolved["app"]["localWrap"].callback_factory_evidence(),
             &BTreeSet::from([CallbackFactoryEvidence::InferredImmutableWrapper {

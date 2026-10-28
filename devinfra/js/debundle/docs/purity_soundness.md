@@ -76,9 +76,11 @@ returns before looking up an adder or invoking iterator/user code. See the
 [WeakMap](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-weakmap-iterable)
 and [WeakSet](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-weakset-iterable)
 constructor algorithms. The shared intrinsic-write census disables this
-shortcut after a visible in-chunk write to the corresponding global
-constructor or global-object property, including writes through aliases and
-unknown computed global properties. Dynamic scopes disable it too.
+shortcut after a visible write to the corresponding global constructor or
+global-object property, including writes through aliases and unknown computed
+global properties. Program analysis shares its resolved census across all
+analyzed chunks; isolated per-chunk analysis uses its local census. Dynamic
+scopes disable it too.
 
 This does not certify subsequent collection operations. A shadowed or dynamic
 callee, subclass construction, arguments and spreads keep ordinary callback
@@ -87,6 +89,36 @@ or expose callbacks. The CLI cases in `empty_collection_timing_test` cover
 all four empty constructors, global constructor replacement, and callback
 reentry through a shadowed constructor, a replaced Set adder, and a replaced
 Array iterator.
+
+## Property-key domains in native writes
+
+The canonical execution index retains a separate key domain for native-write
+facts: a finite set of strings, definitely Symbol, or unknown. This refines only
+which named global bindings a write can replace. A symbol-key write on `Map`,
+`Object`, or another intrinsic still invalidates that intrinsic family.
+Key evaluation, callbacks, effects, throws and returned values retain their
+ordinary analysis.
+
+A stable alias of an unshadowed `Symbol.for` call with one literal string
+argument has a Symbol domain only while the Symbol family remains intact.
+A lexical two-identifier `[key, value]` loop over unshadowed `Object.entries`
+of an immediate object containing only noncomputed own data properties has
+that object's finite string-key set. Its premises include the Object family
+and Array iteration for both the outer entries array and each destructured
+pair. Computed properties, accessors, spreads, default patterns, unknown keys,
+shadowed operations and any binding reassignment retain the unknown domain.
+
+A11 supplies the initial native identities. The whole-program census retains
+all writes, including deferred bodies, and establishes a closed-write
+invariant: each refined write preserves named native global bindings provided
+its operation dependencies remain intact. Start with unconditional native
+writes and unknown global writes, then propagate dependency invalidation to a
+fixed point. An actual Symbol, Object or Array mutation in any analyzed chunk
+invalidates dependent key evidence; unknown global mutation invalidates every
+native premise. A collection provider and its consumers use the same resolved
+source-derived integrity input, separate from author assumptions. Code outside
+the analyzed source remains covered by A11. No whole-program purity or
+nonreentry conclusion follows from this census.
 
 ## Source-composed returned records
 

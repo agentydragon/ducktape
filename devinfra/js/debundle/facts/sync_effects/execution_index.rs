@@ -5,7 +5,7 @@ use super::value_model::{
     FromEntriesMappedProof, NamespaceValueFacts, ValueExpr, infer_namespace_aliases,
     object_data_property_name, static_prop, static_property_name,
 };
-use crate::analysis_inputs::AnalysisInputs;
+use crate::analysis_inputs::{AnalysisInputs, NativeIntegrity, NativeIntrinsic as IntrinsicRoot};
 use crate::facts::LocalClassConstructionProof;
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
@@ -1255,22 +1255,6 @@ fn returned_function_span(expr: &Expr) -> Option<Span> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum IntrinsicRoot {
-    GlobalObject,
-    Error,
-    Object,
-    Array,
-    Math,
-    RegExp,
-    Symbol,
-    Promise,
-    Map,
-    Set,
-    WeakMap,
-    WeakSet,
-}
-
 type IntrinsicRoots = BTreeSet<IntrinsicRoot>;
 
 fn intrinsic_roots(
@@ -1387,12 +1371,166 @@ fn intrinsic_roots(
     }
 }
 
-fn intrinsic_write_target(member: &MemberExpr) -> ValueExpr {
-    ValueExpr::Member(
-        Box::new(ValueExpr::from_expr(&member.obj)),
-        static_prop(&member.prop),
-        matches!(member.prop, MemberProp::Ident(_)),
-    )
+/// Property-key facts affect only the native write census. They make no claim
+/// about evaluating the key, calling a factory, or consuming its return value.
+#[derive(Debug, Clone)]
+enum PropertyKeyExpr {
+    String(String),
+    Binding(Id),
+    SymbolFor(Id),
+    EntriesKeys(Id, BTreeSet<String>),
+    Unknown,
+}
+
+impl PropertyKeyExpr {
+    fn from_expr(expression: &Expr) -> Self {
+        match expression.unwrap_parens() {
+            Expr::Lit(Lit::Str(value)) => Self::String(value.value.to_string_lossy().into_owned()),
+            Expr::Ident(ident) => Self::Binding(ident.to_id()),
+            Expr::Call(call)
+                if call.args.len() == 1
+                    && call.args[0].spread.is_none()
+                    && matches!(call.args[0].expr.unwrap_parens(), Expr::Lit(Lit::Str(_))) =>
+            {
+                match &call.callee {
+                    Callee::Expr(callee) => match callee.unwrap_parens() {
+                        Expr::Member(member)
+                            if static_prop(&member.prop).as_deref() == Some("for") =>
+                        {
+                            match member.obj.unwrap_parens() {
+                                Expr::Ident(ident) if ident.sym == "Symbol" => {
+                                    Self::SymbolFor(ident.to_id())
+                                }
+                                _ => Self::Unknown,
+                            }
+                        }
+                        _ => Self::Unknown,
+                    },
+                    _ => Self::Unknown,
+                }
+            }
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum PropertyKeyDomain {
+    FiniteStrings(BTreeSet<String>),
+    Symbol,
+    Unknown,
+}
+
+#[derive(Debug, Clone)]
+struct PropertyKeyEvidence {
+    domain: PropertyKeyDomain,
+    dependencies: IntrinsicRoots,
+}
+
+impl PropertyKeyEvidence {
+    fn unknown() -> Self {
+        Self {
+            domain: PropertyKeyDomain::Unknown,
+            dependencies: BTreeSet::new(),
+        }
+    }
+}
+
+fn property_key_evidence(
+    expression: &PropertyKeyExpr,
+    assignments: &BTreeMap<Id, Vec<PropertyKeyExpr>>,
+    declared: &BTreeSet<Id>,
+    active: &mut BTreeSet<Id>,
+) -> PropertyKeyEvidence {
+    match expression {
+        PropertyKeyExpr::String(key) => PropertyKeyEvidence {
+            domain: PropertyKeyDomain::FiniteStrings(BTreeSet::from([key.clone()])),
+            dependencies: BTreeSet::new(),
+        },
+        PropertyKeyExpr::Binding(binding) if active.insert(binding.clone()) => {
+            let evidence = match assignments.get(binding).map(Vec::as_slice) {
+                Some([value]) => property_key_evidence(value, assignments, declared, active),
+                _ => PropertyKeyEvidence::unknown(),
+            };
+            active.remove(binding);
+            evidence
+        }
+        PropertyKeyExpr::SymbolFor(namespace) if !declared.contains(namespace) => {
+            PropertyKeyEvidence {
+                domain: PropertyKeyDomain::Symbol,
+                dependencies: BTreeSet::from([IntrinsicRoot::Symbol]),
+            }
+        }
+        PropertyKeyExpr::EntriesKeys(namespace, keys) if !declared.contains(namespace) => {
+            PropertyKeyEvidence {
+                domain: PropertyKeyDomain::FiniteStrings(keys.clone()),
+                // Both the outer entries array and each destructured pair use the
+                // Array iterator. Preserve the same family premise for both.
+                dependencies: BTreeSet::from([IntrinsicRoot::Object, IntrinsicRoot::Array]),
+            }
+        }
+        _ => PropertyKeyEvidence::unknown(),
+    }
+}
+
+#[derive(Debug)]
+struct IntrinsicWriteTarget {
+    receiver: ValueExpr,
+    key: Option<PropertyKeyExpr>,
+}
+
+fn intrinsic_write_target(member: &MemberExpr) -> IntrinsicWriteTarget {
+    let key = match &member.prop {
+        MemberProp::Ident(property) => PropertyKeyExpr::String(property.sym.to_string()),
+        MemberProp::Computed(property) => PropertyKeyExpr::from_expr(&property.expr),
+        _ => PropertyKeyExpr::Unknown,
+    };
+    IntrinsicWriteTarget {
+        receiver: ValueExpr::from_expr(&member.obj),
+        key: Some(key),
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct NativeWriteCensus {
+    unconditional: IntrinsicRoots,
+    conditional: Vec<ConditionalIntrinsicWrite>,
+}
+
+struct ConditionalIntrinsicWrite {
+    refined: IntrinsicRoots,
+    fallback: IntrinsicRoots,
+    dependencies: IntrinsicRoots,
+}
+
+/// A11 supplies the initial native identities. Every retained write either
+/// preserves those identities under its operation premises or invalidates the
+/// affected families. Propagate invalidation to a fixed point, including writes
+/// in deferred bodies. This is a closed-write invariant, not self-certification
+/// from the absence of a fact produced by the same candidate.
+pub(crate) fn resolve_native_integrity<'a>(
+    censuses: impl IntoIterator<Item = &'a NativeWriteCensus>,
+) -> NativeIntegrity {
+    let censuses: Vec<_> = censuses.into_iter().collect();
+    let mut mutated: IntrinsicRoots = censuses
+        .iter()
+        .flat_map(|census| census.unconditional.iter().copied())
+        .collect();
+    loop {
+        let before = mutated.len();
+        for write in censuses.iter().flat_map(|census| &census.conditional) {
+            let invalid = mutated.contains(&IntrinsicRoot::GlobalObject)
+                || !write.dependencies.is_disjoint(&mutated);
+            mutated.extend(if invalid {
+                &write.fallback
+            } else {
+                &write.refined
+            });
+        }
+        if before == mutated.len() {
+            return NativeIntegrity { mutated };
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -1930,7 +2068,10 @@ struct ExecutionIndex {
     reassigned_map: bool,
     namespace_privacy: NamespacePrivacy,
     fresh_error_claims: Vec<FreshErrorWriteClaim>,
-    intrinsic_mutation_receivers: Vec<ValueExpr>,
+    intrinsic_writes: Vec<IntrinsicWriteTarget>,
+    property_key_assignments: BTreeMap<Id, Vec<PropertyKeyExpr>>,
+    property_key_declarations: BTreeSet<Id>,
+    native_write_census: NativeWriteCensus,
     destructuring_source: Option<ValueExpr>,
     destructuring_member_writes: Vec<DestructuringMemberWrite>,
     setter_owners: BTreeMap<Option<String>, BTreeSet<SourceUnitOrdinal>>,
@@ -2040,7 +2181,10 @@ impl Default for ExecutionIndex {
             reassigned_map: false,
             namespace_privacy: NamespacePrivacy::default(),
             fresh_error_claims: Vec::new(),
-            intrinsic_mutation_receivers: Vec::new(),
+            intrinsic_writes: Vec::new(),
+            property_key_assignments: BTreeMap::new(),
+            property_key_declarations: BTreeSet::new(),
+            native_write_census: NativeWriteCensus::default(),
             destructuring_source: None,
             destructuring_member_writes: Vec::new(),
             setter_owners: BTreeMap::new(),
@@ -2470,13 +2614,85 @@ impl ExecutionIndex {
                 _ => {}
             }
         }
-        for receiver in &index.intrinsic_mutation_receivers {
-            mutated_intrinsics.extend(intrinsic_roots(
-                receiver,
+        if !index.dynamic_scope_owners.is_empty() {
+            mutated_intrinsics.insert(IntrinsicRoot::GlobalObject);
+        }
+        index.native_write_census.unconditional = mutated_intrinsics;
+        let declared: BTreeSet<_> = index
+            .property_key_declarations
+            .iter()
+            .chain(index.hoisted_bindings.keys())
+            .chain(index.imported_bindings.iter())
+            .chain(index.class_ids.iter())
+            .cloned()
+            .collect();
+        for write in &index.intrinsic_writes {
+            let roots = intrinsic_roots(
+                &write.receiver,
                 &intrinsic_aliases,
                 &index.global_object_names,
-            ));
+            );
+            let Some(key) = &write.key else {
+                index.native_write_census.unconditional.extend(roots);
+                continue;
+            };
+            let evidence = property_key_evidence(
+                key,
+                &index.property_key_assignments,
+                &declared,
+                &mut BTreeSet::new(),
+            );
+            let fallback = intrinsic_roots(
+                &ValueExpr::Member(Box::new(write.receiver.clone()), None, false),
+                &intrinsic_aliases,
+                &index.global_object_names,
+            );
+            let mut refined: IntrinsicRoots = roots
+                .iter()
+                .filter(|root| **root != IntrinsicRoot::GlobalObject)
+                .copied()
+                .collect();
+            if roots.contains(&IntrinsicRoot::GlobalObject) {
+                match &evidence.domain {
+                    PropertyKeyDomain::FiniteStrings(keys) => {
+                        for key in keys {
+                            refined.extend(intrinsic_roots(
+                                &ValueExpr::Member(
+                                    Box::new(write.receiver.clone()),
+                                    Some(key.clone()),
+                                    false,
+                                ),
+                                &intrinsic_aliases,
+                                &index.global_object_names,
+                            ));
+                        }
+                    }
+                    PropertyKeyDomain::Symbol => {}
+                    PropertyKeyDomain::Unknown => {
+                        refined.extend(&fallback);
+                    }
+                }
+            }
+            index
+                .native_write_census
+                .conditional
+                .push(ConditionalIntrinsicWrite {
+                    refined,
+                    fallback,
+                    dependencies: evidence.dependencies,
+                });
         }
+        let mut censuses = vec![&index.native_write_census];
+        let external = NativeWriteCensus {
+            unconditional: hints
+                .native_integrity
+                .as_ref()
+                .map(|integrity| integrity.mutated.clone())
+                .unwrap_or_default(),
+            conditional: Vec::new(),
+        };
+        censuses.push(&external);
+        let mutated_intrinsics = resolve_native_integrity(censuses).mutated;
         index.mutated_intrinsic_roots = mutated_intrinsics.clone();
         let mut claim_counts = BTreeMap::<FreshErrorWriteSite, usize>::new();
         if !index.fresh_error_claims.is_empty()
@@ -3145,6 +3361,17 @@ impl ExecutionIndex {
         }
     }
 
+    fn invalidate_property_key_pattern(&mut self, pattern: &Pat) {
+        let mut bindings = Vec::new();
+        collect_pattern_assignments(pattern, &ValueExpr::Unknown, &mut bindings);
+        for (binding, _) in bindings {
+            self.property_key_assignments
+                .entry(binding)
+                .or_default()
+                .push(PropertyKeyExpr::Unknown);
+        }
+    }
+
     fn collect_export_roots(&mut self, item: &ModuleItem) {
         match item {
             ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_))) => {
@@ -3573,6 +3800,11 @@ impl Visit for ExecutionIndex {
                     })
                     .collect();
                 self.with_callable(ctor.span.lo.0, params, |index| {
+                    for parameter in &ctor.params {
+                        if let ParamOrTsParamProp::Param(parameter) = parameter {
+                            index.invalidate_property_key_pattern(&parameter.pat);
+                        }
+                    }
                     ctor.visit_children_with(index);
                 });
             }
@@ -3770,6 +4002,12 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_fn_decl(&mut self, declaration: &FnDecl) {
+        self.property_key_declarations
+            .insert(declaration.ident.to_id());
+        self.property_key_assignments
+            .entry(declaration.ident.to_id())
+            .or_default()
+            .push(PropertyKeyExpr::Unknown);
         if let Some(key) = self.current {
             // Declarations are instantiated when the enclosing activation
             // begins, even if their source text follows an await.
@@ -3789,6 +4027,12 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_class_decl(&mut self, declaration: &ClassDecl) {
+        self.property_key_declarations
+            .insert(declaration.ident.to_id());
+        self.property_key_assignments
+            .entry(declaration.ident.to_id())
+            .or_default()
+            .push(PropertyKeyExpr::Unknown);
         declaration.class.visit_with(self);
         if self.current.is_none() {
             self.top_definite_initializers[self.owner.0].insert(declaration.ident.to_id());
@@ -3941,6 +4185,46 @@ impl Visit for ExecutionIndex {
         self.visit_may_skip(node);
     }
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        if !node.is_await
+            && let ForHead::VarDecl(declaration) = &node.left
+            && matches!(declaration.kind, VarDeclKind::Let | VarDeclKind::Const)
+            && declaration.decls.len() == 1
+            && declaration.decls[0].init.is_none()
+            && let Pat::Array(pattern) = &declaration.decls[0].name
+            && pattern.elems.len() == 2
+            && let Some(Pat::Ident(binding)) = &pattern.elems[0]
+            && matches!(&pattern.elems[1], Some(Pat::Ident(_)))
+            && let Expr::Call(call) = node.right.unwrap_parens()
+            && call.args.len() == 1
+            && call.args[0].spread.is_none()
+            && let Callee::Expr(callee) = &call.callee
+            && let Expr::Member(member) = callee.unwrap_parens()
+            && static_prop(&member.prop).as_deref() == Some("entries")
+            && let Expr::Ident(namespace) = member.obj.unwrap_parens()
+            && namespace.sym == "Object"
+            && let Expr::Object(object) = call.args[0].expr.unwrap_parens()
+        {
+            let keys: Option<BTreeSet<String>> = object
+                .props
+                .iter()
+                .map(|property| match property {
+                    PropOrSpread::Prop(property) => match property.as_ref() {
+                        Prop::KeyValue(pair) if !matches!(pair.key, PropName::Computed(_)) => {
+                            static_property_name(&pair.key).filter(|key| key != "__proto__")
+                        }
+                        Prop::Shorthand(ident) => Some(ident.sym.to_string()),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .collect();
+            if let Some(keys) = keys {
+                self.property_key_assignments
+                    .entry(binding.id.to_id())
+                    .or_default()
+                    .push(PropertyKeyExpr::EntriesKeys(namespace.to_id(), keys));
+            }
+        }
         self.visit_may_skip(node);
     }
     fn visit_try_stmt(&mut self, node: &TryStmt) {
@@ -3948,6 +4232,31 @@ impl Visit for ExecutionIndex {
     }
     fn visit_switch_stmt(&mut self, node: &SwitchStmt) {
         self.visit_may_skip(node);
+    }
+
+    fn visit_fn_expr(&mut self, expression: &FnExpr) {
+        if let Some(binding) = &expression.ident {
+            self.property_key_declarations.insert(binding.to_id());
+            self.property_key_assignments
+                .entry(binding.to_id())
+                .or_default()
+                .push(PropertyKeyExpr::Unknown);
+        }
+        expression.visit_children_with(self);
+    }
+
+    fn visit_class_expr(&mut self, expression: &ClassExpr) {
+        if let Some(binding) = &expression.ident {
+            self.property_key_declarations.insert(binding.to_id());
+        }
+        expression.visit_children_with(self);
+    }
+
+    fn visit_catch_clause(&mut self, clause: &CatchClause) {
+        if let Some(parameter) = &clause.param {
+            self.invalidate_property_key_pattern(parameter);
+        }
+        clause.visit_children_with(self);
     }
 
     fn visit_function(&mut self, function: &Function) {
@@ -4001,6 +4310,7 @@ impl Visit for ExecutionIndex {
                 .unwrap()
                 .generator = function.is_generator;
             for param in &function.params {
+                index.invalidate_property_key_pattern(&param.pat);
                 param.pat.visit_with(index);
             }
             if let Some(body) = &function.body {
@@ -4032,6 +4342,9 @@ impl Visit for ExecutionIndex {
         }
         let params = arrow.params.iter().map(Parameter::from_pattern).collect();
         self.with_callable(arrow.span.lo.0, params, |index| {
+            for parameter in &arrow.params {
+                index.invalidate_property_key_pattern(parameter);
+            }
             index
                 .callables
                 .get_mut(&arrow.span.lo.0)
@@ -4151,10 +4464,33 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_binding_ident(&mut self, binding: &BindingIdent) {
+        self.property_key_declarations.insert(binding.id.to_id());
         self.namespace_privacy.record_ident(&binding.id);
     }
 
     fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
+        if let Pat::Ident(binding) = &declarator.name {
+            self.property_key_assignments
+                .entry(binding.id.to_id())
+                .or_default()
+                .push(
+                    declarator
+                        .init
+                        .as_ref()
+                        .map_or(PropertyKeyExpr::Unknown, |value| {
+                            PropertyKeyExpr::from_expr(value)
+                        }),
+                );
+        } else if declarator.init.is_some() {
+            let mut bindings = Vec::new();
+            collect_pattern_assignments(&declarator.name, &ValueExpr::Unknown, &mut bindings);
+            for (id, _) in bindings {
+                self.property_key_assignments
+                    .entry(id)
+                    .or_default()
+                    .push(PropertyKeyExpr::Unknown);
+            }
+        }
         if let Some(key) = self.current
             && let Pat::Ident(binding) = &declarator.name
         {
@@ -4252,8 +4588,7 @@ impl Visit for ExecutionIndex {
                 Pat::Expr(expression) => Some(match expression.unwrap_parens() {
                     Expr::Member(member) => {
                         self.member_write_sites.insert(member.span.into());
-                        self.intrinsic_mutation_receivers
-                            .push(intrinsic_write_target(member));
+                        self.intrinsic_writes.push(intrinsic_write_target(member));
                         ValueExpr::from_expr(&member.obj)
                     }
                     _ => ValueExpr::Unknown,
@@ -4289,6 +4624,9 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_for_head(&mut self, head: &ForHead) {
+        if let ForHead::Pat(pattern) = head {
+            self.invalidate_property_key_pattern(pattern);
+        }
         let previous_source = self.destructuring_source.take();
         if matches!(head, ForHead::Pat(_)) {
             self.destructuring_source = Some(ValueExpr::Unknown);
@@ -4307,6 +4645,28 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_assign_expr(&mut self, assignment: &AssignExpr) {
+        match &assignment.left {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => self
+                .property_key_assignments
+                .entry(binding.id.to_id())
+                .or_default()
+                .push(if assignment.op == AssignOp::Assign {
+                    PropertyKeyExpr::from_expr(&assignment.right)
+                } else {
+                    PropertyKeyExpr::Unknown
+                }),
+            AssignTarget::Pat(pattern) => {
+                let mut bindings = Vec::new();
+                collect_assign_target_assignments(pattern, &ValueExpr::Unknown, &mut bindings);
+                for (id, _) in bindings {
+                    self.property_key_assignments
+                        .entry(id)
+                        .or_default()
+                        .push(PropertyKeyExpr::Unknown);
+                }
+            }
+            _ => {}
+        }
         if self.global_guards_requested {
             self.global_alias_written |= match &assignment.left {
                 AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
@@ -4331,8 +4691,7 @@ impl Visit for ExecutionIndex {
             self.reassigned_map = true;
         }
         if let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left {
-            self.intrinsic_mutation_receivers
-                .push(intrinsic_write_target(member));
+            self.intrinsic_writes.push(intrinsic_write_target(member));
         }
         let before_assignment = self.past_await;
         let previous_source = self.destructuring_source.take();
@@ -4486,14 +4845,22 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
+        if let Expr::Ident(ident) = expression.arg.unwrap_parens() {
+            self.property_key_assignments
+                .entry(ident.to_id())
+                .or_default()
+                .push(PropertyKeyExpr::Unknown);
+        }
         if let Expr::Member(member) = expression.arg.unwrap_parens() {
             self.member_write_sites.insert(member.span.into());
         }
 
-        if matches!(expression.arg.unwrap_parens(), Expr::Ident(id) if matches!(id.sym.as_ref(), "Error" | "Object" | "Array"))
+        if matches!(expression.arg.unwrap_parens(), Expr::Ident(id) if matches!(id.sym.as_ref(), "Error" | "Object" | "Array" | "Math" | "RegExp" | "Symbol" | "Promise" | "Map" | "Set" | "WeakMap" | "WeakSet"))
         {
-            self.intrinsic_mutation_receivers
-                .push(ValueExpr::from_expr(&expression.arg));
+            self.intrinsic_writes.push(IntrinsicWriteTarget {
+                receiver: ValueExpr::from_expr(&expression.arg),
+                key: None,
+            });
         }
 
         if matches!(expression.arg.unwrap_parens(), Expr::Ident(ident) if ident.sym == "Map") {
@@ -4504,8 +4871,7 @@ impl Visit for ExecutionIndex {
         self.namespace_privacy.target_depth -= 1;
         self.record_implicit_coercion(&expression.arg, expression.span);
         if let Expr::Member(member) = expression.arg.unwrap_parens() {
-            self.intrinsic_mutation_receivers
-                .push(intrinsic_write_target(member));
+            self.intrinsic_writes.push(intrinsic_write_target(member));
             self.mark_dynamic_property_effect(Some(&member.obj));
         }
         self.mark_opaque();
@@ -4531,8 +4897,7 @@ impl Visit for ExecutionIndex {
         if expression.op == UnaryOp::Delete
             && let Expr::Member(member) = expression.arg.unwrap_parens()
         {
-            self.intrinsic_mutation_receivers
-                .push(intrinsic_write_target(member));
+            self.intrinsic_writes.push(intrinsic_write_target(member));
             self.mark_dynamic_property_effect(Some(&member.obj));
         }
     }
@@ -4624,20 +4989,23 @@ impl Visit for ExecutionIndex {
                 method.as_deref(),
                 Some("set" | "defineProperty" | "deleteProperty")
             ) {
-                let property =
-                    call.args
-                        .get(1)
-                        .and_then(|argument| match argument.expr.unwrap_parens() {
-                            Expr::Lit(Lit::Str(value)) => {
-                                Some(value.value.to_string_lossy().into_owned())
-                            }
-                            _ => None,
-                        });
-                ValueExpr::Member(Box::new(receiver), property, false)
+                IntrinsicWriteTarget {
+                    receiver,
+                    key: Some(
+                        call.args
+                            .get(1)
+                            .map_or(PropertyKeyExpr::Unknown, |argument| {
+                                PropertyKeyExpr::from_expr(&argument.expr)
+                            }),
+                    ),
+                }
             } else {
-                receiver
+                IntrinsicWriteTarget {
+                    receiver,
+                    key: None,
+                }
             };
-            self.intrinsic_mutation_receivers.push(target);
+            self.intrinsic_writes.push(target);
         }
 
         let callback_argument = self.inline_factory_callback_argument(call);
@@ -5012,25 +5380,51 @@ pub(crate) struct InferredCallableCapabilities {
     pub returned_records: BTreeMap<String, InferredReturnedRecord>,
 }
 
-/// One canonical index/flow for all imported callable capabilities and premises.
+/// Prepared once for callable inference and the whole-program native census.
+/// Value flow remains demand-driven even when every module contributes writes.
+pub(crate) struct PreparedCallableCapabilities {
+    index: ExecutionIndex,
+    exported_locals: BTreeSet<String>,
+}
+
+impl PreparedCallableCapabilities {
+    pub(crate) fn native_writes(&self) -> &NativeWriteCensus {
+        &self.index.native_write_census
+    }
+}
+
+pub(crate) fn prepare_callable_capabilities(
+    body: &[TopLevelItemView<'_>],
+    exported_locals: BTreeSet<String>,
+) -> PreparedCallableCapabilities {
+    PreparedCallableCapabilities {
+        index: ExecutionIndex::collect(
+            body,
+            &AnalysisInputs::default(),
+            None,
+            &BTreeSet::new(),
+            &LocalClassConstructionProof::default(),
+        ),
+        exported_locals,
+    }
+}
+
+/// Consume the same prepared facts after resolving all modules' native writes.
 pub(crate) fn infer_callable_capabilities(
     body: &[TopLevelItemView<'_>],
-    exported_locals: &BTreeSet<String>,
+    prepared: PreparedCallableCapabilities,
+    integrity: &NativeIntegrity,
 ) -> InferredCallableCapabilities {
-    let index = ExecutionIndex::collect(
-        body,
-        &AnalysisInputs::default(),
-        None,
-        &BTreeSet::new(),
-        &LocalClassConstructionProof::default(),
-    );
+    let PreparedCallableCapabilities {
+        mut index,
+        exported_locals,
+    } = prepared;
+    index.mutated_intrinsic_roots = integrity.mutated.clone();
     let mut result = InferredCallableCapabilities {
         map_integrity: index.collection_intrinsic_is_unmodified("Map"),
         callback_factories: BTreeMap::new(),
         returned_records: BTreeMap::new(),
     };
-    // Most exports are not function factories. Preserve the demand boundary:
-    // namespace-only providers and unsupported bodies need no value-flow graph.
     let callback_candidate = |id: &Id, key: u32| {
         exported_locals.contains(id.0.as_ref()) && returned_callback_factory(&index, key)
     };
@@ -5045,8 +5439,9 @@ pub(crate) fn infer_callable_capabilities(
         let flow = ChunkValueFlow::analyze(body);
         let shadowed = crate::facts::compute_shadowed_globals(body);
         result.callback_factories =
-            infer_returned_callback_factories(&index, &flow, exported_locals);
-        result.returned_records = infer_returned_records(&index, &flow, &shadowed, exported_locals);
+            infer_returned_callback_factories(&index, &flow, &exported_locals);
+        result.returned_records =
+            infer_returned_records(&index, &flow, &shadowed, &exported_locals);
     }
     result
 }

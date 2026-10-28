@@ -698,6 +698,24 @@ Existing input/output relocation rules remain unchanged. The markers identify
 a provider; they do not prove its contracts. Each purity, callback, intrinsic
 and publication premise still requires the same independent source audit.
 
+## Inferred native property-key domains
+
+Native mutation analysis distinguishes finite string keys, definitely Symbol
+keys and unknown keys. Stable aliases of unshadowed `Symbol.for(literal)` and
+lexical `[key, value]` loops over closed data-object `Object.entries` inputs
+can preserve unrelated named global bindings. The latter requires intact
+Object operations and Array iterators for both the result and pair
+destructuring. Mutation directly on a native object remains a mutation of that
+family, regardless of key domain.
+
+A11 supplies initial native identity. All analyzed chunks contribute their
+canonical mutation facts, including deferred writes, before resolving a closed
+write invariant and propagating invalidated operation dependencies to a fixed
+point. Providers and consumers share this inferred integrity input; it is not
+a spec assumption or configurable override. Unknown keys, unstable bindings,
+shadowing, unsupported patterns and visible native replacement fall back
+conservatively. Key precision grants no call, purity, throw or return summary.
+
 ## Inferred returned-record construction timing
 
 For a stable directly exported hoisted zero-argument function declaration that allocates one fresh
