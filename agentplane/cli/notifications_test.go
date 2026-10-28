@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -668,14 +669,20 @@ func TestInboxSummaryNamesGitHubObservations(t *testing.T) {
 	}
 }
 
-func TestSubscriptionSummaryIncludesGitHubCIRefreshCoverage(t *testing.T) {
+func TestSubscriptionSummarySerializesGitHubStatus(t *testing.T) {
 	line, err := subscriptionLine([]byte(`{"id":"subscription","source":{"github":{"repository":"owner/repo","subject":{"pullRequest":{"number":7}}}},"version":"1","github":{"ci":{"lastSuccessAt":"2026-10-27T10:00:00Z","errorKind":"SOURCE_FAILURE_KIND_RATE_LIMITED","error":"rate limited","retryAt":"2026-10-27T10:02:00Z"}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"CI last refresh  2026-10-27T10:00:00Z", "CI error  rate_limited", "CI retry  2026-10-27T10:02:00Z"} {
-		if !strings.Contains(line, want) {
-			t.Errorf("subscription summary %q does not contain %q", line, want)
-		}
+	_, encoded, found := strings.Cut(line, "github status ")
+	if !found {
+		t.Fatalf("summary %q does not include GitHub status", line)
+	}
+	var status notificationspb.GitHubStatus
+	if err := protojson.Unmarshal([]byte(encoded), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.GetCi().GetError() != "rate limited" || status.GetCi().GetErrorKind() != notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_RATE_LIMITED || status.GetCi().GetRetryAt().AsTime().UTC().Format(time.RFC3339) != "2026-10-27T10:02:00Z" {
+		t.Fatalf("summary did not preserve GitHub status: %v", &status)
 	}
 }
