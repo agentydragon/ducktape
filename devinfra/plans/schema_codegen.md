@@ -345,8 +345,9 @@ plain-JS validation consumers use Zod modules emitted by normal TypeScript compi
 
 The OpenAPI and JSON Schema declaration macros expose a `js_library` named by the macro call and keep
 the raw `.d.ts` addressable by its output label, defaulting to `<name>.d.ts`; `out` selects another
-module path when a consumer needs one. A runtime package that also needs schema JSON keeps that file
-in its own `js_library` and adds the generated declaration library through `deps`.
+module path when a consumer needs one. Runtime packages bundle original schema JSON and generated
+declarations in a `js_library`: SSH exposes this beside its exporter, while Haku keeps its wrapper in
+the frontend package.
 `openapi_zod_ts_library` returns a compiled `ts_library`; the macro call supplies the shared
 tsconfig and runtime dependencies, while its raw `.ts` output remains addressable by file label.
 
@@ -389,7 +390,7 @@ flowchart LR
     json_runtime["R: ordinary TS adapter<br/>z.fromJSONSchema"]:::converter
     runtime_zod["Runtime Zod schema objects"]:::artifact
     tool_consumers["Haku tool previews and validation<br/>SSH action rendering"]:::consumer
-    tool_package["B: js_library wrapper<br/>runtime JSON srcs + declaration-library deps"]:::proposed
+    tool_package["B: js_library schema package<br/>JSON srcs + declaration deps<br/>SSH: producer; Haku: frontend"]:::proposed
     zod_gen --> zod_ts
     zod_ts --> zod_compile
     zod_compile --> zod_modules
@@ -399,10 +400,9 @@ flowchart LR
     model_types_library -->|"type-only imports"| typed_models
     api_types_library -->|"paths / operations"| http_clients
     api_types_library -->|"direct named imports; no alias module"| typed_models
-    tool_json --> tool_package
+    tool_json -->|"SSH producer package; Haku frontend package"| tool_package
     model_types_library -->|"deps"| tool_package
-    tool_json -->|"SSH direct JSON"| json_runtime
-    tool_package -->|"Haku JSON imports; types via deps"| json_runtime
+    tool_package -->|"JSON imports + types via deps"| json_runtime
     model_json -->|"where runtime validation is needed"| json_runtime
     json_runtime --> runtime_zod
     runtime_zod -->|"safeParse at tested boundary"| tool_consumers
