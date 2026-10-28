@@ -427,9 +427,17 @@ class SnapshotIngestor:
                 row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id), with_for_update=True)
                 if row is None or row.codex_metadata_status in ("complete", "partial"):
                     return
+                existing_observations = {
+                    observation.native_session_id: observation
+                    for observation in db.scalars(
+                        select(CodexTitleObservationRow).where(
+                            CodexTitleObservationRow.machine_id == self._source.machine_id,
+                            CodexTitleObservationRow.snapshot_id == snapshot.id,
+                        )
+                    )
+                }
                 for item in observations:
-                    key = (self._source.machine_id, snapshot.id, item.native_session_id)
-                    existing = db.get(CodexTitleObservationRow, key)
+                    existing = existing_observations.get(item.native_session_id)
                     if existing is None:
                         db.add(
                             CodexTitleObservationRow(

@@ -2,6 +2,7 @@
 # gazelle:include_dep :testing
 """A transient Restic failure retries without losing metadata from the other source."""
 
+import json
 from pathlib import Path
 from typing import BinaryIO
 from unittest.mock import patch
@@ -26,7 +27,11 @@ def test_retry_updates_observation_after_index_read_recovers(tmp_path: Path, pos
     home = Path(env["HOME"])
     codex = home / ".codex"
     transcript(home)
-    (codex / "session_index.jsonl").write_text(index_record("Index winner"))
+    (codex / "session_index.jsonl").write_text(
+        index_record("Index winner")
+        + json.dumps({"id": "thread-two", "thread_name": "New on retry", "updated_at": "2026-01-01T00:00:00Z"})
+        + "\n"
+    )
     snapshot_sqlite(home, "SQLite fallback")
     _backup(env, Path(".codex"), Path(".local/state/ducktape/ai-session-backup-sqlite"), cwd=home)
     snapshot = repository.list_snapshots()[0]
@@ -52,6 +57,7 @@ def test_retry_updates_observation_after_index_read_recovers(tmp_path: Path, pos
         observation = db.get(CodexTitleObservationRow, ("host", snapshot.id, "thread-one"))
         assert observation is not None
         assert observation.title_source == "sqlite_name"
+        assert db.get(CodexTitleObservationRow, ("host", snapshot.id, "thread-two")) is None
 
     assert ingestor.ingest().snapshots_incomplete == 0
     with factory() as db:
@@ -62,6 +68,10 @@ def test_retry_updates_observation_after_index_read_recovers(tmp_path: Path, pos
         observation = db.get(CodexTitleObservationRow, ("host", snapshot.id, "thread-one"))
         assert observation is not None
         assert observation.title_source == "session_index"
+        new_observation = db.get(CodexTitleObservationRow, ("host", snapshot.id, "thread-two"))
+        assert new_observation is not None
+        assert new_observation.title == "New on retry"
+        assert new_observation.title_source == "session_index"
 
 
 if __name__ == "__main__":
