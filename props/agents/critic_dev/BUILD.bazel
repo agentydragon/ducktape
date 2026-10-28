@@ -6,7 +6,8 @@ Shared infrastructure for critic developer agents (optimize and improve modes).
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//props:py_test.bzl", "py_test")
 
 exports_files([
     "authoring_agents.md.mako",

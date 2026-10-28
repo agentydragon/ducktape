@@ -15,7 +15,8 @@ The container runs a persistent agent loop that:
 load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink", "shared_py_image_layers")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//props:py_test.bzl", "py_test")
 
 exports_files(
     ["prompt.md.mako"],
