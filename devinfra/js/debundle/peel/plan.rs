@@ -5,6 +5,8 @@
 //! human-oriented "views".
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 use std::fs;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -1432,6 +1434,23 @@ struct ResolvedSelection {
     unknown_binding_ids: Vec<String>,
 }
 
+#[derive(Debug)]
+pub struct SourceUnitNotFound {
+    source_unit_id: String,
+}
+
+impl Display for SourceUnitNotFound {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "source-unit ID {:?} not found in dependency graph",
+            self.source_unit_id
+        )
+    }
+}
+
+impl Error for SourceUnitNotFound {}
+
 fn resolve_source_unit_ids(
     selection: &SelectionKind,
     graph: &DependencyGraphReport,
@@ -1446,7 +1465,10 @@ fn resolve_source_unit_ids(
             if graph.nodes.iter().any(|node| node.id == *source_unit_id) {
                 vec![source_unit_id.clone()]
             } else {
-                bail!("source-unit ID {source_unit_id:?} not found in dependency graph");
+                return Err(SourceUnitNotFound {
+                    source_unit_id: source_unit_id.clone(),
+                }
+                .into());
             }
         }
         SelectionKind::ModulePath(module_path) => {

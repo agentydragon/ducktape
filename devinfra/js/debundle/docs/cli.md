@@ -190,6 +190,22 @@ If `--format` isn't passed and stdout is **not** a tty (i.e. the command is
 in a pipeline), the default flips to `json`. So
 `debundle modules propose | jq …` works without an explicit `--format json`.
 
+### Runtime failures from top-level queries
+
+After Clap has accepted the command line, `describe`, `inspect-source`,
+`graph-summary`, `atoms`, `coverage`, `scc`, and `cluster` keep runtime errors
+machine-readable in JSON modes. A `json` failure writes one object with a
+typed `reason` code and `message`; `ndjson` writes that same object as one row.
+The message contains the full actionable error chain, and the command exits
+nonzero while retaining the same diagnostic on stderr. Current reason codes are
+`io`, `invalid_json`, `source_unit_not_found`, and `query_failed`.
+
+Graph compatibility failures retain the existing `graph_compatibility`
+rejection object, including `mismatch.reason` and regeneration details. With
+`--format text`, runtime failures keep the existing stderr diagnostic and do
+not write an error report to stdout. Clap usage and argument-parsing failures
+remain Clap diagnostics because dispatch has not begun.
+
 Read-only inspection commands prefer fast graph/spec lookups. `modules
 propose` is the command that runs the proposal proposer by default;
 `describe`, `coverage`, and `graph-summary` do not run it unless the

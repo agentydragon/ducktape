@@ -22,6 +22,7 @@ use clap::{Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand}
 use graph_provenance::{GraphMismatch, GraphMismatchReason};
 use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs, print_report};
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
+use std::process::ExitCode;
 
 use crate::bindings_commands::BindingsNs;
 use crate::gate::{GateArgs, InspectionRoots, run_gate_cli};
@@ -346,24 +347,41 @@ enum DebundleCommand {
 
 /// Parse the current process arguments with Clap metadata available for
 /// resolving environment values and defaults, then dispatch the command.
-pub fn run_debundle_cli_from_process() -> Result<()> {
+pub fn run_debundle_cli_from_process() -> ExitCode {
     let raw_argv = std::env::args_os().collect::<Vec<_>>();
     let command = DebundleArgs::command();
     let matches = command.clone().get_matches_from(raw_argv.clone());
     let args = DebundleArgs::from_arg_matches(&matches)
         .expect("Clap validated DebundleArgs before constructing ArgMatches");
-    let invocation = if args.invocation.requested() {
-        Some(ResolvedInvocation::capture(
-            &command,
-            &matches,
-            &raw_argv,
-            args.invocation.print_invocation,
-            args.invocation.invocation_out.as_deref(),
-        )?)
-    } else {
-        None
-    };
-    run_debundle_cli(args, invocation)
+    let query_format = top_level_query_format(&args.command);
+    let result = (|| {
+        let invocation = if args.invocation.requested() {
+            Some(ResolvedInvocation::capture(
+                &command,
+                &matches,
+                &raw_argv,
+                args.invocation.print_invocation,
+                args.invocation.invocation_out.as_deref(),
+            )?)
+        } else {
+            None
+        };
+        run_debundle_cli(args, invocation)
+    })();
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            if let Some(format) = query_format.filter(|format| *format != OutputFormat::Text) {
+                if error.downcast_ref::<GraphMismatch>().is_some() {
+                    emit_graph_mismatch_json(format, &error);
+                } else {
+                    emit_query_failure(format, &error);
+                }
+            }
+            eprintln!("{error:#}");
+            ExitCode::from(1)
+        }
+    }
 }
 
 fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) -> Result<()> {
@@ -386,7 +404,9 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
         args.graph_source_root.as_deref(),
         &graph_package_roots,
     ) {
-        emit_graph_mismatch_json(&args.command, &error);
+        if top_level_query_format(&args.command).is_none() {
+            emit_graph_mismatch_json(command_output_format(&args.command), &error);
+        }
         return Err(error);
     }
     let writes_with_graph = match &args.command {
@@ -452,10 +472,7 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
     result
 }
 
-fn emit_graph_mismatch_json(command: &DebundleCommand, error: &anyhow::Error) {
-    let Some(mismatch) = error.downcast_ref::<GraphMismatch>() else {
-        return;
-    };
+fn command_output_format(command: &DebundleCommand) -> OutputFormat {
     let format = match command {
         DebundleCommand::Bindings(args) => args.format(),
         DebundleCommand::Modules(args) => args.format(),
@@ -465,7 +482,13 @@ fn emit_graph_mismatch_json(command: &DebundleCommand, error: &anyhow::Error) {
         DebundleCommand::InspectSource(args) => args.format,
         _ => None,
     };
-    let format = OutputFormat::resolve(format);
+    OutputFormat::resolve(format)
+}
+
+fn emit_graph_mismatch_json(format: OutputFormat, error: &anyhow::Error) {
+    let Some(mismatch) = error.downcast_ref::<GraphMismatch>() else {
+        return;
+    };
     if format == OutputFormat::Text {
         return;
     }
@@ -490,6 +513,72 @@ fn emit_graph_mismatch_json(command: &DebundleCommand, error: &anyhow::Error) {
             serde_json::to_string(&value).expect("serialize mismatch")
         ),
         OutputFormat::Text => unreachable!(),
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+enum QueryFailureReason {
+    Io,
+    InvalidJson,
+    SourceUnitNotFound,
+    QueryFailed,
+}
+
+#[derive(serde::Serialize)]
+struct QueryFailure<'a> {
+    reason: QueryFailureReason,
+    message: &'a str,
+}
+
+fn emit_query_failure(format: OutputFormat, error: &anyhow::Error) {
+    let reason = if error
+        .chain()
+        .any(|cause| cause.downcast_ref::<serde_json::Error>().is_some())
+    {
+        QueryFailureReason::InvalidJson
+    } else if error
+        .chain()
+        .any(|cause| cause.downcast_ref::<std::io::Error>().is_some())
+    {
+        QueryFailureReason::Io
+    } else if error.chain().any(|cause| {
+        cause
+            .downcast_ref::<peel::plan::SourceUnitNotFound>()
+            .is_some()
+    }) {
+        QueryFailureReason::SourceUnitNotFound
+    } else {
+        QueryFailureReason::QueryFailed
+    };
+    let message = format!("{error:#}");
+    let failure = QueryFailure {
+        reason,
+        message: &message,
+    };
+    match format {
+        OutputFormat::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(&failure).expect("serialize query failure")
+        ),
+        OutputFormat::Ndjson => println!(
+            "{}",
+            serde_json::to_string(&failure).expect("serialize query failure")
+        ),
+        OutputFormat::Text => unreachable!(),
+    }
+}
+
+fn top_level_query_format(command: &DebundleCommand) -> Option<OutputFormat> {
+    match command {
+        DebundleCommand::Atoms(args) => Some(OutputFormat::resolve(args.format)),
+        DebundleCommand::Coverage(args) => Some(OutputFormat::resolve(args.format)),
+        DebundleCommand::GraphSummary(args) => Some(OutputFormat::resolve(args.format)),
+        DebundleCommand::Describe(args) => Some(OutputFormat::resolve(args.format)),
+        DebundleCommand::InspectSource(args) => Some(OutputFormat::resolve(args.format)),
+        DebundleCommand::Scc(args) => Some(OutputFormat::resolve(args.format)),
+        DebundleCommand::Cluster(args) => Some(OutputFormat::resolve(args.format)),
+        _ => None,
     }
 }
 

@@ -628,6 +628,11 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "query_failures_cli_test",
+    deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
     name = "binding_name_resolution_cli_test",
     deps = [
         "//devinfra/js/debundle:peel",

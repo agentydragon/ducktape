@@ -39,6 +39,20 @@ operation, or read-only analysis. Unrecognized shapes remain unclassified.
 Running an edit gate does not establish full pipeline, reconstruction, or
 runtime validation.
 
+## Read-only query failures
+
+Once Clap accepts the command line, runtime failures from `describe`,
+`inspect-source`, `graph-summary`, `atoms`, `coverage`, `scc`, and `cluster`
+follow the selected output format. In `json` mode the CLI writes one object
+with a typed `reason` and the full actionable error chain in `message`; in
+`ndjson` mode it writes that object as one row. Both modes exit nonzero.
+Both modes retain the same diagnostic on stderr. Reason codes are `io`,
+`invalid_json`, `source_unit_not_found`, and `query_failed`. Graph compatibility
+failures retain the existing `graph_compatibility` rejection payload. In `text`
+mode, runtime errors keep the existing stderr diagnostic and leave stdout
+without an error report.
+Clap parse and usage failures occur before this runtime boundary.
+
 ## Input and spec scope
 
 One run or validation resolves one exact spec against one configured input

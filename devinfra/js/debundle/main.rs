@@ -1,9 +1,7 @@
-use std::process::ExitCode;
-
 use debundle_cli::run_debundle_cli_from_process;
 use swc_common::{GLOBALS, Globals};
 
-fn main() -> ExitCode {
+fn main() -> std::process::ExitCode {
     // SWC hygiene (`Mark`, `SyntaxContext`) is stored in a thread-local
     // arena managed by `GLOBALS`. Every parse and AST-touching operation
     // in the debundler runs inside this closure so the `resolver` pass
@@ -11,18 +9,5 @@ fn main() -> ExitCode {
     // `Globals` instance per process keeps `Mark` identity comparable
     // across chunks.
     let globals = Globals::default();
-    GLOBALS.set(&globals, || match run_debundle_cli_from_process() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            // `{error:#}` prints the full anyhow context chain inline
-            // (top + every `with_context` cause separated by `: `).
-            // Plain `{error}` only shows the topmost context, which
-            // silently hides the actionable cause — e.g. parsing a
-            // module YAML with an unknown field would report only
-            // `parsing path/to/file.yaml` with no hint of the bad
-            // field name.
-            eprintln!("{error:#}");
-            ExitCode::from(1)
-        }
-    })
+    GLOBALS.set(&globals, run_debundle_cli_from_process)
 }
