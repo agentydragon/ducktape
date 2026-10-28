@@ -12,7 +12,7 @@ from sqlalchemy import Connection, create_engine
 from sqlalchemy.schema import SchemaItem
 
 from util.testing.postgres import DatabaseNames, create_temporary_database
-from x.ai_session_archive.database import Base
+from x.ai_session_archive.database import Base, make_engine
 from x.ai_session_archive.database_migrate import RUNNER
 
 pytest_plugins = ["util.testing.postgres_fixtures"]
@@ -44,6 +44,18 @@ def test_fresh_database_matches_models_and_migration_is_idempotent(fresh_databas
     try:
         with engine.connect() as connection:
             assert _schema_drift(connection) == []
+    finally:
+        engine.dispose()
+
+
+def test_make_engine_normalizes_cnpg_uri_to_installed_driver() -> None:
+    engine = make_engine("postgresql://archive_user:archive_password@postgres.example:5432/archive")
+    try:
+        assert engine.url.drivername == "postgresql+psycopg"
+        assert engine.url.username == "archive_user"
+        assert engine.url.password == "archive_password"
+        assert engine.url.host == "postgres.example"
+        assert engine.url.database == "archive"
     finally:
         engine.dispose()
 

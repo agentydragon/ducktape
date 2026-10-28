@@ -15,6 +15,7 @@ py_library(
     srcs = ["database.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//util:db_url",
         "@pypi//psycopg",
         "@pypi//sqlalchemy",
     ],

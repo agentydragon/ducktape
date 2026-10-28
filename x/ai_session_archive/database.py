@@ -26,6 +26,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
+from util.db_url import render_postgresql_url
+
 
 class Base(DeclarativeBase):
     pass
@@ -198,7 +200,7 @@ class FileVersionRecordRow(Base):
 
 
 def make_engine(dsn: str, **kwargs: Any) -> Engine:
-    return create_engine(dsn, pool_pre_ping=True, **kwargs)
+    return create_engine(render_postgresql_url(dsn, "postgresql+psycopg"), pool_pre_ping=True, **kwargs)
 
 
 def make_session_factory(engine: Engine) -> Callable[[], Session]:
