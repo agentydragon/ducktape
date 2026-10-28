@@ -2379,6 +2379,10 @@ fn emit_proposals(
     context: &ProposalContext,
 ) -> Vec<ModuleProposal> {
     let incoming_consumers = IncomingConsumerIndex::build(graph);
+    let build_context = ProposalBuildContext {
+        proposal_context: context,
+        incoming_consumers: &incoming_consumers,
+    };
 
     // Candidate classes: every live class that either has source_units or
     // carries module labels. We skip classes whose only members are
@@ -2466,8 +2470,7 @@ fn emit_proposals(
                 quotient,
                 edges,
                 graph,
-                context,
-                &incoming_consumers,
+                &build_context,
             )
         })
         .collect();
@@ -2564,6 +2567,11 @@ struct CandidateEdgeStats {
 struct IncomingConsumerIndex<'a> {
     by_target: HashMap<&'a str, Vec<&'a DependencyEdgeReport>>,
     source_modules: HashMap<&'a str, &'a analysis::ModuleEntry>,
+}
+
+struct ProposalBuildContext<'context, 'graph> {
+    proposal_context: &'context ProposalContext,
+    incoming_consumers: &'context IncomingConsumerIndex<'graph>,
 }
 
 impl<'a> IncomingConsumerIndex<'a> {
@@ -2808,8 +2816,7 @@ fn build_proposal(
     quotient: &QuotientGraph,
     edges: CandidateEdgeStats,
     graph: &DependencyGraphReport,
-    context: &ProposalContext,
-    incoming_consumers: &IncomingConsumerIndex<'_>,
+    context: &ProposalBuildContext<'_, '_>,
 ) -> ModuleProposal {
     // Labels arrive sorted (BTreeSet over canonical `ModulePath`).
     // Convert to wire strings once, at this boundary; identity logic
@@ -2903,7 +2910,7 @@ fn build_proposal(
         addressable,
         unaddressable_source_unit_ids,
         mut notes,
-    } = anonymous_addressability(&source_unit_idxs, graph, context);
+    } = anonymous_addressability(&source_unit_idxs, graph, context.proposal_context);
     // Status reflects the cell-graph reality: outgoing constraining
     // edges into other residual classes mean this cell cannot be
     // promoted alone (the reads would route through residual_entry).
@@ -2930,7 +2937,7 @@ fn build_proposal(
             source_unit_idxs.as_slice(),
             all_source_unit_idxs.as_slice(),
             graph,
-            incoming_consumers,
+            context.incoming_consumers,
         ),
         anonymous_statement_source_unit_ids: anonymous_source_unit_ids,
         size_lines_estimate: size_lines,
