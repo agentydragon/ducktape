@@ -479,6 +479,7 @@ rust_library(
         "assignment_assembly.rs",
         "atomic_groups.rs",
         "cross_module_purity.rs",
+        "cross_module_values.rs",
         "facts/analyze.rs",
         "facts/array_content_effects.rs",
         "facts/at_init_fallback.rs",

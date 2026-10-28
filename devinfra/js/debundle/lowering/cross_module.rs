@@ -430,37 +430,11 @@ pub(super) fn collect_cross_module_imported_purities(
         }
     }
 
-    // Primitive values are source facts only when supported by a direct
-    // expression or a chain that reaches one. Start from those direct seeds
-    // and add an alias only when every dependency is already proven. An
-    // unsupported alias cycle therefore stays unknown.
-    let mut primitive_exports_changed = true;
-    while primitive_exports_changed {
-        primitive_exports_changed = false;
-        let mut additions = Vec::new();
-        for ((chunk, export), dependencies) in &primitive_export_import_dependencies {
-            if dependencies.iter().all(|dependency| {
-                primitive_exports
-                    .get(&dependency.module)
-                    .is_some_and(|exports| exports.contains(&dependency.export))
-            }) {
-                additions.push((chunk.clone(), export.clone()));
-            }
-        }
-        for (key, dependency) in &primitive_export_reexport_dependencies {
-            if primitive_exports
-                .get(&dependency.module)
-                .is_some_and(|exports| exports.contains(&dependency.export))
-            {
-                additions.push(key.clone());
-            }
-        }
-        for (chunk, export) in additions {
-            if primitive_exports.entry(chunk).or_default().insert(export) {
-                primitive_exports_changed = true;
-            }
-        }
-    }
+    let primitive_exports = analysis::cross_module_values::resolve_primitive_exports(
+        primitive_exports,
+        primitive_export_import_dependencies,
+        primitive_export_reexport_dependencies,
+    );
     let value_inputs = resolve_value_inputs(
         artifact,
         &modules,

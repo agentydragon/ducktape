@@ -20,6 +20,7 @@ pub mod analysis_inputs;
 pub mod assignment_assembly;
 pub mod atomic_groups;
 pub mod cross_module_purity;
+pub mod cross_module_values;
 pub mod facts;
 pub mod graph;
 pub mod ids;
