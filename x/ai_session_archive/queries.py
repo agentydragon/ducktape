@@ -58,10 +58,7 @@ def _session_summary_query() -> Any:
     )
     latest_version_record_count = (
         select(FileVersionRow.record_count)
-        .join(
-            SnapshotFileRow,
-            SnapshotFileRow.file_version_id == FileVersionRow.id,
-        )
+        .join(SnapshotFileRow, SnapshotFileRow.file_version_id == FileVersionRow.id)
         .join(
             ResticSnapshotRow,
             (ResticSnapshotRow.machine_id == SnapshotFileRow.machine_id)
