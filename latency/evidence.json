@@ -1,5 +1,5 @@
 {
-  "source_devel_commit": "feb464de80936d8d612007d60aeb425f7036e374",
+  "source_devel_commit": "2ae990424df7481ead4b5a170ab502934e136a7d",
   "window": {
     "run_created_start": "2026-10-28T03:06:00Z",
     "run_created_end": "2026-10-28T06:05:00Z",
@@ -56370,11 +56370,12 @@
     "scope": "Prior observations retain their original sources and windows. Current completion notes and later measurements are separate; no prior field is silently removed."
   },
   "validation": {
-    "arithmetic": "69 conclusive attempts;57 successful/12failed;58zero/5default/6unknown;12classifiedfailures;2uniqueunderlyingcleanupactions;197artifactjoinsverified.",
-    "privacy": "New evidence contains reviewed aggregates, source/action links and artifact hashes. Raw logs, worker identities, credentials and profiles remain private.",
+    "fresh_measurement": "Exact devel BES/source equality; canonical retry flags; complete fixed-window job census; cached/fresh target results; readiness prototype XML case identity and artifact hashes.",
+    "continuity": "All baseline fields retained unchanged except updated publication source/validation, which are preserved separately. Full prior HTML substantive sections and every external evidence link retained; primary action list superseded with completed-fix evidence.",
     "browser_review": {
-      "status": "passed; desktop/mobile screenshots inspected",
-      "invocation_id": "a63feae7-9855-4a43-8e6b-95501221fbee",
+      "status": "passed; screenshots inspected",
+      "invocation": "ed7f155e-3955-4016-8593-0af3ff97b1de",
+      "test_cases": 4,
       "viewports": [
         [
           1280,
@@ -56385,11 +56386,9 @@
           844
         ]
       ],
-      "test_cases": 4,
-      "html_sha256": "fc70d270d390eac7ab6f7230a81f55ed0f3f2dd206af52a576f745249e67af5c",
-      "checks": "Overview and key sections, expanded retained evidence, disclosure controls, and no document-width overflow. Latest post-merge section inspected on desktop and mobile."
-    },
-    "retention": "All prior evidence fields retained; section-by-section dispositions recorded; original and current windows kept separate."
+      "html_sha256": "13de3bc05dc842c70aa57e34c6bf840a332ea6502ca70721edfef32d0bf9f1f1",
+      "checks": "Fresh CI, uncached probe, readiness/journal corrections, future-report TODOs and expanded retained evidence; disclosure interaction and no document-width overflow."
+    }
   },
   "retention_audit": {
     "baseline_commit": "f7d6595d1a24ed4f028206c4e854f0d22b139b58",
@@ -56514,5 +56513,1332 @@
     "newer_report_integration": "PR12512 post-merge cache/source assessment retained; the earlier cached MCP worker-gap interpretation is corrected.",
     "reference_only_policy": "History links supplement retained substantive evidence; they are not the sole location of retained datasets.",
     "all_prior_external_evidence_links_retained": true
-  }
+  },
+  "prior_publication_validation": {
+    "arithmetic": "69 conclusive attempts;57 successful/12failed;58zero/5default/6unknown;12classifiedfailures;2uniqueunderlyingcleanupactions;197artifactjoinsverified.",
+    "privacy": "New evidence contains reviewed aggregates, source/action links and artifact hashes. Raw logs, worker identities, credentials and profiles remain private.",
+    "browser_review": {
+      "status": "passed; desktop/mobile screenshots inspected",
+      "invocation_id": "a63feae7-9855-4a43-8e6b-95501221fbee",
+      "viewports": [
+        [
+          1280,
+          900
+        ],
+        [
+          390,
+          844
+        ]
+      ],
+      "test_cases": 4,
+      "html_sha256": "fc70d270d390eac7ab6f7230a81f55ed0f3f2dd206af52a576f745249e67af5c",
+      "checks": "Overview and key sections, expanded retained evidence, disclosure controls, and no document-width overflow. Latest post-merge section inspected on desktop and mobile."
+    },
+    "retention": "All prior evidence fields retained; section-by-section dispositions recorded; original and current windows kept separate."
+  },
+  "prior_publication_source_devel_commit": "feb464de80936d8d612007d60aeb425f7036e374",
+  "fresh_adoption_2026_10_28": {
+    "source_devel_commit": "2ae990424df7481ead4b5a170ab502934e136a7d",
+    "run_creation_window": {
+      "start": "2026-10-28T06:05:00Z",
+      "end": "2026-10-28T07:14:04Z"
+    },
+    "selection": "Complete devel CI run census in the fixed run-creation window; job attempts fetched with filter=all. Detailed worker evidence requires exact tested source and uncached target result. No fresh PR-wide census collected.",
+    "collection": {
+      "run_count": 17,
+      "successful_assigned_bazel_jobs": 11,
+      "unassigned_cancelled_bazel_jobs": 6,
+      "job_failures": 0,
+      "pending_bazel_jobs": 0,
+      "all_successful_job_bes_sources_match_run_head": true,
+      "all_successful_job_canonical_remote_retries_values": [
+        "0"
+      ],
+      "unknown_whole_workflow_final_state": "Bazel job completion is measured; release and image jobs can continue or be superseded independently."
+    },
+    "devel_runs": [
+      {
+        "run_id": 40648670132,
+        "source_sha": "df117ce3a90c9c6cf0fed3304dd530c424f8b66c",
+        "created_at": "2026-10-28T07:13:20Z",
+        "job": {
+          "id": 122683366593,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-10-28T07:13:21Z",
+          "started_at": "2026-10-28T07:13:21Z",
+          "completed_at": "2026-10-28T07:14:36Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40648670132/job/122683366593"
+        },
+        "assigned_runner": false
+      },
+      {
+        "run_id": 40648116689,
+        "source_sha": "2ae990424df7481ead4b5a170ab502934e136a7d",
+        "created_at": "2026-10-28T07:08:00Z",
+        "job": {
+          "id": 122681581665,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-28T07:08:01Z",
+          "started_at": "2026-10-28T07:12:10Z",
+          "completed_at": "2026-10-28T07:14:41Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40648116689/job/122681581665"
+        },
+        "assigned_runner": true,
+        "invocation": "0c0dd5e5-14cc-5a11-b9eb-7ed1335c0863",
+        "bes_commit": "2ae990424df7481ead4b5a170ab502934e136a7d",
+        "bazel_duration_s": 78.644,
+        "bazel_success": true,
+        "remote_retries_values": [
+          "0"
+        ],
+        "job_runtime_s": 151.0,
+        "created_to_job_start_s": 249.0,
+        "run_created_to_bazel_finish_s": 401.0,
+        "contains_readiness_merge": true,
+        "contains_journal_merge": true,
+        "targets": {
+          "mcp": {
+            "label": "//agentplane/system_tests:test_mcp",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:47:48.739Z",
+            "end": "2026-10-28T06:51:55.567Z",
+            "duration_s": 246.828
+          },
+          "vm": {
+            "label": "//agentplane/system_tests:test_vm_sandbox_vm",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:48:02.105Z",
+            "end": "2026-10-28T06:56:06.241Z",
+            "duration_s": 484.136
+          },
+          "dispatcher": {
+            "label": "//agentplane/system_tests:test_dispatcher",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:47:45.419Z",
+            "end": "2026-10-28T06:50:45.720Z",
+            "duration_s": 180.301
+          }
+        }
+      },
+      {
+        "run_id": 40648064125,
+        "source_sha": "ce23190db256acb9fe25bb41cfe9612bd904c007",
+        "created_at": "2026-10-28T07:07:29Z",
+        "job": {
+          "id": 122681411277,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-10-28T07:07:30Z",
+          "started_at": "2026-10-28T07:07:30Z",
+          "completed_at": "2026-10-28T07:08:02Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40648064125/job/122681411277"
+        },
+        "assigned_runner": false
+      },
+      {
+        "run_id": 40647924323,
+        "source_sha": "c2f81bf358bab42ba309efb6993f094c027fc545",
+        "created_at": "2026-10-28T07:06:11Z",
+        "job": {
+          "id": 122680972122,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-28T07:06:12Z",
+          "started_at": "2026-10-28T07:07:56Z",
+          "completed_at": "2026-10-28T07:12:07Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40647924323/job/122680972122"
+        },
+        "assigned_runner": true,
+        "invocation": "a1ba6382-159c-5a17-ac9b-ade4995a05bd",
+        "bes_commit": "c2f81bf358bab42ba309efb6993f094c027fc545",
+        "bazel_duration_s": 181.129,
+        "bazel_success": true,
+        "remote_retries_values": [
+          "0"
+        ],
+        "job_runtime_s": 251.0,
+        "created_to_job_start_s": 104.0,
+        "run_created_to_bazel_finish_s": 356.0,
+        "contains_readiness_merge": false,
+        "contains_journal_merge": true,
+        "targets": {
+          "mcp": {
+            "label": "//agentplane/system_tests:test_mcp",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T07:09:29.037Z",
+            "end": "2026-10-28T07:16:43.256Z",
+            "duration_s": 434.219
+          },
+          "vm": {
+            "label": "//agentplane/system_tests:test_vm_sandbox_vm",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T07:09:25.676Z",
+            "end": "2026-10-28T07:16:32.730Z",
+            "duration_s": 427.054
+          },
+          "dispatcher": {
+            "label": "//agentplane/system_tests:test_dispatcher",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T07:09:22.462Z",
+            "end": "2026-10-28T07:12:40.785Z",
+            "duration_s": 198.323
+          }
+        }
+      },
+      {
+        "run_id": 40647186406,
+        "source_sha": "6c4709e8dde5d9a50c31233681692fc717693c97",
+        "created_at": "2026-10-28T06:59:10Z",
+        "job": {
+          "id": 122678631198,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-28T06:59:11Z",
+          "started_at": "2026-10-28T07:00:42Z",
+          "completed_at": "2026-10-28T07:03:26Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40647186406/job/122678631198"
+        },
+        "assigned_runner": true,
+        "invocation": "31dad601-6970-5f38-977e-f3338024e546",
+        "bes_commit": "6c4709e8dde5d9a50c31233681692fc717693c97",
+        "bazel_duration_s": 92.87,
+        "bazel_success": true,
+        "remote_retries_values": [
+          "0"
+        ],
+        "job_runtime_s": 164.0,
+        "created_to_job_start_s": 91.0,
+        "run_created_to_bazel_finish_s": 256.0,
+        "contains_readiness_merge": false,
+        "contains_journal_merge": true,
+        "targets": {
+          "mcp": {
+            "label": "//agentplane/system_tests:test_mcp",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:54:58.911Z",
+            "end": "2026-10-28T07:02:13.130Z",
+            "duration_s": 434.219
+          },
+          "vm": {
+            "label": "//agentplane/system_tests:test_vm_sandbox_vm",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:54:58.913Z",
+            "end": "2026-10-28T07:02:05.967Z",
+            "duration_s": 427.054
+          },
+          "dispatcher": {
+            "label": "//agentplane/system_tests:test_dispatcher",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:54:58.916Z",
+            "end": "2026-10-28T06:58:17.239Z",
+            "duration_s": 198.323
+          }
+        }
+      },
+      {
+        "run_id": 40646896530,
+        "source_sha": "04b3794be13763194b6b61d359d703eab9e7791c",
+        "created_at": "2026-10-28T06:56:10Z",
+        "job": {
+          "id": 122677693586,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-28T06:56:11Z",
+          "started_at": "2026-10-28T06:56:57Z",
+          "completed_at": "2026-10-28T06:59:22Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40646896530/job/122677693586"
+        },
+        "assigned_runner": true,
+        "invocation": "c50b71b8-e8fe-527b-a347-6d9b7762cf32",
+        "bes_commit": "04b3794be13763194b6b61d359d703eab9e7791c",
+        "bazel_duration_s": 72.393,
+        "bazel_success": true,
+        "remote_retries_values": [
+          "0"
+        ],
+        "job_runtime_s": 145.0,
+        "created_to_job_start_s": 46.0,
+        "run_created_to_bazel_finish_s": 192.0,
+        "contains_readiness_merge": false,
+        "contains_journal_merge": true,
+        "targets": {
+          "mcp": {
+            "label": "//agentplane/system_tests:test_mcp",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:54:58.911Z",
+            "end": "2026-10-28T07:02:13.130Z",
+            "duration_s": 434.219
+          },
+          "vm": {
+            "label": "//agentplane/system_tests:test_vm_sandbox_vm",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:54:58.913Z",
+            "end": "2026-10-28T07:02:05.967Z",
+            "duration_s": 427.054
+          },
+          "dispatcher": {
+            "label": "//agentplane/system_tests:test_dispatcher",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:54:58.916Z",
+            "end": "2026-10-28T06:58:17.239Z",
+            "duration_s": 198.323
+          }
+        }
+      },
+      {
+        "run_id": 40645918930,
+        "source_sha": "b15d3d8e82d55f3e2dd6211024563e748e0042e4",
+        "created_at": "2026-10-28T06:46:38Z",
+        "job": {
+          "id": 122674578395,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-28T06:46:39Z",
+          "started_at": "2026-10-28T06:53:25Z",
+          "completed_at": "2026-10-28T06:55:37Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40645918930/job/122674578395"
+        },
+        "assigned_runner": true,
+        "invocation": "fa77c5b9-45c9-5fe0-864a-b51f60c4b78a",
+        "bes_commit": "b15d3d8e82d55f3e2dd6211024563e748e0042e4",
+        "bazel_duration_s": 57.702,
+        "bazel_success": true,
+        "remote_retries_values": [
+          "0"
+        ],
+        "job_runtime_s": 132.0,
+        "created_to_job_start_s": 406.0,
+        "run_created_to_bazel_finish_s": 539.0,
+        "contains_readiness_merge": false,
+        "contains_journal_merge": true,
+        "targets": {
+          "mcp": {
+            "label": "//agentplane/system_tests:test_mcp",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:54:58.911Z",
+            "end": "2026-10-28T07:02:13.130Z",
+            "duration_s": 434.219
+          },
+          "vm": {
+            "label": "//agentplane/system_tests:test_vm_sandbox_vm",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:54:58.913Z",
+            "end": "2026-10-28T07:02:05.967Z",
+            "duration_s": 427.054
+          },
+          "dispatcher": {
+            "label": "//agentplane/system_tests:test_dispatcher",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:54:58.916Z",
+            "end": "2026-10-28T06:58:17.239Z",
+            "duration_s": 198.323
+          }
+        }
+      },
+      {
+        "run_id": 40645349649,
+        "source_sha": "c64ef75e554509a4a933dc79b3b3bbc0207b0153",
+        "created_at": "2026-10-28T06:41:06Z",
+        "job": {
+          "id": 122672765598,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-28T06:41:07Z",
+          "started_at": "2026-10-28T06:42:43Z",
+          "completed_at": "2026-10-28T06:52:04Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40645349649/job/122672765598"
+        },
+        "assigned_runner": true,
+        "invocation": "16a0fdee-849c-5a3a-ae8f-989b6127807e",
+        "bes_commit": "c64ef75e554509a4a933dc79b3b3bbc0207b0153",
+        "bazel_duration_s": 489.348,
+        "bazel_success": true,
+        "remote_retries_values": [
+          "0"
+        ],
+        "job_runtime_s": 561.0,
+        "created_to_job_start_s": 96.0,
+        "run_created_to_bazel_finish_s": 658.0,
+        "contains_readiness_merge": false,
+        "contains_journal_merge": true,
+        "targets": {
+          "mcp": {
+            "label": "//agentplane/system_tests:test_mcp",
+            "status": "PASSED",
+            "cached_results": 0,
+            "run_count": 1,
+            "start": "2026-10-28T06:44:11.371Z",
+            "end": "2026-10-28T06:51:25.590Z",
+            "duration_s": 434.219
+          },
+          "vm": {
+            "label": "//agentplane/system_tests:test_vm_sandbox_vm",
+            "status": "PASSED",
+            "cached_results": 0,
+            "run_count": 1,
+            "start": "2026-10-28T06:44:11.252Z",
+            "end": "2026-10-28T06:51:18.306Z",
+            "duration_s": 427.054
+          },
+          "dispatcher": {
+            "label": "//agentplane/system_tests:test_dispatcher",
+            "status": "PASSED",
+            "cached_results": 0,
+            "run_count": 1,
+            "start": "2026-10-28T06:44:11.268Z",
+            "end": "2026-10-28T06:47:29.591Z",
+            "duration_s": 198.323
+          }
+        }
+      },
+      {
+        "run_id": 40644960322,
+        "source_sha": "273358683233d2aaee470fa4637cdb5ff178e486",
+        "created_at": "2026-10-28T06:37:14Z",
+        "job": {
+          "id": 122671511419,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-28T06:37:14Z",
+          "started_at": "2026-10-28T06:37:38Z",
+          "completed_at": "2026-10-28T06:39:54Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40644960322/job/122671511419"
+        },
+        "assigned_runner": true,
+        "invocation": "ac48c965-ab06-57b8-840e-7049efd04ca4",
+        "bes_commit": "273358683233d2aaee470fa4637cdb5ff178e486",
+        "bazel_duration_s": 57.507,
+        "bazel_success": true,
+        "remote_retries_values": [
+          "0"
+        ],
+        "job_runtime_s": 136.0,
+        "created_to_job_start_s": 24.0,
+        "run_created_to_bazel_finish_s": 160.0,
+        "contains_readiness_merge": false,
+        "contains_journal_merge": true,
+        "targets": {
+          "mcp": {
+            "label": "//agentplane/system_tests:test_mcp",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:36:09.331Z",
+            "end": "2026-10-28T06:41:44.996Z",
+            "duration_s": 335.665
+          },
+          "vm": {
+            "label": "//agentplane/system_tests:test_vm_sandbox_vm",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:36:09.874Z",
+            "end": "2026-10-28T06:43:02.558Z",
+            "duration_s": 412.684
+          },
+          "dispatcher": {
+            "label": "//agentplane/system_tests:test_dispatcher",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:36:11.196Z",
+            "end": "2026-10-28T06:39:09.024Z",
+            "duration_s": 177.828
+          }
+        }
+      },
+      {
+        "run_id": 40644625915,
+        "source_sha": "b392391e87b13c86856819cd71de0c9e912313d1",
+        "created_at": "2026-10-28T06:33:56Z",
+        "job": {
+          "id": 122670440859,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-28T06:33:57Z",
+          "started_at": "2026-10-28T06:35:04Z",
+          "completed_at": "2026-10-28T06:36:42Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40644625915/job/122670440859"
+        },
+        "assigned_runner": true,
+        "invocation": "0baaed3d-366c-583a-a926-8704a9858a28",
+        "bes_commit": "b392391e87b13c86856819cd71de0c9e912313d1",
+        "bazel_duration_s": 28.498,
+        "bazel_success": true,
+        "remote_retries_values": [
+          "0"
+        ],
+        "job_runtime_s": 98.0,
+        "created_to_job_start_s": 67.0,
+        "run_created_to_bazel_finish_s": 166.0,
+        "contains_readiness_merge": false,
+        "contains_journal_merge": true,
+        "targets": {
+          "mcp": {
+            "label": "//agentplane/system_tests:test_mcp",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:36:09.331Z",
+            "end": "2026-10-28T06:41:44.996Z",
+            "duration_s": 335.665
+          },
+          "vm": {
+            "label": "//agentplane/system_tests:test_vm_sandbox_vm",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:36:09.874Z",
+            "end": "2026-10-28T06:43:02.558Z",
+            "duration_s": 412.684
+          },
+          "dispatcher": {
+            "label": "//agentplane/system_tests:test_dispatcher",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:36:11.196Z",
+            "end": "2026-10-28T06:39:09.024Z",
+            "duration_s": 177.828
+          }
+        }
+      },
+      {
+        "run_id": 40643895677,
+        "source_sha": "1b449f24e545123b8bb2093476f2388fc48ecad6",
+        "created_at": "2026-10-28T06:26:46Z",
+        "job": {
+          "id": 122668121723,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-28T06:26:47Z",
+          "started_at": "2026-10-28T06:32:35Z",
+          "completed_at": "2026-10-28T06:35:02Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40643895677/job/122668121723"
+        },
+        "assigned_runner": true,
+        "invocation": "1970cba2-05fd-5945-a5c7-13b2fd0a604b",
+        "bes_commit": "1b449f24e545123b8bb2093476f2388fc48ecad6",
+        "bazel_duration_s": 79.099,
+        "bazel_success": true,
+        "remote_retries_values": [
+          "0"
+        ],
+        "job_runtime_s": 147.0,
+        "created_to_job_start_s": 348.0,
+        "run_created_to_bazel_finish_s": 496.0,
+        "contains_readiness_merge": false,
+        "contains_journal_merge": true,
+        "targets": {
+          "mcp": {
+            "label": "//agentplane/system_tests:test_mcp",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:33:36.053Z",
+            "end": "2026-10-28T06:39:11.718Z",
+            "duration_s": 335.665
+          },
+          "vm": {
+            "label": "//agentplane/system_tests:test_vm_sandbox_vm",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:33:36.462Z",
+            "end": "2026-10-28T06:40:29.146Z",
+            "duration_s": 412.684
+          },
+          "dispatcher": {
+            "label": "//agentplane/system_tests:test_dispatcher",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:33:36.573Z",
+            "end": "2026-10-28T06:36:34.401Z",
+            "duration_s": 177.828
+          }
+        }
+      },
+      {
+        "run_id": 40643511593,
+        "source_sha": "feb464de80936d8d612007d60aeb425f7036e374",
+        "created_at": "2026-10-28T06:23:03Z",
+        "job": {
+          "id": 122666891861,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-28T06:23:03Z",
+          "started_at": "2026-10-28T06:24:04Z",
+          "completed_at": "2026-10-28T06:32:33Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40643511593/job/122666891861"
+        },
+        "assigned_runner": true,
+        "invocation": "7b0af96d-279b-535a-8349-e239958a4a6e",
+        "bes_commit": "feb464de80936d8d612007d60aeb425f7036e374",
+        "bazel_duration_s": 443.804,
+        "bazel_success": true,
+        "remote_retries_values": [
+          "0"
+        ],
+        "job_runtime_s": 509.0,
+        "created_to_job_start_s": 61.0,
+        "run_created_to_bazel_finish_s": 570.0,
+        "contains_readiness_merge": false,
+        "contains_journal_merge": true,
+        "targets": {
+          "mcp": {
+            "label": "//agentplane/system_tests:test_mcp",
+            "status": "PASSED",
+            "cached_results": 0,
+            "run_count": 1,
+            "start": "2026-10-28T06:25:05.773Z",
+            "end": "2026-10-28T06:30:41.438Z",
+            "duration_s": 335.665
+          },
+          "vm": {
+            "label": "//agentplane/system_tests:test_vm_sandbox_vm",
+            "status": "PASSED",
+            "cached_results": 0,
+            "run_count": 1,
+            "start": "2026-10-28T06:25:09.833Z",
+            "end": "2026-10-28T06:32:02.517Z",
+            "duration_s": 412.684
+          },
+          "dispatcher": {
+            "label": "//agentplane/system_tests:test_dispatcher",
+            "status": "PASSED",
+            "cached_results": 0,
+            "run_count": 1,
+            "start": "2026-10-28T06:25:12.324Z",
+            "end": "2026-10-28T06:28:10.152Z",
+            "duration_s": 177.828
+          }
+        }
+      },
+      {
+        "run_id": 40643142497,
+        "source_sha": "a9a0f2ae618fbf01a097021ed9b323c53ce3586f",
+        "created_at": "2026-10-28T06:19:24Z",
+        "job": {
+          "id": 122665713155,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-10-28T06:19:24Z",
+          "started_at": "2026-10-28T06:19:24Z",
+          "completed_at": "2026-10-28T06:23:03Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40643142497/job/122665713155"
+        },
+        "assigned_runner": false
+      },
+      {
+        "run_id": 40643025624,
+        "source_sha": "f100225df802d07601262cc88aa28e287551e4f9",
+        "created_at": "2026-10-28T06:18:13Z",
+        "job": {
+          "id": 122665335939,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-10-28T06:18:13Z",
+          "started_at": "2026-10-28T06:18:13Z",
+          "completed_at": "2026-10-28T06:19:25Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40643025624/job/122665335939"
+        },
+        "assigned_runner": false
+      },
+      {
+        "run_id": 40642731109,
+        "source_sha": "50bd44b472e321c7fb2d50ace0ded24afee7c8b4",
+        "created_at": "2026-10-28T06:15:14Z",
+        "job": {
+          "id": 122664380752,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "created_at": "2026-10-28T06:15:15Z",
+          "started_at": "2026-10-28T06:15:22Z",
+          "completed_at": "2026-10-28T06:23:36Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40642731109/job/122664380752"
+        },
+        "assigned_runner": true,
+        "invocation": "79bbe88d-97c9-500b-ba37-e11dfb5395e7",
+        "bes_commit": "50bd44b472e321c7fb2d50ace0ded24afee7c8b4",
+        "bazel_duration_s": 422.595,
+        "bazel_success": true,
+        "remote_retries_values": [
+          "0"
+        ],
+        "job_runtime_s": 494.0,
+        "created_to_job_start_s": 7.0,
+        "run_created_to_bazel_finish_s": 502.0,
+        "contains_readiness_merge": false,
+        "contains_journal_merge": false,
+        "targets": {
+          "mcp": {
+            "label": "//agentplane/system_tests:test_mcp",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:16:17.624Z",
+            "end": "2026-10-28T06:21:35.039Z",
+            "duration_s": 317.415
+          },
+          "vm": {
+            "label": "//agentplane/system_tests:test_vm_sandbox_vm",
+            "status": "PASSED",
+            "cached_results": 0,
+            "run_count": 1,
+            "start": "2026-10-28T06:16:20.076Z",
+            "end": "2026-10-28T06:23:07.561Z",
+            "duration_s": 407.485
+          },
+          "dispatcher": {
+            "label": "//agentplane/system_tests:test_dispatcher",
+            "status": "PASSED",
+            "cached_results": 1,
+            "run_count": 1,
+            "start": "2026-10-28T06:16:17.545Z",
+            "end": "2026-10-28T06:19:19.784Z",
+            "duration_s": 182.239
+          }
+        }
+      },
+      {
+        "run_id": 40642194929,
+        "source_sha": "9e1af526b76f882130f0ee8a18f540b93f6a29da",
+        "created_at": "2026-10-28T06:09:52Z",
+        "job": {
+          "id": 122662652498,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-10-28T06:09:53Z",
+          "started_at": "2026-10-28T06:09:53Z",
+          "completed_at": "2026-10-28T06:15:15Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40642194929/job/122662652498"
+        },
+        "assigned_runner": false
+      },
+      {
+        "run_id": 40641951123,
+        "source_sha": "36fda509d07ff98995d684a3f76247eb475fad1d",
+        "created_at": "2026-10-28T06:07:27Z",
+        "job": {
+          "id": 122661880608,
+          "run_attempt": 1,
+          "status": "completed",
+          "conclusion": "cancelled",
+          "created_at": "2026-10-28T06:07:28Z",
+          "started_at": "2026-10-28T06:07:28Z",
+          "completed_at": "2026-10-28T06:09:53Z",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/40641951123/job/122661880608"
+        },
+        "assigned_runner": false
+      }
+    ],
+    "readiness_control": {
+      "pr": 12513,
+      "merged_at": "2026-10-28T07:07:58Z",
+      "merge_commit": "2ae990424df7481ead4b5a170ab502934e136a7d",
+      "final_pr_head": "b720cf72271cd75586946baa8b0b533b2d828d55",
+      "earlier_measurement_base": "a9a0f2ae618fbf01a097021ed9b323c53ce3586f",
+      "implementation_scope": "Earlier fixture-only readiness prototype; merged final change applies the same immediate/two-second readiness policy through the shared template. Liveness and /healthz predicate are unchanged.",
+      "clock_definition": "Kubernetes condition lastTransitionTime, container running.startedAt, and Lease metadata.creationTimestamp are UTC whole-second API timestamps; pytest span boundaries are UTC subsecond exporter timestamps, all in the same RBE worker. Per transition API timestamps have ~1s granularity.",
+      "arms": [
+        {
+          "arm": "baseline",
+          "invocation_id": "58f37f96-871e-42ce-9b3c-434fc9bbdc52",
+          "source_base_sha": "a9a0f2ae618fbf01a097021ed9b323c53ce3586f",
+          "start_utc": "2026-10-28T06:22:28.296000Z",
+          "duration_s": 345.835,
+          "profile_action_processing_s": 338.647,
+          "pytest_s": 306.935,
+          "stack_ready_s": 47.5,
+          "totals_s": {
+            "wait_to_container": 56.318,
+            "container_to_pod_ready": 74.0,
+            "lease_minus_container": 1.0,
+            "pod_ready_to_sandbox_ready": 1.0,
+            "sandbox_ready_to_pytest": 16.548,
+            "ready_wait": 147.866
+          },
+          "test_ids": [
+            "test_agent_executes_mcp_action[claude]",
+            "test_agent_executes_mcp_action[codex]",
+            "test_operator_links_oauth_mcp_server[claude]",
+            "test_operator_links_oauth_mcp_server[codex]",
+            "test_agent_mcp_bff_decision[claude]",
+            "test_agent_mcp_bff_decision[codex]",
+            "test_policy_binding_auto_approves_the_bound_sandbox[claude]",
+            "test_policy_binding_auto_approves_the_bound_sandbox[codex]",
+            "test_launcher_drives_only_the_sandbox_it_launched[claude]",
+            "test_launcher_drives_only_the_sandbox_it_launched[codex]"
+          ],
+          "artifacts": {
+            "mcp-readiness-current-baseline.jsonl": {
+              "sha256": "5cfb77d3e68aca2b9f64a00909a7f1f6d9e1a85b83fe7c8d29cf212180b83fe9",
+              "bytes": 17768
+            },
+            "mcp-readiness-current-baseline-phases.jsonl": {
+              "sha256": "635f0bc131b06238a5aaee760bdbfc4d8a18c791e8ea4c57b000cd49d07e2629",
+              "bytes": 34259
+            },
+            "mcp-readiness-current-baseline-command.profile.gz": {
+              "sha256": "569609c3e6bf77116d628e6e91d6c87e0ae3460a9dfa29b13253091c32126fa2",
+              "bytes": 115666
+            },
+            "mcp-readiness-current-baseline-timeline.jsonl": {
+              "sha256": "2b9ea6463beb4852e8001e7437535b9ccd2e51d70716dc842987e0c8afbcec3d",
+              "bytes": 1839
+            },
+            "mcp-readiness-current-baseline.xml": {
+              "sha256": "7f76513e6bae0da585f972c8eb0fd602fce285b5ab7b28cd50e2b525f99242ec",
+              "bytes": 1503
+            }
+          }
+        },
+        {
+          "arm": "fast_fixture_readiness",
+          "invocation_id": "2de59fe1-6b2e-4555-8cda-043934d95410",
+          "source_base_sha": "a9a0f2ae618fbf01a097021ed9b323c53ce3586f",
+          "start_utc": "2026-10-28T06:31:56.691000Z",
+          "duration_s": 252.122,
+          "profile_action_processing_s": 246.651,
+          "pytest_s": 222.115,
+          "stack_ready_s": 48.7,
+          "totals_s": {
+            "wait_to_container": 57.179,
+            "container_to_pod_ready": 8.0,
+            "lease_minus_container": 3.0,
+            "pod_ready_to_sandbox_ready": 2.0,
+            "sandbox_ready_to_pytest": 11.955,
+            "ready_wait": 79.134
+          },
+          "test_ids": [
+            "test_agent_executes_mcp_action[claude]",
+            "test_agent_executes_mcp_action[codex]",
+            "test_operator_links_oauth_mcp_server[claude]",
+            "test_operator_links_oauth_mcp_server[codex]",
+            "test_agent_mcp_bff_decision[claude]",
+            "test_agent_mcp_bff_decision[codex]",
+            "test_policy_binding_auto_approves_the_bound_sandbox[claude]",
+            "test_policy_binding_auto_approves_the_bound_sandbox[codex]",
+            "test_launcher_drives_only_the_sandbox_it_launched[claude]",
+            "test_launcher_drives_only_the_sandbox_it_launched[codex]"
+          ],
+          "artifacts": {
+            "mcp-readiness-fast-candidate.jsonl": {
+              "sha256": "2cde51fa4c8eb94c0a55dc07a63dc5216389777c1ec6f9ca486c8a4d46653f99",
+              "bytes": 17768
+            },
+            "mcp-readiness-fast-candidate-phases.jsonl": {
+              "sha256": "7db639cc8a92438066119a653b0bc7e0990d6cc1c65917d0db4363b188bdeafa",
+              "bytes": 34259
+            },
+            "mcp-readiness-fast-candidate-command.profile.gz": {
+              "sha256": "36a00413adf5a29bbb16f50543dc216b8a0dbfba03fca7ddfcc0a9830ea9ac57",
+              "bytes": 86180
+            },
+            "mcp-readiness-fast-candidate-timeline.jsonl": {
+              "sha256": "14fa41e51fa4911164792969589c1894aa08622c4a90e848fc20d0a7be3644c9",
+              "bytes": 1835
+            },
+            "mcp-readiness-fast-candidate.xml": {
+              "sha256": "5e5540f1f349bc9faca8e53f49bd67fce3386a8b1a3efd5b06f5a3dd7ed4eb3d",
+              "bytes": 1503
+            }
+          }
+        }
+      ],
+      "direct_phase_deltas_s": {
+        "wait_to_container": 0.861,
+        "container_to_pod_ready": -66.0,
+        "lease_minus_container": 2.0,
+        "pod_ready_to_sandbox_ready": 1.0,
+        "sandbox_ready_to_pytest": -4.593,
+        "ready_wait": -68.732
+      },
+      "interpretation": "The measured 66s reduction from container start to PodReady and 68.7s reduction in 10 Ready waits support earlier readiness detection. Action, pytest and invocation differences also include scenario and remote-worker variation. Required-check latency depends on parallel VM/MCP finish ordering.",
+      "latest_form_validation_invocation": "cddc39c2-29a3-41c2-867b-c88c5ea94527",
+      "actual_pr_ci_invocation": "3031d1ac-e76e-560a-bd6c-eb3c14f450e1",
+      "source_limit": "Probe arms use the same base plus observation patch, with the readiness policy added to the candidate. Startup/snapshot and scenario variation are not fully matched; phase differences are not a whole-PR effect.",
+      "actual_pr_ci_tested_source": {
+        "parents": [
+          "04b3794be13763194b6b61d359d703eab9e7791c",
+          "b720cf72271cd75586946baa8b0b533b2d828d55"
+        ],
+        "sha": "d15d7caa8964b1775af69fd27a4b50e10347a268"
+      }
+    },
+    "journal_fix": {
+      "pr": 12504,
+      "merged_at": "2026-10-28T06:19:21Z",
+      "commit": "a9a0f2ae618fbf01a097021ed9b323c53ce3586f",
+      "regression_baseline_invocation": "a5a13662-1281-42a5-af51-edc1e9322f34",
+      "focused_pass_invocation": "a502bec3-a622-49e3-aeae-28ae1985559f",
+      "race_suite_pass_invocation": "cb8062cd-dd9f-4cc3-bbe4-4299108fa4a0",
+      "status": "Known cancellation interleavings reproduced and fixed; natural recurrence effect needs more fresh exposures. Original CI log lacks the initial failed operation/database, preventing exact incident attribution.",
+      "fresh_natural_dispatcher_passes_after_merge": 2
+    },
+    "label_corrections": {
+      "previous_report_label": "//agentplane/system_tests:test_mcp_sandbox",
+      "actual_bazel_label": "//agentplane/system_tests:test_mcp",
+      "scope": "Earlier report display/evidence shorthand was incorrect. Original fields remain intact for audit; new records use the verified actual Bazel label."
+    },
+    "limits": [
+      "The 17-run census overlaps earlier report examples; do not add its denominator to the prior pilot.",
+      "Eleven successful Bazel jobs are devel-only, not a repository failure-rate estimate or evidence automatic retries are unnecessary.",
+      "The first all-changes natural job reused VM/MCP/dispatcher test results; cached durations and timestamps do not measure fresh workers in that invocation.",
+      "Whole workflow completion, auto-merge readiness and agent receipt are not measured here.",
+      "This is not a matched before/after workload, image, snapshot or cache cohort."
+    ],
+    "profile_review": {
+      "all-changes-devel": {
+        "sha256": "5ea051ca18ac6722932df3166eef43b010d8dd7d0ea4cd1c39e9c31778340cca",
+        "bytes": 3048646,
+        "critical_components": [
+          {
+            "name": "action 'Expanding template cluster/cdk8s/providers/seaweedfs/_s3credentials_cdk8s_bin_/_s3credentials_cdk8s_bin [for tool]'",
+            "duration_s": 0.018322
+          },
+          {
+            "name": "runfiles for //cluster/cdk8s/providers/seaweedfs:_s3credentials_cdk8s_bin",
+            "duration_s": 0.144237
+          },
+          {
+            "name": "action 'JsRunBinary cluster/cdk8s/providers/seaweedfs/_s3credentials_imports/seaweed_s3credentials_crds/com/seaweedfs/seaweed/__init__.py'",
+            "duration_s": 0.000919
+          },
+          {
+            "name": "runfiles for //cluster/cdk8s:test_generate_manifests",
+            "duration_s": 0.494948
+          },
+          {
+            "name": "action 'Testing //cluster/cdk8s:test_generate_manifests'",
+            "duration_s": 50.052953
+          }
+        ],
+        "retrieval": "bbapi tool-log download 0c0dd5e5-14cc-5a11-b9eb-7ed1335c0863 command.profile.gz -o command.profile.gz"
+      },
+      "pr12513": {
+        "sha256": "b94f5681d66dc744b74b5e297037a6f8918ace16fa71ddceceae171028b1a300",
+        "bytes": 50676,
+        "critical_components": [
+          {
+            "name": "action 'mypy //cluster/cdk8s/agentplane:test_runner_gateway_workload'",
+            "duration_s": 76.43017
+          }
+        ],
+        "retrieval": "bbapi tool-log download 3031d1ac-e76e-560a-bd6c-eb3c14f450e1 command.profile.gz -o command.profile.gz"
+      },
+      "pre-readiness-fresh": {
+        "invocation": "16a0fdee-849c-5a3a-ae8f-989b6127807e",
+        "critical_path_s": 439.72,
+        "dominant_action": "//agentplane/system_tests:test_mcp",
+        "dominant_action_s": 436.853059,
+        "comparison_limit": "All exporter/import/journal fixes but before shared readiness; different source/worker/cache state, not a causal control."
+      }
+    },
+    "current_required_contexts": [
+      "Build artifacts + imports check",
+      "Pre-commit checks",
+      "bazel-ci / Test & Build"
+    ],
+    "required_context_limits": "Current rules verified; no new exact-PR-head check/approval/agent-delivery census collected.",
+    "all_changes_ancestry": {
+      "12495": {
+        "commit": "36fda509d07ff98995d684a3f76247eb475fad1d",
+        "ancestor_of_tested_source": true
+      },
+      "12496": {
+        "commit": "db1895b3e0b9cadf4b63764db85b3a66c5f96d1b",
+        "ancestor_of_tested_source": true
+      },
+      "12498": {
+        "commit": "50bd44b472e321c7fb2d50ace0ded24afee7c8b4",
+        "ancestor_of_tested_source": true
+      },
+      "12504": {
+        "commit": "a9a0f2ae618fbf01a097021ed9b323c53ce3586f",
+        "ancestor_of_tested_source": true
+      },
+      "12513": {
+        "commit": "2ae990424df7481ead4b5a170ab502934e136a7d",
+        "ancestor_of_tested_source": true
+      }
+    },
+    "uncached_adopted_source_probe": {
+      "invocation": "8886320b-1f9d-44ee-b684-2d5faf2314ee",
+      "source_sha": "2ae990424df7481ead4b5a170ab502934e136a7d",
+      "command": "BBR_REMOTE_ARGS=--run_from_commit=2ae990424df7481ead4b5a170ab502934e136a7d bbr test //agentplane/system_tests:test_vm_sandbox_vm //agentplane/system_tests:test_mcp --nocache_test_results --config=ci",
+      "scope": "Supplementary uncached two-target RBE probe, not a GitHub CI workflow or PR-feedback sample. Exact pinned commit; no local patches. CI retry config remains zero.",
+      "bazel_duration_s": 567.653,
+      "critical_path_s": 490.28,
+      "critical_components": [
+        {
+          "name": "action 'Writing file agentplane/app/app_layers.manifest.preprocessed.spec'",
+          "duration_s": 0.59797
+        },
+        {
+          "name": "action 'Action agentplane/app/app_layers.manifest.mtree'",
+          "duration_s": 0.068636
+        },
+        {
+          "name": "action 'Executing genrule //agentplane/app:app_layers_manifests'",
+          "duration_s": 0.051297
+        },
+        {
+          "name": "action 'UnusedTarInputs agentplane/app/app_layers_packages.unused_inputs.txt'",
+          "duration_s": 0.063812
+        },
+        {
+          "name": "action 'Tar agentplane/app/app_layers_packages.tar.gz'",
+          "duration_s": 16.213297
+        },
+        {
+          "name": "action 'OCI Descriptor agentplane/app/app_layers_packages.tar.gz'",
+          "duration_s": 0.04431
+        },
+        {
+          "name": "action 'OCI Image //agentplane/app:image'",
+          "duration_s": 0.006777
+        },
+        {
+          "name": "runfiles for //agentplane/system_tests:test_vm_sandbox_vm",
+          "duration_s": 0.037143
+        },
+        {
+          "name": "action 'Testing //agentplane/system_tests:test_vm_sandbox_vm'",
+          "duration_s": 473.201455
+        }
+      ],
+      "originating_rbe_execution_count": 3,
+      "originating_cpu_s": 1879.606589,
+      "targets": {
+        "mcp": {
+          "label": "//agentplane/system_tests:test_mcp",
+          "passed_cases": 10,
+          "case_ids": [
+            "test_agent_executes_mcp_action[claude]",
+            "test_agent_executes_mcp_action[codex]",
+            "test_operator_links_oauth_mcp_server[claude]",
+            "test_operator_links_oauth_mcp_server[codex]",
+            "test_agent_mcp_bff_decision[claude]",
+            "test_agent_mcp_bff_decision[codex]",
+            "test_policy_binding_auto_approves_the_bound_sandbox[claude]",
+            "test_policy_binding_auto_approves_the_bound_sandbox[codex]",
+            "test_launcher_drives_only_the_sandbox_it_launched[claude]",
+            "test_launcher_drives_only_the_sandbox_it_launched[codex]"
+          ],
+          "cached_results": 0,
+          "target_summary_duration_s": 445.265,
+          "fixture_stack_ready_s": 239.9
+        },
+        "vm": {
+          "label": "//agentplane/system_tests:test_vm_sandbox_vm",
+          "passed_cases": 3,
+          "case_ids": [
+            "test_a_vm_sandbox_runs_a_turn[claude]",
+            "test_a_vm_sandbox_runs_a_turn[codex]",
+            "test_codex_tool_oom_preserves_runner_and_app_server[codex]"
+          ],
+          "cached_results": 0,
+          "target_summary_duration_s": 471.74,
+          "fixture_stack_ready_s": 115.1
+        }
+      },
+      "executions": [
+        {
+          "label": "//agentplane/app:app_layers_packages",
+          "execution_id": "/uploads/db05c71d-327a-4ef3-b764-7b1247a98da4/blobs/e54568568c21837e702125e7280b24b9a30fc49c473a8db1264b8389cebbd21c/494",
+          "queued_at": "2026-10-28T07:21:59.855472Z",
+          "worker_started_at": "2026-10-28T07:21:59.915437Z",
+          "process_started_at": "2026-10-28T07:22:00.369652Z",
+          "process_completed_at": "2026-10-28T07:22:15.355121Z",
+          "process_duration_s": 14.985469,
+          "queued_to_worker_start_s": 0.059965,
+          "cpu_s": 11.715291,
+          "status": "COMPLETED; default OK status"
+        },
+        {
+          "label": "//agentplane/system_tests:test_mcp",
+          "execution_id": "/uploads/540637bb-a2cc-4f5b-a13f-70c89440ac16/blobs/eb21b5da1aa5cd8c570d4e8b23ee0a3d5dd6a355aab977158be9a4bb2ae85b36/504",
+          "queued_at": "2026-10-28T07:22:15.893681Z",
+          "worker_started_at": "2026-10-28T07:22:15.989800Z",
+          "process_started_at": "2026-10-28T07:22:24.746936Z",
+          "process_completed_at": "2026-10-28T07:29:50.012048Z",
+          "process_duration_s": 445.265112,
+          "queued_to_worker_start_s": 0.096119,
+          "cpu_s": 1084.578025,
+          "status": "COMPLETED; default OK status"
+        },
+        {
+          "label": "//agentplane/system_tests:test_vm_sandbox_vm",
+          "execution_id": "/uploads/acc07e7b-3938-4d22-8926-641678d9ebb8/blobs/6b8da7279a8f3064bd467158181203a0285ac822d07631eda5cf62c37d348a1f/536",
+          "queued_at": "2026-10-28T07:22:15.918115Z",
+          "worker_started_at": "2026-10-28T07:22:15.984570Z",
+          "process_started_at": "2026-10-28T07:22:16.750629Z",
+          "process_completed_at": "2026-10-28T07:30:08.491541Z",
+          "process_duration_s": 471.740912,
+          "queued_to_worker_start_s": 0.066455,
+          "cpu_s": 783.313273,
+          "status": "COMPLETED; default OK status"
+        }
+      ],
+      "worker_finish_gap_vm_after_mcp_s": 18.479493,
+      "vm_phase_spans_s": {
+        "vm.sandbox.create": [
+          0.038784,
+          0.029503,
+          0.028378
+        ],
+        "vm.sandbox.ready": [
+          44.795132,
+          34.589807,
+          32.437351
+        ],
+        "vm.session.open": [
+          2.218822,
+          1.816687,
+          1.12224
+        ],
+        "vm.turn": [
+          41.742988,
+          42.388682
+        ],
+        "vm.scenario": [
+          88.801045,
+          78.827112,
+          106.253534
+        ],
+        "vm.sandbox.cleanup": [
+          11.780673,
+          12.847006,
+          11.580483
+        ],
+        "vm.diagnostics": [
+          0.08356,
+          0.063483,
+          0.071975
+        ],
+        "vm.case": [
+          100.885683,
+          91.755911,
+          117.925054
+        ],
+        "vm.command": [
+          34.337122,
+          30.893492,
+          7.184876
+        ]
+      },
+      "vm_phase_sums_s": {
+        "vm.sandbox.create": 0.096665,
+        "vm.sandbox.ready": 111.82229,
+        "vm.session.open": 5.157749,
+        "vm.turn": 84.13167,
+        "vm.scenario": 273.881691,
+        "vm.sandbox.cleanup": 36.208162,
+        "vm.diagnostics": 0.219018,
+        "vm.case": 310.566648,
+        "vm.command": 72.41549
+      },
+      "selected_fixture_images": {
+        "mcp": [
+          {
+            "image": "agentplane-app",
+            "seconds": 31.1,
+            "at": 73.4
+          },
+          {
+            "image": "runner",
+            "seconds": 63.5,
+            "at": 188.3
+          }
+        ],
+        "vm": [
+          {
+            "image": "agentplane-app",
+            "seconds": 0.7,
+            "at": 35.7
+          },
+          {
+            "image": "runner",
+            "seconds": 0.4,
+            "at": 47.3
+          },
+          {
+            "image": "agentplane-vm-guest-boot",
+            "seconds": 0.8,
+            "at": 64.2
+          },
+          {
+            "image": "agentplane-vm-guest-root",
+            "seconds": 0.8,
+            "at": 65.0
+          }
+        ]
+      },
+      "artifact_identity": {
+        "vm.phases.jsonl": {
+          "sha256": "9efc6fb6e872c531b19ec4392c56214e057b4adeea43f6e69d6007c24836a0b9",
+          "bytes": 18793
+        },
+        "mcp.timeline.jsonl": {
+          "sha256": "6c53795f393677544980187574c5e5110b0b218cfaa2b934887ce4c20246f5cb",
+          "bytes": 1859
+        },
+        "mcp.xml": {
+          "sha256": "7015d67f5454512e88b72ba012db1dff8e54f1b0e802f90030e87a9924b00590",
+          "bytes": 1504
+        },
+        "vm.xml": {
+          "sha256": "db521df805c708c557186e1b1ab4034e884ae35795866f86c682702d9b55097c",
+          "bytes": 642
+        },
+        "command.profile.gz": {
+          "sha256": "ea3a67f19e4d44fe0b03fa066d9d5857be9a5c96f24ac0b079dba4e6b1b1d3a9",
+          "bytes": 1510204
+        },
+        "vm.timeline.jsonl": {
+          "sha256": "dcdd543288ccda281404f3f4abae6e8fd8b10785bb1cdf1fe9cec24114788942",
+          "bytes": 2355
+        }
+      },
+      "retrieval": {
+        "profile": "bbapi tool-log download 8886320b-1f9d-44ee-b684-2d5faf2314ee command.profile.gz -o command.profile.gz",
+        "vm_phases": "bbapi artifact download 8886320b-1f9d-44ee-b684-2d5faf2314ee test.outputs/vm-phases.jsonl -o vm-phases.jsonl",
+        "mcp_timeline": "bbapi artifact download 8886320b-1f9d-44ee-b684-2d5faf2314ee //agentplane/system_tests:test_mcp/test.outputs/k3s-timeline.jsonl -o mcp-timeline.jsonl"
+      },
+      "limits": [
+        "Cold outer runner setup and unequal fixture import/image state; not a matched intervention comparison.",
+        "MCP fixture stack Ready is 239.9s here versus 54.1s in the prior feb devel case; the fixtures are not equivalent warm controls.",
+        "Target-summary start/end clocks are not substituted for RBE process clocks. Finish gap uses indexed execution process end timestamps.",
+        "VM Ready/cleanup spans are nested within scenario/case spans and cannot be summed as independent feedback savings.",
+        "No PR feedback or fleet effect is established by one explicit uncached two-target run."
+      ]
+    },
+    "publication_collection_end_utc": "2026-10-28T07:35:24.349474+00:00",
+    "future_report_todos": [
+      {
+        "id": "CI-SOAK-1",
+        "topic": "Fresh adopted-source worker and PR-feedback distributions",
+        "collect_after_utc": "2026-10-29T07:08:00Z",
+        "window": "Next report after at least 24 hours of natural post-readiness CI; extend to 48 hours when exposures are sparse.",
+        "collect": "Page all CI and trusted-fork job attempts; resolve actual tested SHA ancestry for #12495/#12496/#12498/#12504/#12513. Separate fresh/cached VM and MCP results, image pins, case counts, critical path, job queue/runtime and required-check clocks by PR class/trust path. Preserve failed/canceled/incomplete observations.",
+        "decision": "Whether common required-check feedback and worker cost improved; which target is the remaining gate. Never subtract cached result timestamps or sum parallel phase gains.",
+        "completion": "Publish all denominators and unknowns. If no comparable fresh exposures exist, keep this TODO open; a successful cached workflow does not complete it."
+      },
+      {
+        "id": "CI-SOAK-2",
+        "topic": "Journal/quiesce recurrence after #12504",
+        "collect_after_utc": "2026-10-29T06:19:21Z",
+        "window": "First 24-hour follow-up, then a seven-day review ending 2026-11-04T06:19:21Z.",
+        "collect": "Collect fresh dispatcher and relevant VM/Pod lifecycle outcomes on sources containing #12504, including failed attempts hidden by reruns. Deduplicate shared remote execution IDs. For any recurrence preserve the initial journal operation, native receipt/admission IDs, journal database, and exact drain acknowledgement.",
+        "decision": "Whether the reproduced cancellation mechanism still occurs; distinguish new storage or lifecycle defects.",
+        "completion": "Report 0/N or failures/N with fresh-execution denominator, not elimination. Archive recurrence evidence before rerunning. Keep original-incident attribution limit."
+      },
+      {
+        "id": "CI-SOAK-3",
+        "topic": "Zero-retry reliability cost versus cancellation benefit",
+        "collect_after_utc": "2026-10-29T04:35:45Z",
+        "window": "At least 24\u201348 hours after policy adoption; retain original 03:06\u201306:05 pilot separately.",
+        "collect": "Inspect canonical child options and source config on every conclusive Bazel attempt across both trust paths. Classify remote CANCELLED/UNAVAILABLE versus source/test failures. For reruns verify identical source and fresh formerly failed target. For cancellations distinguish same-digest replacement, distinct later work, indexed status and physical process stop.",
+        "decision": "Retain or change the broad zero-retry mitigation using measured recovery cost and cancellation evidence.",
+        "completion": "Explicit comparative limitations; do not infer saved CPU from acknowledgement or claim automatic retries would have recovered every remote failure. Physical-stop evidence may remain unavailable without a hosted operator trace."
+      },
+      {
+        "id": "CI-SOAK-4",
+        "topic": "Shared readiness and shutdown correctness",
+        "collect_after_utc": "2026-10-29T07:07:58Z",
+        "window": "Next 24\u201348-hour report; live staging only after the matching runner disk/template rollout is independently verified.",
+        "collect": "Preserve ten MCP cases, three independent VM cases, /healthz semantics, liveness policy, clean guest shutdown/storage checks, and readiness/restart outcomes. Collect fresh phase traces with image/snapshot state where available.",
+        "decision": "Whether faster readiness remains correct across warm/cold starts and recovery, and whether exporter/import phase gains recur.",
+        "completion": "Separate CI source acceptance from live deployment and stability. Do not mark staging rollout complete from merged source or hermetic tests."
+      }
+    ]
+  },
+  "future_report_todos": [
+    {
+      "id": "CI-SOAK-1",
+      "topic": "Fresh adopted-source worker and PR-feedback distributions",
+      "collect_after_utc": "2026-10-29T07:08:00Z",
+      "window": "Next report after at least 24 hours of natural post-readiness CI; extend to 48 hours when exposures are sparse.",
+      "collect": "Page all CI and trusted-fork job attempts; resolve actual tested SHA ancestry for #12495/#12496/#12498/#12504/#12513. Separate fresh/cached VM and MCP results, image pins, case counts, critical path, job queue/runtime and required-check clocks by PR class/trust path. Preserve failed/canceled/incomplete observations.",
+      "decision": "Whether common required-check feedback and worker cost improved; which target is the remaining gate. Never subtract cached result timestamps or sum parallel phase gains.",
+      "completion": "Publish all denominators and unknowns. If no comparable fresh exposures exist, keep this TODO open; a successful cached workflow does not complete it."
+    },
+    {
+      "id": "CI-SOAK-2",
+      "topic": "Journal/quiesce recurrence after #12504",
+      "collect_after_utc": "2026-10-29T06:19:21Z",
+      "window": "First 24-hour follow-up, then a seven-day review ending 2026-11-04T06:19:21Z.",
+      "collect": "Collect fresh dispatcher and relevant VM/Pod lifecycle outcomes on sources containing #12504, including failed attempts hidden by reruns. Deduplicate shared remote execution IDs. For any recurrence preserve the initial journal operation, native receipt/admission IDs, journal database, and exact drain acknowledgement.",
+      "decision": "Whether the reproduced cancellation mechanism still occurs; distinguish new storage or lifecycle defects.",
+      "completion": "Report 0/N or failures/N with fresh-execution denominator, not elimination. Archive recurrence evidence before rerunning. Keep original-incident attribution limit."
+    },
+    {
+      "id": "CI-SOAK-3",
+      "topic": "Zero-retry reliability cost versus cancellation benefit",
+      "collect_after_utc": "2026-10-29T04:35:45Z",
+      "window": "At least 24\u201348 hours after policy adoption; retain original 03:06\u201306:05 pilot separately.",
+      "collect": "Inspect canonical child options and source config on every conclusive Bazel attempt across both trust paths. Classify remote CANCELLED/UNAVAILABLE versus source/test failures. For reruns verify identical source and fresh formerly failed target. For cancellations distinguish same-digest replacement, distinct later work, indexed status and physical process stop.",
+      "decision": "Retain or change the broad zero-retry mitigation using measured recovery cost and cancellation evidence.",
+      "completion": "Explicit comparative limitations; do not infer saved CPU from acknowledgement or claim automatic retries would have recovered every remote failure. Physical-stop evidence may remain unavailable without a hosted operator trace."
+    },
+    {
+      "id": "CI-SOAK-4",
+      "topic": "Shared readiness and shutdown correctness",
+      "collect_after_utc": "2026-10-29T07:07:58Z",
+      "window": "Next 24\u201348-hour report; live staging only after the matching runner disk/template rollout is independently verified.",
+      "collect": "Preserve ten MCP cases, three independent VM cases, /healthz semantics, liveness policy, clean guest shutdown/storage checks, and readiness/restart outcomes. Collect fresh phase traces with image/snapshot state where available.",
+      "decision": "Whether faster readiness remains correct across warm/cold starts and recovery, and whether exporter/import phase gains recur.",
+      "completion": "Separate CI source acceptance from live deployment and stability. Do not mark staging rollout complete from merged source or hermetic tests."
+    }
+  ]
 }
