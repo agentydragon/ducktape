@@ -19,7 +19,7 @@ type runnerLifecycleController struct{ l *lifecycle }
 func (*runnerLifecycleController) Name() string { return runnerControllerName }
 func (*runnerLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerInputType, session.InputType, session.RuntimeType, journalSealType, ingressAckType, execserver.RuntimeType, codexappserver.RuntimeType, bootstrap.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerInputType, session.DrainInputType, session.RuntimeType, journalSealType, ingressAckType, execserver.RuntimeType, codexappserver.RuntimeType, bootstrap.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: runnerlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -177,11 +177,11 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 	// Process exit can finish an outstanding inspection. Keep its journal and
 	// controller alive until the resulting observations have been committed.
 	for _, s := range sessions {
-		input, _, err := session.ReadInput(ctx, r, s.ID())
+		input, _, err := session.ReadDrainInput(ctx, r, s.ID())
 		if err != nil {
 			return err
 		}
-		if input.Inspections != 0 || input.InspectionRunning {
+		if input.Inspecting {
 			return write()
 		}
 	}

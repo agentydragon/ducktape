@@ -26,14 +26,31 @@ func (m *Manager) publishSession(s *Session, demand bool) {
 	s.mu.Lock()
 	input.Harness = s.record.Harness
 	input.SetupRequested = s.setupScript != nil
-	input.Setup, input.ActiveTurn, input.Pending, input.ProcessID = s.setup, s.activeTurn, len(s.pending), s.processID
+	input.Setup, input.Pending, input.ProcessID = s.setup, len(s.pending), s.processID
 	input.ProcessRunning = s.process != nil && s.process.Running()
 	input.InspectionRunning = s.inspection != nil
 	input.Inspections = len(s.reconciliations)
 	input.InspectionReady = len(s.reconciliations) > 0 && s.reconciliations[0].ready
+	adapter := s.adapter
 	s.mu.Unlock()
-	input.Cursor = s.journal.LastCursor()
-	m.fail(publish(m.ctx, m.state, s.id, input))
+	input.DispatchBlocked = adapter == nil || adapter.BlocksCommandDispatch()
+	previous, found, err := componentRead[Input](m.ctx, m.state, s.id)
+	if err != nil {
+		m.fail(err)
+		return
+	}
+	if !found || previous != input {
+		m.fail(publish(m.ctx, m.state, s.id, input))
+	}
+	drain := DrainInput{Inspecting: input.Inspections != 0 || input.InspectionRunning}
+	previousDrain, found, err := componentRead[DrainInput](m.ctx, m.state, s.id)
+	if err != nil {
+		m.fail(err)
+		return
+	}
+	if !found || previousDrain != drain {
+		m.fail(publish(m.ctx, m.state, s.id, drain))
+	}
 }
 
 func (s *Session) wake() {

@@ -16,6 +16,7 @@ import (
 
 const (
 	InputType      = "SessionInputs.agentplane"
+	DrainInputType = "SessionDrainInputs.agentplane"
 	RuntimeType    = "SessionRuntimes.agentplane"
 	OperationType  = "NativeOperationResults.agentplane"
 	ControllerName = "session-lifecycle"
@@ -35,17 +36,20 @@ const (
 type Input struct {
 	Harness           runnerpb.Harness
 	Demand            uint64
-	Cursor            uint64
 	SetupRequested    bool
 	Setup             runnerpb.SetupState
-	ActiveTurn        string
 	Pending           int
 	ProcessID         string
 	ProcessRunning    bool
 	Inspections       int
 	InspectionRunning bool
 	InspectionReady   bool
+	DispatchBlocked   bool
 }
+
+// DrainInput changes only when inspection work starts or settles. The aggregate
+// Runner controller needs this barrier, not every Session dispatch dependency.
+type DrainInput struct{ Inspecting bool }
 
 type Runtime struct {
 	Phase          Phase
@@ -128,3 +132,9 @@ func (Runtime) resourceType() resource.Type             { return RuntimeType }
 func (value Runtime) DeepCopy() Runtime                 { return value }
 func (operationResult) resourceType() resource.Type     { return OperationType }
 func (value operationResult) DeepCopy() operationResult { return value }
+
+func (DrainInput) resourceType() resource.Type { return DrainInputType }
+func (value DrainInput) DeepCopy() DrainInput  { return value }
+func ReadDrainInput(ctx context.Context, reader controller.Reader, id string) (DrainInput, bool, error) {
+	return componentRead[DrainInput](ctx, reader, id)
+}

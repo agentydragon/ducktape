@@ -111,9 +111,9 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	}
 	if input.SetupRequested && current.SetupAttempt == "" {
 		s.mu.Lock()
-		script, job, setup := s.setupScript, s.setupJob, s.setup
+		script, job := s.setupScript, s.setupJob
 		s.mu.Unlock()
-		if script != nil && job == nil && setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
+		if script != nil && job == nil && input.Setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
 			s.startOperation(&s.setupJob, func(ctx context.Context) error { return s.runSetup(ctx, *script) })
 			s.mu.Lock()
 			current.SetupAttempt = s.setupJob.id
@@ -125,6 +125,12 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	}
 	if op, done := s.takeOperation(&s.preparation); done {
 		c.manager.forgetOperation(op)
+		// takeOperation refreshes host input synchronously. The completion resource
+		// can be queued before the worker's own refresh, so read it again here.
+		input, _, err = componentRead[Input](ctx, r, s.id)
+		if err != nil {
+			return err
+		}
 		s.mu.Lock()
 		processID := s.processID
 		live := s.process != nil && s.process.Running()
@@ -136,10 +142,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			s.mu.Unlock()
 		} else if desiredState.Mode == runnerlifecycle.Running {
 			current.Phase = Dormant
-			s.mu.Lock()
-			pending := len(s.pending)
-			s.mu.Unlock()
-			if pending == 0 {
+			if input.Pending == 0 {
 				current.Attempt = input.Demand
 			}
 		}
@@ -158,8 +161,8 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	}
 	// Reconciliation runs independently from halt, so native stdout can deliver its replies.
 	s.mu.Lock()
-	inspectionPending := len(s.reconciliations) > 0
-	if s.inspection == nil && inspectionPending && s.reconciliations[0].ready {
+	inspectionPending := input.Inspections > 0 && len(s.reconciliations) > 0
+	if s.inspection == nil && inspectionPending && input.InspectionReady && s.reconciliations[0].ready {
 		pending := s.reconciliations[0]
 		s.reconciliations = s.reconciliations[1:]
 		s.mu.Unlock()
@@ -264,7 +267,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	processID := s.processID
 	pending := len(s.pending)
 	s.mu.Unlock()
-	if current.Phase == Ready && (!processLive || processID != current.ProcessID) {
+	if current.Phase == Ready && (!input.ProcessRunning || input.ProcessID != current.ProcessID || !processLive || processID != current.ProcessID) {
 		current.Phase = Dormant
 		if pending == 0 {
 			// Demand from commands completed by this process is already satisfied.
@@ -272,9 +275,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			current.Attempt = input.Demand
 		}
 	}
-	s.mu.Lock()
-	inspecting := s.inspection != nil || len(s.reconciliations) > 0
-	s.mu.Unlock()
+	inspecting := input.InspectionRunning || input.Inspections > 0
 	if current.Phase == Dormant && !inspecting && input.Demand > current.Attempt && !s.executionClosed() {
 		started, err := s.journal.HasStartedTurn(ctx)
 		if err != nil {
@@ -319,7 +320,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	blocked := s.inspection != nil || len(s.reconciliations) > 0 || s.dispatching != nil
 	adapter := s.adapter
 	s.mu.Unlock()
-	if current.Phase != Ready || blocked || adapter == nil || adapter.BlocksCommandDispatch() {
+	if current.Phase != Ready || blocked || input.DispatchBlocked || adapter == nil || adapter.BlocksCommandDispatch() {
 		return nil
 	}
 	commands, err := s.journal.PendingCommands(ctx)

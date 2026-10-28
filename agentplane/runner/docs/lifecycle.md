@@ -11,22 +11,23 @@ logger, configured by the executable for JSON on stderr. Its resources contain c
 and progress values. They do not contain process handles, adapters, cancellation functions, journal
 connections, or other native state.
 
-| Resource or effect                       | Publisher or owner                              | Meaning                                                                                                     |
-| ---------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Runner desired state and input           | Runner host                                     | Lifecycle mode, incarnation seal UID, generation, and active admission count.                               |
-| Runner runtime                           | Runner lifecycle controller                     | Runner-wide stage and terminal controller error.                                                            |
-| Session input                            | `session.Manager` host                          | Demand and snapshots of journal cursor, setup, process, active turn, and queued or running inspections.     |
-| Session runtime                          | `session` QController                           | Execution phase, attempt, resume flag, process incarnation, and desired-state generation.                   |
-| Codex exec-server input and runtime      | Exec-server host and QController                | Demand, process intent, readiness/health deadlines, restart backoff and stop outcome.                       |
-| Process desired state                    | Requesting controller or `supervision.Host`     | Immutable owner, generation, start deadline and cleanup timeout for one launch.                             |
-| Process status                           | `supervision.Controller`                        | Launch, native exit, stopping and completed cleanup; a finalizer protects each execution domain.            |
-| Process input                            | `supervision.Host` (`supervision-host`)         | Revision-only wakeups for asynchronous launch, exit and stop observations.                                  |
-| Codex app-server input and runtime       | `codexappserver` host and QController           | Shared app-server demand, exec-server dependency deadline, process incarnation and stop outcome.            |
-| Bootstrap input and runtime              | Bootstrap host and QController                  | In-memory accepted demand and execution outcome; `request.json` and the event log remain durable authority. |
-| Operation result                         | Owning Session or component host                | Wakes its controller after an asynchronous host operation completes.                                        |
-| Journal seal and ingress acknowledgement | Runner/transport host                           | In-memory mirrors of the durable journal seal and persisted ingress acknowledgement.                        |
-| Native process effects                   | `supervision.Controller` and `supervision.Host` | Start, observe and fence every Runner-managed native execution domain.                                      |
-| Protocol and journal effects             | Runner, Session, Codex app-server, and journal  | Handshake, frame routing, dispatch, interruption, inspection, sealing, and persistence.                     |
+| Resource or effect                       | Publisher or owner                              | Meaning                                                                                                              |
+| ---------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Runner desired state and input           | Runner host                                     | Lifecycle mode, incarnation seal UID, generation, and active admission count.                                        |
+| Runner runtime                           | Runner lifecycle controller                     | Runner-wide stage and terminal controller error.                                                                     |
+| Session input                            | `session.Manager` host                          | Demand, setup, process liveness, pending commands, native dispatch readiness and inspection scheduling dependencies. |
+| Session inspection drain input           | `session.Manager` host                          | Whether queued or running inspections still block aggregate shutdown.                                                |
+| Session runtime                          | `session` QController                           | Execution phase, attempt, resume flag, process incarnation, and desired-state generation.                            |
+| Codex exec-server input and runtime      | Exec-server host and QController                | Demand, process intent, readiness/health deadlines, restart backoff and stop outcome.                                |
+| Process desired state                    | Requesting controller or `supervision.Host`     | Immutable owner, generation, start deadline and cleanup timeout for one launch.                                      |
+| Process status                           | `supervision.Controller`                        | Launch, native exit, stopping and completed cleanup; a finalizer protects each execution domain.                     |
+| Process input                            | `supervision.Host` (`supervision-host`)         | Revision-only wakeups for asynchronous launch, exit and stop observations.                                           |
+| Codex app-server input and runtime       | `codexappserver` host and QController           | Shared app-server demand, exec-server dependency deadline, process incarnation and stop outcome.                     |
+| Bootstrap input and runtime              | Bootstrap host and QController                  | In-memory accepted demand and execution outcome; `request.json` and the event log remain durable authority.          |
+| Operation result                         | Owning Session or component host                | Wakes its controller after an asynchronous host operation completes.                                                 |
+| Journal seal and ingress acknowledgement | Runner/transport host                           | In-memory mirrors of the durable journal seal and persisted ingress acknowledgement.                                 |
+| Native process effects                   | `supervision.Controller` and `supervision.Host` | Start, observe and fence every Runner-managed native execution domain.                                               |
+| Protocol and journal effects             | Runner, Session, Codex app-server, and journal  | Handshake, frame routing, dispatch, interruption, inspection, sealing, and persistence.                              |
 
 The `session.Manager` owns the Session registry, serialized durable reservation and load,
 journal reconstruction, component resources and controller, and startup recovery. It reconciles retained setup and turn state
@@ -91,7 +92,19 @@ journals retain the Runner observation notification.
 
 QControllers declare primary inputs, mapped dependencies, exclusive outputs, and concurrency. The
 `session` QController maps Runner desired/runtime changes to every Session, app-server runtime changes
-only to Codex Sessions, and operation results to their owning Session.
+only to Codex Sessions, and operation results to their owning Session. Equal Session inputs are not republished.
+Journal cursor changes do not schedule lifecycle work: ingress follows the journal's own commit
+notification. Native reply batches still refresh typed dispatch readiness, because an adapter can
+release queued commands without emitting a normalized Event. The aggregate Runner subscribes to the
+separate inspection drain input rather than all Session dispatch inputs.
+
+`Session.Observe` captures one detached projection used by attachment, status and autosuspend
+reporting. A projection reads lifecycle readiness and native process liveness once; Busy and
+blockers share the same predicates. Active turn and history cursor come from one committed journal
+checkpoint, so in-progress native batches do not expose an active turn ahead of attachment history.
+Busy remains conservative during a batch: either a native active turn or a committed active turn
+blocks autosuspend until both have settled. The projection is not a transaction across journal, COSI and native process ownership; effect
+boundaries still recheck native state and admission remains synchronous.
 Deadlines use COSI requeue scheduling rather than sleeping inside reconciliation. Operation results
 name their consuming controller explicitly, rather than deriving routing from operation names.
 Native operation slots remain claimed through completion publication and until consumption;
