@@ -206,7 +206,7 @@ budget remains authoritative across all of its native services.
   read/wait, acknowledgement persistence, and lifecycle-observation failures are local and fail the
   Runner; remote stream loss retries with the control stream's backoff. A call the ingress refuses as
   another writer's, or whose first acknowledgement is beyond the journal, retries at the maximum.
-  Neither holds up another session, a command or a lifecycle request: the journal is the buffer.
+  These remote failures do not hold up another session, a command or a lifecycle request: the journal is the buffer.
 - The bearer it sends is a placeholder the egress proxy substitutes for the ingress's own audience.
 
 ## Teardown quiesce
