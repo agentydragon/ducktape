@@ -13,12 +13,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
 from x.ai_session_archive.database import (
+    Base,
     FileVersionRecordRow,
     FileVersionRow,
     MachineRow,
     RecordPayloadRow,
     SessionRow,
-    initialize_schema,
     make_session_factory,
 )
 from x.ai_session_archive.web import create_app
@@ -27,7 +27,7 @@ from x.ai_session_archive.web_settings import WebSettings
 
 def test_session_archive_requires_owner_and_serves_machine_list() -> None:
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    initialize_schema(engine)
+    Base.metadata.create_all(engine)
     session_id, child_id, version_id, payload_id = (uuid4() for _ in range(4))
     captured_at = datetime(2026, 1, 1, tzinfo=UTC)
     raw_line = b'{"broken":\xff}\n'

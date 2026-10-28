@@ -60,5 +60,21 @@ def test_make_engine_normalizes_cnpg_uri_to_installed_driver() -> None:
         engine.dispose()
 
 
+def test_make_engine_preserves_sqlite_urls() -> None:
+    engine = make_engine("sqlite:///:memory:")
+    try:
+        assert engine.url.drivername == "sqlite"
+    finally:
+        engine.dispose()
+
+
+def test_make_engine_preserves_explicit_postgresql_driver() -> None:
+    engine = make_engine("postgresql+psycopg://archive_user:archive_password@postgres.example:5432/archive")
+    try:
+        assert engine.url.drivername == "postgresql+psycopg"
+    finally:
+        engine.dispose()
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
