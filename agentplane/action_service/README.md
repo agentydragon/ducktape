@@ -428,26 +428,28 @@ environment gives the service its own `actions` database and login role on the n
 CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
 separate from the integration app's database.
 
-Roll out the dual-writing Action Service version to every writer, then run the migration image with
-`backfill-storage --confirm-all-writers-dual-write` against the same `actions` database. The confirmation flag is
-required; the backfill can be rerun after interruption. Wait for it to exit successfully so every present legacy
-Action identity, actor and policy-evidence value has a typed copy. Then roll out the typed-reader version, which
-still writes both representations.
+Roll out the dual-writing Action Service version to every writer, then run `backfill-storage
+--confirm-all-writers-dual-write` from the migration-capable image in [PR #12360](https://github.com/agentydragon/ducktape/pull/12360)
+against the same `actions` database. The confirmation flag is required; the backfill can be rerun after interruption.
+Wait for it to exit successfully so every present legacy Action identity, actor and policy-evidence value has a typed
+copy. Then roll out the typed-reader version, which still writes both representations.
 
 The typed-only writer version can roll out after every replica is running that typed-reader version. It stops
 writing the legacy `action`, `actor` and `policy_evidence` JSON columns, so rollback after that point is to the
-typed-reader image. After every writer runs the typed-only version, run the migration image with
-`validate-storage --confirm-all-writers-typed-only`. This explicit offline command validates the full-table
-constraints one table at a time; it can resume after interruption. The required confirmation is the operator gate;
-PostgreSQL's `convalidated` state is the durable proof required by the contract migration.
+typed-reader image. After every writer runs the typed-only version, run `validate-storage
+--confirm-all-writers-typed-only` from the migration-capable image in [PR #12371](https://github.com/agentydragon/ducktape/pull/12371).
+This explicit offline command validates the full-table constraints one table at a time; it can resume after
+interruption. The required confirmation is the operator gate; PostgreSQL's `convalidated` state is the durable proof
+required by the contract migration.
 
 Keep the legacy columns through the rollback window. After every writer is typed-only, the rollback window has
 ended, and PostgreSQL's validated constraints are present, deploy the contract migration. On a populated database
 it checks those durable proofs and fails without changing the schema if validation has not run. A fresh empty
 database validates the empty tables inline so it can traverse the complete Goose history without an operator gate.
-The serving image never runs the table-sized backfill or validation. After the contract migration drops legacy
-columns, rollback requires a typed-only compatible image or a database restore/reconstruction; the older dual-write
-and typed-reader images cannot run against the contracted schema.
+The serving image never runs the table-sized backfill or validation. The contract image retires both maintenance
+commands, so do not run them from that image. After the contract migration drops legacy columns, rollback requires a
+typed-only compatible image or a database restore/reconstruction; the older dual-write and typed-reader images cannot
+run against the contracted schema.
 
 ## MCP executor transports
 

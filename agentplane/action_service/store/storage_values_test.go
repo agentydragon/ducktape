@@ -1,7 +1,6 @@
 package store
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
 
@@ -65,32 +64,6 @@ func TestValidateActor(t *testing.T) {
 	} {
 		if err := validateActor(actor); !errors.Is(err, errInvalidActor) {
 			t.Errorf("validateActor(%v) = %v", actor, err)
-		}
-	}
-}
-
-func TestServiceAccountPreservesItsStrictStoredJSON(t *testing.T) {
-	input := []byte(`{"namespace":"test-namespace","name":"test-caller"}`)
-	var account ServiceAccount
-	if err := json.Unmarshal(input, &account); err != nil {
-		t.Fatal(err)
-	}
-	written, err := json.Marshal(account)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(written) != string(input) {
-		t.Errorf("ServiceAccount JSON = %s, want %s", written, input)
-	}
-	for _, input := range []string{
-		`{"namespace":"test-namespace"}`,
-		`{"namespace":null,"name":"test-caller"}`,
-		`{"namespace":"","name":"test-caller"}`,
-		`{"namespace":"test-namespace","name":"test-caller","extra":null}`,
-	} {
-		var account ServiceAccount
-		if err := json.Unmarshal([]byte(input), &account); err == nil {
-			t.Errorf("accepted %s", input)
 		}
 	}
 }

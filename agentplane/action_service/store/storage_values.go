@@ -61,14 +61,6 @@ func (a ServiceAccount) validate() error {
 	return nil
 }
 
-func (a *ServiceAccount) UnmarshalJSON(data []byte) error {
-	type plain ServiceAccount
-	if err := decodeFields(data, (*plain)(a), "namespace", "name"); err != nil {
-		return err
-	}
-	return a.validate()
-}
-
 func serviceAccountFromProto(account *sandboxespb.ServiceAccount) (ServiceAccount, error) {
 	if account == nil {
 		return ServiceAccount{}, errors.New("a ServiceAccount needs a namespace and a name")
