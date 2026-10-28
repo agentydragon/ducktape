@@ -47,7 +47,7 @@ the migrator keeps the advisory lock key the Alembic runner took.
 
 `00005_inbox_destination_expand.sql` adds nullable relational destination columns while the service continues to
 dual-write them and reads legacy `destination_ref` JSON when needed. After every Notification Service writer runs
-the dual-write release, run `bbr run //agentplane/notification_service/storage_backfill/cmd:notification-destination-backfill -- --writer-gate=notification-destination-dual-write-v1`
+the dual-write release, run `bb run //agentplane/notification_service/storage_backfill/cmd:notification-destination-backfill -- --writer-gate=notification-destination-dual-write-v1`
 once against the service database. The command is resumable, uses short bounded batches, and preserves the JSON
 column; it is not part of service startup or readiness.
 

@@ -233,6 +233,28 @@ func TestBackfillInboxDestinationsResumesAfterInvalidRowAndUsesUUIDIndexes(t *te
 	if rewritten != 0 {
 		t.Fatalf("%d destination rows remain incomplete after resume", rewritten)
 	}
+
+	// Simulate an old writer rollback inserting a legacy row below the completed UUID cursor. The final
+	// validation must notice it, reset progress once and migrate it instead of trusting the completion bit.
+	if _, err := db.ExecContext(ctx, `INSERT INTO inbox (
+		id, owner_namespace, owner_name, destination_key, destination_ref, session_id, last_cursor, acknowledged,
+		covered, expired_through, retired, updated_at, next_attempt, claim_until)
+		VALUES ('00000000-0000-0000-0000-000000000000', 'test-namespace', 'test-old-writer', 'old-writer-key',
+			'{"namespace":"test-namespace","name":"test-sandbox","uid":"test-uid"}'::jsonb,
+			'old-writer-session', 0, 0, 0, 0, false, now(), now(), now())`); err != nil {
+		t.Fatal(err)
+	}
+	if err := BackfillInboxDestinations(ctx, db); err != nil {
+		t.Fatalf("backfill after old-writer insertion behind completed cursor: %v", err)
+	}
+	var repaired DestinationRef
+	if err := db.QueryRowContext(ctx, `SELECT destination_namespace, destination_name, destination_uid
+		FROM inbox WHERE owner_name = 'test-old-writer'`).Scan(&repaired.Namespace, &repaired.Name, &repaired.UID); err != nil {
+		t.Fatal(err)
+	}
+	if repaired != (DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-uid"}) {
+		t.Fatalf("old-writer row after completed-cursor recovery = %+v", repaired)
+	}
 }
 
 func TestBoundedDestinationCandidatesLimitsSerializedBytes(t *testing.T) {

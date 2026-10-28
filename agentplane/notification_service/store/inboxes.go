@@ -61,7 +61,8 @@ type InboxPage struct {
 	Notice  *Notice
 }
 
-const inboxColumns = `id, destination_ref, destination_namespace, destination_name, destination_uid,
+const inboxColumns = `id, CASE WHEN destination_namespace IS NULL AND destination_name IS NULL AND destination_uid IS NULL
+	THEN destination_ref END, destination_namespace, destination_name, destination_uid,
 	session_id, last_cursor, acknowledged, covered, expired_through, retired, delivery_error`
 
 type rowScanner interface{ Scan(...any) error }

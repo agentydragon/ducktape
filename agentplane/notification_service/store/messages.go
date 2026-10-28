@@ -193,7 +193,8 @@ func sentMessage(ctx context.Context, tx *sql.Tx, sender ServiceAccount, id uuid
 	var destination []byte
 	var namespace, name, uid sql.NullString
 	err := tx.QueryRowContext(ctx, `
-		SELECT i.id, i.destination_ref, i.destination_namespace, i.destination_name, i.destination_uid,
+		SELECT i.id, CASE WHEN i.destination_namespace IS NULL AND i.destination_name IS NULL AND i.destination_uid IS NULL
+			THEN i.destination_ref END, i.destination_namespace, i.destination_name, i.destination_uid,
 			i.session_id, m.idempotency_key, e.created_at,
 			m.cursor <= i.covered, m.cursor <= i.acknowledged, i.retired
 		FROM message m JOIN inbox i ON i.id = m.inbox_id JOIN entry e ON e.inbox_id = m.inbox_id AND e.cursor = m.cursor

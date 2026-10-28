@@ -16,13 +16,20 @@ const (
 	destinationBackfillMaxRowBytes = 256 << 10
 )
 
-const inboxDestinationCandidatesAfterCursor = `SELECT id, octet_length(destination_ref::text)
+const inboxDestinationCandidatesAfterCursor = `SELECT id, CASE
+		WHEN destination_namespace IS NULL AND destination_name IS NULL AND destination_uid IS NULL
+		THEN octet_length(destination_ref::text) ELSE 0 END
 	FROM inbox WHERE id > $1::uuid ORDER BY id LIMIT $2 FOR UPDATE`
 
-const inboxDestinationCandidatesFromStart = `SELECT id, octet_length(destination_ref::text)
+const inboxDestinationCandidatesFromStart = `SELECT id, CASE
+		WHEN destination_namespace IS NULL AND destination_name IS NULL AND destination_uid IS NULL
+		THEN octet_length(destination_ref::text) ELSE 0 END
 	FROM inbox ORDER BY id LIMIT $1 FOR UPDATE`
 
-const inboxDestinationRowsByID = `SELECT id, destination_ref, destination_namespace, destination_name, destination_uid
+const inboxDestinationRowsByID = `SELECT id, CASE
+		WHEN destination_namespace IS NULL AND destination_name IS NULL AND destination_uid IS NULL
+		THEN destination_ref END,
+		destination_namespace, destination_name, destination_uid
 	FROM inbox WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`
 
 const updateInboxDestinationsFromBatch = `UPDATE inbox AS inbox SET
@@ -49,15 +56,55 @@ type inboxDestinationBackfillRow struct {
 // after every Notification Service writer has deployed dual-write support. Each batch commits its row changes
 // and UUID keyset cursor together, so an interrupted invocation resumes without rescanning a NULL prefix.
 func BackfillInboxDestinations(ctx context.Context, db *sql.DB) error {
+	reset := false
 	for {
 		done, err := backfillInboxDestinations(ctx, db)
 		if err != nil {
 			return err
 		}
 		if done {
-			return nil
+			incomplete, err := inboxDestinationsIncomplete(ctx, db)
+			if err != nil {
+				return err
+			}
+			if !incomplete {
+				return nil
+			}
+			if reset {
+				return errors.New("inbox destination backfill found incomplete rows after a full rescan; verify all writers use notification-destination-dual-write-v1 and inspect partial destination columns")
+			}
+			if err := resetInboxDestinationBackfill(ctx, db); err != nil {
+				return err
+			}
+			reset = true
 		}
 	}
+}
+
+// A completed cursor can be stale if an old writer inserted a row behind it. Validate once at command
+// completion, and restart from the beginning if such rows exist. This is deliberately not done per batch.
+func inboxDestinationsIncomplete(ctx context.Context, db *sql.DB) (bool, error) {
+	var incomplete bool
+	err := db.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM inbox WHERE destination_namespace IS NULL OR destination_name IS NULL OR destination_uid IS NULL
+	)`).Scan(&incomplete)
+	return incomplete, err
+}
+
+func resetInboxDestinationBackfill(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '5s'`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE notification_storage_backfill_progress
+		SET inbox_destination_last_id = NULL, inbox_destination_complete = false WHERE singleton`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func backfillInboxDestinations(ctx context.Context, db *sql.DB) (bool, error) {
@@ -122,18 +169,15 @@ func backfillInboxDestinations(ctx context.Context, db *sql.DB) (bool, error) {
 
 	var updateIDs, namespaces, names, uids []string
 	for _, row := range batch {
-		ref, err := decodeDestinationForBackfill(row.id, row.destination)
-		if err != nil {
-			return false, err
-		}
 		if row.namespace.Valid || row.name.Valid || row.uid.Valid {
 			if !row.namespace.Valid || !row.name.Valid || !row.uid.Valid {
 				return false, fmt.Errorf("inbox %s has incomplete normalized destination fields", row.id)
 			}
-			if row.namespace.String != ref.Namespace || row.name.String != ref.Name || row.uid.String != ref.UID {
-				return false, fmt.Errorf("inbox %s normalized destination fields disagree with destination_ref", row.id)
-			}
 			continue
+		}
+		ref, err := decodeDestinationForBackfill(row.id, row.destination)
+		if err != nil {
+			return false, err
 		}
 		updateIDs = append(updateIDs, row.id.String())
 		namespaces = append(namespaces, ref.Namespace)
