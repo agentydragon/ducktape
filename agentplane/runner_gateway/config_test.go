@@ -73,6 +73,17 @@ func TestAWakeCallerThatIsNotADispatcherCallerIsRefused(t *testing.T) {
 	}
 }
 
+func TestEmptyWakeCallerListIsAccepted(t *testing.T) {
+	path := writeSettings(t, requiredFile+"wake_callers: []\n")
+	c, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+path))
+	if err != nil {
+		t.Fatalf("empty wake caller list: %v", err)
+	}
+	if len(c.WakeCallers) != 0 {
+		t.Fatalf("empty wake caller list loaded as %v", c.WakeCallers)
+	}
+}
+
 func TestHostProcessTargetsAreAcceptedAndTheAdvertisedPortIsBounded(t *testing.T) {
 	host := []string{
 		settingPrefix + "LISTEN_ADDRESS=127.0.0.1:41001", settingPrefix + "PROXY_PORT=42000",

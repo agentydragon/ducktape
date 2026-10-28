@@ -63,8 +63,10 @@ class Settings(YamlFileSettings):
     )
     wake_callers: Set[ServiceAccountName] | None = Field(
         default=None,
-        min_length=1,
-        description="Dispatcher callers whose sends wake a suspended Sandbox, as namespace/name.",
+        description=(
+            "Dispatcher callers whose sends may wake a suspended Sandbox, as namespace/name; an empty list, "
+            "like omission, grants no wake eligibility."
+        ),
     )
     sandbox_controller_account: ServiceAccountName | None = Field(
         default=None, description="ServiceAccount admitted to Quiesce through the Gateway, as namespace/name."
