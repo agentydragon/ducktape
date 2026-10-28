@@ -38,7 +38,8 @@ use swc_ecma_ast::ModuleItem;
 use crate::SourceLocation;
 use crate::analysis_inputs::{
     CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments, DeferredRecordMember,
-    NativeIntegrity, ResolvedBindingValueInput, ReturnedRecordSummary, SelectedBindingValueInput,
+    NamespaceWrapperSummary, NativeIntegrity, ResolvedBindingValueInput, ReturnedRecordSummary,
+    SelectedBindingValueInput,
 };
 use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
@@ -577,6 +578,39 @@ pub fn resolve_imported_callable_summaries(
                         inference: record.inference.clone(),
                     }));
             }
+        }
+    }
+    for (module, facts) in modules {
+        for (export, local) in &facts.exports {
+            let key = (module.clone(), export.clone());
+            if !required.contains(&key) {
+                continue;
+            }
+            let Some(wrapper) = inferred[module].namespace_wrappers.get(local) else {
+                continue;
+            };
+            let source_location = facts.source.as_ref().and_then(|(path, index)| {
+                let (line, column) =
+                    index.line_and_column_for_pos(BytePos(wrapper.function_start))?;
+                Some(SourceLocation {
+                    source_path: path.clone(),
+                    start_line: line,
+                    end_line: line,
+                    start_column: Some(column),
+                })
+            });
+            factories
+                .entry(key)
+                .or_default()
+                .merge(CallableSummary::namespace_wrapper(
+                    NamespaceWrapperSummary {
+                        defining_module: module.clone(),
+                        export: export.clone(),
+                        local: local.clone(),
+                        source_location,
+                        inference: wrapper.inference.clone(),
+                    },
+                ));
         }
     }
     let imported_callables = modules

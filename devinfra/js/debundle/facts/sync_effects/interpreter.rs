@@ -22,7 +22,7 @@ use crate::facts::statement_facts::{
     ReturnedRecordUseFact, StatementFacts, StatementKind, SynchronousCalls,
 };
 use crate::facts::sync_effects::property_inference::{
-    CapturedPropertyDescriptor, OwnPropertyProjection, OwnPropertyProjectionKind, OwnPropertyProof,
+    CapturedPropertyDescriptor, OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest,
     infer_own_property_projection,
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin, Values as FlowValues};
@@ -518,14 +518,14 @@ impl Executor<'_> {
     fn own_property_projection(
         &self,
         values: &Values,
-        native_call_identity: &SemanticKey,
-        projection: OwnPropertyProjectionKind,
+        request: OwnPropertyRequest,
     ) -> Option<OwnPropertyProof> {
-        let [AbstractValue::Origin(ValueOrigin::Object(object))] =
-            values.iter().collect::<Vec<_>>().as_slice()
-        else {
+        let Some(AbstractValue::Origin(ValueOrigin::Object(object))) = values.first() else {
             return None;
         };
+        if values.len() != 1 {
+            return None;
+        }
         let shape = self.index.own_descriptor_shapes.get(object)?;
         let properties = self.prefix_object_properties.get(object)?;
         let semantic_facts = self.index.semantic_facts.as_deref()?;
@@ -536,9 +536,12 @@ impl Executor<'_> {
             properties,
             self.tainted_objects.contains(object),
             semantic_facts,
-            native_call_identity.clone(),
-            projection,
+            request,
         )
+    }
+
+    fn ordinary_source_object(&self, values: &Values) -> Option<OwnPropertyProof> {
+        self.own_property_projection(values, OwnPropertyRequest::Ordinary)
     }
 
     fn capture_own_descriptor_map(
@@ -729,8 +732,9 @@ impl Executor<'_> {
                 };
                 own_property_projection = Some(self.own_property_projection(
                     values,
-                    &native_call_identity,
-                    OwnPropertyProjectionKind::Descriptors,
+                    OwnPropertyRequest::Descriptors {
+                        native_call_identity: native_call_identity.clone(),
+                    },
                 )?);
                 true
             }
@@ -740,8 +744,9 @@ impl Executor<'_> {
                 };
                 own_property_projection = Some(self.own_property_projection(
                     values,
-                    &native_call_identity,
-                    OwnPropertyProjectionKind::Names,
+                    OwnPropertyRequest::Names {
+                        native_call_identity: native_call_identity.clone(),
+                    },
                 )?);
                 true
             }
@@ -3919,6 +3924,40 @@ impl Executor<'_> {
                 && self.index.native_integrity_is_proven(IntrinsicRoot::Map))
     }
 
+    /// Instantiates a provider's checked wrapper timing proof for this exact
+    /// caller-owned ordinary object. The raw source getter remains deferred in
+    /// the returned capability; only the wrapper's eager phase is certified.
+    fn source_namespace_wrapper(
+        &mut self,
+        callee: &ValueExpr,
+        args: &[Values],
+        site: CallSite,
+    ) -> Option<u32> {
+        let ValueExpr::Binding(binding) = callee else {
+            return None;
+        };
+        let summary = self.index.namespace_wrapper_summaries.get(binding)?;
+        let [source, flag] = args else {
+            return None;
+        };
+        if !self.index.literal_true_second_arguments.contains(&site)
+            || flag.is_empty()
+            || !self.ordinary_object_prototype_intact()
+        {
+            return None;
+        }
+        let input = self.ordinary_source_object(source)?;
+        let OwnPropertyProjection::Ordinary { source_object } = input.projection else {
+            return None;
+        };
+        self.inference_uses.borrow_mut().insert(input.inference_use);
+        self.record_inference_use(
+            NativeIntegrityGuard::NativeCallIdentity,
+            summary.inference.clone(),
+        );
+        Some(source_object)
+    }
+
     fn promote_foreign_record(&mut self, outcome: &mut Outcome) {
         // Foreign bodies may read importer cells through a direct ESM capture,
         // without calling an exported callback. Preserve all such obligations.
@@ -4216,6 +4255,23 @@ impl Executor<'_> {
                         );
                     }
                     return BTreeSet::from([AbstractValue::ForeignDeferredRecord]);
+                }
+                if let Some(source_object) = self.source_namespace_wrapper(callee, &args, *span) {
+                    // A cached hit may return the same facade as an earlier
+                    // call. Keep result identity opaque and retain the source
+                    // and every deferred callback for later property reads or
+                    // publication, without running a getter at this call.
+                    let mut retained =
+                        BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(source_object))]);
+                    retained.extend(self.callback_values(&retained));
+                    // The provider's cache may still be in its temporal dead
+                    // zone during an ESM cycle. No success-only return fact
+                    // may erase that possible throw.
+                    return BTreeSet::from([
+                        self.deferred_callbacks(retained),
+                        AbstractValue::Unknown,
+                        AbstractValue::Unavailable,
+                    ]);
                 }
                 if let Some(returns) =
                     self.resolve_native_call(CallKind::Call, callee, expressions, &args)
@@ -4872,6 +4928,7 @@ impl Executor<'_> {
                             )
                         })
                 }
+                AbstractValue::DeferredCallbacks(_) => true,
                 _ => false,
             }) || !accessor_getters.is_empty();
             if unsupported_local {
@@ -4998,6 +5055,14 @@ impl Executor<'_> {
                 call.owner,
                 call.span,
             );
+            return;
+        }
+        if call.kind == CallKind::Call
+            && !call.has_spread
+            && self
+                .source_namespace_wrapper(&call.callee, &args, call.span.into())
+                .is_some()
+        {
             return;
         }
         if !call.has_spread

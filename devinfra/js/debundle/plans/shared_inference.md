@@ -1,16 +1,18 @@
 # Further inference migration
 
-The construction pilot establishes positive shared judgments and dependency
-scheduling. Remaining work should use concrete consumers and measured costs.
+Shared judgments now cover native identity, construction, callable summaries
+and call-local own-property projections. Remaining work should use concrete
+consumers and measured costs.
 
 1. Give compatible cross-module consumers one prepared syntax/value-flow owner.
    Keep native census, author inputs, imported summaries and policy explicit;
    never cache an entire execution index under a source path. Validate reuse
    against different import/author contexts and collect matched CPU/heap profiles.
-2. Move a shared property or native call transfer into typed judgments with
-   separate return-value, timing and heap projections. The namespace-wrapper
-   fixture is a useful target: own properties, deferred getters, alias identity
-   and cache behavior must compose without hiding eager loader effects.
+2. Extend source-composed summaries to ordinary module-loader return values,
+   so namespace wrapping can consume their own-property facts. Preserve eager
+   loader effects, first-use and partial-cache behavior, captured getters and
+   throws. The current wrapper proof covers exact local ordinary inputs; it
+   does not establish the shape of an opaque imported loader's result.
 3. Extend the scheduler only when that consumer requires multiple producers,
    growing value sets or recursive summaries. Declare each domain's order,
    merge, convergence, completion and work-limit fallback before migrating it.

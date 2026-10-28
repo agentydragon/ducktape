@@ -199,6 +199,11 @@ debundle_e2e_test(
 debundle_e2e_test(name = "own_descriptor_inspection_test")
 
 debundle_e2e_test(
+    name = "namespace_wrapper_test",
+    deps = ["//devinfra/js/debundle:analysis"],
+)
+
+debundle_e2e_test(
     name = "own_property_names_test",
     deps = ["//devinfra/js/debundle:analysis"],
 )

@@ -1028,11 +1028,34 @@ Used certificates also appear in the dependency graph's
 `synchronous_execution.returned_record_uses` separately records `call_timing`
 and `return_capability` consumption with the call-site location and a summary
 reference. Callback-input factory evidence and uses retain their own fields.
-The summary's `inference` records the composing stable-function identity,
-guarded native-call identity, empty-collection construction and native-integrity
-rules, together with their captured-input dependencies. Actual use also appears
-in `synchronous_execution.inference_uses`; dependencies are propagated from
-required premises rather than reconstructed by each consumer.
+The summary's `inference` records the composing source-identity, empty-collection
+and native-integrity rules and their captured-input dependencies. Actual use
+also appears in `synchronous_execution.inference_uses`; the dependency set is
+propagated from required premises rather than reconstructed by each consumer.
+
+## Inferred namespace-wrapper timing
+
+A stable directly exported hoisted function may receive a source-derived
+namespace-wrapper summary when its complete body checks an ordinary input,
+uses a private stable WeakMap cache, creates a namespace with the input's
+prototype and optional default reference, and installs deferred own-name
+forwarding getters. The shared proofs require the actual native bindings and
+Object, WeakMap, Array and Function integrity. Shadowed receivers, visible
+native mutations, extra eager operations and cache exposure retain fallback.
+
+At a direct imported call, the caller must prove an exact untainted ordinary
+object with its current own shape and supply a literal `true` second argument.
+The summary narrows synchronous callback reentry after callee and argument
+evaluation. The result retains the input and deferred callback graph while
+remaining opaque: cached alias identity and possible throws remain covered.
+Neither purity nor a fresh result is inferred. Early returned getter access,
+eager argument effects and callbacks written through a cached alias retain
+their ordinary ordering constraints.
+
+Provider identity and rule evidence appear under
+`modules.json.imported_callables.*.namespace_wrapper`. Actual use records both
+the provider derivation and the caller's own-property derivation in
+`synchronous_execution.inference_uses`.
 
 ## Audited callback factories
 

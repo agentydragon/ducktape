@@ -20,66 +20,85 @@ flowchart LR
     identity --> calls[Guarded native call summaries]
     empty --> class[Local class construction]
     native --> set[Primitive Set iteration]
-    shape[Canonical source shapes] --> function[Stable function identity]
-    function --> callback[Callback factory]
-    function --> record[Returned record construction]
+    shape --> stable[Stable source function]
+    stable --> callback[Returned callback factory]
+    stable --> record[Returned record]
     empty --> record
+    stable --> wrapper[Namespace wrapper]
+    empty --> wrapper
+    native --> wrapper
     shape --> empty
     shape --> class
     shape --> set
     class --> consumers[Purity, synchronous execution, heap ordering]
     set --> consumers
-    callback --> consumers
-    record --> consumers
 ```
 
 Native integrity checks the completed census, including dynamic scope and
 global-object mutations. The `Function` family is included so source-visible
 changes to `Function.prototype.call` can invalidate only proofs that consume
-that capability. Native call identity also checks the exact binding,
+that capability. Native prototype crossings and `Object.getPrototypeOf` result
+aliases retain an opaque native root: a later write invalidates every
+potentially affected family rather than trusting the original receiver's family.
+Native call identity also checks the exact binding,
 shadowing, and `globalThis` qualification before requiring both the global
 object and operation roots. Empty collection construction uses that identity
 judgment with the native operation's fresh-allocation model. Local class
 construction requires every native field allocation. Primitive Set iteration
 requires both Set and Array integrity and a checked source shape. The original
 restrictions on class identity, construction sites, arguments, primitive
-elements, mutation and escape remain in their structural analyses.
+elements, mutation and escape remain in their structural analyses. Callback
+factories and returned records require the same stable-function judgment;
+returned records additionally require their checked native allocation. Their
+member and capture data are carried by the resulting fact.
 
-Stable function identity requires one exact function value for the binding.
-Callback-factory conclusions compose that identity with an admitted source
-body. Returned-record conclusions additionally require an unchanged hoisted
-function and a fresh empty collection constructor; their summaries retain the
-member and capture provenance. These are timing and retained-capability facts,
-not purity or no-throw claims.
 Own-property inspection uses a separate call-local inference store. The shared
 semantic context supplies completed native identity and integrity judgments;
 the local rules derive an exact object origin, its canonical source shape, and
 the current prefix state before projecting names or descriptors. Each query
-borrows only the selected object's current property state, and that inference
-context is discarded after the call. It cannot reuse a prefix-derived fact
-after a later mutation. Name projection follows ECMAScript own-string-key
+borrows the selected object's current shape and property state, and the store
+is discarded after the call. Intermediate facts share those references; the
+final projection is moved out after its explanation is expanded. No prefix
+fact survives a later mutation. Name projection follows ECMAScript own-string-key
 ordering, while descriptor projection retains current data identities and
 accessor closures without invoking them.
+Namespace-wrapper source checks can request the same ordinary prefix-state
+fact without a native call key; the consumer composes that origin with its
+separately guarded provider proof.
+
+The namespace summary is conditional on an ordinary input and an exact literal
+`true` second argument. Its source shape preserves the private WeakMap cache,
+default reference and deferred forwarding getters. Shared rules establish the
+function's identity, native cache allocation, Object operations, Array iteration
+and Function call integrity. The caller retains an opaque result and its input
+callback graph, including possible cached aliases and throws. It gains no
+purity, fresh-result or exception-free guarantee.
 
 ## Context and results
 
 The rule context owns compact source facts and the resolved native census from
 the same preparation. It does not parse or walk source again. A changed program,
 author input, import summary or analysis policy requires a new context; no cache
-is shared by path or module name. Prepared native-call, Set, class, and callable
-proofs share one `Arc<SemanticFacts>`, including the heap projection of the
-class proof.
+is shared by path or module name. Prepared native-call, Set and class proofs
+share one `Arc<SemanticFacts>`, including the heap projection of the class
+proof.
 
 A `Judgment` has private construction. It contains a fact, direct premise keys,
 and the union of captured-input dependencies used to establish it. Reading a
 premise through `RuleContext::require` automatically records both the premise
-key and its dependencies. `RuleContext::import` carries a completed judgment
-from another immutable context and inherits its dependencies, so local bridge
-rules retain the imported proof's identity for downstream explanations.
-`RuleContext::assume` adds dependencies from a completed author or runtime
-premise; those assumptions remain distinct from inferred source facts and
-imported judgments. An evaluator cannot publish a fact after requesting an
-unproved prerequisite, even if it accidentally returns a successful value.
+key and its dependencies. Author and runtime assumptions enter through
+`assume`; an author assertion remains distinct from an inferred source fact.
+`RuleContext::import` borrows a proved judgment from an earlier immutable
+context and inherits its dependencies. Call-local rules require an explicit
+bridge key, retaining the source proof for explanations. Reports are never
+decoded back into trusted judgments.
+An evaluator cannot publish a fact after requesting an unproved prerequisite,
+even if it accidentally returns a successful value.
+
+Native judgments require a completed write census. Earlier callback-argument
+analysis can derive source-only callable facts while native judgments remain
+unavailable; it cannot use an empty, unfinished mutation set as proof of
+integrity.
 
 The typed key names the judgment, rather than a universal "safe" boolean.
 Consumers still make purpose-specific decisions: an allocation certificate does

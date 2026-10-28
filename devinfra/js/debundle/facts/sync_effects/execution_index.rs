@@ -3,6 +3,7 @@
 mod callback_arguments;
 mod prototype_properties;
 
+use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::receiver_identity::ReceiverIdentityFacts;
 use super::value_model::{
     ArrayElement, ArrayIteration, ArrayIterationMethod, CallSite, ClassSurface, ClassValueFacts,
@@ -11,15 +12,15 @@ use super::value_model::{
     static_property_name,
 };
 use crate::analysis_inputs::{
-    AnalysisInputs, NativeIntegrity, NativeIntrinsic as IntrinsicRoot, ResolvedBindingValueInput,
-    SelectedBindingValueInput, ValueInputEvidence, ValueInputRef,
+    AnalysisInputs, NamespaceWrapperSummary, NativeIntegrity, NativeIntrinsic as IntrinsicRoot,
+    ResolvedBindingValueInput, SelectedBindingValueInput, ValueInputEvidence, ValueInputRef,
 };
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
 };
 use crate::facts::callable_inference::{
-    CallableInferenceInputs, FunctionBindingFacts, ReturnedRecordCandidateFacts,
-    ReturnedRecordFacts,
+    CallableInferenceInputs, FunctionBindingFacts, NamespaceWrapperCandidateFacts,
+    ReturnedRecordCandidateFacts, ReturnedRecordFacts,
 };
 use crate::facts::global_object::unshadowed_global_object_aliases;
 use crate::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
@@ -1726,6 +1727,17 @@ fn intrinsic_roots(
                         // constructor: Array.prototype.map and Object.fromEntries
                         // are mutations of their respective intrinsic families.
                         out.insert(intrinsic(root));
+                        // These paths can cross from one intrinsic family to
+                        // another; computed keys can name either one. Preserve
+                        // the known family and add an opaque root so writes
+                        // through aliases conservatively invalidate all native
+                        // proofs that may depend on the resolved object.
+                        if property
+                            .as_deref()
+                            .is_none_or(|property| matches!(property, "__proto__" | "constructor"))
+                        {
+                            out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+                        }
                     }
                 }
             }
@@ -1754,6 +1766,29 @@ fn intrinsic_roots(
                     NativeReceiverRoot::Intrinsic(_) => None,
                 }));
                 input_roots.extend(value_roots);
+            }
+            let object_get_prototype_of = match callee.as_ref() {
+                ValueExpr::Member(receiver, Some(property), true)
+                    if property == "getPrototypeOf" =>
+                {
+                    intrinsic_roots(
+                        receiver,
+                        roots,
+                        globals,
+                        ordinary_inputs,
+                        callable_return_inputs,
+                    )
+                    .contains(&NativeReceiverRoot::Intrinsic(IntrinsicRoot::Object))
+                }
+                _ => false,
+            };
+            if matches!(value, ValueExpr::Call(..)) && object_get_prototype_of {
+                // A prototype query can cross intrinsic families or reach a
+                // builtin through an ordinary input. Keep its result opaque
+                // and carry the possible native roots through result aliases;
+                // a later write must not evade the completed census.
+                input_roots.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+                return input_roots;
             }
             if let ValueExpr::Binding(binding) = callee.as_ref()
                 && let Some(references) = callable_return_inputs.get(binding)
@@ -2642,6 +2677,11 @@ struct ExecutionIndex {
     property_key_declarations: BTreeSet<Id>,
     native_write_census: NativeWriteCensus,
     binding_declaration_writes: BTreeMap<Id, Vec<BindingDeclarationWrite>>,
+    namespace_wrapper_candidates: BTreeMap<u32, NamespaceWrapperCandidate>,
+    /// Reference bounds suffice to reject any use outside a candidate body.
+    /// Binding declarations are handled by `visit_binding_ident` separately.
+    binding_use_bounds: BTreeMap<Id, (u32, u32)>,
+    top_const_declarations: BTreeSet<Id>,
     direct_top_level_var_declaration: bool,
     direct_top_level_const_declaration: bool,
     /// Direct primitive literal initializers for simple top-level `const`
@@ -2664,6 +2704,7 @@ struct ExecutionIndex {
     /// Ordinary CallExpr syntax at lexical top level; optional calls use a
     /// conservative Call record too, but do not satisfy this witness shape.
     ordinary_top_call_sites: BTreeSet<CallSite>,
+    literal_true_second_arguments: BTreeSet<CallSite>,
     top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
     fresh_instance_field_writes: BTreeSet<SourceUnitOrdinal>,
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
@@ -2721,6 +2762,7 @@ struct ExecutionIndex {
     returned_factory_candidates: BTreeMap<u32, Span>,
     returned_record_candidates: BTreeMap<u32, ReturnedRecordCandidate>,
     returned_record_summaries: BTreeMap<Id, crate::analysis_inputs::ReturnedRecordSummary>,
+    namespace_wrapper_summaries: BTreeMap<Id, NamespaceWrapperSummary>,
 }
 
 impl Default for ExecutionIndex {
@@ -2785,6 +2827,9 @@ impl Default for ExecutionIndex {
             property_key_declarations: BTreeSet::new(),
             native_write_census: NativeWriteCensus::default(),
             binding_declaration_writes: BTreeMap::new(),
+            namespace_wrapper_candidates: BTreeMap::new(),
+            binding_use_bounds: BTreeMap::new(),
+            top_const_declarations: BTreeSet::new(),
             direct_top_level_var_declaration: false,
             direct_top_level_const_declaration: false,
             direct_primitive_const_bindings: BTreeSet::new(),
@@ -2802,6 +2847,7 @@ impl Default for ExecutionIndex {
             unindexed_accessor_owners: BTreeSet::new(),
             top_calls: Vec::new(),
             ordinary_top_call_sites: BTreeSet::new(),
+            literal_true_second_arguments: BTreeSet::new(),
             top_property_writes: Vec::new(),
             fresh_instance_field_writes: BTreeSet::new(),
             top_dynamic_property_receivers: Vec::new(),
@@ -2856,6 +2902,7 @@ impl Default for ExecutionIndex {
             returned_factory_candidates: BTreeMap::new(),
             returned_record_candidates: BTreeMap::new(),
             returned_record_summaries: BTreeMap::new(),
+            namespace_wrapper_summaries: BTreeMap::new(),
         }
     }
 }
@@ -2886,12 +2933,23 @@ impl ExecutionIndex {
         callables: CallableInferenceInputs,
     ) -> Arc<SemanticFacts> {
         let mut collection_bindings = BTreeMap::new();
-        let constructors = classes.classes.values().flatten().cloned().chain(
-            callables
-                .records
-                .values()
-                .map(|candidate| candidate.constructor.clone()),
-        );
+        let constructors = classes
+            .classes
+            .values()
+            .flatten()
+            .cloned()
+            .chain(
+                callables
+                    .records
+                    .values()
+                    .map(|candidate| candidate.constructor.clone()),
+            )
+            .chain(
+                callables
+                    .namespace_wrappers
+                    .values()
+                    .map(|candidate| candidate.weak_map.clone()),
+            );
         for binding in constructors {
             let Some(model) =
                 native_calls::native_call_model(binding.0.as_ref(), None, CallKind::New)
@@ -2922,6 +2980,13 @@ impl ExecutionIndex {
                 SemanticKey::NativeCallIdentity {
                     binding: binding.clone(),
                     intrinsic: *intrinsic,
+                    global_this_qualified: false,
+                }
+            }))
+            .chain(callables.namespace_wrappers.values().map(|candidate| {
+                SemanticKey::NativeCallIdentity {
+                    binding: candidate.object.clone(),
+                    intrinsic: IntrinsicRoot::Object,
                     global_this_qualified: false,
                 }
             }))
@@ -3491,6 +3556,15 @@ impl ExecutionIndex {
                         index
                             .returned_record_summaries
                             .insert(local.to_id(), record.clone());
+                    }
+                    if let Some(wrapper) = hints
+                        .imported_callables
+                        .get(local.sym.as_ref())
+                        .and_then(|summary| summary.namespace_wrapper.as_ref())
+                    {
+                        index
+                            .namespace_wrapper_summaries
+                            .insert(local.to_id(), wrapper.clone());
                     }
                     if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
                         && summary.supports_callback_factory()
@@ -5833,6 +5907,10 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_function(&mut self, function: &Function) {
+        if let Some(candidate) = namespace_wrapper::candidate(function) {
+            self.namespace_wrapper_candidates
+                .insert(function.span.lo.0, candidate);
+        }
         if let Some(candidate) = returned_record_candidate(function) {
             self.returned_record_candidates
                 .insert(function.span.lo.0, candidate);
@@ -5947,6 +6025,14 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_ident(&mut self, ident: &Ident) {
+        let position = ident.span.lo.0;
+        self.binding_use_bounds
+            .entry(ident.to_id())
+            .and_modify(|(first, last)| {
+                *first = (*first).min(position);
+                *last = (*last).max(position);
+            })
+            .or_insert((position, position));
         // A published outer closure can expose a nested closure's capabilities.
         for key in &self.prototype_capture_stack {
             self.prototype_callable_reads
@@ -6061,6 +6147,9 @@ impl Visit for ExecutionIndex {
             .map(|value| ValueExpr::from_expr(value));
         let direct_top_level = self.direct_top_level_var_declaration && self.current.is_none();
         if let Pat::Ident(binding) = &declarator.name {
+            if self.direct_top_level_const_declaration && direct_top_level {
+                self.top_const_declarations.insert(binding.id.to_id());
+            }
             if self.direct_top_level_const_declaration
                 && direct_top_level
                 && declarator.init.as_deref().is_some_and(primitive_literal)
@@ -6833,6 +6922,13 @@ impl Visit for ExecutionIndex {
             self.from_entries_map_calls.insert(call.span.into(), proof);
         }
         if let Callee::Expr(callee) = &call.callee {
+            if matches!(call.args.as_slice(), [first, second]
+                if first.spread.is_none()
+                    && second.spread.is_none()
+                    && matches!(second.expr.unwrap_parens(), Expr::Lit(Lit::Bool(boolean)) if boolean.value))
+            {
+                self.literal_true_second_arguments.insert(call.span.into());
+            }
             self.record_call(Call {
                 callee: ValueExpr::from_expr(callee),
                 args: call
@@ -7137,10 +7233,16 @@ pub(crate) struct InferredReturnedRecord {
     pub inference: crate::reports::schema::InferenceUse,
 }
 
+pub(crate) struct InferredNamespaceWrapper {
+    pub function_start: u32,
+    pub inference: crate::reports::schema::InferenceUse,
+}
+
 pub(crate) struct InferredCallableCapabilities {
     pub map_integrity: bool,
     pub callback_factories: BTreeMap<String, u32>,
     pub returned_records: BTreeMap<String, InferredReturnedRecord>,
+    pub namespace_wrappers: BTreeMap<String, InferredNamespaceWrapper>,
 }
 
 /// Prepared once for callable inference and the whole-program native census.
@@ -7329,6 +7431,7 @@ pub(crate) fn infer_callable_capabilities(
         map_integrity: false,
         callback_factories: BTreeMap::new(),
         returned_records: BTreeMap::new(),
+        namespace_wrappers: BTreeMap::new(),
     };
     let callback_candidate = |id: &Id, key: u32| {
         exported_locals.contains(id.0.as_ref()) && returned_callback_factory(&index, key)
@@ -7336,7 +7439,8 @@ pub(crate) fn infer_callable_capabilities(
     let has_candidate = index.hoisted_bindings.iter().any(|(id, key)| {
         callback_candidate(id, *key)
             || (exported_locals.contains(id.0.as_ref())
-                && index.returned_record_candidates.contains_key(key))
+                && (index.returned_record_candidates.contains_key(key)
+                    || index.namespace_wrapper_candidates.contains_key(key)))
     }) || index.top_assignments.iter().flatten().any(|(id, value)| {
         matches!(value, ValueExpr::Origin(ValueOrigin::Function(key)) if callback_candidate(id, *key))
     });
@@ -7357,6 +7461,7 @@ pub(crate) fn infer_callable_capabilities(
             index.semantic_facts.as_deref().unwrap(),
         );
         result.returned_records = infer_returned_records(&index, &exported_locals);
+        result.namespace_wrappers = infer_namespace_wrappers(&index, &exported_locals);
     } else {
         index.semantic_facts = Some(Arc::new(SemanticFacts::solve(
             index.completed_native_rules(),
@@ -7366,13 +7471,68 @@ pub(crate) fn infer_callable_capabilities(
     result
 }
 
+fn namespace_wrapper_inputs(
+    index: &ExecutionIndex,
+    exported_locals: &BTreeSet<String>,
+) -> BTreeMap<u32, NamespaceWrapperCandidateFacts> {
+    let mut inferred = BTreeMap::new();
+    for (binding, &function_start) in &index.hoisted_bindings {
+        if !exported_locals.contains(binding.0.as_ref()) {
+            continue;
+        }
+        let Some(candidate) = index.namespace_wrapper_candidates.get(&function_start) else {
+            continue;
+        };
+        let Some([cache_declaration]) = index
+            .binding_declaration_writes
+            .get(&candidate.cache)
+            .map(Vec::as_slice)
+        else {
+            continue;
+        };
+        let Some(ValueExpr::New(weak_map, args, _)) = &cache_declaration.initializer else {
+            continue;
+        };
+        let ValueExpr::Binding(weak_map) = weak_map.as_ref() else {
+            continue;
+        };
+        if !cache_declaration.direct_top_level
+            || !cache_declaration.simple_identifier
+            || !index.top_const_declarations.contains(&candidate.cache)
+            || index.exported_bindings.contains(&candidate.cache)
+            || index.reassigned_bindings.contains(&candidate.cache)
+            || !args.is_empty()
+            || weak_map.0.as_ref() != "WeakMap"
+            || index
+                .binding_use_bounds
+                .get(&candidate.cache)
+                .is_none_or(|(first, last)| {
+                    *first < function_start || *last >= candidate.function_end
+                })
+        {
+            continue;
+        }
+        inferred.insert(
+            function_start,
+            NamespaceWrapperCandidateFacts {
+                object: candidate.object.clone(),
+                weak_map: weak_map.clone(),
+            },
+        );
+    }
+    inferred
+}
+
 /// Retain canonical candidates without granting their semantic conclusions.
 fn callable_inference_inputs(
     index: &ExecutionIndex,
     flow: &ChunkValueFlow,
     exported_locals: &BTreeSet<String>,
 ) -> CallableInferenceInputs {
-    let mut inputs = CallableInferenceInputs::default();
+    let mut inputs = CallableInferenceInputs {
+        namespace_wrappers: namespace_wrapper_inputs(index, exported_locals),
+        ..CallableInferenceInputs::default()
+    };
     let rebound: BTreeSet<_> = index
         .top_assignments
         .iter()
@@ -7546,6 +7706,35 @@ fn infer_returned_callback_factories(
         .collect()
 }
 
+fn infer_namespace_wrappers(
+    index: &ExecutionIndex,
+    exported_locals: &BTreeSet<String>,
+) -> BTreeMap<String, InferredNamespaceWrapper> {
+    index
+        .hoisted_bindings
+        .iter()
+        .filter_map(|(binding, &function)| {
+            if !exported_locals.contains(binding.0.as_ref()) {
+                return None;
+            }
+            let semantic_facts = index.semantic_facts.as_ref()?;
+            let key = SemanticKey::NamespaceWrapper {
+                binding: binding.clone(),
+                function,
+            };
+            let SemanticFact::NamespaceWrapper(function) = semantic_facts.fact(&key)? else {
+                return None;
+            };
+            Some((
+                binding.0.to_string(),
+                InferredNamespaceWrapper {
+                    function_start: *function,
+                    inference: semantic_facts.inference_use(&key)?,
+                },
+            ))
+        })
+        .collect()
+}
 pub(crate) fn stable_ts_enum_named_data_members(
     graph: &ChunkCodeGraph,
     facts: &[StatementFacts],
