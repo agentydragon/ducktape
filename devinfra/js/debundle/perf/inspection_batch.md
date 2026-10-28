@@ -12,7 +12,7 @@ The 12 queries select `seed`, then `value0`, `value300`, through `value3000`,
 with `--limit 20 --format json` and proposals disabled. All 12 batch reports
 equal the corresponding standalone JSON reports.
 
-`perf stat -r 5 -e task-clock,cycles:u,instructions:u` measured the same
+`perf stat -r 5 -e task-clock:u,cycles:u,instructions:u` measured the same
 query sequence as 12 processes and as one batch process, with inputs staged
 before measurement. Filesystem caches were warm. Each command wrote its JSON
 report to a file. Variation below is what `perf stat` reports.
