@@ -42,7 +42,7 @@ def vitest_config(name, environment, setup_files = [], data = []):
             pragma: `node`, `happy-dom` or `jsdom`. Required: whether a package's specs get a DOM
             is its own decision, and a default would be wrong for most of them. A spec's pragma
             may name another one, whose package must then be in `data`.
-        setup_files: Source-file labels, relative or absolute, run before each spec file.
+        setup_files: File labels, relative or absolute, run before each spec file.
         data: Further runtime files, such as the packages pragmas select.
     """
     if environment not in _ENVIRONMENT_PACKAGES:

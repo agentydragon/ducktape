@@ -884,7 +884,7 @@ vitest_config(
         "//util/frontend:test_intersection_observer",
     ],
     environment = "node",
-    setup_files = ["//agentplane/app/frontend/testing:setup.ts"],
+    setup_files = ["//agentplane/app/frontend/testing:setup.js"],
 )
 
 # Python visual tests mount the app against canned inventory and runner events.
