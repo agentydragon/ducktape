@@ -267,7 +267,7 @@ function TransactionDetails({ row, currency }: { row: SpendTransactionRow; curre
   return (
     <Stack gap="sm">
       <Text size="sm">
-        <strong>AllowanceView:</strong>{" "}
+        <strong>Allowance:</strong>{" "}
         {row.disposition
           ? dispositionText[row.disposition]
           : row.allowance_in_scope
@@ -343,7 +343,7 @@ function TransactionDetails({ row, currency }: { row: SpendTransactionRow; curre
       <Divider />
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
         <Text size="sm">
-          AllowanceView balance effect: {m(row.allowance_minor_units === 0 ? 0 : -row.allowance_minor_units)}
+          Allowance balance effect: {m(row.allowance_minor_units === 0 ? 0 : -row.allowance_minor_units)}
         </Text>
         {row.pace_effects.map((effect) => (
           <Text size="sm" key={effect.period_id}>
@@ -511,7 +511,7 @@ export function TransactionsPage({
                 <>
                   <Divider />
                   <Text size="sm" fw={650}>
-                    AllowanceView bridge
+                    Allowance bridge
                   </Text>
                   <Text size="sm">
                     {m(allowance.prior_carry_minor_units)} carried + {m(allowance.monthly_minor_units)} monthly credit −{" "}
@@ -559,7 +559,7 @@ export function TransactionsPage({
                     </Table.Th>
                     <Table.Th ta="right">
                       <Group gap={4} justify="flex-end" wrap="nowrap">
-                        AllowanceView
+                        Allowance
                         <HelpTooltip
                           topic="Allowance effect"
                           description="Shows the transaction's effect on flexible allowance spending. An em dash means there is no effect. Open a row for its disposition and matching rule."
@@ -672,7 +672,7 @@ export function TransactionsPage({
                             {money(row.amount_minor_units, row.currency, true)}
                           </Text>
                           <Text size="xs" c="dimmed">
-                            AllowanceView{" "}
+                            Allowance{" "}
                             {row.allowance_minor_units === 0 ? "—" : money(row.allowance_minor_units, currency, true)}
                           </Text>
                         </Stack>

@@ -378,7 +378,7 @@ function AllowancePanel({
           <Accordion.Panel>
             <Stack gap="lg">
               <Text size="sm" c="dimmed">
-                AllowanceView began: {allowance.activation_at} at midnight ({allowance.time_zone}).
+                Allowance began: {allowance.activation_at} at midnight ({allowance.time_zone}).
               </Text>
               <Text size="sm" c="dimmed">
                 These are overlapping views of the same purchases, not separate budgets. Your available balance includes
