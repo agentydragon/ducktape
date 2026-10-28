@@ -6,8 +6,9 @@ asynchronous operations whose completion wakes reconciliation. Harness and serve
 The reusable process-lifetime controller, its resources and `Host` registry live in `supervision/`.
 Runner injects the lifecycle context, state, namespace, shared worker tracking and error callback into
 the host, then registers `Host.Controller()` in the same COSI engine as its other lifecycle
-controllers. The host does not start a second runtime. Runner's `process_launch.go` adapter captures
-the admitted owner and generation, then calls `Host.Launch`; `supervision.ManagedProcess` publishes
+controllers. The host does not start a second runtime. Runner's `launchProcess` adapter in
+`lifecycle_runtime.go` supplies the admitted owner and generation to `Host.Launch`;
+`supervision.ManagedProcess` publishes
 process intent and exposes streams and waits through that controller.
 
 Runner selects a `supervision.Supervisor` during startup while holding state ownership, before

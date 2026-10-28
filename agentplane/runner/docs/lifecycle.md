@@ -62,8 +62,8 @@ and `operations.go`. Runner controllers have their own `*_controller.go` files, 
 specs specific to each controller. The generic native-process controller, its resources, host registry,
 and `ManagedProcess` wrapper live in `supervision/controller.go`, `process_resources.go`, `host.go`,
 and `managed_process.go`. The host keeps launch callbacks and native handles; COSI resources contain
-only comparable lifecycle values, never streams or environment values. Runner's `process_launch.go`
-captures the admitted owner and generation before calling `Host.Launch`. `lifecycle_runtime.go`
+only comparable lifecycle values, never streams or environment values. Runner's `launchProcess` method
+in `lifecycle_runtime.go` supplies the admitted owner and generation to `Host.Launch`. The same file
 registers that host's controller in the same engine as Runner's other lifecycle controllers. There is
 one runtime, with one process-lifetime owner. The `ManagedProcess` API lets protocol and setup
 workers publish intent, use streams, and wait on the same controller. Completed attempts are released
@@ -183,7 +183,8 @@ incarnation's ingress acknowledgement.
 
 `bbr test //agentplane/runner/supervision:supervision_test` runs the generic process-controller cases
 against an in-memory COSI engine. `bbr test //agentplane/runner:runner_test` runs with the race
-detector and covers Runner lifecycle behavior and the `process_launch.go` integration. Validate public quiesce and status behavior
+detector and covers Runner lifecycle behavior and its integration with supervision. Validate public
+quiesce and status behavior
 with `bbr test //agentplane/sandbox_controller:sandbox_controller_test`. For native recovery and
 shared-process behavior, use `bbr test` with the affected runner targets: `//agentplane/runner:test_restart`,
 `//agentplane/runner:test_turns`, `//agentplane/runner:test_initialize`,

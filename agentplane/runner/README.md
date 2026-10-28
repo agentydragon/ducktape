@@ -21,11 +21,10 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 ## Layout
 
 - `lifecycle_runtime.go`, `lifecycle_resources.go`, and `lifecycle_inputs.go`: Runner COSI runtime
-  wiring, Runner-specific typed resources, and host input publication ([ownership](docs/lifecycle.md)).
+  wiring, Runner-specific typed resources, host input publication, and the adapter that supplies
+  admitted process owners and generations to `supervision.Host` ([ownership](docs/lifecycle.md)).
 - `runner_controller.go`, `session_controller.go`, `codex_exec_server_controller.go`, `codex_app_server_controller.go`,
   and `bootstrap_controller.go`: one lifecycle controller per file.
-- `process_launch.go`: Runner's thin adapter for capturing the admitted owner and generation before
-  launching through `supervision.Host`.
 - `operations.go`: owned asynchronous protocol/setup operations and completion routing.
 - `bootstrap.go`: durable bootstrap selection and the one-shot script effect.
 - `runner.go`: Runner construction, durable inventory, incarnation adoption and lifetime.
