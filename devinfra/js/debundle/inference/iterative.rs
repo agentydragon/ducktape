@@ -406,7 +406,7 @@ mod tests {
 
     struct RequestedRules;
 
-    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
     enum RequestedKey {
         Inputs,
         Projection,
@@ -598,7 +598,7 @@ mod tests {
             RequestedProducer::AdditionalInputs,
         ];
         assert_eq!(
-            IterativeInference::new(RequestedRules).solve_values(producers.clone()),
+            IterativeInference::new(RequestedRules).solve_values(producers),
             IterativeInference::new(RequestedRules)
                 .solve(producers)
                 .into_values(),
