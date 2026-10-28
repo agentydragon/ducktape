@@ -1,6 +1,5 @@
 # gazelle:exclude test_visual.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
-load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:openapi_typescript.bzl", "openapi_typescript")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
@@ -58,14 +57,9 @@ ts_config(
 # Wire types generated from the API's own OpenAPI document, so the page's idea of a status is the
 # Pydantic model rather than a hand-kept copy. Not checked in.
 openapi_typescript(
-    name = "_schema_types",
+    name = "schema",
     out = "api/schema.d.ts",
     schema = "//devinfra/claude/session_export:openapi_schema",
-)
-
-js_library(
-    name = "schema",
-    srcs = [":_schema_types"],
 )
 
 ts_library(

@@ -114,14 +114,9 @@ ts_config(
 # TypeScript types from the app's OpenAPI document: the inventory's models and routes. The bridge's
 # proto-JSON bodies are plain objects there; the runner's shared protocol types them.
 openapi_typescript(
-    name = "_schema_types",
+    name = "schema",
     out = "api/schema.d.ts",
     schema = "//agentplane/app:openapi_schema",
-)
-
-js_library(
-    name = "schema",
-    srcs = [":_schema_types"],
 )
 
 ts_library(

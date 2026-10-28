@@ -55,14 +55,9 @@ ts_config(
 # Wire types generated from the API's own OpenAPI document, so the dashboard's idea of a
 # quota window is the Pydantic model rather than a hand-kept copy. Not checked in.
 openapi_typescript(
-    name = "_schema_types",
+    name = "schema",
     out = "api/schema.d.ts",
     schema = "//aiquota:openapi_schema",
-)
-
-js_library(
-    name = "schema",
-    srcs = [":_schema_types"],
 )
 
 ts_library(

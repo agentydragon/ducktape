@@ -1,4 +1,3 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/js:openapi_typescript.bzl", "openapi_typescript")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
@@ -22,14 +21,9 @@ filegroup(
 )
 
 openapi_typescript(
-    name = "_schema_types",
+    name = "schema",
     out = "api/schema.d.ts",
     schema = "//props/backend:openapi_schema",
-)
-
-js_library(
-    name = "schema",
-    srcs = [":_schema_types"],
 )
 
 ts_library(

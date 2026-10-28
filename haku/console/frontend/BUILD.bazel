@@ -1,5 +1,5 @@
 # gazelle:exclude test_visual.py
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
@@ -90,14 +90,9 @@ ts_config(
 # TypeScript types generated from the backend's OpenAPI schema (reuses the API
 # Pydantic models as the wire contract). Not checked in; regenerated each build.
 openapi_typescript(
-    name = "_schema_types",
+    name = "schema",
     out = "api/schema.d.ts",
     schema = "//haku/console:openapi_schema",
-)
-
-js_library(
-    name = "schema",
-    srcs = [":_schema_types"],
 )
 
 # The exact input schemas advertised by the in-process MCP servers. Keep both the generated
