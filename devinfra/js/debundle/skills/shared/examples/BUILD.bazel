@@ -1,13 +1,21 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 exports_files(
-    ["isolated_edit.py"],
+    [
+        "isolated_edit.py",
+        "contract_examples.py",
+    ] + glob(["contract_examples/**"]),
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "isolated_edit",
     srcs = ["isolated_edit.py"],
+)
+
+py_library(
+    name = "contract_examples",
+    srcs = ["contract_examples.py"],
 )
 
 py_test(
@@ -26,6 +34,26 @@ py_test(
         "//:conftest",
         "//util/testing:undeclared_outputs",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "contract_examples_test",
+    srcs = ["contract_examples_test.py"],
+    data = [
+        "//devinfra/js/debundle",
+        "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_skill",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "DEBUNDLE_CONTRACT_ENGINE": "$(rlocationpath //devinfra/js/debundle)",
+        "DEBUNDLE_CONTRACT_NODE": "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
+        "DEBUNDLE_CONTRACT_SKILL": "$(rlocationpath //devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_skill)",
+    },
+    deps = [
+        "//:conftest",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],

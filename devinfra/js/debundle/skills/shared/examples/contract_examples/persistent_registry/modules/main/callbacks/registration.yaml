@@ -1,0 +1,3 @@
+members:
+  - selector: { binding: { name: registration } }
+  - selector: { binding: { name: observed } }

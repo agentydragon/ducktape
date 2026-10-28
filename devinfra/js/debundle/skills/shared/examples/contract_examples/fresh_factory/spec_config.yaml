@@ -1,0 +1,13 @@
+main_chunk_id: main
+module_roots:
+  main: main
+inputs:
+  root: source
+  js_list_path: js-files.txt
+write_js_tree: true
+unassigned_mode:
+  main: { kind: inline_in_entry }
+  static/peer: { kind: inline_in_entry }
+chunk_export_purity:
+  static/peer:
+    callback_factory_exports: [make]
