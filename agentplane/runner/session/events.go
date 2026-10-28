@@ -89,10 +89,14 @@ func (s *Session) apply(entry *eventlogpb.EventEntry, ids []string) {
 }
 
 func (s *Session) recordEvent(ctx context.Context, e *eventpb.Event, sources []uint64, ids []string) (*eventlogpb.EventEntry, error) {
-	// Turn transitions share the final native-write gate with exact-turn controls.
-	// Once a successor is recorded, an interrupt cannot reach its stdin under the
-	// predecessor's identity.
+	// A native receive may call this while Journal.WithBatch owns the journal
+	// lock. Commit that batch before taking writeMu so every turn transition uses
+	// the same writeMu -> journal lock order as completeTurn. Once a successor is
+	// recorded, an interrupt cannot reach its stdin under the predecessor's identity.
 	if e.GetTurnStarted() != nil || e.GetTurnCompleted() != nil {
+		if err := s.journal.CommitBatch(ctx); err != nil {
+			return nil, err
+		}
 		s.writeMu.Lock()
 		defer s.writeMu.Unlock()
 	}

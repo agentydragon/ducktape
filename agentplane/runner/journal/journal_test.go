@@ -658,6 +658,54 @@ func TestStaleTurnCompletionsDoNotClearCurrentTurnOrPoisonBatch(t *testing.T) {
 	}
 }
 
+func TestCompletionWithCorruptTurnBoundaryDoesNotPublishCheckpoint(t *testing.T) {
+	for _, corruption := range []string{"missing", "already closed"} {
+		t.Run(corruption, func(t *testing.T) {
+			journal := openTestJournal(t)
+			ctx := context.Background()
+			if _, err := journal.Append(ctx, &eventpb.Event{
+				Observation: &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: "active-turn"}},
+			}, AppendOptions{}); err != nil {
+				t.Fatal(err)
+			}
+			statement := "DELETE FROM turn_boundary WHERE turn_id = ?"
+			if corruption == "already closed" {
+				statement = "UPDATE turn_boundary SET end_cursor = 1, status = ? WHERE turn_id = ?"
+				if _, err := journal.conn.ExecContext(ctx, statement, eventpb.TurnStatus_TURN_STATUS_COMPLETED, "active-turn"); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := journal.conn.ExecContext(ctx, statement, "active-turn"); err != nil {
+				t.Fatal(err)
+			}
+
+			entry, err := journal.Append(ctx, &eventpb.Event{
+				Observation: &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{
+					TurnId: "active-turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED,
+				}},
+			}, AppendOptions{})
+			var storageErr *StorageError
+			if entry != nil || !errors.As(err, &storageErr) {
+				t.Fatalf("completion with %s boundary = entry %v, err %v; want storage error", corruption, entry, err)
+			}
+			if journal.LastCursor() != 1 || journal.RecoveryState().ThroughCursor != 1 || journal.RecoveryState().ActiveTurnID != "active-turn" {
+				t.Fatalf("failed completion published checkpoint: cursor=%d state=%+v", journal.LastCursor(), journal.RecoveryState())
+			}
+			var entries int
+			var through int64
+			var active string
+			if err := journal.conn.QueryRowContext(ctx, "SELECT count(*) FROM event_entry").Scan(&entries); err != nil {
+				t.Fatal(err)
+			}
+			if err := journal.conn.QueryRowContext(ctx, "SELECT through_cursor, active_turn_id FROM checkpoint WHERE id = 1").Scan(&through, &active); err != nil {
+				t.Fatal(err)
+			}
+			if entries != 1 || through != 1 || active != "active-turn" {
+				t.Fatalf("failed completion changed durable checkpoint: entries=%d through=%d active=%q", entries, through, active)
+			}
+		})
+	}
+}
+
 func TestFailedJournalWriteDoesNotPublishCursor(t *testing.T) {
 	journal := openTestJournal(t)
 	ctx := context.Background()
