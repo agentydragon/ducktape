@@ -178,6 +178,26 @@ pub struct ValueInputRef {
     pub input_index: usize,
 }
 
+/// Additional captured-value assertions required by an inferred proof.
+/// Structural source evidence stays on the proof's existing source identity.
+/// Empty dependencies add no captured-value premise; the analysis's baseline
+/// native and host assumptions still apply independently.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ProofDependencies {
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub value_inputs: BTreeSet<ValueInputRef>,
+}
+
+impl ProofDependencies {
+    pub fn is_empty(&self) -> bool {
+        self.value_inputs.is_empty()
+    }
+
+    pub fn extend(&mut self, other: &Self) {
+        self.value_inputs.extend(other.value_inputs.iter().cloned());
+    }
+}
+
 /// Evidence retained for an author-conditioned value refinement. The physical
 /// input path and digest identify the bytes consumed by the parser; they do not
 /// establish the external runtime premise recorded by the author.
