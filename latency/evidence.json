@@ -2,126 +2,27 @@
   "collection": {
     "started": "2026-10-27T06:24:12.846128+00:00",
     "finished": "2026-10-27T06:30:16.076449+00:00",
-    "window": [
-      "2026-10-24T04:00:00Z",
-      "2026-10-27T06:00:00Z"
-    ],
+    "window": ["2026-10-24T04:00:00Z", "2026-10-27T06:00:00Z"],
     "runs": 11418,
     "selected_runs": 3461,
     "jobs": 8867,
     "pr_population": 374,
     "sampled_prs": [
-      4806,
-      6155,
-      10322,
-      11567,
-      11785,
-      11800,
-      11804,
-      11808,
-      11811,
-      11815,
-      11820,
-      11824,
-      11827,
-      11831,
-      11836,
-      11840,
-      11843,
-      11847,
-      11851,
-      11855,
-      11859,
-      11863,
-      11867,
-      11872,
-      11875,
-      11879,
-      11883,
-      11886,
-      11890,
-      11894,
-      11898,
-      11901,
-      11905,
-      11913,
-      11920,
-      11923,
-      11927,
-      11931,
-      11935,
-      11939,
-      11943,
-      11947,
-      11951,
-      11954,
-      11958,
-      11964,
-      11968,
-      11971,
-      11975,
-      11979,
-      11983,
-      11986,
-      11990,
-      11994,
-      11998,
-      12003,
-      12007,
-      12011,
-      12014,
-      12019,
-      12028,
-      12033,
-      12041,
-      12045,
-      12049,
-      12053,
-      12056,
-      12060,
-      12067,
-      12071,
-      12074,
-      12078,
-      12082,
-      12087,
-      12090,
-      12094,
-      12098,
-      12101,
-      12105,
-      12109,
-      12113,
-      12116,
-      12120,
-      12124,
-      12128,
-      12131,
-      12135,
-      12139,
-      12143,
-      12146,
-      12150,
-      12155,
-      12160,
-      12163,
-      12167,
-      12171,
-      12175,
-      12178,
-      12182,
-      12186
+      4806, 6155, 10322, 11567, 11785, 11800, 11804, 11808, 11811, 11815, 11820,
+      11824, 11827, 11831, 11836, 11840, 11843, 11847, 11851, 11855, 11859,
+      11863, 11867, 11872, 11875, 11879, 11883, 11886, 11890, 11894, 11898,
+      11901, 11905, 11913, 11920, 11923, 11927, 11931, 11935, 11939, 11943,
+      11947, 11951, 11954, 11958, 11964, 11968, 11971, 11975, 11979, 11983,
+      11986, 11990, 11994, 11998, 12003, 12007, 12011, 12014, 12019, 12028,
+      12033, 12041, 12045, 12049, 12053, 12056, 12060, 12067, 12071, 12074,
+      12078, 12082, 12087, 12090, 12094, 12098, 12101, 12105, 12109, 12113,
+      12116, 12120, 12124, 12128, 12131, 12135, 12139, 12143, 12146, 12150,
+      12155, 12160, 12163, 12167, 12171, 12175, 12178, 12182, 12186
     ],
-    "core_job_window": [
-      "2026-10-26T06:00:00Z",
-      "2026-10-27T06:00:00Z"
-    ],
+    "core_job_window": ["2026-10-26T06:00:00Z", "2026-10-27T06:00:00Z"],
     "selection": "100 systematically spaced PR numbers among devel-base PRs updated since start; latest head, all check attempts; latest-24h core job census plus busiest 90-minute CI-arrival bucket per UTC day with 45m lookback for other workflows"
   },
-  "job_detail_window": [
-    "2026-10-26T06:00:00Z",
-    "2026-10-27T06:00:00Z"
-  ],
+  "job_detail_window": ["2026-10-26T06:00:00Z", "2026-10-27T06:00:00Z"],
   "methods": {
     "clock": "earliest in-window pull_request or pull_request_target workflow creation on the exact PR head to first reconstructed all-success state of three required contexts; latest-started attempt at each completion event",
     "population": "latest-head survivor sample, not reliability or push-to-green; superseded heads remain in run/job census",
@@ -155,11 +56,7 @@
         "require_last_push_approval": false,
         "required_review_thread_resolution": false,
         "require_extra_approval_for_unattributed_changes": true,
-        "allowed_merge_methods": [
-          "merge",
-          "squash",
-          "rebase"
-        ]
+        "allowed_merge_methods": ["merge", "squash", "rebase"]
       },
       "ruleset_source_type": "Repository",
       "ruleset_source": "agentydragon/ducktape",
@@ -225,12 +122,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": true,
       "state_at_collection": "open",
-      "run_ids": [
-        40143568806,
-        40143568744,
-        40143568801,
-        40143567685
-      ],
+      "run_ids": [40143568806, 40143568744, 40143568801, 40143567685],
       "start_proxy": "2026-10-24T23:38:35Z",
       "state": "passing",
       "first_required_green": "2026-10-24T23:43:36Z",
@@ -302,12 +194,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40107737016,
-        40107737086,
-        40107737017,
-        40107735214
-      ],
+      "run_ids": [40107737016, 40107737086, 40107737017, 40107735214],
       "start_proxy": "2026-10-24T15:36:18Z",
       "state": "passing",
       "first_required_green": "2026-10-24T15:38:04Z",
@@ -349,12 +236,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40065295484,
-        40065295501,
-        40065295528,
-        40065295474
-      ],
+      "run_ids": [40065295484, 40065295501, 40065295528, 40065295474],
       "start_proxy": "2026-10-24T05:11:42Z",
       "state": "passing",
       "first_required_green": "2026-10-24T05:18:06Z",
@@ -385,12 +267,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40072903980,
-        40072903789,
-        40072903829,
-        40072903788
-      ],
+      "run_ids": [40072903980, 40072903789, 40072903829, 40072903788],
       "start_proxy": "2026-10-24T07:07:34Z",
       "state": "passing",
       "first_required_green": "2026-10-24T07:11:22Z",
@@ -421,12 +298,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40073318941,
-        40073318830,
-        40073318877,
-        40073318946
-      ],
+      "run_ids": [40073318941, 40073318830, 40073318877, 40073318946],
       "start_proxy": "2026-10-24T07:13:57Z",
       "state": "passing",
       "first_required_green": "2026-10-24T07:17:21Z",
@@ -457,12 +329,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40074465171,
-        40074465153,
-        40074465213,
-        40074465127
-      ],
+      "run_ids": [40074465171, 40074465153, 40074465213, 40074465127],
       "start_proxy": "2026-10-24T07:31:16Z",
       "state": "passing",
       "first_required_green": "2026-10-24T07:33:32Z",
@@ -493,9 +360,7 @@
       "draft_at_collection": true,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40136569429
-      ],
+      "run_ids": [40136569429],
       "start_proxy": "2026-10-24T21:58:59Z",
       "latest_contexts": {
         "Build artifacts + imports check": "failure",
@@ -517,12 +382,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40104724187,
-        40104724186,
-        40104724216,
-        40104722759
-      ],
+      "run_ids": [40104724187, 40104724186, 40104724216, 40104722759],
       "start_proxy": "2026-10-24T14:56:31Z",
       "state": "passing",
       "first_required_green": "2026-10-24T15:01:16Z",
@@ -553,12 +413,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40106291566,
-        40106291558,
-        40106291569,
-        40106288665
-      ],
+      "run_ids": [40106291566, 40106291558, 40106291569, 40106288665],
       "start_proxy": "2026-10-24T15:17:22Z",
       "state": "passing",
       "first_required_green": "2026-10-24T15:19:05Z",
@@ -600,12 +455,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40107391347,
-        40107391366,
-        40107391303,
-        40107389486
-      ],
+      "run_ids": [40107391347, 40107391366, 40107391303, 40107389486],
       "start_proxy": "2026-10-24T15:31:48Z",
       "state": "passing",
       "first_required_green": "2026-10-24T15:36:27Z",
@@ -647,12 +497,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40109780126,
-        40109780123,
-        40109780105,
-        40109778918
-      ],
+      "run_ids": [40109780126, 40109780123, 40109780105, 40109778918],
       "start_proxy": "2026-10-24T16:03:21Z",
       "state": "passing",
       "first_required_green": "2026-10-24T16:10:13Z",
@@ -694,12 +539,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40108179447,
-        40108179452,
-        40108179482,
-        40108177718
-      ],
+      "run_ids": [40108179447, 40108179452, 40108179482, 40108177718],
       "start_proxy": "2026-10-24T15:42:08Z",
       "state": "passing",
       "first_required_green": "2026-10-24T15:45:12Z",
@@ -741,12 +581,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40115752059,
-        40115752009,
-        40115752124,
-        40115750651
-      ],
+      "run_ids": [40115752059, 40115752009, 40115752124, 40115750651],
       "start_proxy": "2026-10-24T17:21:30Z",
       "state": "passing",
       "first_required_green": "2026-10-24T17:26:33Z",
@@ -793,12 +628,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40116664479,
-        40116664595,
-        40116664508,
-        40116664445
-      ],
+      "run_ids": [40116664479, 40116664595, 40116664508, 40116664445],
       "start_proxy": "2026-10-24T17:33:29Z",
       "state": "passing",
       "first_required_green": "2026-10-24T17:43:33Z",
@@ -840,12 +670,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40118354448,
-        40118354228,
-        40118354219,
-        40118354316
-      ],
+      "run_ids": [40118354448, 40118354228, 40118354219, 40118354316],
       "start_proxy": "2026-10-24T17:55:46Z",
       "state": "passing",
       "first_required_green": "2026-10-24T17:57:31Z",
@@ -888,14 +713,8 @@
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
       "run_ids": [
-        40130610228,
-        40130610085,
-        40130610090,
-        40130610063,
-        40123098797,
-        40123098767,
-        40123098716,
-        40123097570
+        40130610228, 40130610085, 40130610090, 40130610063, 40123098797,
+        40123098767, 40123098716, 40123097570
       ],
       "start_proxy": "2026-10-24T18:57:45Z",
       "state": "passing",
@@ -948,12 +767,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40124642060,
-        40124642155,
-        40124642059,
-        40124640477
-      ],
+      "run_ids": [40124642060, 40124642155, 40124642059, 40124640477],
       "start_proxy": "2026-10-24T19:17:46Z",
       "state": "passing",
       "first_required_green": "2026-10-24T19:19:46Z",
@@ -995,12 +809,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40129828975,
-        40129829030,
-        40129828900,
-        40129828835
-      ],
+      "run_ids": [40129828975, 40129829030, 40129828900, 40129828835],
       "start_proxy": "2026-10-24T20:27:05Z",
       "state": "passing",
       "first_required_green": "2026-10-24T20:29:12Z",
@@ -1042,12 +851,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40131219720,
-        40131219568,
-        40131219474,
-        40131219466
-      ],
+      "run_ids": [40131219720, 40131219568, 40131219474, 40131219466],
       "start_proxy": "2026-10-24T20:45:30Z",
       "state": "passing",
       "first_required_green": "2026-10-24T20:50:39Z",
@@ -1089,12 +893,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40133436495,
-        40133436325,
-        40133436399,
-        40133436511
-      ],
+      "run_ids": [40133436495, 40133436325, 40133436399, 40133436511],
       "start_proxy": "2026-10-24T21:15:48Z",
       "state": "passing",
       "first_required_green": "2026-10-24T21:19:45Z",
@@ -1136,12 +935,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40135180972,
-        40135180784,
-        40135180786,
-        40135180818
-      ],
+      "run_ids": [40135180972, 40135180784, 40135180786, 40135180818],
       "start_proxy": "2026-10-24T21:39:27Z",
       "state": "passing",
       "first_required_green": "2026-10-24T21:47:11Z",
@@ -1183,12 +977,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40136742269,
-        40136742312,
-        40136742278,
-        40136740590
-      ],
+      "run_ids": [40136742269, 40136742312, 40136742278, 40136740590],
       "start_proxy": "2026-10-24T22:01:12Z",
       "state": "passing",
       "first_required_green": "2026-10-24T22:04:47Z",
@@ -1230,12 +1019,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40136721443,
-        40136721299,
-        40136721261,
-        40136721387
-      ],
+      "run_ids": [40136721443, 40136721299, 40136721261, 40136721387],
       "start_proxy": "2026-10-24T22:00:59Z",
       "state": "passing",
       "first_required_green": "2026-10-24T22:03:30Z",
@@ -1277,12 +1061,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40137422814,
-        40137422760,
-        40137422818,
-        40137422837
-      ],
+      "run_ids": [40137422814, 40137422760, 40137422818, 40137422837],
       "start_proxy": "2026-10-24T22:10:41Z",
       "state": "passing",
       "first_required_green": "2026-10-24T22:13:07Z",
@@ -1324,12 +1103,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40140681170,
-        40140680907,
-        40140680919,
-        40140680887
-      ],
+      "run_ids": [40140681170, 40140680907, 40140680919, 40140680887],
       "start_proxy": "2026-10-24T22:56:49Z",
       "state": "passing",
       "first_required_green": "2026-10-24T23:03:49Z",
@@ -1371,12 +1145,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40141612557,
-        40141612386,
-        40141612423,
-        40141612399
-      ],
+      "run_ids": [40141612557, 40141612386, 40141612423, 40141612399],
       "start_proxy": "2026-10-24T23:10:08Z",
       "state": "passing",
       "first_required_green": "2026-10-24T23:17:03Z",
@@ -1418,12 +1187,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40143070833,
-        40143070884,
-        40143070810,
-        40143070844
-      ],
+      "run_ids": [40143070833, 40143070884, 40143070810, 40143070844],
       "start_proxy": "2026-10-24T23:31:13Z",
       "state": "passing",
       "first_required_green": "2026-10-24T23:33:00Z",
@@ -1465,12 +1229,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40144071033,
-        40144070984,
-        40144070965,
-        40144071006
-      ],
+      "run_ids": [40144071033, 40144070984, 40144070965, 40144071006],
       "start_proxy": "2026-10-24T23:46:08Z",
       "state": "passing",
       "first_required_green": "2026-10-24T23:48:48Z",
@@ -1512,12 +1271,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40148990710,
-        40148990699,
-        40148990695,
-        40148989387
-      ],
+      "run_ids": [40148990710, 40148990699, 40148990695, 40148989387],
       "start_proxy": "2026-10-25T01:01:33Z",
       "state": "passing",
       "first_required_green": "2026-10-25T01:06:04Z",
@@ -1559,12 +1313,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40148597584,
-        40148597528,
-        40148597524,
-        40148595502
-      ],
+      "run_ids": [40148597584, 40148597528, 40148597524, 40148595502],
       "start_proxy": "2026-10-25T00:55:39Z",
       "state": "passing",
       "first_required_green": "2026-10-25T00:57:49Z",
@@ -1595,12 +1344,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40151324601,
-        40151324642,
-        40151324694,
-        40151324568
-      ],
+      "run_ids": [40151324601, 40151324642, 40151324694, 40151324568],
       "start_proxy": "2026-10-25T01:36:54Z",
       "state": "passing",
       "first_required_green": "2026-10-25T01:41:45Z",
@@ -1631,12 +1375,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40151616944,
-        40151616948,
-        40151616926,
-        40151616879
-      ],
+      "run_ids": [40151616944, 40151616948, 40151616926, 40151616879],
       "start_proxy": "2026-10-25T01:41:21Z",
       "state": "passing",
       "first_required_green": "2026-10-25T01:43:44Z",
@@ -1667,12 +1406,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40151812905,
-        40151812660,
-        40151812656,
-        40151812691
-      ],
+      "run_ids": [40151812905, 40151812660, 40151812656, 40151812691],
       "start_proxy": "2026-10-25T01:44:32Z",
       "state": "passing",
       "first_required_green": "2026-10-25T01:47:53Z",
@@ -1714,12 +1448,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40152138844,
-        40152138858,
-        40152138897,
-        40152138869
-      ],
+      "run_ids": [40152138844, 40152138858, 40152138897, 40152138869],
       "start_proxy": "2026-10-25T01:49:51Z",
       "state": "passing",
       "first_required_green": "2026-10-25T01:52:03Z",
@@ -1761,12 +1490,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40152351577,
-        40152351488,
-        40152351423,
-        40152351462
-      ],
+      "run_ids": [40152351577, 40152351488, 40152351423, 40152351462],
       "start_proxy": "2026-10-25T01:53:16Z",
       "state": "passing",
       "first_required_green": "2026-10-25T01:55:46Z",
@@ -1808,12 +1532,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40153632111,
-        40153631970,
-        40153631983,
-        40153632015
-      ],
+      "run_ids": [40153632111, 40153631970, 40153631983, 40153632015],
       "start_proxy": "2026-10-25T02:13:28Z",
       "state": "passing",
       "first_required_green": "2026-10-25T02:15:46Z",
@@ -1855,12 +1574,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40155011862,
-        40155011921,
-        40155012020,
-        40155011965
-      ],
+      "run_ids": [40155011862, 40155011921, 40155012020, 40155011965],
       "start_proxy": "2026-10-25T02:35:15Z",
       "state": "passing",
       "first_required_green": "2026-10-25T02:37:31Z",
@@ -1902,12 +1616,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40155727491,
-        40155727444,
-        40155727602,
-        40155727571
-      ],
+      "run_ids": [40155727491, 40155727444, 40155727602, 40155727571],
       "start_proxy": "2026-10-25T02:46:26Z",
       "state": "passing",
       "first_required_green": "2026-10-25T02:48:34Z",
@@ -1949,12 +1658,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40161029978,
-        40161029989,
-        40161029984,
-        40161028546
-      ],
+      "run_ids": [40161029978, 40161029989, 40161029984, 40161028546],
       "start_proxy": "2026-10-25T04:12:21Z",
       "state": "passing",
       "first_required_green": "2026-10-25T04:14:49Z",
@@ -1996,12 +1700,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40158593835,
-        40158593883,
-        40158593832,
-        40158593275
-      ],
+      "run_ids": [40158593835, 40158593883, 40158593832, 40158593275],
       "start_proxy": "2026-10-25T03:32:28Z",
       "state": "passing",
       "first_required_green": "2026-10-25T03:55:44Z",
@@ -2032,12 +1731,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40159004784,
-        40159004790,
-        40159004798,
-        40159003266
-      ],
+      "run_ids": [40159004784, 40159004790, 40159004798, 40159003266],
       "start_proxy": "2026-10-25T03:39:13Z",
       "state": "passing",
       "first_required_green": "2026-10-25T03:43:21Z",
@@ -2079,12 +1773,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40161560602,
-        40161560525,
-        40161560528,
-        40161559083
-      ],
+      "run_ids": [40161560602, 40161560525, 40161560528, 40161559083],
       "start_proxy": "2026-10-25T04:21:02Z",
       "state": "passing",
       "first_required_green": "2026-10-25T04:22:53Z",
@@ -2126,12 +1815,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40161211028,
-        40161211100,
-        40161211006,
-        40161210980
-      ],
+      "run_ids": [40161211028, 40161211100, 40161211006, 40161210980],
       "start_proxy": "2026-10-25T04:15:18Z",
       "state": "passing",
       "first_required_green": "2026-10-25T04:19:06Z",
@@ -2173,12 +1857,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40162573045,
-        40162573074,
-        40162573037,
-        40162573070
-      ],
+      "run_ids": [40162573045, 40162573074, 40162573037, 40162573070],
       "start_proxy": "2026-10-25T04:37:41Z",
       "state": "passing",
       "first_required_green": "2026-10-25T04:41:13Z",
@@ -2220,12 +1899,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40164100253,
-        40164099475,
-        40164100055,
-        40164100158
-      ],
+      "run_ids": [40164100253, 40164099475, 40164100055, 40164100158],
       "start_proxy": "2026-10-25T05:02:53Z",
       "state": "passing",
       "first_required_green": "2026-10-25T05:04:44Z",
@@ -2267,12 +1941,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40165289118,
-        40165289189,
-        40165289222,
-        40165289188
-      ],
+      "run_ids": [40165289118, 40165289189, 40165289222, 40165289188],
       "start_proxy": "2026-10-25T05:22:15Z",
       "state": "passing",
       "first_required_green": "2026-10-25T05:32:00Z",
@@ -2324,12 +1993,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40169511818,
-        40169511740,
-        40169511725,
-        40169509347
-      ],
+      "run_ids": [40169511818, 40169511740, 40169511725, 40169509347],
       "start_proxy": "2026-10-25T06:33:29Z",
       "state": "passing",
       "first_required_green": "2026-10-25T06:35:42Z",
@@ -2371,12 +2035,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40167308795,
-        40167308793,
-        40167308785,
-        40167308817
-      ],
+      "run_ids": [40167308795, 40167308793, 40167308785, 40167308817],
       "start_proxy": "2026-10-25T05:56:05Z",
       "state": "passing",
       "first_required_green": "2026-10-25T05:59:31Z",
@@ -2418,12 +2077,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40169877518,
-        40169877403,
-        40169877400,
-        40169877410
-      ],
+      "run_ids": [40169877518, 40169877403, 40169877400, 40169877410],
       "start_proxy": "2026-10-25T06:39:41Z",
       "state": "passing",
       "first_required_green": "2026-10-25T06:41:22Z",
@@ -2465,12 +2119,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40171202277,
-        40171201679,
-        40171201769,
-        40171199059
-      ],
+      "run_ids": [40171202277, 40171201679, 40171201769, 40171199059],
       "start_proxy": "2026-10-25T07:01:04Z",
       "state": "passing",
       "first_required_green": "2026-10-25T07:11:38Z",
@@ -2512,12 +2161,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40173241426,
-        40173241323,
-        40173241346,
-        40173240269
-      ],
+      "run_ids": [40173241426, 40173241323, 40173241346, 40173240269],
       "start_proxy": "2026-10-25T07:33:49Z",
       "state": "passing",
       "first_required_green": "2026-10-25T07:35:44Z",
@@ -2559,12 +2203,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40175226547,
-        40175226707,
-        40175226543,
-        40175224551
-      ],
+      "run_ids": [40175226547, 40175226707, 40175226543, 40175224551],
       "start_proxy": "2026-10-25T08:04:57Z",
       "state": "passing",
       "first_required_green": "2026-10-25T08:07:30Z",
@@ -2606,12 +2245,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40176313561,
-        40176313155,
-        40176313131,
-        40176313232
-      ],
+      "run_ids": [40176313561, 40176313155, 40176313131, 40176313232],
       "start_proxy": "2026-10-25T08:21:50Z",
       "state": "passing",
       "first_required_green": "2026-10-25T08:23:59Z",
@@ -2653,12 +2287,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40178206958,
-        40178206844,
-        40178206929,
-        40178206837
-      ],
+      "run_ids": [40178206958, 40178206844, 40178206929, 40178206837],
       "start_proxy": "2026-10-25T08:50:17Z",
       "state": "passing",
       "first_required_green": "2026-10-25T08:52:06Z",
@@ -2700,12 +2329,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40223144643,
-        40223144670,
-        40223144708,
-        40223142420
-      ],
+      "run_ids": [40223144643, 40223144670, 40223144708, 40223142420],
       "start_proxy": "2026-10-25T18:50:20Z",
       "state": "passing",
       "first_required_green": "2026-10-25T18:55:06Z",
@@ -2747,12 +2371,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40222702825,
-        40222702875,
-        40222702839,
-        40222699654
-      ],
+      "run_ids": [40222702825, 40222702875, 40222702839, 40222699654],
       "start_proxy": "2026-10-25T18:44:44Z",
       "state": "passing",
       "first_required_green": "2026-10-25T18:46:38Z",
@@ -2794,12 +2413,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40231882189,
-        40231882153,
-        40231882192,
-        40231879572
-      ],
+      "run_ids": [40231882189, 40231882153, 40231882192, 40231879572],
       "start_proxy": "2026-10-25T20:40:34Z",
       "state": "passing",
       "first_required_green": "2026-10-25T20:44:34Z",
@@ -2841,12 +2455,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40223180570,
-        40223180442,
-        40223180459,
-        40223180506
-      ],
+      "run_ids": [40223180570, 40223180442, 40223180459, 40223180506],
       "start_proxy": "2026-10-25T18:50:47Z",
       "state": "passing",
       "first_required_green": "2026-10-25T18:55:23Z",
@@ -2888,12 +2497,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40231843029,
-        40231843173,
-        40231843098,
-        40231843087
-      ],
+      "run_ids": [40231843029, 40231843173, 40231843098, 40231843087],
       "start_proxy": "2026-10-25T20:40:07Z",
       "state": "passing",
       "first_required_green": "2026-10-25T20:42:28Z",
@@ -2935,12 +2539,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40238968299,
-        40238968243,
-        40238968241,
-        40238968282
-      ],
+      "run_ids": [40238968299, 40238968243, 40238968241, 40238968282],
       "start_proxy": "2026-10-25T22:10:48Z",
       "state": "passing",
       "first_required_green": "2026-10-25T22:12:40Z",
@@ -2982,12 +2581,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40241222912,
-        40241222691,
-        40241222651,
-        40241222738
-      ],
+      "run_ids": [40241222912, 40241222691, 40241222651, 40241222738],
       "start_proxy": "2026-10-25T22:39:32Z",
       "state": "passing",
       "first_required_green": "2026-10-25T22:41:40Z",
@@ -3029,12 +2623,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40243436787,
-        40243436437,
-        40243436607,
-        40243435015
-      ],
+      "run_ids": [40243436787, 40243436437, 40243436607, 40243435015],
       "start_proxy": "2026-10-25T23:08:59Z",
       "state": "passing",
       "first_required_green": "2026-10-25T23:11:03Z",
@@ -3076,12 +2665,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40243938041,
-        40243938058,
-        40243938031,
-        40243936489
-      ],
+      "run_ids": [40243938041, 40243938058, 40243938031, 40243936489],
       "start_proxy": "2026-10-25T23:15:36Z",
       "state": "passing",
       "first_required_green": "2026-10-25T23:17:19Z",
@@ -3123,12 +2707,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40251575926,
-        40251576031,
-        40251576032,
-        40251574261
-      ],
+      "run_ids": [40251575926, 40251576031, 40251576032, 40251574261],
       "start_proxy": "2026-10-26T00:54:13Z",
       "state": "passing",
       "first_required_green": "2026-10-26T00:58:58Z",
@@ -3170,12 +2749,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40249119121,
-        40249119089,
-        40249119094,
-        40249117294
-      ],
+      "run_ids": [40249119121, 40249119089, 40249119094, 40249117294],
       "start_proxy": "2026-10-26T00:23:20Z",
       "state": "passing",
       "first_required_green": "2026-10-26T00:26:21Z",
@@ -3217,12 +2791,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40255555515,
-        40255555532,
-        40255555580,
-        40255553780
-      ],
+      "run_ids": [40255555515, 40255555532, 40255555580, 40255553780],
       "start_proxy": "2026-10-26T01:42:50Z",
       "state": "passing",
       "first_required_green": "2026-10-26T01:47:28Z",
@@ -3264,12 +2833,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40250473901,
-        40250473796,
-        40250473960,
-        40250473795
-      ],
+      "run_ids": [40250473901, 40250473796, 40250473960, 40250473795],
       "start_proxy": "2026-10-26T00:40:11Z",
       "state": "passing",
       "first_required_green": "2026-10-26T00:42:03Z",
@@ -3311,12 +2875,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40259247218,
-        40259247159,
-        40259247224,
-        40259246240
-      ],
+      "run_ids": [40259247218, 40259247159, 40259247224, 40259246240],
       "start_proxy": "2026-10-26T02:28:14Z",
       "state": "passing",
       "first_required_green": "2026-10-26T02:31:55Z",
@@ -3358,12 +2917,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40255423237,
-        40255422697,
-        40255422901,
-        40255422765
-      ],
+      "run_ids": [40255423237, 40255422697, 40255422901, 40255422765],
       "start_proxy": "2026-10-26T01:41:10Z",
       "state": "passing",
       "first_required_green": "2026-10-26T01:43:03Z",
@@ -3405,12 +2959,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40259775902,
-        40259775901,
-        40259775975,
-        40259774428
-      ],
+      "run_ids": [40259775902, 40259775901, 40259775975, 40259774428],
       "start_proxy": "2026-10-26T02:34:34Z",
       "state": "passing",
       "first_required_green": "2026-10-26T02:36:47Z",
@@ -3453,11 +3002,7 @@
       "mergeable_at_collection": false,
       "state_at_collection": "closed",
       "run_ids": [
-        40262574511,
-        40262574456,
-        40262574390,
-        40262574388,
-        40262571794,
+        40262574511, 40262574456, 40262574390, 40262574388, 40262571794,
         40262571780
       ],
       "start_proxy": "2026-10-26T03:08:24Z",
@@ -3490,12 +3035,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": true,
       "state_at_collection": "closed",
-      "run_ids": [
-        40263222924,
-        40263222874,
-        40263222868,
-        40263220203
-      ],
+      "run_ids": [40263222924, 40263222874, 40263222868, 40263220203],
       "start_proxy": "2026-10-26T03:16:01Z",
       "state": "passing",
       "first_required_green": "2026-10-26T03:19:16Z",
@@ -3526,12 +3066,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40275847383,
-        40275847418,
-        40275847371,
-        40275845699
-      ],
+      "run_ids": [40275847383, 40275847418, 40275847371, 40275845699],
       "start_proxy": "2026-10-26T05:44:23Z",
       "state": "passing",
       "first_required_green": "2026-10-26T05:46:25Z",
@@ -3573,12 +3108,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40266547953,
-        40266547892,
-        40266547922,
-        40266547898
-      ],
+      "run_ids": [40266547953, 40266547892, 40266547922, 40266547898],
       "start_proxy": "2026-10-26T03:56:55Z",
       "state": "passing",
       "first_required_green": "2026-10-26T03:59:28Z",
@@ -3609,12 +3139,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40271727004,
-        40271727036,
-        40271726998,
-        40271723391
-      ],
+      "run_ids": [40271727004, 40271727036, 40271726998, 40271723391],
       "start_proxy": "2026-10-26T04:57:45Z",
       "state": "passing",
       "first_required_green": "2026-10-26T05:00:47Z",
@@ -3645,12 +3170,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40276860365,
-        40276860257,
-        40276860293,
-        40276857021
-      ],
+      "run_ids": [40276860365, 40276860257, 40276860293, 40276857021],
       "start_proxy": "2026-10-26T05:55:18Z",
       "state": "passing",
       "first_required_green": "2026-10-26T05:58:23Z",
@@ -3681,12 +3201,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40276357727,
-        40276357532,
-        40276357509,
-        40276357420
-      ],
+      "run_ids": [40276357727, 40276357532, 40276357509, 40276357420],
       "start_proxy": "2026-10-26T05:49:57Z",
       "state": "passing",
       "first_required_green": "2026-10-26T05:52:58Z",
@@ -3728,12 +3243,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40277313232,
-        40277313198,
-        40277313180,
-        40277313229
-      ],
+      "run_ids": [40277313232, 40277313198, 40277313180, 40277313229],
       "start_proxy": "2026-10-26T06:00:15Z",
       "state": "passing",
       "first_required_green": "2026-10-26T06:02:41Z",
@@ -3775,12 +3285,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40283044908,
-        40283044801,
-        40283044811,
-        40283041699
-      ],
+      "run_ids": [40283044908, 40283044801, 40283044811, 40283041699],
       "start_proxy": "2026-10-26T06:59:21Z",
       "state": "passing",
       "first_required_green": "2026-10-26T07:11:11Z",
@@ -3811,12 +3316,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40281005485,
-        40281005322,
-        40281005379,
-        40281005314
-      ],
+      "run_ids": [40281005485, 40281005322, 40281005379, 40281005314],
       "start_proxy": "2026-10-26T06:38:25Z",
       "state": "passing",
       "first_required_green": "2026-10-26T06:40:20Z",
@@ -3858,12 +3358,7 @@
       "draft_at_collection": true,
       "mergeable_at_collection": true,
       "state_at_collection": "closed",
-      "run_ids": [
-        40281908289,
-        40281908415,
-        40281908332,
-        40281906089
-      ],
+      "run_ids": [40281908289, 40281908415, 40281908332, 40281906089],
       "start_proxy": "2026-10-26T06:47:41Z",
       "state": "passing",
       "first_required_green": "2026-10-26T06:52:14Z",
@@ -3894,12 +3389,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40284535116,
-        40284535009,
-        40284534990,
-        40284533002
-      ],
+      "run_ids": [40284535116, 40284535009, 40284534990, 40284533002],
       "start_proxy": "2026-10-26T07:14:02Z",
       "state": "passing",
       "first_required_green": "2026-10-26T07:16:24Z",
@@ -3941,12 +3431,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40287665923,
-        40287665805,
-        40287665813,
-        40287663212
-      ],
+      "run_ids": [40287665923, 40287665805, 40287665813, 40287663212],
       "start_proxy": "2026-10-26T07:44:40Z",
       "state": "passing",
       "first_required_green": "2026-10-26T07:50:12Z",
@@ -3977,12 +3462,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40291972277,
-        40291972244,
-        40291972323,
-        40291969224
-      ],
+      "run_ids": [40291972277, 40291972244, 40291972323, 40291969224],
       "start_proxy": "2026-10-26T08:23:49Z",
       "state": "passing",
       "first_required_green": "2026-10-26T08:26:27Z",
@@ -4013,12 +3493,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40295293319,
-        40295292830,
-        40295292902,
-        40295292886
-      ],
+      "run_ids": [40295293319, 40295292830, 40295292902, 40295292886],
       "start_proxy": "2026-10-26T08:52:19Z",
       "state": "passing",
       "first_required_green": "2026-10-26T09:17:09Z",
@@ -4049,12 +3524,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40366761859,
-        40366761699,
-        40366761686,
-        40366755800
-      ],
+      "run_ids": [40366761859, 40366761699, 40366761686, 40366755800],
       "start_proxy": "2026-10-26T17:14:33Z",
       "state": "passing",
       "first_required_green": "2026-10-26T17:24:43Z",
@@ -4085,12 +3555,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40369603527,
-        40369603460,
-        40369603497,
-        40369600559
-      ],
+      "run_ids": [40369603527, 40369603460, 40369603497, 40369600559],
       "start_proxy": "2026-10-26T17:32:39Z",
       "state": "passing",
       "first_required_green": "2026-10-26T17:38:05Z",
@@ -4121,12 +3586,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40409787757,
-        40409787925,
-        40409787673,
-        40409788220
-      ],
+      "run_ids": [40409787757, 40409787925, 40409787673, 40409788220],
       "start_proxy": "2026-10-26T22:06:09Z",
       "state": "passing",
       "first_required_green": "2026-10-26T22:09:15Z",
@@ -4168,12 +3628,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40418624413,
-        40418624572,
-        40418624485,
-        40418624410
-      ],
+      "run_ids": [40418624413, 40418624572, 40418624485, 40418624410],
       "start_proxy": "2026-10-26T23:16:37Z",
       "state": "passing",
       "first_required_green": "2026-10-26T23:18:40Z",
@@ -4215,12 +3670,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40422001986,
-        40422001977,
-        40422002030,
-        40422001931
-      ],
+      "run_ids": [40422001986, 40422001977, 40422002030, 40422001931],
       "start_proxy": "2026-10-26T23:46:16Z",
       "state": "passing",
       "first_required_green": "2026-10-27T00:03:19Z",
@@ -4251,12 +3701,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40435681887,
-        40435681953,
-        40435681943,
-        40435679985
-      ],
+      "run_ids": [40435681887, 40435681953, 40435681943, 40435679985],
       "start_proxy": "2026-10-27T01:58:20Z",
       "state": "passing",
       "first_required_green": "2026-10-27T02:01:55Z",
@@ -4287,12 +3732,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40442519772,
-        40442519741,
-        40442519736,
-        40442519930
-      ],
+      "run_ids": [40442519772, 40442519741, 40442519736, 40442519930],
       "start_proxy": "2026-10-27T03:08:48Z",
       "state": "passing",
       "first_required_green": "2026-10-27T03:20:02Z",
@@ -4335,16 +3775,8 @@
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
       "run_ids": [
-        40448232193,
-        40448232032,
-        40448232160,
-        40448232078,
-        40448232098,
-        40448232038,
-        40448232125,
-        40448232135,
-        40448232043,
-        40448232152
+        40448232193, 40448232032, 40448232160, 40448232078, 40448232098,
+        40448232038, 40448232125, 40448232135, 40448232043, 40448232152
       ],
       "start_proxy": "2026-10-27T04:10:06Z",
       "state": "passing",
@@ -4376,12 +3808,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40452075203,
-        40452075229,
-        40452075219,
-        40452073074
-      ],
+      "run_ids": [40452075203, 40452075229, 40452075219, 40452073074],
       "start_proxy": "2026-10-27T04:51:55Z",
       "state": "passing",
       "first_required_green": "2026-10-27T05:04:13Z",
@@ -4412,12 +3839,7 @@
       "draft_at_collection": false,
       "mergeable_at_collection": null,
       "state_at_collection": "closed",
-      "run_ids": [
-        40454504747,
-        40454504153,
-        40454504035,
-        40454503959
-      ],
+      "run_ids": [40454504747, 40454504153, 40454504035, 40454503959],
       "start_proxy": "2026-10-27T05:17:46Z",
       "state": "passing",
       "first_required_green": "2026-10-27T05:28:38Z",
@@ -4460,15 +3882,8 @@
       "mergeable_at_collection": true,
       "state_at_collection": "open",
       "run_ids": [
-        40457626137,
-        40457625995,
-        40457626148,
-        40457626095,
-        40457626096,
-        40457626086,
-        40457626015,
-        40457623230,
-        40457623275
+        40457626137, 40457625995, 40457626148, 40457626095, 40457626096,
+        40457626086, 40457626015, 40457623230, 40457623275
       ],
       "start_proxy": "2026-10-27T05:50:46Z",
       "latest_contexts": {
@@ -5845,7 +5260,7 @@
       }
     ]
   },
-  "source_devel_commit": "53c5ec8bde044fc0ca3b9959cf56f2b73baba641",
+  "source_devel_commit": "01d15ce5f3d06d9c6554a93329b8c5eb4994b417",
   "measurement_source_devel_commit": "f24d1e727184d750f299bbe88b89880fe4865687",
   "profile_cases": [
     {
@@ -6617,9 +6032,7 @@
         "snapshot_configuration_hash": "b506fa68da27beb5c294cde67337516ce2589056ce68becddfc62db69e7de6d5",
         "timeline": "seconds after start: node Ready 12.1, images imported 41.4, CRDs applied 42.3, manifests applied 46.4, Deployments Available 72.2, stack ready 72.4",
         "input_download_bytes": 0,
-        "server_log_keys": [
-          "vm_log_tail.txt"
-        ],
+        "server_log_keys": ["vm_log_tail.txt"],
         "worker_group": "baseline-worker"
       },
       {
@@ -6632,9 +6045,7 @@
         "snapshot_configuration_hash": "b8cfb7bca34b311c2a6e86d5d33036b8027f27db62446222e2207b6e6a69a054",
         "timeline": "seconds after start: node Ready 18.5, images imported 117.3, CRDs applied 118.0, manifests applied 122.7, Deployments Available 147.9, stack ready 148.2",
         "input_download_bytes": "1952559299",
-        "server_log_keys": [
-          "vm_log_tail.txt"
-        ],
+        "server_log_keys": ["vm_log_tail.txt"],
         "worker_group": "opt-out-worker"
       },
       {
@@ -6647,9 +6058,7 @@
         "snapshot_configuration_hash": "b8cfb7bca34b311c2a6e86d5d33036b8027f27db62446222e2207b6e6a69a054",
         "timeline": "seconds after start: node Ready 9.3, images imported 15.6, CRDs applied 16.3, manifests applied 21.4, Deployments Available 45.3, stack ready 45.5",
         "input_download_bytes": 0,
-        "server_log_keys": [
-          "vm_log_tail.txt"
-        ],
+        "server_log_keys": ["vm_log_tail.txt"],
         "worker_group": "opt-out-worker"
       },
       {
@@ -6662,9 +6071,7 @@
         "snapshot_configuration_hash": "b506fa68da27beb5c294cde67337516ce2589056ce68becddfc62db69e7de6d5",
         "timeline": "seconds after start: node Ready 11.1, images imported 34.1, CRDs applied 35.0, manifests applied 38.4, Deployments Available 64.3, stack ready 64.7",
         "input_download_bytes": 0,
-        "server_log_keys": [
-          "vm_log_tail.txt"
-        ],
+        "server_log_keys": ["vm_log_tail.txt"],
         "worker_group": "baseline-worker"
       }
     ],
@@ -6862,10 +6269,7 @@
         "--invocation_id=5b904de0-5d8f-4e29-9ec0-b6ad3d374e08"
       ]
     ],
-    "return_codes": [
-      0,
-      0
-    ],
+    "return_codes": [0, 0],
     "scope": "Concurrent feasibility smoke on populated local Nix store and remote Bazel; not CI-host timing, import check coverage, or a measured speedup. All commands awaited and both statuses retained.",
     "historical_ci_overlap_ceiling_s": {
       "n": 147,
@@ -40426,102 +39830,33 @@
   },
   "attribution": "not collected",
   "validation": {
-    "status": "passed focused source/numeric integrity checks and exact-byte post-merge desktop/mobile browser review",
-    "prior_snapshot": {
-      "status": "passed and visually reviewed",
-      "report_sha256": "d951506dcf5f173519f9fc049152f1486e5a297173db78253efdbc6879e8629d",
-      "numeric_checks": "exact head/check SHA association; percentile/count totals; 345 mainline IDs reconcile to target history; all 129 conclusive PR jobs covered; all 15 shard/control cases exactly once; 674 target pages checked against totalCount",
-      "first_browser_attempt": "5b904de0-5d8f-4e29-9ec0-b6ad3d374e09 failed analysis because temporary target main was omitted; corrected before browser execution",
-      "browser_invocation": "5b904de0-5d8f-4e29-9ec0-b6ad3d374e12",
-      "prior_browser_invocation": "5b904de0-5d8f-4e29-9ec0-b6ad3d374e10",
-      "browser_cases": 2,
-      "viewports": [
-        "1280x900",
-        "390x844"
-      ],
-      "checks": [
-        "pinned Chromium on RBE through deterministic_browser_context and VisualPage.capture",
-        "page content readiness",
-        "no document horizontal overflow",
-        "native disclosure opens and closes",
-        "exact formatted report bytes reviewed"
-      ],
-      "screenshots_inspected": [
-        "latency-desktop-overview",
-        "latency-mobile-overview",
-        "latency-desktop-experiments",
-        "latency-desktop-actions-final",
-        "latency-mobile-actions-final"
-      ]
-    },
-    "numeric_checks": "PR CI action timestamps and gate order; five baseline XML suites reconcile to case totals; isolated grouped XML has 10/10 cases and both harnesses; source pins and counts checked; new HTML anchors unique; fresh 24h core-job and 90m all-workflow run/job counts reconcile; assigned runner and first-step timestamps checked; half-open clipped occupancy/nearest-rank queues verified; four exact-head job clocks and canceled action timestamps linked",
-    "report_sha256": "c8a05e28620033362d427778c1723700f8e5715709da8ac67ea08db64531161e",
-    "previous_html_browser_review": {
-      "runner_invocation": "84c79de3-acb5-49ae-ae7f-6d9e8721a34d",
-      "bazel_invocation": "25416ace-ddcc-4f43-a660-6fc69109b860",
-      "viewports": [
-        "1280x900",
-        "390x844"
-      ],
-      "checks": [
-        "exact HTML bytes copied into browser test data and SHA-256 matched",
-        "h1 visible and content ready",
-        "no document horizontal overflow",
-        "native disclosure opens and closes",
-        "screenshots visually inspected at desktop and mobile"
-      ],
-      "screenshots": [
-        "latency-desktop-overview",
-        "latency-desktop-burst",
-        "latency-desktop-vm-mcp",
-        "latency-desktop-actions",
-        "latency-mobile-overview",
-        "latency-mobile-burst",
-        "latency-mobile-vm-mcp",
-        "latency-mobile-actions"
-      ]
-    },
-    "focused_update_checks": {
-      "report_sha256": "c8a05e28620033362d427778c1723700f8e5715709da8ac67ea08db64531161e",
-      "historical_collection_and_cohort_fields_unchanged": true,
-      "source_devel_sha_checked_against_origin_devel": "53c5ec8bde044fc0ca3b9959cf56f2b73baba641",
-      "pr_head_kept_separate_from_devel_source": "88fb88609842d9c7f6d4333190d1233f0fd5302a",
-      "retry_counts_and_durations_cross_checked_against_selected_json": true,
-      "ci_child_option_cross_checked": "remote_retries=0",
-      "visual_review": "passed"
-    },
+    "status": "passed",
+    "prior_snapshot": "766ecb62698c7844a9cf0c4f225ad77abb7396c0",
+    "report_sha256": "9d5bc0eb284faa81614da8c6ce02c818a3803d24a2d2d988af3599ebfbd47345",
     "browser_review": {
-      "runner_invocation": "4b2a907c-14a7-43ae-b9bf-400125ce916f",
-      "bazel_invocation": "53c8a9ab-2579-481b-a101-20f817898805",
-      "report_sha256": "c8a05e28620033362d427778c1723700f8e5715709da8ac67ea08db64531161e",
+      "invocation": "7f61b181-6b2a-46cb-884a-7cc031c3c355",
+      "target": "//devinfra/ci/reports:slow_report_review",
+      "result": "PASSED",
       "viewports": [
-        "1280x900",
-        "390x844"
+        [1280, 900],
+        [390, 844]
       ],
-      "checks": [
-        "exact report bytes copied to RBE browser input",
-        "content readiness and h1 visibility",
-        "no document horizontal overflow; wide tables scroll within their containers",
-        "native disclosure opens and closes",
-        "overview, retry evidence and recommendations screenshots inspected at desktop and mobile"
+      "captures_per_viewport": [
+        "overview",
+        "browser-probe",
+        "new-profiles",
+        "decisions"
       ],
-      "screenshots_inspected": [
-        "latency-desktop-overview",
-        "latency-desktop-remote-retries",
-        "latency-desktop-actions",
-        "latency-mobile-overview",
-        "latency-mobile-remote-retries",
-        "latency-mobile-actions"
-      ]
-    }
+      "visual_inspection": "Desktop and mobile overview and browser comparison screenshots inspected; readable layout and table scrolling, no page overflow."
+    },
+    "numeric_checks": "Both browser arms have identical 48 unique case IDs; Debundle retains full synthetic dimensions and unchanged Node oracle. Fresh originating execution clocks only in ranking.",
+    "privacy": "Raw execution records, logs, profiles and worker identities excluded from new published evidence; inherited evidence retained."
   },
   "recommendations": [
     {
       "rank": 1,
       "track": "measure landed CI zero-retry policy",
-      "files": [
-        ".bazelrc"
-      ],
+      "files": [".bazelrc"],
       "mechanism": "PR #12468 sets build:ci --remote_retries=0. This suppresses Bazel action retries for CI builds, including retries for unrelated transient remote errors; it is not limited to CANCELLED.",
       "expected_gain": "May suppress a same-action replacement caused by retrying a terminal CANCELLED response. No CI feedback, remote compute, or fleet saving is quantified.",
       "risk": "All Bazel remote retries in CI are disabled, which weakens recovery from unrelated transient remote errors.",
@@ -40560,10 +39895,7 @@
   ],
   "vm_mcp_followup": {
     "scope": "Focused post-window selection and temporary source-patch compatibility probe, not a new PR population census. Broad cohorts elsewhere in this file remain the 2026-10-24T04:00Z to 2026-10-27T06:00Z sample.",
-    "window_utc": [
-      "2026-10-27T19:19:35Z",
-      "2026-10-27T21:09:22Z"
-    ],
+    "window_utc": ["2026-10-27T19:19:35Z", "2026-10-27T21:09:22Z"],
     "source_review_devel_commit": "bddd9cd74d9cc1e3aaa80ba2662c633884ab761e",
     "pr_ci": {
       "github_run_url": "https://github.com/agentydragon/ducktape/actions/runs/40570475031",
@@ -40592,11 +39924,7 @@
           "images_imported": 91.4,
           "stack_ready": 133.7
         },
-        "virt_launcher_pod_running_s": [
-          19.759,
-          19.238,
-          17.073
-        ],
+        "virt_launcher_pod_running_s": [19.759, 19.238, 17.073],
         "originating_execution": {
           "queue_before_worker_s": 0.132,
           "process_start_utc": "2026-10-27T19:38:38.061478Z",
@@ -40691,18 +40019,9 @@
       "Sharding A/B had different workers/snapshot state; 14.585s invocation difference is not treatment effect."
     ],
     "mcp_case_group_ranges_s": {
-      "four_bff_decisions": [
-        95.672,
-        102.692
-      ],
-      "two_launcher_scenarios": [
-        109.571,
-        117.434
-      ],
-      "eleven_cases_after_first": [
-        337.78,
-        351.095
-      ]
+      "four_bff_decisions": [95.672, 102.692],
+      "two_launcher_scenarios": [109.571, 117.434],
+      "eleven_cases_after_first": [337.78, 351.095]
     },
     "bff_grouping_spike": {
       "invocation_url": "https://app.buildbuddy.io/invocation/7fb14a28-324e-440d-bb23-7f8d8d8acccb",
@@ -40722,10 +40041,7 @@
     }
   },
   "post_window_queue_contention": {
-    "window_utc": [
-      "2026-10-27T19:00:00Z",
-      "2026-10-27T20:30:00Z"
-    ],
+    "window_utc": ["2026-10-27T19:00:00Z", "2026-10-27T20:30:00Z"],
     "all_workflow_lookback_utc": "2026-10-27T17:00:00Z",
     "all_workflow_collection": {
       "start": "2026-10-27T17:00:00Z",
@@ -41269,11 +40585,7 @@
         "pr_head_sha": "ca59df9308955e6d3f03a2a169939933ce24e113",
         "tested_merge_candidate_sha": "d7463aaaea34f7455dcd67f56535d06a2fff3eaa",
         "vm_cases_passed": 3,
-        "vm_case_tail_s": [
-          15.22056,
-          15.463325,
-          15.895159
-        ],
+        "vm_case_tail_s": [15.22056, 15.463325, 15.895159],
         "shutdown_states": [
           "guest shutdown completion",
           "kernel poweroff",
@@ -41402,16 +40714,8 @@
     "remote_fetch_base": "d217f55b90f715223e4e5111b9299465b8bb7a04",
     "effective_source_note": "bbr fetched the remote base and applied the recorded reverse patch to restore the pinned local devel source tree; the remote commitSha alone does not identify the effective source tree.",
     "target": "//agentplane/system_tests:test_mcp",
-    "command_flags": [
-      "--nocache_test_results",
-      "--test_output=errors"
-    ],
-    "planned_order": [
-      "A1",
-      "B1",
-      "B2",
-      "A2"
-    ],
+    "command_flags": ["--nocache_test_results", "--test_output=errors"],
+    "planned_order": ["A1", "B1", "B2", "A2"],
     "A_definition": "Existing 12-item target, separate fresh allow and deny Sandbox/session per harness.",
     "B_definition": "10-item target, one fresh Sandbox/session per harness, DENY then ALLOW using distinct Action requests, markers and idempotency keys.",
     "B_candidate_patch_sha256": "8ff68cfb1f7a05245194ed175ff297a7b8c5d9059b9e2344d70a7ff6405860f6",
@@ -41586,10 +40890,7 @@
       }
     ],
     "matched_pair": {
-      "run_ids": [
-        "A1",
-        "B1"
-      ],
+      "run_ids": ["A1", "B1"],
       "A1_bff_decision_case_xml_seconds": 95.592,
       "B1_bff_decision_case_xml_seconds": 50.277,
       "B1_minus_A1_bff_decision_case_xml_seconds": -45.315,
@@ -41633,14 +40934,8 @@
       "interpretation": "The action digest is identical within each source variant; it does not control for the Firecracker snapshot/startup state observed across runs."
     },
     "variant_aggregate": {
-      "baseline_run_ids": [
-        "A1",
-        "A2"
-      ],
-      "reuse_run_ids": [
-        "B1",
-        "B2"
-      ],
+      "baseline_run_ids": ["A1", "A2"],
+      "reuse_run_ids": ["B1", "B2"],
       "runs_per_variant": 2,
       "all_test_executions_passed": 44,
       "baseline_bff_decision_case_xml_mean_seconds": 94.553,
@@ -41795,6 +41090,3451 @@
       "action_execution_completed_utc": "2026-10-27T20:37:27.559Z",
       "action_link_type": "NEW (1); same digest also has synthetic cancelled row",
       "interpretation": "This historical observation is retained in the existing remote_cancellation_case evidence above. One newly linked same-digest execution started after the declared test invocation cancel request was acknowledged. A hedge or retry remains possible; server reason, exclusive ownership, physical worker stop, test verdict, and population rate are unresolved."
+    }
+  },
+  "prior_snapshot_validation": {
+    "status": "passed focused source/numeric integrity checks and exact-byte post-merge desktop/mobile browser review",
+    "prior_snapshot": {
+      "status": "passed and visually reviewed",
+      "report_sha256": "d951506dcf5f173519f9fc049152f1486e5a297173db78253efdbc6879e8629d",
+      "numeric_checks": "exact head/check SHA association; percentile/count totals; 345 mainline IDs reconcile to target history; all 129 conclusive PR jobs covered; all 15 shard/control cases exactly once; 674 target pages checked against totalCount",
+      "first_browser_attempt": "5b904de0-5d8f-4e29-9ec0-b6ad3d374e09 failed analysis because temporary target main was omitted; corrected before browser execution",
+      "browser_invocation": "5b904de0-5d8f-4e29-9ec0-b6ad3d374e12",
+      "prior_browser_invocation": "5b904de0-5d8f-4e29-9ec0-b6ad3d374e10",
+      "browser_cases": 2,
+      "viewports": ["1280x900", "390x844"],
+      "checks": [
+        "pinned Chromium on RBE through deterministic_browser_context and VisualPage.capture",
+        "page content readiness",
+        "no document horizontal overflow",
+        "native disclosure opens and closes",
+        "exact formatted report bytes reviewed"
+      ],
+      "screenshots_inspected": [
+        "latency-desktop-overview",
+        "latency-mobile-overview",
+        "latency-desktop-experiments",
+        "latency-desktop-actions-final",
+        "latency-mobile-actions-final"
+      ]
+    },
+    "numeric_checks": "PR CI action timestamps and gate order; five baseline XML suites reconcile to case totals; isolated grouped XML has 10/10 cases and both harnesses; source pins and counts checked; new HTML anchors unique; fresh 24h core-job and 90m all-workflow run/job counts reconcile; assigned runner and first-step timestamps checked; half-open clipped occupancy/nearest-rank queues verified; four exact-head job clocks and canceled action timestamps linked",
+    "report_sha256": "c8a05e28620033362d427778c1723700f8e5715709da8ac67ea08db64531161e",
+    "previous_html_browser_review": {
+      "runner_invocation": "84c79de3-acb5-49ae-ae7f-6d9e8721a34d",
+      "bazel_invocation": "25416ace-ddcc-4f43-a660-6fc69109b860",
+      "viewports": ["1280x900", "390x844"],
+      "checks": [
+        "exact HTML bytes copied into browser test data and SHA-256 matched",
+        "h1 visible and content ready",
+        "no document horizontal overflow",
+        "native disclosure opens and closes",
+        "screenshots visually inspected at desktop and mobile"
+      ],
+      "screenshots": [
+        "latency-desktop-overview",
+        "latency-desktop-burst",
+        "latency-desktop-vm-mcp",
+        "latency-desktop-actions",
+        "latency-mobile-overview",
+        "latency-mobile-burst",
+        "latency-mobile-vm-mcp",
+        "latency-mobile-actions"
+      ]
+    },
+    "focused_update_checks": {
+      "report_sha256": "c8a05e28620033362d427778c1723700f8e5715709da8ac67ea08db64531161e",
+      "historical_collection_and_cohort_fields_unchanged": true,
+      "source_devel_sha_checked_against_origin_devel": "53c5ec8bde044fc0ca3b9959cf56f2b73baba641",
+      "pr_head_kept_separate_from_devel_source": "88fb88609842d9c7f6d4333190d1233f0fd5302a",
+      "retry_counts_and_durations_cross_checked_against_selected_json": true,
+      "ci_child_option_cross_checked": "remote_retries=0",
+      "visual_review": "passed"
+    },
+    "browser_review": {
+      "runner_invocation": "4b2a907c-14a7-43ae-b9bf-400125ce916f",
+      "bazel_invocation": "53c8a9ab-2579-481b-a101-20f817898805",
+      "report_sha256": "c8a05e28620033362d427778c1723700f8e5715709da8ac67ea08db64531161e",
+      "viewports": ["1280x900", "390x844"],
+      "checks": [
+        "exact report bytes copied to RBE browser input",
+        "content readiness and h1 visibility",
+        "no document horizontal overflow; wide tables scroll within their containers",
+        "native disclosure opens and closes",
+        "overview, retry evidence and recommendations screenshots inspected at desktop and mobile"
+      ],
+      "screenshots_inspected": [
+        "latency-desktop-overview",
+        "latency-desktop-remote-retries",
+        "latency-desktop-actions",
+        "latency-mobile-overview",
+        "latency-mobile-remote-retries",
+        "latency-mobile-actions"
+      ]
+    }
+  },
+  "prior_snapshot_manifest": {
+    "source_devel_commit": "53c5ec8bde044fc0ca3b9959cf56f2b73baba641",
+    "window_start_utc": "2026-10-24T04:00:00Z",
+    "window_end_utc": "2026-10-28T02:00:23.832Z",
+    "published_at_utc": "2026-10-28T04:41:31.067143+00:00",
+    "attribution": "not collected",
+    "historical_report_source_devel_commit": "bf8043f425ea1b2593cbfa914e1ef16388e7a3da",
+    "draft_updated_at_utc": "2026-10-28T04:39:29.364111+00:00",
+    "supplemental_evidence": {
+      "kind": "focused cancellation/retry experiments and PR configuration validation",
+      "probe_window_start_utc": "2026-10-28T03:33:13.320902Z",
+      "probe_window_end_utc": "2026-10-28T04:08:03.141Z",
+      "pr_validation_observed_at_utc": "2026-10-28T04:30:16Z",
+      "source_pr": "https://github.com/agentydragon/ducktape/pull/12468",
+      "source_pr_head_sha": "88fb88609842d9c7f6d4333190d1233f0fd5302a",
+      "source_devel_commit": "53c5ec8bde044fc0ca3b9959cf56f2b73baba641",
+      "population_census_collected": false,
+      "attribution": "not collected",
+      "source_pr_merged_at_utc": "2026-10-28T04:35:45Z",
+      "source_pr_merge_commit": "53c5ec8bde044fc0ca3b9959cf56f2b73baba641"
+    }
+  },
+  "slow_test_profiles_2026_10_28": {
+    "source_devel_commit": "01d15ce5f3d06d9c6554a93329b8c5eb4994b417",
+    "scope": "Focused test-cost investigation; no refreshed PR-readiness, queue, or fleet-wide latency distributions.",
+    "collection": {
+      "started": "2026-10-28T04:53:49.491476+00:00",
+      "finished": "2026-10-28T04:54:58.792540+00:00",
+      "selection": "Up to 12 systematically spaced completed success/failure runs per latest-60 push and PR CI workflow listings; all eligible runs if fewer than 12; cancellations omitted from target-cost sample",
+      "runs": [
+        {
+          "run_id": 40628972677,
+          "invocation": "887358ec-2ab3-570b-8d1c-e1a32fe17790",
+          "event": "push",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T03:50:40Z",
+          "head_sha": "04ab7fe252c3b11587ee20f8f61fd90131ab4506",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40628972677",
+          "tested_sha": "04ab7fe252c3b11587ee20f8f61fd90131ab4506",
+          "duration_usec": "462891000",
+          "pages": 131,
+          "targets": 1565,
+          "executions": 19
+        },
+        {
+          "run_id": 40627362802,
+          "invocation": "71cadbbd-7427-537f-ab62-6d2ff26a5172",
+          "event": "push",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T03:33:26Z",
+          "head_sha": "7f464392c0a253d1bc8dff1a73ef432f116c0150",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40627362802",
+          "tested_sha": "7f464392c0a253d1bc8dff1a73ef432f116c0150",
+          "duration_usec": "146685000",
+          "pages": 131,
+          "targets": 1565,
+          "executions": 4
+        },
+        {
+          "run_id": 40624423651,
+          "invocation": "84f008a6-27d4-5891-9d3a-34ad9318ced7",
+          "event": "push",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T03:02:50Z",
+          "head_sha": "430ff46363628845a8b711f55a3145055adc907c",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40624423651",
+          "tested_sha": "430ff46363628845a8b711f55a3145055adc907c",
+          "duration_usec": "90829000",
+          "pages": 131,
+          "targets": 1565,
+          "executions": 1
+        },
+        {
+          "run_id": 40623013572,
+          "invocation": "c51d0f64-3b93-57e1-85f8-2dc68f499276",
+          "event": "push",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T02:47:46Z",
+          "head_sha": "9698a0791ced99f0d4e07f3dd14253eb68963011",
+          "conclusion": "failure",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40623013572",
+          "tested_sha": "9698a0791ced99f0d4e07f3dd14253eb68963011",
+          "duration_usec": "506350000",
+          "pages": 131,
+          "targets": 1563,
+          "executions": 18
+        },
+        {
+          "run_id": 40622602216,
+          "invocation": "2d95fcc4-860c-5385-8eb1-ba2e2de61d3c",
+          "event": "push",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T02:43:26Z",
+          "head_sha": "ac1ab66891506d3c4f146a24830401001b9a5deb",
+          "conclusion": "failure",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40622602216",
+          "tested_sha": "ac1ab66891506d3c4f146a24830401001b9a5deb",
+          "duration_usec": "83484000",
+          "pages": 131,
+          "targets": 1563,
+          "executions": 10
+        },
+        {
+          "run_id": 40621781686,
+          "invocation": "cb6c1887-ea5b-5558-b788-17881a36233a",
+          "event": "push",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T02:34:58Z",
+          "head_sha": "dba2279e5322afb3ba08631c28bbf70c0870d825",
+          "conclusion": "failure",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40621781686",
+          "tested_sha": "dba2279e5322afb3ba08631c28bbf70c0870d825",
+          "duration_usec": "197391000",
+          "pages": 131,
+          "targets": 1563,
+          "executions": 572
+        },
+        {
+          "run_id": 40621046800,
+          "invocation": "1247ccb0-b92a-54fa-a06c-383cb0b994c5",
+          "event": "push",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T02:27:32Z",
+          "head_sha": "efc9b7f427f01b578269a9586a0cdc3c077ebe4b",
+          "conclusion": "failure",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40621046800",
+          "tested_sha": "efc9b7f427f01b578269a9586a0cdc3c077ebe4b",
+          "duration_usec": "67612000",
+          "pages": 131,
+          "targets": 1563,
+          "executions": 5
+        },
+        {
+          "run_id": 40620450076,
+          "invocation": "71c96926-6d39-5290-ad4a-061ec7a03408",
+          "event": "push",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T02:21:32Z",
+          "head_sha": "26226bc7dbe5feb95468d4017d878951db03fab5",
+          "conclusion": "failure",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40620450076",
+          "tested_sha": "26226bc7dbe5feb95468d4017d878951db03fab5",
+          "duration_usec": "469917000",
+          "pages": 131,
+          "targets": 1562,
+          "executions": 128
+        },
+        {
+          "run_id": 40633471448,
+          "invocation": "2bc0b6d2-7369-56be-9c15-fb2247962d8b",
+          "event": "pull_request",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T04:38:37Z",
+          "head_sha": "c9f81ea364fe163f25bc814e6c7499f29b5ab585",
+          "conclusion": "failure",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40633471448",
+          "tested_sha": "dbae1d80a006c3dc13fd2eb9d655b48fe6bf711f",
+          "duration_usec": "48479000",
+          "pages": 3,
+          "targets": 23,
+          "executions": 1
+        },
+        {
+          "run_id": 40633446763,
+          "invocation": "86d21278-9c67-5088-9fac-9a12533bb0f2",
+          "event": "pull_request",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T04:38:21Z",
+          "head_sha": "9409f1467e4f15b3a0ff3a82a8bbcb285d2221d4",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40633446763",
+          "tested_sha": "d2cd2489d1411249cc24923dd8dd51b9f115c370",
+          "duration_usec": "2965000",
+          "pages": 2,
+          "targets": 23,
+          "executions": 0
+        },
+        {
+          "run_id": 40632929459,
+          "invocation": "c23e6191-07bd-55e8-a0e8-b01fb197b238",
+          "event": "pull_request",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T04:32:49Z",
+          "head_sha": "ab23c0ccd5dc5ba0d7382c895fcb555d2219e4f6",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40632929459",
+          "tested_sha": "04bdf72cb24dec6e0ad8f5ead793a13aadf604ee",
+          "duration_usec": "465809000",
+          "pages": 8,
+          "targets": 91,
+          "executions": 277
+        },
+        {
+          "run_id": 40632102197,
+          "invocation": "d852cea9-cd7d-5cee-9869-8f0f97e8f573",
+          "event": "pull_request",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T04:24:02Z",
+          "head_sha": "9498e92ab3e1f5ce51751abf1de26f3b8b486e87",
+          "conclusion": "failure",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40632102197",
+          "tested_sha": "aa7ecf58f796049a538f989b1ec7d2fef23647f8",
+          "duration_usec": "529842000",
+          "pages": 3,
+          "targets": 23,
+          "executions": 138
+        },
+        {
+          "run_id": 40631858827,
+          "invocation": "81ebd24c-a707-5aa7-a2ea-1882bd7a74c7",
+          "event": "pull_request",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T04:21:24Z",
+          "head_sha": "d182979d0e7f85da511698d066d69590212604a9",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40631858827",
+          "tested_sha": "2415781d827a442efce71e09bf09c5315194804c",
+          "duration_usec": "18718000",
+          "pages": 1,
+          "targets": 10,
+          "executions": 19
+        },
+        {
+          "run_id": 40631246549,
+          "invocation": "c42a9498-3c40-51e0-8c74-f4c78d6f1240",
+          "event": "pull_request",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T04:14:59Z",
+          "head_sha": "6519a37b614111947beedd157d557f1473352cff",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40631246549",
+          "tested_sha": "a13c62acc0f313d3214dabaa75ed134cefbd80f9",
+          "duration_usec": "89058000",
+          "pages": 3,
+          "targets": 34,
+          "executions": 86
+        },
+        {
+          "run_id": 40630839304,
+          "invocation": "27e8bf7f-b52f-5517-83fd-b14b71fdfb13",
+          "event": "pull_request",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T04:10:38Z",
+          "head_sha": "5fdacb03b1b9fd7eec090d362622a140e41c4672",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40630839304",
+          "tested_sha": "eb8b72a7ee19615354fb944b7827117fbadd8e39",
+          "duration_usec": "521595000",
+          "pages": 2,
+          "targets": 23,
+          "executions": 141
+        },
+        {
+          "run_id": 40630326535,
+          "invocation": "9894228b-e5f2-5450-831a-012f8275b289",
+          "event": "pull_request",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T04:05:22Z",
+          "head_sha": "1b977dcbe33f7dad520584afebf4c0af0ffa6ead",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40630326535",
+          "tested_sha": "81aa53d5961fa3e0a0ff2c9457d799c6a92c5dc9",
+          "duration_usec": "447026000",
+          "pages": 10,
+          "targets": 118,
+          "executions": 211
+        },
+        {
+          "run_id": 40630020546,
+          "invocation": "40a39b73-ac2d-5cec-9e31-4f499ac1d150",
+          "event": "pull_request",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T04:02:12Z",
+          "head_sha": "ed29fa7c695086592bdd08ee4a856d79206a1f74",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40630020546",
+          "tested_sha": "aee3af077bffb3fc5bf5d508bebd704e82f769fc",
+          "duration_usec": "758852000",
+          "pages": 2,
+          "targets": 23,
+          "executions": 154
+        },
+        {
+          "run_id": 40629840569,
+          "invocation": "0a4efc58-1e95-5b60-82f6-88b3d3937d53",
+          "event": "pull_request",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T04:00:22Z",
+          "head_sha": "39cfce9071ce44f85557fc3d632771af8ce55269",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40629840569",
+          "error": "HTTP Error 500: Internal Server Error"
+        },
+        {
+          "run_id": 40629510755,
+          "invocation": "f1d59ab2-db51-5744-ac47-f28f28dadd9c",
+          "event": "pull_request",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T03:56:39Z",
+          "head_sha": "ef887c36c20722c55ad3464662b8a7296ec51968",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40629510755",
+          "tested_sha": "017fabcf4b4881b74e72e42f9372463acbd01c23",
+          "duration_usec": "150175000",
+          "pages": 15,
+          "targets": 175,
+          "executions": 698
+        },
+        {
+          "run_id": 40629276036,
+          "invocation": "fe1c05b2-c1f9-5018-b856-42db6cf271ff",
+          "event": "pull_request",
+          "run_attempt": 1,
+          "created_at": "2026-10-28T03:54:04Z",
+          "head_sha": "da98b31e7b77d3c206df2fa48fb40e5bba92c0c8",
+          "conclusion": "success",
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/40629276036",
+          "tested_sha": "e2fdc68af8fe11daaa33bb9fcc84ee6fd83fd725",
+          "duration_usec": "567449000",
+          "pages": 2,
+          "targets": 23,
+          "executions": 143
+        }
+      ],
+      "retry_finished": "2026-10-28T04:57:35.093428+00:00"
+    },
+    "coverage_counts": {
+      "all_test_records": 979,
+      "originating": 943,
+      "reused_or_unknown": 36
+    },
+    "listing_counts": {
+      "push_completed": 60,
+      "push_cancelled": 52,
+      "push_eligible": 8,
+      "pr_completed": 60,
+      "pr_cancelled": 16,
+      "pr_skipped": 10,
+      "pr_eligible": 34,
+      "pr_selected": 12
+    },
+    "ranking_method": "Only GetExecution TestRunner actions with invocationLinkType=1 (NEW); reused MERGED type 2 excluded. Process clocks and CPU counters kept separate; all shards counted as actions, not target latency.",
+    "test_costs": [
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "fresh_actions": 32,
+        "fresh_invocations": 2,
+        "process_seconds": 3520.582319,
+        "cpu_seconds": 7155.591554,
+        "process_p50_seconds": 108.96381,
+        "process_max_seconds": 132.992537,
+        "queue_seconds": 1.9442
+      },
+      {
+        "label": "//agentplane/system_tests:test_vm_sandbox_vm",
+        "fresh_actions": 7,
+        "fresh_invocations": 7,
+        "process_seconds": 3313.160433,
+        "cpu_seconds": 6088.913544999999,
+        "process_p50_seconds": 451.270738,
+        "process_max_seconds": 687.624465,
+        "queue_seconds": 0.447671
+      },
+      {
+        "label": "//agentplane/system_tests:test_mcp",
+        "fresh_actions": 7,
+        "fresh_invocations": 7,
+        "process_seconds": 3019.541777,
+        "cpu_seconds": 4440.894858,
+        "process_p50_seconds": 454.137267,
+        "process_max_seconds": 479.86788,
+        "queue_seconds": 0.42651
+      },
+      {
+        "label": "//agentplane/system_tests:test_agent_messaging",
+        "fresh_actions": 7,
+        "fresh_invocations": 7,
+        "process_seconds": 1907.978854,
+        "cpu_seconds": 1985.923118,
+        "process_p50_seconds": 272.875412,
+        "process_max_seconds": 288.131893,
+        "queue_seconds": 0.380303
+      },
+      {
+        "label": "//agentplane/system_tests:test_dispatcher",
+        "fresh_actions": 7,
+        "fresh_invocations": 7,
+        "process_seconds": 1592.521769,
+        "cpu_seconds": 2392.706595,
+        "process_p50_seconds": 245.573111,
+        "process_max_seconds": 251.144354,
+        "queue_seconds": 0.490691
+      },
+      {
+        "label": "//agentplane/system_tests:test_thread_stream",
+        "fresh_actions": 7,
+        "fresh_invocations": 7,
+        "process_seconds": 1455.8632969999999,
+        "cpu_seconds": 2233.700245,
+        "process_p50_seconds": 206.724649,
+        "process_max_seconds": 225.830521,
+        "queue_seconds": 0.437422
+      },
+      {
+        "label": "//agentplane/system_tests:test_egress",
+        "fresh_actions": 7,
+        "fresh_invocations": 7,
+        "process_seconds": 1371.76382,
+        "cpu_seconds": 2050.543803,
+        "process_p50_seconds": 197.268734,
+        "process_max_seconds": 201.687231,
+        "queue_seconds": 0.427305
+      },
+      {
+        "label": "//agentplane/system_tests:test_suspend_resume",
+        "fresh_actions": 7,
+        "fresh_invocations": 7,
+        "process_seconds": 1267.410511,
+        "cpu_seconds": 1842.784042,
+        "process_p50_seconds": 186.354507,
+        "process_max_seconds": 202.764859,
+        "queue_seconds": 0.400041
+      },
+      {
+        "label": "//agentplane/system_tests:test_launch_presets",
+        "fresh_actions": 7,
+        "fresh_invocations": 7,
+        "process_seconds": 1015.327831,
+        "cpu_seconds": 1755.880906,
+        "process_p50_seconds": 133.246355,
+        "process_max_seconds": 229.064464,
+        "queue_seconds": 0.420626
+      },
+      {
+        "label": "//agentplane/system_tests:test_session_instructions",
+        "fresh_actions": 7,
+        "fresh_invocations": 7,
+        "process_seconds": 936.87219,
+        "cpu_seconds": 1391.364154,
+        "process_p50_seconds": 138.765262,
+        "process_max_seconds": 141.423568,
+        "queue_seconds": 0.320044
+      },
+      {
+        "label": "//agentplane/system_tests:test_storage",
+        "fresh_actions": 7,
+        "fresh_invocations": 7,
+        "process_seconds": 912.202932,
+        "cpu_seconds": 1467.068386,
+        "process_p50_seconds": 128.846608,
+        "process_max_seconds": 146.359455,
+        "queue_seconds": 0.122821
+      },
+      {
+        "label": "//agentplane/app:test_bridge",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 617.4615650000001,
+        "cpu_seconds": 760.24689,
+        "process_p50_seconds": 155.055745,
+        "process_max_seconds": 159.066515,
+        "queue_seconds": 0.197632
+      },
+      {
+        "label": "//agentplane/system_tests:test_dcr",
+        "fresh_actions": 7,
+        "fresh_invocations": 7,
+        "process_seconds": 602.908407,
+        "cpu_seconds": 1215.9057520000001,
+        "process_p50_seconds": 86.352355,
+        "process_max_seconds": 90.649311,
+        "queue_seconds": 0.448021
+      },
+      {
+        "label": "//agentplane/app:test_thread_window_browser",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 371.846633,
+        "cpu_seconds": 736.695532,
+        "process_p50_seconds": 159.227788,
+        "process_max_seconds": 212.618845,
+        "queue_seconds": 0.07825
+      },
+      {
+        "label": "//agentplane/notification_service/store:store_integration_test",
+        "fresh_actions": 5,
+        "fresh_invocations": 5,
+        "process_seconds": 269.41751,
+        "cpu_seconds": 783.974886,
+        "process_p50_seconds": 53.365068,
+        "process_max_seconds": 62.035972,
+        "queue_seconds": 0.321676
+      },
+      {
+        "label": "//agentplane/notification_service/api:integration_test",
+        "fresh_actions": 6,
+        "fresh_invocations": 6,
+        "process_seconds": 260.04195500000003,
+        "cpu_seconds": 465.53108199999997,
+        "process_p50_seconds": 42.55156,
+        "process_max_seconds": 46.14415,
+        "queue_seconds": 0.36148399999999997
+      },
+      {
+        "label": "//cluster/cdk8s:test_generate_manifests",
+        "fresh_actions": 4,
+        "fresh_invocations": 4,
+        "process_seconds": 252.46257400000002,
+        "cpu_seconds": 349.500656,
+        "process_p50_seconds": 56.89497,
+        "process_max_seconds": 73.149113,
+        "queue_seconds": 0.241484
+      },
+      {
+        "label": "//agentplane/app:test_api",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 203.310835,
+        "cpu_seconds": 325.82869,
+        "process_p50_seconds": 93.850123,
+        "process_max_seconds": 109.460712,
+        "queue_seconds": 0.12825999999999999
+      },
+      {
+        "label": "//agentplane/notification_service/worker:integration_test",
+        "fresh_actions": 7,
+        "fresh_invocations": 7,
+        "process_seconds": 192.462274,
+        "cpu_seconds": 504.339146,
+        "process_p50_seconds": 27.379063,
+        "process_max_seconds": 30.239996,
+        "queue_seconds": 0.445752
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:value_flow_sharing_scale_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 165.148225,
+        "cpu_seconds": 171.125403,
+        "process_p50_seconds": 0.359007,
+        "process_max_seconds": 87.113891,
+        "queue_seconds": 0.252354
+      },
+      {
+        "label": "//agentplane/notification_service/github:provider_integration_test",
+        "fresh_actions": 6,
+        "fresh_invocations": 6,
+        "process_seconds": 163.661688,
+        "cpu_seconds": 469.505284,
+        "process_p50_seconds": 26.310301,
+        "process_max_seconds": 30.374844,
+        "queue_seconds": 0.37473100000000004
+      },
+      {
+        "label": "//agentplane/notification_service/webhook:integration_test",
+        "fresh_actions": 6,
+        "fresh_invocations": 6,
+        "process_seconds": 157.01632899999998,
+        "cpu_seconds": 371.221642,
+        "process_p50_seconds": 26.193229,
+        "process_max_seconds": 27.650669,
+        "queue_seconds": 0.367317
+      },
+      {
+        "label": "//agentplane/notification_service:integration_test",
+        "fresh_actions": 6,
+        "fresh_invocations": 6,
+        "process_seconds": 147.22019,
+        "cpu_seconds": 327.149961,
+        "process_p50_seconds": 21.985739,
+        "process_max_seconds": 32.957625,
+        "queue_seconds": 0.177641
+      },
+      {
+        "label": "//agentplane/app:test_electric",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 139.35569800000002,
+        "cpu_seconds": 263.057388,
+        "process_p50_seconds": 67.315458,
+        "process_max_seconds": 72.04024,
+        "queue_seconds": 0.12101500000000001
+      },
+      {
+        "label": "//agentplane/app:test_history_gateway",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 135.65980000000002,
+        "cpu_seconds": 137.62074,
+        "process_p50_seconds": 67.567903,
+        "process_max_seconds": 68.091897,
+        "queue_seconds": 0.118401
+      },
+      {
+        "label": "//agentplane/app/threads/view:test_recording",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 134.806164,
+        "cpu_seconds": 213.057274,
+        "process_p50_seconds": 67.338509,
+        "process_max_seconds": 67.467655,
+        "queue_seconds": 0.115589
+      },
+      {
+        "label": "//agentplane/app:test_operator_sessions",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 128.974671,
+        "cpu_seconds": 236.856392,
+        "process_p50_seconds": 64.445911,
+        "process_max_seconds": 64.52876,
+        "queue_seconds": 0.122711
+      },
+      {
+        "label": "//agentplane/app:test_electric_wal_recovery",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 117.698421,
+        "cpu_seconds": 253.998884,
+        "process_p50_seconds": 58.144926,
+        "process_max_seconds": 59.553495,
+        "queue_seconds": 0.129704
+      },
+      {
+        "label": "//agentplane/notification_service/actions:integration_test",
+        "fresh_actions": 6,
+        "fresh_invocations": 6,
+        "process_seconds": 114.202046,
+        "cpu_seconds": 331.67706599999997,
+        "process_p50_seconds": 18.468017,
+        "process_max_seconds": 23.338045,
+        "queue_seconds": 0.381062
+      },
+      {
+        "label": "//agentplane/app:test_electric_window_traffic",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 113.45775499999999,
+        "cpu_seconds": 229.977693,
+        "process_p50_seconds": 54.924706,
+        "process_max_seconds": 58.533049,
+        "queue_seconds": 0.020076999999999998
+      },
+      {
+        "label": "//agentplane/app/threads:test_history_watch",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 112.339341,
+        "cpu_seconds": 173.856019,
+        "process_p50_seconds": 48.092428,
+        "process_max_seconds": 64.246913,
+        "queue_seconds": 0.12201999999999999
+      },
+      {
+        "label": "//agentplane/app:test_auth_routes",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 108.695618,
+        "cpu_seconds": 169.82619799999998,
+        "process_p50_seconds": 53.206523,
+        "process_max_seconds": 55.489095,
+        "queue_seconds": 0.11807899999999999
+      },
+      {
+        "label": "//agentplane/app:test_live",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 107.499244,
+        "cpu_seconds": 185.774498,
+        "process_p50_seconds": 52.279659,
+        "process_max_seconds": 55.219585,
+        "queue_seconds": 0.121925
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:conflict_diagnostics_scale_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 105.116506,
+        "cpu_seconds": 107.736487,
+        "process_p50_seconds": 0.498633,
+        "process_max_seconds": 52.105918,
+        "queue_seconds": 0.253286
+      },
+      {
+        "label": "//agentplane/app:test_action_stream",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 102.78824,
+        "cpu_seconds": 184.236415,
+        "process_p50_seconds": 51.092789,
+        "process_max_seconds": 51.695451,
+        "queue_seconds": 0.156949
+      },
+      {
+        "label": "//agentplane/app:test_electric_subset_window",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 101.190683,
+        "cpu_seconds": 218.537694,
+        "process_p50_seconds": 50.377174,
+        "process_max_seconds": 50.813509,
+        "queue_seconds": 0.116641
+      },
+      {
+        "label": "//agentplane/app/threads/view:test_content",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 100.34553199999999,
+        "cpu_seconds": 166.300975,
+        "process_p50_seconds": 45.878923,
+        "process_max_seconds": 54.466609,
+        "queue_seconds": 0.127845
+      },
+      {
+        "label": "//agentplane/app:test_native_facades",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 99.729015,
+        "cpu_seconds": 175.296487,
+        "process_p50_seconds": 47.823903,
+        "process_max_seconds": 51.905112,
+        "queue_seconds": 0.12166
+      },
+      {
+        "label": "//agentplane/app:test_database_updates",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 96.756445,
+        "cpu_seconds": 168.906406,
+        "process_p50_seconds": 47.946923,
+        "process_max_seconds": 48.809522,
+        "queue_seconds": 0.12118
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_notifications",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 96.534155,
+        "cpu_seconds": 117.075672,
+        "process_p50_seconds": 48.25013,
+        "process_max_seconds": 48.284025,
+        "queue_seconds": 0.11776700000000001
+      },
+      {
+        "label": "//agentplane/app:test_notifications_stream",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 91.67864800000001,
+        "cpu_seconds": 171.232783,
+        "process_p50_seconds": 45.694063,
+        "process_max_seconds": 45.984585,
+        "queue_seconds": 0.119527
+      },
+      {
+        "label": "//agentplane/app:test_electric_chunk_compaction",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 91.009061,
+        "cpu_seconds": 166.043723,
+        "process_p50_seconds": 91.009061,
+        "process_max_seconds": 91.009061,
+        "queue_seconds": 0.064491
+      },
+      {
+        "label": "//agentplane/app/threads/events:test_event_log",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 90.952775,
+        "cpu_seconds": 152.54546499999998,
+        "process_p50_seconds": 40.811061,
+        "process_max_seconds": 50.141714,
+        "queue_seconds": 0.127748
+      },
+      {
+        "label": "//agentplane/app:test_action_federation",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 90.729872,
+        "cpu_seconds": 151.595819,
+        "process_p50_seconds": 42.169759,
+        "process_max_seconds": 48.560113,
+        "queue_seconds": 0.121248
+      },
+      {
+        "label": "//agentplane/app:test_action_api",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 84.643366,
+        "cpu_seconds": 94.946519,
+        "process_p50_seconds": 41.075195,
+        "process_max_seconds": 43.568171,
+        "queue_seconds": 0.124651
+      },
+      {
+        "label": "//agentplane/app:test_database_migrate",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 80.067605,
+        "cpu_seconds": 146.891853,
+        "process_p50_seconds": 38.601443,
+        "process_max_seconds": 41.466162,
+        "queue_seconds": 0.126143
+      },
+      {
+        "label": "//agentplane/app:test_thread_sync",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 74.873741,
+        "cpu_seconds": 145.472038,
+        "process_p50_seconds": 74.873741,
+        "process_max_seconds": 74.873741,
+        "queue_seconds": 0.061307
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_session_dispatcher",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 68.588619,
+        "cpu_seconds": 81.53196299999999,
+        "process_p50_seconds": 31.228183,
+        "process_max_seconds": 37.360436,
+        "queue_seconds": 0.134382
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_actions",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 67.86607799999999,
+        "cpu_seconds": 85.944965,
+        "process_p50_seconds": 32.428349,
+        "process_max_seconds": 35.437729,
+        "queue_seconds": 0.129313
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_launcher_relay",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 67.47625500000001,
+        "cpu_seconds": 87.852225,
+        "process_p50_seconds": 32.512324,
+        "process_max_seconds": 34.963931,
+        "queue_seconds": 0.122672
+      },
+      {
+        "label": "//agentplane/app:test_thread_debug",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 65.523142,
+        "cpu_seconds": 111.84896,
+        "process_p50_seconds": 65.523142,
+        "process_max_seconds": 65.523142,
+        "queue_seconds": 0.05963
+      },
+      {
+        "label": "//cluster/cdk8s:test_agent_rbac",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 64.848724,
+        "cpu_seconds": 77.535117,
+        "process_p50_seconds": 31.630141,
+        "process_max_seconds": 33.218583,
+        "queue_seconds": 0.118568
+      },
+      {
+        "label": "//agentplane/system_tests/k3s:test_render_determinism",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 64.399405,
+        "cpu_seconds": 81.35234299999999,
+        "process_p50_seconds": 31.534843,
+        "process_max_seconds": 32.864562,
+        "queue_seconds": 0.123917
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_sandbox_service",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 64.012184,
+        "cpu_seconds": 77.349466,
+        "process_p50_seconds": 29.418826,
+        "process_max_seconds": 34.593358,
+        "queue_seconds": 0.122145
+      },
+      {
+        "label": "//cluster/validation:test_cluster_integration",
+        "fresh_actions": 4,
+        "fresh_invocations": 4,
+        "process_seconds": 61.591431,
+        "cpu_seconds": 107.016947,
+        "process_p50_seconds": 14.543834,
+        "process_max_seconds": 17.716978,
+        "queue_seconds": 0.188222
+      },
+      {
+        "label": "//cluster/cdk8s/ssh_mcp:test_consumers",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 59.009783,
+        "cpu_seconds": 67.970123,
+        "process_p50_seconds": 28.880355,
+        "process_max_seconds": 30.129428,
+        "queue_seconds": 0.121085
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_runner_gateway_workload",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 58.449875000000006,
+        "cpu_seconds": 65.758197,
+        "process_p50_seconds": 28.047184,
+        "process_max_seconds": 30.402691,
+        "queue_seconds": 0.02391
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_prompt_instructions",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 58.324412,
+        "cpu_seconds": 68.658204,
+        "process_p50_seconds": 27.681716,
+        "process_max_seconds": 30.642696,
+        "queue_seconds": 0.122057
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_egress",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 57.291037,
+        "cpu_seconds": 70.316465,
+        "process_p50_seconds": 28.531933,
+        "process_max_seconds": 28.759104,
+        "queue_seconds": 0.12462500000000001
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:delegation_snapshot_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 56.245849,
+        "cpu_seconds": 176.830189,
+        "process_p50_seconds": 0.798193,
+        "process_max_seconds": 28.564522,
+        "queue_seconds": 0.200221
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:opaque_callback_scale_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 54.77527,
+        "cpu_seconds": 120.008023,
+        "process_p50_seconds": 0.339739,
+        "process_max_seconds": 27.681278,
+        "queue_seconds": 0.24099199999999998
+      },
+      {
+        "label": "//agentplane/app/threads:test_store",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 53.689668,
+        "cpu_seconds": 101.413769,
+        "process_p50_seconds": 53.689668,
+        "process_max_seconds": 53.689668,
+        "queue_seconds": 0.062353
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_frontend",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 51.295826000000005,
+        "cpu_seconds": 60.130102,
+        "process_p50_seconds": 24.604344,
+        "process_max_seconds": 26.691482,
+        "queue_seconds": 0.125934
+      },
+      {
+        "label": "//agentplane/app:test_action_policy",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 50.129159,
+        "cpu_seconds": 49.450098999999994,
+        "process_p50_seconds": 24.460919,
+        "process_max_seconds": 25.66824,
+        "queue_seconds": 0.126239
+      },
+      {
+        "label": "//agentplane/app:test_sandbox_access",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 49.922968,
+        "cpu_seconds": 48.075592,
+        "process_p50_seconds": 24.790893,
+        "process_max_seconds": 25.132075,
+        "queue_seconds": 0.127909
+      },
+      {
+        "label": "//agentplane/app/frontend/serving:test_static_image",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 49.887656,
+        "cpu_seconds": 54.447715,
+        "process_p50_seconds": 23.499309,
+        "process_max_seconds": 26.388347,
+        "queue_seconds": 0.120059
+      },
+      {
+        "label": "//agentplane/app:test_shutdown",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 49.030759,
+        "cpu_seconds": 32.440557999999996,
+        "process_p50_seconds": 24.161199,
+        "process_max_seconds": 24.86956,
+        "queue_seconds": 0.129952
+      },
+      {
+        "label": "//agentplane/app:test_main",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 49.001739,
+        "cpu_seconds": 88.129315,
+        "process_p50_seconds": 49.001739,
+        "process_max_seconds": 49.001739,
+        "queue_seconds": 0.058879
+      },
+      {
+        "label": "//cluster/cdk8s/public_coder:test_app",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 48.538741,
+        "cpu_seconds": 57.687257,
+        "process_p50_seconds": 22.797768,
+        "process_max_seconds": 25.740973,
+        "queue_seconds": 0.120087
+      },
+      {
+        "label": "//agentplane/runner:test_native_resources",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 46.754603,
+        "cpu_seconds": 97.97171800000001,
+        "process_p50_seconds": 23.01456,
+        "process_max_seconds": 23.740043,
+        "queue_seconds": 0.082263
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_egress_staging_credentials",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 44.589999,
+        "cpu_seconds": 54.014237,
+        "process_p50_seconds": 22.220851,
+        "process_max_seconds": 22.369148,
+        "queue_seconds": 0.11899699999999999
+      },
+      {
+        "label": "//agentplane/system_tests/k3s:test_render",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 43.579388,
+        "cpu_seconds": 50.920038,
+        "process_p50_seconds": 21.239429,
+        "process_max_seconds": 22.339959,
+        "queue_seconds": 0.138973
+      },
+      {
+        "label": "//agentplane/runner:runner_test",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 40.906406,
+        "cpu_seconds": 27.58925,
+        "process_p50_seconds": 40.906406,
+        "process_max_seconds": 40.906406,
+        "queue_seconds": 0.067793
+      },
+      {
+        "label": "//agentplane/app:test_presets",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 38.145555,
+        "cpu_seconds": 27.877476,
+        "process_p50_seconds": 16.847099,
+        "process_max_seconds": 21.298456,
+        "queue_seconds": 0.11670900000000001
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:imported_callback_timing_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 37.476153000000004,
+        "cpu_seconds": 175.205349,
+        "process_p50_seconds": 0.371636,
+        "process_max_seconds": 21.292935,
+        "queue_seconds": 0.24041400000000002
+      },
+      {
+        "label": "//agentplane/runner_gateway/migrations:test_migrations",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 34.964194,
+        "cpu_seconds": 64.709168,
+        "process_p50_seconds": 34.964194,
+        "process_max_seconds": 34.964194,
+        "queue_seconds": 0.063854
+      },
+      {
+        "label": "//agentplane/app:test_sandbox_models",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 34.961587,
+        "cpu_seconds": 24.831195,
+        "process_p50_seconds": 15.862954,
+        "process_max_seconds": 19.098633,
+        "queue_seconds": 0.133041
+      },
+      {
+        "label": "//agentplane/runner:test_restart",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 34.872379,
+        "cpu_seconds": 75.353571,
+        "process_p50_seconds": 34.872379,
+        "process_max_seconds": 34.872379,
+        "queue_seconds": 0.077351
+      },
+      {
+        "label": "//agentplane/runner:test_turns",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 34.791559,
+        "cpu_seconds": 52.378375,
+        "process_p50_seconds": 34.791559,
+        "process_max_seconds": 34.791559,
+        "queue_seconds": 0.061393
+      },
+      {
+        "label": "//agentplane/app/testing:test_client",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 34.624096,
+        "cpu_seconds": 27.190452,
+        "process_p50_seconds": 15.964192,
+        "process_max_seconds": 18.659904,
+        "queue_seconds": 0.124181
+      },
+      {
+        "label": "//agentplane/app/testing:test_http2_proxy",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 34.371735,
+        "cpu_seconds": 27.314253,
+        "process_p50_seconds": 15.064021,
+        "process_max_seconds": 19.307714,
+        "queue_seconds": 0.127737
+      },
+      {
+        "label": "//agentplane/app/threads:test_dispatcher_client",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 34.271134,
+        "cpu_seconds": 29.486086999999998,
+        "process_p50_seconds": 16.860481,
+        "process_max_seconds": 17.410653,
+        "queue_seconds": 0.120715
+      },
+      {
+        "label": "//agentplane/app:test_system_status",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 33.39699400000001,
+        "cpu_seconds": 27.403816,
+        "process_p50_seconds": 16.233775,
+        "process_max_seconds": 17.163219,
+        "queue_seconds": 0.118339
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_launcher_grant_admission",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 26.526776,
+        "cpu_seconds": 31.100429,
+        "process_p50_seconds": 26.526776,
+        "process_max_seconds": 26.526776,
+        "queue_seconds": 0.060238
+      },
+      {
+        "label": "//agentplane/app:test_notifications_operator_client",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 26.372174,
+        "cpu_seconds": 19.269415,
+        "process_p50_seconds": 26.372174,
+        "process_max_seconds": 26.372174,
+        "queue_seconds": 0.025855
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_runner_vm",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 25.642099,
+        "cpu_seconds": 31.77966,
+        "process_p50_seconds": 25.642099,
+        "process_max_seconds": 25.642099,
+        "queue_seconds": 0.065309
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_sandbox_templates",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 25.520428,
+        "cpu_seconds": 30.537103,
+        "process_p50_seconds": 25.520428,
+        "process_max_seconds": 25.520428,
+        "queue_seconds": 0.06293
+      },
+      {
+        "label": "//devinfra/js/debundle/skills/shared/examples:isolated_edit_test",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 24.234487,
+        "cpu_seconds": 23.809998,
+        "process_p50_seconds": 24.234487,
+        "process_max_seconds": 24.234487,
+        "queue_seconds": 0.059565
+      },
+      {
+        "label": "//agentplane/runner:test_attach",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 22.905592,
+        "cpu_seconds": 34.395285,
+        "process_p50_seconds": 22.905592,
+        "process_max_seconds": 22.905592,
+        "queue_seconds": 0.06349
+      },
+      {
+        "label": "//cluster/validation:test_flux_build",
+        "fresh_actions": 4,
+        "fresh_invocations": 4,
+        "process_seconds": 22.507324,
+        "cpu_seconds": 22.398979,
+        "process_p50_seconds": 5.318272,
+        "process_max_seconds": 6.025562,
+        "queue_seconds": 0.251797
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:intrinsic_array_iteration_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 21.038699,
+        "cpu_seconds": 78.341849,
+        "process_p50_seconds": 0.994833,
+        "process_max_seconds": 11.569667,
+        "queue_seconds": 0.242367
+      },
+      {
+        "label": "//agentplane/runner:test_instructions",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 20.609263,
+        "cpu_seconds": 29.865972,
+        "process_p50_seconds": 20.609263,
+        "process_max_seconds": 20.609263,
+        "queue_seconds": 0.061928
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:imported_primitive_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 17.887898,
+        "cpu_seconds": 45.436182,
+        "process_p50_seconds": 0.502026,
+        "process_max_seconds": 8.863311,
+        "queue_seconds": 0.250724
+      },
+      {
+        "label": "//agentplane/app/threads/events:test_stream",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 17.345198,
+        "cpu_seconds": 14.643171,
+        "process_p50_seconds": 17.345198,
+        "process_max_seconds": 17.345198,
+        "queue_seconds": 0.058663
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:global_membership_reentry_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 16.519267,
+        "cpu_seconds": 59.996894000000005,
+        "process_p50_seconds": 0.367145,
+        "process_max_seconds": 8.2781,
+        "queue_seconds": 0.239762
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:describe_batch_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 16.355532,
+        "cpu_seconds": 45.382582,
+        "process_p50_seconds": 0.463727,
+        "process_max_seconds": 7.725976,
+        "queue_seconds": 0.240141
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:bindings_assign_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 16.292394,
+        "cpu_seconds": 52.576723,
+        "process_p50_seconds": 0.549755,
+        "process_max_seconds": 7.862985,
+        "queue_seconds": 0.245346
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:optional_call_timing_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 16.196669,
+        "cpu_seconds": 38.301518,
+        "process_p50_seconds": 0.373224,
+        "process_max_seconds": 8.082678,
+        "queue_seconds": 0.243848
+      },
+      {
+        "label": "//agentplane/runner/x/central_codex:test_probe",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 16.120669,
+        "cpu_seconds": 13.763893,
+        "process_p50_seconds": 16.120669,
+        "process_max_seconds": 16.120669,
+        "queue_seconds": 0.060536
+      },
+      {
+        "label": "//devinfra/js/debundle/skills/shared/examples:contract_examples_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 15.31614,
+        "cpu_seconds": 13.695260000000001,
+        "process_p50_seconds": 7.248349,
+        "process_max_seconds": 8.067791,
+        "queue_seconds": 0.124748
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:edit_gate_source_match_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 15.102208,
+        "cpu_seconds": 34.255317,
+        "process_p50_seconds": 0.520676,
+        "process_max_seconds": 7.246599,
+        "queue_seconds": 0.25871500000000003
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:module_merge_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 15.096332,
+        "cpu_seconds": 51.994366,
+        "process_p50_seconds": 0.456682,
+        "process_max_seconds": 7.26287,
+        "queue_seconds": 0.249366
+      },
+      {
+        "label": "//cluster/cdk8s:test_terraform_vars",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 15.076716,
+        "cpu_seconds": 19.867992,
+        "process_p50_seconds": 15.076716,
+        "process_max_seconds": 15.076716,
+        "queue_seconds": 0.062663
+      },
+      {
+        "label": "//agentplane/app:test_identity",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 14.902731,
+        "cpu_seconds": 11.867108,
+        "process_p50_seconds": 14.902731,
+        "process_max_seconds": 14.902731,
+        "queue_seconds": 0.059488
+      },
+      {
+        "label": "//agentplane/runner:test_executor_container",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 14.63583,
+        "cpu_seconds": 18.130803,
+        "process_p50_seconds": 14.63583,
+        "process_max_seconds": 14.63583,
+        "queue_seconds": 0.06068
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:soundness_at_init_value_flow_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 14.576727,
+        "cpu_seconds": 64.006486,
+        "process_p50_seconds": 0.500142,
+        "process_max_seconds": 7.69192,
+        "queue_seconds": 0.24769
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:source_match_coalescing_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 14.185886,
+        "cpu_seconds": 22.418385,
+        "process_p50_seconds": 0.520443,
+        "process_max_seconds": 7.256294,
+        "queue_seconds": 0.24917899999999998
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:retained_callback_factory_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 13.676621,
+        "cpu_seconds": 47.881828,
+        "process_p50_seconds": 0.912406,
+        "process_max_seconds": 6.423037,
+        "queue_seconds": 0.238454
+      },
+      {
+        "label": "//cluster/validation:test_generator_namespace",
+        "fresh_actions": 4,
+        "fresh_invocations": 4,
+        "process_seconds": 13.417996,
+        "cpu_seconds": 12.222628,
+        "process_p50_seconds": 3.202607,
+        "process_max_seconds": 3.808746,
+        "queue_seconds": 0.265079
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:no_reentry_callback_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 13.050935,
+        "cpu_seconds": 31.381050000000002,
+        "process_p50_seconds": 0.567403,
+        "process_max_seconds": 6.401193,
+        "queue_seconds": 0.24044
+      },
+      {
+        "label": "//agentplane/runner:test_disk",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 12.970383000000002,
+        "cpu_seconds": 10.379283000000001,
+        "process_p50_seconds": 6.383988,
+        "process_max_seconds": 6.586395,
+        "queue_seconds": 0.127432
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:vendor_swap_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 12.410706,
+        "cpu_seconds": 52.128135,
+        "process_p50_seconds": 0.43081,
+        "process_max_seconds": 5.787539,
+        "queue_seconds": 0.243684
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:repeated_var_loop_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 12.268955,
+        "cpu_seconds": 34.963493,
+        "process_p50_seconds": 0.604824,
+        "process_max_seconds": 5.798615,
+        "queue_seconds": 0.252065
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:modules_apply_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 12.080755,
+        "cpu_seconds": 36.970838,
+        "process_p50_seconds": 0.385758,
+        "process_max_seconds": 6.927083,
+        "queue_seconds": 0.250936
+      },
+      {
+        "label": "//agentplane/runner:test_codex_shared_process",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 11.944628,
+        "cpu_seconds": 17.967381,
+        "process_p50_seconds": 11.944628,
+        "process_max_seconds": 11.944628,
+        "queue_seconds": 0.059615
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:purity_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 11.892136,
+        "cpu_seconds": 44.124524,
+        "process_p50_seconds": 0.626893,
+        "process_max_seconds": 6.090111,
+        "queue_seconds": 0.253197
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:modules_refine_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 11.809659,
+        "cpu_seconds": 46.920058,
+        "process_p50_seconds": 0.51298,
+        "process_max_seconds": 5.823728,
+        "queue_seconds": 0.236434
+      },
+      {
+        "label": "//agentplane/x/runner_layering:test_sparse_root",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 11.612531,
+        "cpu_seconds": 12.277471,
+        "process_p50_seconds": 11.612531,
+        "process_max_seconds": 11.612531,
+        "queue_seconds": 0.058881
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:simulator_node_differential_sweep_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 11.452842,
+        "cpu_seconds": 10.247605,
+        "process_p50_seconds": 0.571465,
+        "process_max_seconds": 5.430728,
+        "queue_seconds": 0.259688
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:native_browser_reentry_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 11.430285,
+        "cpu_seconds": 47.390675,
+        "process_p50_seconds": 0.534526,
+        "process_max_seconds": 5.747402,
+        "queue_seconds": 0.241855
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:cli_mutation_outcome_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 11.329242,
+        "cpu_seconds": 36.067809000000004,
+        "process_p50_seconds": 0.405327,
+        "process_max_seconds": 6.238024,
+        "queue_seconds": 0.248863
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:syntactic_holes_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 11.262372,
+        "cpu_seconds": 43.302652,
+        "process_p50_seconds": 0.483006,
+        "process_max_seconds": 5.515101,
+        "queue_seconds": 0.287979
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:unknown_call_unescaped_callable_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 11.083219999999999,
+        "cpu_seconds": 39.701458,
+        "process_p50_seconds": 0.469362,
+        "process_max_seconds": 5.400542,
+        "queue_seconds": 0.189243
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:rejection_fixture_report_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 11.046118,
+        "cpu_seconds": 10.231479,
+        "process_p50_seconds": 0.460593,
+        "process_max_seconds": 5.262404,
+        "queue_seconds": 0.25507199999999997
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:top_level_query_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 10.943296,
+        "cpu_seconds": 41.506616,
+        "process_p50_seconds": 0.597417,
+        "process_max_seconds": 5.072951,
+        "queue_seconds": 0.256816
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:unknown_call_intermediate_availability_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 10.898557,
+        "cpu_seconds": 43.616937,
+        "process_p50_seconds": 0.344202,
+        "process_max_seconds": 5.185889,
+        "queue_seconds": 0.243104
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:metadata_decorator_timing_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 10.895471,
+        "cpu_seconds": 31.690654,
+        "process_p50_seconds": 1.601479,
+        "process_max_seconds": 4.324161,
+        "queue_seconds": 0.24456
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:initializer_placement_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 10.884113,
+        "cpu_seconds": 9.307896,
+        "process_p50_seconds": 0.225041,
+        "process_max_seconds": 5.315093,
+        "queue_seconds": 0.263855
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:namespace_aggregator_split_tdz_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 10.618777,
+        "cpu_seconds": 9.524862,
+        "process_p50_seconds": 0.674234,
+        "process_max_seconds": 6.388531,
+        "queue_seconds": 0.241137
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:makes_decorate_call_lowering_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 10.56993,
+        "cpu_seconds": 26.304647,
+        "process_p50_seconds": 0.590645,
+        "process_max_seconds": 5.175308,
+        "queue_seconds": 0.24888100000000002
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:auto_grown_export_alias_collision_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 10.306997,
+        "cpu_seconds": 8.554295,
+        "process_p50_seconds": 0.704424,
+        "process_max_seconds": 4.542482,
+        "queue_seconds": 0.252625
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:accepted_spec_runs_under_node_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 10.298566,
+        "cpu_seconds": 32.972215,
+        "process_p50_seconds": 0.434272,
+        "process_max_seconds": 4.960133,
+        "queue_seconds": 0.254579
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:invocation_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 10.269069,
+        "cpu_seconds": 31.762023,
+        "process_p50_seconds": 0.651074,
+        "process_max_seconds": 5.046567,
+        "queue_seconds": 0.244371
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:class_callback_reachability_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 10.237188999999999,
+        "cpu_seconds": 27.069529,
+        "process_p50_seconds": 0.510683,
+        "process_max_seconds": 5.007644,
+        "queue_seconds": 0.24488100000000002
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:comma_list_owner_split_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 10.230566,
+        "cpu_seconds": 28.788162,
+        "process_p50_seconds": 0.573652,
+        "process_max_seconds": 4.97738,
+        "queue_seconds": 0.246833
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:use_site_pinning_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 10.175655,
+        "cpu_seconds": 25.691436,
+        "process_p50_seconds": 0.676514,
+        "process_max_seconds": 4.689064,
+        "queue_seconds": 0.258195
+      },
+      {
+        "label": "//agentplane/runner_gateway:test_grpc_native",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 10.162361,
+        "cpu_seconds": 14.529457,
+        "process_p50_seconds": 10.162361,
+        "process_max_seconds": 10.162361,
+        "queue_seconds": 0.060865
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:member_comment_rename_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 10.098286,
+        "cpu_seconds": 8.549139,
+        "process_p50_seconds": 0.683946,
+        "process_max_seconds": 4.750425,
+        "queue_seconds": 0.26078
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:repeated_var_purity_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 10.025153,
+        "cpu_seconds": 13.483898,
+        "process_p50_seconds": 0.410779,
+        "process_max_seconds": 4.79773,
+        "queue_seconds": 0.248307
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:global_selector_assignment_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.993177000000001,
+        "cpu_seconds": 8.529937,
+        "process_p50_seconds": 0.678996,
+        "process_max_seconds": 4.747854,
+        "queue_seconds": 0.251618
+      },
+      {
+        "label": "//agentplane/runner:test_codex_catalog",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 9.950202,
+        "cpu_seconds": 14.159341,
+        "process_p50_seconds": 9.950202,
+        "process_max_seconds": 9.950202,
+        "queue_seconds": 0.063879
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:retained_constructor_callback_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.930939,
+        "cpu_seconds": 31.566545,
+        "process_p50_seconds": 0.481619,
+        "process_max_seconds": 4.622296,
+        "queue_seconds": 0.24468600000000001
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:comment_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.820763,
+        "cpu_seconds": 30.152803000000002,
+        "process_p50_seconds": 0.746733,
+        "process_max_seconds": 4.433851,
+        "queue_seconds": 0.254457
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:realizability_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.816266,
+        "cpu_seconds": 33.342894,
+        "process_p50_seconds": 0.409983,
+        "process_max_seconds": 4.952213,
+        "queue_seconds": 0.246249
+      },
+      {
+        "label": "//agentplane/runner:test_subagents",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 9.813028,
+        "cpu_seconds": 11.86453,
+        "process_p50_seconds": 9.813028,
+        "process_max_seconds": 9.813028,
+        "queue_seconds": 0.062952
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:plain_data_escape_scale_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.807002,
+        "cpu_seconds": 9.955303,
+        "process_p50_seconds": 0.963884,
+        "process_max_seconds": 4.254571,
+        "queue_seconds": 0.189268
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:object_literal_return_shorthand_drops_import_test",
+        "fresh_actions": 3,
+        "fresh_invocations": 2,
+        "process_seconds": 9.760831,
+        "cpu_seconds": 8.915914,
+        "process_p50_seconds": 4.349801,
+        "process_max_seconds": 4.969945,
+        "queue_seconds": 0.181714
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:cross_module_emission_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.726915,
+        "cpu_seconds": 32.679386,
+        "process_p50_seconds": 0.980295,
+        "process_max_seconds": 4.304018,
+        "queue_seconds": 0.25536
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:impure_call_reason_growth_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.665739,
+        "cpu_seconds": 13.954979000000002,
+        "process_p50_seconds": 0.405065,
+        "process_max_seconds": 4.683709,
+        "queue_seconds": 0.25743699999999997
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:standalone_binary_test",
+        "fresh_actions": 3,
+        "fresh_invocations": 2,
+        "process_seconds": 9.664166999999999,
+        "cpu_seconds": 9.624073,
+        "process_p50_seconds": 4.186381,
+        "process_max_seconds": 5.093388,
+        "queue_seconds": 0.179403
+      },
+      {
+        "label": "//agentplane/notification_service/github:github_test",
+        "fresh_actions": 5,
+        "fresh_invocations": 5,
+        "process_seconds": 9.659748,
+        "cpu_seconds": 9.204047,
+        "process_p50_seconds": 1.903456,
+        "process_max_seconds": 2.205951,
+        "queue_seconds": 0.30894
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:proxy_constructor_purity_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.654638,
+        "cpu_seconds": 22.501547,
+        "process_p50_seconds": 0.516877,
+        "process_max_seconds": 4.502687,
+        "queue_seconds": 0.25702
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:edit_gate_direct_claims_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.526408,
+        "cpu_seconds": 24.796265,
+        "process_p50_seconds": 0.508544,
+        "process_max_seconds": 4.537893,
+        "queue_seconds": 0.24670599999999998
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:modules_gate_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.342063,
+        "cpu_seconds": 26.398353,
+        "process_p50_seconds": 0.455492,
+        "process_max_seconds": 4.262455,
+        "queue_seconds": 0.24241000000000001
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:initializer_purity_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.315529,
+        "cpu_seconds": 25.048503,
+        "process_p50_seconds": 1.646088,
+        "process_max_seconds": 3.877077,
+        "queue_seconds": 0.206057
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:module_decomposition_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.129487,
+        "cpu_seconds": 34.983623,
+        "process_p50_seconds": 0.392995,
+        "process_max_seconds": 4.211105,
+        "queue_seconds": 0.255478
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:cross_module_purity_scale_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.123315,
+        "cpu_seconds": 11.99502,
+        "process_p50_seconds": 0.42862,
+        "process_max_seconds": 4.16636,
+        "queue_seconds": 0.254295
+      },
+      {
+        "label": "//agentplane/runner:test_codex_code_mode",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 9.063659,
+        "cpu_seconds": 10.749462,
+        "process_p50_seconds": 9.063659,
+        "process_max_seconds": 9.063659,
+        "queue_seconds": 0.06063
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:s_chain_dataflow_soundness_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.052677,
+        "cpu_seconds": 27.831884,
+        "process_p50_seconds": 0.4579,
+        "process_max_seconds": 4.845102,
+        "queue_seconds": 0.209185
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:selector_commands_agree_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 9.003350000000001,
+        "cpu_seconds": 34.273128,
+        "process_p50_seconds": 0.456307,
+        "process_max_seconds": 4.275528,
+        "queue_seconds": 0.24639
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:reads_member_lowering_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 8.940745,
+        "cpu_seconds": 22.988843,
+        "process_p50_seconds": 0.719715,
+        "process_max_seconds": 4.496588,
+        "queue_seconds": 0.249322
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:module_trees_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 8.922933,
+        "cpu_seconds": 27.956681,
+        "process_p50_seconds": 0.364328,
+        "process_max_seconds": 4.209697,
+        "queue_seconds": 0.24487599999999998
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:bindings_assign_gate_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 8.915858,
+        "cpu_seconds": 19.590113,
+        "process_p50_seconds": 0.716113,
+        "process_max_seconds": 4.060664,
+        "queue_seconds": 0.244035
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:source_export_policy_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 8.80505,
+        "cpu_seconds": 27.898586,
+        "process_p50_seconds": 0.507864,
+        "process_max_seconds": 4.113472,
+        "queue_seconds": 0.25597800000000004
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:anonymous_statement_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 8.63674,
+        "cpu_seconds": 31.997868999999998,
+        "process_p50_seconds": 0.699433,
+        "process_max_seconds": 3.99892,
+        "queue_seconds": 0.25003
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:cross_chunk_readable_imports_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 8.551892,
+        "cpu_seconds": 25.331582,
+        "process_p50_seconds": 0.697265,
+        "process_max_seconds": 4.137742,
+        "queue_seconds": 0.19909200000000002
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:at_init_unresolved_callee_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 8.487572,
+        "cpu_seconds": 28.337175,
+        "process_p50_seconds": 0.515449,
+        "process_max_seconds": 4.92205,
+        "queue_seconds": 0.241944
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:unknown_call_export_reachability_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 8.433401,
+        "cpu_seconds": 25.011264,
+        "process_p50_seconds": 0.444598,
+        "process_max_seconds": 4.224417,
+        "queue_seconds": 0.244308
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:lemma_one_linker_post_order_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 8.325126,
+        "cpu_seconds": 7.689587,
+        "process_p50_seconds": 0.464937,
+        "process_max_seconds": 4.39154,
+        "queue_seconds": 0.259138
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:from_entries_callback_storage_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 8.281412,
+        "cpu_seconds": 27.296935,
+        "process_p50_seconds": 0.59612,
+        "process_max_seconds": 3.675178,
+        "queue_seconds": 0.254931
+      },
+      {
+        "label": "//agentplane/notification_service:unit_test",
+        "fresh_actions": 5,
+        "fresh_invocations": 5,
+        "process_seconds": 8.247222,
+        "cpu_seconds": 9.723254,
+        "process_p50_seconds": 1.006849,
+        "process_max_seconds": 2.754642,
+        "queue_seconds": 0.310208
+      },
+      {
+        "label": "//agentplane/runner:test_initialize",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 8.243734,
+        "cpu_seconds": 8.538259,
+        "process_p50_seconds": 8.243734,
+        "process_max_seconds": 8.243734,
+        "queue_seconds": 0.065136
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:graph_provenance_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 8.155959000000001,
+        "cpu_seconds": 31.000221,
+        "process_p50_seconds": 0.424466,
+        "process_max_seconds": 3.792958,
+        "queue_seconds": 0.048595
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:gate_rejection_scopes_to_bad_scc_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 8.093461999999999,
+        "cpu_seconds": 9.001873999999999,
+        "process_p50_seconds": 0.477787,
+        "process_max_seconds": 4.576172,
+        "queue_seconds": 0.243928
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:intrinsic_alias_lowering_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 8.054041,
+        "cpu_seconds": 24.470362,
+        "process_p50_seconds": 0.711656,
+        "process_max_seconds": 3.502546,
+        "queue_seconds": 0.253486
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:selector_anchor_inference_desiderata_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.993216,
+        "cpu_seconds": 1.7982939999999998,
+        "process_p50_seconds": 0.457882,
+        "process_max_seconds": 6.186363,
+        "queue_seconds": 0.244588
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:at_init_s_chain_dataflow_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.928985,
+        "cpu_seconds": 29.378961,
+        "process_p50_seconds": 0.598872,
+        "process_max_seconds": 3.915277,
+        "queue_seconds": 0.244809
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_egress_credentials",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 7.926969,
+        "cpu_seconds": 9.614745,
+        "process_p50_seconds": 7.926969,
+        "process_max_seconds": 7.926969,
+        "queue_seconds": 0.064757
+      },
+      {
+        "label": "//agentplane/runner:test_cgroups",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 7.914076,
+        "cpu_seconds": 6.87069,
+        "process_p50_seconds": 7.914076,
+        "process_max_seconds": 7.914076,
+        "queue_seconds": 0.061053
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:spec_comments_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.894881,
+        "cpu_seconds": 27.014422,
+        "process_p50_seconds": 0.487265,
+        "process_max_seconds": 3.523548,
+        "queue_seconds": 0.235498
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:catchall_duplicate_export_repro_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.87971,
+        "cpu_seconds": 15.975806,
+        "process_p50_seconds": 0.385037,
+        "process_max_seconds": 3.880682,
+        "queue_seconds": 0.249407
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:template_references_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.86307,
+        "cpu_seconds": 24.441618,
+        "process_p50_seconds": 0.36862,
+        "process_max_seconds": 3.86385,
+        "queue_seconds": 0.299941
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:spec_validate_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.849189,
+        "cpu_seconds": 21.591921999999997,
+        "process_p50_seconds": 0.433092,
+        "process_max_seconds": 4.318981,
+        "queue_seconds": 0.245663
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:url_rebase_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.843075,
+        "cpu_seconds": 16.346815,
+        "process_p50_seconds": 0.800873,
+        "process_max_seconds": 3.507992,
+        "queue_seconds": 0.24334899999999998
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:set_iterable_reentry_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.833807,
+        "cpu_seconds": 28.830424,
+        "process_p50_seconds": 0.578002,
+        "process_max_seconds": 3.482657,
+        "queue_seconds": 0.248662
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:import_coalescing_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.831625,
+        "cpu_seconds": 20.179517,
+        "process_p50_seconds": 0.762891,
+        "process_max_seconds": 3.506764,
+        "queue_seconds": 0.249966
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:hoisted_var_declaration_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.820208,
+        "cpu_seconds": 16.233457,
+        "process_p50_seconds": 0.397792,
+        "process_max_seconds": 3.876975,
+        "queue_seconds": 0.253367
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:soundness_plain_data_escape_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.797377,
+        "cpu_seconds": 22.567266,
+        "process_p50_seconds": 0.455876,
+        "process_max_seconds": 3.807369,
+        "queue_seconds": 0.261166
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:binding_name_resolution_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.779614,
+        "cpu_seconds": 10.280391,
+        "process_p50_seconds": 0.364696,
+        "process_max_seconds": 3.791686,
+        "queue_seconds": 0.243731
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:query_failures_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.7197819999999995,
+        "cpu_seconds": 6.831396,
+        "process_p50_seconds": 0.52542,
+        "process_max_seconds": 4.064073,
+        "queue_seconds": 0.194861
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:member_of_module_lowering_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.707521,
+        "cpu_seconds": 19.607718000000002,
+        "process_p50_seconds": 0.619816,
+        "process_max_seconds": 3.472532,
+        "queue_seconds": 0.24818099999999998
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:chunk_admission_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.686686,
+        "cpu_seconds": 26.579563,
+        "process_p50_seconds": 0.461511,
+        "process_max_seconds": 3.706573,
+        "queue_seconds": 0.24616200000000002
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:lemma_three_at_init_read_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.680281,
+        "cpu_seconds": 7.290923,
+        "process_p50_seconds": 0.716057,
+        "process_max_seconds": 3.441232,
+        "queue_seconds": 0.246807
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:export_local_heuristic_remap_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.637218,
+        "cpu_seconds": 6.93075,
+        "process_p50_seconds": 0.647884,
+        "process_max_seconds": 3.487066,
+        "queue_seconds": 0.24074800000000002
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:empty_collection_timing_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.5855619999999995,
+        "cpu_seconds": 26.496164,
+        "process_p50_seconds": 0.516329,
+        "process_max_seconds": 3.354914,
+        "queue_seconds": 0.245601
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:peel_factorize_landability_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.576792,
+        "cpu_seconds": 25.403854,
+        "process_p50_seconds": 0.456081,
+        "process_max_seconds": 3.602527,
+        "queue_seconds": 0.243716
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:map_entry_callbacks_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.554171,
+        "cpu_seconds": 25.377962,
+        "process_p50_seconds": 0.360168,
+        "process_max_seconds": 3.461726,
+        "queue_seconds": 0.235666
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:unknown_call_callback_storage_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.524181,
+        "cpu_seconds": 21.953723,
+        "process_p50_seconds": 0.407437,
+        "process_max_seconds": 4.147252,
+        "queue_seconds": 0.248615
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:selector_outcomes_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.476494,
+        "cpu_seconds": 25.382543000000002,
+        "process_p50_seconds": 0.433491,
+        "process_max_seconds": 3.416619,
+        "queue_seconds": 0.252545
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:return_object_residual_alias_import_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.428239,
+        "cpu_seconds": 25.469696000000003,
+        "process_p50_seconds": 0.449699,
+        "process_max_seconds": 3.413311,
+        "queue_seconds": 0.250747
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:lemma_two_rescued_asymmetric_cycle_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.395128,
+        "cpu_seconds": 7.219626,
+        "process_p50_seconds": 0.429747,
+        "process_max_seconds": 3.730408,
+        "queue_seconds": 0.251408
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:pass_two_tdz_cut_diagnosis_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.376367,
+        "cpu_seconds": 10.401269,
+        "process_p50_seconds": 0.337914,
+        "process_max_seconds": 3.769335,
+        "queue_seconds": 0.246661
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:reserved_word_mint_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.3395150000000005,
+        "cpu_seconds": 6.895726,
+        "process_p50_seconds": 0.593409,
+        "process_max_seconds": 3.152788,
+        "queue_seconds": 0.251901
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:mediator_reaches_asymmetric_cycle_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.294965,
+        "cpu_seconds": 7.100331,
+        "process_p50_seconds": 0.628197,
+        "process_max_seconds": 3.343153,
+        "queue_seconds": 0.247604
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:runtime_tdz_on_imported_class_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.272418,
+        "cpu_seconds": 6.4470659999999995,
+        "process_p50_seconds": 0.517373,
+        "process_max_seconds": 3.632642,
+        "queue_seconds": 0.244253
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:scc_cluster_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.209898,
+        "cpu_seconds": 14.696603,
+        "process_p50_seconds": 0.430177,
+        "process_max_seconds": 3.297,
+        "queue_seconds": 0.19775900000000002
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:naturalization_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.193722,
+        "cpu_seconds": 16.546174,
+        "process_p50_seconds": 0.550908,
+        "process_max_seconds": 3.089594,
+        "queue_seconds": 0.217253
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:three_argument_metadata_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.1386389999999995,
+        "cpu_seconds": 17.155294,
+        "process_p50_seconds": 0.69696,
+        "process_max_seconds": 3.139055,
+        "queue_seconds": 0.237554
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:residual_member_rename_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.108353,
+        "cpu_seconds": 7.151651,
+        "process_p50_seconds": 0.428119,
+        "process_max_seconds": 3.607807,
+        "queue_seconds": 0.252591
+      },
+      {
+        "label": "//devinfra/js/debundle/skills/debundle_explain:debundle_explain_frontmatter_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 7.099451999999999,
+        "cpu_seconds": 5.8623709999999996,
+        "process_p50_seconds": 3.068583,
+        "process_max_seconds": 4.030869,
+        "queue_seconds": 0.12118699999999999
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:chunk_rename_cross_module_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.063006,
+        "cpu_seconds": 6.824356,
+        "process_p50_seconds": 0.485404,
+        "process_max_seconds": 3.173321,
+        "queue_seconds": 0.239994
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:naturalize_cross_scope_params_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 7.059198,
+        "cpu_seconds": 6.267855,
+        "process_p50_seconds": 0.840686,
+        "process_max_seconds": 3.091469,
+        "queue_seconds": 0.25640399999999997
+      },
+      {
+        "label": "//devinfra/js/debundle/skills/debundle_stabilize:debundle_stabilize_frontmatter_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 7.029389,
+        "cpu_seconds": 6.199384,
+        "process_p50_seconds": 3.302526,
+        "process_max_seconds": 3.726863,
+        "queue_seconds": 0.12992599999999999
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:sibling_declarator_steal_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.99386,
+        "cpu_seconds": 6.544526,
+        "process_p50_seconds": 0.908214,
+        "process_max_seconds": 2.948659,
+        "queue_seconds": 0.246797
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:per_atomic_group_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.961351,
+        "cpu_seconds": 14.563561,
+        "process_p50_seconds": 0.402626,
+        "process_max_seconds": 3.16941,
+        "queue_seconds": 0.240919
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:duplicate_top_level_declaration_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.940119,
+        "cpu_seconds": 13.353709,
+        "process_p50_seconds": 0.432358,
+        "process_max_seconds": 3.282944,
+        "queue_seconds": 0.253777
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:export_default_purity_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.919789,
+        "cpu_seconds": 12.680394,
+        "process_p50_seconds": 0.40167,
+        "process_max_seconds": 3.10911,
+        "queue_seconds": 0.246657
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:selector_diagnostics_report_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.8972809999999996,
+        "cpu_seconds": 21.918177,
+        "process_p50_seconds": 0.404397,
+        "process_max_seconds": 3.230012,
+        "queue_seconds": 0.191847
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:rename_shadowed_inner_binding_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.891877,
+        "cpu_seconds": 12.905217,
+        "process_p50_seconds": 0.882315,
+        "process_max_seconds": 3.057063,
+        "queue_seconds": 0.183971
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:chunk_renames_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.845797,
+        "cpu_seconds": 17.923852,
+        "process_p50_seconds": 0.230387,
+        "process_max_seconds": 3.361288,
+        "queue_seconds": 0.22017799999999998
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:lemma_five_side_effect_order_test",
+        "fresh_actions": 3,
+        "fresh_invocations": 2,
+        "process_seconds": 6.745974,
+        "cpu_seconds": 6.349917,
+        "process_p50_seconds": 2.977793,
+        "process_max_seconds": 3.327553,
+        "queue_seconds": 0.183307
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:selector_conflict_witness_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.730375,
+        "cpu_seconds": 21.780079,
+        "process_p50_seconds": 0.828612,
+        "process_max_seconds": 2.840949,
+        "queue_seconds": 0.266938
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:passed_to_call_lowering_test",
+        "fresh_actions": 3,
+        "fresh_invocations": 2,
+        "process_seconds": 6.623607000000001,
+        "cpu_seconds": 23.762671,
+        "process_p50_seconds": 3.077503,
+        "process_max_seconds": 3.112363,
+        "queue_seconds": 0.18384999999999999
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:unknown_call_export_reentry_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.563534,
+        "cpu_seconds": 19.18843,
+        "process_p50_seconds": 0.442267,
+        "process_max_seconds": 2.899002,
+        "queue_seconds": 0.204311
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:asymmetric_non_residual_cycle_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.550434999999999,
+        "cpu_seconds": 6.298107,
+        "process_p50_seconds": 0.423786,
+        "process_max_seconds": 3.00073,
+        "queue_seconds": 0.17192
+      },
+      {
+        "label": "//devinfra/js/debundle:gate_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 6.549901,
+        "cpu_seconds": 8.003391,
+        "process_p50_seconds": 0.370567,
+        "process_max_seconds": 6.179334,
+        "queue_seconds": 0.12376000000000001
+      },
+      {
+        "label": "//agentplane/notification_service/api:unit_test",
+        "fresh_actions": 6,
+        "fresh_invocations": 6,
+        "process_seconds": 6.497965,
+        "cpu_seconds": 8.268698,
+        "process_p50_seconds": 0.919788,
+        "process_max_seconds": 1.417569,
+        "queue_seconds": 0.367432
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:dependency_graph_purity_reason_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.459566,
+        "cpu_seconds": 20.435530999999997,
+        "process_p50_seconds": 0.388816,
+        "process_max_seconds": 3.074233,
+        "queue_seconds": 0.252188
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:lowering_test",
+        "fresh_actions": 3,
+        "fresh_invocations": 2,
+        "process_seconds": 6.444235,
+        "cpu_seconds": 24.025822,
+        "process_p50_seconds": 2.993692,
+        "process_max_seconds": 3.007072,
+        "queue_seconds": 0.185623
+      },
+      {
+        "label": "//agentplane/runner_gateway:test_client",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 6.37021,
+        "cpu_seconds": 4.519545,
+        "process_p50_seconds": 6.37021,
+        "process_max_seconds": 6.37021,
+        "queue_seconds": 0.063377
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:pure_members_test",
+        "fresh_actions": 3,
+        "fresh_invocations": 2,
+        "process_seconds": 6.294088,
+        "cpu_seconds": 15.940339999999999,
+        "process_p50_seconds": 2.899999,
+        "process_max_seconds": 2.985425,
+        "queue_seconds": 0.179108
+      },
+      {
+        "label": "//:requirements_test",
+        "fresh_actions": 6,
+        "fresh_invocations": 3,
+        "process_seconds": 6.287313,
+        "cpu_seconds": 4.700283,
+        "process_p50_seconds": 0.425858,
+        "process_max_seconds": 1.922847,
+        "queue_seconds": 0.369104
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:object_plain_data_calls_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.16085,
+        "cpu_seconds": 14.600037,
+        "process_p50_seconds": 0.607063,
+        "process_max_seconds": 2.782788,
+        "queue_seconds": 0.146445
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:identifier_rename_queue_test",
+        "fresh_actions": 3,
+        "fresh_invocations": 2,
+        "process_seconds": 6.157325,
+        "cpu_seconds": 12.307043,
+        "process_p50_seconds": 2.850012,
+        "process_max_seconds": 2.907649,
+        "queue_seconds": 0.180237
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:export_reentry_report_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.1516079999999995,
+        "cpu_seconds": 13.560105,
+        "process_p50_seconds": 0.931124,
+        "process_max_seconds": 2.291105,
+        "queue_seconds": 0.238378
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:at_init_promotion_fndecl_direct_read_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.03673,
+        "cpu_seconds": 5.470824,
+        "process_p50_seconds": 0.754767,
+        "process_max_seconds": 2.384314,
+        "queue_seconds": 0.251096
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:cross_ref_lowering_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 6.018564,
+        "cpu_seconds": 18.45863,
+        "process_p50_seconds": 0.418667,
+        "process_max_seconds": 2.727953,
+        "queue_seconds": 0.272527
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:bindings_unassign_gate_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 5.997396,
+        "cpu_seconds": 8.756886,
+        "process_p50_seconds": 0.351335,
+        "process_max_seconds": 2.836986,
+        "queue_seconds": 0.245752
+      },
+      {
+        "label": "//devinfra/js/debundle/skills/debundle_architect:debundle_architect_frontmatter_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 5.954484,
+        "cpu_seconds": 5.060556,
+        "process_p50_seconds": 2.905926,
+        "process_max_seconds": 3.048558,
+        "queue_seconds": 0.127244
+      },
+      {
+        "label": "//devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work_frontmatter_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 5.935116000000001,
+        "cpu_seconds": 5.23751,
+        "process_p50_seconds": 2.856666,
+        "process_max_seconds": 3.07845,
+        "queue_seconds": 0.130903
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:gate_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 5.925643,
+        "cpu_seconds": 19.664375,
+        "process_p50_seconds": 0.617492,
+        "process_max_seconds": 2.526227,
+        "queue_seconds": 0.250374
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:rename_shorthand_destructure_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 5.886374,
+        "cpu_seconds": 8.914395,
+        "process_p50_seconds": 0.500272,
+        "process_max_seconds": 2.60583,
+        "queue_seconds": 0.255789
+      },
+      {
+        "label": "//devinfra/js/debundle/skills/debundle_integrator:debundle_integrator_frontmatter_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 5.8839120000000005,
+        "cpu_seconds": 4.615846,
+        "process_p50_seconds": 2.931621,
+        "process_max_seconds": 2.952291,
+        "queue_seconds": 0.126708
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:at_init_cross_module_call_body_reads_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 5.723609000000001,
+        "cpu_seconds": 14.75441,
+        "process_p50_seconds": 0.405396,
+        "process_max_seconds": 2.500602,
+        "queue_seconds": 0.252587
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:peel_factorize_extend_anonymous_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 5.399899,
+        "cpu_seconds": 11.888496,
+        "process_p50_seconds": 2.598841,
+        "process_max_seconds": 2.801058,
+        "queue_seconds": 0.118499
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:rename_target_capture_test",
+        "fresh_actions": 3,
+        "fresh_invocations": 2,
+        "process_seconds": 5.274531,
+        "cpu_seconds": 9.739612,
+        "process_p50_seconds": 2.072571,
+        "process_max_seconds": 2.315682,
+        "queue_seconds": 0.192718
+      },
+      {
+        "label": "//devinfra/js/debundle/skills/debundle_mint_names:debundle_mint_names_frontmatter_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 5.266266,
+        "cpu_seconds": 4.817097,
+        "process_p50_seconds": 2.531258,
+        "process_max_seconds": 2.735008,
+        "queue_seconds": 0.126316
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:at_init_promotion_nested_closure_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 5.246402,
+        "cpu_seconds": 8.477504,
+        "process_p50_seconds": 0.406244,
+        "process_max_seconds": 2.290552,
+        "queue_seconds": 0.14399499999999998
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:missing_binding_member_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 5.206801,
+        "cpu_seconds": 4.7992930000000005,
+        "process_p50_seconds": 0.670797,
+        "process_max_seconds": 2.017603,
+        "queue_seconds": 0.251163
+      },
+      {
+        "label": "//devinfra/js/debundle/skills/debundle_orchestrator:debundle_orchestrator_frontmatter_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 5.1753800000000005,
+        "cpu_seconds": 4.392072,
+        "process_p50_seconds": 2.315956,
+        "process_max_seconds": 2.859424,
+        "queue_seconds": 0.120861
+      },
+      {
+        "label": "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_frontmatter_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 4.894488,
+        "cpu_seconds": 4.265181,
+        "process_p50_seconds": 2.419296,
+        "process_max_seconds": 2.475192,
+        "queue_seconds": 0.123669
+      },
+      {
+        "label": "//devinfra/js/debundle/skills/debundle_intake:debundle_intake_frontmatter_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 4.799249,
+        "cpu_seconds": 4.369382,
+        "process_p50_seconds": 2.397796,
+        "process_max_seconds": 2.401453,
+        "queue_seconds": 0.124755
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:duplicate_export_test",
+        "fresh_actions": 3,
+        "fresh_invocations": 2,
+        "process_seconds": 4.674259,
+        "cpu_seconds": 3.525187,
+        "process_p50_seconds": 1.978595,
+        "process_max_seconds": 2.326392,
+        "queue_seconds": 0.081677
+      },
+      {
+        "label": "//agentplane/notification_service/store:golden_test",
+        "fresh_actions": 6,
+        "fresh_invocations": 6,
+        "process_seconds": 4.477778,
+        "cpu_seconds": 4.868249,
+        "process_p50_seconds": 0.6851,
+        "process_max_seconds": 0.928234,
+        "queue_seconds": 0.378174
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:modules_list_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 4.410958,
+        "cpu_seconds": 3.448009,
+        "process_p50_seconds": 0.421062,
+        "process_max_seconds": 1.841221,
+        "queue_seconds": 0.248478
+      },
+      {
+        "label": "//cluster/validation:test_kustomize",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 4.31783,
+        "cpu_seconds": 3.387841,
+        "process_p50_seconds": 4.31783,
+        "process_max_seconds": 4.31783,
+        "queue_seconds": 0.060222
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:selector_minimizer_expectation_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 3.897693,
+        "cpu_seconds": 8.551606,
+        "process_p50_seconds": 0.492109,
+        "process_max_seconds": 1.665991,
+        "queue_seconds": 0.247864
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:modules_delete_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 3.780256,
+        "cpu_seconds": 4.294873,
+        "process_p50_seconds": 0.691818,
+        "process_max_seconds": 1.35812,
+        "queue_seconds": 0.235375
+      },
+      {
+        "label": "//agentplane/notification_service/worker:settings_test",
+        "fresh_actions": 5,
+        "fresh_invocations": 5,
+        "process_seconds": 3.651481,
+        "cpu_seconds": 4.8321250000000004,
+        "process_p50_seconds": 0.725721,
+        "process_max_seconds": 0.811127,
+        "queue_seconds": 0.32120899999999997
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:spec_stats_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 3.455448,
+        "cpu_seconds": 4.22502,
+        "process_p50_seconds": 0.687481,
+        "process_max_seconds": 1.220395,
+        "queue_seconds": 0.251271
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:match_selector_cli_test",
+        "fresh_actions": 4,
+        "fresh_invocations": 2,
+        "process_seconds": 3.151712,
+        "cpu_seconds": 5.80293,
+        "process_p50_seconds": 0.433075,
+        "process_max_seconds": 1.192168,
+        "queue_seconds": 0.254115
+      },
+      {
+        "label": "//devinfra/js/debundle:chunk_analysis_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 2.851598,
+        "cpu_seconds": 2.628802,
+        "process_p50_seconds": 0.792895,
+        "process_max_seconds": 2.058703,
+        "queue_seconds": 0.12221499999999999
+      },
+      {
+        "label": "//agentplane/cli:cli_test",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 2.558293,
+        "cpu_seconds": 2.082111,
+        "process_p50_seconds": 2.558293,
+        "process_max_seconds": 2.558293,
+        "queue_seconds": 0.080911
+      },
+      {
+        "label": "//devinfra/js/debundle/e2e:soundness_dynamic_scope_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 2,
+        "process_seconds": 2.120239,
+        "cpu_seconds": 1.0728879999999998,
+        "process_p50_seconds": 0.934087,
+        "process_max_seconds": 1.186152,
+        "queue_seconds": 0.120172
+      },
+      {
+        "label": "//devinfra/js/debundle:pipeline_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 2.011829,
+        "cpu_seconds": 4.238721,
+        "process_p50_seconds": 0.37597,
+        "process_max_seconds": 1.635859,
+        "queue_seconds": 0.124014
+      },
+      {
+        "label": "//devinfra/js/debundle:selector_ortools_cpsat_backend_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 1.77472,
+        "cpu_seconds": 2.708395,
+        "process_p50_seconds": 0.550999,
+        "process_max_seconds": 1.223721,
+        "queue_seconds": 0.11723700000000001
+      },
+      {
+        "label": "//devinfra/js/debundle:selector_codemod_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 1.4493580000000001,
+        "cpu_seconds": 1.711298,
+        "process_p50_seconds": 0.39979,
+        "process_max_seconds": 1.049568,
+        "queue_seconds": 0.123457
+      },
+      {
+        "label": "//devinfra/js/debundle:anonymous_resolution_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 1.436859,
+        "cpu_seconds": 1.323603,
+        "process_p50_seconds": 0.588275,
+        "process_max_seconds": 0.848584,
+        "queue_seconds": 0.128681
+      },
+      {
+        "label": "//devinfra/js/debundle:cli_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 1.392798,
+        "cpu_seconds": 1.361702,
+        "process_p50_seconds": 0.621913,
+        "process_max_seconds": 0.770885,
+        "queue_seconds": 0.127169
+      },
+      {
+        "label": "//devinfra/js/debundle:selector_backend_solver_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 1.329536,
+        "cpu_seconds": 1.208556,
+        "process_p50_seconds": 0.4174,
+        "process_max_seconds": 0.912136,
+        "queue_seconds": 0.119888
+      },
+      {
+        "label": "//devinfra/js/debundle:validate_emitted_exports_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 1.216952,
+        "cpu_seconds": 1.213976,
+        "process_p50_seconds": 0.455904,
+        "process_max_seconds": 0.761048,
+        "queue_seconds": 0.118235
+      },
+      {
+        "label": "//devinfra/js/debundle:selector_ir_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 1.208499,
+        "cpu_seconds": 1.123008,
+        "process_p50_seconds": 0.369104,
+        "process_max_seconds": 0.839395,
+        "queue_seconds": 0.12557200000000002
+      },
+      {
+        "label": "//devinfra/js/debundle:peel_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 1.20093,
+        "cpu_seconds": 1.498402,
+        "process_p50_seconds": 0.353004,
+        "process_max_seconds": 0.847926,
+        "queue_seconds": 0.12082799999999999
+      },
+      {
+        "label": "//devinfra/js/debundle:vendor_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 1.1651639999999999,
+        "cpu_seconds": 1.226667,
+        "process_p50_seconds": 0.427516,
+        "process_max_seconds": 0.737648,
+        "queue_seconds": 0.123412
+      },
+      {
+        "label": "//devinfra/js/debundle:lowering_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 1.163123,
+        "cpu_seconds": 1.316035,
+        "process_p50_seconds": 0.378658,
+        "process_max_seconds": 0.784465,
+        "queue_seconds": 2.869348
+      },
+      {
+        "label": "//devinfra/js/debundle:prune_dead_imports_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 1.095873,
+        "cpu_seconds": 0.986221,
+        "process_p50_seconds": 0.537614,
+        "process_max_seconds": 0.558259,
+        "queue_seconds": 0.156554
+      },
+      {
+        "label": "//devinfra/js/debundle:artifact_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 0.943123,
+        "cpu_seconds": 0.9732890000000001,
+        "process_p50_seconds": 0.390965,
+        "process_max_seconds": 0.552158,
+        "queue_seconds": 0.122001
+      },
+      {
+        "label": "//devinfra/js/debundle:selector_constraint_model_builder_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 0.910194,
+        "cpu_seconds": 0.9619519999999999,
+        "process_p50_seconds": 0.412932,
+        "process_max_seconds": 0.497262,
+        "queue_seconds": 0.126442
+      },
+      {
+        "label": "//devinfra/js/debundle:prepare_chunks_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 0.8962730000000001,
+        "cpu_seconds": 1.08121,
+        "process_p50_seconds": 0.321568,
+        "process_max_seconds": 0.574705,
+        "queue_seconds": 0.073498
+      },
+      {
+        "label": "//devinfra/js/debundle:prune_module_exports_test",
+        "fresh_actions": 2,
+        "fresh_invocations": 1,
+        "process_seconds": 0.886458,
+        "cpu_seconds": 0.926326,
+        "process_p50_seconds": 0.363747,
+        "process_max_seconds": 0.522711,
+        "queue_seconds": 0.122398
+      },
+      {
+        "label": "//devinfra/js/debundle:selector_ir_lowering_test",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 0.63914,
+        "cpu_seconds": 0.427301,
+        "process_p50_seconds": 0.63914,
+        "process_max_seconds": 0.63914,
+        "queue_seconds": 0.011374
+      },
+      {
+        "label": "//devinfra/js/debundle:emit_harness_test",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 0.621526,
+        "cpu_seconds": 0.704193,
+        "process_p50_seconds": 0.621526,
+        "process_max_seconds": 0.621526,
+        "queue_seconds": 0.063546
+      },
+      {
+        "label": "//devinfra/js/debundle:selector_constraint_backend_test",
+        "fresh_actions": 1,
+        "fresh_invocations": 1,
+        "process_seconds": 0.488618,
+        "cpu_seconds": 0.515544,
+        "process_p50_seconds": 0.488618,
+        "process_max_seconds": 0.488618,
+        "queue_seconds": 0.064456
+      }
+    ],
+    "profiles": [
+      {
+        "invocation": "c23e6191-07bd-55e8-a0e8-b01fb197b238",
+        "url": "https://app.buildbuddy.io/invocation/c23e6191-07bd-55e8-a0e8-b01fb197b238",
+        "mechanism": "VM: 406.37s action on 439.03s path",
+        "profile_sha256": "a57f8c7fb88d4f53b7594c42d3a48f7868844779d89e95bade583c713ba9e797",
+        "profile_bytes": 254563,
+        "retrieval": "bbapi tool-log download c23e6191-07bd-55e8-a0e8-b01fb197b238 command.profile.gz"
+      },
+      {
+        "invocation": "d852cea9-cd7d-5cee-9869-8f0f97e8f573",
+        "url": "https://app.buildbuddy.io/invocation/d852cea9-cd7d-5cee-9869-8f0f97e8f573",
+        "mechanism": "MCP: 481.57s action on 517.63s path",
+        "profile_sha256": "3bbc004221f4ee72b2d5ad7cef33343d0fd7e11fee7bb16ee159d483457d407b",
+        "profile_bytes": 692722,
+        "retrieval": "bbapi tool-log download d852cea9-cd7d-5cee-9869-8f0f97e8f573 command.profile.gz"
+      },
+      {
+        "invocation": "f1d59ab2-db51-5744-ac47-f28f28dadd9c",
+        "url": "https://app.buildbuddy.io/invocation/f1d59ab2-db51-5744-ac47-f28f28dadd9c",
+        "mechanism": "Debundle scale: 79.26s test plus 25.17s Rust compilation on 105.57s path",
+        "profile_sha256": "0e4d839112df1b0e158acd6fc09f9abf818b2adbebc4188d675d5de1305f1c50",
+        "profile_bytes": 750423,
+        "retrieval": "bbapi tool-log download f1d59ab2-db51-5744-ac47-f28f28dadd9c command.profile.gz"
+      }
+    ],
+    "debundle_mode_probe": {
+      "source_devel_commit": "01d15ce5f3d06d9c6554a93329b8c5eb4994b417",
+      "target": "//devinfra/js/debundle/e2e:value_flow_sharing_scale_test",
+      "coverage": "Same source fixture (4096 alternatives, 768 properties, 512 repeated writes) and assert_preserved_entry_output Node oracle; no N reduction.",
+      "fastbuild": {
+        "invocation": "7e60b459-3eaf-41d3-b389-852a2f22e3bb",
+        "result": "PASSED",
+        "process_seconds": 73.97771,
+        "cpu_seconds": 73.408587,
+        "bazel_elapsed_seconds": 88.893,
+        "profile_sha256": "ce02eab935cd9d37c54ff007cc921aa6843eb559300ba3f356ef50fcafe09549"
+      },
+      "opt": {
+        "invocation": "f7f65f7e-b8fb-42b2-826f-46e28711e0c9",
+        "result": "PASSED",
+        "process_seconds": 18.692457,
+        "cpu_seconds": 18.777852,
+        "bazel_elapsed_seconds": 52.511,
+        "profile_sha256": "07d8d0ad17393cd335fae4a85d5337e4ddccf6bf705e3b55474f96c83fbf40f2"
+      },
+      "limits": "One uncached run per mode, worker/snapshot state unmatched. Mode switch discarded analysis cache; optimized build had six fresh remote actions versus two in control. Test body identified by primaryOutputPath test.exited_prematurely; additional TestRunner XML-generation helper excluded from this body comparison but included in cohort cost ranking. No fleet/cold-cache benefit established."
+    },
+    "browser_python_profile": {
+      "invocation": "341f7fb5-2265-4f80-b520-c64c5251324a",
+      "source": "pinned devel plus temporary cProfile pytest-session hooks; no instrumentation retained",
+      "command": "bbr test //agentplane/app:test_thread_browser --test_sharding_strategy=disabled --test_arg=-k --test_arg=\"test_archived_thread_page_survives_deleted_sandbox_and_reload or test_small_upward_scroll_stays_detached_when_tail_streams or test_failed_turn_preserves_confirmed_input\" --test_arg=--durations=0 --nocache_test_results",
+      "result": "4 passed, 44 deselected",
+      "pytest_seconds": 137.11,
+      "process_seconds": 176.9,
+      "first_case_setup_seconds": 61.67,
+      "later_setup_seconds": [8.76, 8.95, 7.71],
+      "pstats_sha256": "7a8af00aac36e5ebb9cdd19a4e8d37b39d3c8eda8cbe44f9b67d9fc8f0f5bec3",
+      "limits": "cProfile wall-clock call accounting overlaps asynchronous resumptions; cumulative entries are not additive phase durations. Use pytest phase durations and remote process/CPU clocks for comparisons."
+    },
+    "prior_work_disposition": {
+      "mcp_reuse": "PR12380 merged; earlier four-run BFF XML evidence retained as historical, not remeasured here.",
+      "vm_teardown_and_artifact_overlap": "Earlier landed findings retained; no new causal fleet savings assigned.",
+      "capacity_and_cancellation": "Prior #12468 remote-retry mitigation and supporting experiments retained. Post-policy effects remain unmeasured in this test-cost update; prior queue/occupancy cohorts remain historical.",
+      "trinity": "PR12455 merged; full historical simulation calls reduced from 75 to30 with synthetic structural checks, explicit manual target passed. Manual workload excluded from automatic CI ranking.",
+      "other_prior_tracks": "Complete prior snapshot retained below, with original windows; no revival of rejected blanket system-test sharding, Docker opt-out, or image import experiments."
+    },
+    "browser_shard_probe": {
+      "A16": {
+        "invocation": "fdc386bf-4ba9-433a-adb6-a614bc40f5ce",
+        "cases": 48,
+        "case_ids": [
+          "agentplane.app.test_thread_browser::test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it[desktop-opening a row]",
+          "agentplane.app.test_thread_browser::test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it[desktop-scrolling up]",
+          "agentplane.app.test_thread_browser::test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it[phone-opening a row]",
+          "agentplane.app.test_thread_browser::test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it[phone-scrolling up]",
+          "agentplane.app.test_thread_browser::test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place[desktop]",
+          "agentplane.app.test_thread_browser::test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place[phone]",
+          "agentplane.app.test_thread_browser::test_ahead_snapshot_is_not_a_thread_or_effective_model",
+          "agentplane.app.test_thread_browser::test_an_unfoldable_suffix_stops_browser_without_replacing_verified_history",
+          "agentplane.app.test_thread_browser::test_archived_thread_page_survives_deleted_sandbox_and_reload",
+          "agentplane.app.test_thread_browser::test_browser_replays_streams_and_reloads_one_exact_thread",
+          "agentplane.app.test_thread_browser::test_browser_sends_a_command_and_transitions_its_message_to_confirmed_input",
+          "agentplane.app.test_thread_browser::test_chronological_debug_is_lazy_paged_and_keeps_the_thread[desktop]",
+          "agentplane.app.test_thread_browser::test_chronological_debug_is_lazy_paged_and_keeps_the_thread[phone]",
+          "agentplane.app.test_thread_browser::test_electric_reconnects_unconfirmed_command_without_reloading[4]",
+          "agentplane.app.test_thread_browser::test_expanded_command_stays_collapsible[desktop-dark]",
+          "agentplane.app.test_thread_browser::test_expanded_command_stays_collapsible[desktop-light]",
+          "agentplane.app.test_thread_browser::test_expanded_command_stays_collapsible[phone-dark]",
+          "agentplane.app.test_thread_browser::test_expanded_command_stays_collapsible[phone-light]",
+          "agentplane.app.test_thread_browser::test_failed_turn_preserves_confirmed_input_and_allows_another_turn[desktop-normal]",
+          "agentplane.app.test_thread_browser::test_failed_turn_preserves_confirmed_input_and_allows_another_turn[phone-raw]",
+          "agentplane.app.test_thread_browser::test_http_admission_ahead_of_replay_does_not_skip_earlier_events[4]",
+          "agentplane.app.test_thread_browser::test_lost_runner_receipt_reconciles_from_thread_without_retry",
+          "agentplane.app.test_thread_browser::test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading[desktop-following]",
+          "agentplane.app.test_thread_browser::test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading[desktop-mid-thread]",
+          "agentplane.app.test_thread_browser::test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading[phone-following]",
+          "agentplane.app.test_thread_browser::test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading[phone-mid-thread]",
+          "agentplane.app.test_thread_browser::test_opening_a_call_while_output_streams_in_keeps_it_collapsible",
+          "agentplane.app.test_thread_browser::test_projected_browser_streams_runner_events_and_loads_evidence_lazily",
+          "agentplane.app.test_thread_browser::test_projection_epoch_replacement_retires_old_requests_and_preserves_draft",
+          "agentplane.app.test_thread_browser::test_reload_redelivers_an_unsaved_command_with_its_original_identity",
+          "agentplane.app.test_thread_browser::test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had",
+          "agentplane.app.test_thread_browser::test_returning_to_a_thread_reads_only_what_changed_while_the_reader_was_away",
+          "agentplane.app.test_thread_browser::test_settled_command_reason_survives_leaving_the_tail_and_reload[failed]",
+          "agentplane.app.test_thread_browser::test_settled_command_reason_survives_leaving_the_tail_and_reload[noop]",
+          "agentplane.app.test_thread_browser::test_sidebar_receives_rename_and_archive_from_another_app_replica",
+          "agentplane.app.test_thread_browser::test_small_upward_scroll_stays_detached_when_tail_streams",
+          "agentplane.app.test_thread_browser::test_streamed_admission_survives_a_lost_http_reply_and_reload",
+          "agentplane.app.test_thread_browser::test_switching_threads_starts_at_each_threads_tail",
+          "agentplane.app.test_thread_browser::test_terminal_shape_error_keeps_rows_and_follows_on_from_where_it_stopped",
+          "agentplane.app.test_thread_browser::test_the_history_is_not_settled_while_a_row_is_still_loading_its_text",
+          "agentplane.app.test_thread_browser::test_thread_follows_bottom_until_reader_scrolls_up[desktop-normal]",
+          "agentplane.app.test_thread_browser::test_thread_follows_bottom_until_reader_scrolls_up[desktop-raw]",
+          "agentplane.app.test_thread_browser::test_thread_follows_bottom_until_reader_scrolls_up[phone-normal]",
+          "agentplane.app.test_thread_browser::test_thread_follows_bottom_until_reader_scrolls_up[phone-raw]",
+          "agentplane.app.test_thread_browser::test_thread_says_it_is_reconnecting_while_electric_retries_a_dropped_connection",
+          "agentplane.app.test_thread_browser::test_unconfirmed_command_retries_with_same_identity_then_reconciles",
+          "agentplane.app.test_thread_browser::test_unknown_projection_failure_keeps_verified_history_and_stops_browser",
+          "agentplane.app.test_thread_browser::test_unobserved_committed_admission_reconciles_once_after_reload[4]"
+        ],
+        "fresh_actions": 16,
+        "process_seconds": 1795.368733,
+        "max_process_seconds": 131.965871,
+        "cpu_seconds": 3624.731619
+      },
+      "B8": {
+        "invocation": "5455665f-faf9-45ea-84b7-6c1cd89effba",
+        "cases": 48,
+        "case_ids": [
+          "agentplane.app.test_thread_browser::test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it[desktop-opening a row]",
+          "agentplane.app.test_thread_browser::test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it[desktop-scrolling up]",
+          "agentplane.app.test_thread_browser::test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it[phone-opening a row]",
+          "agentplane.app.test_thread_browser::test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it[phone-scrolling up]",
+          "agentplane.app.test_thread_browser::test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place[desktop]",
+          "agentplane.app.test_thread_browser::test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place[phone]",
+          "agentplane.app.test_thread_browser::test_ahead_snapshot_is_not_a_thread_or_effective_model",
+          "agentplane.app.test_thread_browser::test_an_unfoldable_suffix_stops_browser_without_replacing_verified_history",
+          "agentplane.app.test_thread_browser::test_archived_thread_page_survives_deleted_sandbox_and_reload",
+          "agentplane.app.test_thread_browser::test_browser_replays_streams_and_reloads_one_exact_thread",
+          "agentplane.app.test_thread_browser::test_browser_sends_a_command_and_transitions_its_message_to_confirmed_input",
+          "agentplane.app.test_thread_browser::test_chronological_debug_is_lazy_paged_and_keeps_the_thread[desktop]",
+          "agentplane.app.test_thread_browser::test_chronological_debug_is_lazy_paged_and_keeps_the_thread[phone]",
+          "agentplane.app.test_thread_browser::test_electric_reconnects_unconfirmed_command_without_reloading[4]",
+          "agentplane.app.test_thread_browser::test_expanded_command_stays_collapsible[desktop-dark]",
+          "agentplane.app.test_thread_browser::test_expanded_command_stays_collapsible[desktop-light]",
+          "agentplane.app.test_thread_browser::test_expanded_command_stays_collapsible[phone-dark]",
+          "agentplane.app.test_thread_browser::test_expanded_command_stays_collapsible[phone-light]",
+          "agentplane.app.test_thread_browser::test_failed_turn_preserves_confirmed_input_and_allows_another_turn[desktop-normal]",
+          "agentplane.app.test_thread_browser::test_failed_turn_preserves_confirmed_input_and_allows_another_turn[phone-raw]",
+          "agentplane.app.test_thread_browser::test_http_admission_ahead_of_replay_does_not_skip_earlier_events[4]",
+          "agentplane.app.test_thread_browser::test_lost_runner_receipt_reconciles_from_thread_without_retry",
+          "agentplane.app.test_thread_browser::test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading[desktop-following]",
+          "agentplane.app.test_thread_browser::test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading[desktop-mid-thread]",
+          "agentplane.app.test_thread_browser::test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading[phone-following]",
+          "agentplane.app.test_thread_browser::test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading[phone-mid-thread]",
+          "agentplane.app.test_thread_browser::test_opening_a_call_while_output_streams_in_keeps_it_collapsible",
+          "agentplane.app.test_thread_browser::test_projected_browser_streams_runner_events_and_loads_evidence_lazily",
+          "agentplane.app.test_thread_browser::test_projection_epoch_replacement_retires_old_requests_and_preserves_draft",
+          "agentplane.app.test_thread_browser::test_reload_redelivers_an_unsaved_command_with_its_original_identity",
+          "agentplane.app.test_thread_browser::test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had",
+          "agentplane.app.test_thread_browser::test_returning_to_a_thread_reads_only_what_changed_while_the_reader_was_away",
+          "agentplane.app.test_thread_browser::test_settled_command_reason_survives_leaving_the_tail_and_reload[failed]",
+          "agentplane.app.test_thread_browser::test_settled_command_reason_survives_leaving_the_tail_and_reload[noop]",
+          "agentplane.app.test_thread_browser::test_sidebar_receives_rename_and_archive_from_another_app_replica",
+          "agentplane.app.test_thread_browser::test_small_upward_scroll_stays_detached_when_tail_streams",
+          "agentplane.app.test_thread_browser::test_streamed_admission_survives_a_lost_http_reply_and_reload",
+          "agentplane.app.test_thread_browser::test_switching_threads_starts_at_each_threads_tail",
+          "agentplane.app.test_thread_browser::test_terminal_shape_error_keeps_rows_and_follows_on_from_where_it_stopped",
+          "agentplane.app.test_thread_browser::test_the_history_is_not_settled_while_a_row_is_still_loading_its_text",
+          "agentplane.app.test_thread_browser::test_thread_follows_bottom_until_reader_scrolls_up[desktop-normal]",
+          "agentplane.app.test_thread_browser::test_thread_follows_bottom_until_reader_scrolls_up[desktop-raw]",
+          "agentplane.app.test_thread_browser::test_thread_follows_bottom_until_reader_scrolls_up[phone-normal]",
+          "agentplane.app.test_thread_browser::test_thread_follows_bottom_until_reader_scrolls_up[phone-raw]",
+          "agentplane.app.test_thread_browser::test_thread_says_it_is_reconnecting_while_electric_retries_a_dropped_connection",
+          "agentplane.app.test_thread_browser::test_unconfirmed_command_retries_with_same_identity_then_reconciles",
+          "agentplane.app.test_thread_browser::test_unknown_projection_failure_keeps_verified_history_and_stops_browser",
+          "agentplane.app.test_thread_browser::test_unobserved_committed_admission_reconciles_once_after_reload[4]"
+        ],
+        "fresh_actions": 8,
+        "process_seconds": 1192.261005,
+        "max_process_seconds": 196.128248,
+        "cpu_seconds": 2343.856862
+      },
+      "limits": "One uncached pair, same source and test arguments, shard count only patch; worker and snapshot state unmatched. Preserve distinction between summed process cost and longest action."
     }
   }
 }
