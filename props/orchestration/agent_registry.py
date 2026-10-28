@@ -41,11 +41,9 @@ import asyncio
 import contextlib
 import logging
 import re
-import tempfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from types import TracebackType
 from uuid import UUID, uuid4
 
@@ -174,6 +172,20 @@ class ResolvedImage:
 
     digest: str
     oci_ref: str
+
+
+@dataclass(frozen=True)
+class PreparedAgentRun:
+    """Run metadata shared by DB creation and container startup."""
+
+    agent_run_id: UUID
+    image: ResolvedImage
+    model: str
+    type_config: TypeConfig
+    budget_usd: float
+    container_name: str
+    parent_run_id: UUID | None = None
+    verify_snapshot: SnapshotSlug | None = None
 
 
 @dataclass(frozen=True)
@@ -495,63 +507,107 @@ class AgentRegistry:
                     f"(${status.tree_spent_usd:.2f} spent of ${status.budget_usd:.2f})"
                 )
 
-    def _create_run(
+    def _prepare_critic_run(
+        self, *, image: ResolvedImage, example: ExampleSpec, model: str, parent_run_id: UUID | None, budget_usd: float
+    ) -> PreparedAgentRun:
+        if parent_run_id is not None:
+            self._validate_spawn_budget(parent_run_id, budget_usd)
+
+        agent_run_id = uuid4()
+        slug_seg = _slug_to_container_segment(example.snapshot_slug)
+        return PreparedAgentRun(
+            agent_run_id=agent_run_id,
+            image=image,
+            model=model,
+            type_config=CriticTypeConfig(example=example),
+            budget_usd=budget_usd,
+            container_name=f"critic-{slug_seg}-{str(agent_run_id)[:8]}",
+            parent_run_id=parent_run_id,
+            verify_snapshot=example.snapshot_slug,
+        )
+
+    def _prepare_critic_dev_optimize_run(
         self,
-        agent_run_id: UUID,
         *,
         image: ResolvedImage,
-        model: str,
-        type_config: TypeConfig,
         budget_usd: float,
-        parent_run_id: UUID | None = None,
-        verify_snapshot: SnapshotSlug | None = None,
-    ) -> None:
+        optimizer_model: str,
+        critic_model: str,
+        target_metric: TargetMetric,
+    ) -> PreparedAgentRun:
+        agent_run_id = uuid4()
+        return PreparedAgentRun(
+            agent_run_id=agent_run_id,
+            image=image,
+            model=optimizer_model,
+            type_config=CriticDevOptimizeTypeConfig(
+                target_metric=target_metric, optimizer_model=optimizer_model, critic_model=critic_model
+            ),
+            budget_usd=budget_usd,
+            container_name=f"critic-dev-opt-{str(agent_run_id)[:8]}",
+        )
+
+    async def _prepare_critic_dev_improve_run(
+        self,
+        *,
+        image: ResolvedImage,
+        examples: list[ExampleSpec],
+        baseline_image_digests: list[str],
+        budget_usd: float,
+        improvement_model: str,
+        critic_model: str,
+    ) -> PreparedAgentRun:
+        if not examples:
+            raise ValueError("examples must not be empty")
+
+        resolved_baselines = [await self._resolve_image_ref(AgentType.CRITIC, ref) for ref in baseline_image_digests]
+        agent_run_id = uuid4()
+        return PreparedAgentRun(
+            agent_run_id=agent_run_id,
+            image=image,
+            model=improvement_model,
+            type_config=CriticDevImproveTypeConfig(
+                baseline_image_digests=resolved_baselines,
+                allowed_examples=examples,
+                improvement_model=improvement_model,
+                critic_model=critic_model,
+            ),
+            budget_usd=budget_usd,
+            container_name=f"critic-dev-imp-{str(agent_run_id)[:8]}",
+        )
+
+    def _create_run(self, prepared: PreparedAgentRun) -> None:
         """Create an agent_run DB record."""
         with self._db.session() as session:
-            if verify_snapshot is not None:
-                session.query(Snapshot).filter_by(slug=verify_snapshot).one()
+            if prepared.verify_snapshot is not None:
+                session.query(Snapshot).filter_by(slug=prepared.verify_snapshot).one()
             session.add(
                 AgentRun(
-                    agent_run_id=agent_run_id,
-                    image_digest=image.digest,
-                    parent_agent_run_id=parent_run_id,
-                    model=model,
-                    type_config=type_config,
+                    agent_run_id=prepared.agent_run_id,
+                    image_digest=prepared.image.digest,
+                    parent_agent_run_id=prepared.parent_run_id,
+                    model=prepared.model,
+                    type_config=prepared.type_config,
                     status=AgentRunStatus.IN_PROGRESS,
-                    budget_usd=budget_usd,
+                    budget_usd=prepared.budget_usd,
                 )
             )
             session.commit()
 
     async def _create_and_start(
         self,
-        agent_run_id: UUID,
+        prepared: PreparedAgentRun,
         *,
-        image: ResolvedImage,
-        model: str,
-        type_config: TypeConfig,
-        budget_usd: float,
-        parent_run_id: UUID | None = None,
-        verify_snapshot: SnapshotSlug | None = None,
-        container_name: str,
         timeout_seconds: int | None = None,
         extra_labels: dict[str, str] | None = None,
         annotations: dict[str, str] | None = None,
     ) -> AgentRunHandle:
         """Create DB record and start container, returning a handle."""
-        self._create_run(
-            agent_run_id,
-            image=image,
-            model=model,
-            type_config=type_config,
-            budget_usd=budget_usd,
-            parent_run_id=parent_run_id,
-            verify_snapshot=verify_snapshot,
-        )
+        self._create_run(prepared)
         return await self._start_agent(
-            agent_run_id,
-            image=image.oci_ref,
-            name=container_name,
+            prepared.agent_run_id,
+            image=prepared.image.oci_ref,
+            name=prepared.container_name,
             timeout_seconds=timeout_seconds,
             extra_labels=extra_labels,
             annotations=annotations,
@@ -568,26 +624,13 @@ class AgentRegistry:
         budget_usd: float,
     ) -> UUID:
         """Run a critic agent. Blocks until the container exits. Returns agent run ID."""
-        if parent_run_id is not None:
-            self._validate_spawn_budget(parent_run_id, budget_usd)
-
-        agent_run_id = uuid4()
-        slug_seg = _slug_to_container_segment(example.snapshot_slug)
-        container_name = f"critic-{slug_seg}-{str(agent_run_id)[:8]}"
-        async with self._model_slot(model):
-            handle = await self._create_and_start(
-                agent_run_id,
-                image=image,
-                model=model,
-                type_config=CriticTypeConfig(example=example),
-                budget_usd=budget_usd,
-                parent_run_id=parent_run_id,
-                verify_snapshot=example.snapshot_slug,
-                container_name=container_name,
-                timeout_seconds=timeout_seconds,
-            )
+        prepared = self._prepare_critic_run(
+            image=image, example=example, model=model, parent_run_id=parent_run_id, budget_usd=budget_usd
+        )
+        async with self._model_slot(prepared.model):
+            handle = await self._create_and_start(prepared, timeout_seconds=timeout_seconds)
             await handle
-        return agent_run_id
+        return prepared.agent_run_id
 
     async def start_critic(
         self,
@@ -604,34 +647,14 @@ class AgentRegistry:
         The container runs asynchronously. Poll /api/runs/{agent_run_id} or query the
         DB directly for status updates. Use wait_until_graded() after the run exits.
         """
-        if parent_run_id is not None:
-            self._validate_spawn_budget(parent_run_id, budget_usd)
-
-        agent_run_id = uuid4()
-        slug_seg = _slug_to_container_segment(example.snapshot_slug)
-        container_name = f"critic-{slug_seg}-{str(agent_run_id)[:8]}"
-
-        self._create_run(
-            agent_run_id,
-            image=image,
-            model=model,
-            type_config=CriticTypeConfig(example=example),
-            budget_usd=budget_usd,
-            parent_run_id=parent_run_id,
-            verify_snapshot=example.snapshot_slug,
+        prepared = self._prepare_critic_run(
+            image=image, example=example, model=model, parent_run_id=parent_run_id, budget_usd=budget_usd
         )
-        self._spawn_background_run(
-            agent_run_id,
-            image_ref=image.oci_ref,
-            model=model,
-            container_name=container_name,
-            timeout_seconds=timeout_seconds,
-        )
-        return agent_run_id
+        self._create_run(prepared)
+        self._spawn_background_run(prepared, timeout_seconds=timeout_seconds)
+        return prepared.agent_run_id
 
-    def _spawn_background_run(
-        self, agent_run_id: UUID, *, image_ref: str, model: str, container_name: str, timeout_seconds: int
-    ) -> None:
+    def _spawn_background_run(self, prepared: PreparedAgentRun, *, timeout_seconds: int) -> None:
         """Start an already-created agent run in a background task and return immediately.
 
         The task holds a model parallelism slot for the run's whole duration. The run row must already exist (via
@@ -642,27 +665,30 @@ class AgentRegistry:
         async def _run() -> None:
             handle: AgentRunHandle | None = None
             try:
-                async with self._model_slot(model):
+                async with self._model_slot(prepared.model):
                     handle = await self._start_agent(
-                        agent_run_id, image=image_ref, timeout_seconds=timeout_seconds, name=container_name
+                        prepared.agent_run_id,
+                        image=prepared.image.oci_ref,
+                        timeout_seconds=timeout_seconds,
+                        name=prepared.container_name,
                     )
                     await handle
             except asyncio.CancelledError:
                 self._finalize_run_if_in_progress(
-                    agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None
+                    prepared.agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None
                 )
                 raise
             except Exception:
-                logger.exception("Unhandled error in background agent run %s", agent_run_id)
+                logger.exception("Unhandled error in background agent run %s", prepared.agent_run_id)
                 self._finalize_run_if_in_progress(
-                    agent_run_id,
+                    prepared.agent_run_id,
                     status=AgentRunStatus.STARTUP_FAILED if handle is None else AgentRunStatus.CANCELLED,
                     container_exit_code=None,
                 )
 
-        task = asyncio.create_task(_run(), name=container_name)
-        self._running_agents[agent_run_id] = task
-        task.add_done_callback(lambda _: self._running_agents.pop(agent_run_id, None))
+        task = asyncio.create_task(_run(), name=prepared.container_name)
+        self._running_agents[prepared.agent_run_id] = task
+        task.add_done_callback(lambda _: self._running_agents.pop(prepared.agent_run_id, None))
 
     async def run_critic_dev_optimize(
         self,
@@ -675,22 +701,17 @@ class AgentRegistry:
         timeout_seconds: int,
     ) -> UUID:
         """Run a critic-dev optimizer agent. Returns agent run ID (query DB for status)."""
-        agent_run_id = uuid4()
-        container_name = f"critic-dev-opt-{str(agent_run_id)[:8]}"
-        async with self._model_slot(optimizer_model):
-            handle = await self._create_and_start(
-                agent_run_id,
-                image=image,
-                model=optimizer_model,
-                type_config=CriticDevOptimizeTypeConfig(
-                    target_metric=target_metric, optimizer_model=optimizer_model, critic_model=critic_model
-                ),
-                budget_usd=budget,
-                container_name=container_name,
-                timeout_seconds=timeout_seconds,
-            )
+        prepared = self._prepare_critic_dev_optimize_run(
+            image=image,
+            budget_usd=budget,
+            optimizer_model=optimizer_model,
+            critic_model=critic_model,
+            target_metric=target_metric,
+        )
+        async with self._model_slot(prepared.model):
+            handle = await self._create_and_start(prepared, timeout_seconds=timeout_seconds)
             await handle
-        return agent_run_id
+        return prepared.agent_run_id
 
     async def run_critic_dev_improve(
         self,
@@ -702,42 +723,23 @@ class AgentRegistry:
         improvement_model: str,
         critic_model: str,
         timeout_seconds: int,
-        output_dir: Path | None = None,
     ) -> UUID:
-        """Run a critic-dev improve agent that creates definitions to beat baselines on the allowed examples.
+        """Run a critic-dev improve agent that creates definitions to beat baselines on allowed examples.
 
-        Returns agent run ID. Query DB for final status.
+        Returns the agent run ID. Query the DB for final status.
         """
-        if not examples:
-            raise ValueError("examples must not be empty")
-
-        if output_dir is None:
-            output_dir = Path(tempfile.mkdtemp(prefix="improve_agent_"))
-        output_dir = output_dir.resolve()
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Resolve baseline refs to digests (tags → sha256:...)
-        resolved_baselines = [await self._resolve_image_ref(AgentType.CRITIC, ref) for ref in baseline_image_digests]
-
-        agent_run_id = uuid4()
-        container_name = f"critic-dev-imp-{str(agent_run_id)[:8]}"
-        async with self._model_slot(improvement_model):
-            handle = await self._create_and_start(
-                agent_run_id,
-                image=image,
-                model=improvement_model,
-                type_config=CriticDevImproveTypeConfig(
-                    baseline_image_digests=resolved_baselines,
-                    allowed_examples=examples,
-                    improvement_model=improvement_model,
-                    critic_model=critic_model,
-                ),
-                budget_usd=budget_usd,
-                container_name=container_name,
-                timeout_seconds=timeout_seconds,
-            )
+        prepared = await self._prepare_critic_dev_improve_run(
+            image=image,
+            examples=examples,
+            baseline_image_digests=baseline_image_digests,
+            budget_usd=budget_usd,
+            improvement_model=improvement_model,
+            critic_model=critic_model,
+        )
+        async with self._model_slot(prepared.model):
+            handle = await self._create_and_start(prepared, timeout_seconds=timeout_seconds)
             await handle
-        return agent_run_id
+        return prepared.agent_run_id
 
     async def start_critic_dev_optimize(
         self,
@@ -749,30 +751,21 @@ class AgentRegistry:
         target_metric: TargetMetric,
         timeout_seconds: int,
     ) -> UUID:
-        """Start a critic-dev optimizer in the background. Returns agent_run_id immediately.
+        """Start a critic-dev optimizer in the background and return its run ID immediately.
 
-        The container runs asynchronously; poll /api/runs/{agent_run_id} for status. The
-        optimizer holds an optimizer-model parallelism slot for its whole run.
+        Poll /api/runs/{agent_run_id} for status. The optimizer holds an optimizer-model parallelism slot
+        for its whole run.
         """
-        agent_run_id = uuid4()
-        container_name = f"critic-dev-opt-{str(agent_run_id)[:8]}"
-        self._create_run(
-            agent_run_id,
+        prepared = self._prepare_critic_dev_optimize_run(
             image=image,
-            model=optimizer_model,
-            type_config=CriticDevOptimizeTypeConfig(
-                target_metric=target_metric, optimizer_model=optimizer_model, critic_model=critic_model
-            ),
             budget_usd=budget,
+            optimizer_model=optimizer_model,
+            critic_model=critic_model,
+            target_metric=target_metric,
         )
-        self._spawn_background_run(
-            agent_run_id,
-            image_ref=image.oci_ref,
-            model=optimizer_model,
-            container_name=container_name,
-            timeout_seconds=timeout_seconds,
-        )
-        return agent_run_id
+        self._create_run(prepared)
+        self._spawn_background_run(prepared, timeout_seconds=timeout_seconds)
+        return prepared.agent_run_id
 
     async def start_critic_dev_improve(
         self,
@@ -785,36 +778,21 @@ class AgentRegistry:
         critic_model: str,
         timeout_seconds: int,
     ) -> UUID:
-        """Start a critic-dev improve agent in the background. Returns agent_run_id immediately.
+        """Start a critic-dev improve agent in the background and return its run ID immediately.
 
-        The container runs asynchronously; poll /api/runs/{agent_run_id} for status.
+        Poll /api/runs/{agent_run_id} for status.
         """
-        if not examples:
-            raise ValueError("examples must not be empty")
-        # Resolve baseline refs to digests (tags → sha256:...)
-        resolved_baselines = [await self._resolve_image_ref(AgentType.CRITIC, ref) for ref in baseline_image_digests]
-        agent_run_id = uuid4()
-        container_name = f"critic-dev-imp-{str(agent_run_id)[:8]}"
-        self._create_run(
-            agent_run_id,
+        prepared = await self._prepare_critic_dev_improve_run(
             image=image,
-            model=improvement_model,
-            type_config=CriticDevImproveTypeConfig(
-                baseline_image_digests=resolved_baselines,
-                allowed_examples=examples,
-                improvement_model=improvement_model,
-                critic_model=critic_model,
-            ),
+            examples=examples,
+            baseline_image_digests=baseline_image_digests,
             budget_usd=budget_usd,
+            improvement_model=improvement_model,
+            critic_model=critic_model,
         )
-        self._spawn_background_run(
-            agent_run_id,
-            image_ref=image.oci_ref,
-            model=improvement_model,
-            container_name=container_name,
-            timeout_seconds=timeout_seconds,
-        )
-        return agent_run_id
+        self._create_run(prepared)
+        self._spawn_background_run(prepared, timeout_seconds=timeout_seconds)
+        return prepared.agent_run_id
 
     # --- State Tracking ---
 
@@ -837,14 +815,17 @@ class AgentRegistry:
         agent_run_id = uuid4()
         slug_seg = _slug_to_container_segment(snapshot_slug)
         container_name = f"grader-{slug_seg}-{str(agent_run_id)[:8]}"
-        return await self._create_and_start(
-            agent_run_id,
+        prepared = PreparedAgentRun(
+            agent_run_id=agent_run_id,
             image=image,
             model=model,
             type_config=GraderTypeConfig(snapshot_slug=snapshot_slug),
             budget_usd=10_000.0,
-            verify_snapshot=snapshot_slug,
             container_name=container_name,
+            verify_snapshot=snapshot_slug,
+        )
+        return await self._create_and_start(
+            prepared,
             extra_labels={LABEL_AGENT_TYPE: str(AgentType.GRADER), LABEL_SNAPSHOT: slug_seg},
             annotations={ANNOTATION_SNAPSHOT_SLUG: str(snapshot_slug)},
         )
