@@ -13,7 +13,6 @@ playing the TextArena Wordle environment through multi-step tool calls (see
 ## Training
 
 - [ ] SFT warmup dataset (if needed)
-- [ ] GRPO training loop
 - [ ] Evaluation harness for agentic tasks
 
 ## Throughput
