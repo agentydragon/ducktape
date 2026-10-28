@@ -223,12 +223,12 @@ The backend signs view-only GET requests in memory, caches ready valuations for 
 reads on the next request.
 
 Read-only analysis clients can reuse `plaid_valuation.value_plaid_rows` without importing the database or Coinbase
-clients. The `portfolio_queries` SQLAlchemy Select builders select current active account balances and each account's latest complete holding capture
-batch, with security metadata for allocation details. Convert transport timestamps to timezone-aware `datetime`
-objects, validate them as `AccountObservation` / `HoldingObservation`, and pass holdings for the configured
-correction/exclusion accounts. Successful calls return `PlaidValuation` with named gross assets, signed liabilities
-and exclusions in USD cents. Unavailable data raises `PlaidValuationError`; it never returns a zero-valued portfolio.
-`corrected_holding_value` applies the same exact-position policy corrections to allocation detail rows.
+clients. Portfolio reads execute SQLAlchemy Select builders against current active account balances and each account's
+latest complete holding capture batch, with security metadata for allocation details. Convert transport timestamps to
+timezone-aware `datetime` objects, validate them as `AccountObservation` / `HoldingObservation`, and pass holdings for
+the configured correction/exclusion accounts. Successful calls return `PlaidValuation` with named gross assets, signed
+liabilities and exclusions in USD cents. Unavailable data raises `PlaidValuationError`; it never returns a zero-valued
+portfolio. `corrected_holding_value` applies the same exact-position policy corrections to allocation detail rows.
 
 For each account with corrections or exclusions, its latest balance and complete holding batch must have exactly
 the same `captured_at`. A full mirror sync assigns that shared timestamp; a partial or in-progress sync can leave

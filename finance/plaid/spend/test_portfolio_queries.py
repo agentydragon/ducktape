@@ -6,7 +6,7 @@ import pytest_bazel
 from sqlalchemy import create_engine, insert
 
 from finance.plaid.db.models import AccountRow, BalanceSnapshotRow, Base, HoldingSnapshotRow, LinkRow, SecurityRow
-from finance.plaid.spend.portfolio_queries import compile_asyncpg, select_account_balances, select_holding_batches
+from finance.plaid.spend.portfolio_queries import select_account_balances, select_holding_batches
 
 
 def test_snapshot_selectors_drop_sold_positions_and_respect_account_liveness() -> None:
@@ -106,16 +106,6 @@ def test_snapshot_selectors_drop_sold_positions_and_respect_account_liveness() -
         ]
         assert connection.execute(select_account_balances([])).all() == []
         assert connection.execute(select_holding_batches([])).all() == []
-
-
-def test_asyncpg_compilation_keeps_hostile_selectors_bound() -> None:
-    selector = "fake-account'); DROP TABLE accounts; --"
-    query, arguments = compile_asyncpg(select_account_balances([selector]))
-    assert selector not in query
-    assert selector in arguments
-    query, arguments = compile_asyncpg(select_holding_batches([selector]))
-    assert selector not in query
-    assert selector in arguments
 
 
 if __name__ == "__main__":

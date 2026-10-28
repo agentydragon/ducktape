@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
-import asyncpg
 import httpx
 import jwt
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
+from sqlalchemy.engine import RowMapping
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance.plaid.spend.plaid_valuation import (
     AccountObservation,
@@ -23,7 +26,7 @@ from finance.plaid.spend.plaid_valuation import (
     value_plaid_rows,
 )
 from finance.plaid.spend.portfolio_models import PortfolioPolicy, PortfolioView, SourceValuation
-from finance.plaid.spend.portfolio_queries import compile_asyncpg, select_account_balances, select_holding_batches
+from finance.plaid.spend.portfolio_queries import select_account_balances, select_holding_batches
 
 _COINBASE_HOST = "api.coinbase.com"
 _COINBASE_ACCOUNTS_PATH = "/api/v3/brokerage/accounts"
@@ -70,7 +73,9 @@ class _CoinbaseSpotPrice(BaseModel):
     data: _CoinbaseSpotPriceData
 
 
-async def _read_plaid(pool: asyncpg.Pool, policy: PortfolioPolicy, *, now: datetime) -> PlaidValuation:
+async def _read_plaid(
+    session_factory: async_sessionmaker[AsyncSession], policy: PortfolioPolicy, *, now: datetime
+) -> PlaidValuation:
     plaid = policy.sources.plaid
     selected_ids = [*plaid.asset_account_ids, *plaid.liability_account_ids]
     required_holding_accounts = {exclusion.account_id for exclusion in policy.excluded_securities} | {
@@ -80,15 +85,15 @@ async def _read_plaid(pool: asyncpg.Pool, policy: PortfolioPolicy, *, now: datet
         raise PlaidValuationError("No Plaid accounts are selected.")
 
     try:
-        async with pool.acquire() as connection:
-            balance_query, balance_args = compile_asyncpg(select_account_balances(selected_ids))
-            account_rows = await connection.fetch(balance_query, *balance_args)
-            holding_rows: list[asyncpg.Record] = []
+        async with session_factory() as session:
+            account_result = await session.execute(select_account_balances(selected_ids))
+            account_rows = account_result.mappings().all()
+            holding_rows: Sequence[RowMapping] = ()
             if required_holding_accounts:
                 account_ids = sorted(required_holding_accounts)
-                holding_query, holding_args = compile_asyncpg(select_holding_batches(account_ids))
-                holding_rows = await connection.fetch(holding_query, *holding_args)
-    except (asyncpg.PostgresError, OSError, TimeoutError) as exc:
+                holding_result = await session.execute(select_holding_batches(account_ids))
+                holding_rows = holding_result.mappings().all()
+    except (SQLAlchemyError, OSError, TimeoutError) as exc:
         raise PlaidValuationError("The Plaid mirror could not be read.") from exc
 
     try:
@@ -200,7 +205,11 @@ async def _read_coinbase(*, now: datetime, coinbase_client: CoinbaseClient | Non
 
 
 async def read_portfolio(
-    pool: asyncpg.Pool, policy: PortfolioPolicy, *, now: datetime, coinbase_client: CoinbaseClient | None = None
+    session_factory: async_sessionmaker[AsyncSession],
+    policy: PortfolioPolicy,
+    *,
+    now: datetime,
+    coinbase_client: CoinbaseClient | None = None,
 ) -> PortfolioView:
     """Read selected holdings and return a fail-closed USD portfolio view."""
     if now.tzinfo is None or now.utcoffset() is None:
@@ -214,7 +223,7 @@ async def read_portfolio(
     selected = bool(policy.sources.plaid.asset_account_ids or policy.sources.plaid.liability_account_ids)
     if selected:
         try:
-            valuation = await _read_plaid(pool, policy, now=now)
+            valuation = await _read_plaid(session_factory, policy, now=now)
         except PlaidValuationError as exc:
             sources.append(unavailable_source("plaid", str(exc)))
             sources_ready = False

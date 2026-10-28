@@ -21,14 +21,18 @@ def utcnow() -> datetime:
 # gazelle:include_dep @pypi//asyncpg
 
 
-def async_session_factory(db_url: str) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
+def async_session_factory(
+    db_url: str, *, pool_size: int = 5, max_overflow: int = 10
+) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
     """Construct a fresh AsyncEngine + sessionmaker for `db_url`.
 
     Each call returns a new engine with its own connection pool, so callers that issue
     repeated queries against the same database (every API request, in the budget path)
     should construct one at process startup and reuse it -- the SSL handshake + pool
     init costs ~500ms per engine over the cluster port-forward. Callers own disposal."""
-    engine = create_async_engine(async_engine_url(db_url), pool_pre_ping=True, pool_recycle=1800)
+    engine = create_async_engine(
+        async_engine_url(db_url), pool_pre_ping=True, pool_recycle=1800, pool_size=pool_size, max_overflow=max_overflow
+    )
     return engine, async_sessionmaker(engine, expire_on_commit=False)
 
 

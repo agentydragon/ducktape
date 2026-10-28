@@ -48,9 +48,11 @@ py_library(
         ":portfolio",
         ":portfolio_models",
         ":sustainability",
+        "//finance/plaid/db:models",
         "@pypi//anyio",
         "@pypi//asyncpg",
         "@pypi//babel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -70,10 +72,10 @@ py_library(
         ":plaid_valuation",
         ":portfolio_models",
         ":portfolio_queries",
-        "@pypi//asyncpg",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pyjwt",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -151,6 +153,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -163,13 +166,13 @@ py_test(
         ":portfolio",
         ":portfolio_models",
         "//:conftest",
-        "@pypi//asyncpg",
         "@pypi//cryptography",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pyjwt",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 

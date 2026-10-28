@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import Select, and_, func, select
-from sqlalchemy.dialects.postgresql.asyncpg import PGDialect_asyncpg
 
 from finance.plaid.db.models import AccountRow, BalanceSnapshotRow, HoldingSnapshotRow, LinkRow, SecurityRow
 
@@ -98,9 +97,3 @@ def select_holding_batches(account_ids: Sequence[str]) -> Select[Any]:
         .outerjoin(SecurityRow, SecurityRow.security_id == HoldingSnapshotRow.security_id)
         .order_by(HoldingSnapshotRow.account_id, HoldingSnapshotRow.security_id, HoldingSnapshotRow.id.desc())
     )
-
-
-def compile_asyncpg(statement: Select[Any]) -> tuple[str, list[Any]]:
-    """Compile SQLAlchemy binds in asyncpg's numbered argument order."""
-    compiled = statement.compile(dialect=PGDialect_asyncpg(), compile_kwargs={"render_postcompile": True})
-    return str(compiled), [compiled.params[name] for name in compiled.positiontup or ()]

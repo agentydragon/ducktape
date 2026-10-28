@@ -3,10 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from types import TracebackType
-from typing import cast
+from typing import Any, cast
 
-import asyncpg
 import httpx
 import jwt
 import pytest
@@ -14,6 +12,8 @@ import pytest_bazel
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from pydantic import SecretStr, ValidationError
+from sqlalchemy import Select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance.plaid.spend import portfolio
 from finance.plaid.spend.plaid_valuation import (
@@ -27,42 +27,50 @@ from finance.plaid.spend.portfolio import CoinbaseClient, read_portfolio
 from finance.plaid.spend.portfolio_models import PortfolioPolicy
 
 
-class _FakeConnection:
+class _Observations:
     def __init__(self, *, balances: list[dict[str, object]], holdings: list[dict[str, object]] | None = None) -> None:
         self.balances = balances
         self.holdings = holdings or []
 
-    async def fetch(self, query: str, *args: object) -> list[dict[str, object]]:
-        if "WITH selected_accounts" in query:
-            return self.balances
-        if "WITH latest_holding_batches" in query:
-            return self.holdings
-        raise AssertionError("unexpected Plaid query")
+
+class _Result:
+    def __init__(self, rows: list[dict[str, object]]) -> None:
+        self.rows = rows
+
+    def mappings(self) -> _Result:
+        return self
+
+    def all(self) -> list[dict[str, object]]:
+        return self.rows
 
 
-class _FakeAcquire:
-    def __init__(self, connection: _FakeConnection) -> None:
-        self.connection = connection
+class _FakeSession:
+    def __init__(self, observations: _Observations) -> None:
+        self.observations = observations
+        self.executions = 0
 
-    async def __aenter__(self) -> _FakeConnection:
-        return self.connection
+    async def __aenter__(self) -> _FakeSession:
+        return self
 
-    async def __aexit__(
-        self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
-    ) -> None:
+    async def __aexit__(self, *args: object) -> None:
         return None
 
-
-class _FakePool:
-    def __init__(self, connection: _FakeConnection) -> None:
-        self.connection = connection
-
-    def acquire(self) -> _FakeAcquire:
-        return _FakeAcquire(self.connection)
+    async def execute(self, _statement: Select[Any]) -> _Result:
+        rows = self.observations.balances if self.executions == 0 else self.observations.holdings
+        self.executions += 1
+        return _Result(rows)
 
 
-def _pool(connection: _FakeConnection) -> asyncpg.Pool:
-    return cast(asyncpg.Pool, _FakePool(connection))
+class _FakeSessionFactory:
+    def __init__(self, observations: _Observations) -> None:
+        self.observations = observations
+
+    def __call__(self) -> _FakeSession:
+        return _FakeSession(self.observations)
+
+
+def _session_factory(observations: _Observations) -> async_sessionmaker[AsyncSession]:
+    return cast(async_sessionmaker[AsyncSession], _FakeSessionFactory(observations))
 
 
 def _policy(
@@ -140,7 +148,7 @@ async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_
         ],
         corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}],
     )
-    connection = _FakeConnection(
+    connection = _Observations(
         balances=[
             _balance("asset-checking", 1000, captured_at),
             _balance("asset-brokerage", 250, captured_at, account_type="investment"),
@@ -157,7 +165,7 @@ async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_
         ],
     )
 
-    view = await read_portfolio(_pool(connection), policy, now=now)
+    view = await read_portfolio(_session_factory(connection), policy, now=now)
 
     assert view.status == "ready"
     assert view.assets_minor_units == 125_000
@@ -196,7 +204,7 @@ async def test_correction_reconciles_with_independent_capture_times_across_accou
         },
     ]
 
-    view = await read_portfolio(_pool(_FakeConnection(balances=balances, holdings=holdings)), policy, now=now)
+    view = await read_portfolio(_session_factory(_Observations(balances=balances, holdings=holdings)), policy, now=now)
 
     assert view.status == "ready"
     assert view.assets_minor_units == 300_000
@@ -265,7 +273,7 @@ async def test_corrected_holdings_that_do_not_reconcile_fail_closed() -> None:
     policy = _policy(
         corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
     )
-    connection = _FakeConnection(
+    connection = _Observations(
         balances=[
             _balance("asset-checking", 1000, now),
             _balance("asset-brokerage", 2000, now, account_type="investment"),
@@ -282,7 +290,7 @@ async def test_corrected_holdings_that_do_not_reconcile_fail_closed() -> None:
         ],
     )
 
-    view = await read_portfolio(_pool(connection), policy, now=now)
+    view = await read_portfolio(_session_factory(connection), policy, now=now)
 
     assert view.status == "unavailable"
     assert view.net_minor_units is None
@@ -303,7 +311,7 @@ async def test_missing_excluded_position_with_other_holdings_fails_closed() -> N
             }
         ]
     )
-    connection = _FakeConnection(
+    connection = _Observations(
         balances=[
             _balance("asset-checking", 1000, captured_at),
             _balance("asset-brokerage", 2000, captured_at, account_type="investment"),
@@ -320,7 +328,7 @@ async def test_missing_excluded_position_with_other_holdings_fails_closed() -> N
         ],
     )
 
-    view = await read_portfolio(_pool(connection), policy, now=now)
+    view = await read_portfolio(_session_factory(connection), policy, now=now)
 
     assert view.status == "unavailable"
     assert view.net_minor_units is None
@@ -334,7 +342,7 @@ async def test_missing_correction_position_with_other_holdings_fails_closed() ->
     policy = _policy(
         corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
     )
-    connection = _FakeConnection(
+    connection = _Observations(
         balances=[
             _balance("asset-checking", 1000, captured_at),
             _balance("asset-brokerage", 2000, captured_at, account_type="investment"),
@@ -351,7 +359,7 @@ async def test_missing_correction_position_with_other_holdings_fails_closed() ->
         ],
     )
 
-    view = await read_portfolio(_pool(connection), policy, now=now)
+    view = await read_portfolio(_session_factory(connection), policy, now=now)
 
     assert view.status == "unavailable"
     assert view.net_minor_units is None
@@ -371,7 +379,7 @@ async def test_empty_excluded_account_history_fails_closed() -> None:
             }
         ]
     )
-    connection = _FakeConnection(
+    connection = _Observations(
         balances=[
             _balance("asset-checking", 1000, now),
             _balance("asset-brokerage", 2000, now, account_type="investment"),
@@ -379,7 +387,7 @@ async def test_empty_excluded_account_history_fails_closed() -> None:
         ]
     )
 
-    view = await read_portfolio(_pool(connection), policy, now=now)
+    view = await read_portfolio(_session_factory(connection), policy, now=now)
 
     assert view.status == "unavailable"
     assert view.net_minor_units is None
@@ -389,7 +397,7 @@ async def test_empty_excluded_account_history_fails_closed() -> None:
 @pytest.mark.asyncio
 async def test_negative_credit_balance_is_preserved_as_a_liability_credit() -> None:
     now = datetime.now(UTC)
-    connection = _FakeConnection(
+    connection = _Observations(
         balances=[
             _balance("asset-checking", 100, now),
             _balance("asset-brokerage", 0, now, account_type="investment"),
@@ -397,7 +405,7 @@ async def test_negative_credit_balance_is_preserved_as_a_liability_credit() -> N
         ]
     )
 
-    view = await read_portfolio(_pool(connection), _policy(), now=now)
+    view = await read_portfolio(_session_factory(connection), _policy(), now=now)
 
     assert view.status == "ready"
     assert view.assets_minor_units == 10_000
@@ -409,7 +417,7 @@ async def test_negative_credit_balance_is_preserved_as_a_liability_credit() -> N
 async def test_stale_plaid_fails_closed() -> None:
     now = datetime.now(UTC)
     stale = now - timedelta(hours=73)
-    connection = _FakeConnection(
+    connection = _Observations(
         balances=[
             _balance("asset-checking", 100, now),
             _balance("asset-brokerage", 0, now, account_type="investment"),
@@ -417,7 +425,7 @@ async def test_stale_plaid_fails_closed() -> None:
         ]
     )
 
-    view = await read_portfolio(_pool(connection), _policy(), now=now)
+    view = await read_portfolio(_session_factory(connection), _policy(), now=now)
 
     assert view.status == "unavailable"
     assert view.net_minor_units is None
@@ -428,9 +436,9 @@ async def test_stale_plaid_fails_closed() -> None:
 @pytest.mark.asyncio
 async def test_unavailable_plaid_does_not_hide_enabled_coinbase_status() -> None:
     now = datetime.now(UTC)
-    connection = _FakeConnection(balances=[])
+    connection = _Observations(balances=[])
 
-    view = await read_portfolio(_pool(connection), _policy(coinbase_enabled=True), now=now)
+    view = await read_portfolio(_session_factory(connection), _policy(coinbase_enabled=True), now=now)
 
     assert view.status == "unavailable"
     assert view.net_minor_units is None
@@ -507,7 +515,7 @@ async def test_coinbase_paginates_and_values_held_balances_with_usd_quotes(monke
     )
 
     view = await read_portfolio(
-        _pool(_FakeConnection(balances=[])),
+        _session_factory(_Observations(balances=[])),
         policy,
         now=now,
         coinbase_client=_coinbase_client("organizations/test/apiKeys/key", private_key),
@@ -571,7 +579,7 @@ async def test_coinbase_zero_balance_wallet_does_not_request_an_unsupported_asse
     )
 
     view = await read_portfolio(
-        _pool(_FakeConnection(balances=[])),
+        _session_factory(_Observations(balances=[])),
         policy,
         now=now,
         coinbase_client=_coinbase_client("organizations/test/apiKeys/key", private_key),
@@ -597,7 +605,10 @@ async def test_coinbase_cursor_without_next_page_token_fails_closed(monkeypatch:
     )
 
     view = await read_portfolio(
-        _pool(_FakeConnection(balances=[])), policy, now=now, coinbase_client=_coinbase_client("test-key", private_key)
+        _session_factory(_Observations(balances=[])),
+        policy,
+        now=now,
+        coinbase_client=_coinbase_client("test-key", private_key),
     )
 
     assert view.status == "unavailable"

@@ -14,7 +14,10 @@ from decimal import Decimal
 import anyio
 import asyncpg
 from babel.numbers import get_currency_precision
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from finance.plaid.db.models import async_session_factory
 from finance.plaid.spend.allowance import (
     AccountingPolicy,
     AllowanceView,
@@ -120,6 +123,7 @@ class SpendService:
         self._portfolio_lock = asyncio.Lock()
         self._portfolio_cache: tuple[datetime, PortfolioView] | None = None
         self._pool: asyncpg.Pool | None = None
+        self._portfolio_sessions: async_sessionmaker[AsyncSession] | None = None
         self._listening = asyncio.Event()
         self._revision = 0
         self._subscribers: set[asyncio.Queue[None]] = set()
@@ -138,8 +142,14 @@ class SpendService:
 
     @contextlib.asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
-        async with asyncpg.create_pool(self._database_url, min_size=1, max_size=8) as pool:
+        async with contextlib.AsyncExitStack() as resources:
+            portfolio_engine, portfolio_sessions = async_session_factory(
+                self._database_url, pool_size=1, max_overflow=0
+            )
+            resources.push_async_callback(portfolio_engine.dispose)
+            pool = await resources.enter_async_context(asyncpg.create_pool(self._database_url, min_size=1, max_size=8))
             self._pool = pool
+            self._portfolio_sessions = portfolio_sessions
             try:
                 async with anyio.create_task_group() as task_group:
                     task_group.start_soon(self._listen_forever, name="plaid-spend-listener")
@@ -149,6 +159,7 @@ class SpendService:
                         task_group.cancel_scope.cancel()
             finally:
                 self._pool = None
+                self._portfolio_sessions = None
 
     def report_day(self, instant: datetime) -> date:
         return instant.astimezone(self._configuration.time_zone).date()
@@ -689,9 +700,9 @@ class SpendService:
                 return cached[1]
             try:
                 view = await read_portfolio(
-                    self._require_pool(), policy.portfolio, now=now, coinbase_client=self._coinbase_client
+                    self._require_portfolio_sessions(), policy.portfolio, now=now, coinbase_client=self._coinbase_client
                 )
-            except asyncpg.PostgresError:
+            except SQLAlchemyError:
                 view = PortfolioView(
                     status="unavailable",
                     net_minor_units=None,
@@ -796,6 +807,11 @@ class SpendService:
         if self._pool is None:
             raise RuntimeError("spend database pool is not initialized")
         return self._pool
+
+    def _require_portfolio_sessions(self) -> async_sessionmaker[AsyncSession]:
+        if self._portfolio_sessions is None:
+            raise RuntimeError("spend portfolio session factory is not initialized")
+        return self._portfolio_sessions
 
     async def _listen_forever(self) -> None:
         while True:

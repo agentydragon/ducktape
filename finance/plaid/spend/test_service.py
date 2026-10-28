@@ -7,12 +7,14 @@ import json
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import asyncpg
 import pytest
 import pytest_asyncio
+from sqlalchemy.exc import SQLAlchemyError
 
 from finance.plaid.spend import service
 from finance.plaid.spend.allowance import (
@@ -40,6 +42,7 @@ from finance.plaid.spend.models import (
     SpendTransactionRow,
 )
 from finance.plaid.spend.portfolio_models import (
+    HoldingValueCorrection,
     PlaidSourcePolicy,
     PortfolioPolicy,
     PortfolioSources,
@@ -627,17 +630,17 @@ async def test_portfolio_read_retries_failure_and_caches_ready_result(
         _sustainability_configuration(now.date(), "synthetic-spending-account"),
         dashboard_url="https://spend.example.test",
     )
-    monkeypatch.setattr(spend_service, "_require_pool", lambda: cast(asyncpg.Pool, object()))
+    monkeypatch.setattr(spend_service, "_require_portfolio_sessions", object)
     attempts = 0
 
     async def read_portfolio(
-        _pool: asyncpg.Pool, _policy: PortfolioPolicy, *, now: datetime, coinbase_client: object | None
+        _session_factory: object, _policy: PortfolioPolicy, *, now: datetime, coinbase_client: object | None
     ) -> PortfolioView:
         nonlocal attempts
         attempts += 1
         if attempts == 1:
             if failure_mode == "postgres_error":
-                raise asyncpg.PostgresError("synthetic transient database failure")
+                raise SQLAlchemyError("synthetic transient database failure")
             return PortfolioView(
                 status="unavailable",
                 net_minor_units=None,
@@ -670,6 +673,94 @@ async def test_portfolio_read_retries_failure_and_caches_ready_result(
     assert recovered.status == "ready"
     assert cached.status == "ready"
     assert attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_portfolio_reads_complete_snapshots_through_sqlalchemy(
+    connection: asyncpg.Connection, postgres_url: str
+) -> None:
+    now = datetime.now(UTC)
+    captured_at = now - timedelta(minutes=2)
+    await add_link(connection, "portfolio-item", synced=captured_at)
+    await add_account(connection, "portfolio-brokerage", "portfolio-item", type="investment")
+    await connection.execute(
+        """INSERT INTO public.balance_snapshots
+           (account_id, item_id, captured_at, current, iso_currency_code)
+           VALUES ($1, $2, $3, 900, 'USD'), ($1, $2, $3, 1000, 'USD')""",
+        "portfolio-brokerage",
+        "portfolio-item",
+        captured_at,
+    )
+    for security_id in ("portfolio-sold", "portfolio-held", "portfolio-zero"):
+        await connection.execute(
+            """INSERT INTO public.securities
+               (security_id, name, type, iso_currency_code, raw_json, updated_at)
+               VALUES ($1, $1, 'equity', 'USD', '{}'::json, $2)""",
+            security_id,
+            captured_at,
+        )
+    for security_id, holdings_time, value in (
+        ("portfolio-sold", captured_at - timedelta(hours=1), 500),
+        ("portfolio-held", captured_at, 1000),
+        ("portfolio-zero", captured_at, 0),
+    ):
+        await connection.execute(
+            """INSERT INTO public.holding_snapshots
+               (account_id, security_id, item_id, captured_at, institution_value, iso_currency_code, raw_json)
+               VALUES ($1, $2, $3, $4, $5, 'USD', '{}'::json)""",
+            "portfolio-brokerage",
+            security_id,
+            "portfolio-item",
+            holdings_time,
+            value,
+        )
+
+    await add_link(connection, "revoked-portfolio-item", synced=captured_at)
+    await add_account(connection, "revoked-portfolio-account", "revoked-portfolio-item", type="investment")
+    await connection.execute("UPDATE public.links SET status = 'revoked' WHERE item_id = 'revoked-portfolio-item'")
+    await connection.execute(
+        """INSERT INTO public.balance_snapshots
+           (account_id, item_id, captured_at, current, iso_currency_code)
+           VALUES ('revoked-portfolio-account', 'revoked-portfolio-item', $1, 500, 'USD')""",
+        captured_at,
+    )
+
+    policy = PortfolioPolicy(
+        sources=PortfolioSources(
+            plaid=PlaidSourcePolicy(
+                asset_account_ids=["portfolio-brokerage"],
+                holding_value_corrections=[
+                    HoldingValueCorrection(
+                        account_id="portfolio-brokerage",
+                        security_ids=["portfolio-held", "portfolio-zero"],
+                        value_multiplier=Decimal(1),
+                    )
+                ],
+            )
+        )
+    )
+    config = _sustainability_configuration(now.date(), "synthetic-spending-account")
+    sustainability = config.sustainability
+    assert sustainability is not None
+    config = config.model_copy(update={"sustainability": sustainability.model_copy(update={"portfolio": policy})})
+    spend_service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
+    async with spend_service.lifespan():
+        view = await spend_service._read_current_portfolio(now)
+        revoked_view = await service.read_portfolio(
+            spend_service._require_portfolio_sessions(),
+            PortfolioPolicy(
+                sources=PortfolioSources(plaid=PlaidSourcePolicy(asset_account_ids=["revoked-portfolio-account"]))
+            ),
+            now=now,
+        )
+
+    assert view.status == "ready"
+    assert view.assets_minor_units == 100_000
+    assert view.excluded_minor_units == 0
+    assert view.sources[0].as_of == captured_at
+    assert revoked_view.status == "unavailable"
+    assert "missing or inactive" in revoked_view.sources[0].issues[0]
+    assert not spend_service.is_running
 
 
 @pytest.mark.parametrize("label_source", ["institution", "private", "card"])
