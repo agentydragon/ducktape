@@ -91,13 +91,13 @@ json_schema_js_library(
     name = "types",
     schema = "//my/api:types_schema",
     schema_files = ["//my/api:shared_definitions"],
-    out = "api/types.d.ts",
 )
 ```
 
 List every file reached through a relative local `$ref` in `schema_files`; the action receives each
-as a declared input and resolves the reference from the root schema's path. Remote HTTP resolution
-is disabled by the converter.
+as a declared input and resolves the reference from the root schema's path. The generated file
+defaults to `:<name>.d.ts` (`:types.d.ts` here); set `out` when consumers need another module path.
+Remote HTTP resolution is disabled by the converter.
 
 When a runtime consumer needs the source JSON as well as generated declarations, keep the schema
 artifact as its own Bazel input. A wrapper can package the JSON source and depend on the declaration
@@ -111,7 +111,6 @@ load("@aspect_rules_js//js:defs.bzl", "js_library")
 json_schema_js_library(
     name = "tool_arguments_types",
     schema = ":types_schema",
-    out = "api/types.d.ts",
 )
 
 copy_file(

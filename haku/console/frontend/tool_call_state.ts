@@ -1,4 +1,4 @@
-import type { ToolCallRecord } from "./api/tool_call_record";
+import type { ToolCallRecord } from "./tool_call_record";
 
 export interface ApprovalDisplayFields {
   title: string;

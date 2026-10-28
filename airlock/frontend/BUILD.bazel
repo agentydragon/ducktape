@@ -54,7 +54,6 @@ ts_config(
 
 json_schema_js_library(
     name = "types",
-    out = "types.d.ts",
     schema = "//airlock:types_schema",
     visibility = ["//visibility:public"],
 )

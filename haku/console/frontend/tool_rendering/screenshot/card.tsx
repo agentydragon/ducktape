@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 
 import { approvalDisplayFields } from "../../tool_call_state";
 import { AgentNamesProvider } from "../../agent_names";
-import type { ToolCallRecord } from "../../api/tool_call_record";
+import type { ToolCallRecord } from "../../tool_call_record";
 import { ToolCallCard } from "../../tool_call_card";
 import type { PreviewVariant } from "../vocabulary";
 

@@ -96,7 +96,8 @@ openapi_js_library(
 
 # The exact input schemas advertised by the in-process MCP servers. Keep both the generated
 # TypeScript declarations and their source JSON: :mcp_tool_schema turns each catalog entry into
-# a runtime Zod validator derived from FastMCP's advertised structural contract.
+# a runtime Zod validator derived from FastMCP's advertised structural contract. The declarations
+# stay beside the JSON because mcp_tool_schema.ts imports both through the api/ module paths.
 json_schema_js_library(
     name = "mcp_tool_arguments_types",
     out = "api/mcp_tool_arguments.d.ts",
@@ -165,7 +166,6 @@ ts_library(
 # renderer-only state and preview targets consume it directly.
 json_schema_js_library(
     name = "tool_call_record",
-    out = "api/tool_call_record.d.ts",
     schema = "//haku/console:tool_call_record_schema",
 )
 
