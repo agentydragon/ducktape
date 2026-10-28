@@ -12,10 +12,13 @@ preparation guidance also landed in [#12588].
 - Complete full-pipeline validation through a consuming project's canonical
   adapter before repinning it. The isolated naming pilot passed dry-run/apply,
   annotation/selector/template preservation and source-only validation. Its
-  manual full audit baseline rejected before probes or checkpoint creation.
-  Canonical-adapter and old-pin controls must distinguish input differences,
-  spec conflicts and analysis defects before proposing repairs. Source-only
-  success does not establish full acceptance or runtime behavior.
+  full audit baseline rejected before probes or checkpoint creation. The
+  unchanged-spec control and canonical adapter reproduced the rejection; the
+  original tool pin passed the same adapter with cached results. Preserve that
+  pin and investigate the engine/spec acceptance conflict before adoption.
+  These controls do not identify the analysis defect or establish fresh
+  execution under the original pin. Source-only success does not establish
+  full acceptance or runtime behavior.
 - Use the new observed-consumer metadata in a source-reviewed ownership round
   before adding ranking or component/style heuristics. Current readers/modules
   are evidence for review, not inferred semantic owners. Numeric names or small
