@@ -410,7 +410,7 @@ class SpendService:
             limit_minor_units = card_config.limit_minor_units
             statement_available = account_id in statement_account_ids
             spend_percent = (
-                float(Decimal(spend_minor_units) * Decimal(100) / Decimal(limit_minor_units))
+                Decimal(spend_minor_units) * Decimal(100) / Decimal(limit_minor_units)
                 if limit_minor_units is not None and statement_available
                 else None
             )

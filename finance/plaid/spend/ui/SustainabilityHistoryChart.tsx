@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Checkbox, Group, Paper, Stack, Switch, Text, Title } from "@mantine/core";
 import { CategoryScale, Chart, LinearScale, LineController, LineElement, PointElement, Tooltip } from "chart.js";
+import Decimal from "decimal.js";
 
 import type { SustainabilityView } from "./api/schema";
+import { annualFundingMinorUnits } from "./decimal_math";
 import { money } from "./spend_display";
 import type { SustainabilityHistory } from "./types";
 
@@ -36,8 +38,11 @@ function windowColor(windowDays: number): string {
   return WINDOW_COLORS[windowDays] ?? `hsl(${((windowDays * 137.508) % 360).toFixed(1)} 58% 42%)`;
 }
 
-function percent(value: number): string {
-  return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(value);
+function percent(value: string | number): string {
+  const formatter = new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 });
+  if (typeof value === "number") return formatter.format(value);
+  const roundedRate = new Decimal(value).mul(100).toDecimalPlaces(1, Decimal.ROUND_HALF_UP).div(100);
+  return formatter.format(roundedRate.toNumber());
 }
 
 function shortDate(value: string): string {
@@ -107,9 +112,9 @@ function tooltipLines(
         `Required withdrawal rate including taxes: unavailable · Based on ${point.covered_days} complete days`
       );
     } else {
-      const funding = Math.round(rate * portfolioMinorUnits);
+      const funding = annualFundingMinorUnits(portfolioMinorUnits, rate);
       lines.push(
-        `Estimated withdrawal taxes: ${money(funding - spending, currency)} · Annual funding including taxes: ${money(funding, currency)}`
+        `Estimated withdrawal taxes: ${money(funding.minus(spending), currency)} · Annual funding including taxes: ${money(funding, currency)}`
       );
       lines.push(
         `Required withdrawal rate including taxes: ${percent(rate)} · Based on ${point.covered_days} complete days`
@@ -131,17 +136,19 @@ export function SustainabilityHistoryChart({
 }: {
   windows: SustainabilityView[];
   selectedWindowDays: number;
-  referenceDrawRates: number[];
+  referenceDrawRates: string[];
   currency: string;
   portfolioMinorUnits: number | null;
-  effectiveTaxRate: number | null;
+  effectiveTaxRate: string | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [includeTaxes, setIncludeTaxes] = useState(true);
   const [hiddenWindowDays, setHiddenWindowDays] = useState<Set<number>>(() => new Set());
   const [tooltip, setTooltip] = useState<HistoryTooltip | null>(null);
   const hasRates = effectiveTaxRate != null && portfolioMinorUnits != null && portfolioMinorUnits > 0;
-  const amountPerRate = hasRates ? portfolioMinorUnits * (includeTaxes ? 1 : 1 - effectiveTaxRate) : 1;
+  const amountPerRate = hasRates
+    ? new Decimal(portfolioMinorUnits).mul(includeTaxes ? 1 : new Decimal(1).minus(effectiveTaxRate ?? 0))
+    : new Decimal(1);
   const amountLabel = includeTaxes ? "Annual funding including taxes" : "Annual spending excluding taxes";
 
   const historyWindows = useMemo(
@@ -167,14 +174,16 @@ export function SustainabilityHistoryChart({
     const curveValues = visibleWindows.map(({ pointsByDate }) =>
       dates.map((date) => {
         const point = pointsByDate.get(date);
-        return hasRates ? (point?.tax_adjusted_draw_rate ?? null) : (point?.annualized_spending_minor_units ?? null);
+        if (!hasRates) return point?.annualized_spending_minor_units ?? null;
+        const rate = point?.tax_adjusted_draw_rate;
+        return rate == null ? null : new Decimal(rate).toNumber();
       })
     );
     const fittedValues = [
       ...curveValues.flatMap((values) =>
         values.filter((value): value is number => value != null && Number.isFinite(value))
       ),
-      ...(hasRates ? referenceDrawRates.filter(Number.isFinite) : []),
+      ...(hasRates ? referenceDrawRates.map((rate) => new Decimal(rate).toNumber()).filter(Number.isFinite) : []),
     ];
     const minimum = fittedValues.length > 0 ? Math.min(...fittedValues) : 0;
     const maximum = fittedValues.length > 0 ? Math.max(...fittedValues) : 1;
@@ -202,7 +211,7 @@ export function SustainabilityHistoryChart({
         ? referenceDrawRates.map((rate, index) => ({
             type: "line" as const,
             label: `Reference scenario ${index + 1} (${percent(rate)})`,
-            data: dates.map(() => rate),
+            data: dates.map(() => new Decimal(rate).toNumber()),
             borderColor: REFERENCE_SCENARIO_COLOR,
             backgroundColor: REFERENCE_SCENARIO_COLOR,
             borderWidth: 1,
@@ -292,7 +301,7 @@ export function SustainabilityHistoryChart({
             ticks: {
               count: 6,
               autoSkip: false,
-              callback: (value) => money(Number(value) * amountPerRate, currency),
+              callback: (value) => money(new Decimal(value).mul(amountPerRate), currency),
             },
           },
           rate: {

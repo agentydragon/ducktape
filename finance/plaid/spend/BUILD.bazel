@@ -37,6 +37,7 @@ py_library(
     deps = [
         ":allowance",
         ":sustainability",
+        "//util:yaml_decimal",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],

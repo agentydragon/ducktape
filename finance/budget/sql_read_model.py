@@ -44,8 +44,7 @@ from finance.budget.wire import (
 from finance.plaid.db.models import AccountRow, LinkRow, TransactionRow
 
 # Mean Gregorian month in days; converts a window's per-day average into `window_monthly_avg`.
-DAYS_PER_MONTH = 365.2425 / 12.0
-_DECIMAL_DAYS_PER_MONTH = Decimal("365.2425") / 12
+DAYS_PER_MONTH = Decimal("365.2425") / 12
 
 
 def _month_start(d: date) -> date:
@@ -276,7 +275,7 @@ async def read_budget_snapshot(
             LumpyView(
                 transaction_id=row["transaction_id"],
                 date=row["date"],
-                amount=float(row["amount"]),
+                amount=row["amount"],
                 name=row["name"],
                 merchant_name=row["merchant_name"],
                 bucket_id=row["bucket_id"],
@@ -300,18 +299,11 @@ async def read_budget_snapshot(
         monthly_by_bucket=tuple(
             BucketMonthly(
                 bucket_id=bucket.id,
-                monthly_amounts=tuple(
-                    float(amounts_by_bucket_month.get((bucket.id, month), Decimal(0))) for month in months
-                ),
+                monthly_amounts=tuple(amounts_by_bucket_month.get((bucket.id, month), Decimal(0)) for month in months),
                 window_monthly_avg=(
-                    float(
-                        sum(
-                            (amounts_by_bucket_month.get((bucket.id, month), Decimal(0)) for month in months),
-                            Decimal(0),
-                        )
-                        / days_covered
-                        * _DECIMAL_DAYS_PER_MONTH
-                    )
+                    sum((amounts_by_bucket_month.get((bucket.id, month), Decimal(0)) for month in months), Decimal(0))
+                    / days_covered
+                    * DAYS_PER_MONTH
                 ),
                 transaction_count=counts_by_bucket.get(bucket.id, 0),
             )
@@ -369,7 +361,7 @@ async def read_budget_bucket_transactions(
             TransactionView(
                 transaction_id=row["transaction_id"],
                 date=row["date"],
-                amount=float(row["amount"]),
+                amount=row["amount"],
                 name=row["name"],
                 merchant_name=row["merchant_name"],
                 pfc_primary=row["pfc_primary"],

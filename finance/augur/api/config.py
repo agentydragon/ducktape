@@ -33,6 +33,7 @@ from finance.augur.x.models.provider_config import CompositeProviderConfig, Mirr
 from finance.augur.x.models.state_space import StateSpaceProviderConfig
 from finance.augur.x.models.trained_private_equity import TrainedPrivateEquityProviderConfig
 from finance.budget.schema import BudgetConfig
+from util.yaml_decimal import DecimalSafeLoader
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
@@ -262,7 +263,7 @@ def load_augur_config(path: Path) -> Config:
     Relative deployment-owned file paths are anchored against the yaml's parent
     directory — useful for ConfigMap mounts where the yaml and adjacent data live
     side-by-side (e.g. `/etc/augur/{config.yaml,properties.json}`)."""
-    config = Config.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    config = Config.model_validate(yaml.load(path.read_text(encoding="utf-8"), Loader=DecimalSafeLoader))
     config = _anchor_property_source_paths(config, base_dir=path.parent)
     config = _anchor_model_paths(config, base_dir=path.parent)
     return _anchor_calibration_catalog_paths(config, base_dir=path.parent)

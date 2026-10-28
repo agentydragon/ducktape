@@ -22,11 +22,19 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    and_,
+    column,
 )
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.sql.elements import ColumnElement
 
 from util.db_url import async_engine_url
+
+
+def _finite_values(*names: str) -> ColumnElement[bool]:
+    # CHECK already accepts NULL, so nullable columns need no separate branch.
+    return and_(*(column(name).not_in(("NaN", "Infinity", "-Infinity")) for name in names))
 
 
 def utcnow() -> datetime:
@@ -96,10 +104,7 @@ class AccountRow(Base):
 class TransactionRow(Base):
     __tablename__ = "transactions"
     __table_args__ = (
-        CheckConstraint(
-            "( \"amount\" IS NULL OR \"amount\" NOT IN ('NaN','Infinity','-Infinity'))",
-            name="ck_transactions_finite_values",
-        ),
+        CheckConstraint(_finite_values("amount"), name="ck_transactions_finite_values"),
         ForeignKeyConstraint(
             ["account_id", "item_id"], ["accounts.account_id", "accounts.item_id"], name="fk_transactions_account_item"
         ),
@@ -126,10 +131,7 @@ class TransactionRow(Base):
 class BalanceSnapshotRow(Base):
     __tablename__ = "balance_snapshots"
     __table_args__ = (
-        CheckConstraint(
-            "( \"available\" IS NULL OR \"available\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"current\" IS NULL OR \"current\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"limit\" IS NULL OR \"limit\" NOT IN ('NaN','Infinity','-Infinity'))",
-            name="ck_balance_snapshots_finite_values",
-        ),
+        CheckConstraint(_finite_values("available", "current", "limit"), name="ck_balance_snapshots_finite_values"),
         ForeignKeyConstraint(
             ["account_id", "item_id"],
             ["accounts.account_id", "accounts.item_id"],
@@ -176,10 +178,7 @@ class HoldingCaptureRow(Base):
 class HoldingCaptureAccountRow(Base):
     __tablename__ = "holding_capture_accounts"
     __table_args__ = (
-        CheckConstraint(
-            "current IS NULL OR current NOT IN ('NaN','Infinity','-Infinity')",
-            name="ck_holding_capture_accounts_finite_values",
-        ),
+        CheckConstraint(_finite_values("current"), name="ck_holding_capture_accounts_finite_values"),
         ForeignKeyConstraint(
             ["capture_id", "item_id"],
             ["holding_captures.id", "holding_captures.item_id"],
@@ -203,7 +202,7 @@ class HoldingSnapshotRow(Base):
     __tablename__ = "holding_snapshots"
     __table_args__ = (
         CheckConstraint(
-            "( \"quantity\" IS NULL OR \"quantity\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"cost_basis\" IS NULL OR \"cost_basis\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"institution_price\" IS NULL OR \"institution_price\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"institution_value\" IS NULL OR \"institution_value\" NOT IN ('NaN','Infinity','-Infinity'))",
+            _finite_values("quantity", "cost_basis", "institution_price", "institution_value"),
             name="ck_holding_snapshots_finite_values",
         ),
         UniqueConstraint("capture_id", "account_id", "security_id", name="uq_holding_snapshots_capture_position"),
@@ -242,8 +241,7 @@ class InvestmentTransactionRow(Base):
     __tablename__ = "investment_transactions"
     __table_args__ = (
         CheckConstraint(
-            "( \"amount\" IS NULL OR \"amount\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"quantity\" IS NULL OR \"quantity\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"price\" IS NULL OR \"price\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"fees\" IS NULL OR \"fees\" NOT IN ('NaN','Infinity','-Infinity'))",
-            name="ck_investment_transactions_finite_values",
+            _finite_values("amount", "quantity", "price", "fees"), name="ck_investment_transactions_finite_values"
         ),
         ForeignKeyConstraint(
             ["account_id", "item_id"],

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import Decimal from "decimal.js";
 import {
   Alert,
   Badge,
@@ -17,6 +18,7 @@ import {
 } from "@mantine/core";
 
 import type { SustainabilityDashboard, SustainabilityView } from "./api/schema";
+import { monthlySpendingMinorUnits, percentagePointDifference } from "./decimal_math";
 import { money, time } from "./spend_display";
 import { SustainabilityHistoryChart } from "./SustainabilityHistoryChart";
 import type { SustainabilityPortfolio, SustainabilitySource } from "./types";
@@ -31,28 +33,34 @@ const statusColors = {
   disabled: "gray",
 } satisfies Record<SustainabilityView["status"], string>;
 
-function percent(value: number | null): string {
-  if (value == null || !Number.isFinite(value)) return "Unavailable";
-  return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(value);
+function percent(value: string | Decimal | null): string {
+  if (value == null) return "Unavailable";
+  const rate = Decimal.isDecimal(value) ? value : new Decimal(value);
+  if (!rate.isFinite()) return "Unavailable";
+  const roundedRate = rate.mul(100).toDecimalPlaces(1, Decimal.ROUND_HALF_UP).div(100);
+  return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(
+    roundedRate.toNumber()
+  );
 }
 
-function percentagePoints(value: number): string {
-  return new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value);
+function percentagePoints(value: Decimal): string {
+  return new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(
+    value.toNumber()
+  );
 }
 
-function scenarioComparison(currentRate: number | null, referenceRate: number): string {
-  if (currentRate == null || !Number.isFinite(currentRate)) return "Current draw rate is unavailable.";
-  const difference = Math.round((currentRate - referenceRate) * 1000) / 10;
-  if (difference === 0) return "Current implied draw is at this scenario rate.";
-  const relation = difference > 0 ? "above" : "below";
-  return `Current implied draw is ${percentagePoints(Math.abs(difference))} percentage points ${relation} this scenario.`;
+function scenarioComparison(currentRate: string | null, referenceRate: string): string {
+  if (currentRate == null) return "Current draw rate is unavailable.";
+  const difference = percentagePointDifference(currentRate, referenceRate);
+  if (difference.isZero()) return "Current implied draw is at this scenario rate.";
+  const relation = difference.isPositive() ? "above" : "below";
+  return `Current implied draw is ${percentagePoints(difference.abs())} percentage points ${relation} this scenario.`;
 }
 
-function monthlySpendingBudget(view: SustainabilityView, rate: number): number | null {
+function monthlySpendingBudget(view: SustainabilityView, rate: string): Decimal | null {
   const portfolioValue = view.portfolio.net_minor_units;
-  if (portfolioValue == null || portfolioValue <= 0 || view.effective_tax_rate == null) return null;
-  const afterTaxRate = rate * (1 - view.effective_tax_rate);
-  return Math.round((portfolioValue * afterTaxRate) / 12);
+  if (portfolioValue == null) return null;
+  return monthlySpendingMinorUnits(portfolioValue, rate, view.effective_tax_rate);
 }
 
 function ScenarioTooltip({
@@ -62,9 +70,9 @@ function ScenarioTooltip({
   currentRate,
 }: {
   view: SustainabilityView;
-  rate: number;
+  rate: string;
   index: number;
-  currentRate: number | null;
+  currentRate: string | null;
 }) {
   return (
     <Stack gap={4}>
@@ -93,9 +101,9 @@ function ScenarioMarker({
   style,
 }: {
   view: SustainabilityView;
-  rate: number;
+  rate: string;
   index: number;
-  currentRate: number | null;
+  currentRate: string | null;
   style: CSSProperties;
 }) {
   const markerRef = useRef<HTMLButtonElement>(null);
@@ -447,9 +455,15 @@ function AccountHistoryCoverage({ accounts }: { accounts: AccountCoverage[] }) {
 function DrawGauge({ view }: { view: SustainabilityView }) {
   const headlineRate = view.tax_adjusted_draw_rate;
   const rateLabel = "Tax-adjusted implied draw rate";
-  const maximumRate = Math.max(0.05, ...view.reference_draw_rates.filter(Number.isFinite)) * 1.2;
-  const overflow = headlineRate != null && headlineRate > maximumRate;
-  const fillWidth = headlineRate == null ? 0 : Math.max(0, Math.min(100, (headlineRate / maximumRate) * 100));
+  const maximumRate = Decimal.max(
+    new Decimal("0.05"),
+    ...view.reference_draw_rates.map((rate) => new Decimal(rate))
+  ).mul("1.2");
+  const overflow = headlineRate != null && new Decimal(headlineRate).greaterThan(maximumRate);
+  const fillWidth =
+    headlineRate == null
+      ? 0
+      : Decimal.max(0, Decimal.min(100, new Decimal(headlineRate).div(maximumRate).mul(100))).toNumber();
 
   return (
     <Card component="section" aria-labelledby="draw-title" withBorder radius="lg" padding="xl">
@@ -514,7 +528,7 @@ function DrawGauge({ view }: { view: SustainabilityView }) {
                   currentRate={headlineRate}
                   style={{
                     position: "absolute",
-                    left: `${Math.max(0, Math.min(100, (rate / maximumRate) * 100))}%`,
+                    left: `${Decimal.max(0, Decimal.min(100, new Decimal(rate).div(maximumRate).mul(100))).toNumber()}%`,
                     top: index % 2 === 0 ? 0 : 39,
                     transform: "translateX(-50%)",
                     zIndex: 1,

@@ -152,15 +152,15 @@ def _example_sustainability(variant: str = "ready", *, window_days: int = 90) ->
     portfolio_unavailable = stale or unavailable
     portfolio_net = None if portfolio_unavailable else 125_000_000
     annualized_spending = 600_621 if low_draw else 4_951_065
-    effective_tax_rate = None if tax_unmodeled else 0.12
+    effective_tax_rate = None if tax_unmodeled else Decimal("0.12")
 
-    def rates_for(annualized: int) -> tuple[float | None, float | None]:
+    def rates_for(annualized: int) -> tuple[Decimal | None, Decimal | None]:
         if portfolio_net is None:
             return None, None
         if effective_tax_rate is None:
-            return annualized / portfolio_net, None
-        tax_adjusted = int((Decimal(annualized) / (Decimal(1) - Decimal(str(effective_tax_rate)))).quantize(Decimal(1)))
-        return annualized / portfolio_net, tax_adjusted / portfolio_net
+            return Decimal(annualized) / Decimal(portfolio_net), None
+        tax_adjusted = int((Decimal(annualized) / (Decimal(1) - effective_tax_rate)).quantize(Decimal(1)))
+        return Decimal(annualized) / Decimal(portfolio_net), Decimal(tax_adjusted) / Decimal(portfolio_net)
 
     history: list[SustainabilityHistoryPoint] = []
     history_values = (
@@ -189,7 +189,7 @@ def _example_sustainability(variant: str = "ready", *, window_days: int = 90) ->
     estimated_annual_draw = (
         None
         if portfolio_unavailable or effective_tax_rate is None
-        else int((Decimal(annualized_spending) / (Decimal(1) - Decimal(str(effective_tax_rate)))).quantize(Decimal(1)))
+        else int((Decimal(annualized_spending) / (Decimal(1) - effective_tax_rate)).quantize(Decimal(1)))
     )
     mandatory, flexible, provisional, total = (
         (92_000, 50_000, 6_000, 148_000) if low_draw else (760_000, 410_000, 50_000, 1_220_000)
@@ -255,7 +255,7 @@ def _example_sustainability(variant: str = "ready", *, window_days: int = 90) ->
         effective_tax_rate=effective_tax_rate,
         tax_assumption_note=tax_assumption_note,
         tax_assumption_as_of=None if tax_unmodeled else date(2026, 1, 1),
-        reference_draw_rates=[0.03, 0.035, 0.04, 0.045],
+        reference_draw_rates=[Decimal("0.03"), Decimal("0.035"), Decimal("0.04"), Decimal("0.045")],
         portfolio=portfolio,
         history=history,
         account_coverage=[],
@@ -328,8 +328,8 @@ def _example_sustainability_window(
                 status=ReportStatus.READY,
                 covered_days=days,
                 annualized_spending_minor_units=annual,
-                spending_draw_rate=annual / 125_000_000,
-                tax_adjusted_draw_rate=funding / 125_000_000,
+                spending_draw_rate=Decimal(annual) / Decimal(125_000_000),
+                tax_adjusted_draw_rate=Decimal(funding) / Decimal(125_000_000),
             )
             for day in dates
         ]
@@ -350,8 +350,8 @@ def _example_sustainability_window(
         spending_minor_units=total,
         annualized_spending_minor_units=annual,
         estimated_annual_draw_minor_units=funding,
-        spending_draw_rate=annual / 125_000_000,
-        tax_adjusted_draw_rate=funding / 125_000_000,
+        spending_draw_rate=Decimal(annual) / Decimal(125_000_000),
+        tax_adjusted_draw_rate=Decimal(funding) / Decimal(125_000_000),
         effective_tax_rate=result.effective_tax_rate,
         tax_assumption_note=result.tax_assumption_note,
         tax_assumption_as_of=result.tax_assumption_as_of,
@@ -439,8 +439,8 @@ def _example_sustainability_with_partial_account_history() -> SustainabilityView
         spending_minor_units=610_000,
         annualized_spending_minor_units=annual,
         estimated_annual_draw_minor_units=draw,
-        spending_draw_rate=annual / 125_000_000,
-        tax_adjusted_draw_rate=draw / 125_000_000,
+        spending_draw_rate=Decimal(annual) / Decimal(125_000_000),
+        tax_adjusted_draw_rate=Decimal(draw) / Decimal(125_000_000),
         effective_tax_rate=result.effective_tax_rate,
         tax_assumption_note=result.tax_assumption_note,
         tax_assumption_as_of=result.tax_assumption_as_of,
@@ -461,16 +461,16 @@ def _example_sustainability_with_historical_coverage_gap() -> SustainabilityView
             status=ReportStatus.READY,
             covered_days=90,
             annualized_spending_minor_units=4_700_000,
-            spending_draw_rate=0.0376,
-            tax_adjusted_draw_rate=0.0427272727,
+            spending_draw_rate=Decimal("0.0376"),
+            tax_adjusted_draw_rate=Decimal("0.0427272727"),
         ),
         SustainabilityHistoryPoint(
             date=date(2026, 10, 9),
             status=ReportStatus.READY,
             covered_days=90,
             annualized_spending_minor_units=4_850_000,
-            spending_draw_rate=0.0388,
-            tax_adjusted_draw_rate=0.0440909091,
+            spending_draw_rate=Decimal("0.0388"),
+            tax_adjusted_draw_rate=Decimal("0.0440909091"),
         ),
         *[
             SustainabilityHistoryPoint(
@@ -681,7 +681,7 @@ def dashboard_url() -> Iterator[str]:
                     alert_threshold_percent=None,
                     spend_minor_units=22000,
                     limit_minor_units=100000,
-                    spend_percent=22,
+                    spend_percent=Decimal(22),
                     pending_minor_units=1000,
                     posted_minor_units=21000,
                     last_synced_at=synced,

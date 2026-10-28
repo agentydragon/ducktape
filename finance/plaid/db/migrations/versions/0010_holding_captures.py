@@ -9,6 +9,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.engine import Connection
+from sqlalchemy.sql.elements import ColumnElement
 
 revision: str = "0010"
 down_revision: str | None = "0009"
@@ -30,6 +31,11 @@ _DECIMAL_COLUMNS = {
     "holding_snapshots": ("quantity", "cost_basis", "institution_price", "institution_value"),
     "investment_transactions": ("amount", "quantity", "price", "fees"),
 }
+
+
+def _finite_values(*names: str) -> ColumnElement[bool]:
+    # Frozen here so later application changes cannot alter this migration.
+    return sa.and_(*(sa.column(name).not_in(("NaN", "Infinity", "-Infinity")) for name in names))
 
 
 def _detach_transaction_view(connection: Connection) -> None:
@@ -214,11 +220,7 @@ def upgrade() -> None:
                 existing_type=sa.Float(),
                 postgresql_using=f'"{column}"::text::numeric',
             )
-        finite = " AND ".join(
-            f"( \"{column}\" IS NULL OR \"{column}\" NOT IN ('NaN'::numeric,'Infinity'::numeric,'-Infinity'::numeric))"
-            for column in columns
-        )
-        op.create_check_constraint(f"ck_{table}_finite_values", table, finite)
+        op.create_check_constraint(f"ck_{table}_finite_values", table, _finite_values(*columns))
 
     _restore_transaction_view(connection)
 
@@ -255,10 +257,7 @@ def upgrade() -> None:
             ["accounts.account_id", "accounts.item_id"],
             name="fk_holding_capture_accounts_account_item",
         ),
-        sa.CheckConstraint(
-            "current IS NULL OR current NOT IN ('NaN'::numeric,'Infinity'::numeric,'-Infinity'::numeric)",
-            name="ck_holding_capture_accounts_finite_values",
-        ),
+        sa.CheckConstraint(_finite_values("current"), name="ck_holding_capture_accounts_finite_values"),
         comment="Accounts explicitly covered by each holdings response, with balances from that same response.",
     )
     # Older deployed writers may append rows during a rolling image update.

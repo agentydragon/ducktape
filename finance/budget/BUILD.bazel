@@ -62,6 +62,8 @@ py_test(
         ":schema",
         ":wire",
         "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

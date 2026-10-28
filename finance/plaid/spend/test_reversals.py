@@ -315,7 +315,9 @@ def sustainability_result(
                 portfolio=PortfolioPolicy(
                     sources=PortfolioSources(plaid=PlaidSourcePolicy(asset_account_ids=["assets"]))
                 ),
-                withdrawal_tax=WithdrawalTax(rate=0.2, assumption_note="Synthetic assumption", as_of=date(2026, 1, 1)),
+                withdrawal_tax=WithdrawalTax(
+                    rate=Decimal("0.2"), assumption_note="Synthetic assumption", as_of=date(2026, 1, 1)
+                ),
             ),
             configured.model_copy(update={"spending_account_ids": {"card"}}),
             [transaction(date(2026, 1, 1), "0", "HISTORY", "coverage"), *rows],
@@ -348,7 +350,9 @@ def test_reconciled_history_has_no_artificial_credit_dip_or_original_spike(origi
                 portfolio=PortfolioPolicy(
                     sources=PortfolioSources(plaid=PlaidSourcePolicy(asset_account_ids=["assets"]))
                 ),
-                withdrawal_tax=WithdrawalTax(rate=0.2, assumption_note="Synthetic assumption", as_of=date(2026, 1, 1)),
+                withdrawal_tax=WithdrawalTax(
+                    rate=Decimal("0.2"), assumption_note="Synthetic assumption", as_of=date(2026, 1, 1)
+                ),
             ),
             configured,
             rows,

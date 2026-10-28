@@ -37,7 +37,7 @@ _NOW = datetime(2026, 4, 1, 7, tzinfo=UTC)  # April 1 midnight in Pacific.
 
 
 def policy(
-    *, tax_rate: float | None = None, account_history: dict[str, AccountHistory] | None = None
+    *, tax_rate: Decimal | None = None, account_history: dict[str, AccountHistory] | None = None
 ) -> SustainabilityPolicy:
     return SustainabilityPolicy(
         display=SustainabilityDisplay(windows_days=[30, 90, 365], default_window_days=90),
@@ -114,7 +114,7 @@ def evaluate_account_history(
     selected_ids = {"card"} if spending_account_ids is None else spending_account_ids
     return sustainability_view(
         calculate_sustainability(
-            policy(tax_rate=0.2, account_history=account_history),
+            policy(tax_rate=Decimal("0.2"), account_history=account_history),
             allowance(spending_account_ids=selected_ids),
             transactions,
             portfolio(),
@@ -141,7 +141,7 @@ def portfolio(*, ready: bool = True) -> PortfolioView:
 def test_total_consumption_includes_precommitment_mandatory_and_pending_once() -> None:
     result = sustainability_view(
         calculate_sustainability(
-            policy(tax_rate=0.2),
+            policy(tax_rate=Decimal("0.2")),
             allowance(),
             [
                 transaction(date(2026, 1, 1), "0", "TRANSFER", key="history"),
@@ -171,7 +171,11 @@ def test_total_consumption_includes_precommitment_mandatory_and_pending_once() -
     assert result.spending_minor_units == 13_000
     assert result.annualized_spending_minor_units == 52_757
     assert result.estimated_annual_draw_minor_units == 65_946
-    assert result.tax_adjusted_draw_rate == pytest.approx(0.065946)
+    assert result.tax_adjusted_draw_rate == Decimal("0.065946")
+    result_json = result.model_dump(mode="json")
+    assert result_json["tax_adjusted_draw_rate"] == "0.065946"
+    assert result_json["effective_tax_rate"] == "0.2"
+    assert result_json["reference_draw_rates"] == ["0.03", "0.04"]
     assert result.history[-1].annualized_spending_minor_units == result.annualized_spending_minor_units
     assert result.history[-1].tax_adjusted_draw_rate == result.tax_adjusted_draw_rate
     assert any("unconfirmed" in issue for issue in result.issues)
@@ -454,8 +458,8 @@ def test_history_keeps_covered_windows_nulls_gap_windows_and_resumes_after_full_
     assert points[date(2026, 3, 29)].annualized_spending_minor_units is None
     assert points[date(2026, 3, 30)].annualized_spending_minor_units == 12_175
     assert points[date(2026, 3, 31)].annualized_spending_minor_units == 12_175
-    assert points[date(2026, 3, 30)].tax_adjusted_draw_rate == pytest.approx(0.015219)
-    assert points[date(2026, 3, 31)].tax_adjusted_draw_rate == pytest.approx(0.015219)
+    assert points[date(2026, 3, 30)].tax_adjusted_draw_rate == Decimal("0.015219")
+    assert points[date(2026, 3, 31)].tax_adjusted_draw_rate == Decimal("0.015219")
 
 
 def test_earlier_history_rates_survive_an_unavailable_current_suffix() -> None:
@@ -491,8 +495,8 @@ def test_earlier_history_rates_survive_an_unavailable_current_suffix() -> None:
     assert result.annualized_spending_minor_units is None
     assert result.spending_draw_rate is None
     assert points[date(2026, 1, 31)].annualized_spending_minor_units == 12_175
-    assert points[date(2026, 1, 31)].spending_draw_rate == pytest.approx(0.012175)
-    assert points[date(2026, 1, 31)].tax_adjusted_draw_rate == pytest.approx(0.015219)
+    assert points[date(2026, 1, 31)].spending_draw_rate == Decimal("0.012175")
+    assert points[date(2026, 1, 31)].tax_adjusted_draw_rate == Decimal("0.015219")
 
 
 def test_headline_annualizes_only_the_latest_contiguous_coverage_suffix() -> None:
@@ -606,17 +610,27 @@ def test_account_history_evidence_requires_ordered_bounds_and_provenance() -> No
         DocumentedHistory(complete_from=date(2026, 1, 1), source="   ", as_of=date(2026, 3, 31))
 
 
-@pytest.mark.parametrize("rate", [-0.1, 1.0, float("nan"), float("inf")])
-def test_tax_fraction_must_be_finite_and_below_one(rate: float) -> None:
+@pytest.mark.parametrize("rate", [Decimal("-0.1"), Decimal("1.0"), Decimal("NaN"), Decimal("Infinity")])
+def test_tax_fraction_must_be_finite_and_below_one(rate: Decimal) -> None:
     with pytest.raises(ValidationError):
         WithdrawalTax(rate=rate, assumption_note="Synthetic", as_of=date(2026, 1, 1))
 
 
+@pytest.mark.parametrize("rate", [Decimal(0), Decimal(1), Decimal("NaN"), Decimal("Infinity")])
+def test_reference_draw_rates_must_be_finite_fractions(rate: Decimal) -> None:
+    with pytest.raises(ValidationError):
+        SustainabilityDisplay(reference_draw_rates=[rate])
+
+
 def test_tax_fraction_requires_provenance_and_shared_classification() -> None:
     with pytest.raises(ValidationError, match="dated assumption"):
-        WithdrawalTax(rate=0.2)
+        WithdrawalTax(rate=Decimal("0.2"))
     with pytest.raises(ValidationError, match="requires shared"):
         SpendConfiguration(time_zone=ZoneInfo("UTC"), cards=[], sustainability=policy())
+    with pytest.raises(ValidationError):
+        WithdrawalTax.model_validate({"rate": 0.2, "assumption_note": "Synthetic", "as_of": date(2026, 1, 1)})
+    with pytest.raises(ValidationError):
+        SustainabilityDisplay.model_validate({"reference_draw_rates": [0.04]})
 
 
 if __name__ == "__main__":

@@ -21,9 +21,9 @@ Consumers: augur's API server serves it at `/api/budget/*` for the frontend's
 | `wire.py`           | HTTP wire schemas (drive augur's frontend Zod codegen via its `export_schema`)                                                                                                      |
 | `csv_export.py`     | CSV exports: the bucket-by-month summary (plus planning columns when adjustments are sent) and one bucket's transactions                                                            |
 
-Plaid transaction amounts and SQL monthly totals stay `Decimal` through classification and aggregation. The existing
-Budget HTTP schema exposes amounts as floats, so conversion happens when building that response; the Beancount exporter
-keeps `Decimal` and quantizes only when rendering currency amounts to cents.
+Plaid transaction amounts, SQL monthly totals, HTTP wire amounts, and planning adjustments stay `Decimal`. Pydantic
+serializes HTTP amounts as decimal strings; CSV and Beancount exports render currency to cents. Browser planning and
+rollup arithmetic uses Decimal.js, with conversion to browser numbers only for display and chart coordinates.
 
 ## What lives in ducktape vs gaffer-private
 

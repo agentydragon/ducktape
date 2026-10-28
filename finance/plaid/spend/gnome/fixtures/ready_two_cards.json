@@ -15,7 +15,7 @@
         "pending_minor_units": 2345,
         "limit_minor_units": 15000,
         "alert_threshold_percent": 75,
-        "spend_percent": 82.3,
+        "spend_percent": "82.3",
         "alert_state": "warning",
         "last_synced_at": "2026-10-01T11:58:00Z",
         "statement_period": {
@@ -35,7 +35,7 @@
         "pending_minor_units": 300,
         "limit_minor_units": 100000,
         "alert_threshold_percent": 80,
-        "spend_percent": 2.6,
+        "spend_percent": "2.6",
         "alert_state": "normal",
         "last_synced_at": "2026-10-01T11:59:00Z",
         "statement_period": {

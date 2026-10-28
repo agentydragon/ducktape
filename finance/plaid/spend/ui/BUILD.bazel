@@ -73,6 +73,22 @@ ts_library(
 )
 
 ts_library(
+    name = "decimal_math",
+    srcs = ["decimal_math.ts"],
+    tsconfig = ":tsconfig",
+    deps = ["//:node_modules/decimal.js"],
+)
+
+spend_vitest_test(
+    name = "decimal_math_test",
+    srcs = ["decimal_math.test.ts"],
+    deps = [
+        ":decimal_math",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "rule_display",
     srcs = ["rule_display.ts"],
     tsconfig = ":tsconfig",
@@ -87,6 +103,7 @@ ts_library(
         ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
+        "//:node_modules/decimal.js",
         "//:node_modules/react",
     ],
 )
@@ -111,12 +128,14 @@ ts_library(
     srcs = ["SustainabilityHistoryChart.tsx"],
     tsconfig = ":tsconfig",
     deps = [
+        ":decimal_math",
         ":schema",
         ":spend_display",
         ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/chart.js",
+        "//:node_modules/decimal.js",
         "//:node_modules/react",
     ],
 )
@@ -179,11 +198,13 @@ ts_library(
     tsconfig = ":tsconfig",
     deps = [
         ":SustainabilityHistoryChart",
+        ":decimal_math",
         ":schema",
         ":spend_display",
         ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
+        "//:node_modules/decimal.js",
         "//:node_modules/react",
         "//util/frontend:help_tooltip",
     ],

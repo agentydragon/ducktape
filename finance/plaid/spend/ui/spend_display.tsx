@@ -1,5 +1,6 @@
 import { Badge, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
+import Decimal from "decimal.js";
 
 import type { AllowancePeriodId } from "./types";
 
@@ -11,8 +12,10 @@ export const periodLabels = {
   rolling_30d: "Last 30 days",
 } satisfies Record<AllowancePeriodId, string>;
 
-export function money(value: number | null | undefined, currency: string | null, exact = false): string {
-  if (value == null || !Number.isFinite(value)) return "Unavailable";
+export function money(value: number | Decimal | null | undefined, currency: string | null, exact = false): string {
+  if (value == null) return "Unavailable";
+  const minorUnits = Decimal.isDecimal(value) ? value : new Decimal(value);
+  if (!minorUnits.isFinite()) return "Unavailable";
   const code = currency?.length === 3 ? currency.toUpperCase() : "USD";
   try {
     const formatter = new Intl.NumberFormat(undefined, {
@@ -23,11 +26,14 @@ export function money(value: number | null | undefined, currency: string | null,
     });
     const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
       .maximumFractionDigits;
-    const amount = value / 10 ** (precision ?? 2);
-    if (!exact && amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${formatter.format(1)}`;
-    return formatter.format(amount);
+    const exactAmount = minorUnits.div(new Decimal(10).pow(precision ?? 2));
+    if (!exact && !exactAmount.isZero() && exactAmount.abs().lessThan("0.5")) {
+      return `${exactAmount.isNegative() ? "-" : ""}<${formatter.format(1)}`;
+    }
+    const displayAmount = exactAmount.toDecimalPlaces(exact ? (precision ?? 2) : 0, Decimal.ROUND_HALF_UP);
+    return formatter.format(displayAmount.toNumber());
   } catch {
-    const amount = value / 100;
+    const amount = minorUnits.div(100).toNumber();
     if (!exact && amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${code} 1`;
     return `${code} ${amount.toFixed(exact ? 2 : 0)}`;
   }

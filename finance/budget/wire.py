@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveInt
+from pydantic import Field, NonNegativeInt, PositiveInt
 
-from finance.budget.schema import BucketKind, FrozenModel
+from finance.budget.schema import BucketKind, FiniteDecimal, FrozenModel, NonNegativeDecimal, PositiveDecimal
 
 
 class TrailingMonthsWindow(FrozenModel):
@@ -44,11 +44,11 @@ class BucketMonthly(FrozenModel):
     """One bucket's monthly trend plus a day-normalized monthly average over the window."""
 
     bucket_id: str
-    monthly_amounts: tuple[float, ...] = Field(description="Signed totals per month; + outflow, - inflow.")
-    window_monthly_avg: float = Field(
+    monthly_amounts: tuple[FiniteDecimal, ...] = Field(description="Signed totals per month; + outflow, - inflow.")
+    window_monthly_avg: FiniteDecimal = Field(
         description=(
             "Signed window total / days actually covered, scaled to an average month "
-            "(365.25/12 days). Day-normalized so a partial current month or a mid-month "
+            "(365.2425/12 days). Day-normalized so a partial current month or a mid-month "
             "coverage start isn't counted as a whole month."
         )
     )
@@ -58,7 +58,7 @@ class BucketMonthly(FrozenModel):
 class LumpyView(FrozenModel):
     transaction_id: str
     date: date
-    amount: float
+    amount: FiniteDecimal
     name: str
     merchant_name: str | None
     bucket_id: str
@@ -74,7 +74,7 @@ class HiddenBudgetAdjustment(FrozenModel):
 
 class OverrideBudgetAdjustment(FrozenModel):
     kind: Literal["override"] = "override"
-    monthly: NonNegativeFloat
+    monthly: NonNegativeDecimal
 
 
 BudgetAdjustment = Annotated[HiddenBudgetAdjustment | OverrideBudgetAdjustment, Field(discriminator="kind")]
@@ -90,7 +90,7 @@ class BudgetSnapshotResponse(FrozenModel):
     buckets: tuple[BucketView, ...]
     monthly_by_bucket: tuple[BucketMonthly, ...]
     lumpy: tuple[LumpyView, ...]
-    lumpy_threshold_usd: float
+    lumpy_threshold_usd: PositiveDecimal
     stale_overrides: tuple[str, ...] = Field(
         default=(),
         description=(
@@ -116,7 +116,7 @@ class BudgetSnapshotResponse(FrozenModel):
 class TransactionView(FrozenModel):
     transaction_id: str
     date: date
-    amount: float
+    amount: FiniteDecimal
     name: str
     merchant_name: str | None
     pfc_primary: str | None

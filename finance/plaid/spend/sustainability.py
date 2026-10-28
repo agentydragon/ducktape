@@ -6,10 +6,10 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date as date_type, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Literal
+from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from finance.plaid.spend.allowance import AllowancePolicy, Disposition, Kind, Transaction
 from finance.plaid.spend.consumption import ConsumptionMode, prepare_consumption
@@ -24,7 +24,9 @@ class SustainabilityDisplay(BaseModel):
 
     windows_days: list[int] = Field(default_factory=lambda: [30, 90, 365], min_length=1)
     default_window_days: int = 90
-    reference_draw_rates: list[FiniteFloat] = Field(default_factory=lambda: [0.03, 0.04])
+    reference_draw_rates: list[Annotated[Decimal, Field(gt=0, lt=1, allow_inf_nan=False)]] = Field(
+        default_factory=lambda: [Decimal("0.03"), Decimal("0.04")]
+    )
 
     @model_validator(mode="after")
     def _valid_windows(self) -> SustainabilityDisplay:
@@ -34,8 +36,6 @@ class SustainabilityDisplay(BaseModel):
             raise ValueError("windows must be distinct day counts between 1 and 730")
         if self.default_window_days not in self.windows_days:
             raise ValueError("default window must be configured")
-        if any(not 0 < rate < 1 for rate in self.reference_draw_rates):
-            raise ValueError("reference draw rates must be finite fractions between zero and one")
         return self
 
 
@@ -43,7 +43,7 @@ class WithdrawalTax(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     model: Literal["effective_rate"] = "effective_rate"
-    rate: FiniteFloat | None = Field(default=None, ge=0, lt=1)
+    rate: Decimal | None = Field(default=None, ge=0, lt=1, allow_inf_nan=False)
     assumption_note: str | None = None
     as_of: date_type | None = None
 
@@ -130,8 +130,8 @@ class SustainabilityHistoryPoint(BaseModel):
     status: ReportStatus
     covered_days: int
     annualized_spending_minor_units: int | None
-    spending_draw_rate: float | None
-    tax_adjusted_draw_rate: float | None
+    spending_draw_rate: Decimal | None
+    tax_adjusted_draw_rate: Decimal | None
 
 
 class SustainabilityView(BaseModel):
@@ -150,12 +150,12 @@ class SustainabilityView(BaseModel):
     spending_minor_units: int
     annualized_spending_minor_units: int | None
     estimated_annual_draw_minor_units: int | None
-    spending_draw_rate: float | None
-    tax_adjusted_draw_rate: float | None
-    effective_tax_rate: float | None
+    spending_draw_rate: Decimal | None
+    tax_adjusted_draw_rate: Decimal | None
+    effective_tax_rate: Decimal | None
     tax_assumption_note: str | None = None
     tax_assumption_as_of: date_type | None = None
-    reference_draw_rates: list[float]
+    reference_draw_rates: list[Decimal]
     portfolio: PortfolioView
     history: list[SustainabilityHistoryPoint]
     issues: list[str]
@@ -230,7 +230,7 @@ def disabled_view(now: datetime, time_zone: str, today: date_type) -> Sustainabi
         spending_draw_rate=None,
         tax_adjusted_draw_rate=None,
         effective_tax_rate=None,
-        reference_draw_rates=[0.03, 0.04],
+        reference_draw_rates=[Decimal("0.03"), Decimal("0.04")],
         portfolio=empty_portfolio(),
         history=[],
         issues=["Sustainability is not configured."],
@@ -389,8 +389,12 @@ def calculate_sustainability(
                     ),
                     covered_days=point_days,
                     annualized_spending_minor_units=point_annual,
-                    spending_draw_rate=point_annual / net if point_annual is not None and net and net > 0 else None,
-                    tax_adjusted_draw_rate=point_draw / net if point_draw is not None and net and net > 0 else None,
+                    spending_draw_rate=(Decimal(point_annual) / Decimal(net))
+                    if point_annual is not None and net and net > 0
+                    else None,
+                    tax_adjusted_draw_rate=(Decimal(point_draw) / Decimal(net))
+                    if point_draw is not None and net and net > 0
+                    else None,
                 )
             )
         chart_day += timedelta(days=1)
@@ -418,8 +422,8 @@ def calculate_sustainability(
         spending_minor_units=consumption.total,
         annualized_spending_minor_units=annual,
         estimated_annual_draw_minor_units=draw,
-        spending_draw_rate=annual / net if ready and annual is not None and net else None,
-        tax_adjusted_draw_rate=draw / net if ready and draw is not None and net else None,
+        spending_draw_rate=Decimal(annual) / Decimal(net) if ready and annual is not None and net else None,
+        tax_adjusted_draw_rate=Decimal(draw) / Decimal(net) if ready and draw is not None and net else None,
         effective_tax_rate=policy.withdrawal_tax.rate,
         tax_assumption_note=policy.withdrawal_tax.assumption_note,
         tax_assumption_as_of=policy.withdrawal_tax.as_of,
@@ -440,7 +444,7 @@ def _annualize(amount: int, days: int) -> int:
     return int((Decimal(amount) * _YEAR_DAYS / days).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
-def _tax_adjust(annual: int | None, rate: float | None) -> int | None:
+def _tax_adjust(annual: int | None, rate: Decimal | None) -> int | None:
     if annual is None or rate is None:
         return None
-    return int((Decimal(annual) / (1 - Decimal(str(rate)))).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    return int((Decimal(annual) / (Decimal(1) - rate)).quantize(Decimal(1), rounding=ROUND_HALF_UP))

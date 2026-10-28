@@ -26,6 +26,7 @@ from finance.plaid.spend.allowance import (
     TransactionPeriodId,
 )
 from finance.plaid.spend.sustainability import SustainabilityPolicy
+from util.yaml_decimal import DecimalSafeLoader
 
 
 class AlertState(StrEnum):
@@ -107,7 +108,7 @@ class SpendConfiguration(BaseModel):
 
 def load_configuration(path: Path) -> SpendConfiguration:
     """Load and validate the shared YAML configuration used by the app and analyses."""
-    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    document = yaml.load(path.read_text(encoding="utf-8"), Loader=DecimalSafeLoader)
     return SpendConfiguration.model_validate(document)
 
 
@@ -188,7 +189,7 @@ class CardView(BaseModel):
     pending_minor_units: int | None
     limit_minor_units: int | None
     alert_threshold_percent: int | None
-    spend_percent: float | None
+    spend_percent: Decimal | None
     alert_state: AlertState
     last_synced_at: datetime_type | None
 

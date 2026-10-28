@@ -328,6 +328,10 @@ ts_library(
     name = "budget_adjustments",
     srcs = ["budget_adjustments.ts"],
     tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/decimal.js",
+    ],
 )
 
 ts_library(
@@ -340,6 +344,7 @@ ts_library(
         ":url_state",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
+        "//:node_modules/decimal.js",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:format",
         "//finance/augur/frontend/lib:toast",
@@ -649,6 +654,7 @@ augur_vitest_test(
     srcs = ["budget_adjustments.test.ts"],
     deps = [
         ":budget_adjustments",
+        "//:node_modules/decimal.js",
         "//:node_modules/vitest",
     ],
 )

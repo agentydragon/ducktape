@@ -2,6 +2,7 @@
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -840,6 +841,35 @@ def test_one_off_scope_is_validated_from_its_condition():
     )
     with pytest.raises(ValidationError, match="analysis_categories is missing"):
         AllowancePolicy.model_validate(unconfigured)
+
+
+def test_configuration_preserves_financial_yaml_decimal_tokens(tmp_path: Path) -> None:
+    example = get_required_path("_main/finance/plaid/spend/one-off-configuration.yaml")
+    policy = tmp_path / "policy.yaml"
+    policy.write_text(
+        example.read_text()
+        + """
+sustainability:
+  portfolio:
+    sources:
+      plaid:
+        asset_account_ids: [example-brokerage]
+        holding_value_corrections:
+          - account_id: example-brokerage
+            security_ids: [example-fund]
+            value_multiplier: 1.00000000000000000000000000001
+  withdrawal_tax:
+    rate: 0.10000000000000000000000000001
+    assumption_note: Synthetic precision test
+    as_of: 2026-10-27
+""",
+        encoding="utf-8",
+    )
+    loaded = load_configuration(policy)
+    assert loaded.sustainability is not None
+    assert loaded.sustainability.withdrawal_tax.rate == Decimal("0.10000000000000000000000000001")
+    [correction] = loaded.sustainability.portfolio.sources.plaid.holding_value_corrections
+    assert correction.value_multiplier == Decimal("1.00000000000000000000000000001")
 
 
 def test_one_off_yaml_round_trip_and_configuration_view():

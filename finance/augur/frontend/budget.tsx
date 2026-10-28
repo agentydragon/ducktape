@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NativeSelect } from "@mantine/core";
+import Decimal from "decimal.js";
 
 import {
   type BudgetSnapshotRequest,
-  type BudgetSummaryCsvRequest,
   fetchBudgetSnapshot,
   fetchBudgetSummaryCsv,
   fetchBudgetTransactions,
@@ -15,8 +15,10 @@ import {
   type BudgetTotals,
   parseAdjustments,
   adjustmentsToParams,
+  adjustmentsToRequest,
   effectiveSignedAvg,
   computeTotals,
+  parseMonthlyAmount,
 } from "./budget_adjustments";
 import { fmtUsd, fmtNumber } from "./lib/format";
 import { toastFetchError } from "./lib/toast";
@@ -30,17 +32,17 @@ type BucketSeries = {
   label: string;
   kind: BudgetBucket["kind"];
   family: string | null;
-  monthlyAmounts: number[];
-  windowAvg: number;
+  monthlyAmounts: Decimal[];
+  windowAvg: Decimal;
   transactionCount: number;
 };
 type AdjustedBucketSeries = BucketSeries & {
   adjustment: Adjustment | undefined;
   hidden: boolean;
   overridden: boolean;
-  effectiveAvg: number;
+  effectiveAvg: Decimal;
 };
-type ChartTooltip = { bucketId: string; label: string; amount: number; month: string; left: number; top: number };
+type ChartTooltip = { bucketId: string; label: string; amount: Decimal; month: string; left: number; top: number };
 type BucketDisplayEntry = AdjustedBucketSeries;
 type AdjustmentHandler = (bucketId: string, adjustment: Adjustment | null) => void;
 type LumpyItem = BudgetSnapshot["lumpy"][number];
@@ -98,10 +100,6 @@ function downloadBlob(filename: string, blob: Blob) {
 
 const EXPORT_BUTTON_CLASS = "augur-icon-button gap-1.5 px-2.5 py-1.5 text-xs font-medium";
 
-function adjustmentsToRequest(adjustments: Adjustments): BudgetSummaryCsvRequest["adjustments"] {
-  return Object.fromEntries(adjustments.entries());
-}
-
 // Mirror the product/calibration shell's URL-state pattern: rewrite only our two budget params
 // (preserving everything else) so a hidden-rent / overridden view round-trips through the URL.
 function writeAdjustmentsToSearch(adjustments: Adjustments) {
@@ -146,18 +144,18 @@ function Sparkline({
   width = 90,
   height = 24,
 }: {
-  amounts: readonly number[];
+  amounts: readonly Decimal[];
   width?: number;
   height?: number;
 }) {
   if (!amounts.length) return null;
-  const max = Math.max(...amounts.map((value) => Math.abs(value)));
-  if (max === 0) return <svg width={width} height={height} aria-hidden="true" />;
+  const max = Decimal.max(...amounts.map((value) => value.abs()));
+  if (max.isZero()) return <svg width={width} height={height} aria-hidden="true" />;
   const step = width / Math.max(amounts.length - 1, 1);
   const points = amounts
     .map((value, index) => {
       const x = index * step;
-      const y = height / 2 - (value / max) * (height / 2 - 1);
+      const y = height / 2 - value.div(max).toNumber() * (height / 2 - 1);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
@@ -200,9 +198,12 @@ function StackedMonthlyChart({
     return <div className="px-4 py-6 text-sm augur-muted">No spend data in window.</div>;
   }
   const monthlyTotals = months.map((_, i) =>
-    visibleSpendSeries.reduce((acc, { series }) => acc + Math.max(series.monthlyAmounts[i], 0), 0)
+    visibleSpendSeries.reduce(
+      (total, { series }) => total.plus(Decimal.max(series.monthlyAmounts[i] ?? 0, 0)),
+      new Decimal(0)
+    )
   );
-  const max = Math.max(...monthlyTotals);
+  const max = Decimal.max(...monthlyTotals).toNumber();
   const { ticks, ceiling } = niceTicks(max);
   const palette = [
     "#0ea5e9",
@@ -232,15 +233,15 @@ function StackedMonthlyChart({
     .map(({ series, originalIndex }) => ({
       series,
       originalIndex,
-      amount: Math.max(series.effectiveAvg, 0),
+      amount: Decimal.max(series.effectiveAvg, 0),
     }))
-    .sort((left, right) => right.amount - left.amount || left.originalIndex - right.originalIndex);
+    .sort((left, right) => right.amount.comparedTo(left.amount) || left.originalIndex - right.originalIndex);
   const yAxisWidthPx = 56;
   const innerHeightPx = 220;
   const showSegmentTooltip = (
     event: Pick<React.MouseEvent<SVGRectElement>, "clientX" | "clientY">,
     series: AdjustedBucketSeries,
-    value: number,
+    value: Decimal,
     monthIso: string
   ) => {
     const bounds = chartRef.current?.getBoundingClientRect();
@@ -258,7 +259,7 @@ function StackedMonthlyChart({
   const showFocusedSegmentTooltip = (
     event: { currentTarget: SVGRectElement },
     series: AdjustedBucketSeries,
-    value: number,
+    value: Decimal,
     monthIso: string
   ) => {
     const chartBounds = chartRef.current?.getBoundingClientRect();
@@ -317,12 +318,13 @@ function StackedMonthlyChart({
                 .map(({ series, originalIndex }) => ({
                   series,
                   originalIndex,
-                  value: Math.max(series.monthlyAmounts[monthIdx], 0),
+                  value: Decimal.max(series.monthlyAmounts[monthIdx] ?? 0, 0),
                 }))
-                .filter(({ value }) => value > 0)
-                .sort((left, right) => right.value - left.value || left.originalIndex - right.originalIndex)
+                .filter(({ value }) => value.greaterThan(0))
+                .sort((left, right) => right.value.comparedTo(left.value) || left.originalIndex - right.originalIndex)
                 .map(({ series, value }) => {
-                  const y = cursor - value;
+                  const chartValue = value.toNumber();
+                  const y = cursor - chartValue;
                   cursor = y;
                   return (
                     <rect
@@ -330,7 +332,7 @@ function StackedMonthlyChart({
                       x={monthIdx * barWidth + barWidth * 0.1}
                       y={y}
                       width={barWidth * 0.8}
-                      height={value}
+                      height={chartValue}
                       fill={colorForBucket(series.bucketId)}
                       opacity="0.9"
                       className="cursor-pointer outline-none focus:opacity-100"
@@ -420,11 +422,11 @@ function OverrideEditor({
   const [draft, setDraft] = useState(() =>
     entry.adjustment?.kind === "override"
       ? String(entry.adjustment.monthly)
-      : String(Math.round(Math.abs(entry.windowAvg)))
+      : entry.windowAvg.abs().toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toFixed(0)
   );
   const commit = () => {
-    const value = Number(draft);
-    if (draft.trim() !== "" && Number.isFinite(value) && value >= 0) {
+    const value = parseMonthlyAmount(draft.trim());
+    if (value != null) {
       onAdjust(entry.bucketId, { kind: "override", monthly: value });
     }
     onClose();
@@ -432,8 +434,8 @@ function OverrideEditor({
   return (
     <div className="flex items-center justify-end gap-1" onClick={(event) => event.stopPropagation()}>
       <input
-        type="number"
-        min={0}
+        type="text"
+        inputMode="decimal"
         autoFocus
         aria-label={`Planned monthly amount for ${entry.label}`}
         className="augur-input w-24 text-right augur-tabular"
@@ -552,12 +554,12 @@ function HeadlineCards({
   // totals (hidden buckets dropped, overrides applied); the burn card then anchors
   // them against the unadjusted history so the tweak's effect is legible.
   const subtitle = adjustmentsActive ? "planned $/mo" : `${windowMonths}-month average`;
-  const cards: { label: string; value: number; note?: string; tone?: string }[] = [];
-  const hasOffsets = totals.inflow > 0 || totals.income > 0;
+  const cards: { label: string; value: Decimal; note?: string; tone?: string }[] = [];
+  const hasOffsets = totals.inflow.greaterThan(0) || totals.income.greaterThan(0);
   if (hasOffsets) {
     cards.push({ label: "Gross spend", value: totals.spend, note: "All expense buckets, before inflows." });
   }
-  if (totals.inflow > 0) {
+  if (totals.inflow.greaterThan(0)) {
     cards.push({
       label: "Inflows",
       value: totals.inflow,
@@ -565,7 +567,7 @@ function HeadlineCards({
       tone: "text-sky-700 dark:text-sky-400",
     });
   }
-  if (totals.income > 0) {
+  if (totals.income.greaterThan(0)) {
     cards.push({
       label: "Income",
       value: totals.income,
@@ -615,7 +617,7 @@ function AdjustmentsBar({ rows, onReset }: { rows: readonly AdjustedBucketSeries
       {overridden.length > 0 && (
         <span>
           <span className="font-semibold">Set:</span>{" "}
-          {overridden.map((row) => `${row.label} → ${fmtUsd(Math.abs(row.effectiveAvg))}/mo`).join(", ")}
+          {overridden.map((row) => `${row.label} → ${fmtUsd(row.effectiveAvg.abs())}/mo`).join(", ")}
         </span>
       )}
       <button type="button" className="augur-link ml-auto" onClick={onReset}>
@@ -643,25 +645,25 @@ function FamilyPanel({
   // Roll up the family-level totals from each row's effective average (override when set, else
   // historical) so the summary lines up with the row figures. Hidden buckets are excluded -- the
   // panel total tracks the same adjusted view the headline cards show.
-  let grossOut = 0;
-  let grossIn = 0;
+  let grossOut = new Decimal(0);
+  let grossIn = new Decimal(0);
   for (const row of rows) {
     if (row.hidden) continue;
-    if (row.kind === "expense") grossOut += row.effectiveAvg;
-    else if (row.kind === "inflow") grossIn += Math.abs(row.effectiveAvg);
-    else if (row.kind === "income") grossIn += Math.abs(row.effectiveAvg);
+    if (row.kind === "expense") grossOut = grossOut.plus(row.effectiveAvg);
+    else if (row.kind === "inflow") grossIn = grossIn.plus(row.effectiveAvg.abs());
+    else if (row.kind === "income") grossIn = grossIn.plus(row.effectiveAvg.abs());
   }
   // `transfer` buckets are direction-agnostic -- their sign is real (negative = net inflow).
   // Add their signed average to the relevant side so net stays honest.
   for (const row of rows) {
     if (row.hidden || row.kind !== "transfer") continue;
-    if (row.effectiveAvg >= 0) grossOut += row.effectiveAvg;
-    else grossIn += -row.effectiveAvg;
+    if (row.effectiveAvg.greaterThanOrEqualTo(0)) grossOut = grossOut.plus(row.effectiveAvg);
+    else grossIn = grossIn.plus(row.effectiveAvg.abs());
   }
-  const net = grossOut - grossIn;
+  const net = grossOut.minus(grossIn);
   // Hide the In/Net columns when the family is purely expense-side -- no signal there.
-  const hasInflowSide = grossIn > 0;
-  const sortedRows = rows.slice().sort((l, r) => Math.abs(r.effectiveAvg) - Math.abs(l.effectiveAvg));
+  const hasInflowSide = grossIn.greaterThan(0);
+  const sortedRows = rows.slice().sort((l, r) => r.effectiveAvg.abs().comparedTo(l.effectiveAvg.abs()));
   return (
     <section className="augur-panel overflow-hidden" data-budget-family={family}>
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
@@ -863,10 +865,10 @@ export function BudgetWorkspace() {
         label: bucket?.label ?? series.bucketId,
         kind: bucket?.kind ?? "expense",
         family: bucket?.family ?? null,
-        monthlyAmounts: series.monthlyAmounts,
+        monthlyAmounts: series.monthlyAmounts.map((amount) => new Decimal(amount)),
         // Day-normalized $/mo from the backend (signed window total / days covered × avg
         // days/mo). Not sum/months, which counted a partial current month as a full one.
-        windowAvg: series.windowMonthlyAvg,
+        windowAvg: new Decimal(series.windowMonthlyAvg),
         transactionCount: series.transactionCount,
       };
     });

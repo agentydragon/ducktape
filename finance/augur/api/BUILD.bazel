@@ -79,6 +79,7 @@ py_library(
         "//finance/augur/x/models:state_space",
         "//finance/augur/x/models:trained_private_equity",
         "//finance/budget:schema",
+        "//util:yaml_decimal",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],

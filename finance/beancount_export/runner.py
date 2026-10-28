@@ -30,6 +30,7 @@ from finance.beancount_export.export import ClassifiedTxn, render_ledger
 from finance.budget.schema import BudgetConfig
 from finance.budget.sql_read_model import ClassifiedRow, read_all_classified
 from finance.plaid.db.models import async_session_factory
+from util.yaml_decimal import DecimalSafeLoader
 
 log = structlog.get_logger()
 
@@ -63,7 +64,7 @@ def _load_budget_config(config_path: Path | None) -> BudgetConfig:
     the whole augur Config -- keeping the exporter independent of the augur server.
     """
     path = config_path or Path(os.environ.get(_AUGUR_CONFIG_PATH_ENV, _DEFAULT_CONFIG_PATH))
-    raw = yaml.safe_load(path.read_text())
+    raw = yaml.load(path.read_text(), Loader=DecimalSafeLoader)
     budget = raw.get("budget") if isinstance(raw, dict) else None
     if budget is None:
         raise typer.BadParameter(f"no `budget:` block in config {path}")

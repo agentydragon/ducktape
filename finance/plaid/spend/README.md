@@ -20,7 +20,9 @@ Bearer-token API. Both desktop clients read the same global card view and notifi
 The response models in [`models.py`](models.py) and [`allowance.py`](allowance.py) define the wire contract. The running
 service publishes their generated schema at `/openapi.json`; the browser generates its types from that schema. Money
 values calculated by the service are integer currency minor units. Original Plaid transaction amounts in the
-authenticated detail view remain decimal strings in major units.
+authenticated detail view remain decimal strings in major units. Card percentages and sustainability rates are
+`Decimal` values serialized as strings. Browser calculations use Decimal.js until the display/chart boundary.
+Configuration loading preserves YAML decimal tokens before validation, including tax rates and holding corrections.
 
 - The shared spend configuration requires a root-level `time_zone` IANA zone.
   It determines local midnight for card, allowance, and sustainability reports,
@@ -158,6 +160,7 @@ effective tax fraction is a share of gross withdrawals, so estimated annual fund
 `annualized spending / (1 - rate)`. A supplied rate requires a dated explanatory assumption. The displayed draw rate
 is tax-inclusive funding divided by current eligible portfolio value, assuming no other income. Without a documented
 tax assumption, funding and withdrawal percentages remain unavailable; consumption amounts are still available.
+Rates are finite decimal fractions and are serialized as JSON strings; currency amounts remain integer minor units.
 The reference markers are scenarios, not guarantees of lifetime sustainability.
 
 Reversal reconciliation is shared with private reports through typed reason codes, matched record references,

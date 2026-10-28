@@ -130,7 +130,7 @@ def _format_allowance(allowance: AllowanceView) -> str:
             lines.append(
                 f"  {short_label} unmatched: {unmatched.count} ({_format_money(unmatched.amount_minor_units, currency)})"
             )
-    daily_reference = round(allowance.monthly_minor_units * 12 / 365.2425)
+    daily_reference = round(Decimal(allowance.monthly_minor_units) * 12 / Decimal("365.2425"))
     lines.append(f"  Provisional leash rate: ~{_format_money(daily_reference, currency)}/day")
     lines.append("  Leash capacity is not a sustainability target; unmatched purchases count as flexible.")
     lines.append("  History before activation informs pace but not the available balance.")
@@ -187,7 +187,7 @@ def _format_view(view: SpendView, status: str, last_error: str) -> str:
         spend = _format_money(card.spend_minor_units, currency)
         limit = "no limit set" if card.limit_minor_units is None else _format_money(card.limit_minor_units, currency)
         percent = card.spend_percent
-        percent_text = f" · {percent:.1f}%" if isinstance(percent, int | float) else ""
+        percent_text = f" · {percent:.1f}%" if percent is not None else ""
         lines.append(
             f"  Spend: {spend} / {limit}{percent_text}"
             if card.statement_period.kind == "statement"

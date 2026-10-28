@@ -84,7 +84,7 @@ def _budget_config(overrides: tuple[Override, ...] = ()) -> BudgetConfig:
             PfcRule(primary="INCOME", bucket_id="income"),
         ),
         overrides=overrides,
-        lumpy_threshold_usd=500.0,
+        lumpy_threshold_usd=Decimal(500),
     )
 
 
@@ -99,7 +99,7 @@ def _tx(
     account_id: str = "checking",
     item_id: str = "item-budget",
     on: date,
-    amount: Decimal | float,
+    amount: Decimal,
     name: str,
     merchant_name: str | None = None,
     pfc_primary: str | None = None,
@@ -197,7 +197,7 @@ async def _seed_budget_rows(session_factory: async_sessionmaker[AsyncSession]) -
                 _tx(
                     "target_preempt",
                     on=date(2026, 3, 20),
-                    amount=40.0,
+                    amount=Decimal(40),
                     name="TARGET STORE",
                     merchant_name="Target",
                     pfc_primary="GENERAL_MERCHANDISE",
@@ -205,14 +205,14 @@ async def _seed_budget_rows(session_factory: async_sessionmaker[AsyncSession]) -
                 _tx(
                     "anthropic_default_skipped",
                     on=date(2026, 3, 21),
-                    amount=20.0,
+                    amount=Decimal(20),
                     name="ANTHROPIC",
                     merchant_name="Anthropic",
                 ),
                 _tx(
                     "wealthfront_out",
                     on=date(2026, 3, 22),
-                    amount=30000.0,
+                    amount=Decimal(30000),
                     name="Wealthfront",
                     merchant_name=None,
                     pfc_primary="TRANSFER_OUT",
@@ -220,7 +220,7 @@ async def _seed_budget_rows(session_factory: async_sessionmaker[AsyncSession]) -
                 _tx(
                     "wealthfront_in",
                     on=date(2026, 3, 23),
-                    amount=-12000.0,
+                    amount=Decimal(-12000),
                     name="Wealthfront",
                     merchant_name=None,
                     pfc_primary="INCOME",
@@ -229,17 +229,17 @@ async def _seed_budget_rows(session_factory: async_sessionmaker[AsyncSession]) -
                 _tx(
                     "tax_refund",
                     on=date(2026, 3, 24),
-                    amount=-1246.0,
+                    amount=Decimal(-1246),
                     name="FRANCHISE TAX BD DES:CASTTAXRFD",
                     merchant_name=None,
                     pfc_primary="INCOME",
                     pfc_detailed="INCOME_TAX_REFUND",
                 ),
-                _tx("zero", on=date(2026, 4, 1), amount=0.0, name="ZERO"),
+                _tx("zero", on=date(2026, 4, 1), amount=Decimal(0), name="ZERO"),
                 _tx(
                     "grocery_lumpy",
                     on=date(2026, 4, 5),
-                    amount=1000.0,
+                    amount=Decimal(1000),
                     name="GROCERY",
                     merchant_name="Grocery",
                     pfc_primary="FOOD_AND_DRINK",
@@ -248,7 +248,7 @@ async def _seed_budget_rows(session_factory: async_sessionmaker[AsyncSession]) -
                 _tx(
                     "payroll",
                     on=date(2026, 4, 6),
-                    amount=-5000.0,
+                    amount=Decimal(-5000),
                     name="PAYROLL",
                     pfc_primary="INCOME",
                     pfc_detailed="INCOME_WAGES",
@@ -257,27 +257,27 @@ async def _seed_budget_rows(session_factory: async_sessionmaker[AsyncSession]) -
                     "other_account_excluded",
                     account_id="other-account",
                     on=date(2026, 4, 7),
-                    amount=999.0,
+                    amount=Decimal(999),
                     name="OTHER ACCOUNT",
                     merchant_name="Target",
                 ),
-                _tx("pending_excluded", on=date(2026, 4, 8), amount=25.0, name="PENDING", pending=True),
-                _tx("removed_excluded", on=date(2026, 4, 9), amount=25.0, name="REMOVED", removed=True),
+                _tx("pending_excluded", on=date(2026, 4, 8), amount=Decimal(25), name="PENDING", pending=True),
+                _tx("removed_excluded", on=date(2026, 4, 9), amount=Decimal(25), name="REMOVED", removed=True),
                 _tx(
                     "revoked_excluded",
                     account_id="revoked-account",
                     item_id="item-revoked",
                     on=date(2026, 4, 10),
-                    amount=25.0,
+                    amount=Decimal(25),
                     name="REVOKED",
                 ),
-                _tx("outside_window", on=date(2026, 5, 1), amount=25.0, name="OUTSIDE"),
+                _tx("outside_window", on=date(2026, 5, 1), amount=Decimal(25), name="OUTSIDE"),
             ]
         )
         await session.commit()
 
 
-def _monthly_by_bucket(response) -> dict[str, tuple[float, ...]]:
+def _monthly_by_bucket(response) -> dict[str, tuple[Decimal, ...]]:
     return {row.bucket_id: row.monthly_amounts for row in response.monthly_by_bucket}
 
 
@@ -285,7 +285,7 @@ def _counts_by_bucket(response) -> dict[str, int]:
     return {row.bucket_id: row.transaction_count for row in response.monthly_by_bucket}
 
 
-def _averages_by_bucket(response) -> dict[str, float]:
+def _averages_by_bucket(response) -> dict[str, Decimal]:
     return {row.bucket_id: row.window_monthly_avg for row in response.monthly_by_bucket}
 
 
@@ -305,15 +305,15 @@ async def test_sql_budget_snapshot_preserves_classification_and_aggregation_sema
 
     assert response.months == (date(2026, 3, 1), date(2026, 4, 1))
     assert _monthly_by_bucket(response) == {
-        "custom": (40.0, 0.0),
-        "general_merchandise": (0.0, 0.0),
-        "groceries": (0.0, 1000.0),
-        "transfers_out": (30000.0, 0.0),
-        "transfers_in": (-12000.0, 0.0),
-        "tax_refunds": (-1246.0, 0.0),
-        "income": (0.0, -5000.0),
-        "other": (20.0, 0.0),
-        "other_in": (0.0, 0.0),
+        "custom": (Decimal(40), Decimal(0)),
+        "general_merchandise": (Decimal(0), Decimal(0)),
+        "groceries": (Decimal(0), Decimal(1000)),
+        "transfers_out": (Decimal(30000), Decimal(0)),
+        "transfers_in": (Decimal(-12000), Decimal(0)),
+        "tax_refunds": (Decimal(-1246), Decimal(0)),
+        "income": (Decimal(0), Decimal(-5000)),
+        "other": (Decimal(20), Decimal(0)),
+        "other_in": (Decimal(0), Decimal(0)),
     }
     assert _counts_by_bucket(response) == {
         "custom": 1,
@@ -326,11 +326,45 @@ async def test_sql_budget_snapshot_preserves_classification_and_aggregation_sema
         "other": 2,
         "other_in": 0,
     }
-    days = (date(2026, 4, 30) - date(2026, 3, 15)).days + 1
-    assert _averages_by_bucket(response)["groceries"] == pytest.approx(1000.0 / days * sql_read_model.DAYS_PER_MONTH)
-    assert _averages_by_bucket(response)["income"] == pytest.approx(-5000.0 / days * sql_read_model.DAYS_PER_MONTH)
+    assert _averages_by_bucket(response)["groceries"] == Decimal("647.5930851063829787234042552")
+    assert _averages_by_bucket(response)["income"] == Decimal("-3237.965425531914893617021278")
     assert [row.transaction_id for row in response.lumpy] == ["grocery_lumpy"]
     assert response.coverage_starts == date(2026, 3, 15)
+
+
+async def test_sql_budget_readers_preserve_large_decimal_amounts_and_average(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _seed_budget_rows(session_factory)
+    precision_amount = Decimal("9007199254740993.01")
+    async with session_factory() as session:
+        session.add(_tx("precision", on=date(2026, 4, 20), amount=precision_amount, name="Precision amount"))
+        await session.commit()
+    config = _budget_config()
+
+    snapshot = await sql_read_model.read_budget_snapshot(
+        session_factory=session_factory,
+        config=config,
+        window_start=date(2026, 3, 15),
+        window_end=date(2026, 4, 30),
+        account_ids=("checking",),
+    )
+    other = next(row for row in snapshot.monthly_by_bucket if row.bucket_id == "other")
+    assert other.monthly_amounts == (Decimal(20), precision_amount)
+    assert other.window_monthly_avg == Decimal("5832999953545646.177845611702")
+    precision_lumpy = next(row for row in snapshot.lumpy if row.transaction_id == "precision")
+    assert precision_lumpy.amount == precision_amount
+
+    drilldown = await sql_read_model.read_budget_bucket_transactions(
+        session_factory=session_factory,
+        config=config,
+        bucket_id="other",
+        window_start=date(2026, 3, 15),
+        window_end=date(2026, 4, 30),
+        account_ids=("checking",),
+    )
+    precision_transaction = next(row for row in drilldown.transactions if row.transaction_id == "precision")
+    assert precision_transaction.amount == precision_amount
 
 
 async def test_sql_budget_drilldown_filters_in_sql_and_enriches_account_labels(
@@ -351,7 +385,7 @@ async def test_sql_budget_drilldown_filters_in_sql_and_enriches_account_labels(
     assert response.bucket_id == "transfers_in"
     assert [row.transaction_id for row in response.transactions] == ["wealthfront_in"]
     row = response.transactions[0]
-    assert row.amount == -12000.0
+    assert row.amount == Decimal(-12000)
     assert row.account_name == "Checking"
     assert row.institution_name == "Budget Bank"
     assert row.bucket_id == "transfers_in"
@@ -394,9 +428,9 @@ async def test_sql_budget_overrides_beat_rules_and_ignore_direction(
     )
 
     monthly = _monthly_by_bucket(response)
-    assert monthly["groceries"] == (40.0, 1000.0)  # target_preempt (Mar) joins grocery_lumpy (Apr)
-    assert monthly["custom"] == (-12000.0, 0.0)  # wealthfront_in forced here despite its inflow sign
-    assert monthly["transfers_in"] == (0.0, 0.0)  # wealthfront_in no longer lands here
+    assert monthly["groceries"] == (Decimal(40), Decimal(1000))  # target_preempt (Mar) joins grocery_lumpy (Apr)
+    assert monthly["custom"] == (Decimal(-12000), Decimal(0))  # wealthfront_in forced here despite its inflow sign
+    assert monthly["transfers_in"] == (Decimal(0), Decimal(0))  # wealthfront_in no longer lands here
     assert response.stale_overrides == ()
 
 
@@ -445,7 +479,7 @@ async def test_match_rule_all_of_combines_merchant_and_amount(
             MatchRule(
                 bucket_id="custom",
                 condition=AllOfCondition(
-                    conditions=(MerchantSubstringCondition(pattern="Grocery"), AmountCondition(min=500.0))
+                    conditions=(MerchantSubstringCondition(pattern="Grocery"), AmountCondition(min=Decimal(500)))
                 ),
             ),
         )
@@ -464,7 +498,7 @@ async def test_match_rule_use_abs_any_of_still_respects_direction_gate(
                 bucket_id="custom",
                 condition=AnyOfCondition(
                     conditions=(
-                        AmountCondition(min=10000.0, use_abs=True),
+                        AmountCondition(min=Decimal(10000), use_abs=True),
                         MerchantSubstringCondition(pattern="no-such-merchant-zzz"),
                     )
                 ),
@@ -541,7 +575,7 @@ async def test_read_all_classified_returns_every_live_txn_with_its_bucket(
     # Ordered by (date, transaction_id); carries the fields the exporter renders.
     assert [(row.date, row.transaction_id) for row in rows] == sorted((row.date, row.transaction_id) for row in rows)
     grocery = next(row for row in rows if row.transaction_id == "grocery_lumpy")
-    assert grocery.amount == 1000.0
+    assert grocery.amount == Decimal(1000)
     assert grocery.account_id == "checking"
     assert grocery.merchant_name == "Grocery"
     assert grocery.pfc_primary == "FOOD_AND_DRINK"
@@ -569,6 +603,20 @@ def test_date_condition_validation() -> None:
     # min must not exceed max.
     with pytest.raises(ValidationError):
         DateCondition(min=date(2026, 2, 1), max=date(2026, 1, 1))
+
+
+@pytest.mark.parametrize("amount", [Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity")])
+def test_amount_condition_rejects_nonfinite_bounds(amount: Decimal) -> None:
+    with pytest.raises(ValidationError):
+        AmountCondition(min=amount)
+
+
+def test_budget_config_rejects_nonfinite_lumpy_threshold() -> None:
+    data = _budget_config().model_dump()
+    data["lumpy_threshold_usd"] = Decimal("Infinity")
+
+    with pytest.raises(ValidationError):
+        BudgetConfig.model_validate(data)
 
 
 def test_match_override_unknown_bucket_rejected() -> None:
@@ -616,9 +664,9 @@ async def test_match_override_is_ungated_and_beats_rules(session_factory: async_
     monthly = _monthly_by_bucket(response)
     # custom already holds target_preempt (+40, via the Target rule); the match_override adds both
     # Wealthfront legs (+30000 out and -12000 in) regardless of sign: 40 + 30000 - 12000 = 18040.
-    assert monthly["custom"] == (18040.0, 0.0)
-    assert monthly["transfers_out"] == (0.0, 0.0)  # outflow leg no longer falls to the PFC rule
-    assert monthly["transfers_in"] == (0.0, 0.0)  # inflow leg no longer falls to the name rule
+    assert monthly["custom"] == (Decimal(18040), Decimal(0))
+    assert monthly["transfers_out"] == (Decimal(0), Decimal(0))  # outflow leg no longer falls to the PFC rule
+    assert monthly["transfers_in"] == (Decimal(0), Decimal(0))  # inflow leg no longer falls to the name rule
 
 
 async def test_transaction_id_override_beats_match_override(session_factory: async_sessionmaker[AsyncSession]) -> None:

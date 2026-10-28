@@ -9,6 +9,7 @@ This file just defines the schemas it populates.
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -17,6 +18,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_]*$"
 # Beancount account: a root type followed by one or more capitalized segments.
 _BEANCOUNT_ACCOUNT_PATTERN = r"^(Assets|Liabilities|Equity|Income|Expenses)(:[A-Z0-9][A-Za-z0-9-]*)+$"
+FiniteDecimal = Annotated[Decimal, Field(allow_inf_nan=False)]
+NonNegativeDecimal = Annotated[Decimal, Field(ge=Decimal(0), allow_inf_nan=False)]
+PositiveDecimal = Annotated[Decimal, Field(gt=Decimal(0), allow_inf_nan=False)]
 
 
 class FrozenModel(BaseModel):
@@ -169,8 +173,8 @@ class AmountCondition(FrozenModel):
     (e.g. "any leg >= 5000 regardless of direction")."""
 
     kind: Literal["amount"] = "amount"
-    min: float | None = None
-    max: float | None = None
+    min: FiniteDecimal | None = None
+    max: FiniteDecimal | None = None
     use_abs: bool = False
 
     @model_validator(mode="after")
@@ -352,7 +356,7 @@ class BudgetConfig(FrozenModel):
     match_overrides: tuple[MatchOverride, ...] = ()
     # Transactions with abs(amount) >= this threshold are flagged as "lumpy" (in addition to
     # appearing in their natural bucket). User can re-classify them as one-off vs recurring.
-    lumpy_threshold_usd: float = Field(default=500.0, gt=0.0)
+    lumpy_threshold_usd: PositiveDecimal = Decimal(500)
     # Plaid account_id -> Beancount funding account (the funding leg of each exported
     # entry; the bucket supplies the contra leg). Consumed by the Beancount exporter,
     # not the in-app budget. Accounts not listed fall back to the exporter's default.

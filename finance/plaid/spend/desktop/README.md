@@ -38,8 +38,8 @@ subsequent notifications are full JSON views under the `view` event name. Each v
 When present, the `allowance` object supplies the available balance, monthly credit, period-keyed spend and recorded
 pace, unmatched charge totals, a separate forecast, next credit and sync time; unavailable allowance states are shown
 without inventing a balance. Money fields use the currency's minor unit. `spend_percent` and `alert_state` are rendered
-as supplied; the desktop client does not calculate alerts or spend. Null spend and unavailable periods render as
-unavailable.
+as supplied; `spend_percent` is a decimal string in JSON. The desktop client does not calculate alerts or spend. Null
+spend and unavailable periods render as unavailable.
 
 ## Login and credentials
 

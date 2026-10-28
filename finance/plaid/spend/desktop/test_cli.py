@@ -1,6 +1,7 @@
 """Synthetic desktop spend CLI display tests."""
 
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
 import pytest_bazel
@@ -36,7 +37,7 @@ def sample_card() -> CardView:
         pending_minor_units=300,
         limit_minor_units=10000,
         alert_threshold_percent=80,
-        spend_percent=12.0,
+        spend_percent=Decimal("12.0"),
         alert_state=AlertState.NORMAL,
         last_synced_at=NOW,
     )
@@ -104,6 +105,7 @@ def test_formats_active_allowance_and_cards() -> None:
     assert "USD 2" in output
     assert "2026-02-28T00:00:00Z" in output
     assert "Sample card" in output
+    assert "USD 12 / USD 100 · 12.0%" in output
 
 
 def test_formats_unavailable_allowance_without_inventing_balance() -> None:
@@ -121,6 +123,13 @@ def test_without_allowance_keeps_existing_card_output() -> None:
     assert "Sample card" in output
     assert "Spend: USD 12" in output
     assert "Flexible allowance" not in output
+
+
+def test_card_percent_uses_decimal_json_string() -> None:
+    payload = sample_card().model_dump(mode="json")
+
+    assert payload["spend_percent"] == "12.0"
+    assert CardView.model_validate(payload).spend_percent == Decimal("12.0")
 
 
 @pytest.mark.parametrize(
