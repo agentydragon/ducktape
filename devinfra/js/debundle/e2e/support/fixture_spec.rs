@@ -648,6 +648,7 @@ pub fn logical_module_with_anon_comment(
 
 pub struct FixtureOpts<'a> {
     pub execution_runtime: spec::ExecutionRuntime,
+    pub host_no_reentry: Option<spec::HostNoReentry>,
     pub source: &'a str,
     pub logical_modules: Vec<LogicalModuleEntry>,
     /// Optional `chunk_renames` entry for this chunk. When set, the
@@ -718,6 +719,7 @@ impl<'a> FixtureOpts<'a> {
         // override with [`unassigned_mode_per_atomic_group`].
         Self {
             execution_runtime: spec::ExecutionRuntime::default(),
+            host_no_reentry: None,
             source,
             logical_modules,
             chunk_renames: None,
@@ -765,6 +767,11 @@ impl<'a> FixtureOpts<'a> {
         entries: &'a [(&'a str, spec::ChunkExportPurity)],
     ) -> Self {
         self.chunk_export_purity = entries;
+        self
+    }
+
+    pub fn with_host_no_reentry(mut self, policy: spec::HostNoReentry) -> Self {
+        self.host_no_reentry = Some(policy);
         self
     }
 
@@ -1118,6 +1125,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
 
     TransformSpec {
         execution_runtime: opts.execution_runtime,
+        host_no_reentry: opts.host_no_reentry.clone(),
         inputs: LoadJsChunksArgs {
             input_root: setup.snapshot_root.clone(),
             js_list_path: setup.js_list_path.clone(),

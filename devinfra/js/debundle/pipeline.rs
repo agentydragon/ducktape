@@ -321,6 +321,7 @@ fn run_transform_inner(
                 unassigned_mode: &spec.unassigned_mode,
                 chunk_analysis_options: &spec.chunk_analysis_options,
                 chunk_export_purity: &spec.chunk_export_purity,
+                host_no_reentry: spec.host_no_reentry.as_ref(),
             },
             &vendor_plan,
             MaterializeLogicalModulesOptions {
@@ -1033,6 +1034,7 @@ mod tests {
             unassigned_mode: BTreeMap::new(),
             chunk_analysis_options: BTreeMap::new(),
             chunk_export_purity: BTreeMap::new(),
+            host_no_reentry: None,
             swap_vendor_chunks: SwapVendorChunksConfig::default(),
             materialize_logical_modules: spec::MaterializeLogicalModulesConfig::default(),
             write_js_tree: None,

@@ -32,7 +32,8 @@ use serde_json::Value;
 /// Re-exported so test files can reference the spec enums behind
 /// `Member::with_purity` / `Member::with_effect` without a direct `spec` dep.
 pub use spec::{
-    ExecutionRuntime, InitializerPurity, MemberEffect, MemberPurity, VendorLevel, VendorMark,
+    ExecutionRuntime, HostNoReentry, HostNoReentryOperation, HostNoReentryRuntime,
+    InitializerPurity, MemberEffect, MemberPurity, VendorLevel, VendorMark,
 };
 
 use std::collections::BTreeSet;
@@ -396,6 +397,81 @@ pub fn assert_entry_output(fixture: &Fixture, expected_stdout: &str) {
 pub fn assert_preserved_entry_output(fixture: &Fixture, expected_stdout: &str) {
     assert_node_output(&fixture.source_path, expected_stdout, "");
     assert_entry_output(fixture, expected_stdout);
+}
+
+/// Compare both files under the pinned Bun release supplied in this test's
+/// runfiles. Node execution alone cannot validate a Bun-specific host premise.
+pub fn assert_preserved_entry_output_with_bun(fixture: &Fixture, expected_stdout: &str) {
+    let bun = bun_1_3_10_path();
+    for path in [&fixture.source_path, &fixture.entry_path] {
+        let output = Command::new(&bun)
+            .arg(path)
+            .output()
+            .unwrap_or_else(|err| panic!("spawn Bun {}: {err}", bun.display()));
+        assert!(
+            output.status.success(),
+            "Bun {} exited {:?}: {}",
+            path.display(),
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), expected_stdout);
+        assert!(
+            output.stderr.is_empty(),
+            "Bun stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+/// Exercise Bun's standalone embedding path for one runtime-premise probe.
+/// This tests the public release binary, not any third-party embedded artifact.
+pub fn assert_compiled_bun_entry_output(fixture: &Fixture, expected_stdout: &str) {
+    let bun = bun_1_3_10_path();
+    let dir = TempDir::with_prefix("debundle-bun-standalone-").expect("compile tempdir");
+    let executable = dir.path().join("probe");
+    let compile = Command::new(&bun)
+        .arg("build")
+        .arg("--compile")
+        .arg(&fixture.source_path)
+        .arg("--outfile")
+        .arg(&executable)
+        .output()
+        .unwrap_or_else(|err| panic!("spawn Bun compiler {}: {err}", bun.display()));
+    assert!(
+        compile.status.success(),
+        "Bun compile failed: {}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let output = Command::new(&executable)
+        .output()
+        .unwrap_or_else(|err| panic!("spawn compiled Bun {}: {err}", executable.display()));
+    assert!(
+        output.status.success(),
+        "compiled Bun exited {:?}: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), expected_stdout);
+    assert!(
+        output.stderr.is_empty(),
+        "compiled Bun stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn bun_1_3_10_path() -> PathBuf {
+    let relative = std::env::var("DEBUNDLE_TEST_BUN").expect("DEBUNDLE_TEST_BUN runfile label");
+    let runfiles = Runfiles::create().expect("create runfiles");
+    let bun = rlocation!(runfiles, relative.as_str())
+        .unwrap_or_else(|| panic!("resolve Bun runfile: {relative}"));
+    let version = Command::new(&bun)
+        .arg("--version")
+        .output()
+        .unwrap_or_else(|err| panic!("spawn Bun version {}: {err}", bun.display()));
+    assert!(version.status.success(), "Bun version check failed");
+    assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "1.3.10");
+    bun
 }
 
 /// Run `node --check` against every emitted JavaScript file in a fixture.

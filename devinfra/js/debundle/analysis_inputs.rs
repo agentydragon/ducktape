@@ -83,6 +83,8 @@ impl CallableSummary {
 
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisAssumptions {
+    /// Version-scoped author assertion for exact host operations.
+    pub host_no_reentry: Option<spec::HostNoReentry>,
     /// Exact author-certified browser-global slots whose stored capabilities
     /// cannot be consumed before this chunk finishes synchronous init.
     pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,

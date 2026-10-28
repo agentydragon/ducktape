@@ -118,6 +118,12 @@ debundle_e2e_test(name = "math_round_timing_test")
 debundle_e2e_test(name = "native_call_summary_test")
 
 debundle_e2e_test(
+    name = "host_no_reentry_test",
+    data = ["@debundle_bun_1_3_10//:bun"],
+    env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
+)
+
+debundle_e2e_test(
     name = "retained_callback_factory_test",
     deps = [
         "//devinfra/js/debundle:analysis",

@@ -253,6 +253,7 @@ pub struct MaterializeSpecInputs<'a> {
     pub unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
     pub chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
     pub chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
+    pub host_no_reentry: Option<&'a spec::HostNoReentry>,
 }
 
 pub fn materialize_logical_modules(
@@ -268,6 +269,7 @@ pub fn materialize_logical_modules(
         unassigned_mode,
         chunk_analysis_options,
         chunk_export_purity,
+        host_no_reentry,
     } = spec_inputs;
     if options.chunk_ids.is_empty() {
         bail!("materialize_logical_modules requires at least one chunk_id");
@@ -366,6 +368,7 @@ pub fn materialize_logical_modules(
                                 chunk_renames,
                                 unassigned_mode,
                                 chunk_analysis_options,
+                                host_no_reentry,
                             },
                         })
                     })

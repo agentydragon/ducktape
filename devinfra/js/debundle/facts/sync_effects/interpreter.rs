@@ -322,6 +322,40 @@ impl Executor<'_> {
         admitted.then_some(model.returns)
     }
 
+    /// Author-asserted timing for two exact operations in the pinned Bun host.
+    /// This does not supply a return value or a purity/throw summary.
+    fn host_call_does_not_reenter(&self, call: &Call) -> bool {
+        if call.has_spread || !call.args.is_empty() || !self.index.dynamic_scope_owners.is_empty() {
+            return false;
+        }
+        match (call.kind, &call.callee) {
+            (CallKind::New, ValueExpr::Binding(binding)) => self
+                .index
+                .host_async_local_storage_imports
+                .contains(binding),
+            (CallKind::Call, ValueExpr::Member(receiver, Some(member), true))
+                if call.no_reentry_candidate && member == "resolve" =>
+            {
+                let ValueExpr::Binding(binding) = receiver.as_ref() else {
+                    return false;
+                };
+                self.index.host_promise_resolve
+                    && binding.0.as_ref() == "Promise"
+                    && !self.flow.is_declared(binding)
+                    && !self.shadowed.contains("Promise")
+                    && !self
+                        .index
+                        .mutated_intrinsic_roots
+                        .contains(&IntrinsicRoot::Promise)
+                    && !self
+                        .index
+                        .mutated_intrinsic_roots
+                        .contains(&IntrinsicRoot::GlobalObject)
+            }
+            _ => false,
+        }
+    }
+
     fn native_return_values(returns: CallReturn, args: &[Values], may_throw: bool) -> Values {
         let mut values = match returns {
             CallReturn::Unknown => unknown(),
@@ -4201,6 +4235,9 @@ impl Executor<'_> {
                 .resolve_native_call(call.kind, &call.callee, &call.args, &args)
                 .is_some()
         {
+            return;
+        }
+        if self.host_call_does_not_reenter(call) {
             return;
         }
         if call.kind == CallKind::Call

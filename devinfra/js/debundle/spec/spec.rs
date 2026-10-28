@@ -83,6 +83,10 @@ pub struct TransformSpec {
     /// can produce a buggy debundle; soundness shifts to the spec author.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
+    /// Version-scoped author assertion about host callback timing. This does
+    /// not change module-loader policy, purity, throws, or return values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_no_reentry: Option<HostNoReentry>,
 
     // --- per-stage configuration ---
     /// Output configuration for vendor swap emission outputs (wrappers,
@@ -106,6 +110,29 @@ pub struct TransformSpec {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub emit_browser_harness: Option<EmitBrowserHarnessConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostNoReentry {
+    pub runtime: HostNoReentryRuntime,
+    #[serde(default)]
+    pub operations: BTreeSet<HostNoReentryOperation>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostNoReentryRuntime {
+    #[serde(rename = "bun_standalone_1_3_10")]
+    BunStandalone1_3_10,
+}
+
+/// Exact zero-argument operations audited for the versioned host above.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostNoReentryOperation {
+    AsyncLocalStorageConstruct,
+    PromiseResolve,
 }
 
 impl TransformSpec {

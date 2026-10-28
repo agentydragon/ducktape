@@ -18,7 +18,7 @@ use crate::facts::statement_facts::{CallbackFactoryWriteWitness, StatementFacts}
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin};
 use crate::purity::ChunkCodeGraph;
 use source_identity::SourceUnitOrdinal;
-use spec::BuiltinGlobalRoot;
+use spec::{BuiltinGlobalRoot, HostNoReentryOperation, HostNoReentryRuntime};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::{Span, Spanned};
@@ -1193,6 +1193,7 @@ enum IntrinsicRoot {
     Math,
     RegExp,
     Symbol,
+    Promise,
 }
 
 type IntrinsicRoots = BTreeSet<IntrinsicRoot>;
@@ -1218,6 +1219,9 @@ fn intrinsic_roots(
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Symbol" => {
             BTreeSet::from([IntrinsicRoot::Symbol])
+        }
+        ValueExpr::Binding(id) if id.0.as_ref() == "Promise" => {
+            BTreeSet::from([IntrinsicRoot::Promise])
         }
         ValueExpr::Binding(id) if globals.contains(id.0.as_ref()) => {
             BTreeSet::from([IntrinsicRoot::GlobalObject])
@@ -1255,6 +1259,9 @@ fn intrinsic_roots(
                         Some("Symbol") => {
                             out.insert(IntrinsicRoot::Symbol);
                         }
+                        Some("Promise") => {
+                            out.insert(IntrinsicRoot::Promise);
+                        }
                         Some("globalThis" | "window" | "self" | "frames" | "top") | None => {
                             out.insert(IntrinsicRoot::GlobalObject);
                         }
@@ -1269,7 +1276,8 @@ fn intrinsic_roots(
                     | IntrinsicRoot::Array
                     | IntrinsicRoot::Math
                     | IntrinsicRoot::RegExp
-                    | IntrinsicRoot::Symbol => {
+                    | IntrinsicRoot::Symbol
+                    | IntrinsicRoot::Promise => {
                         out.insert(root);
                     }
                 }
@@ -1880,6 +1888,8 @@ struct ExecutionIndex {
     retained_constructor_calls: BTreeMap<CallSite, RetainedCallbackCall>,
     no_reentry_callback_calls: BTreeMap<CallSite, RetainedCallbackCall>,
     no_reentry_exports: BTreeSet<Id>,
+    host_async_local_storage_imports: BTreeSet<Id>,
+    host_promise_resolve: bool,
     no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
     no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
     returned_factory_candidates: BTreeMap<u32, Span>,
@@ -1979,6 +1989,8 @@ impl Default for ExecutionIndex {
             retained_constructor_calls: BTreeMap::new(),
             no_reentry_callback_calls: BTreeMap::new(),
             no_reentry_exports: BTreeSet::new(),
+            host_async_local_storage_imports: BTreeSet::new(),
+            host_promise_resolve: false,
             no_reentry_members: BTreeMap::new(),
             no_reentry_record_members: BTreeMap::new(),
             returned_factory_candidates: BTreeMap::new(),
@@ -1994,6 +2006,13 @@ impl ExecutionIndex {
         plain_array_bindings: &BTreeSet<String>,
         construction_proof: &LocalClassConstructionProof,
     ) -> Self {
+        let host_operations = hints
+            .assumptions
+            .host_no_reentry
+            .as_ref()
+            .map(|policy| match policy.runtime {
+                HostNoReentryRuntime::BunStandalone1_3_10 => &policy.operations,
+            });
         let global_guards_requested = !hints.assumptions.deferred_global_publications.is_empty()
             || !hints.assumptions.non_reentrant_global_membership.is_empty();
         let mut index = Self {
@@ -2024,6 +2043,9 @@ impl ExecutionIndex {
             global_object_names: unshadowed_global_object_aliases(body),
             plain_array_bindings: plain_array_bindings.clone(),
             no_sync_callback_members: hints.assumptions.no_sync_callback_members.clone(),
+            host_promise_resolve: host_operations.is_some_and(|operations| {
+                operations.contains(&HostNoReentryOperation::PromiseResolve)
+            }),
             ..Self::default()
         };
         let mut fresh_steps = Vec::with_capacity(body.len());
@@ -2108,9 +2130,35 @@ impl ExecutionIndex {
             index.collect_uninitialized_lexical_bindings(item.as_module_item());
             index.collect_export_roots(item.as_module_item());
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item() {
+                let host_async_local_storage = host_operations.is_some_and(|operations| {
+                    operations.contains(&HostNoReentryOperation::AsyncLocalStorageConstruct)
+                }) && !import.type_only
+                    && matches!(&import.phase, ImportPhase::Evaluation)
+                    && import.with.is_none()
+                    && matches!(
+                        import.src.value.as_str(),
+                        Some("async_hooks" | "node:async_hooks")
+                    );
                 for specifier in &import.specifiers {
                     let local = specifier.local();
                     index.imported_bindings.insert(local.to_id());
+                    if host_async_local_storage
+                        && let ImportSpecifier::Named(named) = specifier
+                        && !named.is_type_only
+                        && named
+                            .imported
+                            .as_ref()
+                            .map(|name| match name {
+                                ModuleExportName::Ident(id) => id.sym.as_ref(),
+                                ModuleExportName::Str(string) => {
+                                    string.value.as_str().unwrap_or("")
+                                }
+                            })
+                            .unwrap_or(named.local.sym.as_ref())
+                            == "AsyncLocalStorage"
+                    {
+                        index.host_async_local_storage_imports.insert(local.to_id());
+                    }
                     if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
                         && summary.supports_callback_factory()
                     {
@@ -2285,6 +2333,9 @@ impl ExecutionIndex {
                 }
                 "Symbol" => {
                     mutated_intrinsics.insert(IntrinsicRoot::Symbol);
+                }
+                "Promise" => {
+                    mutated_intrinsics.insert(IntrinsicRoot::Promise);
                 }
                 _ => {}
             }

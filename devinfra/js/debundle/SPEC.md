@@ -1099,6 +1099,45 @@ effects remain in synchronous effect analysis unless the independent audited
 membership contract below applies. Dynamic keys, aliases, ordinary
 calls, and visible root replacement retain the conservative publication guard.
 
+## Version-scoped host call timing
+
+`host_no_reentry` is an optional author assertion for two exact zero-argument
+operations in an unmodified Bun 1.3.10 standalone release:
+
+```yaml
+host_no_reentry:
+  runtime: bun_standalone_1_3_10
+  operations: [async_local_storage_construct, promise_resolve]
+```
+
+The accepted operations are a direct `new` of a named `AsyncLocalStorage` import
+from Bun's builtin `async_hooks` or `node:async_hooks`, and a direct ordinary
+`Promise.resolve()` call on the unshadowed global constructor. The former
+allows a named import alias (`as M`) but not a subsequent local alias; the
+latter rejects a shadowed, aliased, replaced, computed, detached, or optional
+callee. Both reject arguments and spreads. Visible global/`Promise` mutation
+and dynamic scope disable the Promise contract. The assertions only suppress
+the opaque synchronous callback-reentry fallback after the callee and
+arguments have evaluated. Purity, ordering, possible throws, return shape,
+later method calls, and module-loader reentry retain their ordinary analysis.
+Omitting this field keeps generic/Node behavior conservative.
+
+The author must verify that the analyzed program actually runs under the
+specified Bun release with its original builtin loader, exports, Promise
+constructor and descriptors. Earlier loaded modules, preloads, plugins,
+patched binaries, and host instrumentation must not replace those capabilities
+or introduce synchronous hooks before these initializers. The analyzer's
+local mutation guard does not establish that full-program/runtime premise.
+The version string alone is not a binary identity proof. The tagged Bun 1.3.10
+[`async_hooks`](https://github.com/oven-sh/bun/blob/bun-v1.3.10/src/js/node/async_hooks.ts)
+and [`v8.promiseHooks`](https://github.com/oven-sh/bun/blob/bun-v1.3.10/src/js/node/v8.ts)
+stubs support this bounded assertion; [Node's `async_hooks`](https://nodejs.org/api/async_hooks.html)
+can synchronously invoke registered callbacks during Promise creation, so the
+assertion must not migrate to Node or later Bun versions without a new audit.
+Current graph reports expose the resulting synchronous precision, but do not
+record per-call host-contract consumption; keep the authored policy and its
+runtime provenance with the acceptance evidence.
+
 ## Audited builtin-global membership probes
 
 `chunk_analysis_options.<chunk>.non_reentrant_global_membership` maps builtin

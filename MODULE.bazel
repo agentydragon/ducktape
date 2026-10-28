@@ -915,6 +915,16 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
+# Exact runtime for Debundle's version-scoped Bun host-timing regressions.
+# Baseline x64 runs on RBE workers without requiring AVX2.
+http_archive(
+    name = "debundle_bun_1_3_10",
+    build_file_content = 'exports_files(["bun"])',
+    sha256 = "41201a8c5ee74a9dcbb1ce25a1104f1f929838b57a845aa78d98379b0ce7cde2",
+    strip_prefix = "bun-linux-x64-baseline",
+    urls = ["https://github.com/oven-sh/bun/releases/download/bun-v1.3.10/bun-linux-x64-baseline.zip"],
+)
+
 # Restic's real CLI for offline workstation backup/restore regression tests.
 http_file(
     name = "restic_linux_amd64",
