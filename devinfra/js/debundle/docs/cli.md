@@ -471,6 +471,29 @@ aggregate report without probe events. Text, JSON, and NDJSON stdout remain one
 complete aggregate report; a baseline or probe failure before report completion
 leaves stdout without a partial report.
 
+Add `--checkpoint audit.json` to create a new checkpoint, or replace it with
+`--resume-from audit.json` to resume one. The modes are mutually exclusive;
+creation refuses an existing file. Resume reruns full baseline acceptance and
+requires the same complete input provenance, engine, effective pipeline options,
+roots and normalized target selection before reusing definitive successes or
+acceptance failures. Inconclusive work is retried. Each probe still removes only
+one contract from the original spec.
+
+`--max-probes` caps the total deterministic target prefix, including reused
+results. Raise it to extend an audit. Lowering it narrows the report while
+retaining later checkpoint records. Reused targets emit `audit-progress probe reused`
+instead of the normal probe start/completion pair. Stdout remains the complete
+report. Budget skips are derived and never cached.
+
+The checkpoint directory must exist. A kernel lock on `<checkpoint>.lock`
+refuses concurrent writers; leave that sidecar in place. Each completed,
+input-verified definitive probe replaces the checkpoint atomically through a
+sibling temporary file. A failed baseline, identity check or replacement leaves
+the previous complete file intact. This recovers completed work after process
+interruption; it does not promise power-loss durability. Checkpoints contain
+source/spec identity, target names and probe errors: store them with the input
+artifacts.
+
 Every `spec validate` format includes a `validation` summary. JSON places it
 beside `counts` and `outcomes`; the final NDJSON `summary` line includes it;
 text prints `Selector validation: success|failed; checked=N, matched=M`.

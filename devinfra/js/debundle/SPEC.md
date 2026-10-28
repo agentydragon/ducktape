@@ -655,6 +655,16 @@ means the changed candidate failed the shared pipeline; it does not establish
 that the contract is semantically true or uniquely necessary. A failure before
 input capture is `inconclusive`. The audit does not apply removals.
 
+Optional `--checkpoint` creates a new record; `--resume-from` loads and updates
+one. Both modes hold an exclusive kernel lock on a stable sidecar. Resume always
+runs fresh full baseline acceptance, then compares complete `GraphProvenance`
+and normalized selection before reusing definitive target results. Inconclusive
+results are retried; budget skips are never stored. `--max-probes` remains the
+total deterministic prefix, including reused results; a smaller cap retains
+saved results outside the reported prefix. Verified definitive results are
+saved by atomic sibling-file replacement, with no power-loss durability claim.
+The final report schema and independent-removal semantics remain unchanged.
+
 ## Source-anchored export policies
 
 `chunk_export_purity` normally keys contracts by the defining chunk ID.

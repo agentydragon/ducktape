@@ -140,8 +140,32 @@ fn one_removal_rechecks_full_acceptance_and_keeps_other_hints() {
     assert_eq!(before, fs::read(&fixture.spec_path).unwrap());
     assert_no_pipeline_artifacts(&fixture.spec_path, &report_dir);
 
-    let needed_output = audit(&fixture.spec_path, &["--kind", "no_reentry_exports"]);
+    let checkpoint = fixture
+        .spec_path
+        .parent()
+        .unwrap()
+        .join("needed-audit.json");
+    let needed_output = audit(
+        &fixture.spec_path,
+        &[
+            "--kind",
+            "no_reentry_exports",
+            "--checkpoint",
+            checkpoint.to_str().unwrap(),
+        ],
+    );
     let needed = parsed(&needed_output);
+    let resumed = audit(
+        &fixture.spec_path,
+        &[
+            "--kind",
+            "no_reentry_exports",
+            "--resume-from",
+            checkpoint.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(needed, parsed(&resumed));
+    assert!(String::from_utf8_lossy(&resumed.stderr).contains("audit-progress probe reused"));
     assert_eq!(needed["results"][0]["target"]["export"], "makeSlot");
     assert_eq!(needed["results"][0]["verdict"], "failed_full_acceptance");
     let needed_progress = progress_lines(&needed_output);
@@ -383,4 +407,324 @@ fn typed_signature_selection_removes_only_one_call_shape() {
     ));
     assert_eq!(needed["results"].as_array().unwrap().len(), 1);
     assert_eq!(needed["results"][0]["verdict"], "failed_full_acceptance");
+}
+
+fn checkpoint_fixture() -> ValidateFixture {
+    let policy = [ChunkExportPurityBuilder::new("static/peer")
+        .with_no_reentry_exports(&["makeSlot"])
+        .with_pure_exports(&["makeSlot", "spare"])
+        .build()];
+    write_validate_fixture_spec(
+        FixtureOpts::new(SOURCE, split_modules())
+            .with_extra_chunks(PEER)
+            .with_chunk_export_purity(&policy),
+    )
+}
+
+#[test]
+fn audit_checkpoint_resumes_the_total_prefix_and_preserves_later_results() {
+    let fixture = checkpoint_fixture();
+    let checkpoint = fixture.spec_path.parent().unwrap().join("audit.json");
+    let path = checkpoint.to_str().unwrap();
+    let first = parsed(&audit(
+        &fixture.spec_path,
+        &[
+            "--kind",
+            "pure_exports",
+            "--max-probes",
+            "1",
+            "--checkpoint",
+            path,
+        ],
+    ));
+    assert_eq!(first["independently_probed"], 1);
+    assert_eq!(first["budget_skipped"], 1);
+    let initial: Value = serde_json::from_slice(&fs::read(&checkpoint).unwrap()).unwrap();
+    assert_eq!(initial["results"].as_array().unwrap().len(), 1);
+    let resumed = audit(
+        &fixture.spec_path,
+        &[
+            "--kind",
+            "pure_exports",
+            "--max-probes",
+            "2",
+            "--resume-from",
+            path,
+        ],
+    );
+    let report = parsed(&resumed);
+    assert_eq!(report["independently_probed"], 2);
+    assert_eq!(report["budget_skipped"], 0);
+    assert_eq!(
+        String::from_utf8_lossy(&resumed.stderr)
+            .matches("audit-progress probe reused")
+            .count(),
+        1
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&resumed.stderr)
+            .matches("audit-progress probe complete")
+            .count(),
+        1
+    );
+    let complete = fs::read(&checkpoint).unwrap();
+    let stored: Value = serde_json::from_slice(&complete).unwrap();
+    assert_eq!(stored["results"].as_array().unwrap().len(), 2);
+    let narrowed = audit(
+        &fixture.spec_path,
+        &[
+            "--kind",
+            "pure_exports",
+            "--max-probes",
+            "1",
+            "--resume-from",
+            path,
+        ],
+    );
+    assert_eq!(parsed(&narrowed)["budget_skipped"], 1);
+    assert_eq!(fs::read(&checkpoint).unwrap(), complete);
+    let mut incomplete = stored.clone();
+    incomplete["results"][0]["verdict"] = Value::String("inconclusive".to_string());
+    incomplete["results"][0]["error"] = Value::String("interrupted probe".to_string());
+    fs::write(&checkpoint, serde_json::to_vec(&incomplete).unwrap()).unwrap();
+    let retried = audit(
+        &fixture.spec_path,
+        &[
+            "--kind",
+            "pure_exports",
+            "--kind",
+            "pure_exports",
+            "--resume-from",
+            path,
+        ],
+    );
+    assert_eq!(
+        parsed(&retried)["results"][0]["verdict"],
+        "removable_under_remaining_assumptions"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&retried.stderr)
+            .matches("audit-progress probe reused")
+            .count(),
+        1
+    );
+    assert_eq!(fs::read(&checkpoint).unwrap(), complete);
+    let duplicate = audit(
+        &fixture.spec_path,
+        &["--kind", "pure_exports", "--checkpoint", path],
+    );
+    assert!(!duplicate.status.success());
+    assert!(duplicate.stdout.is_empty());
+    assert_eq!(fs::read(&checkpoint).unwrap(), complete);
+}
+
+#[test]
+fn audit_checkpoint_rejects_changed_identity_selection_and_baseline_without_writes() {
+    let fixture = checkpoint_fixture();
+    let checkpoint = fixture.spec_path.parent().unwrap().join("audit.json");
+    let path = checkpoint.to_str().unwrap();
+    parsed(&audit(
+        &fixture.spec_path,
+        &["--kind", "pure_exports", "--checkpoint", path],
+    ));
+    let original = fs::read(&checkpoint).unwrap();
+    let record: Value = serde_json::from_slice(&original).unwrap();
+    for field in [
+        "engine_sha256",
+        "generation_command",
+        "roots",
+        "files",
+        "yaml_memberships",
+    ] {
+        let mut modified = record.clone();
+        if field == "engine_sha256" {
+            modified["provenance"][field] = Value::String("different-engine".to_string());
+        } else if field == "generation_command" {
+            modified["provenance"][field]
+                .as_array_mut()
+                .unwrap()
+                .push(Value::String("--different-options".to_string()));
+        } else if field == "roots" {
+            modified["provenance"][field]["source"] =
+                Value::String("/different-source-root".to_string());
+        } else {
+            modified["provenance"][field] = Value::Array(vec![]);
+            // Flat fixtures have no YAML membership; use another valid but different record.
+            if field == "yaml_memberships" {
+                modified["provenance"][field] =
+                    serde_json::json!([{"root":"spec", "directory":"different", "members":[]}]);
+            }
+        }
+        fs::write(&checkpoint, serde_json::to_vec(&modified).unwrap()).unwrap();
+        let before = fs::read(&checkpoint).unwrap();
+        let output = audit(
+            &fixture.spec_path,
+            &["--kind", "pure_exports", "--resume-from", path],
+        );
+        assert!(!output.status.success(), "{field}");
+        assert!(output.stdout.is_empty());
+        assert_eq!(fs::read(&checkpoint).unwrap(), before);
+    }
+    fs::write(&checkpoint, &original).unwrap();
+    let changed_selection = audit(
+        &fixture.spec_path,
+        &[
+            "--kind",
+            "pure_exports",
+            "--export",
+            "spare",
+            "--resume-from",
+            path,
+        ],
+    );
+    assert!(!changed_selection.status.success());
+    assert_eq!(fs::read(&checkpoint).unwrap(), original);
+    let mut baseline: serde_yaml::Value =
+        serde_yaml::from_slice(&fs::read(&fixture.spec_path).unwrap()).unwrap();
+    baseline["chunk_export_purity"]["static/peer"]["no_reentry_exports"] =
+        serde_yaml::from_str("[]").unwrap();
+    write_text_file(
+        &fixture.spec_path,
+        &serde_yaml::to_string(&baseline).unwrap(),
+    );
+    let failed_baseline = audit(
+        &fixture.spec_path,
+        &["--kind", "pure_exports", "--resume-from", path],
+    );
+    assert!(!failed_baseline.status.success());
+    assert!(failed_baseline.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&failed_baseline.stderr)
+            .contains("baseline full acceptance failed")
+    );
+    assert_eq!(fs::read(&checkpoint).unwrap(), original);
+}
+
+#[test]
+fn audit_checkpoint_refuses_a_live_writer_and_malformed_records() {
+    let fixture = checkpoint_fixture();
+    let checkpoint = fixture.spec_path.parent().unwrap().join("audit.json");
+    let path = checkpoint.to_str().unwrap();
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(checkpoint.with_file_name("audit.json.lock"))
+        .unwrap();
+    lock.try_lock().unwrap();
+    let busy = audit(
+        &fixture.spec_path,
+        &["--kind", "pure_exports", "--checkpoint", path],
+    );
+    assert!(!busy.status.success());
+    assert!(busy.stdout.is_empty());
+    assert!(!checkpoint.exists());
+    drop(lock);
+    parsed(&audit(
+        &fixture.spec_path,
+        &["--kind", "pure_exports", "--checkpoint", path],
+    ));
+    fs::write(&checkpoint, "{").unwrap();
+    let malformed = audit(
+        &fixture.spec_path,
+        &["--kind", "pure_exports", "--resume-from", path],
+    );
+    assert!(!malformed.status.success());
+    assert!(malformed.stdout.is_empty());
+    assert_eq!(fs::read(&checkpoint).unwrap(), b"{");
+}
+
+#[test]
+fn audit_checkpoint_rechecks_tree_membership_source_and_effective_package_roots() {
+    let fixture = run_tree_fixture(
+        &TreeFixture {
+            chunks: &[
+                ("main", "console.log('ready');"),
+                ("peer", "export function spare() { return 1; }"),
+            ],
+            module_roots: &[("main", "main")],
+            modules: &[],
+        },
+        &[],
+    );
+    assert!(fixture.result.status.success(), "{}", fixture.result.stderr);
+    let root = fixture.root();
+    let config = root.join("spec_config.yaml");
+    let mut yaml: serde_yaml::Value = serde_yaml::from_slice(&fs::read(&config).unwrap()).unwrap();
+    yaml["chunk_export_purity"] = serde_yaml::from_str("peer: {pure_exports: [spare]}").unwrap();
+    write_text_file(&config, &serde_yaml::to_string(&yaml).unwrap());
+    let modules = root.join("modules");
+    let vendor = root.join("vendor_marks.yaml");
+    let checkpoint = root.join("audit.json");
+    let run = |mode: &str, extra: &[&str]| {
+        let mut args = vec![
+            "spec",
+            "audit-contracts",
+            "--tree-config",
+            config.to_str().unwrap(),
+            "--tree-modules",
+            modules.to_str().unwrap(),
+            "--tree-vendor-marks",
+            vendor.to_str().unwrap(),
+            "--tree-source-root",
+            root.to_str().unwrap(),
+            "--out-root",
+            fixture.out_root.to_str().unwrap(),
+            "--policy-key",
+            "peer",
+            "--max-probes",
+            "1",
+            "--format",
+            "json",
+            mode,
+            checkpoint.to_str().unwrap(),
+        ];
+        args.extend_from_slice(extra);
+        run_debundle(&args)
+    };
+    parsed(&run("--checkpoint", &[]));
+    let before = fs::read(&checkpoint).unwrap();
+    let source = root.join("snapshot/main.js");
+    let original = fs::read(&source).unwrap();
+    write_text_file(&source, "console.log('changed');");
+    let changed_source = run("--resume-from", &[]);
+    assert!(!changed_source.status.success());
+    assert!(changed_source.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&changed_source.stderr)
+            .contains("checkpoint input identity differs"),
+        "{}",
+        String::from_utf8_lossy(&changed_source.stderr)
+    );
+    assert_eq!(fs::read(&checkpoint).unwrap(), before);
+    fs::write(&source, original).unwrap();
+    let extra_module = modules.join("main/empty.yaml");
+    write_text_file(&extra_module, "members: []\n");
+    let changed_membership = run("--resume-from", &[]);
+    assert!(!changed_membership.status.success());
+    assert!(changed_membership.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&changed_membership.stderr)
+            .contains("checkpoint input identity differs"),
+        "{}",
+        String::from_utf8_lossy(&changed_membership.stderr)
+    );
+    assert_eq!(fs::read(&checkpoint).unwrap(), before);
+    fs::remove_file(extra_module).unwrap();
+    let package_root = root.join("unused-package");
+    fs::create_dir(&package_root).unwrap();
+    let mapping = format!("example={}", package_root.display());
+    let changed_options = run("--resume-from", &["--package-root", &mapping]);
+    assert!(!changed_options.status.success());
+    assert!(changed_options.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&changed_options.stderr)
+            .contains("checkpoint input identity differs"),
+        "{}",
+        String::from_utf8_lossy(&changed_options.stderr)
+    );
+    assert_eq!(fs::read(&checkpoint).unwrap(), before);
+    let unchanged = run("--resume-from", &[]);
+    assert_eq!(parsed(&unchanged)["independently_probed"], 1);
+    assert!(String::from_utf8_lossy(&unchanged.stderr).contains("audit-progress probe reused"));
 }
