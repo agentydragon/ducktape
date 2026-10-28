@@ -8,13 +8,17 @@
 //! other chunks.
 
 use source_identity::SourceUnitOrdinal;
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+#[cfg(test)]
+use std::collections::VecDeque;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 #[cfg(test)]
 use std::{cell::Cell, rc::Rc};
 
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
+
+use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
 
 use super::{
     LazyBoundary, PositionBucketed, StatementFacts, TopLevelItemView, lazy_visit_arrow_expr,
@@ -609,7 +613,7 @@ impl ValuesBuilder {
 pub(crate) struct CandidateObjectIndex {
     objects: Vec<ValueOrigin>,
     origins: Arc<OriginTable>,
-    reachable: Vec<Option<Vec<u64>>>,
+    reachable: Vec<Option<Arc<Vec<u64>>>>,
     bindings: BTreeMap<Id, Vec<u64>>,
 }
 
@@ -643,7 +647,46 @@ impl CandidateObjectIndex {
     }
 }
 
+struct CandidateObjectRules {
+    predecessors: Vec<Vec<OriginId>>,
+}
+
+impl IterativeRules for CandidateObjectRules {
+    type Key = OriginId;
+    type Fact = Arc<Vec<u64>>;
+    type Rule = OriginId;
+
+    fn evaluate(&self, value: &OriginId, context: &mut IterativeContext<'_, Self>) {
+        let Some(reached) = context.read(*value).cloned() else {
+            return;
+        };
+        for predecessor in &self.predecessors[value.0 as usize] {
+            context.propose(*predecessor, reached.clone());
+        }
+    }
+
+    fn merge(_key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        if Arc::ptr_eq(current, &contribution)
+            || bits_contain_all(current.as_slice(), contribution.as_slice())
+        {
+            return false;
+        }
+        union_bits(
+            Arc::make_mut(current).as_mut_slice(),
+            contribution.as_slice(),
+        )
+    }
+}
+
+fn bits_contain_all(into: &[u64], from: &[u64]) -> bool {
+    debug_assert_eq!(into.len(), from.len());
+    into.iter()
+        .zip(from)
+        .all(|(into, from)| into & from == *from)
+}
+
 fn union_bits(into: &mut [u64], from: &[u64]) -> bool {
+    debug_assert_eq!(into.len(), from.len());
     let mut changed = false;
     for (slot, bits) in into.iter_mut().zip(from) {
         let merged = *slot | bits;
@@ -673,14 +716,15 @@ impl ChunkValueFlow {
     #[cfg(test)]
     pub(super) fn evaluate_value_expr_for_test(&self, expr: &Expr) -> (Values, usize) {
         let value_expr = FlowValueExpr::from_ast(expr);
-        let mut dependencies = BTreeSet::new();
         let work = Rc::new(Cell::new(0));
         let mut flow = self.clone();
         if flow.bindings.is_empty() && flow.properties.is_empty() && flow.returns.is_empty() {
             flow.origin_table = OriginTable::for_expr(expr);
         }
         let mut values = ValuesBuilder::with_work(flow.origin_table.clone(), work.clone());
-        flow.append_value_expr_tracking(&value_expr, &mut dependencies, &mut values);
+        append_value_expr(&value_expr, &mut values, &flow.declared_ids, &mut |key| {
+            flow.values_for_key(key)
+        });
         (values.finish(), work.get())
     }
 
@@ -710,56 +754,44 @@ impl ChunkValueFlow {
 
         // Origin IDs follow ValueOrigin::Ord, so sorting and deduplicating
         // each predecessor list preserves the old BTreeSet traversal order.
-        let mut reverse = vec![Vec::<OriginId>::new(); origins.origins.len()];
+        let mut predecessors = vec![Vec::<OriginId>::new(); origins.origins.len()];
         for (function, values) in &self.returns {
             for value in values {
-                reverse[origins.id(value).0 as usize]
+                predecessors[origins.id(value).0 as usize]
                     .push(origins.id(ValueOrigin::Function(*function)));
             }
         }
-        // `merge_property` keeps this monotone union in sync whenever a
-        // property's facts grow. Reusing it avoids rescanning all per-property
-        // sets and deduplicating the same value across many properties here.
+        // The property-union facts avoid rescanning every property's values
+        // and deduplicating the same value across many properties here.
         for (object, values) in &self.property_unions {
             let source_unit = origins.id(ValueOrigin::Object(*object));
             for value in values {
-                reverse[origins.id(value).0 as usize].push(source_unit);
+                predecessors[origins.id(value).0 as usize].push(source_unit);
             }
         }
-        for predecessors in &mut reverse {
-            predecessors.sort_unstable();
-            predecessors.dedup();
+        for values in &mut predecessors {
+            values.sort_unstable();
+            values.dedup();
         }
 
-        // Keep the per-origin bitset lazy: most AST origins are not reachable
-        // from any candidate, and allocating one dense candidate vector for
-        // every origin would turn a sparse graph into O(origins * candidates)
-        // memory before propagation starts.
-        let mut reachable: Vec<Option<Vec<u64>>> = vec![None; origins.origins.len()];
-        let mut pending = VecDeque::new();
-        let mut queued = vec![false; origins.origins.len()];
+        let rules: Vec<_> = predecessors
+            .iter()
+            .enumerate()
+            .filter_map(|(value, predecessors)| {
+                (!predecessors.is_empty()).then_some(OriginId(value as u32))
+            })
+            .collect();
+        let mut inference = IterativeInference::new(CandidateObjectRules { predecessors });
         for (index, object) in objects.iter().copied().enumerate() {
             let origin = origins.id(object);
-            let bits = reachable[origin.0 as usize].get_or_insert_with(|| vec![0; words]);
+            let mut bits = vec![0; words];
             bits[index / 64] |= 1 << (index % 64);
-            pending.push_back(origin);
-            queued[origin.0 as usize] = true;
+            inference.seed(origin, Arc::new(bits));
         }
-        while let Some(value) = pending.pop_front() {
-            queued[value.0 as usize] = false;
-            let bits = reachable[value.0 as usize]
-                .as_ref()
-                .expect("queued candidate origin must be reachable")
-                .clone();
-            for predecessor in &reverse[value.0 as usize] {
-                let target =
-                    reachable[predecessor.0 as usize].get_or_insert_with(|| vec![0; words]);
-                let predecessor_index = predecessor.0 as usize;
-                if union_bits(target, &bits) && !queued[predecessor_index] {
-                    pending.push_back(*predecessor);
-                    queued[predecessor_index] = true;
-                }
-            }
+        let facts = inference.solve(rules).into_values();
+        let mut reachable = vec![None; origins.origins.len()];
+        for (origin, bits) in facts {
+            reachable[origin.0 as usize] = Some(bits);
         }
         let bindings = self
             .bindings
@@ -891,14 +923,19 @@ impl ChunkValueFlow {
     }
 
     pub(crate) fn analyze(body: &[TopLevelItemView<'_>]) -> Self {
-        FlowProgram::collect(body).solve()
+        FlowProgram::collect(body).solve().0
     }
 
     #[cfg(test)]
     pub(crate) fn analyze_with_stats(body: &[TopLevelItemView<'_>]) -> (Self, FlowWorkStats) {
-        let mut solver = FlowProgram::collect(body).into_solver();
-        solver.run();
-        (solver.flow, solver.stats)
+        let (flow, event_executions, argument_evaluations) = FlowProgram::collect(body).solve();
+        (
+            flow,
+            FlowWorkStats {
+                event_executions,
+                argument_evaluations,
+            },
+        )
     }
 
     #[cfg(test)]
@@ -931,6 +968,7 @@ impl ChunkValueFlow {
         flow
     }
 
+    #[cfg(test)]
     fn merge_binding(&mut self, id: Id, values: Values) -> bool {
         if values.is_empty() {
             return false;
@@ -947,6 +985,7 @@ impl ChunkValueFlow {
         }
     }
 
+    #[cfg(test)]
     fn merge_property(&mut self, object: u32, prop: String, values: Values) -> bool {
         if values.is_empty() {
             return false;
@@ -975,6 +1014,7 @@ impl ChunkValueFlow {
         changed
     }
 
+    #[cfg(test)]
     fn merge_return(&mut self, function: u32, values: Values) -> bool {
         if values.is_empty() {
             return false;
@@ -1096,106 +1136,17 @@ impl ChunkValueFlow {
         self.singleton_value(ValueOrigin::Unknown)
     }
 
-    fn values_of_binding_tracking(
-        &self,
-        id: &Id,
-        dependencies: &mut BTreeSet<FlowDependency>,
-    ) -> Values {
-        dependencies.insert(FlowDependency::Binding(id.clone()));
-        self.values_of_binding(id)
-    }
-
-    fn values_of_value_expr_tracking(
-        &self,
-        expr: &FlowValueExpr,
-        dependencies: &mut BTreeSet<FlowDependency>,
-    ) -> Values {
-        let mut values = ValuesBuilder::new(self.origin_table.clone());
-        self.append_value_expr_tracking(expr, dependencies, &mut values);
-        values.finish()
-    }
-
-    fn append_value_expr_tracking(
-        &self,
-        expr: &FlowValueExpr,
-        dependencies: &mut BTreeSet<FlowDependency>,
-        values: &mut ValuesBuilder,
-    ) {
-        let mut pending = vec![expr];
-        while let Some(expr) = pending.pop() {
-            if let FlowValueExpr::Union(left, right) = expr {
-                // Visit the left subtree first, as the recursive evaluator did.
-                pending.push(right);
-                pending.push(left);
-            } else {
-                self.append_non_union_value_expr_tracking(expr, dependencies, values);
-            }
-        }
-    }
-
-    fn append_non_union_value_expr_tracking(
-        &self,
-        expr: &FlowValueExpr,
-        dependencies: &mut BTreeSet<FlowDependency>,
-        values: &mut ValuesBuilder,
-    ) {
-        match expr {
-            FlowValueExpr::Binding(id) => {
-                dependencies.insert(FlowDependency::Binding(id.clone()));
-                if let Some(found) = self.bindings.get(id) {
-                    values.extend(found);
-                } else if !self.declared_ids.contains(id) {
-                    values.push(ValueOrigin::Unknown);
-                }
-            }
-            FlowValueExpr::Value(value) => values.push(*value),
-            FlowValueExpr::Member { object, property } => {
-                let mut objects = values.child();
-                self.append_value_expr_tracking(object, dependencies, &mut objects);
-                for origin in objects.finish() {
-                    if let ValueOrigin::Object(object) = origin {
-                        if let Some(property) = property {
-                            // Keep watching absent properties. Their Unknown is durable, while a later
-                            // write can add concrete values.
-                            dependencies.insert(FlowDependency::Property(object, property.clone()));
-                            if let Some(found) = self
-                                .properties
-                                .get(&object)
-                                .and_then(|properties| properties.get(property))
-                            {
-                                values.extend(found);
-                            } else {
-                                values.push(ValueOrigin::Unknown);
-                            }
-                        } else {
-                            dependencies.insert(FlowDependency::Properties(object));
-                            if let Some(found) = self.property_unions.get(&object) {
-                                values.extend(found);
-                            }
-                            values.push(ValueOrigin::Unknown);
-                        }
-                    } else {
-                        values.push(ValueOrigin::Unknown);
-                    }
-                }
-            }
-            FlowValueExpr::Call(callee) => {
-                let mut targets = values.child();
-                self.append_value_expr_tracking(callee, dependencies, &mut targets);
-                for origin in targets.finish() {
-                    if let ValueOrigin::Function(function) = origin {
-                        dependencies.insert(FlowDependency::Return(function));
-                        if let Some(found) = self.returns.get(&function) {
-                            values.extend(found);
-                        }
-                    } else {
-                        values.push(ValueOrigin::Unknown);
-                    }
-                }
-            }
-            FlowValueExpr::Union(_, _) => unreachable!("unions are handled by the work stack"),
-            FlowValueExpr::Empty => {}
-            FlowValueExpr::Unknown => values.push(ValueOrigin::Unknown),
+    fn values_for_key(&self, key: &FlowKey) -> Option<Values> {
+        match key {
+            FlowKey::Binding(id) => self.bindings.get(id).cloned(),
+            FlowKey::Property(object, property) => self
+                .properties
+                .get(object)
+                .and_then(|properties| properties.get(property))
+                .cloned(),
+            FlowKey::Properties(object) => self.property_unions.get(object).cloned(),
+            FlowKey::Return(function) => self.returns.get(function).cloned(),
+            FlowKey::ValueFlowActive | FlowKey::Parameters(_) | FlowKey::ReadyParameters(_) => None,
         }
     }
 
@@ -1308,6 +1259,76 @@ impl ChunkValueFlow {
                 }
                 constructor.calls.extend(ctor_calls.calls.first_order_lazy);
             }
+        }
+    }
+}
+
+fn append_value_expr(
+    expr: &FlowValueExpr,
+    values: &mut ValuesBuilder,
+    declared_ids: &BTreeSet<Id>,
+    read_values: &mut impl FnMut(&FlowKey) -> Option<Values>,
+) {
+    let mut pending = vec![expr];
+    while let Some(expr) = pending.pop() {
+        if let FlowValueExpr::Union(left, right) = expr {
+            // Visit the left subtree first, as the recursive evaluator did.
+            pending.push(right);
+            pending.push(left);
+            continue;
+        }
+        match expr {
+            FlowValueExpr::Binding(id) => {
+                let key = FlowKey::Binding(id.clone());
+                if let Some(found) = read_values(&key) {
+                    values.extend(&found);
+                } else if !declared_ids.contains(id) {
+                    values.push(ValueOrigin::Unknown);
+                }
+            }
+            FlowValueExpr::Value(value) => values.push(*value),
+            FlowValueExpr::Member { object, property } => {
+                let mut objects = values.child();
+                append_value_expr(object, &mut objects, declared_ids, read_values);
+                for origin in objects.finish() {
+                    if let ValueOrigin::Object(object) = origin {
+                        if let Some(property) = property {
+                            // Unknown is durable even when a later write adds a value.
+                            let key = FlowKey::Property(object, property.clone());
+                            if let Some(found) = read_values(&key) {
+                                values.extend(&found);
+                            } else {
+                                values.push(ValueOrigin::Unknown);
+                            }
+                        } else {
+                            let key = FlowKey::Properties(object);
+                            if let Some(found) = read_values(&key) {
+                                values.extend(&found);
+                            }
+                            values.push(ValueOrigin::Unknown);
+                        }
+                    } else {
+                        values.push(ValueOrigin::Unknown);
+                    }
+                }
+            }
+            FlowValueExpr::Call(callee) => {
+                let mut targets = values.child();
+                append_value_expr(callee, &mut targets, declared_ids, read_values);
+                for origin in targets.finish() {
+                    if let ValueOrigin::Function(function) = origin {
+                        let key = FlowKey::Return(function);
+                        if let Some(found) = read_values(&key) {
+                            values.extend(&found);
+                        }
+                    } else {
+                        values.push(ValueOrigin::Unknown);
+                    }
+                }
+            }
+            FlowValueExpr::Union(_, _) => unreachable!("unions are handled by the work stack"),
+            FlowValueExpr::Empty => {}
+            FlowValueExpr::Unknown => values.push(ValueOrigin::Unknown),
         }
     }
 }
@@ -1444,12 +1465,10 @@ enum FlowEvent {
     ClassDeclaration {
         id: Id,
         origin: ValueOrigin,
-        source_unit: SourceUnitOrdinal,
     },
     Variable {
         id: Id,
         init: FlowValueExpr,
-        canonical: Option<ValueOrigin>,
     },
     AssignBinding {
         id: Id,
@@ -1478,7 +1497,6 @@ enum FlowEvent {
     FunctionMetadata {
         function: u32,
         params: Vec<Option<Id>>,
-        source_unit: SourceUnitOrdinal,
     },
     Return {
         function: u32,
@@ -1491,18 +1509,32 @@ enum FlowEvent {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-enum FlowDependency {
+enum FlowKey {
+    /// Opens parameter-driven calls after the first ordinary value fact exists.
+    ValueFlowActive,
     Binding(Id),
     Property(u32, String),
     Properties(u32),
     Return(u32),
     Parameters(u32),
+    /// Calls watch readiness so metadata-only input preserves legacy behavior.
+    ReadyParameters(u32),
+}
+
+#[derive(Clone)]
+enum FlowFact {
+    ValueFlowActive,
+    Values(Values),
+    Parameters(Vec<Option<Id>>),
+    ReadyParameters(Vec<Option<Id>>),
 }
 
 struct FlowProgram {
     declared_ids: BTreeSet<Id>,
     events: Vec<FlowEvent>,
     origin_table: Arc<OriginTable>,
+    canonical: BTreeMap<ValueOrigin, Id>,
+    callable_source_unit: BTreeMap<ValueOrigin, SourceUnitOrdinal>,
 }
 
 impl FlowProgram {
@@ -1513,6 +1545,8 @@ impl FlowProgram {
             origins: BTreeSet::from([ValueOrigin::Unknown]),
             source_unit: SourceUnitOrdinal(0),
             current_function: None,
+            canonical: BTreeMap::new(),
+            callable_source_unit: BTreeMap::new(),
         };
         for (ordinal, item) in body.iter().enumerate() {
             collector.source_unit = SourceUnitOrdinal(ordinal);
@@ -1522,33 +1556,71 @@ impl FlowProgram {
             declared_ids: collector.declared_ids,
             events: collector.events,
             origin_table: Arc::new(OriginTable::from_origins(collector.origins)),
+            canonical: collector.canonical,
+            callable_source_unit: collector.callable_source_unit,
         }
     }
 
-    fn into_solver(self) -> FlowSolver {
-        FlowSolver {
-            flow: ChunkValueFlow {
-                origin_table: self.origin_table,
-                declared_ids: self.declared_ids,
-                ..ChunkValueFlow::default()
-            },
-            events: self.events,
-            dependencies: Vec::new(),
-            watchers: HashMap::new(),
-            pending: BTreeSet::new(),
-            scheduled_round: Vec::new(),
-            round_zero_new_parameters: BTreeSet::new(),
-            round_zero_had_fact_change: false,
+    fn solve(self) -> (ChunkValueFlow, usize, usize) {
+        let Self {
+            declared_ids,
+            events,
+            origin_table,
+            canonical,
+            callable_source_unit,
+        } = self;
+        let producer_count = events.len();
+        #[cfg(test)]
+        let argument_evaluations = Rc::new(Cell::new(0));
+        let rules = FlowRules {
+            events,
+            declared_ids: declared_ids.clone(),
+            origin_table: origin_table.clone(),
             #[cfg(test)]
-            stats: FlowWorkStats::default(),
+            argument_evaluations: argument_evaluations.clone(),
+        };
+        let facts = IterativeInference::new(rules).solve(0..producer_count);
+        #[cfg(test)]
+        let evaluations = facts.evaluations();
+        #[cfg(not(test))]
+        let evaluations = 0;
+        let mut flow = ChunkValueFlow {
+            origin_table,
+            declared_ids,
+            canonical,
+            callable_source_unit,
+            ..ChunkValueFlow::default()
+        };
+        for (key, fact) in facts.into_values() {
+            match (key, fact) {
+                (FlowKey::ValueFlowActive, FlowFact::ValueFlowActive)
+                | (FlowKey::ReadyParameters(_), FlowFact::ReadyParameters(_)) => {}
+                (FlowKey::Binding(id), FlowFact::Values(values)) => {
+                    flow.bindings.insert(id, values);
+                }
+                (FlowKey::Property(object, property), FlowFact::Values(values)) => {
+                    flow.properties
+                        .entry(object)
+                        .or_default()
+                        .insert(property, values);
+                }
+                (FlowKey::Properties(object), FlowFact::Values(values)) => {
+                    flow.property_unions.insert(object, values);
+                }
+                (FlowKey::Return(function), FlowFact::Values(values)) => {
+                    flow.returns.insert(function, values);
+                }
+                (FlowKey::Parameters(function), FlowFact::Parameters(params)) => {
+                    flow.params.insert(function, params);
+                }
+                _ => unreachable!("flow key and fact variants must agree"),
+            }
         }
-        .with_event_slots()
-    }
-
-    fn solve(self) -> ChunkValueFlow {
-        let mut solver = self.into_solver();
-        solver.run();
-        solver.flow
+        #[cfg(test)]
+        let argument_evaluations = argument_evaluations.get();
+        #[cfg(not(test))]
+        let argument_evaluations = 0;
+        (flow, evaluations, argument_evaluations)
     }
 }
 
@@ -1558,6 +1630,8 @@ struct FlowProgramCollector {
     origins: BTreeSet<ValueOrigin>,
     source_unit: SourceUnitOrdinal,
     current_function: Option<u32>,
+    canonical: BTreeMap<ValueOrigin, Id>,
+    callable_source_unit: BTreeMap<ValueOrigin, SourceUnitOrdinal>,
 }
 
 impl Visit for FlowProgramCollector {
@@ -1569,6 +1643,7 @@ impl Visit for FlowProgramCollector {
         let id = node.ident.to_id();
         let origin = ValueOrigin::Function(node.function.span.lo.0);
         self.declared_ids.insert(id.clone());
+        self.canonical.entry(origin).or_insert_with(|| id.clone());
         self.events
             .push(FlowEvent::FunctionDeclaration { id, origin });
         node.function.visit_with(self);
@@ -1578,25 +1653,26 @@ impl Visit for FlowProgramCollector {
         let id = node.ident.to_id();
         let origin = ValueOrigin::Class(node.class.span.lo.0);
         self.declared_ids.insert(id.clone());
-        self.events.push(FlowEvent::ClassDeclaration {
-            id,
-            origin,
-            source_unit: self.source_unit,
-        });
+        self.canonical.entry(origin).or_insert_with(|| id.clone());
+        self.callable_source_unit
+            .entry(origin)
+            .or_insert(self.source_unit);
+        self.events.push(FlowEvent::ClassDeclaration { id, origin });
         node.class.visit_with(self);
     }
 
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
         if let (Pat::Ident(binding), Some(init)) = (&node.name, node.init.as_deref()) {
-            let canonical = self
-                .current_function
-                .is_none()
-                .then(|| direct_callable_origin(init))
-                .flatten();
+            if self.current_function.is_none()
+                && let Some(origin) = direct_callable_origin(init)
+            {
+                self.canonical
+                    .entry(origin)
+                    .or_insert_with(|| binding.id.to_id());
+            }
             self.events.push(FlowEvent::Variable {
                 id: binding.id.to_id(),
                 init: FlowValueExpr::from_ast(init),
-                canonical,
             });
         }
         node.visit_children_with(self);
@@ -1680,6 +1756,9 @@ impl Visit for FlowProgramCollector {
     fn visit_function(&mut self, node: &Function) {
         let function = node.span.lo.0;
         self.origins.insert(ValueOrigin::Function(function));
+        self.callable_source_unit
+            .entry(ValueOrigin::Function(function))
+            .or_insert(self.source_unit);
         self.events.push(FlowEvent::FunctionMetadata {
             function,
             params: node
@@ -1690,7 +1769,6 @@ impl Visit for FlowProgramCollector {
                     _ => None,
                 })
                 .collect(),
-            source_unit: self.source_unit,
         });
         let previous = self.current_function.replace(function);
         node.visit_children_with(self);
@@ -1700,6 +1778,9 @@ impl Visit for FlowProgramCollector {
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
         let function = node.span.lo.0;
         self.origins.insert(ValueOrigin::Function(function));
+        self.callable_source_unit
+            .entry(ValueOrigin::Function(function))
+            .or_insert(self.source_unit);
         self.events.push(FlowEvent::FunctionMetadata {
             function,
             params: node
@@ -1710,7 +1791,6 @@ impl Visit for FlowProgramCollector {
                     _ => None,
                 })
                 .collect(),
-            source_unit: self.source_unit,
         });
         let previous = self.current_function.replace(function);
         if let ArrowFunctionBody::Expr(expr) = node.body.as_ref() {
@@ -1788,119 +1868,106 @@ struct CachedArgument {
     binding_dependencies: BTreeSet<Id>,
 }
 
-struct FlowSolver {
-    flow: ChunkValueFlow,
+struct FlowRules {
     events: Vec<FlowEvent>,
-    dependencies: Vec<BTreeSet<FlowDependency>>,
-    watchers: HashMap<FlowDependency, Vec<usize>>,
-    pending: BTreeSet<(usize, usize)>,
-    scheduled_round: Vec<Option<usize>>,
-    round_zero_new_parameters: BTreeSet<u32>,
-    round_zero_had_fact_change: bool,
+    declared_ids: BTreeSet<Id>,
+    origin_table: Arc<OriginTable>,
     #[cfg(test)]
-    stats: FlowWorkStats,
+    argument_evaluations: Rc<Cell<usize>>,
 }
 
-impl FlowSolver {
-    fn with_event_slots(mut self) -> Self {
-        self.dependencies = vec![BTreeSet::new(); self.events.len()];
-        self.scheduled_round = vec![None; self.events.len()];
-        self
-    }
-
-    fn run(&mut self) {
-        for index in 0..self.events.len() {
-            self.run_event(index, 0, true);
-        }
-        // Legacy convergence only counted value-map merges, not params metadata.
-        if self.round_zero_had_fact_change {
-            let functions = std::mem::take(&mut self.round_zero_new_parameters);
-            for function in functions {
-                if let Some(watchers) = self.watchers.get(&FlowDependency::Parameters(function)) {
-                    for &watcher in watchers {
-                        schedule_event(&mut self.pending, &mut self.scheduled_round, watcher, 1);
-                    }
-                }
+impl FlowRules {
+    fn values_of_expr_tracking(
+        &self,
+        expr: &FlowValueExpr,
+        context: &mut IterativeContext<'_, Self>,
+        binding_dependencies: Option<&mut BTreeSet<Id>>,
+    ) -> Values {
+        let mut binding_dependencies = binding_dependencies;
+        let mut values = ValuesBuilder::new(self.origin_table.clone());
+        append_value_expr(expr, &mut values, &self.declared_ids, &mut |key| {
+            if let FlowKey::Binding(id) = key
+                && let Some(binding_dependencies) = binding_dependencies.as_deref_mut()
+            {
+                binding_dependencies.insert(id.clone());
             }
-        }
-        while let Some((round, index)) = self.pending.pop_first() {
-            self.scheduled_round[index] = None;
-            self.run_event(index, round, false);
-        }
+            match context.read(key.clone()) {
+                Some(FlowFact::Values(values)) => Some(values.clone()),
+                Some(_) => {
+                    unreachable!("value expressions cannot read parameter metadata")
+                }
+                None => None,
+            }
+        });
+        values.finish()
     }
 
-    fn run_event(&mut self, index: usize, round: usize, initial_sweep: bool) {
-        #[cfg(test)]
-        {
-            self.stats.event_executions += 1;
+    fn propose_values(
+        context: &mut IterativeContext<'_, Self>,
+        key: FlowKey,
+        values: Values,
+    ) -> bool {
+        if values.is_empty() {
+            return false;
         }
+        let changed = context.propose(key, FlowFact::Values(values));
+        context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
+        changed
+    }
 
-        let event = self.events[index].clone();
-        let mut dependencies = BTreeSet::new();
-        let mut changed = BTreeSet::new();
+    fn propose_property(
+        context: &mut IterativeContext<'_, Self>,
+        object: u32,
+        property: String,
+        values: Values,
+    ) {
+        if values.is_empty() {
+            return;
+        }
+        context.propose(
+            FlowKey::Property(object, property),
+            FlowFact::Values(values.clone()),
+        );
+        context.propose(FlowKey::Properties(object), FlowFact::Values(values));
+        context.propose(FlowKey::ValueFlowActive, FlowFact::ValueFlowActive);
+    }
+
+    fn singleton_value(&self, value: ValueOrigin) -> Values {
+        Values::singleton(self.origin_table.clone(), value)
+    }
+}
+
+impl IterativeRules for FlowRules {
+    type Key = FlowKey;
+    type Fact = FlowFact;
+    type Rule = usize;
+
+    fn evaluate(&self, rule: &usize, context: &mut IterativeContext<'_, Self>) {
+        let event = &self.events[*rule];
         match event {
-            FlowEvent::FunctionDeclaration { id, origin } => {
-                self.flow
-                    .canonical
-                    .entry(origin)
-                    .or_insert_with(|| id.clone());
-                let values = self.flow.singleton_value(origin);
-                self.merge_binding(id, values, &mut changed);
+            FlowEvent::FunctionDeclaration { id, origin }
+            | FlowEvent::ClassDeclaration { id, origin } => {
+                let values = self.singleton_value(*origin);
+                Self::propose_values(context, FlowKey::Binding(id.clone()), values);
             }
-            FlowEvent::ClassDeclaration {
-                id,
-                origin,
-                source_unit,
-            } => {
-                self.flow
-                    .canonical
-                    .entry(origin)
-                    .or_insert_with(|| id.clone());
-                self.flow
-                    .callable_source_unit
-                    .entry(origin)
-                    .or_insert(source_unit);
-                let values = self.flow.singleton_value(origin);
-                self.merge_binding(id, values, &mut changed);
-            }
-            FlowEvent::Variable {
-                id,
-                init,
-                canonical,
-            } => {
-                let values = self
-                    .flow
-                    .values_of_value_expr_tracking(&init, &mut dependencies);
-                if let Some(origin) = canonical
-                    && values.contains(&origin)
-                {
-                    self.flow
-                        .canonical
-                        .entry(origin)
-                        .or_insert_with(|| id.clone());
-                }
-                self.merge_binding(id, values, &mut changed);
+            FlowEvent::Variable { id, init } => {
+                let values = self.values_of_expr_tracking(init, context, None);
+                Self::propose_values(context, FlowKey::Binding(id.clone()), values);
             }
             FlowEvent::AssignBinding { id, right } => {
-                let values = self
-                    .flow
-                    .values_of_value_expr_tracking(&right, &mut dependencies);
-                self.merge_binding(id, values, &mut changed);
+                let values = self.values_of_expr_tracking(right, context, None);
+                Self::propose_values(context, FlowKey::Binding(id.clone()), values);
             }
             FlowEvent::AssignProperty {
                 object,
                 property,
                 right,
             } => {
-                let values = self
-                    .flow
-                    .values_of_value_expr_tracking(&right, &mut dependencies);
-                let objects = self
-                    .flow
-                    .values_of_value_expr_tracking(&object, &mut dependencies);
+                let values = self.values_of_expr_tracking(right, context, None);
+                let objects = self.values_of_expr_tracking(object, context, None);
                 for origin in objects {
                     if let ValueOrigin::Object(object) = origin {
-                        self.merge_property(object, property.clone(), values.clone(), &mut changed);
+                        Self::propose_property(context, object, property.clone(), values.clone());
                     }
                 }
             }
@@ -1909,104 +1976,92 @@ impl FlowSolver {
                 property,
                 value,
             } => {
-                let values = self
-                    .flow
-                    .values_of_value_expr_tracking(&value, &mut dependencies);
-                self.merge_property(object, property, values, &mut changed);
+                let values = self.values_of_expr_tracking(value, context, None);
+                Self::propose_property(context, *object, property.clone(), values);
             }
             FlowEvent::WritePropertyBinding {
                 object,
                 property,
                 binding,
             } => {
-                let values = self
-                    .flow
-                    .values_of_binding_tracking(&binding, &mut dependencies);
-                self.merge_property(object, property, values, &mut changed);
+                let values = self.values_of_expr_tracking(
+                    &FlowValueExpr::Binding(binding.clone()),
+                    context,
+                    None,
+                );
+                Self::propose_property(context, *object, property.clone(), values);
             }
             FlowEvent::WritePropertyValue {
                 object,
                 property,
                 value,
             } => {
-                let values = self.flow.singleton_value(value);
-                self.merge_property(object, property, values, &mut changed);
+                let values = self.singleton_value(*value);
+                Self::propose_property(context, *object, property.clone(), values);
             }
-            FlowEvent::FunctionMetadata {
-                function,
-                params,
-                source_unit,
-            } => {
-                if let std::collections::btree_map::Entry::Vacant(entry) =
-                    self.flow.params.entry(function)
-                {
-                    entry.insert(params);
-                    self.round_zero_new_parameters.insert(function);
+            FlowEvent::FunctionMetadata { function, params } => {
+                context.propose(
+                    FlowKey::Parameters(*function),
+                    FlowFact::Parameters(params.clone()),
+                );
+                // The legacy solver only woke calls waiting for metadata if
+                // some non-empty value fact grew in its initial source sweep.
+                if context.read(FlowKey::ValueFlowActive).is_some() {
+                    context.propose(
+                        FlowKey::ReadyParameters(*function),
+                        FlowFact::ReadyParameters(params.clone()),
+                    );
                 }
-                self.flow
-                    .callable_source_unit
-                    .entry(ValueOrigin::Function(function))
-                    .or_insert(source_unit);
             }
             FlowEvent::Return { function, value } => {
-                let values = self
-                    .flow
-                    .values_of_value_expr_tracking(&value, &mut dependencies);
-                self.merge_return(function, values, &mut changed);
+                let values = self.values_of_expr_tracking(value, context, None);
+                Self::propose_values(context, FlowKey::Return(*function), values);
             }
             FlowEvent::Invoke { callee, args } => {
-                let targets = self
-                    .flow
-                    .values_of_value_expr_tracking(&callee, &mut dependencies);
+                let targets = self.values_of_expr_tracking(callee, context, None);
                 let mut cached_args: Vec<Option<CachedArgument>> = vec![None; args.len()];
 
                 for target in targets {
                     let ValueOrigin::Function(function) = target else {
                         continue;
                     };
-                    let Some(params) = self.flow.params.get(&function).cloned() else {
-                        dependencies.insert(FlowDependency::Parameters(function));
-                        continue;
+                    let params = match context.read(FlowKey::ReadyParameters(function)).cloned() {
+                        Some(FlowFact::ReadyParameters(params)) => params,
+                        Some(_) => {
+                            unreachable!("parameter keys must contain parameter metadata")
+                        }
+                        None => continue,
                     };
-                    for (arg_index, (param, arg)) in params.into_iter().zip(&args).enumerate() {
-                        if let Some(param) = param {
-                            let values = if let Some(cached) = &cached_args[arg_index] {
-                                cached.values.clone()
-                            } else {
-                                let mut arg_dependencies = BTreeSet::new();
-                                #[cfg(test)]
-                                {
-                                    self.stats.argument_evaluations += 1;
-                                }
-                                let values = self
-                                    .flow
-                                    .values_of_value_expr_tracking(arg, &mut arg_dependencies);
-                                let binding_dependencies = arg_dependencies
-                                    .iter()
-                                    .filter_map(|dependency| match dependency {
-                                        FlowDependency::Binding(id) => Some(id.clone()),
-                                        _ => None,
-                                    })
-                                    .collect();
-                                dependencies.extend(arg_dependencies);
-                                cached_args[arg_index] = Some(CachedArgument {
-                                    values: values.clone(),
-                                    binding_dependencies,
-                                });
-                                values
-                            };
-                            // Invoke only changes parameter bindings. Cached argument queries
-                            // remain exact until a binding they read actually grows; property,
-                            // return, and parameter metadata facts are immutable during this
-                            // event. Invalidate after each real merge so later arguments still
-                            // observe the legacy left-to-right parameter updates.
-                            if self.merge_binding(param.clone(), values, &mut changed) {
-                                for cached in &mut cached_args {
-                                    if cached.as_ref().is_some_and(|cached| {
-                                        cached.binding_dependencies.contains(&param)
-                                    }) {
-                                        *cached = None;
-                                    }
+                    for (arg_index, (param, arg)) in params.into_iter().zip(args).enumerate() {
+                        let Some(param) = param else {
+                            continue;
+                        };
+                        let values = if let Some(cached) = &cached_args[arg_index] {
+                            cached.values.clone()
+                        } else {
+                            let mut binding_dependencies = BTreeSet::new();
+                            #[cfg(test)]
+                            self.argument_evaluations
+                                .set(self.argument_evaluations.get() + 1);
+                            let values = self.values_of_expr_tracking(
+                                arg,
+                                context,
+                                Some(&mut binding_dependencies),
+                            );
+                            cached_args[arg_index] = Some(CachedArgument {
+                                values: values.clone(),
+                                binding_dependencies,
+                            });
+                            values
+                        };
+                        // Proposals are immediately visible to later arguments and targets.
+                        // Recompute only arguments that read a binding this invocation grows.
+                        if Self::propose_values(context, FlowKey::Binding(param.clone()), values) {
+                            for cached in &mut cached_args {
+                                if cached.as_ref().is_some_and(|cached| {
+                                    cached.binding_dependencies.contains(&param)
+                                }) {
+                                    *cached = None;
                                 }
                             }
                         }
@@ -2014,107 +2069,43 @@ impl FlowSolver {
                 }
             }
         }
-        if initial_sweep && !changed.is_empty() {
-            self.round_zero_had_fact_change = true;
-        }
-        self.record_event_dependencies(index, dependencies);
-        self.schedule_changed_events(index, round, initial_sweep, changed);
     }
 
-    fn merge_binding(
-        &mut self,
-        id: Id,
-        values: Values,
-        changed: &mut BTreeSet<FlowDependency>,
-    ) -> bool {
-        let merged = self.flow.merge_binding(id.clone(), values);
-        if merged {
-            changed.insert(FlowDependency::Binding(id));
-        }
-        merged
-    }
-
-    fn merge_property(
-        &mut self,
-        object: u32,
-        property: String,
-        values: Values,
-        changed: &mut BTreeSet<FlowDependency>,
-    ) {
-        if self.flow.merge_property(object, property.clone(), values) {
-            changed.insert(FlowDependency::Property(object, property));
-            changed.insert(FlowDependency::Properties(object));
-        }
-    }
-
-    fn merge_return(
-        &mut self,
-        function: u32,
-        values: Values,
-        changed: &mut BTreeSet<FlowDependency>,
-    ) {
-        if self.flow.merge_return(function, values) {
-            changed.insert(FlowDependency::Return(function));
-        }
-    }
-
-    fn record_event_dependencies(&mut self, index: usize, dependencies: BTreeSet<FlowDependency>) {
-        for dependency in dependencies {
-            // The per-event set admits each watcher once, so a Vec is a compact
-            // lookup-only reverse index with the same uniqueness semantics.
-            if self.dependencies[index].insert(dependency.clone()) {
-                self.watchers.entry(dependency).or_default().push(index);
+    fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        match (key, current, contribution) {
+            (
+                FlowKey::Parameters(_),
+                FlowFact::Parameters(current),
+                FlowFact::Parameters(contribution),
+            ) => {
+                assert_eq!(current, &contribution, "parameter metadata is immutable");
+                false
             }
-        }
-    }
-
-    fn schedule_changed_events(
-        &mut self,
-        index: usize,
-        round: usize,
-        initial_sweep: bool,
-        changed: BTreeSet<FlowDependency>,
-    ) {
-        // Preserve sweep timing: only later source-order events can run this round.
-        for dependency in changed {
-            let Some(watchers) = self.watchers.get(&dependency) else {
-                continue;
-            };
-            for &watcher in watchers {
-                if initial_sweep && watcher > index {
-                    continue;
-                }
-                let next_round = if watcher > index {
-                    round
-                } else {
-                    round.checked_add(1).expect("value-flow round overflow")
-                };
-                // Watcher visitation order is immaterial: the pending set keeps
-                // source-index order and schedule_event retains the earliest round.
-                schedule_event(
-                    &mut self.pending,
-                    &mut self.scheduled_round,
-                    watcher,
-                    next_round,
+            (
+                FlowKey::ReadyParameters(_),
+                FlowFact::ReadyParameters(current),
+                FlowFact::ReadyParameters(contribution),
+            ) => {
+                assert_eq!(
+                    current, &contribution,
+                    "ready parameter metadata is immutable"
                 );
+                false
             }
+            (FlowKey::ValueFlowActive, FlowFact::ValueFlowActive, FlowFact::ValueFlowActive) => {
+                false
+            }
+            (
+                FlowKey::Binding(_)
+                | FlowKey::Property(_, _)
+                | FlowKey::Properties(_)
+                | FlowKey::Return(_),
+                FlowFact::Values(current),
+                FlowFact::Values(contribution),
+            ) => current.union_with(&contribution),
+            _ => unreachable!("flow key and fact variants must agree"),
         }
     }
-}
-
-fn schedule_event(
-    pending: &mut BTreeSet<(usize, usize)>,
-    scheduled_round: &mut [Option<usize>],
-    index: usize,
-    round: usize,
-) {
-    if scheduled_round[index].is_some_and(|scheduled| scheduled <= round) {
-        return;
-    }
-    if let Some(scheduled) = scheduled_round[index].replace(round) {
-        pending.remove(&(scheduled, index));
-    }
-    pending.insert((round, index));
 }
 
 pub(crate) fn static_prop(prop: &MemberProp) -> Option<String> {
