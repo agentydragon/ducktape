@@ -687,6 +687,42 @@ func TestControlFrameSenderRejectsWritesAfterTimeout(t *testing.T) {
 	<-returned
 }
 
+func TestControlFrameSenderPreservesTerminalErrors(t *testing.T) {
+	for _, ended := range []bool{false, true} {
+		t.Run(fmt.Sprintf("context_ended_%t", ended), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			want := codes.Unavailable
+			if ended {
+				cancel()
+				want = codes.Canceled
+			}
+			var calls atomic.Int32
+			sender := &controlFrameSender{
+				ctx: ctx, timeout: time.Second,
+				send: func(*runnercontrolpb.ServiceFrame) error {
+					calls.Add(1)
+					return context.Canceled
+				},
+			}
+			first := sender.Send(&runnercontrolpb.ServiceFrame{})
+			if status.Code(first) != want {
+				t.Fatalf("Send code = %v, want %v", status.Code(first), want)
+			}
+			if next := sender.Send(&runnercontrolpb.ServiceFrame{}); next != first {
+				t.Fatalf("later Send error = %v, want original terminal error %v", next, first)
+			}
+			wantCalls := int32(1)
+			if ended {
+				wantCalls = 0
+			}
+			if calls.Load() != wantCalls {
+				t.Fatalf("Send calls = %d, want %d", calls.Load(), wantCalls)
+			}
+		})
+	}
+}
+
 func TestGeneratedRunnerClientPreservesTunnelStatusTrailersAndCancellation(t *testing.T) {
 	frames := make(chan *runnercontrolpb.ServiceFrame, 2)
 	connection := newRunnerConnection(sandboxreader.Identity{}, "pod-uid", "boot-id", 1, func(frame *runnercontrolpb.ServiceFrame) error {

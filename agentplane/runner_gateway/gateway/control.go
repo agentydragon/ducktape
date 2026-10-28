@@ -2,10 +2,12 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -43,24 +45,18 @@ func (s *controlFrameSender) Send(frame *runnercontrolpb.ServiceFrame) error {
 	if s.failed != nil {
 		return s.failed
 	}
-	done := make(chan error, 1)
-	go func() { done <- s.send(frame) }()
-	timer := time.NewTimer(s.timeout)
-	defer timer.Stop()
-	select {
-	case err := <-done:
-		if err != nil {
-			s.failed = status.Error(codes.Unavailable, "runner control stream ended while sending")
-			return s.failed
-		}
+	err := streaming.SendWithin(s.ctx, s.timeout, s.send, frame)
+	switch {
+	case err == nil:
 		return nil
-	case <-s.ctx.Done():
-		s.failed = status.FromContextError(s.ctx.Err()).Err()
-		return s.failed
-	case <-timer.C:
+	case errors.Is(err, streaming.ErrSendTimeout):
 		s.failed = status.Error(codes.Unavailable, "runner control stream send timed out")
-		return s.failed
+	case s.ctx.Err() != nil && errors.Is(err, s.ctx.Err()):
+		s.failed = status.FromContextError(s.ctx.Err()).Err()
+	default:
+		s.failed = status.Error(codes.Unavailable, "runner control stream ended while sending")
 	}
+	return s.failed
 }
 
 func (s *runnerControlServer) Connect(stream grpc.BidiStreamingServer[runnercontrolpb.RunnerFrame, runnercontrolpb.ServiceFrame]) (returnErr error) {
