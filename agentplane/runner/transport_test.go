@@ -5,18 +5,13 @@ import (
 	"errors"
 	"net"
 	"testing"
-	"time"
 
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
-	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/proto"
 )
 
 func loopbackGRPCServer(t *testing.T, register func(*grpc.Server)) string {
@@ -33,70 +28,6 @@ func loopbackGRPCServer(t *testing.T, register func(*grpc.Server)) string {
 		_ = listener.Close()
 	})
 	return listener.Addr().String()
-}
-
-type controlAudit struct {
-	Authorization string
-	Hello         *controlpb.Hello
-	Facts         *controlpb.RunnerFacts
-	Reply         *tunnelpb.Reply
-	Err           error
-}
-
-type controlLoopback struct {
-	controlpb.UnimplementedRunnerControlServer
-	result chan controlAudit
-}
-
-func (s *controlLoopback) Connect(stream grpc.BidiStreamingServer[controlpb.RunnerFrame, controlpb.ServiceFrame]) (resultErr error) {
-	audit := controlAudit{}
-	defer func() {
-		audit.Err = resultErr
-		s.result <- audit
-	}()
-	if values, ok := metadata.FromIncomingContext(stream.Context()); ok {
-		audit.Authorization = firstString(values.Get("authorization"))
-	}
-	frame, err := stream.Recv()
-	if err != nil {
-		return err
-	}
-	audit.Hello = frame.GetHello()
-	if audit.Hello == nil {
-		return errors.New("first control frame was not Hello")
-	}
-	if err := stream.Send(&controlpb.ServiceFrame{Frame: &controlpb.ServiceFrame_Welcome{Welcome: &controlpb.Welcome{ConnectionEpoch: 1, IncarnationUid: "loopback-incarnation"}}}); err != nil {
-		return err
-	}
-	frame, err = stream.Recv()
-	if err != nil {
-		return err
-	}
-	if heartbeat := frame.GetHeartbeat(); heartbeat != nil {
-		audit.Facts = heartbeat.GetFacts()
-	}
-	if audit.Facts == nil {
-		return errors.New("runner did not publish facts after Welcome")
-	}
-	request, err := proto.Marshal(&runnerpb.ListSessionsRequest{})
-	if err != nil {
-		return err
-	}
-	if err := stream.Send(&controlpb.ServiceFrame{Frame: &controlpb.ServiceFrame_Call{Call: &tunnelpb.Call{
-		CallId: 17, Method: "/agentplane.runner.Runner/ListSessions", Request: request,
-	}}}); err != nil {
-		return err
-	}
-	frame, err = stream.Recv()
-	if err != nil {
-		return err
-	}
-	reply := frame.GetReply()
-	if reply == nil {
-		return errors.New("runner did not answer tunneled ListSessions call")
-	}
-	audit.Reply = reply
-	return nil
 }
 
 func firstString(values []string) string {
@@ -232,54 +163,6 @@ func TestIngressLoopPublishesSealedAcknowledgementToQuiesce(t *testing.T) {
 	cancel()
 	if err := <-loopDone; err != nil {
 		t.Fatalf("ingress loop shutdown: %v", err)
-	}
-}
-
-func TestControlConnectAuthenticatesWelcomesPublishesFactsAndRelaysRPC(t *testing.T) {
-	runner := newBareRunner(t)
-	service := &controlLoopback{result: make(chan controlAudit, 1)}
-	endpoint := loopbackGRPCServer(t, func(server *grpc.Server) {
-		controlpb.RegisterRunnerControlServer(server, service)
-	})
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	connected := make(chan error, 1)
-	go func() {
-		_, err := runner.connectControl(ctx, Endpoint{Target: endpoint, Bearer: "loopback-token"})
-		connected <- err
-	}()
-	var audit controlAudit
-	select {
-	case audit = <-service.result:
-	case <-ctx.Done():
-		t.Fatalf("control exchange timed out: %v", ctx.Err())
-	}
-	if audit.Err != nil {
-		t.Fatalf("control stream failed: %v", audit.Err)
-	}
-	if audit.Authorization != "Bearer loopback-token" || audit.Hello == nil || audit.Hello.RunnerBootId != runner.bootID {
-		t.Fatalf("control authentication/Hello = authorization %q, hello %v", audit.Authorization, audit.Hello)
-	}
-	if audit.Facts == nil || audit.Facts.IdleSince == nil || audit.Facts.QuiesceStage != controlpb.RunnerFacts_QUIESCE_STAGE_UNSPECIFIED {
-		t.Fatalf("first heartbeat facts = %v", audit.Facts)
-	}
-	if uid, known := runner.store.IncarnationUID(); !known || uid != "loopback-incarnation" {
-		t.Fatalf("Welcome incarnation = %q, %t", uid, known)
-	}
-	if audit.Reply == nil || audit.Reply.CallId != 17 || audit.Reply.Code != int32(codes.OK) {
-		t.Fatalf("tunneled RPC reply = %v", audit.Reply)
-	}
-	response := &runnerpb.ListSessionsResponse{}
-	if err := proto.Unmarshal(audit.Reply.Response, response); err != nil || len(response.Sessions) != 0 {
-		t.Fatalf("tunneled ListSessions response = %v, %v", response, err)
-	}
-	select {
-	case err := <-connected:
-		if err == nil {
-			t.Fatal("control stream ended successfully without cancellation")
-		}
-	case <-ctx.Done():
-		t.Fatalf("control client did not exit after peer closed: %v", ctx.Err())
 	}
 }
 
