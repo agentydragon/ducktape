@@ -107,15 +107,6 @@ impl LocalClassConstructionProof {
             .and_then(|class| self.dependencies_for_class(*class))
     }
 
-    pub(crate) fn with_native_premises(
-        &self,
-        native_constructor_is_unmodified: impl Fn(&Id) -> bool,
-    ) -> Self {
-        self.with_native_dependencies(|id| {
-            native_constructor_is_unmodified(id).then(ProofDependencies::default)
-        })
-    }
-
     pub(crate) fn with_native_dependencies(
         &self,
         native_constructor_dependencies: impl Fn(&Id) -> Option<ProofDependencies>,

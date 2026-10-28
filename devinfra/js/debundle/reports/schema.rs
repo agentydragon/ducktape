@@ -365,6 +365,8 @@ pub enum NativeIntegrityGuard {
     ArrayIntrinsics,
     HostPromiseResolve,
     NativeCallIdentity,
+    SetIterable,
+    LocalClassConstruction,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]

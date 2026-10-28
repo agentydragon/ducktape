@@ -197,11 +197,8 @@ impl ChunkCodeGraph {
             &plain_data_bindings,
             dynamic_scope,
         );
-        let set_iterable_proof = if prepared_sync_index.set_iterable_intrinsics_are_unmodified() {
-            set_iterable_proof
-        } else {
-            SetIterableProof::default()
-        };
+        let set_iterable_proof =
+            prepared_sync_index.validate_set_iterable_proof(set_iterable_proof);
         Self::build_full_with_prepared_plain_data(
             body,
             shadowed,

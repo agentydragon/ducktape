@@ -4528,11 +4528,7 @@ impl ExecutionIndex {
     }
 
     fn set_iterable_intrinsics_are_unmodified(&self) -> bool {
-        // This premise feeds purity classification before a runtime proof-use
-        // record can be emitted. Keep it source-only while author-conditioned
-        // NativeIntegrity inputs are present.
-        self.native_integrity_value_input_refs.is_empty()
-            && self.collection_intrinsic_is_unmodified("Set")
+        self.collection_intrinsic_is_unmodified("Set")
             && !self.mutated_intrinsic_roots.contains(&IntrinsicRoot::Array)
     }
 

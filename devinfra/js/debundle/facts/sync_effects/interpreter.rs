@@ -433,11 +433,24 @@ impl Executor<'_> {
     }
 
     fn record_native_integrity_use(&self, guard: NativeIntegrityGuard) {
-        if !self.index.native_integrity_value_input_refs.is_empty() {
+        self.record_proof_dependencies(
+            guard,
+            &crate::analysis_inputs::ProofDependencies {
+                value_inputs: self.index.native_integrity_value_input_refs.clone(),
+            },
+        );
+    }
+
+    fn record_proof_dependencies(
+        &self,
+        guard: NativeIntegrityGuard,
+        dependencies: &crate::analysis_inputs::ProofDependencies,
+    ) {
+        if !dependencies.is_empty() {
             self.native_integrity_uses.borrow_mut().insert(
                 crate::reports::schema::NativeIntegrityUse {
                     guard,
-                    value_input_refs: self.index.native_integrity_value_input_refs.clone(),
+                    value_input_refs: dependencies.value_inputs.clone(),
                 },
             );
         }
@@ -3084,6 +3097,16 @@ impl Executor<'_> {
                 return None;
             }
         }
+        if let Some(dependencies) = self
+            .index
+            .local_class_construction_proof
+            .dependencies_for_class(key)
+        {
+            self.record_proof_dependencies(
+                NativeIntegrityGuard::LocalClassConstruction,
+                dependencies,
+            );
+        }
         let outcome = constructor.key.map_or_else(
             || Outcome {
                 complete: true,
@@ -4937,9 +4960,12 @@ impl Executor<'_> {
         // can be retained by the Set and invoked by a later opaque consumer.
         if call.kind == CallKind::New
             && call.caller.is_none()
-            && self.set_iterable_proof.contains_constructor(call.span)
+            && let Some(dependencies) = self
+                .set_iterable_proof
+                .dependencies_for_constructor(call.span)
             && self.index.set_iterable_intrinsics_are_unmodified()
         {
+            self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, dependencies);
             return;
         }
         let targets = self.evaluate(&call.callee, env, captures);
@@ -5373,8 +5399,14 @@ impl PreparedSynchronousCallIndex {
         self.index.locate_native_integrity_witnesses(locate);
     }
 
-    pub(crate) fn set_iterable_intrinsics_are_unmodified(&self) -> bool {
-        self.index.set_iterable_intrinsics_are_unmodified()
+    pub(crate) fn validate_set_iterable_proof(&self, proof: SetIterableProof) -> SetIterableProof {
+        if self.index.set_iterable_intrinsics_are_unmodified() {
+            proof.with_dependencies(crate::analysis_inputs::ProofDependencies {
+                value_inputs: self.index.native_integrity_value_input_refs.clone(),
+            })
+        } else {
+            SetIterableProof::default()
+        }
     }
 
     pub(crate) fn local_class_construction_proof(&self) -> &LocalClassConstructionProof {
@@ -5405,14 +5437,14 @@ pub(crate) fn prepare_synchronous_call_index(
         plain_array_bindings,
         local_class_construction,
     );
-    index.local_class_construction_proof = local_class_construction.with_native_premises(|id| {
-        // This proof can affect purity without an execution-site guard record.
-        // Keep structural proofs with no native field premise, but do not let
-        // an author-conditioned census certify a native-backed field until
-        // that proof-use consumer can retain the dependency directly.
-        index.native_integrity_value_input_refs.is_empty()
-            && index.empty_collection_constructor_is_unmodified(id, flow, shadowed)
-    });
+    index.local_class_construction_proof =
+        local_class_construction.with_native_dependencies(|id| {
+            index
+                .empty_collection_constructor_is_unmodified(id, flow, shadowed)
+                .then(|| crate::analysis_inputs::ProofDependencies {
+                    value_inputs: index.native_integrity_value_input_refs.clone(),
+                })
+        });
     index.local_constructors.retain(|key, constructor| {
         !constructor.checked_default_fields
             || index.local_class_construction_proof.contains_class(*key)
