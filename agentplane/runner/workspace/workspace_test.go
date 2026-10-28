@@ -1,4 +1,4 @@
-package runner
+package workspace
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -16,7 +17,19 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 )
 
-func TestEnsureWorkspacePreservesExistingOwnership(t *testing.T) {
+func TestMain(m *testing.M) {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case supervision.SupervisorMode:
+			os.Exit(supervision.SupervisorMain(os.Args[2:]))
+		case HelperMode:
+			os.Exit(Main(os.Args[2:]))
+		}
+	}
+	os.Exit(m.Run())
+}
+
+func TestEnsurePreservesExistingOwnership(t *testing.T) {
 	base, err := os.MkdirTemp("/tmp", "agentplane-workspace-")
 	if err != nil {
 		t.Fatal(err)
@@ -34,12 +47,12 @@ func TestEnsureWorkspacePreservesExistingOwnership(t *testing.T) {
 	}
 	uid, gid := uint32(os.Geteuid()), uint32(os.Getegid())
 	cwd := filepath.Join(root, "new", "repository")
-	created, err := EnsureWorkspace(context.Background(), cwd, root, nil)
+	created, err := Ensure(context.Background(), cwd, Config{Root: root})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if created != cwd {
-		t.Fatalf("EnsureWorkspace path = %q, want %q", created, cwd)
+		t.Fatalf("Ensure path = %q, want %q", created, cwd)
 	}
 	assertOwner(t, cwd, uid, gid)
 	assertOwner(t, filepath.Join(root, "new"), uid, gid)
@@ -73,12 +86,12 @@ func TestEnsureWorkspacePreservesExistingOwnership(t *testing.T) {
 	}
 	existingOwner := ownerOf(t, existing)
 	fileOwner := ownerOf(t, filepath.Join(existing, "notes.txt"))
-	resolved, err := EnsureWorkspace(context.Background(), existing, root, nil)
+	resolved, err := Ensure(context.Background(), existing, Config{Root: root})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if resolved != existing || ownerOf(t, existing) != existingOwner || ownerOf(t, filepath.Join(existing, "notes.txt")) != fileOwner {
-		t.Fatal("EnsureWorkspace changed an existing workspace or authored file ownership")
+		t.Fatal("Ensure changed an existing workspace or authored file ownership")
 	}
 	content, err := os.ReadFile(filepath.Join(existing, "notes.txt"))
 	if err != nil || string(content) != "authored data" {
@@ -94,49 +107,74 @@ func TestEnsureWorkspacePreservesExistingOwnership(t *testing.T) {
 	}
 	parentOwner := ownerOf(t, parent)
 	nested := filepath.Join(parent, "new-session", "nested")
-	if _, err := EnsureWorkspace(context.Background(), nested, root, nil); err != nil {
+	if _, err := Ensure(context.Background(), nested, Config{Root: root}); err != nil {
 		t.Fatal(err)
 	}
 	if ownerOf(t, parent) != parentOwner {
-		t.Fatal("EnsureWorkspace changed the existing parent directory owner")
+		t.Fatal("Ensure changed the existing parent directory owner")
 	}
 	assertOwner(t, filepath.Join(parent, "new-session"), uid, gid)
 	assertOwner(t, nested, uid, gid)
 }
 
-func TestEnsureWorkspaceRejectsSymlinkEscapeBeforeCreatingAnything(t *testing.T) {
+func TestEnsureRejectsSymlinkEscapeBeforeCreatingAnything(t *testing.T) {
 	root := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "new")
 	if err := os.Symlink(filepath.Dir(outside), filepath.Join(root, "escape")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := EnsureWorkspace(context.Background(), filepath.Join(root, "escape", "new"), root, nil); err == nil || !strings.Contains(err.Error(), "must be a child") {
-		t.Fatalf("EnsureWorkspace symlink escape error = %v", err)
+	if _, err := Ensure(context.Background(), filepath.Join(root, "escape", "new"), Config{Root: root}); err == nil || !strings.Contains(err.Error(), "must be a child") {
+		t.Fatalf("Ensure symlink escape error = %v", err)
 	}
 	if _, err := os.Stat(outside); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("symlink escape created an outside directory: stat error %v", err)
 	}
 }
 
-func TestResolveWorkspaceRejectsSymlinkEscape(t *testing.T) {
+func TestResolveRejectsSymlinkEscape(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
 	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ResolveWorkspace(filepath.Join(root, "escape", "new"), root); err == nil || !strings.Contains(err.Error(), "must be a child") {
-		t.Fatalf("ResolveWorkspace error = %v, want child-containment error", err)
+	if _, err := Resolve(filepath.Join(root, "escape", "new"), root); err == nil || !strings.Contains(err.Error(), "must be a child") {
+		t.Fatalf("Resolve error = %v, want child-containment error", err)
 	}
 }
 
-func TestEnsureWorkspaceWithoutIsolationKeepsRunnerIdentity(t *testing.T) {
+func TestEnsureWithoutIsolationKeepsCurrentIdentity(t *testing.T) {
 	cwd := filepath.Join(t.TempDir(), "pod", "new-session")
-	created, err := EnsureWorkspace(context.Background(), cwd, "", nil)
+	created, err := Ensure(context.Background(), cwd, Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if created != cwd || ownerOf(t, cwd) != (fileOwner{uid: uint32(os.Geteuid()), gid: uint32(os.Getegid())}) {
-		t.Fatalf("rootless workspace = %q owner %+v", created, ownerOf(t, cwd))
+		t.Fatalf("workspace = %q owner %+v", created, ownerOf(t, cwd))
+	}
+}
+
+func TestEnsurePassesExplicitHelperLaunchConfiguration(t *testing.T) {
+	root := t.TempDir()
+	cwd := filepath.Join(root, "new", "session")
+	launchErr := errors.New("launch boundary reached")
+	var launched supervision.ProcessConfig
+	config := Config{
+		Root: root,
+		LaunchHelper: func(_ context.Context, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+			launched = processConfig
+			return nil, launchErr
+		},
+	}
+	if _, err := Ensure(context.Background(), cwd, config); !errors.Is(err, launchErr) {
+		t.Fatalf("Ensure error = %v, want launcher error %v", err, launchErr)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCommand := []string{executable, HelperMode, root, "new", "session"}
+	if !reflect.DeepEqual(launched.Command, wantCommand) || launched.Dir != root || len(launched.Env) != 0 {
+		t.Fatalf("helper launch config = %+v, want command %q, dir %q and empty environment", launched, wantCommand, root)
 	}
 }
 

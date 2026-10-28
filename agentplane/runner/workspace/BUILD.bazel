@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:private"])
+
+go_library(
+    name = "workspace",
+    srcs = ["workspace.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/workspace",
+    visibility = ["//agentplane/runner:__pkg__"],
+    deps = [
+        "//agentplane/runner/supervision",
+        "@org_golang_x_sys//unix",
+    ],
+)
+
+go_test(
+    name = "workspace_test",
+    srcs = ["workspace_test.go"],
+    embed = [":workspace"],
+    race = "on",
+    deps = ["//agentplane/runner/supervision"],
+)

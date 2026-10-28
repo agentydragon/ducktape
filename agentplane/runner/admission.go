@@ -15,6 +15,7 @@ import (
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
@@ -48,7 +49,7 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	if !filepath.IsAbs(spec.Cwd) || spec.Model == "" {
 		return nil, status.Error(codes.InvalidArgument, "spec.cwd must be absolute and spec.model is required")
 	}
-	if _, err := ResolveWorkspace(spec.Cwd, r.config.WorkspaceRoot); err != nil {
+	if _, err := workspace.Resolve(spec.Cwd, r.config.WorkspaceRoot); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	if len(request.GetSetupScript()) > 65536 {

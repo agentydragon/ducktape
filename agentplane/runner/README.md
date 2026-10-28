@@ -51,6 +51,8 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   together; publication and startup handshake replies follow commit.
 - `retained/`: durable session metadata, ingress acknowledgements, incarnation markers, the ownership
   lock, and filesystem durability helpers. SQLite remains the separate journal authority.
+- `workspace/`: workspace path containment and creation. Runner supplies the configured helper
+  launcher at the composition boundary, keeping process ownership and generation policy in Runner.
 - `supervision/`: the shared native-process API, COSI process resources and controller, host registry,
   and private systemd/subprocess backends. Runner wires its `Host` and controller into the same COSI
   engine as its lifecycle controllers; the package owns streams, exit observation and

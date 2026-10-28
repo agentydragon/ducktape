@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
+	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -211,7 +212,7 @@ func (r *Runner) load(ctx context.Context, id string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := ResolveWorkspace(record.CWD, r.config.WorkspaceRoot); err != nil {
+	if _, err := workspace.Resolve(record.CWD, r.config.WorkspaceRoot); err != nil {
 		return nil, err
 	}
 	directory, err := r.store.Directory(id)
@@ -348,10 +349,13 @@ func (r *Runner) reopen(ctx context.Context, s *Session) error {
 }
 
 func (r *Runner) ensureWorkspace(ctx context.Context, cwd string) (string, error) {
-	if r.workspaceSupervisor == nil {
-		return EnsureWorkspace(ctx, cwd, r.config.WorkspaceRoot, nil)
+	config := workspace.Config{Root: r.config.WorkspaceRoot}
+	if r.workspaceSupervisor != nil {
+		config.LaunchHelper = func(ctx context.Context, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+			return r.launchProcess(ctx, "workspace-helper", r.workspaceSupervisor, processConfig)
+		}
 	}
-	return EnsureWorkspace(ctx, cwd, r.config.WorkspaceRoot, r)
+	return workspace.Ensure(ctx, cwd, config)
 }
 
 func (r *Runner) runScript(ctx context.Context, owner, script, cwd string, output func(bool, []byte) error) (int, error) {

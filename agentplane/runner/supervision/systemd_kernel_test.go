@@ -99,6 +99,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 	t.Run("workspace_created_as_agent", func(t *testing.T) {
 		cwd := filepath.Join(dir, "nested", "workspace")
 		workspaceHelper, err := supervisor.NewProcess(ProcessConfig{
+			// Keep this private Runner CLI mode in sync with workspace.HelperMode.
 			Command: []string{"/run/agentplane/runner/bin/agentplane-runner", "--agentplane-runner-workspace", dir, "nested", "workspace"},
 			Dir:     dir,
 			Env:     map[string]string{},

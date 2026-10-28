@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
+	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
 )
 
 const (
-	workspaceMode            = "--agentplane-runner-workspace"
 	vmResourcePropertiesMode = "--vm-resource-properties"
 	stopGrace                = 5 * time.Second
 )
@@ -23,8 +23,8 @@ func InternalMode(args []string) (handled bool, exitCode int) {
 	switch args[0] {
 	case supervision.SupervisorMode:
 		return true, supervision.SupervisorMain(args[1:])
-	case workspaceMode:
-		return true, WorkspaceMain(args[1:])
+	case workspace.HelperMode:
+		return true, workspace.Main(args[1:])
 	case vmResourcePropertiesMode:
 		return true, VMResourcePropertiesMain(args[1:])
 	default:

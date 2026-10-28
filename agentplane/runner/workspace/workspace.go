@@ -1,4 +1,4 @@
-package runner
+package workspace
 
 import (
 	"context"
@@ -13,9 +13,21 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// ResolveWorkspace resolves cwd and rejects the workspace root itself or a path outside it.
+// HelperMode is the private Runner CLI mode used to create a workspace directory.
+const HelperMode = "--agentplane-runner-workspace"
+
+// Config contains the workspace root and the optional process capability used
+// when workspace creation needs an isolated helper.
+type Config struct {
+	// Root is the configured workspace root, or empty for local unmounted workspaces.
+	Root string
+	// LaunchHelper starts the isolated helper under the caller's process ownership policy.
+	LaunchHelper func(context.Context, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
+}
+
+// Resolve resolves cwd and rejects the workspace root itself or a path outside it.
 // An empty workspaceRoot leaves cwd as provided, matching non-mounted local workspaces.
-func ResolveWorkspace(cwd, workspaceRoot string) (string, error) {
+func Resolve(cwd, workspaceRoot string) (string, error) {
 	if workspaceRoot == "" {
 		return cwd, nil
 	}
@@ -34,10 +46,11 @@ func ResolveWorkspace(cwd, workspaceRoot string) (string, error) {
 	return candidate, nil
 }
 
-// EnsureWorkspace returns cwd after creating any missing path components. Existing
+// Ensure returns cwd after creating any missing path components. Existing
 // directories and their contents retain their original ownership.
-func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, runner *Runner) (string, error) {
-	resolved, err := ResolveWorkspace(cwd, workspaceRoot)
+func Ensure(ctx context.Context, cwd string, config Config) (string, error) {
+	workspaceRoot := config.Root
+	resolved, err := Resolve(cwd, workspaceRoot)
 	if err != nil {
 		return "", err
 	}
@@ -51,7 +64,7 @@ func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, runner *Run
 	if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("inspect workspace path %s: %w", resolved, err)
 	}
-	if runner == nil {
+	if config.LaunchHelper == nil {
 		if workspaceRoot == "" {
 			if err := os.MkdirAll(resolved, 0o770); err != nil {
 				return "", fmt.Errorf("create workspace path %s: %w", resolved, err)
@@ -69,10 +82,7 @@ func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, runner *Run
 				return "", fmt.Errorf("create workspace below %s: %w", root, err)
 			}
 		}
-		return ResolveWorkspace(resolved, workspaceRoot)
-	}
-	if runner.workspaceSupervisor == nil {
-		return "", errors.New("isolated workspace helper requires a configured process supervisor")
+		return Resolve(resolved, workspaceRoot)
 	}
 	if workspaceRoot == "" {
 		return "", errors.New("an isolated harness workspace requires a configured workspace root")
@@ -90,8 +100,8 @@ func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, runner *Run
 	if err != nil {
 		return "", fmt.Errorf("locate runner executable for workspace creation: %w", err)
 	}
-	command := append([]string{executable, workspaceMode, root}, parts...)
-	process, err := runner.launchProcess(ctx, "workspace-helper", runner.workspaceSupervisor, supervision.ProcessConfig{
+	command := append([]string{executable, HelperMode, root}, parts...)
+	process, err := config.LaunchHelper(ctx, supervision.ProcessConfig{
 		Command: command,
 		Dir:     root,
 		Env:     map[string]string{},
@@ -132,11 +142,11 @@ func EnsureWorkspace(ctx context.Context, cwd, workspaceRoot string, runner *Run
 	if code != 0 {
 		return "", fmt.Errorf("harness workspace creation failed: %s", process.ExitDescription())
 	}
-	return ResolveWorkspace(resolved, workspaceRoot)
+	return Resolve(resolved, workspaceRoot)
 }
 
-// WorkspaceMain creates the requested path under a root descriptor without following symlinks.
-func WorkspaceMain(args []string) int {
+// Main creates the requested path under a root descriptor without following symlinks.
+func Main(args []string) int {
 	if len(args) < 2 {
 		fmt.Fprintln(os.Stderr, "workspace creator requires ROOT COMPONENT [COMPONENT ...]")
 		return 64
