@@ -12,3 +12,7 @@ ip link set lo up
 ip link set eth0 up
 ip addr add 10.0.2.2/24 dev eth0
 ip route add default via 10.0.2.1
+# This fixture assigns the guest address statically instead of using KubeVirt's DHCP offer. Point it
+# at the k3s cluster DNS Service so in-cluster runner-gateway names resolve from the guest.
+rm -f /etc/resolv.conf
+printf 'nameserver 10.43.0.10\n' >/etc/resolv.conf
