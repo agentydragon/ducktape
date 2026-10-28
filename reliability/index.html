@@ -3,270 +3,211 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CI reliability · October 24–27, 2026</title>
+    <title>CI reliability · landed-change measurement · 28 October 2026</title>
     <style>
-      :root {
-        --ink: #17303b;
-        --muted: #536671;
-        --line: #d5dfe2;
-        --blue: #105b80;
-        --paper: #f5f7f8;
-        --teal: #09766e;
-      }
       * {
         box-sizing: border-box;
       }
+      html {
+        scroll-behavior: smooth;
+      }
       body {
         margin: 0;
-        background: var(--paper);
-        color: var(--ink);
+        background: #f4f6f8;
+        color: #172331;
         font:
-          16px/1.65 system-ui,
+          16px/1.6 system-ui,
           sans-serif;
       }
       main {
-        max-width: 1180px;
+        max-width: 1120px;
         margin: auto;
-        padding: 40px 30px 70px;
-      }
-      h1 {
-        font-size: clamp(31px, 4.2vw, 50px);
-        line-height: 1.12;
-        letter-spacing: -0.035em;
-        max-width: 950px;
-        margin: 14px 0 20px;
-      }
-      h2 {
-        font-size: 28px;
-        line-height: 1.25;
-        letter-spacing: -0.02em;
-        margin: 0 0 20px;
-      }
-      h3 {
-        font-size: 20px;
-        line-height: 1.3;
-        margin: 24px 0 10px;
-      }
-      p {
-        margin: 10px 0 18px;
-        max-width: 100ch;
+        padding: 36px 26px 64px;
       }
       a {
-        color: var(--blue);
-        overflow-wrap: anywhere;
+        color: #174e9b;
         text-underline-offset: 3px;
       }
-      code {
-        font-size: 0.86em;
-        overflow-wrap: anywhere;
+      header {
+        border-top: 5px solid #246257;
+        padding: 26px 0 20px;
+      }
+      h1 {
+        font-size: clamp(2rem, 5vw, 3.2rem);
+        line-height: 1.12;
+        max-width: 24ch;
+        letter-spacing: -0.03em;
+        margin: 12px 0 20px;
+      }
+      h2 {
+        font-size: 1.55rem;
+        line-height: 1.25;
+        margin: 0 0 16px;
+      }
+      h3 {
+        font-size: 1.1rem;
+      }
+      p {
+        max-width: 94ch;
+      }
+      section {
+        background: white;
+        border: 1px solid #dce3e8;
+        border-radius: 12px;
+        padding: 26px;
+        margin: 26px 0;
+        scroll-margin-top: 18px;
       }
       .eyebrow {
-        font-size: 12px;
-        letter-spacing: 0.11em;
+        font-size: 0.82rem;
+        letter-spacing: 0.09em;
         text-transform: uppercase;
-        font-weight: 750;
-        color: var(--muted);
+        font-weight: 700;
+        color: #46616a;
       }
       .lede {
-        font-size: 20px;
-        max-width: 980px;
+        font-size: 1.18rem;
+        color: #344955;
       }
-      .small,
-      figcaption {
-        font-size: 13px;
-        color: var(--muted);
+      .meta,
+      .small {
+        font-size: 0.88rem;
+        color: #4c606b;
       }
-      .cards {
+      .metrics {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 14px;
-        margin: 23px 0;
-      }
-      .card {
-        background: white;
-        border: 1px solid var(--line);
-        border-radius: 9px;
-        padding: 17px 20px;
+        margin: 22px 0;
       }
       .metric {
+        background: #e8f0ed;
+        border: 1px solid #cadcd4;
+        border-radius: 10px;
+        padding: 18px;
+      }
+      .metric strong {
         display: block;
-        font-size: 31px;
-        line-height: 1.2;
-        font-weight: 750;
-        margin: 9px 0;
+        font-size: 2rem;
+        line-height: 1.25;
+        color: #174f43;
       }
-      .callout {
-        padding: 18px 22px;
-        background: #e3efeb;
-        border-left: 5px solid var(--teal);
-        margin: 22px 0;
-        border-radius: 0 8px 8px 0;
+      .metric span {
+        display: block;
+        font-size: 0.88rem;
+        margin-top: 8px;
       }
-      .warning {
-        background: #fff0da;
-        border-left-color: #a26414;
+      .note {
+        padding: 15px 18px;
+        border-left: 4px solid #b18b28;
+        background: #fff7e3;
+      }
+      .good {
+        background: #edf5f0;
+        border-left-color: #32785b;
       }
       nav {
         display: flex;
         flex-wrap: wrap;
         gap: 10px 20px;
-        font-size: 14px;
-        margin: 25px 0;
-      }
-      section {
-        border-top: 1px solid var(--line);
-        margin-top: 38px;
-        padding-top: 28px;
+        margin: 20px 0;
       }
       table {
-        width: 100%;
         border-collapse: collapse;
-        font-size: 14px;
+        width: 100%;
+        font-size: 0.9rem;
+        min-width: 610px;
       }
       th,
       td {
+        padding: 12px 13px;
         text-align: left;
         vertical-align: top;
-        padding: 10px 12px;
-        border-bottom: 1px solid var(--line);
+        border-bottom: 1px solid #e3e8ec;
       }
       th {
-        background: #e4ecef;
+        background: #f1f5f6;
+        font-weight: 700;
       }
-      td:first-child {
-        font-weight: 650;
+      tbody tr:last-child td {
+        border-bottom: 0;
       }
-      .scroll {
-        overflow-x: auto;
-        margin: 18px 0;
+      .table-wrap {
+        overflow: auto;
+        max-width: 100%;
+        border: 1px solid #dce3e8;
+        border-radius: 8px;
+      }
+      code {
+        background: #edf1f4;
+        padding: 2px 5px;
+        border-radius: 4px;
+        font-size: 0.85em;
+        overflow-wrap: anywhere;
       }
       details {
-        background: white;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 15px 19px;
-        margin: 14px 0;
+        margin: 18px 0;
       }
       summary {
+        font-weight: 650;
         cursor: pointer;
-        font-weight: 700;
+        padding: 10px 0;
       }
       li {
         margin: 8px 0;
       }
-      .two {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-      }
       .bars {
         display: grid;
-        gap: 12px;
-        margin: 22px 0;
-      }
-      .bar-row {
-        display: grid;
-        grid-template-columns: 190px 1fr 110px;
-        gap: 10px;
-        align-items: center;
-        font-size: 14px;
-      }
-      .track {
-        background: #e0e8eb;
-        height: 24px;
-        border-radius: 4px;
-        overflow: hidden;
+        gap: 14px;
       }
       .bar {
-        height: 100%;
-        background: #277c8a;
+        display: grid;
+        grid-template-columns: 120px 1fr 90px;
+        gap: 12px;
+        align-items: center;
       }
-      .old {
-        background: #9baab2;
+      .track {
+        background: #edf1f3;
+        border-radius: 6px;
+        overflow: hidden;
       }
-      .timeline {
-        min-width: 850px;
-      }
-      .prior {
-        min-width: 740px;
+      .fill {
+        height: 24px;
+        background: #286f62;
+        border-radius: 6px;
       }
       footer {
-        font-size: 13px;
-        color: var(--muted);
+        font-size: 0.85rem;
+        color: #4c606b;
         margin-top: 32px;
-      }
-      button {
-        font: inherit;
-        color: var(--blue);
-        background: white;
-        border: 1px solid var(--line);
-        border-radius: 5px;
-        padding: 5px 10px;
-        cursor: pointer;
-      }
-      @media (max-width: 680px) {
-        main {
-          padding: 24px 16px 50px;
-        }
-        .cards,
-        .two {
-          grid-template-columns: 1fr;
-        }
-        .metric {
-          font-size: 28px;
-        }
-        .lede {
-          font-size: 18px;
-        }
-        h2 {
-          font-size: 25px;
-        }
-        .bar-row {
-          grid-template-columns: 115px 1fr 76px;
-          font-size: 12px;
-        }
-        .scroll table {
-          min-width: 650px;
-        }
-        .callout {
-          padding: 16px;
-        }
-        .card {
-          padding: 15px;
-        }
-      }
-
-      .status {
-        font-weight: 700;
-      }
-      .num {
-        font-variant-numeric: tabular-nums;
-      }
-      .reading {
-        max-width: 85ch;
-      }
-      .scroll {
-        max-width: 100%;
-      }
-      td,
-      th {
         overflow-wrap: anywhere;
       }
-      .legend {
-        font-size: 13px;
-      }
-      .evidence {
-        background: white;
-        padding: 18px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-      }
-      @media (max-width: 680px) {
-        h1 {
-          font-size: 33px;
+      @media (max-width: 600px) {
+        main {
+          padding: 20px 14px 40px;
         }
-        .scroll table {
-          min-width: 680px;
+        section {
+          padding: 18px 15px;
+        }
+        .metrics {
+          grid-template-columns: 1fr;
+        }
+        .metric strong {
+          font-size: 1.8rem;
+        }
+        .bar {
+          grid-template-columns: 85px 1fr 65px;
+          font-size: 0.85rem;
+        }
+        header {
+          padding-top: 18px;
+        }
+        td,
+        th {
+          padding: 10px;
+        }
+        nav {
+          font-size: 0.9rem;
         }
       }
     </style>
@@ -274,771 +215,2192 @@
   <body>
     <main>
       <header>
-        <div class="eyebrow">Ducktape · reliability refresh · 24–27 October 2026</div>
-        <h1>Mainline is mostly green.<br />System-test failures still cost retries.</h1>
+        <div class="eyebrow">Ducktape · CI reliability · 28 October 2026</div>
+        <h1>Remote errors and cleanup failures need different responses.</h1>
         <p class="lede">
-          Mainline full-suite CI failed in
-          <strong>2/345 completed invocations (0.58%)</strong>. The latest day’s PR Bazel attempts failed in
-          <strong>29/129 conclusive attempts (22.5%)</strong>, largely catching source and integration changes before
-          merge. Five selected failed-and-retried runs recover on the same tested SHA with explicit fresh passing
-          results; that is evidence of inconsistency, not the repository’s flake rate.
+          The later-window census includes 69 conclusive Bazel job attempts: 57
+          successes and 12 failures. Eleven failures used zero retries; one
+          tested an older default-policy source. Workflow reruns hid seven
+          first-attempt failures from the latest-run summary.
         </p>
-        <p class="small">
-          Window: 24 October 04:00 → 27 October 06:00 UTC, 2026. Job census: latest 24 hours plus earlier busy-window
-          samples. Baseline source reviewed:
-          <a href="https://github.com/agentydragon/ducktape/commit/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95"
-            >424eefe254c6</a
-          >; profiling/spikes use the pinned <code>f24d1e727184</code> source tree. Source review includes changes after
-          the measurement window.
+        <p class="meta">
+          Run-creation window: 03:06–06:05 UTC, 28 October 2026. Policy merge:
+          04:35:45 UTC. Job collection: 06:06:33–06:09:15 UTC. Pilot source
+          review <code>50bd44b472e3</code>; latest separate devel validation
+          <code>feb464de8093</code>. Outcomes are a collection sweep; some runs
+          completed after the creation-window cutoff. Separate combined-source
+          validation: the 06:15:14 UTC devel run passed at 06:23:36 UTC with MCP
+          cached. A later run executed both suites fresh and passed at 06:32:33
+          UTC; its detailed comparison is retained in the latency report.
         </p>
+        <div class="metrics">
+          <div class="metric">
+            <strong>12 / 69</strong
+            ><span>Failed conclusive Bazel job attempts; not a flake rate</span>
+          </div>
+          <div class="metric">
+            <strong>5 / 58</strong
+            ><span
+              >Retry-eligible remote errors under verified zero retries</span
+            >
+          </div>
+          <div class="metric">
+            <strong>3 / 2</strong
+            ><span
+              >Affected job attempts / unique cleanup-failure remote
+              executions</span
+            >
+          </div>
+        </div>
+        <nav aria-label="Report sections">
+          <a href="#policy">Policy exposures</a
+          ><a href="#culprits">Failure diagnoses</a
+          ><a href="#recoveries">Reruns</a><a href="#actions">Decisions</a
+          ><a href="#methods">Methods</a
+          ><a href="#retained-findings">Retained findings</a
+          ><a href="#continuity">Prior work</a>
+        </nav>
       </header>
-      <div class="cards">
-        <div class="card">
-          Mainline full-suite failures<span class="metric">2 / 345</span>One 60-second Rust scale-test timeout; one
-          remote CAS input eviction. All tested SHAs verified in inspected devel ancestry.
-        </div>
-        <div class="card">
-          PR Bazel failures<span class="metric">29 / 129</span>All conclusive success/failure attempts in the latest
-          day; 38 cancellations are separate. Counts are attempts, not distinct PRs.
-        </div>
-        <div class="card">
-          Verified same-source recoveries<span class="metric">5 / 5 retried</span>Selected failed runs with a conclusive
-          later attempt; six recovered targets, all freshly executed. No population flake probability implied.
-        </div>
-      </div>
-      <div class="callout">
-        <strong>27 October follow-up:</strong> the iptables fix is merged in
-        <a href="https://github.com/agentydragon/ducktape/pull/12248">#12248</a>. The corrected MCP deadline passed
-        three fresh full-suite runs, documented in
-        <a href="https://github.com/agentydragon/ducktape/pull/12254">#12254</a>. The dispatcher incident is explained
-        and its activation fix already merged in
-        <a href="https://github.com/agentydragon/ducktape/pull/12167">#12167</a>; cleanup error preservation remains
-        open in <a href="https://github.com/agentydragon/ducktape/pull/12244">#12244</a>. Frequency tables retain their
-        original window; these selected follow-ups do not measure a new failure rate.
-      </div>
-      <nav aria-label="Report navigation">
-        <a href="#frequencies">Frequencies</a><a href="#culprits">Observed culprits</a
-        ><a href="#recoveries">Verified recoveries</a><a href="#tracks">Next actions</a
-        ><a href="#risks">Source risk scan</a><a href="#continuity">Prior work</a><a href="#method">Coverage</a>
-      </nav>
-      <section id="frequencies">
-        <h2>Failure frequency depends on the denominator</h2>
+      <section id="policy">
+        <h2>Zero retries has an observed recovery tradeoff</h2>
         <p>
-          Keep three populations distinct: mainline full-suite invocations across 74 hours; all PR Bazel attempts across
-          the latest 24 hours; and a selected retry subset. A workflow failure can occur outside Bazel, and a failed
-          invocation can fail before any test runs.
+          <strong
+            >Five remote-execution failures occurred among 58 verified
+            zero-retry attempts (8.6%).</strong
+          >
+          Three were Firecracker VM pause socket refusals; one was an executor
+          OOM; one was transport EOF with a server-shutdown GOAWAY. All five
+          surfaced as remote <code>UNAVAILABLE</code>. Four later workflow
+          attempts succeeded on the identical tested source, still using zero
+          retries; the OOM rerun was canceled.
         </p>
-        <div class="scroll">
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Scrollable evidence table"
+        >
           <table>
             <thead>
               <tr>
-                <th scope="col">PR workflow, latest day</th>
-                <th scope="col">Failed attempts</th>
+                <th scope="col">Effective policy</th>
                 <th scope="col">Conclusive attempts</th>
-                <th scope="col">Cancelled</th>
-                <th scope="col">Latest-job outcomes per run</th>
+                <th scope="col">Successful attempts</th>
+                <th scope="col">Failed attempts</th>
+                <th scope="col">Interpretation</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>ci.yml</td>
+                <td>0</td>
+                <td>58</td>
+                <td>47</td>
+                <td>11</td>
+                <td>5 remote UNAVAILABLE;6 test/build failures</td>
+              </tr>
+              <tr>
+                <td>Bazel default 5</td>
                 <td>5</td>
-                <td>60</td>
-                <td>14</td>
-                <td>{&#x27;success&#x27;: 55, &#x27;cancelled&#x27;: 14, &#x27;failure&#x27;: 3}</td>
+                <td>4</td>
+                <td>1</td>
+                <td>Old tested sources; one schema/test failure</td>
               </tr>
               <tr>
-                <td>trusted-fork-pr-ci.yml</td>
-                <td>24</td>
-                <td>69</td>
-                <td>24</td>
-                <td>{&#x27;cancelled&#x27;: 24, &#x27;success&#x27;: 45, &#x27;failure&#x27;: 20}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p>
-          Mainline has 343 successes, one <code>TESTS_FAILED</code> and one <code>REMOTE_CACHE_EVICTED</code>. Its 345
-          invocations reconcile to 518,774 tracked target observations. Those target histories include cached passes.
-          They are not 518,774 independent executions.
-        </p>
-        <h3>PR target-specific exposure</h3>
-        <p>
-          101 test invocations plus 28 log-verified “no affected targets” jobs account for all 129 conclusive jobs.
-          Fully paginated test groups contain 8,691 final target verdicts. Counts below are per target/invocation in the
-          normal CI configuration; cached and mixed/fresh verdicts are shown separately. Co-failing targets overlap.
-        </p>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Target</th>
-                <th scope="col">Failed / observed verdicts</th>
-                <th scope="col">Fully cached verdicts</th>
-                <th scope="col">At least one fresh run</th>
-                <th scope="col">Observed status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><code>//cluster/cdk8s:test_generate_manifests</code></td>
-                <td>7 / 44</td>
-                <td>17</td>
-                <td>27</td>
-                <td>{&#x27;PASSED&#x27;: 37, &#x27;FAILED&#x27;: 7}</td>
-              </tr>
-              <tr>
-                <td><code>//finance/plaid/spend/ui:visual_test</code></td>
-                <td>4 / 22</td>
-                <td>3</td>
-                <td>19</td>
-                <td>{&#x27;PASSED&#x27;: 18, &#x27;FAILED&#x27;: 4}</td>
-              </tr>
-              <tr>
-                <td><code>//agentplane/system_tests:test_dispatcher</code></td>
-                <td>3 / 39</td>
-                <td>20</td>
-                <td>19</td>
-                <td>{&#x27;PASSED&#x27;: 36, &#x27;FAILED&#x27;: 3}</td>
-              </tr>
-              <tr>
-                <td>
-                  <code>//agentplane/system_tests:test_vm_sandbox_vm</code>
-                </td>
-                <td>3 / 39</td>
-                <td>16</td>
-                <td>23</td>
-                <td>{&#x27;PASSED&#x27;: 36, &#x27;FAILED&#x27;: 3}</td>
-              </tr>
-              <tr>
-                <td>
-                  <code>//cluster/validation:test_cluster_integration</code>
-                </td>
-                <td>2 / 32</td>
-                <td>10</td>
-                <td>22</td>
-                <td>{&#x27;PASSED&#x27;: 30, &#x27;FAILED&#x27;: 2}</td>
-              </tr>
-              <tr>
-                <td>
-                  <code>//cluster/validation:test_generator_namespace</code>
-                </td>
-                <td>2 / 22</td>
-                <td>8</td>
-                <td>14</td>
-                <td>{&#x27;PASSED&#x27;: 20, &#x27;TIMED_OUT&#x27;: 2}</td>
-              </tr>
-              <tr>
-                <td>
-                  <code>//agentplane/app/frontend/threads:projected_session_test</code>
-                </td>
-                <td>2 / 23</td>
-                <td>17</td>
+                <td>Unknown</td>
                 <td>6</td>
-                <td>{&#x27;PASSED&#x27;: 21, &#x27;FAILED&#x27;: 2}</td>
-              </tr>
-              <tr>
-                <td><code>//agentplane/system_tests:test_mcp</code></td>
-                <td>2 / 40</td>
-                <td>18</td>
-                <td>22</td>
-                <td>{&#x27;PASSED&#x27;: 38, &#x27;FAILED&#x27;: 2}</td>
-              </tr>
-              <tr>
-                <td><code>//agentplane/app/frontend:visual_scenes</code></td>
-                <td>1 / 26</td>
-                <td>17</td>
-                <td>9</td>
-                <td>{&#x27;PASSED&#x27;: 25, &#x27;FAILED&#x27;: 1}</td>
-              </tr>
-              <tr>
-                <td><code>//cluster/cdk8s:test_agent_rbac</code></td>
-                <td>1 / 30</td>
-                <td>15</td>
-                <td>15</td>
-                <td>{&#x27;PASSED&#x27;: 29, &#x27;FAILED&#x27;: 1}</td>
-              </tr>
-              <tr>
-                <td><code>//cluster/cdk8s/litellm:test_config</code></td>
-                <td>1 / 4</td>
-                <td>2</td>
-                <td>2</td>
-                <td>{&#x27;PASSED&#x27;: 3, &#x27;TIMED_OUT&#x27;: 1}</td>
-              </tr>
-              <tr>
-                <td><code>//cluster/terraform/main:validate</code></td>
-                <td>1 / 5</td>
-                <td>2</td>
-                <td>3</td>
-                <td>{&#x27;PASSED&#x27;: 4, &#x27;TIMED_OUT&#x27;: 1}</td>
-              </tr>
-              <tr>
+                <td>6</td>
+                <td>0</td>
                 <td>
-                  <code>//devinfra/js/debundle/e2e:conflict_diagnostics_scale_test</code>
+                  No indexed test child; job success alone does not prove test
+                  execution
                 </td>
-                <td>1 / 13</td>
-                <td>3</td>
-                <td>10</td>
-                <td>{&#x27;PASSED&#x27;: 12, &#x27;TIMED_OUT&#x27;: 1}</td>
               </tr>
             </tbody>
           </table>
         </div>
         <p>
-          The seven manifest-test failures and source type/lint errors are useful validation failures; they are not
-          assigned to the intermittent-failure category. Build-only failures may have no test target outcome and are
-          included only in the invocation/job denominator.
+          This is an observed failure cost alongside the intended cancellation
+          mitigation. It does <strong>not</strong> prove five avoidable failures
+          or that default retries would have recovered them automatically.
+          <a
+            href="https://github.com/bazelbuild/bazel/blob/9.2.0/src/main/java/com/google/devtools/build/lib/remote/RemoteRetrier.java#L48-L79"
+            >Pinned Bazel 9.2 retry classifier</a
+          >
+          treats UNAVAILABLE as transient; zero removes that opportunity. The
+          five default-policy attempts are not a matched control. No production
+          policy is changed by this report.
+        </p>
+        <p class="note">
+          Do not make blanket zero retries permanent on the strength of the
+          cancellation probe alone. The recovery tradeoff is now observed;
+          realized canceled-work savings are still unquantified. Keep the policy
+          decision separate from the three cleanup-failed attempts (two remote
+          executions) and four source/test failures.
         </p>
       </section>
       <section id="culprits">
-        <h2>Observed failures and their mechanisms</h2>
-        <h3>k3s setup: a real xtables lock conflict</h3>
-        <p>
-          In
-          <a href="https://app.buildbuddy.io/invocation/8cf4fdfe-2fc0-5d60-9d3d-3d0aabb87dd1">8cf4fdfe</a>, all ten MCP
-          cases error in one shared fixture. <code>K3s.start</code> checks then appends a NAT masquerade rule while
-          k3s/kube-proxy can also update iptables. The append exits 4 with “Can’t lock /run/xtables.lock”. The baseline
-          <a
-            href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/agentplane/system_tests/k3s/stack.py"
-            >agentplane/system_tests/k3s/stack.py</a
-          >
-          invokes both commands without <code>-w</code> and treats every nonzero check as a missing rule. The same
-          tested SHA later passes the MCP target from a fresh execution. Ten pytest setup errors are one target/fixture
-          failure. Follow-up:
-          <a href="https://github.com/agentydragon/ducktape/pull/12248">#12248</a>
-          now uses <code>iptables -w 5</code> on both operations and appends only when the check returns 1. This waits
-          on the real xtables lock and proceeds when it is available; five seconds bounds acquisition, rather than
-          imposing a five-second sleep. Five real-lock tests and the exact-head CI passed. No fleet recurrence reduction
-          has been measured.
-        </p>
-        <h3>MCP early wait: source defect, now a merged candidate fix</h3>
-        <p>
-          <a href="https://app.buildbuddy.io/invocation/9ba054ed-664f-5a81-981e-3b365a5268d9">9ba054ed</a>
-          fails the Codex launcher’s
-          <code>wait_for_turn(wait_seconds=1)</code> expectation;
-          <a href="https://app.buildbuddy.io/invocation/9a80d2fa-9d90-531c-b0a4-a3fad67ba017">9a80d2fa</a>
-          explicitly passes the target fresh on the identical tested SHA
-          <code>a31e93dfa297fa3185e6f94bbefe3120c5b515a9</code>.
-          <a href="https://github.com/agentydragon/ducktape/pull/12189">#12189</a>
-          references this exact incident and changes the authorization/wait budget and propagated-deadline boundary. It
-          merged after the window; current source was reviewed. The follow-up at the exact merged tree executed three
-          fresh full MCP suites: 12/12 cases passed in each, with no cached test result and one attempt per run. The
-          focused Go wait tests also passed.
-          <a
-            href="https://github.com/agentydragon/ducktape/blob/4f4fd6f8b1c3f12c19dd347718c2323ce77b6122/agentplane/debug/2026_10_27_orchestration_wait_deadline_measurement.md"
-            >The measurement note</a
-          >
-          records the invocations and exclusions. Zero failures in three selected exposures verifies the corrected path
-          executes; unmatched pre/post runs do not estimate a causal failure-rate reduction.
-        </p>
-        <h3>Dispatcher: three distinct failures, one verified same-source recovery</h3>
-        <p>
-          One revision fails an exact caller-set assertion after
-          <code>actions</code> becomes a configured caller: a source/test mismatch. An earlier revision stalls in the
-          deployed ready/admission scenario for its 600s pytest deadline. The recovered
-          <a href="https://app.buildbuddy.io/invocation/7d08c8f3-2186-5057-9b1f-08aa7a98a740">7d08c8f3</a>
-          fails its cleanup wait for <code>Ready.reason=Stopped</code> after the runner reports
-          <code>Codex executor startup: context deadline exceeded</code>. Its retained wake artifact reports
-          <code>passed: true</code>: there was no earlier scenario exception hidden in this particular failure.
-          <a href="https://app.buildbuddy.io/invocation/786f259e-a8b7-5444-b806-a23f7ebf07eb">786f259e</a>
-          passes dispatcher fresh on identical tested SHA
-          <code>1393bc64da85dc49a8ab37151920625b7e0d77c3</code>.
-        </p>
-        <p>
-          Follow-up inspection found
-          <code>fork/exec /bin/codex: no such file or directory</code> in the companion diagnostics. The target selected
-          the <code>model_free</code> image, which lacked Codex. Failed child startup killed the companion, leaving its
-          control socket unavailable during restart backoff, so the runner could neither activate nor quiesce.
-          <a href="https://github.com/agentydragon/ducktape/pull/12167">#12167</a>
-          had already switched the test to the harness image and kept the companion serving when it refuses an
-          unstartable claim. The same-source retry proves admission and cleanup, not working Codex execution. A fresh
-          corrected-source replay passed all three dispatcher scenarios (<a
-            href="https://app.buildbuddy.io/invocation/19325b64-2793-4f6e-8ab1-2211efd4cc38"
-            >19325b64</a
-          >). The separate open
-          <a href="https://github.com/agentydragon/ducktape/pull/12244">#12244</a>
-          preserves an original scenario exception when cleanup also fails, and keeps cleanup-only failure fatal. Its
-          three cleanup-helper tests and exact-head CI passed; it is still awaiting review and merge.
-        </p>
-        <h3>VM OOM acceptance: three failures in a new contract</h3>
-        <p>
-          Three PR failures occur in the new OOM containment case: one tool response reports an unknown exec-server
-          session, and two later revisions fail because the executor cgroup path differs before/after OOM. The current
-          <a
-            href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/agentplane/system_tests/test_vm_sandbox.py"
-            >agentplane/system_tests/test_vm_sandbox.py</a
-          >
-          still requires the same runner boot, app-server process, native session and surviving cgroup, plus a working
-          follow-up. Later passes exist on other tested revisions; these are not verified same-source recoveries.
-          Preserve the OOM containment contract and retained native/console artifacts; determine whether the leaf was
-          replaced before weakening the equality.
-        </p>
-        <h3>Source/UI failures are not interchangeable with timing failures</h3>
-        <p>
-          Manifest drift/orphan/missing dependency assertions recur on seven target verdicts. Other concrete failures
-          include missing Rust names, ESLint/mypy errors, a changed projected-session model label, an outdated menu
-          item, and finance visual selectors. The four finance failures include a missing tooltip, an ambiguous selector
-          matching three elements, and a later unavailable-tax assertion. Their different signatures and source
-          revisions do not establish one shared browser flake. Scope selectors to their rendered subject and preserve
-          the semantic assertion; refresh generated output and all callers with source changes.
-        </p>
-        <h3>Mainline and bare timeouts: different mechanisms</h3>
-        <p>
-          <a href="https://app.buildbuddy.io/invocation/ec627215-7de7-5e7f-b251-bb2192236722">ec627215</a>
-          fails before the binary-diff test runs: a required CAS input
-          <code>v1_plain</code> is “no longer available remotely”. No failed-test log exists.
-          <a href="https://app.buildbuddy.io/invocation/7f06573b-2078-5a68-adcd-1cc0d8bf35f9">7f06573b</a>
-          times out the value-flow sharing scale test at 60.018s; worker records show about 60.84 CPU-seconds. A PR
-          conflict-diagnostics scale timeout similarly uses about 61.14 CPU-seconds. These are active CPU-bound scale
-          cases, not evidence of a common fixture-startup wedge; no timeout policy was changed.
-        </p>
-        <div id="timeout-findings">
-          <p>
-            The generator-namespace timeout
-            <a href="https://app.buildbuddy.io/invocation/0925c736-06ab-5cdb-921b-51371a833fba">0925c736</a>
-            has a 64.23s remote execution interval, no usage samples, and a retained worker log ending after snapshot
-            restore with no workspace-drive attachment. A linked execution then succeeds in about 3.2s; the workflow’s
-            later attempt explicitly reports a fresh pass on the same source. Terraform’s 60.51s timeout also has no
-            usage samples; a co-failing litellm action has 14.72 CPU-seconds over 74.50s. These are distinct from the
-            CPU-saturated Rust scale tests. The exact hosted preparation/startup stage is unavailable; retain the
-            execution IDs and request host-stage traces rather than increase all small-test timeouts. Missing usage or
-            attachment records alone do not prove a particular filesystem operation caused the delay.
-          </p>
+        <h2>All twelve failed attempts are classified</h2>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Scrollable evidence table"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Run / attempt</th>
+                <th scope="col">Retries</th>
+                <th scope="col">Classification</th>
+                <th scope="col">Observed signature</th>
+                <th scope="col">Invocation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40633471448/job/122634982301"
+                    >40633471448 /1</a
+                  >
+                </td>
+                <td>5 (Bazel default)</td>
+                <td>schema assertion</td>
+                <td>
+                  Notification worker retention fixture: column event of
+                  relation entry does not exist
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/2bc0b6d2-7369-56be-9c15-fb2247962d8b"
+                    >2bc0b6d2</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40635208160/job/122640480321"
+                    >40635208160 /1</a
+                  >
+                </td>
+                <td>0</td>
+                <td>remote execution transport unavailable</td>
+                <td>
+                  Remote UNAVAILABLE: transport EOF with server_shutting_down
+                  GOAWAY
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/89f750e7-f4e5-5cd8-ab8f-436ce8deeae5"
+                    >89f750e7</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40635290761/job/122640744212"
+                    >40635290761 /1</a
+                  >
+                </td>
+                <td>0</td>
+                <td>remote executor firecracker</td>
+                <td>
+                  Remote UNAVAILABLE: Firecracker VM pause API socket refused
+                  connection
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/486b181b-5dec-5a78-a671-fd8b21f1ec70"
+                    >486b181b</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40635291712/job/122640748606"
+                    >40635291712 /1</a
+                  >
+                </td>
+                <td>0</td>
+                <td>remote executor firecracker</td>
+                <td>
+                  Remote UNAVAILABLE: Firecracker VM pause API socket refused
+                  connection
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/eec3b304-d25d-51a8-a8e3-dbd5b7d46676"
+                    >eec3b304</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40635342434/job/122640913989"
+                    >40635342434 /1</a
+                  >
+                </td>
+                <td>0</td>
+                <td>remote executor oom</td>
+                <td>
+                  Remote UNAVAILABLE: executor OOM termination; estimate10GB,
+                  observed~4.7GB
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/963eabb8-7b53-5606-ab76-85ae65a836c2"
+                    >963eabb8</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40636650447/job/122645055492"
+                    >40636650447 /1</a
+                  >
+                </td>
+                <td>0</td>
+                <td>service assertion</td>
+                <td>Portfolio read expected ready but returned unavailable</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/c68d8c11-889a-53c5-958f-437bf6c199cd"
+                    >c68d8c11</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40636676607/job/122645140107"
+                    >40636676607 /1</a
+                  >
+                </td>
+                <td>0</td>
+                <td>fixture cleanup lifecycle timeout</td>
+                <td>
+                  Sandbox cleanup timed out waiting for Ready.reason=Stopped;
+                  retained Quiescing/PendingCommand state with latched journal
+                  context-canceled failure
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/b72b1392-1f2d-5eb1-81ed-e922cbfb37f0"
+                    >b72b1392</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40636861308/job/122645722902"
+                    >40636861308 /1</a
+                  >
+                </td>
+                <td>0</td>
+                <td>fixture cleanup lifecycle timeout</td>
+                <td>
+                  Sandbox cleanup timed out waiting for Ready.reason=Stopped;
+                  retained Quiescing/PendingCommand state with latched journal
+                  context-canceled failure
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/f4f6abb3-4b33-5b8d-b81a-9f9ffe315201"
+                    >f4f6abb3</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40637699280/job/122648367674"
+                    >40637699280 /1</a
+                  >
+                </td>
+                <td>0</td>
+                <td>fixture cleanup lifecycle timeout</td>
+                <td>
+                  Sandbox cleanup timed out waiting for Ready.reason=Stopped;
+                  retained Quiescing/PendingCommand state with latched journal
+                  context-canceled failure
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/c9e921b2-247b-5ff1-817b-fa5a208390ef"
+                    >c9e921b2</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40637916403/job/122649067810"
+                    >40637916403 /1</a
+                  >
+                </td>
+                <td>0</td>
+                <td>remote executor firecracker</td>
+                <td>
+                  Remote UNAVAILABLE: Firecracker VM pause API socket refused
+                  connection
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/6772d255-d2b6-5428-9253-59f25e6d81f4"
+                    >6772d255</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40638840779/job/122651978094"
+                    >40638840779 /1</a
+                  >
+                </td>
+                <td>0</td>
+                <td>source type error</td>
+                <td>
+                  executor_companion.py:61 mypy no-any-return in a
+                  bool-returning function
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/bc8e0f33-1a05-5fdb-b637-4a449278ebe7"
+                    >bc8e0f33</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40640090985/job/122655968370"
+                    >40640090985 /1</a
+                  >
+                </td>
+                <td>0</td>
+                <td>source lint and ui assertions</td>
+                <td>
+                  ESLint react-hooks/exhaustive-deps for amountPerRate; four
+                  rendered UI assertions failed
+                </td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/7e0989c2-ffb0-5ab8-bb9c-39e146ece84f"
+                    >7e0989c2</a
+                  >
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
+        <p>
+          Three failed attempts—one mainline and two PR attempts—retain the
+          convergence failure described below. They map to
+          <strong>two unique remote executions</strong>: the mainline and one PR
+          share the identical execution ID, so they are not independent
+          incidents. No 300s-per-job worker-cost sum is assigned. Observed
+          state: Sandbox <code>Suspended</code> but
+          <code>Ready=False / Quiescing</code>; Lease stage
+          <code>draining</code> with a <code>PendingCommand</code>. The same
+          session’s runner lifecycle and ingress report a latched
+          <code>journal failed; reopen it for recovery: context canceled</code>.
+          The cleanup wait then expires after 300s. No pod remains in the
+          captured snapshot.
+        </p>
+        <p>
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/4dd43826a65f4cfb80f84096965494e351381111/agentplane/runner/journal.go#L369"
+            >Journal.checkWritableLocked</a
+          >
+          rejects further writes after the journal records failure;
+          transaction/commit/callback error paths latch it.
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/4dd43826a65f4cfb80f84096965494e351381111/agentplane/runner/session_controller.go#L182"
+            >Session teardown</a
+          >
+          advances halt→stop→seal;
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/4dd43826a65f4cfb80f84096965494e351381111/agentplane/runner/runner_controller.go#L155"
+            >Runner quiesce</a
+          >
+          waits for session teardown and exact sealed-ingress acknowledgments.
+          The pending session and journal errors align in retained diagnostics.
+        </p>
+        <p>
+          <strong>Visibility boundary:</strong> the original canceled journal
+          operation and journal database were not retained; there was no
+          previous-container log. Controller update conflicts and exporter DNS
+          errors also appear, but are not established causes. The merged
+          cleanup-diagnostics PR<a
+            href="https://github.com/agentydragon/ducktape/pull/12244"
+            >#12244</a
+          >
+          preserves an earlier exception; it does not fix this stalled state.
+        </p>
+        <p class="note good">
+          <strong>Next owned probe:</strong> cancel at journal
+          transaction/commit boundaries, reopen the journal, and verify that an
+          admitted command’s identity/cursor remains recoverable and quiesce
+          reaches its terminal state. Preserve uncertain admission; do not drop
+          the blocker, replay the command, increase the timeout or weaken the
+          Stopped assertion.
+        </p>
       </section>
       <section id="recoveries">
-        <h2>Verified same-source recovery, with fresh verdicts</h2>
-        <p>
-          Six initially failed runs were retried: five have conclusive later results and recover; one later attempt was
-          cancelled and is excluded from 5/5. Every listed target has explicit <code>PASSED</code>, not merely an absent
-          result or a successful workflow. Same source does not hold worker, executor state, credentials, external
-          services or cache state fixed.
-        </p>
-        <div class="scroll">
+        <h2>
+          Later workflow recovery is not an automatic-retry counterfactual
+        </h2>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Scrollable evidence table"
+        >
           <table>
             <thead>
               <tr>
-                <th scope="col">Workflow run</th>
-                <th scope="col">Full tested SHA</th>
-                <th scope="col">Failed → passed invocation</th>
-                <th scope="col">Explicit target result</th>
-                <th scope="col">Failed end → retry assignment</th>
+                <th scope="col">Run</th>
+                <th scope="col">First failure</th>
+                <th scope="col">Later workflow</th>
+                <th scope="col">Same tested SHA</th>
+                <th scope="col">Later test invocation</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td>
-                  <a href="https://github.com/agentydragon/ducktape/actions/runs/40409596741">40409596741</a>
-                </td>
-                <td><code>df9fc5c3ec2fc2ff5358ad4c5754cb2d4ae6bb45</code></td>
-                <td>
-                  <a href="https://app.buildbuddy.io/invocation/392b76a7-0804-5924-80fc-76f0fae14ba9">392b76a7</a>
-                  →
-                  <a href="https://app.buildbuddy.io/invocation/ddfb6ec8-073d-5a8a-9032-4277274d5a8d">ddfb6ec8</a>
-                </td>
-                <td>
-                  <code>//cluster/cdk8s/litellm:test_config</code> TIMED_OUT → PASSED (fresh)<br /><code
-                    >//cluster/terraform/main:validate</code
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40637916403/job/122649067810"
+                    >40637916403</a
                   >
-                  TIMED_OUT → PASSED (fresh)
                 </td>
-                <td>84s</td>
-              </tr>
-              <tr>
+                <td>remote executor firecracker</td>
+                <td>success</td>
+                <td>Yes</td>
                 <td>
-                  <a href="https://github.com/agentydragon/ducktape/actions/runs/40295293319">40295293319</a>
-                </td>
-                <td><code>eb800b6d082f03f863e1ec47668fb49bd397766d</code></td>
-                <td>
-                  <a href="https://app.buildbuddy.io/invocation/8cf4fdfe-2fc0-5d60-9d3d-3d0aabb87dd1">8cf4fdfe</a>
-                  →
-                  <a href="https://app.buildbuddy.io/invocation/7f0582c0-8b29-56ef-b612-a5fde1f89595">7f0582c0</a>
-                </td>
-                <td><code>//agentplane/system_tests:test_mcp</code> FAILED → PASSED (fresh)</td>
-                <td>126s</td>
-              </tr>
-              <tr>
-                <td>
-                  <a href="https://github.com/agentydragon/ducktape/actions/runs/40366801197">40366801197</a>
-                </td>
-                <td><code>6af628f2212a4c5c62e9ec6c811a7d34aaf697a3</code></td>
-                <td>
-                  <a href="https://app.buildbuddy.io/invocation/0925c736-06ab-5cdb-921b-51371a833fba">0925c736</a>
-                  →
-                  <a href="https://app.buildbuddy.io/invocation/5a19d48c-dd66-54af-9792-727a0b7698a7">5a19d48c</a>
-                </td>
-                <td>
-                  <code>//cluster/validation:test_generator_namespace</code>
-                  TIMED_OUT → PASSED (fresh)
-                </td>
-                <td>57s</td>
-              </tr>
-              <tr>
-                <td>
-                  <a href="https://github.com/agentydragon/ducktape/actions/runs/40383976168">40383976168</a>
-                </td>
-                <td><code>1393bc64da85dc49a8ab37151920625b7e0d77c3</code></td>
-                <td>
-                  <a href="https://app.buildbuddy.io/invocation/7d08c8f3-2186-5057-9b1f-08aa7a98a740">7d08c8f3</a>
-                  →
-                  <a href="https://app.buildbuddy.io/invocation/786f259e-a8b7-5444-b806-a23f7ebf07eb">786f259e</a>
-                </td>
-                <td><code>//agentplane/system_tests:test_dispatcher</code> FAILED → PASSED (fresh)</td>
-                <td>3106s</td>
-              </tr>
-              <tr>
-                <td>
-                  <a href="https://github.com/agentydragon/ducktape/actions/runs/40457828797">40457828797</a>
-                </td>
-                <td><code>a31e93dfa297fa3185e6f94bbefe3120c5b515a9</code></td>
-                <td>
-                  <a href="https://app.buildbuddy.io/invocation/9ba054ed-664f-5a81-981e-3b365a5268d9">9ba054ed</a>
-                  →
-                  <a href="https://app.buildbuddy.io/invocation/9a80d2fa-9d90-531c-b0a4-a3fad67ba017">9a80d2fa</a>
-                </td>
-                <td><code>//agentplane/system_tests:test_mcp</code> FAILED → PASSED (fresh)</td>
-                <td>71s</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p>
-          Intervals before the next assigned attempt are not automatically operator or scheduler delay. Four
-          failed-end-to-assignment intervals are 57–126s; one is 3,106s. Attempt metadata separates 52–3,101s before the
-          recorded rerun start from just 4–5s afterward to runner assignment. All triggering accounts are User-type; two
-          match the original actor and three differ. These account fields do not establish manual intent. No request
-          actor or intent is inferred from account identity. The selected recovery fraction 5/5 must not be extrapolated
-          to all 29 failures or to all repository builds.
-        </p>
-      </section>
-      <section id="tracks">
-        <h2>Recommended next reliability tracks</h2>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Priority</th>
-                <th scope="col">Action / source</th>
-                <th scope="col">Expected gain and validation</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>1 · Review cleanup error preservation</td>
-                <td>
-                  Review open
-                  <a href="https://github.com/agentydragon/ducktape/pull/12244">#12244</a>, whose required checks
-                  passed. Activation fix
-                  <a href="https://github.com/agentydragon/ducktape/pull/12167">#12167</a>
-                  is already merged; keep those two changes distinct.
-                </td>
-                <td>
-                  Retains the primary traceback when both scenario and cleanup fail, while cleanup-only failure still
-                  fails the test. Diagnostic benefit is tested; no recurrence or common-PR time saving is assigned.
+                  <a
+                    href="https://app.buildbuddy.io/invocation/8f2ee8cb-c85f-5f24-92ef-54796ea0044a"
+                    >8f2ee8cb</a
+                  >
                 </td>
               </tr>
               <tr>
-                <td>Completed · iptables locking</td>
                 <td>
-                  <a href="https://github.com/agentydragon/ducktape/pull/12248">#12248</a>
-                  merged the bounded lock wait and fail-closed check handling. Retain its real-lock contention and
-                  expiry tests.
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40637699280/job/122648367674"
+                    >40637699280</a
+                  >
                 </td>
+                <td>fixture cleanup lifecycle timeout</td>
+                <td>success</td>
+                <td>Yes</td>
                 <td>
-                  Mechanism verified locally on RBE and full exact-head CI passed. Observe future comparable fixture
-                  exposures before claiming fewer retries; do not implement this fix again.
-                </td>
-              </tr>
-              <tr>
-                <td>Completed · deadline acceptance replay</td>
-                <td>
-                  <a href="https://github.com/agentydragon/ducktape/pull/12254">#12254</a>
-                  records three fresh full MCP passes on merged
-                  <a href="https://github.com/agentydragon/ducktape/pull/12189">#12189</a>. Retain backend-error,
-                  expiry, cancellation and resume-token coverage.
-                </td>
-                <td>
-                  Zero of three selected runs failed; all 36 pytest cases passed. This is bounded acceptance evidence,
-                  not elimination or a matched failure-rate comparison. A larger replay needs a new recurrence signal.
+                  <a
+                    href="https://app.buildbuddy.io/invocation/d80b7fe5-0ab5-589e-9e66-41c0a1a53008"
+                    >d80b7fe5</a
+                  >
                 </td>
               </tr>
               <tr>
-                <td>2 · Separate startup timeouts from scale CPU</td>
                 <td>
-                  Use retained execution/worker logs to classify each timeout before any size change. CPU-bound Rust
-                  scale cases need a real native profiler; pre-command VM cases need hosted stage traces.
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40636676607/job/122645140107"
+                    >40636676607</a
+                  >
                 </td>
+                <td>fixture cleanup lifecycle timeout</td>
+                <td>success</td>
+                <td>Yes</td>
                 <td>
-                  Avoid a blanket timeout workaround. Mainline incidence is one scale timeout / 345 full suites; two
-                  generator namespace PR verdicts timed out / 22 observed verdicts. Preserve full test coverage.
+                  <a
+                    href="https://app.buildbuddy.io/invocation/aa88b31c-e45e-5288-b97c-4bb8c36a3f75"
+                    >aa88b31c</a
+                  >
                 </td>
               </tr>
               <tr>
-                <td>3 · Keep fast source feedback intact</td>
                 <td>
-                  Regenerate cdk8s outputs on the tested base, update every caller, and keep lint/type/semantic checks.
-                  Fix UI subject selectors at their actual renderer.
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40635342434/job/122640913989"
+                    >40635342434</a
+                  >
                 </td>
+                <td>remote executor oom</td>
+                <td>cancelled</td>
+                <td>Not established</td>
+                <td>Not indexed</td>
+              </tr>
+              <tr>
                 <td>
-                  Reduces avoidable edit/retry rounds; measured gate failures are not permission to disable coverage. No
-                  quantified fleet speedup assigned.
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40635290761/job/122640744212"
+                    >40635290761</a
+                  >
+                </td>
+                <td>remote executor firecracker</td>
+                <td>success</td>
+                <td>Yes</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/088dc0c7-6fe7-582e-b5f1-734fd776da3a"
+                    >088dc0c7</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40635291712/job/122640748606"
+                    >40635291712</a
+                  >
+                </td>
+                <td>remote executor firecracker</td>
+                <td>success</td>
+                <td>Yes</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/c0225cd8-45ba-5161-8c9e-e61707dfd8cc"
+                    >c0225cd8</a
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40635208160/job/122640480321"
+                    >40635208160</a
+                  >
+                </td>
+                <td>remote execution transport unavailable</td>
+                <td>success</td>
+                <td>Yes</td>
+                <td>
+                  <a
+                    href="https://app.buildbuddy.io/invocation/893be73d-6924-54cf-86ee-cc64f2989051"
+                    >893be73d</a
+                  >
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
         <p>
-          The companion latency report tests sharding and records worker cost. No tests, workflow policy, production
-          setting or scanning policy were changed by this analysis.
+          Six of these seven reruns succeeded and one was canceled. Four
+          remote-error pairs and the two cleanup-stall pairs use the same exact
+          tested SHA. A passing invocation/workflow is not by itself a verified
+          fresh passing verdict for the formerly failed target; cached work and
+          selection remain separate. These selected pairs are not a repository
+          flake rate.
         </p>
       </section>
-      <section id="risks">
-        <h2>Fragile-pattern scan: retained and retired leads</h2>
-        <p>
-          These source-only risks retain the baseline review at <code>424eefe254c6</code>; this disposition follow-up
-          does not re-audit them. No grep count is used as a flake rate.
-        </p>
-        <div class="scroll">
+      <section id="cancellation">
+        <h2>Six natural cancellations do not establish saved compute</h2>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Scrollable evidence table"
+        >
           <table>
             <thead>
               <tr>
-                <th scope="col">Prior lead</th>
-                <th scope="col">Current source disposition</th>
-                <th scope="col">Next bounded check</th>
+                <th scope="col">Run</th>
+                <th scope="col">Actual retries</th>
+                <th scope="col">Helper acknowledgment</th>
+                <th scope="col">Queues after displayed ack second</th>
+                <th scope="col">Same-action matches</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>Study Casino readiness</td>
                 <td>
                   <a
-                    href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/study_casino/test_e2e_browser.py"
-                    >study_casino/test_e2e_browser.py</a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40633319279/job/122634492385"
+                    >40633319279</a
                   >
-                  still waits 500ms before a render-health check.
                 </td>
-                <td>
-                  Wait for the intended spinning/settled state; inject a delayed response and ensure broken mapping
-                  still fails.
-                </td>
+                <td>5 (Bazel default)</td>
+                <td>acknowledged</td>
+                <td>2</td>
+                <td>2</td>
               </tr>
               <tr>
-                <td>Grader debounce scheduling</td>
                 <td>
                   <a
-                    href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/props/orchestration/test_grader_supervisor.py"
-                    >props/orchestration/test_grader_supervisor.py</a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40635807771/job/122642381154"
+                    >40635807771</a
                   >
-                  retains 0.2/0.25/0.15s sleeps around reconciliation.
                 </td>
-                <td>Use controlled timer/event boundaries and assert coalescing and shutdown order.</td>
+                <td>0</td>
+                <td>acknowledged</td>
+                <td>0</td>
+                <td>0</td>
               </tr>
               <tr>
-                <td>FreeCAD shared RPC / port</td>
                 <td>
                   <a
-                    href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/skills/freecad/test_interactive.py"
-                    >skills/freecad/test_interactive.py</a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40635986882/job/122642950835"
+                    >40635986882</a
                   >
-                  still uses fixed localhost:9875 and a ping without per-call socket timeout; state is module-scoped.
                 </td>
-                <td>
-                  Unique endpoint and finite call timeout; verify a silent listener fails within the bound and cases
-                  work in isolation.
-                </td>
+                <td>0</td>
+                <td>acknowledged</td>
+                <td>9</td>
+                <td>0</td>
               </tr>
               <tr>
-                <td>Augur port reservation</td>
                 <td>
-                  The old direct pick-free-port pattern is no longer at the callers; they use
                   <a
-                    href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/finance/augur/testing/server.py"
-                    >the owned server fixture</a
-                  >.
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40636378504/job/122644190323"
+                    >40636378504</a
+                  >
                 </td>
-                <td>
-                  Do not re-propose the caller migration. Continue only if a concrete bind-ownership failure appears.
-                </td>
+                <td>0</td>
+                <td>unknown no acknowledgment line</td>
+                <td>0</td>
+                <td>0</td>
               </tr>
               <tr>
-                <td>D-Bus example</td>
-                <td>The former <code>x/dbus_fast_example/test_example.py</code> is absent.</td>
-                <td>Retire that file-specific recommendation.</td>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40638208952/job/122650001441"
+                    >40638208952</a
+                  >
+                </td>
+                <td>0</td>
+                <td>acknowledged</td>
+                <td>0</td>
+                <td>0</td>
+              </tr>
+              <tr>
+                <td>
+                  <a
+                    href="https://github.com/agentydragon/ducktape/actions/runs/40640883995/job/122658482846"
+                    >40640883995</a
+                  >
+                </td>
+                <td>0</td>
+                <td>acknowledged</td>
+                <td>0</td>
+                <td>0</td>
               </tr>
             </tbody>
           </table>
         </div>
-      </section>
-      <section id="continuity">
-        <h2>Continue the prior investigation without carrying stale fixes forward</h2>
         <p>
-          Complete latest reliability HTML and substantive evidence were read at
+          Six evenly spaced picks from 12 assigned canceled Bazel jobs. Five
+          retain a test-child acknowledgment; one remains unknown. The default-5
+          child has two indexed COMPLETED/OK-status same-digest records queued
+          8–9s after the acknowledgment. A zero-retry child has nine later
+          records with distinct digests from its 49 canceled records, plus 25
+          queues in the displayed acknowledgment second. This is consistent with
+          the earlier distinction between retrying an action and submitting
+          different work; it does not estimate either frequency. The same-second
+          25 have uncertain ordering. Other three acknowledged cases have no
+          later indexed queue records.
+        </p>
+        <p>
+          These are selected indexing/timestamp observations, not client RPC
+          retry traces, fresh output proofs or complete consumer-ownership
+          checks. GitHub/worker clocks were not calibrated; no physical
+          worker-stop time, actual hosted lease or recovered worker-seconds is
+          measured. A missing acknowledgment is not a successful cancellation.
+        </p>
+      </section>
+      <section id="actions">
+        <h2>Concrete next actions</h2>
+        <ol>
+          <li>
+            <strong
+              >Reproduce the journal/quiesce failure at its owner
+              boundary.</strong
+            >
+            Use controlled transaction cancellation and reopen checks in the
+            runner journal/session lifecycle tests; keep admission identity and
+            exact drain acknowledgment. This targets the cleanup failure seen in
+            three job attempts across two unique remote executions, rather than
+            masking their timeout.
+          </li>
+          <li>
+            <strong>Make the retry-policy tradeoff explicit.</strong> Five of 58
+            known-zero attempts ended in retry-eligible remote errors;
+            cancellation savings remain unmeasured. Decide whether to retain
+            zero with that manual-rerun cost or restore useful retries while
+            accepting the demonstrated cancellation race. A selective
+            cancellation-safe retry policy is preferable in principle, but no
+            supported flag separating these statuses has been established and
+            the Bazel backport was declined. Do not silently change policy from
+            this report.
+          </li>
+          <li>
+            <strong
+              >Extend the combined-adoption sample before another VM/MCP
+              optimization.</strong
+            >
+            Two combined-source devel jobs passed, including one with both
+            suites fresh; their latest detailed assessment is retained in the
+            latency report. Collect further completed actual-source runs
+            containing both<a
+              href="https://github.com/agentydragon/ducktape/pull/12495"
+              >#12495</a
+            >
+            and<a href="https://github.com/agentydragon/ducktape/pull/12496"
+              >#12496</a
+            >; verify runtime cases and phase spans. Include the later
+            import-order merge<a
+              href="https://github.com/agentydragon/ducktape/pull/12498"
+              >#12498</a
+            >
+            only when actual tested source contains it; keep its
+            import/readiness proof separate from population savings.
+          </li>
+        </ol>
+        <p>
+          Artifact phase overlap is implemented and sustained. Browser shard
+          reduction remains an optional compute tradeoff; more GitHub/RBE
+          capacity is not justified by these selected process-dominated
+          profiles.
+        </p>
+      </section>
+      <section id="methods">
+        <h2>Sources, clocks and limits</h2>
+        <p>
+          The collection recursively split all-workflow run queries below
+          GitHub’s 1,000-result cap: <strong>2,279 distinct runs</strong>, with
+          all attempts’ job detail for
+          <strong>975 core runs / 2,618 jobs</strong>. Core scope is CI,
+          trusted-fork CI, pre-commit and artifact workflows. No all-workflow
+          runner-occupancy or account-capacity census was collected. Run
+          membership uses creation time; job outcomes were read during the later
+          sweep. Attempts and distinct heads are separate units.
+        </p>
+        <p>
+          Assigned-completed duration statistics require a positive runner ID
+          and valid ordered timestamps. Cancellations are excluded from
+          success/failure denominators and retained in outcome tables.
+          Percentiles use nearest rank; GitHub timestamps resolve one second.
+          The two temporal bins have different workloads and source histories.
+          Effective policy is established from actual Bazel options, rather than
+          assigned by creation time.
+        </p>
+        <p>
+          Same-repository PR feedback is a
+          <strong>latest-head survivor proxy</strong>: earliest matching core
+          workflow creation to completion of the latest successful native jobs
+          for all three required contexts. It is not push-to-green or full
+          auto-merge readiness. Fork heads are excluded from that linkage
+          because their workflow head metadata can name the base. Changed-path
+          classes use exact head/event-base comparisons where available;
+          unknowns remain explicit.
+        </p>
+        <p>
+          Live rules still require <code>bazel-ci / Test &amp; Build</code>,
+          <code>Pre-commit checks</code> and
+          <code>Build artifacts + imports check</code>, with zero required
+          approvals and no strict up-to-date/thread-resolution requirement.
+          Drafts, conflicts and extra approval for unattributed changes can
+          still block merge. The legacy branch-protection endpoint returned 404;
+          the active branch-rules endpoint supplies these requirements.
+        </p>
+        <p>
+          Remote queue, process/worker time, CPU, artifact overlap and
+          required-check wall time are different units. Shared/cached executions
+          and synthetic cancellation timestamps cannot prove physical worker
+          shutdown or reclaimed compute. Agent-visible API availability,
+          webhook/inbox/harness receipt and full-policy readiness remain
+          unmeasured. Raw logs, profiles, worker identities and credentials stay
+          local; public evidence contains reviewed aggregates, source/action
+          links and artifact hashes.
+        </p>
+      </section>
+      <section id="retained-findings">
+        <h2>Retained measurements, experiments and open leads</h2>
+        <p>
+          Historical baseline source:
           <a
-            href="https://github.com/agentydragon/ducktape/blob/4a0bd596cc050f613067608beae1ef11be05a91e/reliability/index.html"
-            >4a0bd596cc05</a
-          >. Its frequency baseline was October 1–8; its focused race follow-up ended October 9 02:20 UTC. The old
-          55/600 (9.2%) mainline red frequency and this 2/345 (0.58%) are descriptive, unmatched windows across major
-          service/test migrations.
+            href="https://github.com/agentydragon/ducktape/commit/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95"
+            ><code>424eefe254c6</code></a
+          >. The focused retry-policy pilot does not replace the broader cohorts
+          or prior experiments. Their detailed tables, invocation/source links
+          and unresolved observations remain available below. Each topic keeps
+          its original population and time window; completion notes override old
+          proposals. The complete prior structured evidence is retained in
+          <code>historical_snapshot.evidence</code>, with a
+          semantic-preservation audit.
         </p>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Prior finding / experiment</th>
-                <th scope="col">Disposition in this refresh</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Bridge receipt race / deferred production fix</td>
-                <td>
-                  The old archive lookup/cursor race remains proven historical evidence, but the implementation has
-                  since moved to Dispatcher/History ownership. Current
-                  <a
-                    href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/agentplane/app/test_bridge.py"
-                    >agentplane/app/test_bridge.py</a
-                  >
-                  tests dispatch receipt return before app archive catches up. Do not revive a patch against retired
-                  RunnerBridge logic; preserve idempotent receipt recovery and one native admission. No matched
-                  recurrence reduction measured.
-                </td>
-              </tr>
-              <tr>
-                <td>Notification 130-command history seeding / 504 admission</td>
-                <td>
-                  The former Python acceptance target and loop are retired; current notification service is Go with
-                  store/source/worker integration coverage. Preserve over-one-batch replay and uncertain-admission
-                  recovery, but do not apply old target rates to new suites. Historical blocked-stage diagnosis remains
-                  unresolved for those old executions.
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  Thread browser projection readiness
-                  <a href="https://github.com/agentydragon/ducktape/pull/9481">#9481</a>
-                </td>
-                <td>
-                  Still covered by the current suite; no failed mainline target verdict in this new full-suite sample,
-                  but cached exposure prevents a fresh-execution before/after claim. Old nine same-source retry
-                  recoveries stay in the October 1–8 baseline.
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  Visual focus
-                  <a href="https://github.com/agentydragon/ducktape/pull/9410">#9410</a>
-                </td>
-                <td>
-                  Historical capture fix retained. The old combined
-                  <code>:visual</code> target and 2/15 likely-flake rate are not comparable to current split targets or
-                  new UI semantics.
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  Runner fake
-                  <a href="https://github.com/agentydragon/ducktape/pull/8734">#8734</a>
-                  / orphaned Secret
-                  <a href="https://github.com/agentydragon/ducktape/pull/8978">#8978</a>
-                </td>
-                <td>
-                  Resolved historical source regressions; retain the 31-build fake failure and two validation failures
-                  as historical, not current flakes.
-                </td>
-              </tr>
-              <tr>
-                <td>Claude crash/durable-state ordering and old store timeout</td>
-                <td>
-                  Paths moved under native implementations; no new failing tracked target here. Keep the
-                  durable-write/crash invariant, defer a dedicated forced-crash reproduction because current recurrence
-                  is elsewhere.
-                </td>
-              </tr>
-              <tr>
-                <td>Native-journal diagnostic gap</td>
-                <td>
-                  Old failed bridge outputs lacked a journal. Current system tests retain VM console/native artifacts
-                  via
-                  <a href="https://github.com/agentydragon/ducktape/pull/12140">#12140</a>. That is source/coverage
-                  progress, not proof that every old artifact gap is repaired.
-                </td>
-              </tr>
-              <tr>
-                <td>Network/mirror failures</td>
-                <td>
-                  Old Go proxy/Electric/Stalwart/InvenTree signatures did not recur in this mainline sample. Current CAS
-                  eviction is a distinct retained-input failure. Keep certificate validation and pinned blob integrity.
-                </td>
-              </tr>
-              <tr>
-                <td>Investigation tools</td>
-                <td>
-                  History pagination/since cutoff and invocation-context artifact fixes remain in source. This scan
-                  found
-                  <code>bbapi target</code> stops at the first 12-target status page; direct GetTarget pagination
-                  recovered all 8,691 verdicts. No source tooling patch is mixed into this report PR.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <details>
-          <summary>Earlier evidence retained without repeating its experiments</summary>
-          <p>
-            The October 9 controlled receipt race had two passing controls and two forced-interleaving failures across
-            Claude/Codex, with exactly one native admission in all four. That proves the old mechanism, not its natural
-            frequency. Earlier bridge 504s and notification setup deadlines were not thereby explained. Historical
-            checkout, sharding, Bazel retention, cancellation and Nix experiment results remain in the prior reports and
-            current latency continuity inventory; no remote-work reclamation or notification-delivery saving is claimed.
-            No monitoring schedule was created.
+        <details id="retained-reliability-frequencies">
+          <summary>
+            Broader failure and target-specific exposure denominators
+          </summary>
+          <p class="note">
+            24 October 04:00–27 October 06:00 UTC. Retain all mainline/PR
+            denominators, cached/fresh target counts and overlaps; the later
+            69-attempt pilot does not replace this population.
           </p>
+          <section id="retained-reliability-frequencies-body">
+            <h3>Failure frequency depends on the denominator</h3>
+            <p>
+              Keep three populations distinct: mainline full-suite invocations
+              across 74 hours; all PR Bazel attempts across the latest 24 hours;
+              and a selected retry subset. A workflow failure can occur outside
+              Bazel, and a failed invocation can fail before any test runs.
+            </p>
+            <div
+              class="table-wrap"
+              tabindex="0"
+              role="region"
+              aria-label="Retained evidence table"
+            >
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">PR workflow, latest day</th>
+                    <th scope="col">Failed attempts</th>
+                    <th scope="col">Conclusive attempts</th>
+                    <th scope="col">Cancelled</th>
+                    <th scope="col">Latest-job outcomes per run</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>ci.yml</td>
+                    <td>5</td>
+                    <td>60</td>
+                    <td>14</td>
+                    <td>
+                      {&#x27;success&#x27;: 55, &#x27;cancelled&#x27;: 14,
+                      &#x27;failure&#x27;: 3}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>trusted-fork-pr-ci.yml</td>
+                    <td>24</td>
+                    <td>69</td>
+                    <td>24</td>
+                    <td>
+                      {&#x27;cancelled&#x27;: 24, &#x27;success&#x27;: 45,
+                      &#x27;failure&#x27;: 20}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              Mainline has 343 successes, one <code>TESTS_FAILED</code> and one
+              <code>REMOTE_CACHE_EVICTED</code>. Its 345 invocations reconcile
+              to 518,774 tracked target observations. Those target histories
+              include cached passes. They are not 518,774 independent
+              executions.
+            </p>
+            <h4>PR target-specific exposure</h4>
+            <p>
+              101 test invocations plus 28 log-verified “no affected targets”
+              jobs account for all 129 conclusive jobs. Fully paginated test
+              groups contain 8,691 final target verdicts. Counts below are per
+              target/invocation in the normal CI configuration; cached and
+              mixed/fresh verdicts are shown separately. Co-failing targets
+              overlap.
+            </p>
+            <div
+              class="table-wrap"
+              tabindex="0"
+              role="region"
+              aria-label="Retained evidence table"
+            >
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Target</th>
+                    <th scope="col">Failed / observed verdicts</th>
+                    <th scope="col">Fully cached verdicts</th>
+                    <th scope="col">At least one fresh run</th>
+                    <th scope="col">Observed status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <code>//cluster/cdk8s:test_generate_manifests</code>
+                    </td>
+                    <td>7 / 44</td>
+                    <td>17</td>
+                    <td>27</td>
+                    <td>{&#x27;PASSED&#x27;: 37, &#x27;FAILED&#x27;: 7}</td>
+                  </tr>
+                  <tr>
+                    <td><code>//finance/plaid/spend/ui:visual_test</code></td>
+                    <td>4 / 22</td>
+                    <td>3</td>
+                    <td>19</td>
+                    <td>{&#x27;PASSED&#x27;: 18, &#x27;FAILED&#x27;: 4}</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>//agentplane/system_tests:test_dispatcher</code>
+                    </td>
+                    <td>3 / 39</td>
+                    <td>20</td>
+                    <td>19</td>
+                    <td>{&#x27;PASSED&#x27;: 36, &#x27;FAILED&#x27;: 3}</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>//agentplane/system_tests:test_vm_sandbox_vm</code>
+                    </td>
+                    <td>3 / 39</td>
+                    <td>16</td>
+                    <td>23</td>
+                    <td>{&#x27;PASSED&#x27;: 36, &#x27;FAILED&#x27;: 3}</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>//cluster/validation:test_cluster_integration</code>
+                    </td>
+                    <td>2 / 32</td>
+                    <td>10</td>
+                    <td>22</td>
+                    <td>{&#x27;PASSED&#x27;: 30, &#x27;FAILED&#x27;: 2}</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>//cluster/validation:test_generator_namespace</code>
+                    </td>
+                    <td>2 / 22</td>
+                    <td>8</td>
+                    <td>14</td>
+                    <td>{&#x27;PASSED&#x27;: 20, &#x27;TIMED_OUT&#x27;: 2}</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code
+                        >//agentplane/app/frontend/threads:projected_session_test</code
+                      >
+                    </td>
+                    <td>2 / 23</td>
+                    <td>17</td>
+                    <td>6</td>
+                    <td>{&#x27;PASSED&#x27;: 21, &#x27;FAILED&#x27;: 2}</td>
+                  </tr>
+                  <tr>
+                    <td><code>//agentplane/system_tests:test_mcp</code></td>
+                    <td>2 / 40</td>
+                    <td>18</td>
+                    <td>22</td>
+                    <td>{&#x27;PASSED&#x27;: 38, &#x27;FAILED&#x27;: 2}</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>//agentplane/app/frontend:visual_scenes</code>
+                    </td>
+                    <td>1 / 26</td>
+                    <td>17</td>
+                    <td>9</td>
+                    <td>{&#x27;PASSED&#x27;: 25, &#x27;FAILED&#x27;: 1}</td>
+                  </tr>
+                  <tr>
+                    <td><code>//cluster/cdk8s:test_agent_rbac</code></td>
+                    <td>1 / 30</td>
+                    <td>15</td>
+                    <td>15</td>
+                    <td>{&#x27;PASSED&#x27;: 29, &#x27;FAILED&#x27;: 1}</td>
+                  </tr>
+                  <tr>
+                    <td><code>//cluster/cdk8s/litellm:test_config</code></td>
+                    <td>1 / 4</td>
+                    <td>2</td>
+                    <td>2</td>
+                    <td>{&#x27;PASSED&#x27;: 3, &#x27;TIMED_OUT&#x27;: 1}</td>
+                  </tr>
+                  <tr>
+                    <td><code>//cluster/terraform/main:validate</code></td>
+                    <td>1 / 5</td>
+                    <td>2</td>
+                    <td>3</td>
+                    <td>{&#x27;PASSED&#x27;: 4, &#x27;TIMED_OUT&#x27;: 1}</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code
+                        >//devinfra/js/debundle/e2e:conflict_diagnostics_scale_test</code
+                      >
+                    </td>
+                    <td>1 / 13</td>
+                    <td>3</td>
+                    <td>10</td>
+                    <td>{&#x27;PASSED&#x27;: 12, &#x27;TIMED_OUT&#x27;: 1}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              The seven manifest-test failures and source type/lint errors are
+              useful validation failures; they are not assigned to the
+              intermittent-failure category. Build-only failures may have no
+              test target outcome and are included only in the invocation/job
+              denominator.
+            </p>
+          </section>
+        </details>
+        <details id="retained-reliability-culprits">
+          <summary>
+            Earlier incident mechanisms and unresolved timeout evidence
+          </summary>
+          <p class="note">
+            Historical incidents remain split by mechanism. Activation,
+            iptables, deadline and cleanup diagnostics fixes are now merged; VM
+            OOM-contract, CAS eviction and hosted pre-command gaps retain their
+            original evidence and limits.
+          </p>
+          <section id="retained-reliability-culprits-body">
+            <h3>Observed failures and their mechanisms</h3>
+            <h4>k3s setup: a real xtables lock conflict</h4>
+            <p>
+              In
+              <a
+                href="https://app.buildbuddy.io/invocation/8cf4fdfe-2fc0-5d60-9d3d-3d0aabb87dd1"
+                >8cf4fdfe</a
+              >, all ten MCP cases error in one shared fixture.
+              <code>K3s.start</code> checks then appends a NAT masquerade rule
+              while k3s/kube-proxy can also update iptables. The append exits 4
+              with “Can’t lock /run/xtables.lock”. The baseline
+              <a
+                href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/agentplane/system_tests/k3s/stack.py"
+                >agentplane/system_tests/k3s/stack.py</a
+              >
+              invokes both commands without <code>-w</code> and treats every
+              nonzero check as a missing rule. The same tested SHA later passes
+              the MCP target from a fresh execution. Ten pytest setup errors are
+              one target/fixture failure. Follow-up:
+              <a href="https://github.com/agentydragon/ducktape/pull/12248"
+                >#12248</a
+              >
+              now uses <code>iptables -w 5</code> on both operations and appends
+              only when the check returns 1. This waits on the real xtables lock
+              and proceeds when it is available; five seconds bounds
+              acquisition, rather than imposing a five-second sleep. Five
+              real-lock tests and the exact-head CI passed. No fleet recurrence
+              reduction has been measured.
+            </p>
+            <h4>MCP early wait: source defect, now a merged candidate fix</h4>
+            <p>
+              <a
+                href="https://app.buildbuddy.io/invocation/9ba054ed-664f-5a81-981e-3b365a5268d9"
+                >9ba054ed</a
+              >
+              fails the Codex launcher’s
+              <code>wait_for_turn(wait_seconds=1)</code> expectation;
+              <a
+                href="https://app.buildbuddy.io/invocation/9a80d2fa-9d90-531c-b0a4-a3fad67ba017"
+                >9a80d2fa</a
+              >
+              explicitly passes the target fresh on the identical tested SHA
+              <code>a31e93dfa297fa3185e6f94bbefe3120c5b515a9</code>.
+              <a href="https://github.com/agentydragon/ducktape/pull/12189"
+                >#12189</a
+              >
+              references this exact incident and changes the authorization/wait
+              budget and propagated-deadline boundary. It merged after the
+              window; current source was reviewed. The follow-up at the exact
+              merged tree executed three fresh full MCP suites: 12/12 cases
+              passed in each, with no cached test result and one attempt per
+              run. The focused Go wait tests also passed.
+              <a
+                href="https://github.com/agentydragon/ducktape/blob/4f4fd6f8b1c3f12c19dd347718c2323ce77b6122/agentplane/debug/2026_10_27_orchestration_wait_deadline_measurement.md"
+                >The measurement note</a
+              >
+              records the invocations and exclusions. Zero failures in three
+              selected exposures verifies the corrected path executes; unmatched
+              pre/post runs do not estimate a causal failure-rate reduction.
+            </p>
+            <h4>
+              Dispatcher: three distinct failures, one verified same-source
+              recovery
+            </h4>
+            <p>
+              One revision fails an exact caller-set assertion after
+              <code>actions</code> becomes a configured caller: a source/test
+              mismatch. An earlier revision stalls in the deployed
+              ready/admission scenario for its 600s pytest deadline. The
+              recovered
+              <a
+                href="https://app.buildbuddy.io/invocation/7d08c8f3-2186-5057-9b1f-08aa7a98a740"
+                >7d08c8f3</a
+              >
+              fails its cleanup wait for <code>Ready.reason=Stopped</code> after
+              the runner reports
+              <code>Codex executor startup: context deadline exceeded</code>.
+              Its retained wake artifact reports <code>passed: true</code>:
+              there was no earlier scenario exception hidden in this particular
+              failure.
+              <a
+                href="https://app.buildbuddy.io/invocation/786f259e-a8b7-5444-b806-a23f7ebf07eb"
+                >786f259e</a
+              >
+              passes dispatcher fresh on identical tested SHA
+              <code>1393bc64da85dc49a8ab37151920625b7e0d77c3</code>.
+            </p>
+            <p>
+              Follow-up inspection found
+              <code>fork/exec /bin/codex: no such file or directory</code> in
+              the companion diagnostics. The target selected the
+              <code>model_free</code> image, which lacked Codex. Failed child
+              startup killed the companion, leaving its control socket
+              unavailable during restart backoff, so the runner could neither
+              activate nor quiesce.
+              <a href="https://github.com/agentydragon/ducktape/pull/12167"
+                >#12167</a
+              >
+              had already switched the test to the harness image and kept the
+              companion serving when it refuses an unstartable claim. The
+              same-source retry proves admission and cleanup, not working Codex
+              execution. A fresh corrected-source replay passed all three
+              dispatcher scenarios (<a
+                href="https://app.buildbuddy.io/invocation/19325b64-2793-4f6e-8ab1-2211efd4cc38"
+                >19325b64</a
+              >). The separate
+              <a href="https://github.com/agentydragon/ducktape/pull/12244"
+                >#12244</a
+              >
+              preserves an original scenario exception when cleanup also fails,
+              and keeps cleanup-only failure fatal. It merged as
+              <code>59889abccc1c</code>; review inlined the handling at its sole
+              call site and removed the helper and its dedicated tests. Required
+              CI passed on <code>6d7a2ef0d9</code>.
+            </p>
+            <h4>VM OOM acceptance: three failures in a new contract</h4>
+            <p>
+              Three PR failures occur in the new OOM containment case: one tool
+              response reports an unknown exec-server session, and two later
+              revisions fail because the executor cgroup path differs
+              before/after OOM. The current
+              <a
+                href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/agentplane/system_tests/test_vm_sandbox.py"
+                >agentplane/system_tests/test_vm_sandbox.py</a
+              >
+              still requires the same runner boot, app-server process, native
+              session and surviving cgroup, plus a working follow-up. Later
+              passes exist on other tested revisions; these are not verified
+              same-source recoveries. Preserve the OOM containment contract and
+              retained native/console artifacts; determine whether the leaf was
+              replaced before weakening the equality.
+            </p>
+            <h4>
+              Source/UI failures are not interchangeable with timing failures
+            </h4>
+            <p>
+              Manifest drift/orphan/missing dependency assertions recur on seven
+              target verdicts. Other concrete failures include missing Rust
+              names, ESLint/mypy errors, a changed projected-session model
+              label, an outdated menu item, and finance visual selectors. The
+              four finance failures include a missing tooltip, an ambiguous
+              selector matching three elements, and a later unavailable-tax
+              assertion. Their different signatures and source revisions do not
+              establish one shared browser flake. Scope selectors to their
+              rendered subject and preserve the semantic assertion; refresh
+              generated output and all callers with source changes.
+            </p>
+            <h4>Mainline and bare timeouts: different mechanisms</h4>
+            <p>
+              <a
+                href="https://app.buildbuddy.io/invocation/ec627215-7de7-5e7f-b251-bb2192236722"
+                >ec627215</a
+              >
+              fails before the binary-diff test runs: a required CAS input
+              <code>v1_plain</code> is “no longer available remotely”. No
+              failed-test log exists.
+              <a
+                href="https://app.buildbuddy.io/invocation/7f06573b-2078-5a68-adcd-1cc0d8bf35f9"
+                >7f06573b</a
+              >
+              times out the value-flow sharing scale test at 60.018s; worker
+              records show about 60.84 CPU-seconds. A PR conflict-diagnostics
+              scale timeout similarly uses about 61.14 CPU-seconds. These are
+              active CPU-bound scale cases, not evidence of a common
+              fixture-startup wedge; no timeout policy was changed.
+            </p>
+            <div id="retained-reliability-timeout-findings-body">
+              <p>
+                The generator-namespace timeout
+                <a
+                  href="https://app.buildbuddy.io/invocation/0925c736-06ab-5cdb-921b-51371a833fba"
+                  >0925c736</a
+                >
+                has a 64.23s remote execution interval, no usage samples, and a
+                retained worker log ending after snapshot restore with no
+                workspace-drive attachment. A linked execution then succeeds in
+                about 3.2s; the workflow’s later attempt explicitly reports a
+                fresh pass on the same source. Terraform’s 60.51s timeout also
+                has no usage samples; a co-failing litellm action has 14.72
+                CPU-seconds over 74.50s. These are distinct from the
+                CPU-saturated Rust scale tests. The exact hosted
+                preparation/startup stage is unavailable; retain the execution
+                IDs and request host-stage traces rather than increase all
+                small-test timeouts. Missing usage or attachment records alone
+                do not prove a particular filesystem operation caused the delay.
+              </p>
+            </div>
+          </section>
+        </details>
+        <details id="retained-reliability-recoveries">
+          <summary>Five verified same-source fresh recoveries</summary>
+          <p class="note">
+            Historical explicit target PASSED results on identical tested
+            SHA/configuration. These are stronger target-level evidence than the
+            new pilot’s workflow-only recoveries; neither is a repository flake
+            rate.
+          </p>
+          <section id="retained-reliability-recoveries-body">
+            <h3>Verified same-source recovery, with fresh verdicts</h3>
+            <p>
+              Six initially failed runs were retried: five have conclusive later
+              results and recover; one later attempt was cancelled and is
+              excluded from 5/5. Every listed target has explicit
+              <code>PASSED</code>, not merely an absent result or a successful
+              workflow. Same source does not hold worker, executor state,
+              credentials, external services or cache state fixed.
+            </p>
+            <div
+              class="table-wrap"
+              tabindex="0"
+              role="region"
+              aria-label="Retained evidence table"
+            >
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Workflow run</th>
+                    <th scope="col">Full tested SHA</th>
+                    <th scope="col">Failed → passed invocation</th>
+                    <th scope="col">Explicit target result</th>
+                    <th scope="col">Failed end → retry assignment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <a
+                        href="https://github.com/agentydragon/ducktape/actions/runs/40409596741"
+                        >40409596741</a
+                      >
+                    </td>
+                    <td>
+                      <code>df9fc5c3ec2fc2ff5358ad4c5754cb2d4ae6bb45</code>
+                    </td>
+                    <td>
+                      <a
+                        href="https://app.buildbuddy.io/invocation/392b76a7-0804-5924-80fc-76f0fae14ba9"
+                        >392b76a7</a
+                      >
+                      →
+                      <a
+                        href="https://app.buildbuddy.io/invocation/ddfb6ec8-073d-5a8a-9032-4277274d5a8d"
+                        >ddfb6ec8</a
+                      >
+                    </td>
+                    <td>
+                      <code>//cluster/cdk8s/litellm:test_config</code> TIMED_OUT
+                      → PASSED (fresh)<br /><code
+                        >//cluster/terraform/main:validate</code
+                      >
+                      TIMED_OUT → PASSED (fresh)
+                    </td>
+                    <td>84s</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <a
+                        href="https://github.com/agentydragon/ducktape/actions/runs/40295293319"
+                        >40295293319</a
+                      >
+                    </td>
+                    <td>
+                      <code>eb800b6d082f03f863e1ec47668fb49bd397766d</code>
+                    </td>
+                    <td>
+                      <a
+                        href="https://app.buildbuddy.io/invocation/8cf4fdfe-2fc0-5d60-9d3d-3d0aabb87dd1"
+                        >8cf4fdfe</a
+                      >
+                      →
+                      <a
+                        href="https://app.buildbuddy.io/invocation/7f0582c0-8b29-56ef-b612-a5fde1f89595"
+                        >7f0582c0</a
+                      >
+                    </td>
+                    <td>
+                      <code>//agentplane/system_tests:test_mcp</code> FAILED →
+                      PASSED (fresh)
+                    </td>
+                    <td>126s</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <a
+                        href="https://github.com/agentydragon/ducktape/actions/runs/40366801197"
+                        >40366801197</a
+                      >
+                    </td>
+                    <td>
+                      <code>6af628f2212a4c5c62e9ec6c811a7d34aaf697a3</code>
+                    </td>
+                    <td>
+                      <a
+                        href="https://app.buildbuddy.io/invocation/0925c736-06ab-5cdb-921b-51371a833fba"
+                        >0925c736</a
+                      >
+                      →
+                      <a
+                        href="https://app.buildbuddy.io/invocation/5a19d48c-dd66-54af-9792-727a0b7698a7"
+                        >5a19d48c</a
+                      >
+                    </td>
+                    <td>
+                      <code>//cluster/validation:test_generator_namespace</code>
+                      TIMED_OUT → PASSED (fresh)
+                    </td>
+                    <td>57s</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <a
+                        href="https://github.com/agentydragon/ducktape/actions/runs/40383976168"
+                        >40383976168</a
+                      >
+                    </td>
+                    <td>
+                      <code>1393bc64da85dc49a8ab37151920625b7e0d77c3</code>
+                    </td>
+                    <td>
+                      <a
+                        href="https://app.buildbuddy.io/invocation/7d08c8f3-2186-5057-9b1f-08aa7a98a740"
+                        >7d08c8f3</a
+                      >
+                      →
+                      <a
+                        href="https://app.buildbuddy.io/invocation/786f259e-a8b7-5444-b806-a23f7ebf07eb"
+                        >786f259e</a
+                      >
+                    </td>
+                    <td>
+                      <code>//agentplane/system_tests:test_dispatcher</code>
+                      FAILED → PASSED (fresh)
+                    </td>
+                    <td>3106s</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <a
+                        href="https://github.com/agentydragon/ducktape/actions/runs/40457828797"
+                        >40457828797</a
+                      >
+                    </td>
+                    <td>
+                      <code>a31e93dfa297fa3185e6f94bbefe3120c5b515a9</code>
+                    </td>
+                    <td>
+                      <a
+                        href="https://app.buildbuddy.io/invocation/9ba054ed-664f-5a81-981e-3b365a5268d9"
+                        >9ba054ed</a
+                      >
+                      →
+                      <a
+                        href="https://app.buildbuddy.io/invocation/9a80d2fa-9d90-531c-b0a4-a3fad67ba017"
+                        >9a80d2fa</a
+                      >
+                    </td>
+                    <td>
+                      <code>//agentplane/system_tests:test_mcp</code> FAILED →
+                      PASSED (fresh)
+                    </td>
+                    <td>71s</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              Intervals before the next assigned attempt are not automatically
+              operator or scheduler delay. Four failed-end-to-assignment
+              intervals are 57–126s; one is 3,106s. Attempt metadata separates
+              52–3,101s before the recorded rerun start from just 4–5s afterward
+              to runner assignment. All triggering accounts are User-type; two
+              match the original actor and three differ. These account fields do
+              not establish manual intent. No request actor or intent is
+              inferred from account identity. The selected recovery fraction 5/5
+              must not be extrapolated to all 29 failures or to all repository
+              builds.
+            </p>
+          </section>
+        </details>
+        <details id="retained-reliability-tracks">
+          <summary>Retained reliability actions and completed fixes</summary>
+          <p class="note">
+            Completion states are updated here; startup/CPU classification and
+            source-semantic feedback remain useful. This table is not a request
+            to repeat landed fixes.
+          </p>
+          <section id="retained-reliability-tracks-body">
+            <h3>Recommended next reliability tracks</h3>
+            <div
+              class="table-wrap"
+              tabindex="0"
+              role="region"
+              aria-label="Retained evidence table"
+            >
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Priority</th>
+                    <th scope="col">Action / source</th>
+                    <th scope="col">Expected gain and validation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Completed · cleanup error preservation</td>
+                    <td>
+                      Merged
+                      <a
+                        href="https://github.com/agentydragon/ducktape/pull/12244"
+                        >#12244</a
+                      >, whose required checks passed. Activation fix
+                      <a
+                        href="https://github.com/agentydragon/ducktape/pull/12167"
+                        >#12167</a
+                      >
+                      is already merged; keep those two changes distinct.
+                    </td>
+                    <td>
+                      Retains the primary traceback when both scenario and
+                      cleanup fail, while cleanup-only failure still fails the
+                      test. Diagnostic benefit is tested; no recurrence or
+                      common-PR time saving is assigned.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Completed · iptables locking</td>
+                    <td>
+                      <a
+                        href="https://github.com/agentydragon/ducktape/pull/12248"
+                        >#12248</a
+                      >
+                      merged the bounded lock wait and fail-closed check
+                      handling. Retain its real-lock contention and expiry
+                      tests.
+                    </td>
+                    <td>
+                      Mechanism verified locally on RBE and full exact-head CI
+                      passed. Observe future comparable fixture exposures before
+                      claiming fewer retries; do not implement this fix again.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Completed · deadline acceptance replay</td>
+                    <td>
+                      <a
+                        href="https://github.com/agentydragon/ducktape/pull/12254"
+                        >#12254</a
+                      >
+                      records three fresh full MCP passes on merged
+                      <a
+                        href="https://github.com/agentydragon/ducktape/pull/12189"
+                        >#12189</a
+                      >. Retain backend-error, expiry, cancellation and
+                      resume-token coverage.
+                    </td>
+                    <td>
+                      Zero of three selected runs failed; all 36 pytest cases
+                      passed. This is bounded acceptance evidence, not
+                      elimination or a matched failure-rate comparison. A larger
+                      replay needs a new recurrence signal.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>2 · Separate startup timeouts from scale CPU</td>
+                    <td>
+                      Use retained execution/worker logs to classify each
+                      timeout before any size change. CPU-bound Rust scale cases
+                      need a real native profiler; pre-command VM cases need
+                      hosted stage traces.
+                    </td>
+                    <td>
+                      Avoid a blanket timeout workaround. Mainline incidence is
+                      one scale timeout / 345 full suites; two generator
+                      namespace PR verdicts timed out / 22 observed verdicts.
+                      Preserve full test coverage.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>3 · Keep fast source feedback intact</td>
+                    <td>
+                      Regenerate cdk8s outputs on the tested base, update every
+                      caller, and keep lint/type/semantic checks. Fix UI subject
+                      selectors at their actual renderer.
+                    </td>
+                    <td>
+                      Reduces avoidable edit/retry rounds; measured gate
+                      failures are not permission to disable coverage. No
+                      quantified fleet speedup assigned.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              The companion latency report tests sharding and records worker
+              cost. No tests, workflow policy, production setting or scanning
+              policy were changed by this analysis.
+            </p>
+          </section>
+        </details>
+        <details id="retained-reliability-risks">
+          <summary>
+            Source-only fragile-pattern leads, rechecked for existence
+          </summary>
+          <p class="note">
+            At b15d3d8e82d5, the Casino 500ms wait, grader sleeps and fixed
+            FreeCAD port remain present; the D-Bus example is absent. These are
+            source-only leads, not measured flake rates. Original source links
+            remain provenance.
+          </p>
+          <section id="retained-reliability-risks-body">
+            <h3>Fragile-pattern scan: retained and retired leads</h3>
+            <p>
+              These source-only risks retain the baseline review at
+              <code>424eefe254c6</code>; this disposition follow-up does not
+              re-audit them. No grep count is used as a flake rate.
+            </p>
+            <div
+              class="table-wrap"
+              tabindex="0"
+              role="region"
+              aria-label="Retained evidence table"
+            >
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Prior lead</th>
+                    <th scope="col">Current source disposition</th>
+                    <th scope="col">Next bounded check</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Study Casino readiness</td>
+                    <td>
+                      <a
+                        href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/study_casino/test_e2e_browser.py"
+                        >study_casino/test_e2e_browser.py</a
+                      >
+                      still waits 500ms before a render-health check.
+                    </td>
+                    <td>
+                      Wait for the intended spinning/settled state; inject a
+                      delayed response and ensure broken mapping still fails.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Grader debounce scheduling</td>
+                    <td>
+                      <a
+                        href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/props/orchestration/test_grader_supervisor.py"
+                        >props/orchestration/test_grader_supervisor.py</a
+                      >
+                      retains 0.2/0.25/0.15s sleeps around reconciliation.
+                    </td>
+                    <td>
+                      Use controlled timer/event boundaries and assert
+                      coalescing and shutdown order.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>FreeCAD shared RPC / port</td>
+                    <td>
+                      <a
+                        href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/skills/freecad/test_interactive.py"
+                        >skills/freecad/test_interactive.py</a
+                      >
+                      still uses fixed localhost:9875 and a ping without
+                      per-call socket timeout; state is module-scoped.
+                    </td>
+                    <td>
+                      Unique endpoint and finite call timeout; verify a silent
+                      listener fails within the bound and cases work in
+                      isolation.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Augur port reservation</td>
+                    <td>
+                      The old direct pick-free-port pattern is no longer at the
+                      callers; they use
+                      <a
+                        href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/finance/augur/testing/server.py"
+                        >the owned server fixture</a
+                      >.
+                    </td>
+                    <td>
+                      Do not re-propose the caller migration. Continue only if a
+                      concrete bind-ownership failure appears.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>D-Bus example</td>
+                    <td>
+                      The former
+                      <code>x/dbus_fast_example/test_example.py</code> is
+                      absent.
+                    </td>
+                    <td>Retire that file-specific recommendation.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </details>
+        <details id="retained-reliability-continuity">
+          <summary>Prior race, migration and diagnostic dispositions</summary>
+          <p class="note">
+            Retain the named mechanisms, owners, retired paths and correctness
+            invariants. Do not revive fixes against retired RunnerBridge/Python
+            notification paths.
+          </p>
+          <section id="retained-reliability-continuity-body">
+            <h3>
+              Continue the prior investigation without carrying stale fixes
+              forward
+            </h3>
+            <p>
+              Complete latest reliability HTML and substantive evidence were
+              read at
+              <a
+                href="https://github.com/agentydragon/ducktape/blob/4a0bd596cc050f613067608beae1ef11be05a91e/reliability/index.html"
+                >4a0bd596cc05</a
+              >. Its frequency baseline was October 1–8; its focused race
+              follow-up ended October 9 02:20 UTC. The old 55/600 (9.2%)
+              mainline red frequency and this 2/345 (0.58%) are descriptive,
+              unmatched windows across major service/test migrations.
+            </p>
+            <div
+              class="table-wrap"
+              tabindex="0"
+              role="region"
+              aria-label="Retained evidence table"
+            >
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Prior finding / experiment</th>
+                    <th scope="col">Disposition in this refresh</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Bridge receipt race / deferred production fix</td>
+                    <td>
+                      The old archive lookup/cursor race remains proven
+                      historical evidence, but the implementation has since
+                      moved to Dispatcher/History ownership. Current
+                      <a
+                        href="https://github.com/agentydragon/ducktape/blob/424eefe254c61edba4c9d5eadfe80dc6a0c8bb95/agentplane/app/test_bridge.py"
+                        >agentplane/app/test_bridge.py</a
+                      >
+                      tests dispatch receipt return before app archive catches
+                      up. Do not revive a patch against retired RunnerBridge
+                      logic; preserve idempotent receipt recovery and one native
+                      admission. No matched recurrence reduction measured.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      Notification 130-command history seeding / 504 admission
+                    </td>
+                    <td>
+                      The former Python acceptance target and loop are retired;
+                      current notification service is Go with
+                      store/source/worker integration coverage. Preserve
+                      over-one-batch replay and uncertain-admission recovery,
+                      but do not apply old target rates to new suites.
+                      Historical blocked-stage diagnosis remains unresolved for
+                      those old executions.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      Thread browser projection readiness
+                      <a
+                        href="https://github.com/agentydragon/ducktape/pull/9481"
+                        >#9481</a
+                      >
+                    </td>
+                    <td>
+                      Still covered by the current suite; no failed mainline
+                      target verdict in this new full-suite sample, but cached
+                      exposure prevents a fresh-execution before/after claim.
+                      Old nine same-source retry recoveries stay in the October
+                      1–8 baseline.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      Visual focus
+                      <a
+                        href="https://github.com/agentydragon/ducktape/pull/9410"
+                        >#9410</a
+                      >
+                    </td>
+                    <td>
+                      Historical capture fix retained. The old combined
+                      <code>:visual</code> target and 2/15 likely-flake rate are
+                      not comparable to current split targets or new UI
+                      semantics.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      Runner fake
+                      <a
+                        href="https://github.com/agentydragon/ducktape/pull/8734"
+                        >#8734</a
+                      >
+                      / orphaned Secret
+                      <a
+                        href="https://github.com/agentydragon/ducktape/pull/8978"
+                        >#8978</a
+                      >
+                    </td>
+                    <td>
+                      Resolved historical source regressions; retain the
+                      31-build fake failure and two validation failures as
+                      historical, not current flakes.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      Claude crash/durable-state ordering and old store timeout
+                    </td>
+                    <td>
+                      Paths moved under native implementations; no new failing
+                      tracked target here. Keep the durable-write/crash
+                      invariant, defer a dedicated forced-crash reproduction
+                      because current recurrence is elsewhere.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Native-journal diagnostic gap</td>
+                    <td>
+                      Old failed bridge outputs lacked a journal. Current system
+                      tests retain VM console/native artifacts via
+                      <a
+                        href="https://github.com/agentydragon/ducktape/pull/12140"
+                        >#12140</a
+                      >. That is source/coverage progress, not proof that every
+                      old artifact gap is repaired.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Network/mirror failures</td>
+                    <td>
+                      Old Go proxy/Electric/Stalwart/InvenTree signatures did
+                      not recur in this mainline sample. Current CAS eviction is
+                      a distinct retained-input failure. Keep certificate
+                      validation and pinned blob integrity.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Investigation tools</td>
+                    <td>
+                      History pagination/since cutoff and invocation-context
+                      artifact fixes remain in source. This scan found
+                      <code>bbapi target</code> stops at the first 12-target
+                      status page; direct GetTarget pagination recovered all
+                      8,691 verdicts. No source tooling patch is mixed into this
+                      report PR.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <details>
+              <summary>
+                Earlier evidence retained without repeating its experiments
+              </summary>
+              <p>
+                The October 9 controlled receipt race had two passing controls
+                and two forced-interleaving failures across Claude/Codex, with
+                exactly one native admission in all four. That proves the old
+                mechanism, not its natural frequency. Earlier bridge 504s and
+                notification setup deadlines were not thereby explained.
+                Historical checkout, sharding, Bazel retention, cancellation and
+                Nix experiment results remain in the prior reports and current
+                latency continuity inventory; no remote-work reclamation or
+                notification-delivery saving is claimed. No monitoring schedule
+                was created.
+              </p>
+            </details>
+          </section>
+        </details>
+        <details id="retained-reliability-method">
+          <summary>
+            Historical reliability sampling and recovery methods
+          </summary>
+          <p class="note">
+            Original 74-hour population, pagination reconciliation, cached/fresh
+            semantics and observation gaps. Old CLI pagination findings describe
+            that collection; they are not a fresh audit of the current CLI.
+          </p>
+          <section id="retained-reliability-method-body">
+            <h3>Methods and remaining uncertainty</h3>
+            <p>
+              Observation window is 74 hours, chosen to cover activity since the
+              latest latency follow-ups with substantial exposure; it is not
+              presented as a seven-day census. Mainline: SearchInvocation fully
+              paginated (one page), command <code>test</code>, role
+              <code>CI</code>, exact pattern <code>//...</code>, queried by
+              update time through collection, then filtered to invocation
+              creation inside the fixed window. All 345 SHAs are in inspected
+              devel ancestry. Target-history pagination reaches the cutoff and
+              matches the 345 mainline IDs exactly; smoke/developer/PR
+              invocations are excluded.
+            </p>
+            <p>
+              PRs: full latest-day core job/attempt census; 129 conclusive Bazel
+              attempts, 38 cancellations, no unfinished in-window Bazel
+              attempts. 101 explicit test invocations and 28 log-confirmed
+              no-affected-target selections. Test verdict groups required
+              <strong>674 additional GetTarget pages</strong>; each final group
+              count was checked against <code>totalCount</code>. Default CLI
+              output was not accepted as complete. Failed target counts overlap,
+              and automatic shard/run attempts remain distinct from final target
+              status. <code>totalNumCached</code> and
+              <code>totalRunCount</code> distinguish fully cached from
+              at-least-partly-executed verdicts.
+            </p>
+            <p>
+              BuildBuddy’s default flake leaderboard is only a lead: its API
+              defaults and absent successful-run fields prevent reading it as
+              the exact window. Explicit report-window stats are retained
+              separately. The fresh mainline history has two nonpassing targets;
+              the VM/recording/SSH leads from the default leaderboard fall
+              outside or differ from that population. A likely-flake heuristic
+              across commits does not establish a same-source recovery.
+            </p>
+            <p>
+              Raw payloads, logs, native traces, credentials and worker/account
+              identities stay local. Reviewed evidence contains compact
+              aggregates and exact reproducible job/invocation/source
+              references. Full auto-merge eligibility and notification delivery
+              were not observed. Read-only transient API failures were retried
+              once; available independent evidence was retained. Source after
+              the window includes
+              <a href="https://github.com/agentydragon/ducktape/pull/12189"
+                >#12189</a
+              >, whose recurrence effect remains unmeasured. The 27 October
+              disposition follow-up reviewed source
+              <a
+                href="https://github.com/agentydragon/ducktape/commit/bddd9cd74d9cc1e3aaa80ba2662c633884ab761e"
+                >bddd9cd74d9c</a
+              >
+              and the separately identified open cleanup PR. It updates incident
+              explanations and completed actions; it does not refresh any
+              frequency denominator. Neither this report nor its branch is a
+              hosted website or a configured monitoring schedule.
+            </p>
+          </section>
         </details>
       </section>
-      <section id="method">
-        <h2>Methods and remaining uncertainty</h2>
+      <section id="continuity">
+        <h2>What happened to the earlier recommendations</h2>
         <p>
-          Observation window is 74 hours, chosen to cover activity since the latest latency follow-ups with substantial
-          exposure; it is not presented as a seven-day census. Mainline: SearchInvocation fully paginated (one page),
-          command <code>test</code>, role <code>CI</code>, exact pattern <code>//...</code>, queried by update time
-          through collection, then filtered to invocation creation inside the fixed window. All 345 SHAs are in
-          inspected devel ancestry. Target-history pagination reaches the cutoff and matches the 345 mainline IDs
-          exactly; smoke/developer/PR invocations are excluded.
+          The original baseline reports at <code>e199f995abea</code>, both
+          manifests and relevant evidence were reviewed before collecting this
+          sample. These dispositions preserve earlier results with their
+          original conditions; they do not merge historical denominators with
+          the new pilot.
         </p>
-        <p>
-          PRs: full latest-day core job/attempt census; 129 conclusive Bazel attempts, 38 cancellations, no unfinished
-          in-window Bazel attempts. 101 explicit test invocations and 28 log-confirmed no-affected-target selections.
-          Test verdict groups required
-          <strong>674 additional GetTarget pages</strong>; each final group count was checked against
-          <code>totalCount</code>. Default CLI output was not accepted as complete. Failed target counts overlap, and
-          automatic shard/run attempts remain distinct from final target status. <code>totalNumCached</code> and
-          <code>totalRunCount</code> distinguish fully cached from at-least-partly-executed verdicts.
-        </p>
-        <p>
-          BuildBuddy’s default flake leaderboard is only a lead: its API defaults and absent successful-run fields
-          prevent reading it as the exact window. Explicit report-window stats are retained separately. The fresh
-          mainline history has two nonpassing targets; the VM/recording/SSH leads from the default leaderboard fall
-          outside or differ from that population. A likely-flake heuristic across commits does not establish a
-          same-source recovery.
-        </p>
-        <p>
-          Raw payloads, logs, native traces, credentials and worker/account identities stay local. Reviewed evidence
-          contains compact aggregates and exact reproducible job/invocation/source references. Full auto-merge
-          eligibility and notification delivery were not observed. Read-only transient API failures were retried once;
-          available independent evidence was retained. Source after the window includes
-          <a href="https://github.com/agentydragon/ducktape/pull/12189">#12189</a>, whose recurrence effect remains
-          unmeasured. The 27 October disposition follow-up reviewed source
-          <a href="https://github.com/agentydragon/ducktape/commit/bddd9cd74d9cc1e3aaa80ba2662c633884ab761e"
-            >bddd9cd74d9c</a
+        <details>
+          <summary>Prior-work inventory and deferred tracks</summary>
+          <div
+            class="table-wrap"
+            tabindex="0"
+            role="region"
+            aria-label="Scrollable evidence table"
           >
-          and the separately identified open cleanup PR. It updates incident explanations and completed actions; it does
-          not refresh any frequency denominator. Neither this report nor its branch is a hosted website or a configured
-          monitoring schedule.
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Track</th>
+                  <th scope="col">Disposition and remaining boundary</th>
+                  <th scope="col">Reference</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Exporter shutdown waits</td>
+                  <td>
+                    MCP PR #12496 merged at 06:04:10 Z; VM PR #12495 merged
+                    after the source pin. Prior controlled MCP cleanup sums
+                    84.36→23.72 s with both SDKs disabled, runner-only 82.56 s;
+                    ten identical cases retained. VM cleanup 49.75→34.86 s while
+                    whole action 409.7→415.3 s. These are focused phase results;
+                    combined landed CI effect remains unmeasured.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/pull/12496"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Guest image import order</td>
+                  <td>
+                    PR #12498 merged at 06:15:11Z, after the collection window
+                    and pinned source. One pair: stack Ready 221.8→170.3 s,
+                    action 636.3→600.4 s; about 22 s service-readiness tail
+                    overlapped, while 29 s varied upstream. Root import
+                    remained~65 s. Retain full imports and final readiness; no
+                    digest-based skip or fleet estimate.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/pull/12498"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Browser shards / manual scale tests</td>
+                  <td>
+                    Eight versus 16 shards retained 48 cases: process
+                    1795.4→1192.3 s, CPU 3624.7→2343.9 s, slowest 132→196 s in
+                    one pair. Repeat only as a compute tradeoff. Debundle scale
+                    moved to manual in#12486; optimized-CLI automatic-CI
+                    proposal is superseded. Trinity#12455 is also a
+                    manual-workload improvement.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/pull/12486"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>VM/MCP landed work</td>
+                  <td>
+                    Phase timing#12308, guest shutdown/storage ordering#12333
+                    and MCP decision reuse#12380 are complete. Prior acceptance:
+                    eight clean VM incarnations; BFF XML~44 s shorter across two
+                    runs per arm, with unequal startup/snapshot state. Preserve
+                    independent Claude/Codex/OOM boots and fresh-session denial;
+                    further basic/OAuth grouping was rejected because it changes
+                    policy/startup isolation.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/pull/12380"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Reliability / source selection</td>
+                  <td>
+                    iptables lock handling#12248, deadline fix#12189 and
+                    selected replay#12254, pre-commit merge-parent
+                    selector#12270, and cleanup-diagnostic preservation#12244
+                    are merged. Deadline replay 0/3 and real-lock tests are
+                    bounded acceptance, not recurrence-rate estimates.
+                    Diagnostic preservation does not repair a stuck cleanup
+                    state.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/pull/12244"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Cancellation ownership</td>
+                  <td>
+                    Zero retries#12468 suppresses one client retry path. RPC
+                    control resubmitted 105 ms after CANCELLED; a distinct gated
+                    action still ran with zero retries. Producer-stop
+                    evidence#12482 is merged: one normal same-server completion
+                    receipt within 2.302 s; blocked case inconclusive; matched
+                    native-client kill fixed within 0.731 s on Bazel 10
+                    development. Hosted lease/stop trace requires an operator.
+                    Backport declined; no Bazel upgrade or support request is
+                    queued.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/pull/12482"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Artifact checks / capacity</td>
+                  <td>
+                    Native policy/build overlap#12358 is complete and remeasured
+                    here. Affected-artifact selection remains deferred behind
+                    the small artifact-last population. Prior burst reached 20
+                    repository-visible runners for 60 m 53 s; visual publication
+                    used 5.4% of measured occupancy. Capacity remains
+                    conditional on repeat bursts and verified eligible
+                    account-wide capacity; no account plan or hosted-executor
+                    saturation is established.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/pull/12358"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Image and workspace reuse</td>
+                  <td>
+                    VM recycling key#11769 remains; historical imports
+                    198.0→11.7 s are one matched pair, not a fleet effect. Extra
+                    Pod key had no benefit. Immutable seeds remain deferred.
+                    ctr-local, parallel import and no-unpack probes did not
+                    support adoption. Docker opt-out passed four unequal-state
+                    runs without a demonstrated gain. Six warmed full/empty
+                    workspace pairs added~10.18 s, without reproducing 91.068 s
+                    pre-attachment stall.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/latency/index.html"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Fixture graph and selection</td>
+                  <td>
+                    API image#11506 and deterministic rendering/MCP
+                    variants#11746/#11747 are retained; graph cut 14→0 is
+                    historical. k 3 s ownership#11871 and Go Actions retirement
+                    are complete. Scoped fixtures and DCR component fixtures
+                    remain partial/deferred; preserve full ingress/discovery
+                    smoke. Leaf-rule narrowing still needs both-revision graph
+                    proof and fallback. Broad mypy batching/internal caches
+                    remain unproved.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/latency/index.html"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Rejected cost/latency shortcuts</td>
+                  <td>
+                    Two-shard VM/MCP pair increased worker-seconds 1.74× and CPU
+                    2.31× for an unmatched 14.6 s wall difference; do not adopt
+                    blanket sharding. No VM boot coverage is removed. Prepared
+                    Nix check container/combined evaluation remains rejected;
+                    host guard stays removed. Cold bytecode/mypy work,
+                    publication-tail work and changed-consumer invalidation
+                    remain lower priority than measured required gates.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/latency/index.html"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Older implemented optimizations</td>
+                  <td>
+                    Bridge sharding, PostgreSQL templates, Props prefetch,
+                    shallow checkout, warm Bazel, parse-once YAML, Gazelle
+                    consolidation and marker/policy cache work retain their
+                    original source/window evidence. Their fleet savings are not
+                    remeasured here. App/history/auth ownership migrations
+                    retain independent correctness gates; no wholesale
+                    app-removal saving is assumed.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/latency/index.html"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Historical reliability leads</td>
+                  <td>
+                    October 24–27 baseline:2/345 mainline failures,29/129
+                    conclusive PR attempts; five selected same-source recoveries
+                    are not a flake rate. CAS eviction, CPU-bound scale timeouts
+                    and pre-command startup timeouts are distinct. Old
+                    notification/Python and RunnerBridge mechanisms moved
+                    owners; do not revive retired-path fixes. Native journal,
+                    receipt idempotency, projection readiness and visual capture
+                    invariants remain. Source-only Casino/debounce/FreeCAD leads
+                    were not re-audited here; Augur port callers migrated and
+                    D-Bus example is absent.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/reliability/index.html"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Feedback visibility</td>
+                  <td>
+                    Live BuildBuddy status#11827/#11851/#11854 and
+                    pagination/source-lineage tooling are retained. Status
+                    timestamps, API availability, webhook delivery, inbox
+                    admission, harness receipt and complete auto-merge readiness
+                    are distinct. This refresh observes native check/job clocks;
+                    no delivery schedule, Mimir metric, Shapley allocation or
+                    hosted Pages deployment was created.
+                  </td>
+                  <td>
+                    <a
+                      href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/latency/index.html"
+                      >Prior evidence / change</a
+                    >
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+        <p>
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/latency/index.html"
+            >Complete previous latency snapshot</a
+          >
+          ·
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/e199f995abeae03392d0e3e25f8e269fdf09df21/reliability/index.html"
+            >Complete previous reliability snapshot</a
+          >
         </p>
       </section>
       <footer>
-        Ducktape CI reports · standalone HTML, no hosted Pages deployment ·
-        <a href="evidence.json">reviewed evidence</a> · <a href="manifest.json">manifest</a> ·
-        <a href="../latency/index.html">companion report</a>
+        <a href="../latency/index.html">Companion report</a> ·
+        <a href="evidence.json">Reviewed evidence</a> ·
+        <a href="manifest.json">Source and window</a><br />Standalone HTML; no
+        hosted Pages deployment or scheduled monitoring.
       </footer>
     </main>
   </body>
