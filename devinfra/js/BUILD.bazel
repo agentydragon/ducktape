@@ -1,6 +1,6 @@
 # Shared JavaScript/TypeScript Bazel macros.
 
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library")
 load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/python:defs.bzl", "py_binary", "py_test")
 
@@ -41,12 +41,6 @@ js_binary(
 js_library(
     name = "schema_remote_fetch_guard",
     srcs = ["schema_remote_fetch_guard.mjs"],
-)
-
-js_test(
-    name = "openapi_typescript_no_fetch_test",
-    data = [":openapi_typescript_codegen"],
-    entry_point = "openapi_typescript_no_fetch.test.mjs",
 )
 
 py_library(

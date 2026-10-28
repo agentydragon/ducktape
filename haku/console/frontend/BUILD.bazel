@@ -98,7 +98,6 @@ openapi_typescript(
 js_library(
     name = "schema",
     srcs = [":_schema_types"],
-    tags = ["no-lint"],
 )
 
 # The exact input schemas advertised by the in-process MCP servers. Keep both the generated
