@@ -7,6 +7,8 @@ go_library(
     srcs = [
         "actions.go",
         "claims.go",
+        "event_identity_runtime.go",
+        "event_identity_storage.go",
         "github_commit_observations.go",
         "github_deliveries.go",
         "github_ingest.go",
@@ -17,8 +19,6 @@ go_library(
         "github_state.go",
         "github_status.go",
         "inboxes.go",
-        "json.go",
-        "legacy_action.go",
         "messages.go",
         "notices.go",
         "status.go",
@@ -28,12 +28,16 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/store",
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/notification_service:storage_go_proto",
+        "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/model",
         "//agentplane/postgres/go:postgres",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
@@ -42,11 +46,15 @@ go_test(
     srcs = [
         "golden_test.go",
         "golden_vectors_test.go",
+        "historical_model_json_test.go",
+        "historical_notification_json_test.go",
     ],
     embed = [":store"],
     embedsrcs = ["golden.json"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/notification_service/internal/storagecodec",
+        "//agentplane/notification_service/migrations/backfill",
         "//agentplane/notification_service/model",
         "//agentplane/proto:event_log_go_proto",
         "@com_github_google_uuid//:uuid",
@@ -61,6 +69,11 @@ go_test(
     srcs = [
         "actions_integration_test.go",
         "claims_integration_test.go",
+        "creation_contract_integration_test.go",
+        "entry_native_content_contract_integration_test.go",
+        "event_identity_contract_integration_test.go",
+        "event_identity_storage_integration_test.go",
+        "event_native_content_writer_only_integration_test.go",
         "github_commit_integration_test.go",
         "github_commit_migration_integration_test.go",
         "github_ingest_integration_test.go",
@@ -74,6 +87,9 @@ go_test(
         "github_state_integration_test.go",
         "github_subscribe_integration_test.go",
         "golden_vectors_test.go",
+        "historical_model_json_test.go",
+        "historical_notification_json_test.go",
+        "inbox_destination_contract_integration_test.go",
         "inboxes_integration_test.go",
         "integration_testmain_test.go",
         "messages_integration_test.go",
@@ -82,6 +98,7 @@ go_test(
         "python_rows_integration_test.go",
         "status_integration_test.go",
         "status_test.go",
+        "storage_test.go",
         "subscriptions_integration_test.go",
         "wakeups_integration_test.go",
     ],
@@ -91,7 +108,9 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/migrations",
+        "//agentplane/notification_service/migrations/backfill",
         "//agentplane/notification_service/model",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/proto:command_go_proto",
@@ -103,6 +122,7 @@ go_test(
         "@com_github_pressly_goose_v3//:goose",
         "@io_bazel_rules_go//go/runfiles",
         "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

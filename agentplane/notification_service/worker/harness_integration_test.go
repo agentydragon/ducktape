@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"reflect"
 	"slices"
@@ -13,8 +14,9 @@ import (
 	"testing"
 	"time"
 
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -237,7 +239,17 @@ type harness struct {
 // newHarness starts from a database without the other tests' inboxes: the worker claims whichever inbox is due.
 func newHarness(t *testing.T, settings Settings) *harness {
 	t.Helper()
-	db, err := sql.Open("postgres", database.URL)
+	return newHarnessWithDatabaseURL(t, database.URL, settings)
+}
+
+func newIsolatedHarness(t *testing.T, settings Settings) *harness {
+	t.Helper()
+	return newHarnessWithDatabaseURL(t, database.Clone(t), settings)
+}
+
+func newHarnessWithDatabaseURL(t *testing.T, databaseURL string, settings Settings) *harness {
+	t.Helper()
+	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,8 +331,9 @@ func (h *harness) addEvents(t *testing.T, subscription store.Subscription, first
 		if _, err := tx.ExecContext(t.Context(), `SELECT 1 FROM inbox WHERE id = $1 FOR UPDATE`, subscription.InboxID); err != nil {
 			t.Fatal(err)
 		}
+		payload := json.RawMessage(fmt.Sprintf(`{"sequence": %d, "state": "running", "at": "2026-01-01T00:00:00Z", "actor": null}`, sequence))
 		if err := h.store.AppendEvent(t.Context(), tx, subscription.InboxID, subscription.ID,
-			model.ActionsEvent{RequestID: request, Sequence: sequence}, json.RawMessage(`{}`)); err != nil {
+			model.ActionsEvent{RequestID: request, Sequence: sequence}, payload); err != nil {
 			t.Fatal(err)
 		}
 		if err := tx.Commit(); err != nil {

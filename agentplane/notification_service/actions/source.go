@@ -9,6 +9,8 @@ import (
 	"math"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -41,7 +43,7 @@ var _ worker.Provider = (*Source)(nil)
 //
 // The subscription servicer calls it when a subscription is created and shows an access denied failure as
 // PERMISSION_DENIED: authorization precedes persistence even when replay starts after the last event.
-func (s *Source) Events(ctx context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
+func (s *Source) Events(ctx context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
 	request, err := s.Service.GetActionRequest(ctx, &action_servicepb.GetActionRequestRequest{RequestId: requestID.String()})
 	if err != nil {
 		return nil, rpcFailure(ctx, err)
@@ -69,7 +71,7 @@ func (s *Source) Events(ctx context.Context, owner model.ServiceAccount, request
 	if page == nil {
 		return nil, validationFailure()
 	}
-	events := make([]store.ActionEvent, len(page.GetEvents()))
+	events := make([]storagecodec.ActionEvent, len(page.GetEvents()))
 	for i, event := range page.GetEvents() {
 		if events[i], err = actionEvent(event); err != nil {
 			return nil, err
@@ -103,19 +105,19 @@ func serviceAccount(account *sandboxespb.ServiceAccount) (model.ServiceAccount, 
 	return model.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}, nil
 }
 
-func actionEvent(event *action_servicepb.ActionEvent) (store.ActionEvent, error) {
+func actionEvent(event *action_servicepb.ActionEvent) (storagecodec.ActionEvent, error) {
 	if event == nil || event.GetSequence() < 1 || event.GetAt() == nil || event.GetAt().CheckValid() != nil {
-		return store.ActionEvent{}, validationFailure()
+		return storagecodec.ActionEvent{}, validationFailure()
 	}
 	state := event.GetState()
 	if !validActionState(state) {
-		return store.ActionEvent{}, validationFailure()
+		return storagecodec.ActionEvent{}, validationFailure()
 	}
 	actor := event.GetActor()
 	if err := validateActionActor(actor); err != nil {
-		return store.ActionEvent{}, validationFailure()
+		return storagecodec.ActionEvent{}, validationFailure()
 	}
-	return store.ActionEvent{
+	return storagecodec.ActionEvent{
 		Sequence: int64(event.GetSequence()), State: state, At: event.GetAt().AsTime().UTC().Truncate(time.Microsecond), Actor: actor,
 	}, nil
 }

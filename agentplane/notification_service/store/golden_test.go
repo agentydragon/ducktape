@@ -7,6 +7,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations/backfill"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -23,61 +26,12 @@ func TestDestinationKeysAreThosePythonComputes(t *testing.T) {
 	}
 }
 
-func TestCreationsAreReadAndWrittenAsPythonDoes(t *testing.T) {
-	for _, vector := range loadGolden(t).Subscriptions {
-		t.Run(vector.Name, func(t *testing.T) {
-			var sent, stored model.Subscribe
-			if err := decode(vector.Input, &sent); err != nil {
-				t.Fatalf("decoding the input: %v", err)
-			}
-			if err := sent.Validate(); err != nil {
-				t.Fatalf("Validate: %v", err)
-			}
-			written, err := json.Marshal(sent)
-			if err != nil {
-				t.Fatal(err)
-			}
-			sameJSON(t, written, vector.Stored)
-
-			// What Python stored reads back, without loss, as the creation that was sent.
-			if err := decode(vector.Stored, &stored); err != nil {
-				t.Fatalf("decoding the stored form: %v", err)
-			}
-			if !stored.Equal(sent) {
-				t.Errorf("stored form %+v is not the creation sent %+v", stored, sent)
-			}
-			rewritten, err := json.Marshal(stored)
-			if err != nil {
-				t.Fatal(err)
-			}
-			sameJSON(t, rewritten, vector.Stored)
-		})
-	}
-}
-
-func TestCreationsPythonRefusesAreRefused(t *testing.T) {
-	for _, vector := range loadGolden(t).InvalidSubscriptions {
-		t.Run(vector.Name, func(t *testing.T) {
-			var creation model.Subscribe
-			err := decode(vector.Input, &creation)
-			if err == nil {
-				err = creation.Validate()
-				if err != nil && !errors.Is(err, model.ErrInvalid) {
-					t.Errorf("Validate error %v is not model.ErrInvalid", err)
-				}
-			}
-			if err == nil {
-				t.Errorf("accepted %s", vector.Input)
-			}
-		})
-	}
-}
-
 func TestCreationsAreTheSameWhereThePythonCheckSaysSo(t *testing.T) {
 	for _, vector := range loadGolden(t).Comparisons {
 		t.Run(vector.Name, func(t *testing.T) {
-			var a, b model.Subscribe
-			if err := errors.Join(decode(vector.A, &a), decode(vector.B, &b)); err != nil {
+			a, errA := backfill.DecodeHistoricalSubscription(vector.A)
+			b, errB := backfill.DecodeHistoricalSubscription(vector.B)
+			if err := errors.Join(errA, errB); err != nil {
 				t.Fatal(err)
 			}
 			if got := a.Equal(b); got != vector.Same {
@@ -93,8 +47,8 @@ func TestCreationsAreTheSameWhereThePythonCheckSaysSo(t *testing.T) {
 func TestActionEventsAreStoredAsPythonStoresThem(t *testing.T) {
 	for _, vector := range loadGolden(t).ActionEvents {
 		t.Run(vector.Name, func(t *testing.T) {
-			var event ActionEvent
-			if err := decode(vector.Wire, &event); err != nil {
+			var event storagecodec.ActionEvent
+			if err := storagecodec.Decode(vector.Wire, &event); err != nil {
 				t.Fatal(err)
 			}
 			payload, err := json.Marshal(event)
@@ -109,8 +63,8 @@ func TestActionEventsAreStoredAsPythonStoresThem(t *testing.T) {
 func TestActionEventsPythonRefusesAreRefused(t *testing.T) {
 	for _, vector := range loadGolden(t).InvalidActionEvents {
 		t.Run(vector.Name, func(t *testing.T) {
-			var event ActionEvent
-			if err := decode(vector.Wire, &event); err == nil {
+			var event storagecodec.ActionEvent
+			if err := storagecodec.Decode(vector.Wire, &event); err == nil {
 				t.Errorf("accepted %s", vector.Wire)
 			}
 		})
@@ -126,7 +80,7 @@ func TestActionActorDecoderKeepsExplicitNullCompatibility(t *testing.T) {
 		{
 			name: "caller with null operator fields",
 			json: `{"account":{"namespace":"test-namespace","name":"test-caller"},"issuer":null,"subject":null}`,
-			want: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: serviceAccountProto(model.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"})}},
+			want: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: storagecodec.ServiceAccountProto(model.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"})}},
 		},
 		{
 			name: "operator with null account",
@@ -135,14 +89,14 @@ func TestActionActorDecoderKeepsExplicitNullCompatibility(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			actor, err := decodeActionActor(json.RawMessage(test.json))
+			actor, err := storagecodec.DecodeActionActor(json.RawMessage(test.json))
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !proto.Equal(actor, test.want) {
 				t.Fatalf("actor = %#v, want %#v", actor, test.want)
 			}
-			written, err := encodeActionActor(actor)
+			written, err := storagecodec.EncodeActionActor(actor)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -198,26 +152,10 @@ func TestRunnerEntriesSerializeAsPythonDoes(t *testing.T) {
 	}
 }
 
-func TestEventsAreReadAndWrittenAsPythonDoes(t *testing.T) {
-	for _, vector := range loadGolden(t).Events {
-		t.Run(vector.Name, func(t *testing.T) {
-			event, err := model.DecodeEventIdentity(vector.Event)
-			if err != nil {
-				t.Fatal(err)
-			}
-			written, err := json.Marshal(event)
-			if err != nil {
-				t.Fatal(err)
-			}
-			sameJSON(t, written, vector.Event)
-		})
-	}
-}
-
 func TestSubjectKeysAreThosePythonIndexes(t *testing.T) {
 	for _, vector := range loadGolden(t).SubjectKeys {
 		t.Run(vector.Kind, func(t *testing.T) {
-			subject, err := model.DecodeGitHubSubject(vector.Subject)
+			subject, err := backfill.DecodeHistoricalSubject(vector.Subject)
 			if err != nil {
 				t.Fatal(err)
 			}

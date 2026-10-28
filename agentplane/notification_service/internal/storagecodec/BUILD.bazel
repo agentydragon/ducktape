@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "storagecodec",
+    srcs = [
+        "action.go",
+        "entry_content.go",
+        "json.go",
+        "legacy_action.go",
+        "mergeability.go",
+        "storage.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec",
+    visibility = ["//agentplane/notification_service:__subpackages__"],
+    deps = [
+        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/notification_service:storage_go_proto",
+        "//agentplane/notification_service/model",
+        "//agentplane/proto:sandboxes_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)

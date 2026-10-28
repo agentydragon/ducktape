@@ -1,4 +1,4 @@
-package store
+package storagecodec
 
 import (
 	"bytes"
@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-func decode(data []byte, value any) error {
+func Decode(data []byte, value any) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(value); err != nil {
@@ -19,7 +19,7 @@ func decode(data []byte, value any) error {
 	return nil
 }
 
-func required(field string, present bool) error {
+func Required(field string, present bool) error {
 	if !present {
 		return fmt.Errorf("%s is required", field)
 	}

@@ -9,13 +9,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations/backfill"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
 )
 
-// These tests write rows the way the retired Python service did, from the golden vectors it produced, and hold the
-// store to finding and reading them: the store takes over a database that Python filled.
+// These tests use rows the retired Python service produced as semantic inputs, then write the typed columns the
+// current store requires and hold the store to finding and reading them.
 
 func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef, sessionID string) uuid.UUID {
 	t.Helper()
@@ -26,68 +29,73 @@ func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef,
 
 func (f fixture) insertInboxAs(t *testing.T, id uuid.UUID, key string, ref model.DestinationRef, sessionID string) {
 	t.Helper()
-	destination, err := json.Marshal(ref)
+	f.exec(t, `
+		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
+			destination_namespace, destination_name, destination_uid, session_id,
+			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, now(), now(), now())`,
+		id, f.owner.Namespace, f.owner.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID)
+}
+
+// insertSubscription decodes a historical Python creation document and writes its current typed representation.
+func (f fixture) insertSubscription(t *testing.T, inboxID uuid.UUID, creation json.RawMessage) uuid.UUID {
+	t.Helper()
+	sent, err := backfill.DecodeHistoricalSubscription(creation)
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.exec(t, `
-		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref, session_id,
-			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6, 0, 0, 0, 0, false, now(), now(), now())`,
-		id, f.owner.Namespace, f.owner.Name, key, string(destination), sessionID)
-}
-
-// insertSubscription writes a subscription of the inbox from the creation JSON Python stored, with the columns
-// Python derives from it.
-func (f fixture) insertSubscription(t *testing.T, inboxID uuid.UUID, creation json.RawMessage) uuid.UUID {
-	t.Helper()
-	var shape struct {
-		IdempotencyKey string `json:"idempotency_key"`
-		Source         struct {
-			Provider      string `json:"provider"`
-			AfterSequence int64  `json:"after_sequence"`
-			Repository    string `json:"repository"`
-			Subject       struct {
-				Kind   string `json:"kind"`
-				Number int64  `json:"number"`
-				Name   string `json:"name"`
-				SHA    string `json:"sha"`
-			} `json:"subject"`
-		} `json:"source"`
-	}
-	if err := json.Unmarshal(creation, &shape); err != nil {
+	creationProto, provider, err := storagecodec.EncodeSubscriptionCreation(sent)
+	if err != nil {
 		t.Fatal(err)
 	}
 	id := uuid.New()
 	expires := time.Now().Add(24 * time.Hour)
-	if shape.Source.Provider == "actions" {
+	switch source := sent.Source.(type) {
+	case model.ActionsSource:
 		f.exec(t, `
-			INSERT INTO subscription (id, inbox_id, idempotency_key, creation, version, actions_after_sequence, generation,
-				cancelled, expires_at, next_attempt)
-			VALUES ($1, $2, $3, $4::jsonb, 1, $5, 0, false, $6, now())`,
-			id, inboxID, shape.IdempotencyKey, string(creation), shape.Source.AfterSequence, expires)
+			INSERT INTO subscription (id, inbox_id, idempotency_key, creation_proto, source_provider, version,
+				actions_after_sequence, generation, cancelled, expires_at, next_attempt)
+			VALUES ($1, $2, $3, $4, $5, 1, $6, 0, false, $7, now())`,
+			id, inboxID, sent.IdempotencyKey, creationProto, provider, source.AfterSequence, expires)
 		return id
+	case model.GitHubSource:
+		subjectKind, subjectKey := githubSubjectStorage(t, source.Subject)
+		f.exec(t, `INSERT INTO github_installation (app_id, installation_id, generation) VALUES (1, 2, 0) ON CONFLICT DO NOTHING`)
+		var repositoryID int64
+		if err := f.db.QueryRowContext(t.Context(),
+			`INSERT INTO github_repository (full_name) VALUES ($1) RETURNING repository_id`, source.Repository).Scan(&repositoryID); err != nil {
+			t.Fatal(err)
+		}
+		f.exec(t, `INSERT INTO github_repository_access (app_id, installation_id, repository_id, generation) VALUES (1, 2, $1, 0)`, repositoryID)
+		f.exec(t, `INSERT INTO github_subject (repository_id, kind, subject_key, generation) VALUES ($1, $2, $3, 0)`, repositoryID, subjectKind, subjectKey)
+		f.exec(t, `
+			INSERT INTO subscription (id, inbox_id, idempotency_key, creation_proto, source_provider, version,
+				github_start_position, generation, github_app_id, github_installation_id, github_repository_id,
+				github_subject_kind, github_subject_key, cancelled, expires_at, next_attempt)
+			VALUES ($1, $2, $3, $4, $5, 1, 0, 0, 1, 2, $6, $7, $8, false, $9, now())`,
+			id, inboxID, sent.IdempotencyKey, creationProto, provider, repositoryID, subjectKind, subjectKey, expires)
+		return id
+	default:
+		t.Fatalf("unsupported historical source %T", sent.Source)
+		return uuid.Nil
 	}
-	subject := shape.Source.Subject
-	key := map[string]string{
-		"pull_request": strconv.FormatInt(subject.Number, 10), "issue": strconv.FormatInt(subject.Number, 10),
-		"branch": subject.Name, "commit": subject.SHA,
-	}[subject.Kind]
-	f.exec(t, `INSERT INTO github_installation (app_id, installation_id, generation) VALUES (1, 2, 0) ON CONFLICT DO NOTHING`)
-	var repositoryID int64
-	if err := f.db.QueryRowContext(t.Context(),
-		`INSERT INTO github_repository (full_name) VALUES ($1) RETURNING repository_id`, shape.Source.Repository).Scan(&repositoryID); err != nil {
-		t.Fatal(err)
+}
+
+func githubSubjectStorage(t *testing.T, subject model.GitHubSubject) (string, string) {
+	t.Helper()
+	switch subject := subject.(type) {
+	case model.PullRequestSubject:
+		return "pull_request", strconv.FormatInt(subject.Number, 10)
+	case model.IssueSubject:
+		return "issue", strconv.FormatInt(subject.Number, 10)
+	case model.BranchSubject:
+		return "branch", subject.Name
+	case model.CommitSubject:
+		return "commit", subject.SHA
+	default:
+		t.Fatalf("unsupported historical GitHub subject %T", subject)
+		return "", ""
 	}
-	f.exec(t, `INSERT INTO github_repository_access (app_id, installation_id, repository_id, generation) VALUES (1, 2, $1, 0)`, repositoryID)
-	f.exec(t, `INSERT INTO github_subject (repository_id, kind, subject_key, generation) VALUES ($1, $2, $3, 0)`, repositoryID, subject.Kind, key)
-	f.exec(t, `
-		INSERT INTO subscription (id, inbox_id, idempotency_key, creation, version, github_start_position, generation,
-			github_app_id, github_installation_id, github_repository_id, github_subject_kind, github_subject_key,
-			cancelled, expires_at, next_attempt)
-		VALUES ($1, $2, $3, $4::jsonb, 1, 0, 0, 1, 2, $5, $6, $7, false, $8, now())`,
-		id, inboxID, shape.IdempotencyKey, string(creation), repositoryID, subject.Kind, key, expires)
-	return id
 }
 
 func TestInboxesPythonCreatedAreFoundByTheirDestinationKey(t *testing.T) {
@@ -127,9 +135,9 @@ func TestInboxesPythonCreatedAreFoundByTheirDestinationKey(t *testing.T) {
 func TestSubscriptionsPythonCreatedAreReadAndFoundByTheirKey(t *testing.T) {
 	for _, vector := range loadGolden(t).Subscriptions {
 		t.Run(vector.Name, func(t *testing.T) {
-			f := newFixture(t, defaultQuotas())
-			var sent model.Subscribe
-			if err := decode(vector.Input, &sent); err != nil {
+			f := newIsolatedFixture(t, defaultQuotas())
+			sent, err := backfill.DecodeHistoricalSubscription(vector.Input)
+			if err != nil {
 				t.Fatal(err)
 			}
 			inboxID := f.insertInbox(t, model.DestinationKey(sent.DestinationRef, sent.SessionID), sent.DestinationRef, sent.SessionID)
@@ -175,8 +183,11 @@ func TestEntriesPythonWroteAreReadAndNotAppendedAgain(t *testing.T) {
 	subscription := f.subscribe(t, body("first"))
 	vectors := loadGolden(t).Events
 	for i, vector := range vectors {
-		f.exec(t, `INSERT INTO entry (inbox_id, cursor, event, payload, created_at) VALUES ($1, $2, $3::jsonb, '{}'::jsonb, now())`,
-			subscription.InboxID, i+1, string(vector.Event))
+		event, err := backfill.DecodeHistoricalEventIdentity(vector.Event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		insertContractedHistoricalEntry(t, f.db, subscription.InboxID, int64(i+1), vector.Event, entryPayloadForTest(t, event))
 	}
 	f.exec(t, `UPDATE inbox SET last_cursor = $2 WHERE id = $1`, subscription.InboxID, len(vectors))
 
@@ -185,7 +196,7 @@ func TestEntriesPythonWroteAreReadAndNotAppendedAgain(t *testing.T) {
 		t.Fatalf("%d entries, want %d", len(page.Entries), len(vectors))
 	}
 	for i, vector := range vectors {
-		event, err := model.DecodeEventIdentity(vector.Event)
+		event, err := backfill.DecodeHistoricalEventIdentity(vector.Event)
 		if err != nil {
 			t.Fatal(err)
 		}

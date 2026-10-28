@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -21,7 +22,7 @@ func actionsEvents(request uuid.UUID, count int) []model.ActionsEvent {
 }
 
 func payloadOf(event model.ActionsEvent) string {
-	return fmt.Sprintf(`{"sequence": %d, "state": "decision_pending"}`, event.Sequence)
+	return fmt.Sprintf(`{"sequence": %d, "state": "decision_pending", "at": "2026-01-01T00:00:00Z", "actor": null}`, event.Sequence)
 }
 
 func TestOverlappingSubscriptionsCommitOnePrefixAndReadDoesNotAcknowledge(t *testing.T) {
@@ -75,6 +76,51 @@ func TestOverlappingSubscriptionsCommitOnePrefixAndReadDoesNotAcknowledge(t *tes
 	}
 }
 
+func TestReadReconstructsTypedPayloadsAndKeepsGitHubJSONNative(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, body("typed-content-reader"))
+	requestID := uuid.New()
+	events := []model.EventIdentity{
+		model.ActionsEvent{RequestID: requestID, Sequence: 1},
+		model.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 2},
+		model.GitHubMergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 3},
+		model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "sandbox"}},
+		model.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: model.EventPullRequest},
+	}
+	wantPayloads := make([][]byte, len(events))
+	for i, event := range events {
+		payload := entryPayloadForTest(t, event)
+		wantPayloads[i] = []byte(payload)
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payload)
+		if _, nativeJSON := event.(model.GitHubEvent); !nativeJSON {
+			// After the content-backfill gate, native fields stand on their own.
+			f.exec(t, `UPDATE entry SET payload = NULL WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1)
+		}
+	}
+
+	page := f.read(t, subscription.InboxID, 0)
+	if len(page.Entries) != len(events) {
+		t.Fatalf("read returned %d entries, want %d", len(page.Entries), len(events))
+	}
+	for i := range events {
+		sameJSON(t, page.Entries[i].Payload, wantPayloads[i])
+	}
+}
+
+func TestReadRejectsMissingNativeContentInsteadOfFallingBackToJSON(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, body("missing-typed-content"))
+	event := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
+	f.exec(t, `UPDATE entry SET action_state = NULL, action_at = NULL, action_actor_kind = NULL,
+		action_actor_namespace = NULL, action_actor_name = NULL, action_actor_issuer = NULL,
+		action_actor_subject = NULL WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
+	_, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, 0, 128)
+	if err == nil || !strings.Contains(err.Error(), "entry has no Action content") {
+		t.Fatalf("read error = %v, want a missing native content error", err)
+	}
+}
+
 func TestReadIsBoundedAndOwned(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	subscription := f.subscribe(t, body("first"))
@@ -125,7 +171,7 @@ func TestConcurrentSourcesAllocateOneCommittedPrefix(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			event := model.ActionsEvent{RequestID: requests[i], Sequence: 1}
-			if err := f.appendEvent(subscription.InboxID, subscription.ID, event, `{}`); err != nil {
+			if err := f.appendEvent(subscription.InboxID, subscription.ID, event, payloadOf(event)); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -221,6 +267,9 @@ func TestRetentionGapIsVisibleAndReplayKeepsTheTombstone(t *testing.T) {
 	for _, event := range events {
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 	}
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND action_at IS NOT NULL`, subscription.InboxID); got != 3 {
+		t.Fatalf("%d entries have native Action content before expiry, want 3", got)
+	}
 	f.exec(t, `UPDATE entry SET created_at = now() - interval '31 days' WHERE inbox_id = $1`, subscription.InboxID)
 	f.cleanAll(t)
 
@@ -230,6 +279,9 @@ func TestRetentionGapIsVisibleAndReplayKeepsTheTombstone(t *testing.T) {
 	}
 	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND payload IS NULL`, subscription.InboxID); got != 3 {
 		t.Fatalf("%d entries without a payload, want 3", got)
+	}
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND action_at IS NULL AND action_state IS NULL`, subscription.InboxID); got != 3 {
+		t.Fatalf("%d entries without native Action content after expiry, want 3", got)
 	}
 	// A late overlapping subscription replaying the expired events finds their identities and adds none.
 	late := creation
@@ -268,7 +320,8 @@ func TestInboxesRetiredLongAgoAreDeletedWithTheirRows(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	creation := body("first")
 	subscription := f.subscribe(t, creation)
-	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}, `{}`)
+	event := model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 	recent := f.subscribe(t, func() model.Subscribe { other := creation; other.SessionID = "recently-retired"; return other }())
 
 	for _, inboxID := range []uuid.UUID{subscription.InboxID, recent.InboxID} {

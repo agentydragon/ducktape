@@ -11,6 +11,7 @@ go_library(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/grpc/bearer",
+        "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/model",
         "//agentplane/notification_service/store",
         "//agentplane/notification_service/worker",
@@ -34,6 +35,7 @@ go_test(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/grpc/bearer",
+        "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/migrations",
         "//agentplane/notification_service/model",
         "//agentplane/notification_service/store",

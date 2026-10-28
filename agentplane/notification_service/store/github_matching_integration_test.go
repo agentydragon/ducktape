@@ -73,6 +73,38 @@ func TestRedeliveryIsNotDeliveredAgain(t *testing.T) {
 	}
 }
 
+func TestDeliverySelectorUsesRelationalIdentityAfterWriterOnlyCutover(t *testing.T) {
+	g := newGitHubFixtureWithStoreFixture(t, newEventIdentityWriterOnlyFixture(t))
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	nilAction := g.deliver(t, "issue_comment", onPullRequest(7), labelled("nil action"))
+	emptyAction := g.deliver(t, "issue_comment", withAction(""), onPullRequest(7), labelled("empty action"))
+	g.reconcileAll(t, sub)
+
+	if step := g.prepare(t, sub); len(step.Matched) != 0 {
+		t.Fatalf("selector returned %d already matched deliveries, want none", len(step.Matched))
+	}
+
+	// Model a retained rollback copy that disagrees with the relational identity. New writer-only rows start
+	// with NULL here; neither delivery selection nor redelivery suppression may consult this legacy column.
+	g.exec(t, `UPDATE entry SET event = jsonb_build_object('provider', 'actions',
+		'request_id', '00000000-0000-0000-0000-000000000001', 'sequence', cursor)
+		WHERE inbox_id = $1`, sub.InboxID)
+	if step := g.prepare(t, sub); len(step.Matched) != 0 {
+		t.Fatalf("selector used conflicting legacy JSON and returned %d already matched deliveries", len(step.Matched))
+	}
+
+	// A delivery with NULL action differs from one with an explicitly empty action. Make the retained match's
+	// relational action look like the empty-action delivery; only the NULL-action delivery should become owed.
+	g.exec(t, `UPDATE entry SET github_action = '' WHERE inbox_id = $1 AND github_delivery_id = $2`,
+		sub.InboxID, nilAction.DeliveryID)
+	step := g.prepare(t, sub)
+	if len(step.Matched) != 1 || step.Matched[0].Event.DeliveryID != nilAction.DeliveryID ||
+		step.Matched[0].Event.Action != nil {
+		t.Fatalf("selector after changing matched action identity = %+v, want only NULL-action delivery %s (empty action %s)",
+			step.Matched, nilAction.DeliveryID, emptyAction.DeliveryID)
+	}
+}
+
 func TestIssueAndPullRequestSubjectsAreKeptApart(t *testing.T) {
 	g := newGitHubFixture(t)
 	issue := g.source(model.IssueSubject{Number: 7})

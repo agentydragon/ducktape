@@ -4,11 +4,20 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations/backfill"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -20,10 +29,59 @@ func TestMain(m *testing.M) {
 	os.Exit(postgres.RunIntegrationTests(
 		migrations.Up,
 		func(database *postgres.Database) int {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+			if err := database.PrepareCloneTemplate(ctx); err != nil {
+				fmt.Fprintln(os.Stderr, "prepare pristine PostgreSQL clone template:", err)
+				return 1
+			}
 			integrationDatabase = database
 			return m.Run()
 		},
 	))
+}
+
+func newStorageIntegrationDatabase(t *testing.T) (*sql.DB, context.Context) {
+	t.Helper()
+	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db, t.Context()
+}
+
+// newEventIdentityWriterOnlyFixture retains the compatibility schema used by tests that exercise legacy event
+// and payload JSON alongside the native relational fields before init cleanup (00019) and the final contracts (00020–00023) retire them.
+func newEventIdentityWriterOnlyFixture(t *testing.T) fixture {
+	t.Helper()
+	db, ctx := newStorageIntegrationDatabase(t)
+	resetNotificationSchema(t, db)
+	if err := migrations.UpTo(ctx, db, 18); err != nil {
+		t.Fatalf("build pre-contract schema through migration 00018: %v", err)
+	}
+	return fixtureForDatabase(t, db, defaultQuotas())
+}
+
+func explainLines(ctx context.Context, tx *sql.Tx, query string, args ...any) (string, error) {
+	rows, err := tx.QueryContext(ctx, "EXPLAIN (COSTS OFF) "+query, args...)
+	if err != nil {
+		return "", err
+	}
+	var plan strings.Builder
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			_ = rows.Close()
+			return "", err
+		}
+		plan.WriteString(line)
+		plan.WriteByte('\n')
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return "", err
+	}
+	return plan.String(), nil
 }
 
 func defaultQuotas() Quotas {
@@ -46,11 +104,139 @@ func newFixture(t *testing.T, quotas Quotas) fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
+	return fixtureForDatabase(t, db, quotas)
+}
+
+func newIsolatedFixture(t *testing.T, quotas Quotas) fixture {
+	t.Helper()
+	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return fixtureForDatabase(t, db, quotas)
+}
+
+func fixtureForDatabase(t *testing.T, db *sql.DB, quotas Quotas) fixture {
+	t.Helper()
 	return fixture{Store: New(db, quotas), db: db, owner: newOwner(), sandboxUID: testSandboxUID}
 }
 
 func newOwner() model.ServiceAccount {
 	return model.ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
+}
+
+// insertBackfilledEntry stores the native event JSON a prior writer created alongside the relational identity
+// that the identity backfill has populated before the relational-reader release.
+func insertBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor int64, eventJSON []byte, payload string) {
+	t.Helper()
+	event, err := backfill.DecodeHistoricalEventIdentity(eventJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	columns, err := eventIdentityStorageFor(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := append([]any{inboxID, cursor, string(eventJSON), payload}, columns.args()...)
+	_, err = db.ExecContext(t.Context(), `INSERT INTO entry (inbox_id, cursor, event, payload, created_at,
+		identity_provider, actions_request_id, actions_sequence,
+		github_app_id, github_delivery_id, github_repository_id, github_event, github_action,
+		github_pull_request_number, github_mergeability_sequence, github_snapshot_version, github_observation_sequence,
+		message_id, message_sender_namespace, message_sender_name)
+		VALUES ($1, $2, $3::jsonb, $4::jsonb, now(), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// insertContentBackfilledEntry models a retained non-expired row after both identity and content backfills.
+func insertContentBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor int64, eventJSON []byte, payload string) {
+	t.Helper()
+	event, err := backfill.DecodeHistoricalEventIdentity(eventJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := storagecodec.EntryContentStorageFor(event, json.RawMessage(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertBackfilledEntry(t, db, inboxID, cursor, eventJSON, payload)
+	values := content.Args()
+	placeholders := make([]string, len(values))
+	for i := range placeholders {
+		placeholders[i] = fmt.Sprintf("$%d", i+3)
+	}
+	query := `UPDATE entry SET (` + storagecodec.EntryContentReadColumns + `) = (` + strings.Join(placeholders, ", ") + `)
+		WHERE inbox_id = $1 AND cursor = $2`
+	if _, err := db.ExecContext(t.Context(), query, append([]any{inboxID, cursor}, values...)...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// insertContractedHistoricalEntry decodes a Python identity fixture and stores its current relational form.
+func insertContractedHistoricalEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor int64, eventJSON []byte, payload string) {
+	t.Helper()
+	event, err := backfill.DecodeHistoricalEventIdentity(eventJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if err := insertEntry(t.Context(), tx, inboxID, cursor, event, json.RawMessage(payload), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func entryPayloadForTest(t *testing.T, event model.EventIdentity) string {
+	t.Helper()
+	var value any
+	switch event := event.(type) {
+	case model.ActionsEvent:
+		value = storagecodec.ActionEvent{
+			Sequence: event.Sequence, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING,
+			At: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+			Actor: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{
+				Issuer: "https://issuer.example", Subject: "subject-123",
+			}}},
+		}
+	case model.GitHubEvent:
+		return `{}`
+	case model.GitHubObservationEvent:
+		return `{"id":17,"appId":1,"repositoryId":2,"name":"build","headSha":"0123456789abcdef0123456789abcdef01234567"}`
+	case model.GitHubMergeabilityEvent:
+		value = testMergeabilityPayload(event.PullRequestNumber)
+	case model.GitHubMergeabilitySnapshotEvent:
+		value = testMergeabilityPayload(event.PullRequestNumber)
+	case model.MessageEvent:
+		fromSession := "sender-session"
+		value = struct {
+			Body        string  `json:"body"`
+			FromSession *string `json:"from_session,omitempty"`
+		}{Body: "stored message", FromSession: &fromSession}
+	default:
+		t.Fatalf("unsupported entry test identity %T", event)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
+
+func testMergeabilityPayload(pullRequestNumber int64) storagecodec.MergeabilityPayload {
+	return storagecodec.MergeabilityPayload{
+		Repository: "owner/repository", PullRequestNumber: pullRequestNumber,
+		BaseRef: "main", HeadSHA: "head", BaseSHA: "base",
+		PreviousMergeability: model.GitHubMergeabilityUnknown, Mergeability: model.GitHubConflicting,
+		ObservedAt: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+	}
 }
 
 // testSandboxUID is the Sandbox incarnation body's destination names.
@@ -175,4 +361,13 @@ func (f fixture) cleanAll(t *testing.T) {
 		}
 		after = last
 	}
+}
+
+func countQuery(t *testing.T, ctx context.Context, db *sql.DB, query string, args ...any) int {
+	t.Helper()
+	var count int
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
 }

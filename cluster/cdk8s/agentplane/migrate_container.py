@@ -24,12 +24,14 @@ def migrate_init_container(
     *,
     name: str,
     env_variables: dict[str, EnvValue],
+    command: list[str] | None = None,
     image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
     memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
 ) -> ContainerProps:
     return ContainerProps(
         name=name,
         image=image,
+        command=command,
         image_pull_policy=image_pull_policy,
         env_variables=env_variables,
         resources=ContainerResources(

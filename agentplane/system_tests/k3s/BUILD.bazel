@@ -107,7 +107,6 @@ _IMAGES = {
     "mcp_edge": "//agentplane/mcp_edge:service_image",
     "mcp_edge_migrate": "//agentplane/mcp_edge/migrations:image",
     "notification_service": "//agentplane/notification_service:service_image",
-    "notification_service_migrate": "//agentplane/notification_service/migrations:image",
     "policy_controller": "//agentplane/policy_controller:image",
     "postgres": "@postgres_18_minimal_linux_amd64",
     "runner_disk": "//agentplane/runner:disk_image",

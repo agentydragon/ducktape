@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
@@ -125,7 +127,7 @@ type fakeActions struct {
 	calls []actionsCall
 }
 
-func (a *fakeActions) Events(_ context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
+func (a *fakeActions) Events(_ context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.calls = append(a.calls, actionsCall{owner: owner, requestID: requestID, afterSequence: afterSequence})
@@ -440,9 +442,9 @@ func (s testServer) record(t *testing.T, subscription *notificationspb.Subscript
 	if err != nil || due == nil {
 		t.Fatalf("due = %v, %v", due, err)
 	}
-	var events []store.ActionEvent
+	var events []storagecodec.ActionEvent
 	for sequence := int64(1); sequence <= through; sequence++ {
-		events = append(events, store.ActionEvent{
+		events = append(events, storagecodec.ActionEvent{
 			Sequence: sequence, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, At: time.Date(2026, 10, 20, 3, 56, 3, 0, time.UTC),
 		})
 	}

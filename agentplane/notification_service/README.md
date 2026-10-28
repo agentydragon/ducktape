@@ -34,8 +34,8 @@ History Service lags the runner's journal, so a retry never precedes an admissio
 
 ## Running and deployment
 
-`:service_image` (binary `:notification-service`) is the service, and `//agentplane/notification_service/migrations:image`
-its Goose migrator, which the Deployment's init container runs before the service starts. The service needs its own
+`:service_image` contains `notification-service` and `notifications-migrate`. The Deployment's init container
+runs `notifications-migrate` from that same image before the service starts. The service needs its own
 PostgreSQL database, Actions, Runner Gateway, History Service and Session Dispatcher endpoints, projected
 service-account tokens, Kubernetes read access to Sandboxes, PolicySets and PolicyBindings, and `patch` on
 PolicyBinding status. Preserve existing staging data. Verify an Action
@@ -45,12 +45,38 @@ A schema change is a Goose file in `migrations/notifications/`. The baseline, `0
 database that the retired Alembic history left at revision `0010_drop_write_only_columns` and refuses one behind it;
 the migrator keeps the advisory lock key the Alembic runner took.
 
-The generic `github_observation` inbox identity is read-compatible here for the planned CI/check, review
-and PR lifecycle recovery writers. [Reader PR #12411](https://github.com/agentydragon/ducktape/pull/12411) must deploy to all replicas
-before deploying these writers; retain its image as the data-preserving rollback floor once writing begins.
-Do not overlap old GitHub workers with recovery writers during rollout. If rolling back to the reader-only image,
-disable the GitHub provider until a recovery-capable image is restored, while retaining inbox reads and delivery.
-Never roll back to an older decoder or run a down migration that discards retained notifications.
+Entry storage has one staging cutover. The Notification Deployment uses `Recreate`, so its old
+writers stop before the init container migrates and the new service starts. This interrupts
+Notification and webhook handling for the migration and restart. Inspect and redeliver failed GitHub
+webhooks from this window; GitHub does not retry them automatically. No operator backfill commands,
+writer gates or intervening application releases are required. Goose migrations `00001`–`00008`
+remain byte-for-byte unchanged; `00009`–`00023` are internal, restartable checkpoints of this
+single schema release. The packaging prerequisite must first put `notifications-migrate` in the
+currently deployed service image; verify that image is selected before enabling the init command.
+
+The init migrator holds a PostgreSQL advisory session lock across the entire cutover, in addition
+to Goose's existing lock. It expands destinations, subscription creation, event identities and
+entry content, then copies retained rows in bounded primary-key batches. It builds six native
+identity indexes, fences new owned JSON writes, cleans old Action, mergeability and Message JSON,
+validates database constraints, and contracts the legacy columns. Each batch commits its data and
+cursor together. If init fails or a Pod restarts, the next init resumes from Goose and backfill
+checkpoints; it does not admit serving writes until the final contract completes. Once version
+`00023` is applied, normal restarts inspect only Goose metadata and perform no retained-row walk.
+A fresh empty database follows the same path automatically.
+
+The final schema stores Action state, actor and timestamp; mergeability repository, refs, states,
+commit and nanosecond timestamp; and Message text and optional source Session in native columns.
+GitHub webhook and observation payloads remain JSONB. Subscription `creation_proto` and notice
+`runner_entry` remain binary protobuf snapshots. Expired entries keep their identity tombstones
+while their content stays cleared. The migration fails on an undecodable or conflicting retained
+row and leaves its original JSON intact for diagnosis; completed bounded copies are safe to rerun.
+
+Rollback after the cutover needs a forward fix or a native-schema-capable service image. Restore a
+pre-cutover database backup only before admitting new writes, never over newly accepted work.
+Keep the Deployment stopped during restore, then verify readiness, authorization, inbox reads,
+new writes, expiry and replay deduplication. Staging verification also includes a fresh Action
+subscription and a real GitHub webhook delivery; database checks alone do not prove ingress or
+runner notice delivery.
 
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
 flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,

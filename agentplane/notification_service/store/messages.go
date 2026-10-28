@@ -36,6 +36,15 @@ type Message struct {
 	FromSession *string
 }
 
+type messagePayload struct {
+	Body        string  `json:"body"`
+	FromSession *string `json:"from_session,omitempty"`
+}
+
+func encodeMessagePayload(body string, fromSession *string) ([]byte, error) {
+	return json.Marshal(messagePayload{Body: body, FromSession: fromSession})
+}
+
 // Validate checks the bounds of the message, its body against limit UTF-8 bytes. The destination's UID may be
 // empty, for the Sandbox of that name as it is now.
 func (m Message) Validate(limit int) error {
@@ -64,10 +73,7 @@ func (m Message) Validate(limit int) error {
 
 // payload is the entry's payload: what the sender wrote.
 func (m Message) payload() ([]byte, error) {
-	return json.Marshal(struct {
-		Body        string  `json:"body"`
-		FromSession *string `json:"from_session,omitempty"`
-	}{m.Body, m.FromSession})
+	return encodeMessagePayload(m.Body, m.FromSession)
 }
 
 // SentMessage is a message as its sender sees it: where it went and how far the recipient's inbox has moved
@@ -146,10 +152,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 			return &QuotaError{Quota: UnacknowledgedMessagesPerSender, Limit: s.quotas.UnacknowledgedMessagesPerSender}
 		}
 		id = uuid.New()
-		identity, err := json.Marshal(model.MessageEvent{MessageID: id, Sender: message.Sender})
-		if err != nil {
-			return err
-		}
+		event := model.MessageEvent{MessageID: id, Sender: message.Sender}
 		accepted, cursor := now(), inbox.LastCursor+1
 		// A worker's release works out when the notice is due, so the inbox is only made due now.
 		if _, err := tx.ExecContext(ctx,
@@ -157,9 +160,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 			inbox.ID, cursor, accepted); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO entry (inbox_id, cursor, event, payload, created_at) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5)`,
-			inbox.ID, cursor, string(identity), string(payload), accepted); err != nil {
+		if err := insertEntry(ctx, tx, inbox.ID, cursor, event, json.RawMessage(payload), accepted); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -190,13 +191,16 @@ func (s *Store) SentMessage(ctx context.Context, sender model.ServiceAccount, id
 
 func sentMessage(ctx context.Context, tx *sql.Tx, sender model.ServiceAccount, id uuid.UUID) (SentMessage, error) {
 	sent := SentMessage{ID: id}
-	var destination []byte
+	var inboxID uuid.UUID
+	var namespace, name, uid sql.NullString
 	err := tx.QueryRowContext(ctx, `
-		SELECT i.destination_ref, i.session_id, m.idempotency_key, e.created_at,
+		SELECT i.id, i.destination_namespace, i.destination_name, i.destination_uid,
+			i.session_id, m.idempotency_key, e.created_at,
 			m.cursor <= i.covered, m.cursor <= i.acknowledged, i.retired
 		FROM message m JOIN inbox i ON i.id = m.inbox_id JOIN entry e ON e.inbox_id = m.inbox_id AND e.cursor = m.cursor
 		WHERE m.id = $1 AND m.sender_namespace = $2 AND m.sender_name = $3`,
-		id, sender.Namespace, sender.Name).Scan(&destination, &sent.SessionID, &sent.IdempotencyKey, &sent.AcceptedAt,
+		id, sender.Namespace, sender.Name).Scan(&inboxID, &namespace, &name, &uid,
+		&sent.SessionID, &sent.IdempotencyKey, &sent.AcceptedAt,
 		&sent.Covered, &sent.Acknowledged, &sent.InboxRetired)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SentMessage{}, ErrNotFound
@@ -205,7 +209,8 @@ func sentMessage(ctx context.Context, tx *sql.Tx, sender model.ServiceAccount, i
 		return SentMessage{}, err
 	}
 	sent.AcceptedAt = sent.AcceptedAt.UTC()
-	if err := decode(destination, &sent.DestinationRef); err != nil {
+	sent.DestinationRef, err = destinationRefFromColumns(inboxID, namespace, name, uid)
+	if err != nil {
 		return SentMessage{}, err
 	}
 	return sent, nil

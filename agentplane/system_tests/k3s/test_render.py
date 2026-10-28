@@ -79,7 +79,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         "egress": "agentplane-egress-history-migrate",
         "history-service": "agentplane-history-migrate",
         "mcp-edge": "agentplane-mcp-edge-migrate",
-        "notifications": "agentplane-notification-service-migrate",
+        "notifications": "agentplane-notification-service",
         "runner-gateway": "agentplane-runner-gateway-queue-migrate",
     }.items():
         pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]

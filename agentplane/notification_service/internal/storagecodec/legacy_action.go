@@ -1,4 +1,4 @@
-package store
+package storagecodec
 
 import (
 	"encoding/json"
@@ -57,10 +57,10 @@ func (a *actionActorAccount) UnmarshalJSON(data []byte) error {
 		Namespace *string `json:"namespace"`
 		Name      *string `json:"name"`
 	}
-	if err := decode(data, &wire); err != nil {
+	if err := Decode(data, &wire); err != nil {
 		return err
 	}
-	if err := errors.Join(required("namespace", wire.Namespace != nil), required("name", wire.Name != nil)); err != nil {
+	if err := errors.Join(Required("namespace", wire.Namespace != nil), Required("name", wire.Name != nil)); err != nil {
 		return err
 	}
 	*a = actionActorAccount{Namespace: *wire.Namespace, Name: *wire.Name}
@@ -70,7 +70,7 @@ func (a *actionActorAccount) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func serviceAccountProto(a model.ServiceAccount) *sandboxespb.ServiceAccount {
+func ServiceAccountProto(a model.ServiceAccount) *sandboxespb.ServiceAccount {
 	return &sandboxespb.ServiceAccount{Namespace: a.Namespace, Name: a.Name}
 }
 
@@ -96,8 +96,8 @@ func validateActionActor(principal *action_servicepb.Principal) error {
 	return nil
 }
 
-// encodeActionActor writes the legacy flat JSON document. Nil remains JSON null.
-func encodeActionActor(principal *action_servicepb.Principal) ([]byte, error) {
+// EncodeActionActor writes the legacy flat JSON document. Nil remains JSON null.
+func EncodeActionActor(principal *action_servicepb.Principal) ([]byte, error) {
 	if principal == nil {
 		return []byte("null"), nil
 	}

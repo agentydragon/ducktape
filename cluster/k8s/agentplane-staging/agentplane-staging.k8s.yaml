@@ -7020,10 +7020,7 @@ spec:
     matchLabels:
       cdk8s.io/metadata.addr: agentplane-notifications-deployment-c8c45f99
   strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-    type: RollingUpdate
+    type: Recreate
   template:
     metadata:
       labels:
@@ -7110,13 +7107,15 @@ spec:
       imagePullSecrets:
         - name: forgejo-images-creds
       initContainers:
-        - env:
+        - command:
+            - /usr/local/bin/notifications-migrate
+          env:
             - name: AGENTPLANE_NOTIFICATIONS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   key: uri
                   name: postgres-notifications
-          image: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate:unset
+          image: git.allegedly.works/ducktape-ci/agentplane-notification-service:unset
           imagePullPolicy: Always
           name: migrate
           resources:

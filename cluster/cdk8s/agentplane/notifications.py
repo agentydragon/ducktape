@@ -2,6 +2,7 @@
 receipts are read from the History Service."""
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -9,6 +10,7 @@ from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
     CpuResources,
+    DeploymentStrategy,
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
@@ -153,10 +155,13 @@ class Notifications(Construct):
                 memory=MemoryResources(request=Size.mebibytes(128), limit=memory_limit),
             ),
             termination_grace=Duration.seconds(30),
+            # Stop every old writer before the replacement Pods run the schema migration.
+            replica_profile=replace(env.replicas, strategy=DeploymentStrategy.recreate()),
             migrate=migrate_init_container(
-                f"{_IMAGE}-migrate:unset",
+                f"{_IMAGE}:unset",
                 name="migrate",
                 env_variables=variables,
+                command=["/usr/local/bin/notifications-migrate"],
                 image_pull_policy=migrate_pull_policy,
                 memory_limit=migrate_memory_limit,
             ),

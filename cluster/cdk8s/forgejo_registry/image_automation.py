@@ -51,7 +51,6 @@ IMAGES = (
     "agentplane-mcp-edge",
     "agentplane-mcp-edge-migrate",
     "agentplane-notification-service",
-    "agentplane-notification-service-migrate",
     "agentplane-policy-controller",
     "agentplane-runner-disk",
     "agentplane-runner-gateway",

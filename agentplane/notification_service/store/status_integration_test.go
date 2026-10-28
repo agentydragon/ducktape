@@ -1,12 +1,16 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
@@ -120,8 +124,18 @@ func TestSandboxStatusSummarizesWhatAwaitsAcknowledgementWithoutItsContent(t *te
 	subscription := f.subscribeIn(t, "first", uniqueSession(), ref)
 	request := subscription.Source.(model.ActionsSource).RequestID
 	for sequence := int64(1); sequence <= 3; sequence++ {
-		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, model.ActionsEvent{RequestID: request, Sequence: sequence},
-			fmt.Sprintf(`{"sequence": %d, "state": "decision_pending", "result": "private"}`, sequence))
+		event := storagecodec.ActionEvent{
+			Sequence: sequence, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING,
+			At: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+			Actor: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{
+				Issuer: "private-issuer", Subject: "private-subject",
+			}}},
+		}
+		payload, err := json.Marshal(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, model.ActionsEvent{RequestID: request, Sequence: sequence}, string(payload))
 	}
 	summaries := func(cursors ...int64) []EntrySummary {
 		var want []EntrySummary
@@ -154,6 +168,39 @@ func TestSandboxStatusSummarizesWhatAwaitsAcknowledgementWithoutItsContent(t *te
 	inbox = f.onlyInbox(t, ref)
 	requireEqual(t, [2]int64{inbox.UnannouncedCount, inbox.PendingAcknowledgementCount}, [2]int64{0, 0})
 	requireEqual(t, len(inbox.PendingEntries), 0)
+}
+
+func TestSandboxStatusSummarizesTypedContentWhenLegacyJSONConflicts(t *testing.T) {
+	f := newEventIdentityWriterOnlyFixture(t)
+	ref := uniqueSandbox()
+	f.sandboxUID = ref.UID
+	subscription := f.subscribeIn(t, "typed-summary", uniqueSession(), ref)
+	event := model.ActionsEvent{RequestID: subscription.Source.(model.ActionsSource).RequestID, Sequence: 1}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
+	f.exec(t, `UPDATE entry SET payload = '{"state":"legacy_conflict"}' WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
+
+	inbox := f.onlyInbox(t, ref)
+	requireEqual(t, inbox.PendingEntries, []EntrySummary{{
+		Cursor: 1, CreatedAt: f.entryCreatedAt(t, subscription.InboxID, 1), Provider: EntryFromActions,
+		Summary: fmt.Sprintf("Action %s · event 1 · decision_pending", event.RequestID),
+	}})
+}
+
+func TestSandboxStatusSummarizesMessageWithoutReadingItsBody(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	ref := uniqueSandbox()
+	f.sandboxUID = ref.UID
+	subscription := f.subscribeIn(t, "message-summary", uniqueSession(), ref)
+	event := model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "sandbox"}}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, `{"body":"private message body"}`)
+	f.exec(t, `UPDATE entry SET payload = NULL, message_body = NULL, message_from_session = NULL
+		WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
+
+	inbox := f.onlyInbox(t, ref)
+	requireEqual(t, inbox.PendingEntries, []EntrySummary{{
+		Cursor: 1, CreatedAt: f.entryCreatedAt(t, subscription.InboxID, 1), Provider: EntryFromMessage,
+		Summary: "Message from sender/sandbox",
+	}})
 }
 
 func TestSandboxStatusDescribesAtMostAHundredPendingEntries(t *testing.T) {

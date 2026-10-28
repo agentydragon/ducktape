@@ -8,16 +8,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
+
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
 // eventsThrough is the events of an Action request with sequences first through last.
-func eventsThrough(first, last int64) []ActionEvent {
-	var events []ActionEvent
+func eventsThrough(first, last int64) []storagecodec.ActionEvent {
+	var events []storagecodec.ActionEvent
 	for sequence := first; sequence <= last; sequence++ {
-		events = append(events, ActionEvent{
+		events = append(events, storagecodec.ActionEvent{
 			Sequence: sequence, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, At: time.Date(2026, 10, 20, 3, 56, 3, 0, time.UTC),
 		})
 	}
@@ -29,11 +31,11 @@ func dueOf(subscription Subscription) DueSubscription {
 	return DueSubscription{Subscription: subscription, ActionsAfterSequence: ptr(int64(0))}
 }
 
-func (f fixture) record(claim Claim, subscription Subscription, events []ActionEvent) error {
+func (f fixture) record(claim Claim, subscription Subscription, events []storagecodec.ActionEvent) error {
 	return f.RecordActionEvents(context.Background(), claim, dueOf(subscription), events)
 }
 
-func (f fixture) mustRecord(t *testing.T, claim Claim, subscription Subscription, events []ActionEvent) {
+func (f fixture) mustRecord(t *testing.T, claim Claim, subscription Subscription, events []storagecodec.ActionEvent) {
 	t.Helper()
 	if err := f.record(claim, subscription, events); err != nil {
 		t.Fatal(err)
@@ -86,7 +88,7 @@ func TestRecordActionEventsAppendsTheNewEventsAndMovesTheSubscriptionOn(t *testi
 		t.Fatal("the new subscription is not due")
 	}
 	events := eventsThrough(1, 3)
-	events[2].Actor = &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: serviceAccountProto(model.ServiceAccount{Namespace: "test-namespace", Name: "test-sandbox"})}}
+	events[2].Actor = &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: storagecodec.ServiceAccountProto(model.ServiceAccount{Namespace: "test-namespace", Name: "test-sandbox"})}}
 
 	before := time.Now()
 	if err := f.RecordActionEvents(t.Context(), claim, *due, events); err != nil {
@@ -148,7 +150,7 @@ func TestRecordActionEventsRefusesAGapAndRecordsNothingOfTheRead(t *testing.T) {
 	}
 	failure := f.get(t, subscription.ID).Failure
 
-	for name, events := range map[string][]ActionEvent{
+	for name, events := range map[string][]storagecodec.ActionEvent{
 		"a read that starts past the next sequence": eventsThrough(4, 5),
 		"a read that skips one in the middle":       append(eventsThrough(3, 3), eventsThrough(5, 5)...),
 	} {

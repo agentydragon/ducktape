@@ -16,6 +16,25 @@ from cluster.cdk8s.agentplane import (
 )
 
 
+def test_notifications_stop_old_writers_before_migration(staging_manifests: list[dict[str, Any]]) -> None:
+    notifications_deployment = one(
+        doc
+        for doc in staging_manifests
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == notifications.NAME
+    )
+    assert notifications_deployment["spec"]["strategy"] == {"type": "Recreate"}
+    pod = notifications_deployment["spec"]["template"]["spec"]
+    migration = one(pod["initContainers"])
+    server = one(pod["containers"])
+    assert migration["image"] == server["image"]
+    assert migration["command"] == ["/usr/local/bin/notifications-migrate"]
+
+    history_deployment = one(
+        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "history-service"
+    )
+    assert history_deployment["spec"]["strategy"]["type"] == "RollingUpdate"
+
+
 def test_public_notification_routes_are_webhook_only(staging_manifests: list[dict[str, Any]]) -> None:
     rules = [
         rule
