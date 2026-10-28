@@ -203,8 +203,3 @@ def make_engine(dsn: str, **kwargs: Any) -> Engine:
 
 def make_session_factory(engine: Engine) -> Callable[[], Session]:
     return sessionmaker(engine, expire_on_commit=False)
-
-
-def initialize_schema(engine: Engine) -> None:
-    """Create the initial schema for a new archive database."""
-    Base.metadata.create_all(engine)

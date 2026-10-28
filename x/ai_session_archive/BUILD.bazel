@@ -1,3 +1,6 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
@@ -13,6 +16,70 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//psycopg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "database_migrate",
+    srcs = ["database_migrate.py"],
+    data = ["//x/ai_session_archive/migrations:files"],
+    deps = [
+        ":database",
+        "//util:db_migrations",
+    ],
+)
+
+py_library(
+    name = "migrate_cli",
+    srcs = ["migrate_cli.py"],
+    deps = [":database_migrate"],
+)
+
+py_binary(
+    name = "migrate_database_bin",
+    main_module = "x.ai_session_archive.migrate_cli",
+    visibility = ["//visibility:public"],
+    deps = [":migrate_cli"],
+)
+
+aspect_py_binary(
+    name = "migrate_image_bin",
+    main = "migrate_cli.py",
+    deps = [":migrate_cli"],
+)
+
+py_image_layer(
+    name = "migrate_image_layers",
+    binary = ":migrate_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "migrate_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("migrate_image_bin"),
+    env = py_image_env(binary_name = "migrate_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":migrate_image_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_database_migrate",
+    srcs = ["test_database_migrate.py"],
+    requires_docker = True,
+    deps = [
+        ":database",
+        ":database_migrate",
+        "//:conftest",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//alembic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

@@ -5,6 +5,11 @@
       "test": "//agentplane/indexing/...",
       "registry": "forgejo"
     },
+    "ai-session-archive-migrator": {
+      "target": "//x/ai_session_archive:migrate_image",
+      "test": "//x/ai_session_archive:test_database_migrate",
+      "registry": "forgejo"
+    },
     "airlock": {
       "target": "//airlock:image",
       "test": "//airlock/...",

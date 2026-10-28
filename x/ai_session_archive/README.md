@@ -17,7 +17,13 @@ bb run //x/ai_session_archive:ingest_cli -- \
 
 `DATABASE_URL` is read only from the environment so credentials do not appear in process arguments. Archive roots must be configured explicitly with `--claude-root` / `--codex-root` or `CLAUDE_ARCHIVE_ROOT` / `CODEX_ARCHIVE_ROOT`. These absolute paths must match file-node paths returned by `restic ls`; the importer does not infer them from its own home directory or harness environment. Repeat the root flags to map additional roots. The CLI runs the repository's pinned Restic binary from Bazel runfiles. Restic reads its normal environment settings; use `RESTIC_PASSWORD_FILE` for the repository password.
 
-The first schema initializer is explicitly opt-in with `--initialize-fresh-database`. It uses SQLAlchemy `create_all` for a brand-new prototype database and does not upgrade an existing database. Production upgrades need versioned migrations before deploying schema changes. No cluster CronJob or secret provisioning is included here.
+Before the first import, create or upgrade the schema with the versioned migration runner:
+
+```sh
+DATABASE_URL='postgresql+psycopg://…' bb run //x/ai_session_archive:migrate_database_bin
+```
+
+The migration runner applies a versioned Alembic history and uses a PostgreSQL advisory lock to serialize concurrent runs. Run it before starting the importer or API; those processes do not create or upgrade tables. This initial revision targets an empty database. It will fail without dropping data if the earlier prototype `create_all` schema already exists without a migration stamp; adopting an existing prototype database needs a separate schema comparison and explicit stamp.
 
 Claude JSONL under `projects/` is indexed, including nested `subagents/`; Codex JSONL under `sessions/` and `archived_sessions/` is indexed. Other `.jsonl` files are recorded as unclassified inventory rows and are not presented as conversations. Claude subagent parent paths are exposed as `parent_session_id` with `parent_link_kind="claude_path_inferred"`; `identity_inferred` marks a parent placeholder until its own transcript is captured. Codex `session_meta.payload.parent_thread_id` creates a `parent_session_id` link only when it matches exactly one captured Codex session's native metadata ID on the same machine. Native identity is read only from `session_meta.payload.id`. Conflicting native or parent IDs are exposed as candidate lists and conflict flags; such links are marked inconsistent rather than guessed. Claude subagent `sessionId` can refer to the root session, so Claude identity remains path-based. Physical files with duplicate native IDs remain separate sessions and make parent resolution ambiguous.
 

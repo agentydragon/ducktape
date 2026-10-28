@@ -8,7 +8,7 @@ import os
 from dataclasses import asdict
 from pathlib import Path
 
-from x.ai_session_archive.database import initialize_schema, make_engine, make_session_factory
+from x.ai_session_archive.database import make_engine, make_session_factory
 from x.ai_session_archive.ingest import ArchiveSource, HarnessRoot, SnapshotIngestor
 from x.ai_session_archive.models import Harness
 from x.ai_session_archive.restic import ResticRepository
@@ -57,11 +57,6 @@ def _parse_args(arguments: list[str] | None) -> argparse.Namespace:
         default=[],
         help="absolute Restic node root for CODEX_HOME (session_backup.sh uses /.codex); repeat for more roots",
     )
-    parser.add_argument(
-        "--initialize-fresh-database",
-        action="store_true",
-        help="create the prototype schema in a brand-new database; this does not upgrade an existing schema",
-    )
     return parser.parse_args(arguments)
 
 
@@ -82,8 +77,6 @@ def main(arguments: list[str] | None = None) -> None:
     )
     engine = make_engine(database_url)
     try:
-        if args.initialize_fresh_database:
-            initialize_schema(engine)
         source = ArchiveSource(
             machine_id=args.machine_id,
             display_name=args.display_name,
