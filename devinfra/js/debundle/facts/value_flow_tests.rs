@@ -127,6 +127,94 @@ const rooted = return_cycle();
     assert!(actual.1.contains_key(&id("rooted")));
 }
 
+#[test]
+fn candidate_reachability_tracks_late_values_and_call_aliases() {
+    let source = r#"
+const leaf = {};
+const outer = {};
+let delayed;
+outer.child = delayed;
+delayed = leaf;
+function identity(value) { return value; }
+function relay(argument) { return identity(argument); }
+const alias = relay(outer);
+function make() { return alias; }
+const returned = make();
+"#;
+    let module = raw_js_test_support::parse(source);
+    let body = top_level_item_views(&module.body);
+    let initial = ChunkValueFlow::analyze(&body);
+
+    let mut candidates = BTreeSet::new();
+    for name in ["leaf", "outer"] {
+        candidates.extend(
+            initial
+                .values_of_binding(&id(name))
+                .iter()
+                .filter(|origin| matches!(origin, ValueOrigin::Object(_))),
+        );
+    }
+    for name in ["identity", "relay", "make"] {
+        candidates.extend(
+            initial
+                .values_of_binding(&id(name))
+                .iter()
+                .filter(|origin| matches!(origin, ValueOrigin::Function(_))),
+        );
+    }
+
+    let (_, without_candidates) = ChunkValueFlow::analyze_with_stats(&body);
+    let (flow, with_candidates) =
+        ChunkValueFlow::analyze_with_candidates_and_stats(&body, &candidates);
+    assert_eq!(
+        without_candidates.event_executions, with_candidates.event_executions,
+        "candidate growth must not reevaluate AST events"
+    );
+    assert_eq!(
+        without_candidates.argument_evaluations, with_candidates.argument_evaluations,
+        "candidate growth must not reevaluate call arguments"
+    );
+    let actual = flow.candidate_object_index_maps_for_test(&candidates);
+    assert_eq!(
+        actual,
+        flow.candidate_object_index_reference_for_test(&candidates)
+    );
+
+    let binding_origin = |name: &str, is_object: fn(&ValueOrigin) -> bool| {
+        flow.values_of_binding(&id(name))
+            .iter()
+            .find(is_object)
+            .unwrap_or_else(|| panic!("{name} should have a matching value origin"))
+    };
+    let ValueOrigin::Object(leaf) =
+        binding_origin("leaf", |origin| matches!(origin, ValueOrigin::Object(_)))
+    else {
+        unreachable!();
+    };
+    let ValueOrigin::Object(outer) =
+        binding_origin("outer", |origin| matches!(origin, ValueOrigin::Object(_)))
+    else {
+        unreachable!();
+    };
+    let ValueOrigin::Function(relay) =
+        binding_origin("relay", |origin| matches!(origin, ValueOrigin::Function(_)))
+    else {
+        unreachable!();
+    };
+    let ValueOrigin::Function(make) =
+        binding_origin("make", |origin| matches!(origin, ValueOrigin::Function(_)))
+    else {
+        unreachable!();
+    };
+
+    assert!(actual.0[&ValueOrigin::Object(outer)].contains(&ValueOrigin::Object(leaf)));
+    assert!(actual.0[&ValueOrigin::Function(relay)].contains(&ValueOrigin::Object(leaf)));
+    assert!(actual.0[&ValueOrigin::Function(make)].contains(&ValueOrigin::Object(leaf)));
+    for name in ["alias", "returned"] {
+        assert!(actual.1[&id(name)].contains(&ValueOrigin::Object(leaf)));
+    }
+}
+
 fn return_call_chain(depth: usize, reverse_declarations: bool) -> String {
     let mut source = String::from("function base() {}\n");
     if reverse_declarations {

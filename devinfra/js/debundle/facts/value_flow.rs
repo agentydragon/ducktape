@@ -827,8 +827,16 @@ impl ChunkValueFlow {
 
     #[cfg(test)]
     pub(crate) fn analyze_with_stats(body: &[TopLevelItemView<'_>]) -> (Self, FlowWorkStats) {
+        Self::analyze_with_candidates_and_stats(body, &BTreeSet::new())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn analyze_with_candidates_and_stats(
+        body: &[TopLevelItemView<'_>],
+        candidates: &BTreeSet<ValueOrigin>,
+    ) -> (Self, FlowWorkStats) {
         let (flow, event_executions, argument_evaluations) =
-            FlowProgram::collect(body, &BTreeSet::new()).solve();
+            FlowProgram::collect(body, candidates).solve();
         (
             flow,
             FlowWorkStats {
@@ -1437,6 +1445,13 @@ enum FlowFact {
     ReadyParameters(Vec<Option<Id>>),
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+enum FlowRule {
+    Event(usize),
+    CandidateReachability(OriginId),
+    CandidateBinding(Id),
+}
+
 struct FlowProgram {
     declared_ids: BTreeSet<Id>,
     events: Vec<FlowEvent>,
@@ -1506,7 +1521,7 @@ impl FlowProgram {
                 FlowFact::CandidateReachability(Arc::new(bits)),
             );
         }
-        let facts = inference.solve_values(0..producer_count);
+        let facts = inference.solve_values((0..producer_count).map(FlowRule::Event));
         #[cfg(test)]
         let evaluations = event_executions.get();
         #[cfg(not(test))]
@@ -1893,28 +1908,6 @@ impl FlowRules {
         }
     }
 
-    fn propose_candidate_parent(
-        &self,
-        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
-        parent: ValueOrigin,
-        values: &Values,
-    ) {
-        self.propose_candidate_values(
-            context,
-            FlowKey::CandidateReachable(self.origin_table.id(parent)),
-            values,
-        );
-    }
-
-    fn propose_candidate_binding(
-        &self,
-        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
-        binding: &Id,
-        values: &Values,
-    ) {
-        self.propose_candidate_values(context, FlowKey::CandidateBinding(binding.clone()), values);
-    }
-
     fn singleton_value(&self, value: ValueOrigin) -> Values {
         Values::singleton(self.origin_table.clone(), value)
     }
@@ -1923,157 +1916,218 @@ impl FlowRules {
 impl IterativeRules for FlowRules {
     type Key = FlowKey;
     type Fact = FlowFact;
-    type Rule = usize;
+    type Rule = FlowRule;
 
     fn evaluate(
         &self,
-        rule: &usize,
+        rule: &FlowRule,
         context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
     ) {
-        #[cfg(test)]
-        self.event_executions.set(self.event_executions.get() + 1);
-        let event = &self.events[*rule];
-        match event {
-            FlowEvent::FunctionDeclaration { id, origin }
-            | FlowEvent::ClassDeclaration { id, origin } => {
-                let values = self.singleton_value(*origin);
-                Self::propose_values(context, FlowKey::Binding(id.clone()), values.clone());
-                self.propose_candidate_binding(context, id, &values);
-            }
-            FlowEvent::Variable { id, init } => {
-                let values = self.values_of_expr_tracking(init, context, None);
-                Self::propose_values(context, FlowKey::Binding(id.clone()), values.clone());
-                self.propose_candidate_binding(context, id, &values);
-            }
-            FlowEvent::AssignBinding { id, right } => {
-                let values = self.values_of_expr_tracking(right, context, None);
-                Self::propose_values(context, FlowKey::Binding(id.clone()), values.clone());
-                self.propose_candidate_binding(context, id, &values);
-            }
-            FlowEvent::AssignProperty {
-                object,
-                property,
-                right,
-            } => {
-                let values = self.values_of_expr_tracking(right, context, None);
-                let objects = self.values_of_expr_tracking(object, context, None);
-                for origin in objects {
-                    if let ValueOrigin::Object(object) = origin {
-                        Self::propose_property(context, object, property.clone(), values.clone());
-                        self.propose_candidate_parent(
-                            context,
-                            ValueOrigin::Object(object),
-                            &values,
-                        );
-                    }
+        match rule {
+            FlowRule::CandidateBinding(binding) => {
+                if !self.candidate_facts_enabled {
+                    return;
                 }
-            }
-            FlowEvent::WritePropertyExpr {
-                object,
-                property,
-                value,
-            } => {
-                let values = self.values_of_expr_tracking(value, context, None);
-                Self::propose_property(context, *object, property.clone(), values.clone());
-                self.propose_candidate_parent(context, ValueOrigin::Object(*object), &values);
-            }
-            FlowEvent::WritePropertyBinding {
-                object,
-                property,
-                binding,
-            } => {
-                let values = self.values_of_expr_tracking(
-                    &FlowValueExpr::Binding(binding.clone()),
+                let Some(fact) = context.read(FlowKey::Binding(binding.clone())).cloned() else {
+                    return;
+                };
+                let FlowFact::Values(values) = fact else {
+                    unreachable!("binding keys must contain value facts")
+                };
+                self.propose_candidate_values(
                     context,
-                    None,
+                    FlowKey::CandidateBinding(binding.clone()),
+                    &values,
                 );
-                Self::propose_property(context, *object, property.clone(), values.clone());
-                self.propose_candidate_parent(context, ValueOrigin::Object(*object), &values);
             }
-            FlowEvent::WritePropertyValue {
-                object,
-                property,
-                value,
-            } => {
-                let values = self.singleton_value(*value);
-                Self::propose_property(context, *object, property.clone(), values.clone());
-                self.propose_candidate_parent(context, ValueOrigin::Object(*object), &values);
-            }
-            FlowEvent::FunctionMetadata { function, params } => {
-                context.propose(
-                    FlowKey::Parameters(*function),
-                    FlowFact::Parameters(params.clone()),
-                );
-                // The legacy solver only woke calls waiting for metadata if
-                // some non-empty value fact grew in its initial source sweep.
-                if context.read(FlowKey::ValueFlowActive).is_some() {
-                    context.propose(
-                        FlowKey::ReadyParameters(*function),
-                        FlowFact::ReadyParameters(params.clone()),
-                    );
+            FlowRule::CandidateReachability(origin) => {
+                if !self.candidate_facts_enabled {
+                    return;
                 }
+                let parent = self.origin_table.origin(*origin);
+                let values_key = match parent {
+                    ValueOrigin::Object(object) => FlowKey::Properties(object),
+                    ValueOrigin::Function(function) => FlowKey::Return(function),
+                    ValueOrigin::Class(_) | ValueOrigin::Unknown => return,
+                };
+                let Some(fact) = context.read(values_key).cloned() else {
+                    return;
+                };
+                let FlowFact::Values(values) = fact else {
+                    unreachable!("property and return keys must contain value facts")
+                };
+                self.propose_candidate_values(
+                    context,
+                    FlowKey::CandidateReachable(*origin),
+                    &values,
+                );
             }
-            FlowEvent::Return { function, value } => {
-                let values = self.values_of_expr_tracking(value, context, None);
-                Self::propose_values(context, FlowKey::Return(*function), values.clone());
-                self.propose_candidate_parent(context, ValueOrigin::Function(*function), &values);
-            }
-            FlowEvent::Invoke { callee, args } => {
-                let targets = self.values_of_expr_tracking(callee, context, None);
-                let mut cached_args: Vec<Option<CachedArgument>> = vec![None; args.len()];
-
-                for target in targets {
-                    let ValueOrigin::Function(function) = target else {
-                        continue;
-                    };
-                    let params = match context.read(FlowKey::ReadyParameters(function)).cloned() {
-                        Some(FlowFact::ReadyParameters(params)) => params,
-                        Some(_) => {
-                            unreachable!("parameter keys must contain parameter metadata")
+            FlowRule::Event(index) => {
+                #[cfg(test)]
+                self.event_executions.set(self.event_executions.get() + 1);
+                let event = &self.events[*index];
+                match event {
+                    FlowEvent::FunctionDeclaration { id, origin }
+                    | FlowEvent::ClassDeclaration { id, origin } => {
+                        let values = self.singleton_value(*origin);
+                        Self::propose_values(context, FlowKey::Binding(id.clone()), values);
+                    }
+                    FlowEvent::Variable { id, init } => {
+                        let values = self.values_of_expr_tracking(init, context, None);
+                        Self::propose_values(context, FlowKey::Binding(id.clone()), values);
+                    }
+                    FlowEvent::AssignBinding { id, right } => {
+                        let values = self.values_of_expr_tracking(right, context, None);
+                        Self::propose_values(context, FlowKey::Binding(id.clone()), values);
+                    }
+                    FlowEvent::AssignProperty {
+                        object,
+                        property,
+                        right,
+                    } => {
+                        let values = self.values_of_expr_tracking(right, context, None);
+                        let objects = self.values_of_expr_tracking(object, context, None);
+                        for origin in objects {
+                            if let ValueOrigin::Object(object) = origin {
+                                Self::propose_property(
+                                    context,
+                                    object,
+                                    property.clone(),
+                                    values.clone(),
+                                );
+                            }
                         }
-                        None => continue,
-                    };
-                    for (arg_index, (param, arg)) in params.into_iter().zip(args).enumerate() {
-                        let Some(param) = param else {
-                            continue;
-                        };
-                        let values = if let Some(cached) = &cached_args[arg_index] {
-                            cached.values.clone()
-                        } else {
-                            let mut binding_dependencies = BTreeSet::new();
-                            #[cfg(test)]
-                            self.argument_evaluations
-                                .set(self.argument_evaluations.get() + 1);
-                            let values = self.values_of_expr_tracking(
-                                arg,
-                                context,
-                                Some(&mut binding_dependencies),
-                            );
-                            cached_args[arg_index] = Some(CachedArgument {
-                                values: values.clone(),
-                                binding_dependencies,
-                            });
-                            values
-                        };
-                        // Proposals are immediately visible to later arguments and targets.
-                        // Recompute only arguments that read a binding this invocation grows.
-                        if Self::propose_values(
+                    }
+                    FlowEvent::WritePropertyExpr {
+                        object,
+                        property,
+                        value,
+                    } => {
+                        let values = self.values_of_expr_tracking(value, context, None);
+                        Self::propose_property(context, *object, property.clone(), values);
+                    }
+                    FlowEvent::WritePropertyBinding {
+                        object,
+                        property,
+                        binding,
+                    } => {
+                        let values = self.values_of_expr_tracking(
+                            &FlowValueExpr::Binding(binding.clone()),
                             context,
-                            FlowKey::Binding(param.clone()),
-                            values.clone(),
-                        ) {
-                            for cached in &mut cached_args {
-                                if cached.as_ref().is_some_and(|cached| {
-                                    cached.binding_dependencies.contains(&param)
-                                }) {
-                                    *cached = None;
+                            None,
+                        );
+                        Self::propose_property(context, *object, property.clone(), values);
+                    }
+                    FlowEvent::WritePropertyValue {
+                        object,
+                        property,
+                        value,
+                    } => {
+                        let values = self.singleton_value(*value);
+                        Self::propose_property(context, *object, property.clone(), values);
+                    }
+                    FlowEvent::FunctionMetadata { function, params } => {
+                        context.propose(
+                            FlowKey::Parameters(*function),
+                            FlowFact::Parameters(params.clone()),
+                        );
+                        // The legacy solver only woke calls waiting for metadata if
+                        // some non-empty value fact grew in its initial source sweep.
+                        if context.read(FlowKey::ValueFlowActive).is_some() {
+                            context.propose(
+                                FlowKey::ReadyParameters(*function),
+                                FlowFact::ReadyParameters(params.clone()),
+                            );
+                        }
+                    }
+                    FlowEvent::Return { function, value } => {
+                        let values = self.values_of_expr_tracking(value, context, None);
+                        Self::propose_values(context, FlowKey::Return(*function), values);
+                    }
+                    FlowEvent::Invoke { callee, args } => {
+                        let targets = self.values_of_expr_tracking(callee, context, None);
+                        let mut cached_args: Vec<Option<CachedArgument>> = vec![None; args.len()];
+
+                        for target in targets {
+                            let ValueOrigin::Function(function) = target else {
+                                continue;
+                            };
+                            let params = match context
+                                .read(FlowKey::ReadyParameters(function))
+                                .cloned()
+                            {
+                                Some(FlowFact::ReadyParameters(params)) => params,
+                                Some(_) => {
+                                    unreachable!("parameter keys must contain parameter metadata")
+                                }
+                                None => continue,
+                            };
+                            for (arg_index, (param, arg)) in
+                                params.into_iter().zip(args).enumerate()
+                            {
+                                let Some(param) = param else {
+                                    continue;
+                                };
+                                let values = if let Some(cached) = &cached_args[arg_index] {
+                                    cached.values.clone()
+                                } else {
+                                    let mut binding_dependencies = BTreeSet::new();
+                                    #[cfg(test)]
+                                    self.argument_evaluations
+                                        .set(self.argument_evaluations.get() + 1);
+                                    let values = self.values_of_expr_tracking(
+                                        arg,
+                                        context,
+                                        Some(&mut binding_dependencies),
+                                    );
+                                    cached_args[arg_index] = Some(CachedArgument {
+                                        values: values.clone(),
+                                        binding_dependencies,
+                                    });
+                                    values
+                                };
+                                // Proposals are immediately visible to later arguments and targets.
+                                // Recompute only arguments that read a binding this invocation grows.
+                                if Self::propose_values(
+                                    context,
+                                    FlowKey::Binding(param.clone()),
+                                    values,
+                                ) {
+                                    for cached in &mut cached_args {
+                                        if cached.as_ref().is_some_and(|cached| {
+                                            cached.binding_dependencies.contains(&param)
+                                        }) {
+                                            *cached = None;
+                                        }
+                                    }
                                 }
                             }
                         }
-                        self.propose_candidate_binding(context, &param, &values);
                     }
                 }
             }
+        }
+    }
+
+    fn producers_for(&self, key: &FlowKey, fact: &FlowFact) -> Vec<FlowRule> {
+        if !self.candidate_facts_enabled {
+            return Vec::new();
+        }
+        match (key, fact) {
+            (FlowKey::Binding(binding), FlowFact::Values(values)) if !values.is_empty() => {
+                vec![FlowRule::CandidateBinding(binding.clone())]
+            }
+            (FlowKey::Properties(object), FlowFact::Values(values)) if !values.is_empty() => {
+                vec![FlowRule::CandidateReachability(
+                    self.origin_table.id(ValueOrigin::Object(*object)),
+                )]
+            }
+            (FlowKey::Return(function), FlowFact::Values(values)) if !values.is_empty() => {
+                vec![FlowRule::CandidateReachability(
+                    self.origin_table.id(ValueOrigin::Function(*function)),
+                )]
+            }
+            _ => Vec::new(),
         }
     }
 
