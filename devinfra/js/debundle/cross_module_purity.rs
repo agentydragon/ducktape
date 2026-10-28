@@ -86,7 +86,10 @@ struct PreparedModulePurityFacts<'a> {
 }
 
 impl<'a> ModulePurityFacts<'a> {
-    fn prepare(&self, native_integrity: Option<&NativeIntegrity>) -> PreparedModulePurityFacts<'a> {
+    fn prepare(
+        &self,
+        inputs: &crate::analysis_inputs::AnalysisInputs,
+    ) -> PreparedModulePurityFacts<'a> {
         let views = top_level_item_views(self.body);
         let shadowed = compute_shadowed_globals(&views);
         let value_flow = ChunkValueFlow::analyze(&views);
@@ -110,10 +113,7 @@ impl<'a> ModulePurityFacts<'a> {
             crate::facts::sync_effects::execution_index::interpreter::prepare_synchronous_call_index(
                 &views,
                 &value_flow,
-                &crate::analysis_inputs::AnalysisInputs {
-                    native_integrity: native_integrity.cloned(),
-                    ..Default::default()
-                },
+                inputs,
                 &plain_array_bindings,
                 &local_class_construction_proof,
                 &shadowed,
@@ -213,7 +213,7 @@ fn merge_inferred_export_purity(current: &Arc<Purity>, inferred: &Purity) -> Opt
 pub fn resolve_imported_purities(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted_pure: &BTreeMap<ModuleKey, BTreeSet<String>>,
-    native_integrity: Option<&NativeIntegrity>,
+    callable_summaries: &ResolvedCallableSummaries,
 ) -> BTreeMap<ModuleKey, BTreeMap<String, Arc<Purity>>> {
     // Only exported verdicts read by a named/default import can affect the
     // returned maps or another module's fixpoint inputs. Namespace member
@@ -270,7 +270,28 @@ pub fn resolve_imported_purities(
                 "[debundle progress] chunk={key} phase=prepare_cross_module_purity state=start"
             );
         }
-        let facts_prepared = facts.prepare(native_integrity);
+        // Rebuilding a provider's execution index must retain the same captured
+        // receiver and imported-call facts that established the program census.
+        // A native-integrity result alone cannot refine the provider's local
+        // mutation census, which would otherwise reintroduce unknown aliases.
+        let inputs = crate::analysis_inputs::AnalysisInputs {
+            native_integrity: callable_summaries.native_integrity.clone(),
+            assumptions: crate::analysis_inputs::AnalysisAssumptions {
+                captured_value_inputs: callable_summaries
+                    .value_inputs
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_default(),
+                ..Default::default()
+            },
+            imported_callables: callable_summaries
+                .imported_callables
+                .get(key)
+                .cloned()
+                .unwrap_or_default(),
+            ..Default::default()
+        };
+        let facts_prepared = facts.prepare(&inputs);
         // Discover function exports before optimistically seeding them. Other
         // exports stay unresolved, unless explicitly asserted above.
         let graph = facts.build_graph(&facts_prepared, &BTreeMap::new());
@@ -338,6 +359,7 @@ pub fn resolve_imported_purities(
 /// Callback transfer is independent of purity, including asserted purity.
 /// Compose checked source call timing and returned capabilities separately
 /// from author assertions. Missing exports and unsupported bodies stay opaque.
+#[derive(Default)]
 pub struct ResolvedCallableSummaries {
     pub imported_callables: BTreeMap<ModuleKey, BTreeMap<String, CallableSummary>>,
     pub native_integrity: Option<NativeIntegrity>,
@@ -872,7 +894,7 @@ mod tests {
     ) -> Purity {
         let module = parse(source);
         let facts = facts(&module, &[], &[("out", local)]);
-        let prepared = facts.prepare(None);
+        let prepared = facts.prepare(&crate::analysis_inputs::AnalysisInputs::default());
         facts
             .build_graph(&prepared, imported)
             .function_purity(local)
@@ -904,7 +926,11 @@ mod tests {
             ),
             ("c".to_string(), facts(&c, &[], &[("base", "base")])),
         ]);
-        let resolved = resolve_imported_purities(&modules, &BTreeMap::new(), None);
+        let resolved = resolve_imported_purities(
+            &modules,
+            &BTreeMap::new(),
+            &ResolvedCallableSummaries::default(),
+        );
         assert!(!resolved["a"]["wrap"].is_pure());
     }
 
@@ -916,7 +942,11 @@ mod tests {
             "app".to_string(),
             facts(&app, &[("ext", "vendor", "ext")], &[]),
         )]);
-        let resolved = resolve_imported_purities(&modules, &BTreeMap::new(), None);
+        let resolved = resolve_imported_purities(
+            &modules,
+            &BTreeMap::new(),
+            &ResolvedCallableSummaries::default(),
+        );
         assert!(!resolved["app"].contains_key("ext"));
     }
 
@@ -932,7 +962,11 @@ mod tests {
             ),
             ("lib".to_string(), facts(&lib, &[], &[("table", "table")])),
         ]);
-        let resolved = resolve_imported_purities(&modules, &BTreeMap::new(), None);
+        let resolved = resolve_imported_purities(
+            &modules,
+            &BTreeMap::new(),
+            &ResolvedCallableSummaries::default(),
+        );
         assert!(!resolved["app"].contains_key("table"));
     }
 
@@ -941,7 +975,8 @@ mod tests {
         let module = parse(
             "const values = [1]; Set.prototype.add = function add(value) {}; new Set(values);",
         );
-        let prepared = facts(&module, &[], &[]).prepare(None);
+        let prepared =
+            facts(&module, &[], &[]).prepare(&crate::analysis_inputs::AnalysisInputs::default());
 
         struct SetConstructors(Vec<Span>);
         impl Visit for SetConstructors {
@@ -983,13 +1018,18 @@ mod tests {
         ]);
         // Without the assertion: impure.
         assert!(
-            !resolve_imported_purities(&modules, &BTreeMap::new(), None)["app"]["observer"]
+            !resolve_imported_purities(
+                &modules,
+                &BTreeMap::new(),
+                &ResolvedCallableSummaries::default()
+            )["app"]["observer"]
                 .is_pure()
         );
         // With the assertion on the defining chunk: pure, at every importer.
         let asserted =
             BTreeMap::from([("lib".to_string(), BTreeSet::from(["observer".to_string()]))]);
-        let resolved = resolve_imported_purities(&modules, &asserted, None);
+        let resolved =
+            resolve_imported_purities(&modules, &asserted, &ResolvedCallableSummaries::default());
         assert!(resolved["app"]["observer"].is_pure());
         assert_eq!(
             resolved["app"]["observer"].dependencies(),
@@ -1063,7 +1103,11 @@ mod tests {
             ),
         ]);
         assert!(
-            !resolve_imported_purities(&modules, &BTreeMap::new(), None)["app"]
+            !resolve_imported_purities(
+                &modules,
+                &BTreeMap::new(),
+                &ResolvedCallableSummaries::default()
+            )["app"]
                 .contains_key("forwardRef")
         );
         let asserted = BTreeMap::from([(
@@ -1071,7 +1115,7 @@ mod tests {
             BTreeSet::from(["forwardRef".to_string()]),
         )]);
         assert!(
-            resolve_imported_purities(&modules, &asserted, None)["app"]["forwardRef"].is_pure()
+            resolve_imported_purities(&modules, &asserted, &ResolvedCallableSummaries::default())["app"]["forwardRef"].is_pure()
         );
     }
 

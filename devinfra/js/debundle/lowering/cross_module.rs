@@ -628,11 +628,7 @@ pub(super) fn collect_cross_module_imported_purities(
                 (name.clone(), locals)
             })
             .collect(),
-        bindings: resolve_imported_purities(
-            &modules,
-            &asserted_pure,
-            callable_summaries.native_integrity.as_ref(),
-        ),
+        bindings: resolve_imported_purities(&modules, &asserted_pure, &callable_summaries),
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
         constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
