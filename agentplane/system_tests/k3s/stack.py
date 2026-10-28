@@ -482,7 +482,10 @@ def running_stack(
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"]))
     fixture_layouts = sorted(get_required_path("_main/agentplane/system_tests/k3s").glob("*_layout.rloc"))
-    fixture_layouts.append(get_required_path(os.environ["K3S_RUNNER_LAYOUT_RLOCATION"]))
+    if runner_layout_rloc := os.environ.get("K3S_RUNNER_LAYOUT_RLOCATION"):
+        fixture_layouts.append(get_required_path(runner_layout_rloc))
+    elif not fixture.vm_sandboxes:
+        raise ValueError("non-VM system test is missing K3S_RUNNER_LAYOUT_RLOCATION")
     if fixture.mcp_fixtures is not None:
         fixture_layouts.extend(get_required_path(path) for path in os.environ["K3S_MCP_FIXTURE_LAYOUTS"].split())
     fixture_images = {_ci_image(rloc): rloc for rloc in fixture_layouts}

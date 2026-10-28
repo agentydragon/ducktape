@@ -73,7 +73,7 @@ def system_test(name, srcs, deps, data = [], k3s = None, vm_sandboxes = None, re
         _k3s_test(
             name = name + "_vm",
             # The guest's runner comes from the runner disk; no Sandbox runs the Pod runner image.
-            runner_layout = _RUNNER_LAYOUTS["model_free"],
+            runner_layout = None,
             fixture = _VM_FIXTURE,
             layouts = [],
             data = K3S_VM_DATA,
@@ -100,18 +100,18 @@ def _k3s_test(name, runner_layout, fixture, layouts, main_module, deps, data = [
         name = name,
         size = "enormous",
         data = [
-            runner_layout,
             fixture,
             K3S_BINARY,
-        ] + layouts + data,
+        ] + ([runner_layout] if runner_layout != None else []) + layouts + data,
         env = {
             "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
             "AGENTPLANE_SYSTEM_TEST_MODEL_BACKEND": "scripted_model",
             "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + fixture + ")",
             "K3S_MCP_FIXTURE_LAYOUTS": " ".join(["$(rlocationpath " + layout + ")" for layout in layouts]),
-            "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath " + runner_layout + ")",
             "PYTEST_PLUGINS": "agentplane.system_tests.k3s.system_test_target",
-        } | env,
+        } | ({
+            "K3S_RUNNER_LAYOUT_RLOCATION": "$(rlocationpath " + runner_layout + ")",
+        } if runner_layout != None else {}) | env,
         exec_properties = K3S_EXEC_PROPERTIES | exec_properties,
         tags = K3S_TAGS + tags,
         main_module = main_module,

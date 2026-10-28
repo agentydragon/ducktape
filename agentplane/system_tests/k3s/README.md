@@ -83,14 +83,11 @@ The importer consumes the `oci_image` targets through `oci_layout_rloc`, combine
 descriptors with the rendered tags, and streams each distinct blob once. It does not materialize
 Docker-format `oci_load` tarballs.
 
-The runner Pod is laid out as in production: the real runner comes from the production `//agentplane/runner:disk_image`
-image volume at `/run/agentplane/runner`, and the tools image holds the rest. Model-free targets supply
-`:runner_image`, with no native harnesses. Targets that run a turn supply `:runner_harnesses_image`, which adds
-pinned Claude Code and Codex to the same base. Each target carries its own `runner_layout.rloc` through
-`K3S_RUNNER_LAYOUT_RLOCATION`; the shared stack library carries only service layouts, among them the runner
-disk image (`agentplane-runner-disk:unset`). Both variants import as the existing `runner:unset` tag, so
-templates, registration and lifecycle behavior stay the same. Image volumes need containerd 2.1 or later
-and the `ImageVolume` feature gate, which `stack.py` turns on in the API server and kubelet.
+The Pod runner uses the production `//agentplane/runner:disk_image` volume at `/run/agentplane/runner`, with a
+tools image for the rest. Model-free Pod targets import `:runner_image`; targets that run a turn import
+`:runner_harnesses_image`, which adds pinned Claude Code and Codex. VM-only targets omit the Pod runner image:
+their Sandboxes use the runner disk and test guest images. Image volumes need containerd 2.1 or later and the
+`ImageVolume` feature gate, which `stack.py` turns on in the API server and kubelet.
 
 ## RBE executor constraints
 
