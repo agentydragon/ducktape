@@ -147,7 +147,7 @@ class SpendService:
     @contextlib.asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
         async with contextlib.AsyncExitStack() as resources:
-            read_engine, read_sessions = async_session_factory(self._database_url, pool_size=1, max_overflow=0)
+            read_engine, read_sessions = async_session_factory(self._database_url, pool_size=1, max_overflow=7)
             resources.push_async_callback(read_engine.dispose)
             pool = await resources.enter_async_context(asyncpg.create_pool(self._database_url, min_size=1, max_size=8))
             self._pool = pool
