@@ -440,12 +440,16 @@ func (s *Session) harnessEnded(ctx context.Context, code int) error {
 	s.processState = runnerpb.ProcessState_PROCESS_STATE_UNSPECIFIED
 	s.mu.Unlock()
 	s.connection.end(code)
+	// History may end its stream at HarnessExited. Publish the lost turn and its
+	// recovery evidence before exposing that terminal boundary.
+	if turn := s.Session().ActiveTurnID; turn != "" {
+		if err := s.completeTurn(ctx, &eventpb.TurnCompleted{TurnId: turn, Status: eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST, Error: fmt.Sprintf("the harness exited with exit_code=%d during the turn", code)}, nil); err != nil {
+			return err
+		}
+	}
 	if err := s.Emit(ctx, observation(&eventpb.HarnessExited{ExitCode: int32(code), StoppedByRunner: stoppedByRunner}), nil); err != nil {
 		return err
 	}
 	s.wake()
-	if turn := s.Session().ActiveTurnID; turn != "" {
-		return s.completeTurn(ctx, &eventpb.TurnCompleted{TurnId: turn, Status: eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST, Error: fmt.Sprintf("the harness exited with exit_code=%d during the turn", code)}, nil)
-	}
 	return nil
 }

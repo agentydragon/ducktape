@@ -95,6 +95,8 @@ budget remains authoritative across all of its native services.
   Codex Session the app-server hosts. Interrupting one Session's turn leaves the others running. An
   app-server exit ends every hosted Session's harness: each records `HarnessExited` and, with an
   active turn, `PROCESS_LOST`, and resumes its thread when it next needs a harness.
+  A lost turn's completion and recovery report precede `HarnessExited`, so readers can end at
+  that exit without losing the turn's final evidence.
 - `OpenSession` with an unknown id durably reserves the session from `spec`; `spec.cwd` must be
   absolute. With a known id it confirms the reservation: the `spec` must equal the stored one.
   Opening never starts a harness. Later admitted execution work starts it in the background, and the

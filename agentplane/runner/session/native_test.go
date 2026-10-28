@@ -353,6 +353,46 @@ func TestStdoutRetainsFinalFrameWithoutNewline(t *testing.T) {
 	}
 }
 
+func TestHarnessExitPublishesTurnRecoveryBeforeTerminalEvent(t *testing.T) {
+	ctx := context.Background()
+	s, p, _ := frameTestSession(t, []string{"/bin/cat"})
+	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "lost-turn"}), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Emit(ctx, observation(&eventpb.ItemStarted{ItemId: "unfinished-tool", Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, ToolName: "Bash"}), nil); err != nil {
+		t.Fatal(err)
+	}
+	adapter := frameTestAdapter{onFrame: func(context.Context, json.RawMessage, uint64) error { return nil }}
+	s.connection.startStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+	if err := p.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s.connection.join()
+	entries, err := s.journal.Since(ctx, 0, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed, reconciled, exited := false, false, false
+	for _, entry := range entries {
+		event := entry.GetEvent()
+		if turn := event.GetTurnCompleted(); turn != nil && turn.TurnId == "lost-turn" {
+			completed = turn.Status == eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST
+		}
+		if report := event.GetConversationReconciled(); report != nil && report.TurnId == "lost-turn" {
+			reconciled = len(report.Items) == 1 && report.Items[0].ItemId == "unfinished-tool" && report.Items[0].Disposition == eventpb.RecoveryDisposition_RECOVERY_DISPOSITION_UNKNOWN
+		}
+		if event.GetHarnessExited() != nil {
+			exited = true
+			if !completed || !reconciled {
+				t.Fatalf("terminal harness exit preceded turn recovery: completed=%t reconciled=%t", completed, reconciled)
+			}
+		}
+	}
+	if !exited {
+		t.Fatal("missing terminal harness exit")
+	}
+}
+
 func TestConfirmationReplayKeepsTerminalReceipt(t *testing.T) {
 	ctx := context.Background()
 	journal := openTestJournal(t)
