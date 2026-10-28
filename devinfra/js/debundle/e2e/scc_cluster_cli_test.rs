@@ -1,6 +1,7 @@
 //! Module-quotient queries over graph artifacts from real JS/specs.
 
 use debundle_e2e_support::GraphFixture;
+use serde_json::Value;
 
 fn fixture() -> GraphFixture {
     GraphFixture::rejected(
@@ -97,9 +98,9 @@ fn source_unit_queries_refuse_minified_readable_name_ambiguity() {
             stderr.contains("ambiguous") && stderr.contains("unit:0") && stderr.contains("unit:1"),
             "{stderr}"
         );
-        assert!(
-            out.stdout.is_empty(),
-            "failure must not emit a partial report"
-        );
+        let failure: Value = serde_json::from_slice(&out.stdout)
+            .expect("one structured failure without a partial query report");
+        assert_eq!(failure["reason"], "query_failed");
+        assert_eq!(failure["message"].as_str().unwrap(), stderr.trim());
     }
 }
