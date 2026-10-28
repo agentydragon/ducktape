@@ -170,7 +170,7 @@ func TestCleanupMessageLegacyContentValidationFailureResetsFullScan(t *testing.T
 
 	// Model an old writer bypassing the database proof after the scan. A failed verification must reset the
 	// checkpoint and keep this late row's canonical and historical content intact for the next full pass.
-	late := sendLegacyMessageForCleanup(t, f, "late", "arrived after scan", nil)
+	late := sendCanonicalMessageForCleanup(t, f, "late", "arrived after scan", nil)
 	f.exec(t, `ALTER TABLE entry DROP CONSTRAINT entry_message_legacy_content_absent`)
 	f.exec(t, `ALTER TABLE entry DROP CONSTRAINT entry_typed_payload_source_canonical`)
 	writeLegacyMessageCleanupPayload(t, f, late, "arrived after scan", nil)
@@ -309,6 +309,14 @@ func TestCleanupMessageLegacyContentAppliesEstimatedByteBudget(t *testing.T) {
 		rows = append(rows, sendLegacyMessageForCleanup(t, f, fmt.Sprintf("large-%d", i), largeBody, nil))
 	}
 	applyMessageLegacyCleanupMigration(t, f.db)
+	var serializedSize int64
+	if err := f.db.QueryRowContext(t.Context(), `SELECT octet_length(payload::text) FROM entry
+		WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, rows[0].cursor).Scan(&serializedSize); err != nil {
+		t.Fatal(err)
+	}
+	if serializedSize <= 1<<20 {
+		t.Fatalf("valid control-character Message JSON size = %d bytes, want over 1 MiB", serializedSize)
+	}
 	conn, err := f.db.Conn(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -317,14 +325,6 @@ func TestCleanupMessageLegacyContentAppliesEstimatedByteBudget(t *testing.T) {
 	closeErr := conn.Close()
 	if err != nil || done || closeErr != nil {
 		t.Fatalf("byte-budgeted cleanup batch: done=%t err=%v close=%v", done, err, closeErr)
-	}
-	var serializedSize int64
-	if err := f.db.QueryRowContext(t.Context(), `SELECT octet_length(payload::text) FROM entry
-		WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, rows[0].cursor).Scan(&serializedSize); err != nil {
-		t.Fatal(err)
-	}
-	if serializedSize <= 1<<20 {
-		t.Fatalf("valid control-character Message JSON size = %d bytes, want over 1 MiB", serializedSize)
 	}
 	for i, row := range rows {
 		var payloadNull bool
@@ -425,6 +425,13 @@ func applyMessageLegacyCleanupMigration(t *testing.T, db *sql.DB) {
 
 func sendLegacyMessageForCleanup(t *testing.T, f fixture, key, text string, fromSession *string) cleanupMessage {
 	t.Helper()
+	row := sendCanonicalMessageForCleanup(t, f, key, text, fromSession)
+	writeLegacyMessageCleanupPayload(t, f, row, text, fromSession)
+	return row
+}
+
+func sendCanonicalMessageForCleanup(t *testing.T, f fixture, key, text string, fromSession *string) cleanupMessage {
+	t.Helper()
 	sender := newOwner()
 	message := f.message(sender, key, text)
 	message.FromSession = fromSession
@@ -436,7 +443,6 @@ func sendLegacyMessageForCleanup(t *testing.T, f fixture, key, text string, from
 		t.Fatalf("find new TEXT-only Message entry: %v", err)
 	}
 	row := cleanupMessage{inboxID: inboxID, cursor: cursor, messageID: sent.ID, sender: sender, body: text, fromSession: fromSession}
-	writeLegacyMessageCleanupPayload(t, f, row, text, fromSession)
 	row.digest = cleanupMessageDigest(t, f.db, sent.ID)
 	return row
 }
