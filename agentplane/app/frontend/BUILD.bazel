@@ -419,7 +419,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend/connections:management",
+        "//agentplane/app/frontend/connections:connections",
     ],
 )
 
@@ -782,7 +782,7 @@ ts_library(
         "//agentplane/app/frontend/actions:history",
         "//agentplane/app/frontend/actions:requests",
         "//agentplane/app/frontend/actions:sidebar",
-        "//agentplane/app/frontend/connections:consent",
+        "//agentplane/app/frontend/connections:connections",
         "//agentplane/app/frontend/sandboxes:list",
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/sandboxes:sandbox_page",
@@ -900,7 +900,7 @@ ts_library(
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/actions/testing:proto_fixtures",
-        "//agentplane/app/frontend/connections:models",
+        "//agentplane/app/frontend/connections:connections",
         "//agentplane/app/frontend/connections/testing:fixture",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
