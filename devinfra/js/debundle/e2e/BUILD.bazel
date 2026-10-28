@@ -111,6 +111,8 @@ debundle_e2e_test(name = "no_reentry_callback_test")
 
 debundle_e2e_test(name = "empty_collection_timing_test")
 
+debundle_e2e_test(name = "native_constructor_identity_order_test")
+
 debundle_e2e_test(
     name = "local_array_push_order_test",
     deps = ["//devinfra/js/debundle:analysis"],

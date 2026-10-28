@@ -625,7 +625,12 @@ side-effect ordering; method invocation, callback escape, and ordinary eager
 reads keep their own checks. The synchronous interpreter consumes the same
 class certificate and retains its separate binding-identity and deferred-body
 checks. Unsupported shapes and uncertain identities keep the conservative
-paths.
+paths. Before any semantic consumer uses this composed certificate, its native
+field identities must pass the canonical execution index's source-derived
+integrity guard. Purity and synchronous execution share that validated result;
+recognized native replacement invalidates both. This uses the existing local
+and whole-program native census and does not change the catalogue's A11
+assumption for other whitelist admissions.
 
 At-init callback analysis also records possible implicit primitive conversions
 from arithmetic, relational and loose-equality operators, the left operand of

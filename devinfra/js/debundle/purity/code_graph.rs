@@ -186,7 +186,10 @@ impl ChunkCodeGraph {
                 &crate::analysis_inputs::AnalysisInputs::default(),
                 &plain_array_bindings,
                 &local_class_construction_proof,
+                shadowed,
             );
+        let local_class_construction_proof =
+            prepared_sync_index.local_class_construction_proof().clone();
         let set_iterable_proof = SetIterableProof::analyze(
             body,
             shadowed,

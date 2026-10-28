@@ -87,7 +87,7 @@ struct PreparedModulePurityFacts<'a> {
 }
 
 impl<'a> ModulePurityFacts<'a> {
-    fn prepare(&self) -> PreparedModulePurityFacts<'a> {
+    fn prepare(&self, native_integrity: Option<&NativeIntegrity>) -> PreparedModulePurityFacts<'a> {
         let views = top_level_item_views(self.body);
         let shadowed = compute_shadowed_globals(&views);
         let value_flow = ChunkValueFlow::analyze(&views);
@@ -111,10 +111,16 @@ impl<'a> ModulePurityFacts<'a> {
             crate::facts::sync_effects::execution_index::interpreter::prepare_synchronous_call_index(
                 &views,
                 &value_flow,
-                &crate::analysis_inputs::AnalysisInputs::default(),
+                &crate::analysis_inputs::AnalysisInputs {
+                    native_integrity: native_integrity.cloned(),
+                    ..Default::default()
+                },
                 &plain_array_bindings,
                 &local_class_construction_proof,
+                &shadowed,
             );
+        let local_class_construction_proof =
+            prepared_sync_index.local_class_construction_proof().clone();
         if !prepared_sync_index.set_iterable_intrinsics_are_unmodified() {
             set_iterable_proof = crate::facts::SetIterableProof::default();
         }
@@ -198,6 +204,7 @@ impl<'a> ModulePurityFacts<'a> {
 pub fn resolve_imported_purities(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted_pure: &BTreeMap<ModuleKey, BTreeSet<String>>,
+    native_integrity: Option<&NativeIntegrity>,
 ) -> BTreeMap<ModuleKey, BTreeMap<String, Arc<Purity>>> {
     // Only exported verdicts read by a named/default import can affect the
     // returned maps or another module's fixpoint inputs. Namespace member
@@ -254,7 +261,7 @@ pub fn resolve_imported_purities(
                 "[debundle progress] chunk={key} phase=prepare_cross_module_purity state=start"
             );
         }
-        let facts_prepared = facts.prepare();
+        let facts_prepared = facts.prepare(native_integrity);
         // Discover function exports before optimistically seeding them. Other
         // exports stay unresolved, unless explicitly asserted above.
         let graph = facts.build_graph(&facts_prepared, &BTreeMap::new());
@@ -791,7 +798,7 @@ mod tests {
             ),
             ("c".to_string(), facts(&c, &[], &[("base", "base")])),
         ]);
-        let resolved = resolve_imported_purities(&modules, &BTreeMap::new());
+        let resolved = resolve_imported_purities(&modules, &BTreeMap::new(), None);
         assert!(!resolved["a"]["wrap"].is_pure());
     }
 
@@ -803,7 +810,7 @@ mod tests {
             "app".to_string(),
             facts(&app, &[("ext", "vendor", "ext")], &[]),
         )]);
-        let resolved = resolve_imported_purities(&modules, &BTreeMap::new());
+        let resolved = resolve_imported_purities(&modules, &BTreeMap::new(), None);
         assert!(!resolved["app"].contains_key("ext"));
     }
 
@@ -819,7 +826,7 @@ mod tests {
             ),
             ("lib".to_string(), facts(&lib, &[], &[("table", "table")])),
         ]);
-        let resolved = resolve_imported_purities(&modules, &BTreeMap::new());
+        let resolved = resolve_imported_purities(&modules, &BTreeMap::new(), None);
         assert!(!resolved["app"].contains_key("table"));
     }
 
@@ -828,7 +835,7 @@ mod tests {
         let module = parse(
             "const values = [1]; Set.prototype.add = function add(value) {}; new Set(values);",
         );
-        let prepared = facts(&module, &[], &[]).prepare();
+        let prepared = facts(&module, &[], &[]).prepare(None);
 
         struct SetConstructors(Vec<Span>);
         impl Visit for SetConstructors {
@@ -870,12 +877,13 @@ mod tests {
         ]);
         // Without the assertion: impure.
         assert!(
-            !resolve_imported_purities(&modules, &BTreeMap::new())["app"]["observer"].is_pure()
+            !resolve_imported_purities(&modules, &BTreeMap::new(), None)["app"]["observer"]
+                .is_pure()
         );
         // With the assertion on the defining chunk: pure, at every importer.
         let asserted =
             BTreeMap::from([("lib".to_string(), BTreeSet::from(["observer".to_string()]))]);
-        assert!(resolve_imported_purities(&modules, &asserted)["app"]["observer"].is_pure());
+        assert!(resolve_imported_purities(&modules, &asserted, None)["app"]["observer"].is_pure());
     }
 
     #[test]
@@ -896,14 +904,16 @@ mod tests {
             ),
         ]);
         assert!(
-            !resolve_imported_purities(&modules, &BTreeMap::new())["app"]
+            !resolve_imported_purities(&modules, &BTreeMap::new(), None)["app"]
                 .contains_key("forwardRef")
         );
         let asserted = BTreeMap::from([(
             "lib".to_string(),
             BTreeSet::from(["forwardRef".to_string()]),
         )]);
-        assert!(resolve_imported_purities(&modules, &asserted)["app"]["forwardRef"].is_pure());
+        assert!(
+            resolve_imported_purities(&modules, &asserted, None)["app"]["forwardRef"].is_pure()
+        );
     }
 
     #[test]

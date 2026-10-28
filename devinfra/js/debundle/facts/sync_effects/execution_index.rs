@@ -1037,7 +1037,7 @@ fn local_constructor(
     if class.super_class.is_some() || !class.decorators.is_empty() {
         return None;
     }
-    let checked_default_fields = construction_proof.contains_class(class.span);
+    let checked_default_fields = construction_proof.contains_class(class.span.lo.0);
     let mut constructor = None;
     let mut has_instance_fields = false;
     for member in &class.body {

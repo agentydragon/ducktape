@@ -4780,6 +4780,10 @@ impl PreparedSynchronousCallIndex {
     pub(crate) fn set_iterable_intrinsics_are_unmodified(&self) -> bool {
         self.index.set_iterable_intrinsics_are_unmodified()
     }
+
+    pub(crate) fn local_class_construction_proof(&self) -> &LocalClassConstructionProof {
+        &self.index.local_class_construction_proof
+    }
 }
 
 pub(crate) fn prepare_synchronous_call_index(
@@ -4788,16 +4792,23 @@ pub(crate) fn prepare_synchronous_call_index(
     hints: &AnalysisInputs,
     plain_array_bindings: &BTreeSet<String>,
     local_class_construction: &LocalClassConstructionProof,
+    shadowed: &BTreeSet<&'static str>,
 ) -> PreparedSynchronousCallIndex {
-    PreparedSynchronousCallIndex {
-        index: ExecutionIndex::collect(
-            body,
-            hints,
-            Some(flow),
-            plain_array_bindings,
-            local_class_construction,
-        ),
-    }
+    let mut index = ExecutionIndex::collect(
+        body,
+        hints,
+        Some(flow),
+        plain_array_bindings,
+        local_class_construction,
+    );
+    index.local_class_construction_proof = local_class_construction.with_native_premises(|id| {
+        index.empty_collection_constructor_is_unmodified(id, flow, shadowed)
+    });
+    index.local_constructors.retain(|key, constructor| {
+        !constructor.checked_default_fields
+            || index.local_class_construction_proof.contains_class(*key)
+    });
+    PreparedSynchronousCallIndex { index }
 }
 
 /// Finalize enum own-key candidates with the already collected binding-write

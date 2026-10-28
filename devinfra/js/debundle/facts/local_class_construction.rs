@@ -1,6 +1,7 @@
 //! Source-derived proof for a narrow implicit local class constructor.
 //!
-//! The class-shape certificate is shared by purity and synchronous execution.
+//! Shape and identity premises are collected structurally; the prepared native
+//! index validates field intrinsics before purity or synchronous execution.
 //! Purity additionally requires an exact, eager, zero-argument construction
 //! after the declaration and a unique class value in whole-chunk flow.
 
@@ -9,8 +10,8 @@ use crate::purity::PURE_BUILTIN_NEW_NO_ARGS;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct LocalClassConstructionProof {
-    classes: BTreeSet<u32>,
-    constructions: BTreeSet<u32>,
+    classes: BTreeMap<u32, BTreeSet<Id>>,
+    constructions: BTreeMap<u32, u32>,
 }
 
 impl LocalClassConstructionProof {
@@ -36,9 +37,10 @@ impl LocalClassConstructionProof {
                 }
                 _ => continue,
             };
-            if safe_implicit_class(&class.class, shadowed) {
+            let mut native_fields = BTreeSet::new();
+            if safe_implicit_class(&class.class, shadowed, &mut native_fields) {
                 let key = class.class.span.lo.0;
-                proof.classes.insert(key);
+                proof.classes.insert(key, native_fields);
                 declarations.insert(class.ident.to_id(), (key, ordinal));
             }
         }
@@ -75,23 +77,50 @@ impl LocalClassConstructionProof {
                     .into_iter()
                     .collect();
                 if values == [ValueOrigin::Class(class_key)] {
-                    proof.constructions.insert(construction.span.lo.0);
+                    proof
+                        .constructions
+                        .insert(construction.span.lo.0, class_key);
                 }
             }
         }
         proof
     }
 
-    pub(crate) fn contains_class(&self, span: Span) -> bool {
-        self.classes.contains(&span.lo.0)
+    pub(crate) fn contains_class(&self, class: u32) -> bool {
+        self.classes.contains_key(&class)
     }
 
     pub(crate) fn contains_construction(&self, span: Span) -> bool {
-        self.constructions.contains(&span.lo.0)
+        self.constructions.contains_key(&span.lo.0)
+    }
+
+    pub(crate) fn with_native_premises(
+        &self,
+        native_constructor_is_unmodified: impl Fn(&Id) -> bool,
+    ) -> Self {
+        let classes: BTreeMap<_, _> = self
+            .classes
+            .iter()
+            .filter(|(_, fields)| fields.iter().all(&native_constructor_is_unmodified))
+            .map(|(class, fields)| (*class, fields.clone()))
+            .collect();
+        Self {
+            constructions: self
+                .constructions
+                .iter()
+                .filter(|(_, class)| classes.contains_key(class))
+                .map(|(span, class)| (*span, *class))
+                .collect(),
+            classes,
+        }
     }
 }
 
-fn safe_implicit_class(class: &Class, shadowed: &BTreeSet<&'static str>) -> bool {
+fn safe_implicit_class(
+    class: &Class,
+    shadowed: &BTreeSet<&'static str>,
+    native_fields: &mut BTreeSet<Id>,
+) -> bool {
     if class.super_class.is_some() || !class.decorators.is_empty() {
         return false;
     }
@@ -121,7 +150,7 @@ fn safe_implicit_class(class: &Class, shadowed: &BTreeSet<&'static str>) -> bool
                 && prop
                     .value
                     .as_deref()
-                    .is_none_or(|value| safe_field_value(value, shadowed))
+                    .is_none_or(|value| safe_field_value(value, shadowed, native_fields))
         }
         ClassMember::PrivateProp(prop) => {
             !prop.is_static
@@ -129,14 +158,18 @@ fn safe_implicit_class(class: &Class, shadowed: &BTreeSet<&'static str>) -> bool
                 && prop
                     .value
                     .as_deref()
-                    .is_none_or(|value| safe_field_value(value, shadowed))
+                    .is_none_or(|value| safe_field_value(value, shadowed, native_fields))
         }
         ClassMember::Empty(_) => true,
         _ => false,
     })
 }
 
-fn safe_field_value(value: &Expr, shadowed: &BTreeSet<&'static str>) -> bool {
+fn safe_field_value(
+    value: &Expr,
+    shadowed: &BTreeSet<&'static str>,
+    native_fields: &mut BTreeSet<Id>,
+) -> bool {
     match value.unwrap_parens() {
         Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
         | Expr::Arrow(_) => true,
@@ -169,10 +202,14 @@ fn safe_field_value(value: &Expr, shadowed: &BTreeSet<&'static str>) -> bool {
             let Expr::Ident(callee) = construction.callee.unwrap_parens() else {
                 return false;
             };
-            matches!(callee.sym.as_ref(), "Set" | "Map" | "WeakSet" | "WeakMap")
+            let safe = matches!(callee.sym.as_ref(), "Set" | "Map" | "WeakSet" | "WeakMap")
                 && PURE_BUILTIN_NEW_NO_ARGS.contains(&callee.sym.as_ref())
                 && !shadowed.contains(callee.sym.as_ref())
-                && construction.args.as_ref().is_none_or(Vec::is_empty)
+                && construction.args.as_ref().is_none_or(Vec::is_empty);
+            if safe {
+                native_fields.insert(callee.to_id());
+            }
+            safe
         }
         _ => false,
     }

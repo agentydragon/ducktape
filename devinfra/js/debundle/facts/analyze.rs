@@ -261,6 +261,7 @@ where
             hints,
             &plain_array_bindings,
             &local_class_construction_proof,
+            &shadowed,
         );
     prepared_sync_index.locate_native_integrity_witnesses(|span| {
         let source_path = source_path?;
@@ -272,6 +273,8 @@ where
             start_column: Some(start_column),
         })
     });
+    let local_class_construction_proof =
+        prepared_sync_index.local_class_construction_proof().clone();
     let set_iterable_proof = if prepared_sync_index.set_iterable_intrinsics_are_unmodified() {
         set_iterable_proof
     } else {

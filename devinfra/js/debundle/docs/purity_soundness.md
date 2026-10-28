@@ -617,6 +617,14 @@ before discarding the value, so calls, property reads, computed keys, and other
 non-literal operands remain excluded; see the [ECMAScript void operator](https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-void-operator).
 An ordinary getter's body is deferred and is not evaluated by construction.
 
+The prepared canonical native index validates these field constructor identities
+before the class certificate reaches purity or synchronous execution. It rejects
+shadowed/replaced bindings, dynamic scopes and recognized writes to the native
+family or global object, including mutations supplied by the existing
+whole-program `NativeIntegrity` census. A11 remains the external integrity
+premise; source-visible checks strengthen this composed proof without making
+purity catalogue admissions unconditional under native replacement.
+
 Purity requires an exact direct top-level `new` initializer after the class
 declaration and a unique class origin in monotone whole-chunk value flow.
 Unknown, rebound, or shadowed alternatives fail this check. This preserves
