@@ -235,14 +235,16 @@ interval. Refreshing head associations alone does not synthesize missed CI/check
 notices; their broader recovery contract remains the decision below. Intermediate changes that
 revert between reads are not recovered by state polling.
 
-The [2026-10-27 live exercise](../debug/github_mergeability_live_acceptance_20261027.md) also found a
-separate correctness gap: a received base push can be followed by GitHub returning an old definite
-mergeability result, suppressing early retries until periodic repair; the PR response's base SHA can
-lag the actual branch tip. Correcting that existing contract does not wait for the broader recovery decision.
+[PR #12343](https://github.com/agentydragon/ducktape/pull/12343) now rejects stale positive test-merge
+proof, reads the actual base ref, and persists early rechecks. The
+[2026-10-28 live exercise](../notification_service/debug/github_mergeability_live_acceptance_20261028.md)
+verified that behavior but still saw GitHub return an old definite positive after ten minutes of a
+base-only change. Retries did not obtain a current result within that window. This remaining provider-state
+freshness problem is independent of the broader missed-event recovery decision.
 
 ```mermaid
 flowchart LR
-    GITHUB_MERGEABILITY_FRESHNESS[In flight: fresh post-change mergeability observations]
+    GITHUB_MERGEABILITY_FRESHNESS[Ready: obtain fresh results after base-only changes]
     GITHUB_NOTICE_RELIABILITY_DESIGN[Decision: eventual-state recovery vs agent fallback]
     GITHUB_NOTIFICATION_RECOVERY[Blocked: selected reconciliation or reminder mechanism]
     GITHUB_SHEPHERD_GUIDANCE[Blocked: after the reliability decision; fallback-check wording]
@@ -250,46 +252,30 @@ flowchart LR
     GITHUB_NOTICE_RELIABILITY_DESIGN --> GITHUB_SHEPHERD_GUIDANCE
 ```
 
-### `GITHUB_MERGEABILITY_FRESHNESS` — handle stale definite GitHub results after a change
+### `GITHUB_MERGEABILITY_FRESHNESS` — obtain a current result after base-only changes
 
-**In flight — Codex, 2026-10-28 UTC:** implementing test-merge parent validation, current base-ref reads,
-persisted rechecks and deterministic coverage in [PR #12343](https://github.com/agentydragon/ducktape/pull/12343). The
-[bounded GitHub probe](../notification_service/debug/github_mergeability_freshness_probe.md) confirmed stale
-positive and negative results; PR validation and deployment acceptance remain pending.
+**Ready — remaining scope updated by Codex, 2026-10-28 UTC.** The implementation in
+[PR #12343](https://github.com/agentydragon/ducktape/pull/12343) is merged and deployed. Positive
+parent validation, current base labels, persisted retry/backoff and deterministic race/restart
+coverage are complete; their contract is in the [API reference](../notification_service/docs/api.md).
+The [live evidence](../notification_service/debug/github_mergeability_live_acceptance_20261028.md)
+shows a stale REST `MERGEABLE` / old test merge at 600 seconds after a received base-only push,
+while the service correctly stays `UNKNOWN` and retries. A request with `Cache-Control: no-cache`
+returned the same stale result. A later diagnostic GraphQL read returned `UNKNOWN`, and a head
+change followed; the subsequent conflict notice does not prove base-only recovery.
 
-Reject a positive result whose test merge does not match the observed head/current base, and
-apply the bounded negative-result recheck policy below. An old definite positive must not suppress
-rechecks until the ordinary freshness deadline. Persist the required follow-up across worker restarts, preserve access/error
-backoff and generation fences, and source revision labels from the actual relevant refs rather than
-assuming the PR response's base SHA is the current branch tip. Keep pending/settling observations
-separate from source failures, and fence observations overtaken by known head/base changes.
+Investigate GitHub's invalidation/recalculation behavior with an unchanged head/current base pair.
+Compare supported REST and GraphQL reads in a bounded fixture without conflating stale PR base
+metadata, HTTP revalidation, and background computation. Establish whether a supported read can
+obtain the current result without modifying the PR. A negative remains GitHub-reported without
+proof of the evaluated pair; neither elapsed time nor current-ref reads supply that proof.
 
-For an open PR reporting `MERGEABLE`, retain REST `merge_commit_sha`, fetch that test merge
-commit and validate both parents against the expected base and head revisions. GitHub documents
-that successful-check artifact in [Get a pull request](https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request);
-GraphQL exposes the corresponding `potentialMergeCommit`. A missing/unavailable test commit or
-mismatched parent pair leaves the observation pending for a durable recheck, with normal source
-failure/rate-limit backoff preserved. Persist the test commit and its actual parent revisions with
-the accepted observation and event, under the existing invalidation/access fences. Read the current
-base tip through its branch ref; PR `.base.sha` / `baseRefOid` alone does not prove either the
-current tip or which pair was evaluated. Do not equate that current-ref read with proof of a result.
-
-`CONFLICTING` needs a separate freshness rule: a successful test merge commit may not exist, and
-no documented general field was found binding a negative result to an evaluated base/head pair.
-The probe established the available evidence. Report a negative with observed refs and no pair
-proof; recheck after successive 5, 15 and 45 second delays before ordinary freshness refreshes.
-Unverified results use 5, 15 and 45 second delays, then a 60-second cap, with persisted counters
-reset by changed observed refs/state. Document these policy limits in the API and agent guidance. Neither an absent merge commit nor the accompanying PR ref fields
-proves a fresh conflict calculation. Keep the distinction between a validated positive result and
-an observed negative result explicit; a fixed delay alone is not evidence of the evaluated pair.
-
-Exit: controlled GitHub responses cover a stale definite answer followed by the current answer,
-a test merge with the right head but an old base, a wrong head, unavailable test-commit evidence,
-a negative result without pair evidence, lagging PR base metadata, ref changes during parent
-validation, duplicate/reordered invalidations and durable follow-up. Repeat the
-bounded base-only conflict/resolution and late-subscriber live exercise with current SHA labels;
-record its actual latency and harness receipt. This repairs the shipped mergeability contract;
-it does not select a broader GitHub replay/reminder mechanism.
+Exit: establish and validate a supported way to obtain the current result after a base-only change,
+with actual refs, request cost and detection timing recorded. If no bounded mechanism is available,
+bring the operator an explicit contract decision between GitHub-only observation, local conflict
+calculation, or reporting prolonged uncertainty before implementing an alternative. Preserve the
+shipped proof/fence/error policies. This does not reopen waived broad outage/restart drills or select
+a general CI/comment/review replay mechanism.
 
 ### `GITHUB_NOTICE_RELIABILITY_DESIGN` — delivery guarantee and fallback
 

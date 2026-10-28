@@ -89,7 +89,9 @@ the observed base and head as its two parents. Its payload additionally contains
 branch ref after fetching that commit; it does not use the PR response's potentially stale base SHA
 as the current tip. Missing or mismatched test merge evidence leaves the observation `UNKNOWN`.
 `CONFLICTING` is GitHub's reported result alongside the refs read by the service: GitHub exposes no
-equivalent proof of the pair evaluated for a negative result. Neither those refs nor elapsed time
+equivalent proof of the pair evaluated for a negative result. GitHub can also keep returning a stale definite
+positive after a base change: rejecting it and polling does not guarantee a settling deadline.
+Neither those refs nor elapsed time
 proves a fresh conflict calculation. Read current state before acting on either kind of notice.
 
 A `source` with neither field set is rejected as `INVALID_ARGUMENT`. A service without the GitHub App refuses
