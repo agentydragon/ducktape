@@ -812,9 +812,18 @@ debundle modules refine --batch reviewed-source-units.json \
 ```
 
 The batch is a JSON array of `{ "unit_id": "...", "module": "..." }`
-rows. `module` names a destination path; with `--tree-config`, include the
-selected chunk root in that path. Source units omitted from the batch keep their
-current assignment. Each row moves every existing selector that resolves to
+rows. `module` is a logical module ID, not a YAML filename; use the ID without
+the `.yaml` suffix. For example:
+
+```json
+[{ "unit_id": "unit-id-from-reviewed-row", "module": "features/editor/state" }]
+```
+
+With `--tree-config`, include the selected chunk root in the module ID. Do not
+pass a filename such as `features/editor/state.yaml`: the command resolves the
+logical ID to a YAML path, so a filename-shaped value can produce a doubled
+`.yaml` suffix. Source units omitted from the batch keep their current
+assignment. Each row moves every existing selector that resolves to
 that source unit, including `members:`, grouped `source_matches[].bindings[]`, and
 `anonymous_statements:` entries. It preserves selector text, binding names,
 annotations, source-match notes, and anonymous-statement comments and notes.
