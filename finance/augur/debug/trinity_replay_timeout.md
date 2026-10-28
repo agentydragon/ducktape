@@ -11,7 +11,7 @@ and 1.000 seconds in collection order. The final three stacks were executing
 allocation and withdrawal-rate cell. `Replay.success_rate` calls `run`, which
 composes and drives all windows through `ActionSession`; `safemax` bisects its
 grid with further full-cell runs. The root `conftest.py` gives each unmarked test
-the remainder of 90% of Bazel's *target* timeout, measured from module import.
+the remainder of 90% of Bazel's _target_ timeout, measured from module import.
 With the `large` target's 900-second budget, the table test had only 145 seconds
 left after SAFEMAX, and the later cases got the one-second minimum. These stacks
 and elapsed times support active computation exhausting a shared budget, rather
