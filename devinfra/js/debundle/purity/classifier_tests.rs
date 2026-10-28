@@ -1447,6 +1447,47 @@ fn conditioned_constructor_dependencies_flow_through_local_calls_and_bindings() 
 }
 
 #[test]
+fn conditioned_dependencies_follow_the_exact_direct_literal_set_certificate() {
+    let module = parse(
+        "const certified = new Set(['a', 'b']);\n\
+         const independent = new Set([{ value: 'c' }]);",
+    );
+    let views = top_level_item_views(&module.body);
+    let shadowed = compute_shadowed_globals(&views);
+    let dependencies = value_input_dependencies("static/provider.js", 4);
+    let graph = graph_with_conditioned_set_proof(&module, &dependencies, &BTreeSet::new());
+
+    let ModuleItem::Stmt(Stmt::Decl(Decl::Var(certified))) = &module.body[0] else {
+        panic!("expected certified Set declaration");
+    };
+    let certified = classify_expr_purity(
+        certified.decls[0].init.as_deref().unwrap(),
+        &shadowed,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &graph,
+    );
+    assert_eq!(certified.dependencies(), Some(&dependencies));
+
+    let ModuleItem::Stmt(Stmt::Decl(Decl::Var(independent))) = &module.body[1] else {
+        panic!("expected independent Set declaration");
+    };
+    let independent = classify_expr_purity(
+        independent.decls[0].init.as_deref().unwrap(),
+        &shadowed,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &graph,
+    );
+    assert!(independent.is_pure());
+    assert_eq!(
+        independent.dependencies(),
+        Some(&ProofDependencies::default()),
+        "the independent literal-iterable whitelist must not inherit unrelated input refs"
+    );
+}
+
+#[test]
 fn nested_conditioned_arguments_keep_dependencies_across_pure_builtins() {
     let module = parse(
         "const values = [1];\n\
