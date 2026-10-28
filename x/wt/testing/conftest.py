@@ -78,9 +78,9 @@ def service_builder():
 
 
 @pytest.fixture
-def repo_factory(temp_dir):
+def repo_factory(tmp_path: Path):
     """Factory for creating git repositories with different configurations."""
-    return GitRepoFactory(temp_dir)
+    return GitRepoFactory(tmp_path)
 
 
 @pytest.fixture
@@ -101,17 +101,17 @@ def pygit2_repo(real_temp_repo) -> pygit2.Repository:
 
 
 @pytest.fixture
-def config_factory(temp_dir):
+def config_factory(tmp_path: Path):
     """Factory for creating test configurations with presets and overrides."""
 
     def _factory_for_repo(repo_path: Path):
-        return ConfigFactory(repo_path, temp_dir)
+        return ConfigFactory(repo_path, tmp_path)
 
     return _factory_for_repo
 
 
 @pytest.fixture
-def daemon_config_factory(temp_dir):
+def daemon_config_factory(tmp_path: Path):
     """`config_factory` for configurations a daemon runs on: they carry the gitstatusd binary.
 
     The requesting test target must list `//third_party/gitstatusd` in `data`.
@@ -119,7 +119,7 @@ def daemon_config_factory(temp_dir):
     gitstatusd_path = gitstatusd_binary()
 
     def _factory_for_repo(repo_path: Path):
-        return ConfigFactory(repo_path, temp_dir, gitstatusd_path=gitstatusd_path)
+        return ConfigFactory(repo_path, tmp_path, gitstatusd_path=gitstatusd_path)
 
     return _factory_for_repo
 
@@ -141,11 +141,6 @@ def cli_test_env(repo_factory, config_factory):
 
     # Return the WT_DIR path (the .wt directory)
     return config.wt_dir
-
-
-@pytest.fixture
-def temp_dir(tmp_path: Path) -> Path:
-    return tmp_path
 
 
 @pytest.fixture
