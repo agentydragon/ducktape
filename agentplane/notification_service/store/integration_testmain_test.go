@@ -319,3 +319,12 @@ func (f fixture) cleanAll(t *testing.T) {
 		after = last
 	}
 }
+
+func countQuery(t *testing.T, ctx context.Context, db *sql.DB, query string, args ...any) int {
+	t.Helper()
+	var count int
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}

@@ -92,7 +92,7 @@ column; it is not part of service startup or readiness. The command is retired b
 
 `00008_subscription_creation_expand.sql` adds a binary typed snapshot and relational source discriminator while
 the service continues to dual-write and can still read retained `creation` JSON. After every Notification Service
-writer runs the dual-write release, run
+writer runs the dual-write release, use that release image to run
 `bb run //agentplane/notification_service/storage_backfill/subscription_creation_cmd:notification-subscription-creation-backfill -- --writer-gate=notification-subscription-creation-dual-write-v1`
 once against the service database. This resumable command uses short bounded batches, stores its UUID cursor with
 each batch, and preserves the JSON creation record as a rollback copy; it is not part of startup or readiness.
@@ -103,18 +103,25 @@ snapshot and leaves new `creation` JSON rows NULL; the JSON column remains as a 
 earlier releases. The migration also replaces JSON-dependent source constraints with typed source constraints.
 After every writer runs the typed-only release, run
 `bb run //agentplane/notification_service/storage_backfill/storage_validate_cmd:notification-storage-validate -- --proof=subscription-creation --writer-gate=notification-subscription-creation-typed-only-v1`.
-This command validates each typed constraint in its own transaction with a short lock wait and is safe to rerun.
-Run it even on an empty database so later writes have validated proofs; a later contract migration may use an
-empty-table fast path, but requires all four catalog proofs before dropping the retained JSON column on a populated
-database.
+Run that command from the typed-only release image, which is the last image that contains it. It validates each
+typed constraint in its own transaction with a short lock wait and is safe to rerun. Run it even on an empty
+database so later writes have validated proofs; a later contract migration may use an empty-table fast path, but
+requires all four catalog proofs before dropping the retained JSON column on a populated database.
 
-Before the typed-only release, roll back to the dual-write release while retaining all additive migrations and
-columns; it prefers typed snapshots and can read rows written by the typed-only release. Do not roll back to an image
-that predates typed-snapshot support once `00009` is applied. Keep `00009` applied during code rollback, because its
-Down step requires every row to have a JSON creation again. After the rollback rollout settles, verify readiness,
-inbox authorization, and read/write behavior. A later contract migration may drop the unused JSON column only after
-all readers and writers use typed storage; until then, the typed-only migration retains it for the compatible
-dual-write rollback.
+`00014_subscription_creation_contract.sql` requires those four proofs on populated databases. Their catalog state
+proves existing rows and later writes satisfy the contract, so the migration does not scan the checkpoint or repeat
+a table validation. A fresh empty database validates the checks in the migration's bounded empty-table path. It sets
+`creation_proto` and `source_provider` `NOT NULL`, drops creation JSON and its checkpoint data, and removes the now
+unused shared backfill-progress table. The source-provider and source-specific-state constraints remain as permanent
+relational invariants. The contract image retires the creation backfill and validation commands; operators must run
+each command from its earlier dual-write or typed-only image, respectively.
+
+Before `00014`, roll back only to the typed-capable dual-write release while retaining the additive migrations and
+columns; it reads typed-only rows and writes both representations. Keep `00009` applied during code rollback, because
+its Down step requires every row to have JSON creation data again. After the rollback rollout settles, verify
+readiness, inbox authorization, reads and writes. After `00014`, roll back only to a typed-only compatible image and
+keep the contract migration applied. The JSON and checkpoint data are gone, so images that read or write creation
+JSON are no longer supported; the contract `Down` fails rather than recreating empty columns.
 
 `00011_inbox_destination_typed_only.sql` requires the inbox-destination backfill completion marker on populated
 databases, makes the retained `destination_ref` JSON nullable, and adds a not-yet-validated shape constraint for the
