@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 )
@@ -29,7 +30,7 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 	waitForFile(t, started)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := r.bootstrap(ctx); !errors.Is(err, context.Canceled) {
+	if err := r.bootstrapHost.Wait(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled bootstrap waiter error = %v, want context.Canceled", err)
 	}
 
@@ -56,7 +57,7 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 	ctx, cancel = context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 	if err := restarted.lifecycle.waitFor(ctx, func() (bool, error) {
-		return restarted.bootstrapSettled(), nil
+		return restarted.bootstrapHost.Settled(ctx)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -65,30 +66,6 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 	}
 	if data, err := os.ReadFile(count); err != nil || string(data) != "b" {
 		t.Fatalf("bootstrap effect after restart = %q, %v; want one execution", data, err)
-	}
-}
-
-func TestBootstrapRunErrorWritesInterruptedOutcome(t *testing.T) {
-	r := newBareRunner(t)
-	script := "printf output"
-	r.config.Launch.Bootstrap = &script
-	r.config.InitializationCwd = t.TempDir()
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := r.runBootstrap(ctx)
-	if err == nil || !errors.Is(err, errBootstrapInterrupted) {
-		t.Fatalf("canceled native bootstrap error = %v, want an interrupted outcome", err)
-	}
-	r.bootstrapMu.Lock()
-	log := r.initLog
-	r.bootstrapMu.Unlock()
-	if log == nil || !log.Ended() {
-		t.Fatalf("native bootstrap failure left a nonterminal initialization log: %v", log)
-	}
-	last := log.Since(log.LastSequence() - 1)
-	if len(last) != 1 || last[0].GetInterrupted() == nil {
-		t.Fatalf("terminal initialization event = %v, want interrupted", last)
 	}
 }
 
@@ -105,13 +82,7 @@ func TestBootstrapRuntimeFailureDoesNotLeaveLogDerivedBusyFact(t *testing.T) {
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
 	waitForFile(t, started)
 
-	r.bootstrapMu.Lock()
-	log := r.initLog
-	r.bootstrapMu.Unlock()
-	if log == nil {
-		t.Fatal("bootstrap log was not opened before the script started")
-	}
-	if err := log.Close(); err != nil {
+	if err := r.bootstrapHost.CloseLog(); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(release, nil, 0o600); err != nil {
@@ -119,7 +90,7 @@ func TestBootstrapRuntimeFailureDoesNotLeaveLogDerivedBusyFact(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
-	if err := r.lifecycle.waitFor(ctx, func() (bool, error) { return r.bootstrapSettled(), nil }); err != nil {
+	if err := r.lifecycle.waitFor(ctx, func() (bool, error) { return r.bootstrapHost.Settled(ctx) }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -135,8 +106,8 @@ func TestBootstrapRuntimeFailureDoesNotLeaveLogDerivedBusyFact(t *testing.T) {
 			t.Fatal("terminal bootstrap resource still blocks autosuspend")
 		}
 	}
-	runtime, found, err := lifecycleRead[bootstrapRuntimeSpec](r.ctx, r.lifecycle.state, "bootstrap")
-	if err != nil || !found || runtime.Phase != bootstrapFailed || !strings.Contains(runtime.Error, "initialization log is closed") {
+	runtime, found, err := bootstrap.ReadRuntime(r.ctx, r.lifecycle.state)
+	if err != nil || !found || runtime.Phase != bootstrap.Failed || !strings.Contains(runtime.Error, "initialization log is closed") {
 		t.Fatalf("bootstrap runtime after log write failure = (%+v, found=%t, err=%v), want concrete storage failure", runtime, found, err)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
@@ -38,8 +39,8 @@ type Runner struct {
 	mu                  sync.Mutex
 	createMu            sync.Mutex
 	loadMu              sync.Mutex
-	bootstrapMu         sync.Mutex
 	sessions            map[string]*Session
+	bootstrapHost       *bootstrap.Host
 	codexAppServer      *codexAppServer
 	codexExecServer     *execserver.Host
 	changes             chan struct{}
@@ -49,8 +50,6 @@ type Runner struct {
 	lifecycle           *lifecycle
 	closeOnce           sync.Once
 	closeErr            error
-	initLog             *InitializationLog
-	bootstrapOp         *operation
 }
 
 func New(config Config) (*Runner, error) {
@@ -203,8 +202,8 @@ func (r *Runner) Startup(ctx context.Context) error {
 			return err
 		}
 	}
-	if r.config.Launch.Bootstrap != nil {
-		if err := r.requestBootstrap(); err != nil {
+	if r.bootstrapHost.Configured() {
+		if err := r.bootstrapHost.Request(ctx); err != nil {
 			return err
 		}
 	}
@@ -433,8 +432,8 @@ func (r *Runner) Close() error {
 			s.work.Wait()
 			errs = append(errs, s.journal.Close())
 		}
-		if r.initLog != nil {
-			errs = append(errs, r.initLog.Close())
+		if r.bootstrapHost != nil {
+			errs = append(errs, r.bootstrapHost.CloseLog())
 		}
 		if err := errors.Join(errs...); err != nil {
 			r.closeErr = err

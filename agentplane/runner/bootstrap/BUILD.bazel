@@ -1,0 +1,51 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:private"])
+
+go_library(
+    name = "bootstrap",
+    srcs = glob(
+        ["*.go"],
+        exclude = ["*_test.go"],
+    ),
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/bootstrap",
+    visibility = ["//agentplane/runner:__pkg__"],
+    deps = [
+        "//agentplane/proto:runner_go_proto",
+        "//agentplane/runner/lifecycle",
+        "//agentplane/runner/retained",
+        "//agentplane/runner/scripts",
+        "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/resource/meta/spec",
+        "@com_github_cosi_project_runtime//pkg/resource/typed",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_siderolabs_gen//optional",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "bootstrap_test",
+    srcs = glob(["*_test.go"]),
+    embed = [":bootstrap"],
+    race = "on",
+    deps = [
+        "//agentplane/runner/lifecycle",
+        "//agentplane/runner/scripts",
+        "//agentplane/runner/supervision",
+        "@com_github_cosi_project_runtime//pkg/controller/runtime",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
+        "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_uber_go_zap//:zap",
+    ],
+)

@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
@@ -16,7 +17,7 @@ type runnerLifecycleController struct{ l *lifecycle }
 func (*runnerLifecycleController) Name() string { return runnerControllerName }
 func (*runnerLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerInputType, sessionInputType, sessionRuntimeType, operationResultType, journalSealType, ingressAckType, execserver.RuntimeType, codexAppServerRuntimeType, bootstrapRuntimeType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerInputType, sessionInputType, sessionRuntimeType, operationResultType, journalSealType, ingressAckType, execserver.RuntimeType, codexAppServerRuntimeType, bootstrap.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: runnerlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -144,7 +145,11 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			return write()
 		}
 	}
-	if !c.l.runner.bootstrapSettled() {
+	bootstrapSettled, err := c.l.runner.bootstrapHost.Settled(ctx)
+	if err != nil {
+		return err
+	}
+	if !bootstrapSettled {
 		return write()
 	}
 	// Owner-level completion cannot substitute for the native cleanup barrier.

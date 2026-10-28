@@ -24,12 +24,14 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   wiring, Runner-specific typed resources, host input publication, and the adapter that supplies
   admitted process owners and generations to `supervision.Host` ([ownership](docs/lifecycle.md)).
 - `runner_controller.go`, `session_controller.go`, `codex_app_server_controller.go`,
-  and `bootstrap_controller.go`: one lifecycle controller per file.
+  and `bootstrap/controller.go`: one lifecycle controller per owner.
 - `operations.go`: owned asynchronous protocol/setup operations and completion routing.
-- `bootstrap.go`: durable bootstrap selection and the one-shot script effect.
 - `scripts/`: one-shot shell execution over supervised process streams. Each run samples
   `os.Environ` and overlays the configured harness environment; the caller owns operation admission
   and process ownership.
+- `bootstrap/`: the Sandbox one-shot operation host, COSI resources and controller, durable script
+  selection, and append-only initialization log. Runner supplies state, admission, the shared worker
+  barrier, and the script runner; the package owns no Runner coordinator.
 - `runner.go`: Runner construction, durable inventory, incarnation adoption and lifetime.
 - `admission.go` and `status.go`: public admission and status/facts RPCs.
 - `session.go`: Session host state, readiness and recovery; `session_events.go` owns journal-backed

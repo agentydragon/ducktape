@@ -6,7 +6,10 @@ go_library(
     name = "scripts",
     srcs = ["scripts.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/scripts",
-    visibility = ["//agentplane/runner:__pkg__"],
+    visibility = [
+        "//agentplane/runner:__pkg__",
+        "//agentplane/runner/bootstrap:__pkg__",
+    ],
     deps = [
         "//agentplane/runner/supervision",
         "@org_golang_x_sync//errgroup",

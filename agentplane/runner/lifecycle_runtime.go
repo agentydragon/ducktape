@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
@@ -39,13 +40,27 @@ func newLifecycle(r *Runner, adapters *execserver.Adapters) (*lifecycle, error) 
 	}
 	l := &lifecycle{runner: r, state: store, engine: engine, done: make(chan struct{})}
 	l.processes = supervision.NewHost(r.ctx, l.state, runnerlifecycle.Namespace, &l.workers, r.fail)
+	bootstrapHost, err := bootstrap.NewHost(bootstrap.Config{
+		Script: r.config.Launch.Bootstrap, StateDir: r.config.StateDir,
+		WorkingDirectory: r.config.InitializationCwd,
+	}, bootstrap.Dependencies{
+		Context: r.ctx, State: l.state, Workers: &l.workers, Scripts: r.scripts,
+		Admission: r.admitLifecycleEffect, OnError: r.fail, OnRuntimeChange: r.changed,
+	})
+	if err != nil {
+		return nil, err
+	}
+	r.bootstrapHost = bootstrapHost
+	if err := bootstrapHost.Initialize(r.ctx); err != nil {
+		return nil, err
+	}
 	if r.config.CodexExecServer != nil {
 		if adapters == nil {
 			return nil, errors.New("Codex exec-server adapters are required")
 		}
 		executor, err := execserver.NewHost(*r.config.CodexExecServer, execserver.Dependencies{
 			Context: r.ctx, State: l.state, Workers: &l.workers, Processes: l.processes,
-			Admission: r.admitCodexExecServer, OnError: r.fail, OnRuntimeChange: r.changed,
+			Admission: r.admitLifecycleEffect, OnError: r.fail, OnRuntimeChange: r.changed,
 		}, *adapters)
 		if err != nil {
 			return nil, err
@@ -68,7 +83,7 @@ func newLifecycle(r *Runner, adapters *execserver.Adapters) (*lifecycle, error) 
 	controllers = append(
 		controllers,
 		&codexAppServerLifecycleController{l: l, host: r.codexAppServer, codexExecServer: r.codexExecServer},
-		&bootstrapLifecycleController{l: l},
+		bootstrapHost.Controller(),
 	)
 	for _, c := range controllers {
 		if err := engine.RegisterQController(c); err != nil {
@@ -78,10 +93,6 @@ func newLifecycle(r *Runner, adapters *execserver.Adapters) (*lifecycle, error) 
 	if err := publishLifecycle(l, codexAppServerResourceID, codexAppServerInputSpec{}); err != nil {
 		return nil, err
 	}
-	if err := publishLifecycle(l, "bootstrap", bootstrapInputSpec{}); err != nil {
-		return nil, err
-	}
-
 	if err := runnerlifecycle.PublishDesired(l.runner.ctx, l.state, runnerlifecycle.Desired{}); err != nil {
 		return nil, err
 	}
@@ -155,7 +166,7 @@ func (l *lifecycle) setDesiredState(mode runnerlifecycle.Mode, sealUID string) e
 	return runnerlifecycle.PublishDesired(l.runner.ctx, l.state, desiredState)
 }
 
-func (r *Runner) admitCodexExecServer(ctx context.Context, expected runnerlifecycle.Desired, effect func(context.Context) error) error {
+func (r *Runner) admitLifecycleEffect(ctx context.Context, expected runnerlifecycle.Desired, effect func(context.Context) error) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	current, found, err := runnerlifecycle.ReadDesired(ctx, r.lifecycle.state)

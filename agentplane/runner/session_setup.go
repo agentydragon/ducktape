@@ -11,7 +11,7 @@ import (
 // runSetup performs one claimed script operation. The Session controller owns
 // whether it runs; cancellation of an admission or preparation cannot cancel it.
 func (s *Session) runSetup(ctx context.Context, script string) error {
-	err := s.runner.bootstrap(ctx)
+	err := s.runner.bootstrapHost.Wait(ctx)
 	if err == nil {
 		err = s.Emit(ctx, observation(&eventpb.SetupStarted{}), nil)
 	}

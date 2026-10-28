@@ -1,4 +1,4 @@
-package runner
+package bootstrap
 
 import (
 	"bufio"
@@ -14,17 +14,17 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// InitializationLog is the append-only, newline-delimited protobuf JSON log for the
+// Log is the append-only, newline-delimited protobuf JSON log for the
 // Sandbox's one bootstrap attempt.
-type InitializationLog struct {
+type Log struct {
 	path   string
 	file   *os.File
 	mu     sync.Mutex
 	events []*runnerpb.InitializationEvent
 }
 
-func OpenInitializationLog(path string) (*InitializationLog, error) {
-	log := &InitializationLog{path: path}
+func OpenLog(path string) (*Log, error) {
+	log := &Log{path: path}
 	if _, err := os.Stat(path); err == nil {
 		if err := log.load(); err != nil {
 			return nil, err
@@ -40,7 +40,7 @@ func OpenInitializationLog(path string) (*InitializationLog, error) {
 	return log, nil
 }
 
-func (l *InitializationLog) load() error {
+func (l *Log) load() error {
 	data, err := os.ReadFile(l.path)
 	if err != nil {
 		return err
@@ -82,7 +82,7 @@ func (l *InitializationLog) load() error {
 	}
 }
 
-func (l *InitializationLog) LastSequence() uint64 {
+func (l *Log) LastSequence() uint64 {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if len(l.events) == 0 {
@@ -91,7 +91,7 @@ func (l *InitializationLog) LastSequence() uint64 {
 	return l.events[len(l.events)-1].GetSequence()
 }
 
-func (l *InitializationLog) LastAttempt() uint32 {
+func (l *Log) LastAttempt() uint32 {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if len(l.events) == 0 {
@@ -100,7 +100,7 @@ func (l *InitializationLog) LastAttempt() uint32 {
 	return l.events[len(l.events)-1].GetAttempt()
 }
 
-func (l *InitializationLog) Ended() bool {
+func (l *Log) Ended() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if len(l.events) == 0 {
@@ -112,7 +112,7 @@ func (l *InitializationLog) Ended() bool {
 	return observation != nil && (observation.Name() == "result" || observation.Name() == "interrupted")
 }
 
-func (l *InitializationLog) Since(afterSequence uint64) []*runnerpb.InitializationEvent {
+func (l *Log) Since(afterSequence uint64) []*runnerpb.InitializationEvent {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if afterSequence >= uint64(len(l.events)) {
@@ -125,7 +125,7 @@ func (l *InitializationLog) Since(afterSequence uint64) []*runnerpb.Initializati
 	return result
 }
 
-func (l *InitializationLog) AppendOutput(attempt uint32, stream runnerpb.InitializationStream, data []byte) error {
+func (l *Log) AppendOutput(attempt uint32, stream runnerpb.InitializationStream, data []byte) error {
 	event := &runnerpb.InitializationEvent{
 		Attempt: attempt,
 		Observation: &runnerpb.InitializationEvent_Output{Output: &runnerpb.InitializationOutput{
@@ -135,7 +135,7 @@ func (l *InitializationLog) AppendOutput(attempt uint32, stream runnerpb.Initial
 	return l.append(event)
 }
 
-func (l *InitializationLog) AppendResult(attempt uint32, exitCode int32) (*runnerpb.InitializeResult, error) {
+func (l *Log) AppendResult(attempt uint32, exitCode int32) (*runnerpb.InitializeResult, error) {
 	result := &runnerpb.InitializeResult{Executed: true, ExitCode: exitCode}
 	event := &runnerpb.InitializationEvent{
 		Attempt:     attempt,
@@ -147,14 +147,14 @@ func (l *InitializationLog) AppendResult(attempt uint32, exitCode int32) (*runne
 	return result, nil
 }
 
-func (l *InitializationLog) AppendInterrupted(attempt uint32) error {
+func (l *Log) AppendInterrupted(attempt uint32) error {
 	return l.append(&runnerpb.InitializationEvent{
 		Attempt:     attempt,
 		Observation: &runnerpb.InitializationEvent_Interrupted{Interrupted: &runnerpb.InitializationInterrupted{}},
 	})
 }
 
-func (l *InitializationLog) append(event *runnerpb.InitializationEvent) error {
+func (l *Log) append(event *runnerpb.InitializationEvent) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.file == nil {
@@ -187,7 +187,7 @@ func (l *InitializationLog) append(event *runnerpb.InitializationEvent) error {
 	return nil
 }
 
-func (l *InitializationLog) Close() error {
+func (l *Log) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.file == nil {

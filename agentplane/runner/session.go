@@ -107,7 +107,7 @@ func (s *Session) ensureReady(ctx context.Context) error {
 	if setup == runnerpb.SetupState_SETUP_STATE_FAILED || setup == runnerpb.SetupState_SETUP_STATE_INTERRUPTED || setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
 		return errors.New("session setup failed or was interrupted; create a new session")
 	}
-	if err := s.runner.bootstrap(ctx); err != nil {
+	if err := s.runner.bootstrapHost.Wait(ctx); err != nil {
 		return err
 	}
 	s.mu.Lock()

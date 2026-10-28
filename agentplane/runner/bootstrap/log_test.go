@@ -1,4 +1,4 @@
-package runner
+package bootstrap
 
 import (
 	"os"
@@ -10,7 +10,7 @@ import (
 )
 
 func TestInitializationLogTruncatesOnlyIncompleteTail(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "initialization.jsonl")
+	path := filepath.Join(t.TempDir(), "events.jsonl")
 	first := &runnerpb.InitializationEvent{
 		Sequence: 1, Attempt: 1,
 		Observation: &runnerpb.InitializationEvent_Output{Output: &runnerpb.InitializationOutput{
@@ -26,7 +26,7 @@ func TestInitializationLogTruncatesOnlyIncompleteTail(t *testing.T) {
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	log, err := OpenInitializationLog(path)
+	log, err := OpenLog(path)
 	if err != nil {
 		t.Fatal(err)
 	}

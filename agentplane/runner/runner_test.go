@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	bootstrapcomponent "github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 
@@ -192,24 +193,6 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 	if err := r.lifecycle.state.Create(ctx, lifecycleResourceFor(session.id, sessionRuntimeSpec{}), state.WithCreateOwner(sessionControllerName)); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.lifecycle.state.Create(ctx, lifecycleResourceFor("bootstrap", bootstrapRuntimeSpec{}), state.WithCreateOwner(bootstrapControllerName)); err != nil {
-		t.Fatal(err)
-	}
-	bootstrapScript := "unused test bootstrap"
-	r.config.Launch.Bootstrap = &bootstrapScript
-	setBootstrapRuntime := func(phase bootstrapPhase) error {
-		ctx, cancel := context.WithTimeout(r.ctx, lifecycleTestTimeout)
-		defer cancel()
-		return modifyLifecycleForTest(ctx, r, "bootstrap", bootstrapControllerName, func(current *bootstrapRuntimeSpec) {
-			current.Phase = phase
-		})
-	}
-	if err := setBootstrapRuntime(bootstrapRunning); err != nil {
-		t.Fatal(err)
-	}
-	if err := publishLifecycle(r.lifecycle, "bootstrap", bootstrapInputSpec{Requested: true}); err != nil {
-		t.Fatal(err)
-	}
 	resetManualState := func() {
 		r.mu.Lock()
 		r.admissions = 0
@@ -221,12 +204,6 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 		session.mu.Unlock()
 		if err := setSessionRuntimePhaseForTest(r, session, executionDormant); err != nil {
 			t.Errorf("restore session runtime: %v", err)
-		}
-		if err := setBootstrapRuntime(bootstrapSucceeded); err != nil {
-			t.Errorf("restore bootstrap runtime: %v", err)
-		}
-		if err := publishLifecycle(r.lifecycle, "bootstrap", bootstrapInputSpec{}); err != nil {
-			t.Errorf("restore bootstrap input: %v", err)
 		}
 	}
 
@@ -254,7 +231,7 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 	}
 	want := []string{
 		"session-1:Activation", "session-1:ActiveTurn", "session-1:PendingCommand", "session-1:Setup",
-		"Admission", "Bootstrap",
+		"Admission",
 	}
 	if !reflect.DeepEqual(got, want) || !facts.SetupsRunning || facts.IdleSince != nil {
 		t.Fatalf("busy facts = (%v, setups=%t, idleSince=%v), want (%v, true, nil)", got, facts.SetupsRunning, facts.IdleSince, want)
@@ -383,14 +360,8 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 		if !t.Failed() {
 			return
 		}
-		input, _, inputErr := lifecycleRead[bootstrapInputSpec](r.ctx, r.lifecycle.state, "bootstrap")
-		current, _, runtimeErr := lifecycleRead[bootstrapRuntimeSpec](r.ctx, r.lifecycle.state, "bootstrap")
-		r.bootstrapMu.Lock()
-		op := r.bootstrapOp
-		if op != nil {
-			t.Logf("bootstrap operation: done=%t error=%v", operationDone(op), op.err)
-		}
-		r.bootstrapMu.Unlock()
+		input, _, inputErr := bootstrapcomponent.ReadInput(r.ctx, r.lifecycle.state)
+		current, _, runtimeErr := bootstrapcomponent.ReadRuntime(r.ctx, r.lifecycle.state)
 		t.Logf("bootstrap input=%+v (%v), runtime=%+v (%v)", input, inputErr, current, runtimeErr)
 		if data, err := os.ReadFile(filepath.Join(stateDir, "initialization", "events.jsonl")); err == nil {
 			t.Logf("bootstrap events: %s", data)
@@ -459,7 +430,10 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 	if err != nil || len(statusResponse.Sessions) != 1 || statusResponse.Sessions[0].SetupState != runnerpb.SetupState_SETUP_STATE_SUCCEEDED {
 		t.Fatalf("restarted setup state = %v, %v", statusResponse, err)
 	}
-	waitLifecycle(t, restarted, restarted.bootstrapSettled, "reconstructed bootstrap outcome")
+	waitLifecycle(t, restarted, func() bool {
+		settled, err := restarted.bootstrapHost.Settled(restarted.ctx)
+		return err == nil && settled
+	}, "reconstructed bootstrap outcome")
 	facts, err := restarted.facts()
 	if err != nil || facts.Bootstrap != controlpb.RunnerFacts_BOOTSTRAP_SUCCEEDED {
 		t.Fatalf("restarted bootstrap state = %v, %v", facts, err)

@@ -7,6 +7,7 @@ import (
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/protobuf/proto"
@@ -92,26 +93,26 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 		blockers = append(blockers, sessionBlockers...)
 	}
 	facts := &controlpb.RunnerFacts{SetupsRunning: setup}
-	if r.config.Launch.Bootstrap != nil {
-		input, requested, err := lifecycleRead[bootstrapInputSpec](r.ctx, r.lifecycle.state, "bootstrap")
+	if r.bootstrapHost.Configured() {
+		input, requested, err := bootstrap.ReadInput(r.ctx, r.lifecycle.state)
 		if err != nil {
 			return nil, err
 		}
 		if requested && input.Requested {
-			runtime, hasRuntime, err := lifecycleRead[bootstrapRuntimeSpec](r.ctx, r.lifecycle.state, "bootstrap")
+			runtime, hasRuntime, err := bootstrap.ReadRuntime(r.ctx, r.lifecycle.state)
 			if err != nil {
 				return nil, err
 			}
-			if !hasRuntime || runtime.Phase == bootstrapDormant || runtime.Phase == bootstrapRunning {
+			if !hasRuntime || runtime.Phase == bootstrap.Dormant || runtime.Phase == bootstrap.Running {
 				facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_RUNNING
 				blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendBootstrap})
 			} else {
 				switch runtime.Phase {
-				case bootstrapSucceeded:
+				case bootstrap.Succeeded:
 					facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_SUCCEEDED
-				case bootstrapFailed:
+				case bootstrap.Failed:
 					facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_FAILED
-				case bootstrapInterrupted:
+				case bootstrap.Interrupted:
 					facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_INTERRUPTED
 				default:
 					return nil, fmt.Errorf("unknown bootstrap phase %d", runtime.Phase)
