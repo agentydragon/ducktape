@@ -1,0 +1,6 @@
+--- a/internal/api/middleware/response_writer.go
++++ b/internal/api/middleware/response_writer.go
+@@ -309 +308,0 @@
+-			w.chunkChannel = nil
+@@ -315,0 +315 @@
++		w.chunkChannel = nil

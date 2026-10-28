@@ -93,6 +93,7 @@ go_deps.archive_override(
         "//patches:bundled-panel.patch",
         "//patches:bazel.patch",
         "//patches:upstream-timing.patch",
+        "//patches:streaming-channel-race.patch",
     ],
     path = "github.com/router-for-me/CLIProxyAPI/v8",
     sha256 = "d6f1bcb5ee6ff76f72b4a5478747d13bbfc060fea95bc449084d24fc952b08e0",
