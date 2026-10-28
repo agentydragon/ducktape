@@ -17,8 +17,11 @@ import (
 )
 
 const (
-	databaseURLEnv                  = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
-	requiredEventIdentityWriterGate = "notification-event-identity-dual-write-v1"
+	databaseURLEnv                       = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
+	requiredEventIdentityWriterGate      = "notification-event-identity-dual-write-v1"
+	requiredEntryContentWriterGate       = "notification-entry-typed-payload-dual-write-v1"
+	defaultEntryContentBackfillBatchSize = 512
+	maxEntryContentBackfillBatchSize     = 4096
 )
 
 func main() {
@@ -52,9 +55,27 @@ func main() {
 		run = func(ctx context.Context, db *sql.DB) error {
 			return store.BackfillEventIdentities(ctx, db, *batchSize)
 		}
+	case os.Args[1] == "backfill-entry-content":
+		flags := flag.NewFlagSet(os.Args[1], flag.ContinueOnError)
+		writerGate := flags.String("writer-gate", "", "required rollout gate: "+requiredEntryContentWriterGate)
+		batchSize := flags.Int("batch-size", defaultEntryContentBackfillBatchSize, "maximum entry keys per short transaction")
+		if err := flags.Parse(os.Args[2:]); err != nil {
+			os.Exit(2)
+		}
+		if flags.NArg() != 0 || *batchSize < 1 || *batchSize > maxEntryContentBackfillBatchSize {
+			fmt.Fprintf(os.Stderr, "backfill-entry-content accepts --writer-gate=... and --batch-size=N where N is between 1 and %d\n", maxEntryContentBackfillBatchSize)
+			os.Exit(2)
+		}
+		if *writerGate != requiredEntryContentWriterGate {
+			fmt.Fprintf(os.Stderr, "run only after every Notification Service writer and cleanup worker is at the dual-write rollout gate; pass --writer-gate=%s\n", requiredEntryContentWriterGate)
+			os.Exit(2)
+		}
+		run = func(ctx context.Context, db *sql.DB) error {
+			return store.BackfillEntryContent(ctx, db, *batchSize)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
-		fmt.Fprintln(os.Stderr, "commands: (default) migrate, backfill-event-identities")
+		fmt.Fprintln(os.Stderr, "commands: (default) migrate, backfill-event-identities, backfill-entry-content")
 		os.Exit(2)
 	}
 	if err := migrate.Run(ctx, databaseURL, run); err != nil {

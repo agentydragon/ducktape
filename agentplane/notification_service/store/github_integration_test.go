@@ -43,7 +43,16 @@ type githubFixture struct {
 
 func newGitHubFixture(t *testing.T) githubFixture {
 	t.Helper()
-	f := newFixture(t, defaultQuotas())
+	return newGitHubFixtureWithStoreFixture(t, newFixture(t, defaultQuotas()))
+}
+
+func newIsolatedGitHubFixture(t *testing.T) githubFixture {
+	t.Helper()
+	return newGitHubFixtureWithStoreFixture(t, newIsolatedFixture(t, defaultQuotas()))
+}
+
+func newGitHubFixtureWithStoreFixture(t *testing.T, f fixture) githubFixture {
+	t.Helper()
 	base := 1<<41 + rand.Int64N(1<<40)
 	ref := model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID}
 	return githubFixture{

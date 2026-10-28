@@ -240,9 +240,9 @@ func (s *Store) SandboxStatus(ctx context.Context, ref model.DestinationRef, deb
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		status.ObservedAt = now()
 		inboxes, nextWork, err := inboxesOf(ctx, tx, `
-			WHERE coalesce(destination_namespace, destination_ref->>'namespace') = $1
-				AND coalesce(destination_name, destination_ref->>'name') = $2
-				AND coalesce(destination_uid, destination_ref->>'uid') = $3
+			WHERE destination_namespace = $1
+				AND destination_name = $2
+				AND destination_uid = $3
 			ORDER BY session_id, id LIMIT $4`, ref.Namespace, ref.Name, ref.UID, maxInboxesPerSandbox)
 		if err != nil {
 			return err
@@ -324,7 +324,8 @@ func subscriptionStatuses(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, ob
 
 func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, after int64) ([]EntrySummary, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT cursor, event, payload, created_at FROM entry WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
+		`SELECT cursor, `+eventIdentityReadColumns+`, payload, created_at FROM entry
+			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inboxID, after, maxPendingEntrySummaries)
 	if err != nil {
 		return nil, err
@@ -333,12 +334,15 @@ func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, a
 	var summaries []EntrySummary
 	for rows.Next() {
 		var cursor int64
-		var event, payload []byte
+		var identityRead eventIdentityRead
+		var payload []byte
 		var createdAt time.Time
-		if err := rows.Scan(&cursor, &event, &payload, &createdAt); err != nil {
+		destinations := append([]any{&cursor}, identityRead.destinations()...)
+		destinations = append(destinations, &payload, &createdAt)
+		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
-		identity, err := model.DecodeEventIdentity(event)
+		identity, err := identityRead.event()
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inboxID, cursor, err)
 		}
@@ -393,7 +397,7 @@ func (s *Store) SessionNoticeStates(ctx context.Context, namespace string, sessi
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		states.ObservedAt = now()
 		inboxes, _, err := inboxesOf(ctx, tx, `
-			WHERE coalesce(destination_namespace, destination_ref->>'namespace') = $1 AND NOT retired
+			WHERE destination_namespace = $1 AND NOT retired
 				AND session_id IN (SELECT jsonb_array_elements_text($2::jsonb))
 			ORDER BY session_id, id`, namespace, string(wanted))
 		if err != nil {

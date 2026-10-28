@@ -59,14 +59,33 @@ image with `backfill-event-identities --writer-gate=notification-event-identity-
 shapes that collide under the natural key, validates the shape constraint, and builds the unique natural-key
 indexes concurrently. A collision stops the command with exact inbox/cursor groups, retaining every original
 entry and JSON document for explicit resolution. The command is separate from Pod init, so retained inboxes do
-not hold serving readiness while they are scanned. This phase keeps serving deduplication on JSONB; a later
-runtime release can switch readers after it observes the completed backfill/index phase. Keep the JSONB index
+not hold serving readiness while they are scanned. This phase keeps serving deduplication on JSONB. Do not roll
+the runtime release that reads and deduplicates by relational keys until the command has completed with phase
+`indexed` on every service database, including newly initialized databases; an empty database still needs the
+natural-key indexes. The runtime release has no JSONB fallback or per-append readiness probe. Keep the JSONB index
 until every old writer has drained and every reader has moved to relational keys.
 
-To roll back before the backfill/index command runs, restore the previous service image and leave the additive
-columns in place; do not run a migration's `Down` section while dual writers remain. If reverting after the
-command marks indexes ready, leave the columns, checkpoint and natural-key indexes in place as well. The previous
-image continues to use the JSONB key. After the rollback rollout settles, verify the previous API's reads, writes,
+Typed entry content is a separate phase. `00014_entry_typed_payload_expand.sql` adds nullable protobuf `BYTEA` for
+Actions events, generated mergeability observations and messages. New writers fill it while retaining the existing
+JSON payload for older readers; cleanup clears both physical representations in one transaction. GitHub webhook
+payloads remain native JSONB and do not use the typed column. After every writer and cleanup worker runs that
+dual-write release, run
+`bb run //agentplane/notification_service/migrations/cmd:notifications-migrate -- backfill-entry-content --writer-gate=notification-entry-typed-payload-dual-write-v1`
+once against each Notification database. The command is resumable outside Pod init, walks every entry in native
+`(inbox_id, cursor)` primary-key order, and commits short batches bounded by entry count and one MiB of serialized
+JSON (a single oversized row is processed alone). It never loads GitHub webhook JSON. It also physically clears
+typed bytes left by an older cleanup writer wherever the legacy payload is already NULL, including entries below
+an inbox's `expired_through` cursor. It verifies both conditions over the full table before reporting completion.
+Do not switch readers to typed-only content until it completes on every database, including newly initialized
+databases. During rollout, an older cleanup replica can clear only the legacy JSON column; a future typed reader
+must treat that SQL `NULL` as expired even if typed bytes remain, until the all-cleanup-writers gate and backfill
+have completed.
+
+To roll back before the content backfill runs, restore the previous service image and leave the additive column in
+place; do not run a migration's `Down` section while dual writers remain. If the content command has started or
+completed, leave its checkpoint and typed bytes in place too; the previous image continues to use the retained
+JSON payload. If the event identity backfill/index command has completed, leave its columns, checkpoint and
+natural-key indexes in place as well. After the rollback rollout settles, verify the previous API's reads, writes,
 replay deduplication and readiness. Only after no reader depends on relational keys should a later cleanup drop the
 natural-key indexes concurrently, then run the migration Down sections in reverse order. Before a later forward
 rollout, drain old writers and check for any unconverted rows; the backfill command stops with their inbox/cursors
@@ -85,12 +104,40 @@ writer runs the dual-write release, run
 once against the service database. This resumable command uses short bounded batches, stores its UUID cursor with
 each batch, and preserves the JSON creation record as a rollback copy; it is not part of startup or readiness.
 
-To roll the application back, stop the backfill command and roll every replica to the previous service image while
-leaving the additive migration applied; that image ignores the extra columns and continues to use the retained JSON.
-Only run either migration's down step after no replica or backfill process uses its new columns, reversing later
-Notification migrations first. The typed creation migration does not remove creation JSON. After Flux settles,
-verify the previous service's readiness, inbox authorization, and read/write behavior before considering the rollback
-complete.
+`00013_subscription_creation_typed_only.sql` requires the backfill completion marker on a populated database. After
+the command reports completion, roll out the typed-only release to every reader and writer. It uses only the typed
+snapshot and leaves new `creation` JSON rows NULL; the JSON column remains as a rollback copy for rows created by
+earlier releases. The migration also replaces JSON-dependent source constraints with typed source constraints.
+After every writer runs the typed-only release, run
+`bb run //agentplane/notification_service/storage_backfill/storage_validate_cmd:notification-storage-validate -- --proof=subscription-creation --writer-gate=notification-subscription-creation-typed-only-v1`.
+This command validates each typed constraint in its own transaction with a short lock wait and is safe to rerun.
+Run it even on an empty database so later writes have validated proofs; a later contract migration may use an
+empty-table fast path, but requires all four catalog proofs before dropping the retained JSON column on a populated
+database.
+
+Before the typed-only release, roll back to the dual-write release while retaining all additive migrations and
+columns; it prefers typed snapshots and can read rows written by the typed-only release. Do not roll back to an image
+that predates typed-snapshot support once `00013` is applied. Keep `00013` applied during code rollback, because its
+Down step requires every row to have a JSON creation again. After the rollback rollout settles, verify readiness,
+inbox authorization, and read/write behavior. A later contract migration may drop the unused JSON column only after
+all readers and writers use typed storage; until then, the typed-only migration retains it for the compatible
+dual-write rollback.
+
+`00015_inbox_destination_typed_only.sql` requires the inbox-destination backfill completion marker on populated
+databases, makes the retained `destination_ref` JSON nullable, and adds a not-yet-validated shape constraint for the
+relational namespace, name and UID columns. Roll the typed-only reader and writer to every Notification Service
+instance only after the `00009` backfill reports completion. The new reader uses only the relational columns, and
+new inboxes leave `destination_ref` NULL. Once every writer has the typed-only release, run
+`bb run //agentplane/notification_service/storage_backfill/storage_validate_cmd:notification-storage-validate -- --proof=inbox-destination --writer-gate=notification-destination-typed-only-v1`.
+It validates the shape constraint in a separate bounded transaction, including on an empty database. A later
+contract migration requires that validated catalog proof before making the relational fields mandatory and dropping
+the retained JSON column.
+
+Before the contract migration, roll back only to the typed-capable dual-write release: it reads relational fields
+and can still read retained legacy JSON, and it repopulates JSON for new inboxes. Keep the additive columns and
+`00015` applied during rollback; its Down step refuses to run while any typed-only row lacks JSON. After rollback,
+check API ownership, inbox authorization, writes, reads and readiness. Once the contract migration drops JSON, an
+older image that depends on `destination_ref` is no longer a supported rollback.
 
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
 flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,

@@ -2,11 +2,16 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"testing"
+	"time"
 
-	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/entrystoragepb"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *testing.T) {
@@ -28,7 +33,7 @@ func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t
 		model.MessageEvent{MessageID: messageID, Sender: model.ServiceAccount{Namespace: "sender-ns", Name: "sender"}},
 	}
 	for _, event := range events {
-		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, `{}`)
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
 	}
 	rows, err := f.db.QueryContext(t.Context(), `SELECT identity_provider,
 		actions_request_id::text, actions_sequence,
@@ -93,5 +98,117 @@ func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t
 	if got[7].provider != "message" || got[7].messageID.String != messageID.String() ||
 		got[7].messageSenderNamespace.String != "sender-ns" || got[7].messageSenderName.String != "sender" {
 		t.Errorf("message identity columns = %+v", got[7])
+	}
+	for i, wantNull := range []bool{false, true, true, true, true, false, false, false} {
+		var isNull bool
+		var encoded []byte
+		if err := f.db.QueryRowContext(t.Context(), `SELECT typed_payload IS NULL, typed_payload
+			FROM entry WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1).Scan(&isNull, &encoded); err != nil {
+			t.Fatal(err)
+		}
+		if isNull != wantNull {
+			t.Errorf("event %d typed_payload IS NULL = %t, want %t", i, isNull, wantNull)
+			continue
+		}
+		if wantNull {
+			continue
+		}
+		var content entrystoragepb.EntryContent
+		if err := proto.Unmarshal(encoded, &content); err != nil {
+			t.Fatalf("event %d typed payload is not protobuf: %v", i, err)
+		}
+		switch event := events[i].(type) {
+		case model.ActionsEvent:
+			action := content.GetAction()
+			wantAt := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+			wantActor := &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{
+				Issuer: "https://issuer.example", Subject: "subject-123",
+			}}}
+			if action == nil || action.GetState() != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING ||
+				action.GetAt() == nil || !action.GetAt().AsTime().Equal(wantAt) || !proto.Equal(action.GetActor(), wantActor) {
+				t.Errorf("Action typed content = %v", content.GetAction())
+			}
+		case model.GitHubMergeabilityEvent, model.GitHubMergeabilitySnapshotEvent:
+			mergeability := content.GetMergeability()
+			if mergeability == nil || mergeability.GetRepository() != "owner/repository" ||
+				mergeability.GetPreviousMergeability() != entrystoragepb.GitHubMergeabilityState_GITHUB_MERGEABILITY_STATE_UNKNOWN ||
+				mergeability.GetMergeability() != entrystoragepb.GitHubMergeabilityState_GITHUB_MERGEABILITY_STATE_CONFLICTING {
+				t.Errorf("mergeability typed content = %v", mergeability)
+			}
+		case model.MessageEvent:
+			message := content.GetMessage()
+			if message == nil || message.GetBody() != "stored message" || message.FromSession == nil || *message.FromSession != "sender-session" {
+				t.Errorf("message typed content = %v", message)
+			}
+		default:
+			t.Fatalf("unexpected event in typed content test: %T", event)
+		}
+	}
+}
+
+func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, body("identity-runtime"))
+	requestID := uuid.New()
+	deliveryID := uuid.New()
+	messageID := uuid.New()
+	empty := ""
+	events := []model.EventIdentity{
+		model.ActionsEvent{RequestID: requestID, Sequence: 17},
+		model.ActionsEvent{RequestID: requestID, Sequence: 18},
+		model.GitHubEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: model.EventPullRequest},
+		model.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: model.EventPullRequest, Action: &empty},
+		model.GitHubObservationEvent{AppID: 1, RepositoryID: 2, Event: model.EventCheckRun, Sequence: 19},
+		model.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 4},
+		model.GitHubMergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 5},
+		model.MessageEvent{MessageID: messageID, Sender: model.ServiceAccount{Namespace: "sender-ns", Name: "sender"}},
+	}
+	for _, event := range events {
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
+	}
+	// Make one legacy copy disagree with the relational identity so this test proves that new reads and retries
+	// use the populated columns. Production writers still dual-write the correct JSON for old readers in rollout.
+	legacyEvent, err := json.Marshal(model.ActionsEvent{RequestID: requestID, Sequence: 999})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.exec(t, `UPDATE entry SET event = $3::jsonb WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, 1, string(legacyEvent))
+	page := f.read(t, subscription.InboxID, 0)
+	if len(page.Entries) != len(events) {
+		t.Fatalf("read %d entries, want %d", len(page.Entries), len(events))
+	}
+	for i, event := range events {
+		requireEqual(t, page.Entries[i].Event, event)
+	}
+
+	// An expired payload remains deduplicated by its permanent identity. A replay does not create an entry or
+	// restore content after cleanup has advanced the expired prefix.
+	f.exec(t, `UPDATE entry SET payload = NULL WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
+	f.exec(t, `UPDATE inbox SET expired_through = 1 WHERE id = $1`, subscription.InboxID)
+	for _, event := range events {
+		if err := f.transaction(t.Context(), func(tx *sql.Tx) error {
+			return f.AppendEvent(t.Context(), tx, subscription.InboxID, subscription.ID, event, []byte(`{"retry":true}`))
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1`, subscription.InboxID); got != len(events) {
+		t.Fatalf("replay left %d entries, want %d", got, len(events))
+	}
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND cursor = 1 AND payload IS NULL`, subscription.InboxID); got != 1 {
+		t.Fatalf("expired payload rows = %d, want 1 after replay", got)
+	}
+
+	tx, err := f.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	summaries, err := pendingEntrySummaries(t.Context(), tx, subscription.InboxID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != len(events)-1 || summaries[0].Summary != "Action "+requestID.String()+" · event 18 · decision_pending" {
+		t.Fatalf("pending summaries from relational identity = %+v", summaries)
 	}
 }
