@@ -88,13 +88,8 @@ func TestInputAdvertisementAndTypedDecode(t *testing.T) {
 	}
 }
 
-func TestInputBindingIsolationAndDefinitionCopies(t *testing.T) {
-	title := "Original"
-	readOnly := true
-	options := InputOptions{
-		Name: "bounded", Description: "Bounded input", Title: &title,
-		Annotations: &ToolAnnotations{Title: &title, ReadOnlyHint: &readOnly},
-	}
+func TestInputBindingIsolation(t *testing.T) {
+	options := InputOptions{Name: "bounded", Description: "Bounded input"}
 	newBounded := func(maximum string) Input[struct {
 		Count int `json:"count"`
 	}] {
@@ -127,27 +122,6 @@ func TestInputBindingIsolationAndDefinitionCopies(t *testing.T) {
 	}
 	if _, err := low.Decode(validForHigh); !errors.Is(err, ErrInvalidArguments) {
 		t.Fatalf("low binding accepted value above its cap: %v", err)
-	}
-	title = "Mutated option"
-	readOnly = false
-	first := low.Definition()
-	if *first.Title != "Original" || *first.Annotations.ReadOnlyHint != true || *first.Annotations.Title != "Original" {
-		t.Fatalf("constructor kept mutable option metadata: %+v", first)
-	}
-	first.InputSchema[0] = 'x'
-	*first.Title = "Mutated definition"
-	*first.Annotations.ReadOnlyHint = false
-	*first.Annotations.Title = "Mutated definition"
-	second := low.Definition()
-	if !json.Valid(second.InputSchema) || *second.Title != "Original" || *second.Annotations.ReadOnlyHint != true ||
-		*second.Annotations.Title != "Original" {
-		t.Fatalf("definition mutation reached shared contract: %+v", second)
-	}
-	if _, err := low.Decode(validForBoth); err != nil {
-		t.Fatalf("definition mutation affected decode: %v", err)
-	}
-	if _, err := high.Decode(validForHigh); err != nil {
-		t.Fatalf("one binding mutation affected another: %v", err)
 	}
 }
 

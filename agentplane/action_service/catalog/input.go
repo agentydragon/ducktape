@@ -13,6 +13,7 @@ import (
 
 // InputOptions describes one built-in Action input. Configure receives a fresh reflected schema,
 // so binding-specific constraints can be applied without changing another binding's contract.
+// Title and Annotations are shared read-only metadata.
 type InputOptions struct {
 	Name        string
 	Description string
@@ -72,8 +73,8 @@ func NewInput[T any](options InputOptions) (Input[T], error) {
 		definition: ActionDefinition{
 			Description: options.Description,
 			InputSchema: document,
-			Title:       copyString(options.Title),
-			Annotations: copyAnnotations(options.Annotations),
+			Title:       options.Title,
+			Annotations: options.Annotations,
 		},
 		validator: compiled,
 	}, nil
@@ -81,15 +82,8 @@ func NewInput[T any](options InputOptions) (Input[T], error) {
 
 func (input Input[T]) Name() string { return input.name }
 
-// Definition returns a copy. The caller may edit it without changing later advertisements or
-// the validator used by Decode.
-func (input Input[T]) Definition() ActionDefinition {
-	definition := input.definition
-	definition.InputSchema = bytes.Clone(definition.InputSchema)
-	definition.Title = copyString(definition.Title)
-	definition.Annotations = copyAnnotations(definition.Annotations)
-	return definition
-}
+// Definition returns this input's read-only Action definition.
+func (input Input[T]) Definition() ActionDefinition { return input.definition }
 
 // Decode validates and decodes arguments into T. All malformed or rejected arguments have the
 // same ErrInvalidArguments result as the existing Action decoder.
@@ -99,33 +93,4 @@ func (input Input[T]) Decode(arguments json.RawMessage) (T, error) {
 		return value, err
 	}
 	return value, nil
-}
-
-func copyString(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
-}
-
-func copyBool(value *bool) *bool {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
-}
-
-func copyAnnotations(value *ToolAnnotations) *ToolAnnotations {
-	if value == nil {
-		return nil
-	}
-	return &ToolAnnotations{
-		Title:           copyString(value.Title),
-		ReadOnlyHint:    copyBool(value.ReadOnlyHint),
-		DestructiveHint: copyBool(value.DestructiveHint),
-		IdempotentHint:  copyBool(value.IdempotentHint),
-		OpenWorldHint:   copyBool(value.OpenWorldHint),
-	}
 }
