@@ -1033,12 +1033,14 @@ async def test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place(thr
     await expect(history).to_have_attribute("data-layout-settled", "true", timeout=30_000)
     await wheel(page, -200)
     await expect(history).to_have_attribute("data-layout-settled", "true", timeout=30_000)
+    gesture_distance = 120
     state = await history.evaluate_handle(
-        """area => {
+        """(area, distance) => {
             const top = area.getBoundingClientRect().top;
             const rows = [...area.querySelectorAll('[data-thread-anchor]')];
-            const above = rows.filter(row => row.getBoundingClientRect().bottom <= top);
-            const growing = above.at(-2);
+            // Keep the row above the viewport for the entire upward gesture. A nearby row
+            // can enter the viewport before its ResizeObserver measurement is delivered.
+            const growing = rows.filter(row => row.getBoundingClientRect().bottom <= top - distance - 2).at(-1);
             const anchor = rows.find(row => row.getBoundingClientRect().bottom > top);
             if (!growing || !anchor) throw new Error('the resize needs mounted rows above the reader');
             const state = {
@@ -1049,7 +1051,8 @@ async def test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place(thr
                 }, { once: true })),
             };
             return state;
-        }"""
+        }""",
+        gesture_distance,
     )
     initial_top = await state.evaluate("state => state.scrollTop")
     bounds = await history.bounding_box()
@@ -1064,7 +1067,7 @@ async def test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place(thr
                 "gestureSourceType": "mouse",
                 "preventFling": True,
                 "speed": 60,
-                "yDistance": 120,
+                "yDistance": gesture_distance,
             },
         )
     )
@@ -1103,8 +1106,8 @@ async def test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place(thr
     await state.dispose()
     assert outcome["events"].index("resized") < outcome["events"].index("scrollend"), outcome
     assert outcome["connected"], outcome
-    # Only the requested 120px scroll should move the line, irrespective of the 600px resize.
-    assert abs(outcome["movement"] - 120) <= 2, (
+    # Only the requested scroll should move the line, irrespective of the 600px resize.
+    assert abs(outcome["movement"] - gesture_distance) <= 2, (
         f"{outcome}; recent history decisions:\n{await thread_view_marks.recent(page, 60)}"
     )
 
