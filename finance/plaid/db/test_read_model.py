@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 import pytest_bazel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage
 from finance.plaid.db.models import HoldingSnapshotRow, async_session_factory
 from finance.plaid.db.read_model import read_current_cash_balances, read_current_holdings
+from finance.plaid.db.testing import ensure_test_sync_run
 
 
 @pytest.fixture
@@ -35,6 +37,7 @@ async def _capture_holdings(
         ApiEvent(endpoint="investments/holdings/get", status="ok", item_id=item_id, request_json={}, response_json={})
     )
     await storage.apply_holdings(
+        run_id=await ensure_test_sync_run(storage, item_id=item_id),
         item_id=item_id,
         securities=[dict(security) for security in securities],
         holdings=[dict(holding) for holding in holdings],
@@ -58,6 +61,7 @@ async def test_read_current_cash_balances_returns_latest_selected_usd_snapshot(
 ) -> None:
     await add_link("item-cash")
     await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id="item-cash"),
         item_id="item-cash",
         accounts=[
             {
@@ -86,6 +90,7 @@ async def test_read_current_cash_balances_returns_latest_selected_usd_snapshot(
         captured_at=datetime(2026, 5, 31, 12, 0, tzinfo=UTC),
     )
     await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id="item-cash"),
         item_id="item-cash",
         accounts=[
             {
@@ -120,6 +125,7 @@ async def test_read_current_holdings_returns_latest_selected_usd_holdings(
 ) -> None:
     await add_link("item-investments")
     await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id="item-investments"),
         item_id="item-investments",
         accounts=[
             {
@@ -202,6 +208,7 @@ async def test_read_current_holdings_uses_latest_capture_and_preserves_empty_cov
 ) -> None:
     await add_link("item-investments")
     await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id="item-investments"),
         item_id="item-investments",
         accounts=[{"account_id": "brokerage", "name": "Brokerage", "type": "investment"}],
         captured_at=datetime(2026, 5, 31, 12, 0, tzinfo=UTC),
@@ -278,6 +285,7 @@ async def test_read_current_holdings_fails_closed_on_unlinked_legacy_row(
 ) -> None:
     await add_link("item-investments")
     await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id="item-investments"),
         item_id="item-investments",
         accounts=[{"account_id": "brokerage", "name": "Brokerage", "type": "investment"}],
         captured_at=datetime(2026, 5, 31, 12, 0, tzinfo=UTC),
@@ -319,6 +327,7 @@ async def test_read_current_holdings_fails_closed_on_unapplied_successful_api_ev
 ) -> None:
     await add_link("item-investments")
     await storage.apply_accounts(
+        run_id=await ensure_test_sync_run(storage, item_id="item-investments"),
         item_id="item-investments",
         accounts=[{"account_id": "brokerage", "name": "Brokerage", "type": "investment"}],
         captured_at=datetime(2026, 5, 31, 12, 0, tzinfo=UTC),
@@ -358,6 +367,75 @@ async def test_read_current_holdings_fails_closed_on_unapplied_successful_api_ev
     holdings = await read_current_holdings(session_factory=session_factory, account_ids=("brokerage",))
     assert [holding.security_id for holding in holdings] == ["security-a"]
     assert holdings[0].institution_value == Decimal("11.02")
+
+
+async def test_superseded_run_receipt_does_not_hide_successor_holdings(
+    storage: PlaidLinkStorage,
+    add_link: Callable[[str], Awaitable[None]],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await add_link("item-investments")
+    stale_run_id = await storage.begin_sync_run(trigger="cron", item_id="item-investments", configured_windows={})
+    async with session_factory() as session:
+        await session.execute(
+            text("UPDATE sync_runs SET started_at = :started_at WHERE run_id = :run_id"),
+            {"started_at": datetime.now(UTC) - timedelta(hours=3), "run_id": stale_run_id},
+        )
+        await session.commit()
+    successor_run_id = await storage.begin_sync_run(
+        trigger="webhook", item_id="item-investments", configured_windows={}
+    )
+    await storage.apply_accounts(
+        run_id=successor_run_id,
+        item_id="item-investments",
+        accounts=[{"account_id": "brokerage", "name": "Brokerage", "type": "investment"}],
+        captured_at=datetime.now(UTC),
+    )
+    event_id = await storage.record_api_event(
+        ApiEvent(
+            sync_run_id=successor_run_id,
+            endpoint="investments/holdings/get",
+            status="ok",
+            item_id="item-investments",
+            request_json={},
+            response_json={},
+        )
+    )
+    await storage.apply_holdings(
+        run_id=successor_run_id,
+        item_id="item-investments",
+        api_event_id=event_id,
+        securities=[{"security_id": "security-current", "name": "Current Security"}],
+        holdings=[
+            {"account_id": "brokerage", "security_id": "security-current", "institution_value": Decimal("12.34")}
+        ],
+        accounts=[
+            {
+                "account_id": "brokerage",
+                "name": "Brokerage",
+                "type": "investment",
+                "balances": {"current": Decimal("12.34"), "iso_currency_code": "USD"},
+            }
+        ],
+        captured_at=datetime.now(UTC),
+    )
+    stale_event_id = await storage.record_api_event(
+        ApiEvent(
+            sync_run_id=stale_run_id,
+            endpoint="investments/holdings/get",
+            status="ok",
+            item_id="item-investments",
+            request_json={},
+            response_json={},
+        )
+    )
+
+    holdings = await read_current_holdings(session_factory=session_factory, account_ids=("brokerage",))
+    assert [holding.security_id for holding in holdings] == ["security-current"]
+    async with session_factory() as session:
+        assert (
+            await session.execute(text("SELECT status FROM plaid_api_events WHERE id = :id"), {"id": stale_event_id})
+        ).scalar_one() == "ok_superseded"
 
 
 if __name__ == "__main__":

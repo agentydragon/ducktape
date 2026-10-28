@@ -33,6 +33,7 @@ async def storage(db_url: str) -> AsyncGenerator[PlaidLinkStorage]:
 def add_link(storage: PlaidLinkStorage) -> Callable[[str], Awaitable[None]]:
     async def add(item_id: str) -> None:
         await storage.upsert_link(
+            run_id=None,
             item_id=item_id,
             access_token_secret=f"{item_id}-token",
             products_requested=["investments"],
