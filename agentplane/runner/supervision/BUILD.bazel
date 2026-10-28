@@ -1,0 +1,49 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "supervision",
+    srcs = [
+        "backend.go",
+        "process.go",
+        "resources.go",
+        "subprocess.go",
+        "supervisor.go",
+        "systemd.go",
+        "systemd_policy.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/supervision",
+    deps = [
+        "@com_github_coreos_go_systemd_v22//dbus",
+        "@com_github_godbus_dbus_v5//:dbus",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_x_sys//unix",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "supervision_test",
+    srcs = glob(
+        ["*_test.go"],
+        exclude = ["systemd_kernel_test.go"],
+    ),
+    embed = [":supervision"],
+    exec_properties = {"test.dockerUser": "0:0"},
+    race = "on",
+    deps = ["@org_golang_x_sys//unix"],
+)
+
+go_test(
+    name = "runner_systemd_fixture",
+    srcs = ["systemd_kernel_test.go"],
+    embed = [":supervision"],
+    pure = "on",
+    tags = ["manual"],
+    deps = [
+        "@com_github_coreos_go_systemd_v22//dbus",
+        "@com_github_godbus_dbus_v5//:dbus",
+        "@com_github_google_uuid//:uuid",
+    ],
+)

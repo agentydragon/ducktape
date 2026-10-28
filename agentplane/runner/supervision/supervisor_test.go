@@ -1,4 +1,4 @@
-package runner
+package supervision
 
 import (
 	"context"
@@ -24,11 +24,10 @@ func TestSupervisorFencesSameGroupChildAfterNativeLeaderExits(t *testing.T) {
 		t.Fatal(err)
 	}
 	pidFile := filepath.Join(t.TempDir(), "background-pid")
-	childScript := "trap '' TERM; echo $$ > " + shellQuote(pidFile) + "; exec /bin/sleep 60"
-	leaderScript := "/bin/sh -c " + shellQuote(childScript) + " & wait"
-	process, err := NewProcess(ProcessConfig{
-		Command:      []string{"/bin/sh", "-c", leaderScript},
-		StateOwnerFD: owner,
+	childScript := "trap '' TERM; echo $$ > " + quoteShellArg(pidFile) + "; exec /bin/sleep 60"
+	leaderScript := "/bin/sh -c " + quoteShellArg(childScript) + " & wait"
+	process, err := NewSubprocessSupervisor(owner).NewProcess(ProcessConfig{
+		Command: []string{"/bin/sh", "-c", leaderScript},
 	})
 	if err != nil {
 		_ = owner.Close()
@@ -79,6 +78,10 @@ func TestSupervisorFencesSameGroupChildAfterNativeLeaderExits(t *testing.T) {
 	}
 	_ = unix.Kill(childPID, unix.SIGKILL)
 	t.Fatalf("same-group tool %d kept state ownership after its native leader exited", childPID)
+}
+
+func quoteShellArg(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func waitForProcessPID(t *testing.T, path string) int {

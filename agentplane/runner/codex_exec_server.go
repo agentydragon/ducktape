@@ -15,6 +15,7 @@ import (
 	"time"
 
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/runner/executor/control"
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/coder/websocket"
 	"github.com/sethvargo/go-retry"
 	"go.uber.org/zap"
@@ -25,10 +26,10 @@ import (
 type CodexExecServerConfig struct {
 	URL             string
 	ContainerSocket string
-	Isolation       *VMProcessPolicy
+	Isolation       *supervision.SystemdPolicy
 }
 
-func (c CodexExecServerConfig) validate(isolation *VMProcessPolicy) error {
+func (c CodexExecServerConfig) validate(isolation *supervision.SystemdPolicy) error {
 	if err := validateExecutorURL(c.URL); err != nil {
 		return err
 	}
@@ -41,15 +42,15 @@ func (c CodexExecServerConfig) validate(isolation *VMProcessPolicy) error {
 	if isolation == nil || c.Isolation == nil {
 		return errors.New("supervised executor requires cgroup isolation and explicit leaf limits")
 	}
-	if isolation.Slice != workloadSlice || c.Isolation.Slice != executorSlice {
+	if isolation.Slice != supervision.WorkloadSlice || c.Isolation.Slice != supervision.ExecutorSlice {
 		return errors.New("executor and harness policies require their distinct systemd slices")
 	}
 	// Validate both policies before Prepare can change either subtree.
-	for _, groups := range []*VMProcessPolicy{isolation, c.Isolation} {
+	for _, groups := range []*supervision.SystemdPolicy{isolation, c.Isolation} {
 		if err := groups.AggregateLimits.Validate(); err != nil {
 			return err
 		}
-		if err := groups.validateProcessLimits(groups.ProcessLimits); err != nil {
+		if err := groups.ValidateProcessLimits(groups.ProcessLimits); err != nil {
 			return err
 		}
 	}
@@ -193,10 +194,9 @@ func (e *codexExecServer) start(ctx context.Context) (*codexExecServerInstance, 
 	if e.config.ContainerSocket != "" {
 		return claimCodexExecServerContainer(ctx, e.config.ContainerSocket, env)
 	}
-	p, err := NewProcess(ProcessConfig{
+	p, err := e.runner.executorSupervisor.NewProcess(supervision.ProcessConfig{
 		Command: []string{e.runner.config.Codex.Binary, "exec-server", "--listen", e.config.URL},
-		Dir:     e.runner.config.StateDir, Env: env, StateOwnerFD: e.runner.owner.File(),
-		VMProcessPolicy: e.config.Isolation,
+		Dir:     e.runner.config.StateDir, Env: env,
 	})
 	if err != nil {
 		return nil, err

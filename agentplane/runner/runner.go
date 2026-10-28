@@ -13,6 +13,7 @@ import (
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -23,28 +24,31 @@ import (
 
 type Runner struct {
 	runnerservicepb.UnimplementedRunnerServer
-	config          Config
-	ctx             context.Context
-	cancel          context.CancelFunc
-	owner           *StateOwner
-	store           *SessionStore
-	bootID          string
-	mu              sync.Mutex
-	createMu        sync.Mutex
-	loadMu          sync.Mutex
-	bootstrapMu     sync.Mutex
-	sessions        map[string]*Session
-	codexAppServer  *codexAppServer
-	codexExecServer *codexExecServer
-	changes         chan struct{}
-	fatal           chan error
-	idleSince       *timestamppb.Timestamp
-	admissions      int
-	lifecycle       *lifecycle
-	closeOnce       sync.Once
-	closeErr        error
-	initLog         *InitializationLog
-	bootstrapOp     *operation
+	config              Config
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	owner               *StateOwner
+	supervisor          *supervision.Supervisor
+	executorSupervisor  *supervision.Supervisor
+	workspaceSupervisor *supervision.Supervisor
+	store               *SessionStore
+	bootID              string
+	mu                  sync.Mutex
+	createMu            sync.Mutex
+	loadMu              sync.Mutex
+	bootstrapMu         sync.Mutex
+	sessions            map[string]*Session
+	codexAppServer      *codexAppServer
+	codexExecServer     *codexExecServer
+	changes             chan struct{}
+	fatal               chan error
+	idleSince           *timestamppb.Timestamp
+	admissions          int
+	lifecycle           *lifecycle
+	closeOnce           sync.Once
+	closeErr            error
+	initLog             *InitializationLog
+	bootstrapOp         *operation
 }
 
 func New(config Config) (*Runner, error) {
@@ -66,14 +70,19 @@ func New(config Config) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
+	supervisor := supervision.NewSubprocessSupervisor(owner.File())
+	var workspaceSupervisor, executorSupervisor *supervision.Supervisor
 	if config.VMProcessPolicy != nil {
-		if err := config.VMProcessPolicy.prepare(config); err != nil {
+		supervisor, err = config.VMProcessPolicy.Prepare(config.StateDir, config.Launch.Sandbox.UID)
+		if err != nil {
 			_ = owner.Close()
 			return nil, err
 		}
+		workspaceSupervisor = supervisor
 	}
 	if config.CodexExecServer != nil && config.CodexExecServer.Isolation != nil {
-		if err := config.CodexExecServer.Isolation.prepare(config); err != nil {
+		executorSupervisor, err = config.CodexExecServer.Isolation.Prepare(config.StateDir, config.Launch.Sandbox.UID)
+		if err != nil {
 			_ = owner.Close()
 			return nil, err
 		}
@@ -93,7 +102,7 @@ func New(config Config) (*Runner, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &Runner{config: config, owner: owner, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, sessions: map[string]*Session{}, changes: make(chan struct{}), fatal: make(chan error, 1)}
+	r := &Runner{config: config, owner: owner, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, executorSupervisor: executorSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, sessions: map[string]*Session{}, changes: make(chan struct{}), fatal: make(chan error, 1)}
 	if config.CodexExecServer != nil {
 		r.codexExecServer = newCodexExecServer(r, *config.CodexExecServer)
 	}
@@ -321,7 +330,7 @@ func (r *Runner) reopen(ctx context.Context, s *Session) error {
 }
 
 func (r *Runner) ensureWorkspace(ctx context.Context, cwd string) (string, error) {
-	return EnsureWorkspace(ctx, cwd, r.config.WorkspaceRoot, r.config.VMProcessPolicy)
+	return EnsureWorkspace(ctx, cwd, r.config.WorkspaceRoot, r.workspaceSupervisor)
 }
 
 func (r *Runner) runScript(ctx context.Context, script, cwd string, output func(bool, []byte) error) (int, error) {
@@ -335,7 +344,7 @@ func (r *Runner) runScript(ctx context.Context, script, cwd string, output func(
 	for key, value := range r.config.HarnessEnvironment {
 		env[key] = value
 	}
-	process, err := NewProcess(ProcessConfig{Command: []string{"/bin/sh", "-eu"}, Dir: cwd, Env: env, StateOwnerFD: r.owner.File(), VMProcessPolicy: r.config.VMProcessPolicy})
+	process, err := r.supervisor.NewProcess(supervision.ProcessConfig{Command: []string{"/bin/sh", "-eu"}, Dir: cwd, Env: env})
 	if err != nil {
 		return 0, err
 	}

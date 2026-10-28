@@ -1,4 +1,4 @@
-package runner
+package supervision
 
 import (
 	"errors"
@@ -16,55 +16,17 @@ import (
 )
 
 const (
-	workspaceMode            = "--agentplane-runner-workspace"
-	vmResourcePropertiesMode = "--vm-resource-properties"
+	// SupervisorMode is the private runner child mode for native process supervision.
+	SupervisorMode = "--agentplane-runner-supervisor"
 
 	parentLivenessFDDefault = 3
 	nativePIDFDDefault      = 4
 	stopGrace               = 5 * time.Second
 )
 
-// InternalMode dispatches the private child modes before the runner starts its service.
-// args excludes argv[0].
-func InternalMode(args []string) (handled bool, exitCode int) {
-	if len(args) == 0 {
-		return false, 0
-	}
-	switch args[0] {
-	case supervisorMode:
-		return true, SupervisorMain(args[1:])
-	case workspaceMode:
-		return true, WorkspaceMain(args[1:])
-	case vmResourcePropertiesMode:
-		return true, VMResourcePropertiesMain(args[1:])
-	default:
-		return false, 0
-	}
-}
-
-// VMResourcePropertiesMain validates the shared Runner config and prints the
-// systemd properties that may be applied to the Runner service.
-func VMResourcePropertiesMain(args []string) int {
-	if len(args) != 1 || args[0] == "" {
-		fmt.Fprintln(os.Stderr, "--vm-resource-properties requires one Runner config path")
-		return 64
-	}
-	properties, err := guestResourceSystemdProperties(args[0])
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	for _, property := range properties {
-		if _, err := fmt.Fprintln(os.Stdout, property); err != nil {
-			return 1
-		}
-	}
-	return 0
-}
-
-// SupervisorMain runs one native command, retaining inherited state ownership until the
-// command has exited and its process group has been signaled. Container isolation
-// supplies the stronger whole-domain fence after runner death.
+// SupervisorMain runs one native command, retaining inherited state ownership
+// until the command exits and its process group has been signaled. Container
+// isolation supplies the stronger whole-domain fence after runner death.
 func SupervisorMain(args []string) int {
 	flags := flag.NewFlagSet("runner supervisor", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -99,15 +61,15 @@ func SupervisorMain(args []string) int {
 			fmt.Fprintln(os.Stderr, "harness supervisor received an invalid state-owner descriptor")
 			return 64
 		}
-		// The descriptor remains open in this supervisor. A child gets a deliberate duplicate via ExtraFiles.
+		// The descriptor stays open in this supervisor. A child gets a deliberate duplicate via ExtraFiles.
 		unix.CloseOnExec(*stateFD)
 	}
 	defer liveness.Close()
 	defer report.Close()
 
-	// A pipe is a process-lifetime token. Unlike PR_SET_PDEATHSIG it is independent of
-	// which Go runtime thread launched this process, and EOF remains pending across the
-	// check/spawn race. Check once before the command can execute, then monitor EOF.
+	// A pipe is a process-lifetime token. Unlike PR_SET_PDEATHSIG it is independent
+	// of which Go runtime thread launched this process, and EOF remains pending
+	// across the check/spawn race. Check before the command can execute, then watch EOF.
 	if parentAlreadyGone(liveness) {
 		return 128 + int(syscall.SIGUSR1)
 	}
@@ -145,9 +107,7 @@ func startNative(command []string, stateOwner *os.File) (*exec.Cmd, error) {
 	if stateOwner != nil {
 		child.ExtraFiles = []*os.File{stateOwner}
 	}
-	proc := &syscall.SysProcAttr{Setpgid: true}
-
-	child.SysProcAttr = proc
+	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	return child, child.Start()
 }
 
@@ -207,7 +167,6 @@ func stopNative(child *exec.Cmd, done <-chan error) (int, error) {
 
 func stopAndFence(child *exec.Cmd) int {
 	_ = signalProcessGroup(child.Process.Pid, syscall.SIGKILL)
-
 	_ = child.Wait()
 	_ = fenceNativeGroup(child.Process.Pid)
 	return 125

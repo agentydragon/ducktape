@@ -1,4 +1,4 @@
-package runner
+package supervision
 
 import (
 	"errors"
@@ -10,10 +10,16 @@ import (
 	"go.uber.org/zap"
 )
 
-const cgroupCPUPeriodMicros uint64 = 100000
+const CPUPeriodMicros uint64 = 100000
+
+// WorkloadSlice and ExecutorSlice contain native Agentplane services by role.
+const (
+	WorkloadSlice = "agentplane-workloads.slice"
+	ExecutorSlice = "agentplane-executors.slice"
+)
 
 // ResourceLimits is one cgroup-v2 resource budget. CPU quota is expressed in
-// microseconds per the fixed 100,000 microsecond period.
+// microseconds per the fixed CPUPeriodMicros period.
 type ResourceLimits struct {
 	CPUQuotaMicros int64  `json:"cpu_quota_micros"`
 	MemoryMaxBytes int64  `json:"memory_max_bytes"`

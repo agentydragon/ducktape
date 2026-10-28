@@ -1,6 +1,7 @@
-package runner
+package supervision
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -27,8 +28,8 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	if handled, code := InternalMode(os.Args[1:]); handled {
-		os.Exit(code)
+	if len(os.Args) > 1 && os.Args[1] == SupervisorMode {
+		os.Exit(SupervisorMain(os.Args[2:]))
 	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -111,22 +112,9 @@ func TestProcessFixture(t *testing.T) {
 	}
 }
 
-func TestResolveWorkspaceRejectsSymlinkEscape(t *testing.T) {
-	root := t.TempDir()
-	outside := t.TempDir()
-	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ResolveWorkspace(filepath.Join(root, "escape", "new"), root); err == nil || !strings.Contains(err.Error(), "must be a child") {
-		t.Fatalf("ResolveWorkspace error = %v, want child-containment error", err)
-	}
-}
-
 func TestProcessStartFailureCompletesWait(t *testing.T) {
-	process, err := NewProcess(ProcessConfig{
-		Command:              []string{"/bin/true"},
-		supervisorExecutable: filepath.Join(t.TempDir(), "missing-runner"),
-	})
+	supervisor := newSubprocessSupervisor(nil, filepath.Join(t.TempDir(), "missing-runner"))
+	process, err := supervisor.NewProcess(ProcessConfig{Command: []string{"/bin/true"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,8 +128,55 @@ func TestProcessStartFailureCompletesWait(t *testing.T) {
 	}
 }
 
+func TestSupervisorProcessesHaveIndependentLifetimes(t *testing.T) {
+	supervisor := NewSubprocessSupervisor(nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var processes []*Process
+	for range 2 {
+		process, err := supervisor.NewProcess(ProcessConfig{
+			Command: []string{"/bin/sh", "-c", `while IFS= read -r line; do printf '%s\n' "$line"; done`},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := process.Start(ctx); err != nil {
+			t.Fatal(err)
+		}
+		processes = append(processes, process)
+		t.Cleanup(func() {
+			if err := process.Stop(context.Background(), 0); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	if err := processes[0].Stop(ctx, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := processes[1].WriteLine(ctx, "still running"); err != nil {
+		t.Fatal(err)
+	}
+	type reply struct {
+		line string
+		err  error
+	}
+	replies := make(chan reply, 1)
+	go func() {
+		line, err := bufio.NewReader(processes[1].Stdout()).ReadString('\n')
+		replies <- reply{line, err}
+	}()
+	select {
+	case got := <-replies:
+		if got.err != nil || got.line != "still running\n" {
+			t.Fatalf("second process after stopping first: %q, %v", got.line, got.err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+}
+
 func TestInputCancellationAndCloseUnblockPendingWrites(t *testing.T) {
-	process, err := NewProcess(ProcessConfig{Command: []string{"/bin/sleep", "60"}})
+	process, err := NewSubprocessSupervisor(nil).NewProcess(ProcessConfig{Command: []string{"/bin/sleep", "60"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,9 +252,8 @@ func TestImmediateStopFencesChildAndReleasesOwner(t *testing.T) {
 			_ = owner.Close()
 			t.Fatalf("acquire owner lock on attempt %d: %v", attempt, err)
 		}
-		process, err := NewProcess(ProcessConfig{
-			Command:      []string{"/bin/sleep", "60"},
-			StateOwnerFD: owner,
+		process, err := NewSubprocessSupervisor(owner).NewProcess(ProcessConfig{
+			Command: []string{"/bin/sleep", "60"},
 		})
 		if err != nil {
 			_ = owner.Close()
@@ -251,9 +285,8 @@ func TestImmediateStopFencesChildAndReleasesOwner(t *testing.T) {
 func testProcessParentDeathFixture(t *testing.T) {
 	owner := acquireStateOwnerForFixture(t)
 	ignoringTerm := os.Getenv(processTestPIDEnv) + ".ignoring-term"
-	process, err := NewProcess(ProcessConfig{
-		Command:      []string{"/bin/sh", "-c", `trap '' TERM; : > "$1"; exec /bin/sleep 60`, "native", ignoringTerm},
-		StateOwnerFD: owner,
+	process, err := NewSubprocessSupervisor(owner).NewProcess(ProcessConfig{
+		Command: []string{"/bin/sh", "-c", `trap '' TERM; : > "$1"; exec /bin/sleep 60`, "native", ignoringTerm},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -285,9 +318,8 @@ func testBackgroundChildFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	process, err := NewProcess(ProcessConfig{
-		Command:      []string{executable, processTestLeader, os.Getenv(processTestPIDEnv)},
-		StateOwnerFD: owner,
+	process, err := NewSubprocessSupervisor(owner).NewProcess(ProcessConfig{
+		Command: []string{executable, processTestLeader, os.Getenv(processTestPIDEnv)},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 )
 
 func TestEnsureWorkspacePreservesExistingOwnership(t *testing.T) {
@@ -116,6 +118,17 @@ func TestEnsureWorkspaceRejectsSymlinkEscapeBeforeCreatingAnything(t *testing.T)
 	}
 }
 
+func TestResolveWorkspaceRejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveWorkspace(filepath.Join(root, "escape", "new"), root); err == nil || !strings.Contains(err.Error(), "must be a child") {
+		t.Fatalf("ResolveWorkspace error = %v, want child-containment error", err)
+	}
+}
+
 func TestEnsureWorkspaceWithoutIsolationKeepsRunnerIdentity(t *testing.T) {
 	cwd := filepath.Join(t.TempDir(), "pod", "new-session")
 	created, err := EnsureWorkspace(context.Background(), cwd, "", nil)
@@ -152,9 +165,12 @@ func assertOwner(t *testing.T, path string, uid, gid uint32) {
 	}
 }
 
-func runWorkspaceCommand(t *testing.T, command []string, cwd string, environment map[string]string, policy *VMProcessPolicy) (int, string, string) {
+func runWorkspaceCommand(t *testing.T, command []string, cwd string, environment map[string]string, supervisor *supervision.Supervisor) (int, string, string) {
 	t.Helper()
-	process, err := NewProcess(ProcessConfig{Command: command, Dir: cwd, Env: environment, VMProcessPolicy: policy})
+	if supervisor == nil {
+		supervisor = supervision.NewSubprocessSupervisor(nil)
+	}
+	process, err := supervisor.NewProcess(supervision.ProcessConfig{Command: command, Dir: cwd, Env: environment})
 	if err != nil {
 		t.Fatal(err)
 	}

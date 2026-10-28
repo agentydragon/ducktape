@@ -168,9 +168,9 @@ pkg_tar(
 
 pkg_files(
     name = "root_supervision_fixture_file",
-    srcs = ["//agentplane/runner:runner_systemd_fixture"],
+    srcs = ["//agentplane/runner/supervision:runner_systemd_fixture"],
     attributes = pkg_attributes(mode = "0755"),
-    renames = {"//agentplane/runner:runner_systemd_fixture": "runner-systemd-fixture"},
+    renames = {"//agentplane/runner/supervision:runner_systemd_fixture": "runner-systemd-fixture"},
 )
 
 pkg_tar(

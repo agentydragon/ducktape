@@ -9,6 +9,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"go.uber.org/zap"
 )
 
@@ -27,7 +28,7 @@ type Session struct {
 	mu                                                     sync.Mutex
 	admitMu                                                sync.Mutex
 	writeMu                                                sync.Mutex
-	process                                                *Process
+	process                                                *supervision.Process
 	adapter                                                harness.Adapter
 	processID                                              string
 	processState                                           runnerpb.ProcessState

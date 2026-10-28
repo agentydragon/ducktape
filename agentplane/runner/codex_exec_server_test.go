@@ -19,6 +19,7 @@ import (
 
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/runner/executor/control"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/coder/websocket"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -83,10 +84,10 @@ func TestExecutorConfigurationRejectsPartialOrOverlappingIsolation(t *testing.T)
 	if err := (CodexExecServerConfig{URL: endpoint, ContainerSocket: "/run/test-executor.sock"}).validate(nil); err != nil {
 		t.Fatal(err)
 	}
-	limits := ResourceLimits{CPUQuotaMicros: 100000, MemoryMaxBytes: 64 * 1024 * 1024, PidsMax: 32, ReadBPS: 1, WriteBPS: 1, ReadIOPS: 1, WriteIOPS: 1}
-	harnessGroups := &VMProcessPolicy{Slice: workloadSlice, AggregateLimits: limits, ProcessLimits: limits}
+	limits := supervision.ResourceLimits{CPUQuotaMicros: 100000, MemoryMaxBytes: 64 * 1024 * 1024, PidsMax: 32, ReadBPS: 1, WriteBPS: 1, ReadIOPS: 1, WriteIOPS: 1}
+	harnessGroups := &supervision.SystemdPolicy{Slice: supervision.WorkloadSlice, AggregateLimits: limits, ProcessLimits: limits}
 	codexExecServerGroups := *harnessGroups
-	codexExecServerGroups.Slice = executorSlice
+	codexExecServerGroups.Slice = supervision.ExecutorSlice
 	if err := (CodexExecServerConfig{URL: endpoint, Isolation: &codexExecServerGroups}).validate(harnessGroups); err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +98,7 @@ func TestExecutorConfigurationRejectsPartialOrOverlappingIsolation(t *testing.T)
 		{URL: endpoint, ContainerSocket: "relative"},
 		{URL: endpoint, ContainerSocket: "/run/test.sock", Isolation: harnessGroups},
 		{URL: endpoint, Isolation: harnessGroups},
-		{URL: endpoint, Isolation: &VMProcessPolicy{Slice: "invalid.slice"}},
+		{URL: endpoint, Isolation: &supervision.SystemdPolicy{Slice: "invalid.slice"}},
 		{URL: endpoint, Isolation: &invalid},
 	} {
 		if err := config.validate(harnessGroups); err == nil {

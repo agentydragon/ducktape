@@ -15,6 +15,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/codex"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -46,7 +47,7 @@ type codexAppServer struct {
 // codexAppServerProcess is one incarnation of the shared app-server.
 type codexAppServerProcess struct {
 	id          string
-	process     *Process
+	process     *supervision.Process
 	router      *codex.Router[*Session]
 	hostingMu   sync.Mutex
 	exiting     bool
@@ -197,7 +198,7 @@ func (c *codexAppServer) start(ctx context.Context, owner *Session) error {
 	if err != nil {
 		return err
 	}
-	process, err := NewProcess(ProcessConfig{Command: command, Dir: c.store, Env: env, StateOwnerFD: c.runner.owner.File(), VMProcessPolicy: c.runner.config.VMProcessPolicy})
+	process, err := c.runner.supervisor.NewProcess(supervision.ProcessConfig{Command: command, Dir: c.store, Env: env})
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-package runner
+package supervision
 
 import (
 	"context"
@@ -14,11 +14,14 @@ import (
 	"go.uber.org/zap"
 )
 
-// systemdProcess retains exit evidence through RemainAfterExit and CollectMode:
+// systemdBackend retains exit evidence through RemainAfterExit and CollectMode:
 // successful exits stay active/exited and failures stay loaded until Stop/fence.
-// Its private name is allocated
-// before StartTransientUnit; no retry can accidentally allocate another launch.
-type systemdProcess struct {
+// Its unit name is allocated before StartTransientUnit so uncertain launch retries
+// always reconcile the same UUID.
+type systemdBackend struct {
+	config ProcessConfig
+	policy *SystemdPolicy
+
 	conn         *systemd.Conn
 	cancel       context.CancelFunc
 	name         string
@@ -28,107 +31,112 @@ type systemdProcess struct {
 	updateErrors chan error
 }
 
-func (p *Process) startSystemd(ctx context.Context) error {
-	policy := p.config.VMProcessPolicy
+func (b *systemdBackend) validate() error {
+	if !filepath.IsAbs(b.config.Command[0]) {
+		return errors.New("VM native executable must be absolute")
+	}
+	return nil
+}
+
+func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 	if err := ctx.Err(); err != nil {
-		return p.cleanupFailedStart(err)
+		return err
 	}
-	if policy.scope == "" {
-		return p.cleanupFailedStart(errors.New("VM process policy has not fenced its owner scope"))
+	if b.policy.scope == "" {
+		return errors.New("VM process policy has not fenced its owner scope")
 	}
-	if policy.lifetimeMarker == "" {
-		return p.cleanupFailedStart(errors.New("VM process policy has no Runner invocation guard"))
+	if b.policy.lifetimeMarker == "" {
+		return errors.New("VM process policy has no Runner invocation guard")
 	}
 	conn, cancelConnection, err := openSystemdConnection()
 	if err != nil {
-		return p.cleanupFailedStart(fmt.Errorf("connect native systemd manager: %w", err))
+		return fmt.Errorf("connect native systemd manager: %w", err)
 	}
-	backend := &systemdProcess{conn: conn, cancel: cancelConnection, name: policy.scope + uuid.NewString() + ".service", updates: make(chan *systemd.PropertiesUpdate, 32), updateErrors: make(chan error, 1)}
+	b.conn = conn
+	b.cancel = cancelConnection
+	b.name = b.policy.scope + uuid.NewString() + ".service"
+	b.updates = make(chan *systemd.PropertiesUpdate, 32)
+	b.updateErrors = make(chan error, 1)
 	// Direct peers are already subscribed. Use the upstream typed notification
 	// API only as a hint; every observation re-reads current authoritative state.
-	conn.SetPropertiesSubscriber(backend.updates, backend.updateErrors)
+	conn.SetPropertiesSubscriber(b.updates, b.updateErrors)
 	stdinReader, stdinWriter, err := os.Pipe()
 	if err != nil {
 		conn.Close()
 		cancelConnection()
-		return p.cleanupFailedStart(err)
+		return err
 	}
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		closeFiles(stdinReader, stdinWriter)
 		conn.Close()
 		cancelConnection()
-		return p.cleanupFailedStart(err)
+		return err
 	}
 	stderrReader, stderrWriter, err := os.Pipe()
 	if err != nil {
 		closeFiles(stdinReader, stdinWriter, stdoutReader, stdoutWriter)
 		conn.Close()
 		cancelConnection()
-		return p.cleanupFailedStart(err)
+		return err
 	}
 	defer closeFiles(stdinReader, stdoutWriter, stderrWriter)
-	props, err := policy.properties(policy.ProcessLimits)
+	props, err := b.policy.properties(b.policy.ProcessLimits)
 	if err != nil {
 		closeFiles(stdinWriter, stdoutReader, stderrReader)
 		conn.Close()
 		cancelConnection()
-		return p.cleanupFailedStart(err)
+		return err
 	}
-	command := p.config.Command
+	command := b.config.Command
 	executable := command[0]
 	if !filepath.IsAbs(executable) {
 		err = errors.New("VM native executable must be absolute")
 		closeFiles(stdinWriter, stdoutReader, stderrReader)
 		conn.Close()
 		cancelConnection()
-		return p.cleanupFailedStart(err)
+		return err
 	}
 	// ExecStartEx disables manager-side $ expansion. Native argv (including shell
 	// programs) must be delivered verbatim, with expansion owned by the native process.
-	props = append(props, policy.identityProperties()...)
+	props = append(props, b.policy.identityProperties()...)
 	// AddRef requires the API bus and cannot be used on the private manager peer.
 	// Lifecycle retention preserves status until we consume it before Stop.
 	props = append(
 		props,
-		property("Description", "Agentplane native launch "+backend.name), property("Type", "exec"), property("Restart", "no"), property("Slice", policy.Slice),
-		property("BindsTo", []string{policy.parentUnit()}), property("After", []string{policy.parentUnit()}), property("RemainAfterExit", true), property("CollectMode", "inactive"),
-		property("Conditions", []systemdCondition{{Type: "ConditionPathExists", Parameter: policy.lifetimeMarker}}),
-		property("ExecStartEx", []systemdExec{{executable, command, []string{"no-env-expand"}}}), property("Environment", environment(p.config.Env)), property("WorkingDirectory", p.config.Dir),
+		property("Description", "Agentplane native launch "+b.name), property("Type", "exec"), property("Restart", "no"), property("Slice", b.policy.Slice),
+		property("BindsTo", []string{b.policy.parentUnit()}), property("After", []string{b.policy.parentUnit()}), property("RemainAfterExit", true), property("CollectMode", "inactive"),
+		property("Conditions", []systemdCondition{{Type: "ConditionPathExists", Parameter: b.policy.lifetimeMarker}}),
+		property("ExecStartEx", []systemdExec{{executable, command, []string{"no-env-expand"}}}), property("Environment", environment(b.config.Env)), property("WorkingDirectory", b.config.Dir),
 		property("StandardInputFileDescriptor", dbus.UnixFD(stdinReader.Fd())), property("StandardOutputFileDescriptor", dbus.UnixFD(stdoutWriter.Fd())), property("StandardErrorFileDescriptor", dbus.UnixFD(stderrWriter.Fd())),
 		property("PrivateTmp", false), property("ProtectSystem", "strict"), property("ReadWritePaths", []string{"/state", "/tmp"}), property("UMask", uint32(7)), property("LockPersonality", true), property("ProtectKernelModules", true), property("ProtectKernelLogs", true),
 		property("KillMode", "control-group"), property("KillSignal", int32(15)), property("SendSIGKILL", true), property("TimeoutStopUSec", uint64(stopGrace/time.Microsecond)), property("OOMPolicy", "continue"),
 	)
-	p.mu.Lock()
-	p.systemd = backend
-	p.stdin = stdinWriter
-	p.stdout = stdoutReader
-	p.stderr = &tailReader{reader: stderrReader}
-	p.mu.Unlock()
+	p.attachStreams(stdinWriter, stdoutReader, stderrReader)
 	// Caller cancellation cannot let an accepted launch escape cleanup. A subsequent
 	// request on this same connection observes the manager after this message.
 	launchCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	completion := make(chan string, 1)
-	start := policy.startTransient
+	start := b.policy.startTransient
 	if start == nil {
 		start = func(c context.Context, bus *systemd.Conn, name string, properties []systemd.Property, completed chan<- string) (int, error) {
 			return bus.StartTransientUnitContext(c, name, "fail", properties, completed)
 		}
 	}
-	job, err := start(launchCtx, conn, backend.name, props, completion)
+	job, err := start(launchCtx, conn, b.name, props, completion)
 	cancel()
-	backend.accepted = err == nil
+	b.accepted = err == nil
 	if err != nil {
-		fenceErr := p.fenceSystemdUntilCertain()
-		backend.release()
+		fenceErr := b.fenceUntilCertain()
+		b.release()
 		closeFiles(stdinWriter, stdoutReader, stderrReader)
-		return p.cleanupFailedStart(errors.Join(fmt.Errorf("start systemd native unit %s: %w", backend.name, err), fenceErr))
+		return errors.Join(fmt.Errorf("start systemd native unit %s: %w", b.name, err), fenceErr)
 	}
 	if err = ctx.Err(); err != nil {
-		fenceErr := p.fenceSystemdUntilCertain()
-		backend.release()
+		fenceErr := b.fenceUntilCertain()
+		b.release()
 		closeFiles(stdinWriter, stdoutReader, stderrReader)
-		return p.cleanupFailedStart(errors.Join(err, fenceErr))
+		return errors.Join(err, fenceErr)
 	}
 	// Upstream registers the completion listener before releasing its job lock,
 	// so even an immediate exec/exit cannot outrun listener registration.
@@ -137,7 +145,7 @@ func (p *Process) startSystemd(ctx context.Context) error {
 	for err == nil {
 		select {
 		case <-ctx.Done():
-			err = fmt.Errorf("wait systemd start job %d for %s: %w (%s)", job, backend.name, ctx.Err(), backend.diagnostics())
+			err = fmt.Errorf("wait systemd start job %d for %s: %w (%s)", job, b.name, ctx.Err(), b.diagnostics())
 		case <-connectionCheck.C:
 			if !conn.Connected() {
 				err = errors.New("systemd manager disconnected while waiting for native start job")
@@ -146,7 +154,7 @@ func (p *Process) startSystemd(ctx context.Context) error {
 			if result != "done" {
 				err = fmt.Errorf("native unit start job failed: %s", result)
 			} else {
-				service, observeErr := conn.GetUnitTypePropertiesContext(ctx, backend.name, "Service")
+				service, observeErr := conn.GetUnitTypePropertiesContext(ctx, b.name, "Service")
 				if observeErr != nil {
 					err = observeErr
 				} else {
@@ -155,24 +163,22 @@ func (p *Process) startSystemd(ctx context.Context) error {
 						err = errors.New("native start job completed without executing a process; Runner invocation may have ended")
 						break
 					}
-					backend.group, _ = service["ControlGroup"].(string)
-					p.mu.Lock()
-					p.nativePID = int(pid)
-					p.mu.Unlock()
-					go p.reapSystemd()
+					b.group, _ = service["ControlGroup"].(string)
+					p.setNativePID(int(pid))
+					go b.reap(p)
 					return nil
 				}
 			}
 		}
 	}
 
-	fenceErr := p.fenceSystemdUntilCertain()
-	backend.release()
+	fenceErr := b.fenceUntilCertain()
+	b.release()
 	closeFiles(stdinWriter, stdoutReader, stderrReader)
-	return p.cleanupFailedStart(errors.Join(err, fenceErr))
+	return errors.Join(err, fenceErr)
 }
 
-func (b *systemdProcess) release() {
+func (b *systemdBackend) release() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = b.conn.ResetFailedUnitContext(ctx, b.name)
@@ -182,8 +188,7 @@ func (b *systemdProcess) release() {
 
 // A manager failure is a fencing barrier. Never publish waitDone or release
 // state ownership merely because observation/StopUnit lost its connection.
-func (p *Process) fenceSystemdUntilCertain() error {
-	b := p.systemd
+func (b *systemdBackend) fenceUntilCertain() error {
 	conn := b.conn
 	cancelConnection := func() {}
 	defer func() {
@@ -215,8 +220,7 @@ func (p *Process) fenceSystemdUntilCertain() error {
 	}
 }
 
-func (p *Process) reapSystemd() {
-	b := p.systemd
+func (b *systemdBackend) reap(p *Process) {
 	code := 125
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -253,25 +257,20 @@ func (p *Process) reapSystemd() {
 		}
 	}
 	cancel()
-	fenceErr := p.fenceSystemdUntilCertain()
+	fenceErr := b.fenceUntilCertain()
 	_ = p.CloseStdin()
 	b.release()
-	p.mu.Lock()
-	p.waitCode = code
-	p.waitErr = fenceErr
-	close(p.waitDone)
-	p.mu.Unlock()
+	p.completeWith(code, fenceErr)
 }
 
-func (p *Process) stopSystemd(ctx context.Context, grace time.Duration) error {
+func (b *systemdBackend) stop(ctx context.Context, p *Process, grace time.Duration) error {
 	_ = p.CloseStdin()
-	b := p.systemd
 	// Signal first: StopUnit could collect an inactive unit before the reaper
 	// reads ExecMainStatus. RemainAfterExit/CollectMode retain signal results.
 	if err := b.conn.KillUnitWithTarget(ctx, b.name, systemd.All, int32(15)); err != nil && !systemdMissing(err) {
 		if errors.Is(err, dbus.ErrClosed) {
-			// Release may race Stop after the reaper has started fencing. Its
-			// completed Wait, rather than the connection, is the cleanup barrier.
+			// Release may race Stop after the reaper starts fencing. Its completed
+			// Wait, rather than the connection, is the cleanup barrier.
 			_, waitErr := p.Wait(ctx)
 			return waitErr
 		}
@@ -298,16 +297,16 @@ func (p *Process) stopSystemd(ctx context.Context, grace time.Duration) error {
 	return err
 }
 
-func (p *VMProcessPolicy) parentUnit() string {
-	if p.lifetimeUnit != "" {
-		return p.lifetimeUnit
+func (b *systemdBackend) description(p *Process) string {
+	if b.conn == nil {
+		return p.ExitDescription()
 	}
-	return runnerUnit
+	return b.name + ": " + b.diagnostics()
 }
 
 // Notifications are hints: upstream may coalesce/drop overflowing updates, and
 // disconnection does not close subscriber channels. The fallback bounds both.
-func (b *systemdProcess) waitChange() bool {
+func (b *systemdBackend) waitChange() bool {
 	timer := time.NewTimer(time.Second)
 	defer timer.Stop()
 	for {
@@ -325,18 +324,10 @@ func (b *systemdProcess) waitChange() bool {
 }
 
 // diagnostics reports lifecycle evidence only, never argv or environment secrets.
-func (b *systemdProcess) diagnostics() string {
+func (b *systemdBackend) diagnostics() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	unit, unitErr := b.conn.GetUnitPropertiesContext(ctx, b.name)
 	service, serviceErr := b.conn.GetUnitTypePropertiesContext(ctx, b.name, "Service")
 	return fmt.Sprintf("active=%v sub=%v unit_job=%v main_pid=%v exec_pid=%v exec_code=%v exec_status=%v result=%v unit_error=%v service_error=%v", unit["ActiveState"], unit["SubState"], unit["Job"], service["MainPID"], service["ExecMainPID"], service["ExecMainCode"], service["ExecMainStatus"], service["Result"], unitErr, serviceErr)
-}
-
-func systemdErrorKind(err error) string {
-	var remote dbus.Error
-	if errors.As(err, &remote) {
-		return "dbus_error=" + remote.Name
-	}
-	return fmt.Sprintf("error_type=%T", err)
 }

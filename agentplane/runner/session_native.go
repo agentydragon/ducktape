@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/claude"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex"
 	harness "github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -87,7 +88,7 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 	if err != nil {
 		return err
 	}
-	process, err := NewProcess(ProcessConfig{Command: command, Dir: cwd, Env: env, StateOwnerFD: s.runner.owner.File(), VMProcessPolicy: s.runner.config.VMProcessPolicy})
+	process, err := s.runner.supervisor.NewProcess(supervision.ProcessConfig{Command: command, Dir: cwd, Env: env})
 	if err != nil {
 		return err
 	}
@@ -457,7 +458,7 @@ func (s *Session) deliverReplies() {
 	}
 }
 
-func (s *Session) readStdout(process *Process, adapter harness.Adapter) {
+func (s *Session) readStdout(process *supervision.Process, adapter harness.Adapter) {
 	defer s.readers.Done()
 	buffer := make([]byte, 64*1024)
 	var pending []byte
@@ -523,7 +524,7 @@ func (s *Session) readStdout(process *Process, adapter harness.Adapter) {
 	}
 }
 
-func (s *Session) readStderr(process *Process) {
+func (s *Session) readStderr(process *supervision.Process) {
 	defer s.readers.Done()
 	buffer := make([]byte, 4096)
 	for {

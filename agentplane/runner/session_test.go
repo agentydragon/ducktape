@@ -10,6 +10,7 @@ import (
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/state"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -35,7 +36,7 @@ func (a frameTestAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sequ
 	return a.onFrame(ctx, raw, sequence)
 }
 
-func frameTestSession(t *testing.T, command []string) (*Session, *Process) {
+func frameTestSession(t *testing.T, command []string) (*Session, *supervision.Process) {
 	t.Helper()
 	r, err := New(Config{StateDir: t.TempDir()})
 	if err != nil {
@@ -57,7 +58,7 @@ func frameTestSession(t *testing.T, command []string) (*Session, *Process) {
 		t.Fatal(err)
 	}
 	s := newSession(r, "session", &record, journal)
-	p, err := NewProcess(ProcessConfig{Command: command, Dir: record.CWD, Env: map[string]string{}, StateOwnerFD: r.owner.File()})
+	p, err := r.supervisor.NewProcess(supervision.ProcessConfig{Command: command, Dir: record.CWD, Env: map[string]string{}})
 	if err != nil {
 		t.Fatal(err)
 	}

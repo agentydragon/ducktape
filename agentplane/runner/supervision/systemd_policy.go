@@ -1,4 +1,4 @@
-package runner
+package supervision
 
 import (
 	"context"
@@ -18,15 +18,13 @@ import (
 )
 
 const (
-	workloadSlice           = "agentplane-workloads.slice"
-	executorSlice           = "agentplane-executors.slice"
 	runnerUnit              = "agentplane-runner.service"
 	runnerLifetimeDirectory = "/run/agentplane-runner-lifetime"
 )
 
-// VMProcessPolicy describes systemd-owned containment, independently of a launch.
-// scope is assigned from durable owner identity before opening any Session store.
-type VMProcessPolicy struct {
+// SystemdPolicy describes systemd-owned containment, independently of a launch.
+// Prepare assigns scope from durable owner identity before any Session store opens.
+type SystemdPolicy struct {
 	Slice                          string
 	AgentUID, AgentGID             uint32
 	BlockDevices                   []string
@@ -37,7 +35,8 @@ type VMProcessPolicy struct {
 	startTransient                 func(context.Context, *systemd.Conn, string, []systemd.Property, chan<- string) (int, error)
 }
 
-func (p *VMProcessPolicy) validateProcessLimits(limits ResourceLimits) error {
+// ValidateProcessLimits checks values and ensures one process remains within its aggregate budget.
+func (p *SystemdPolicy) ValidateProcessLimits(limits ResourceLimits) error {
 	if err := limits.Validate(); err != nil {
 		return err
 	}
@@ -58,6 +57,7 @@ type systemdCondition struct {
 	Trigger, Negate bool
 	Parameter       string
 }
+
 type systemdDeviceLimit struct {
 	Path  string
 	Limit uint64
@@ -67,12 +67,12 @@ func property(name string, value any) systemd.Property {
 	return systemd.Property{Name: name, Value: dbus.MakeVariant(value)}
 }
 
-func (p *VMProcessPolicy) properties(limits ResourceLimits) ([]systemd.Property, error) {
-	if err := p.validateProcessLimits(limits); err != nil {
+func (p *SystemdPolicy) properties(limits ResourceLimits) ([]systemd.Property, error) {
+	if err := p.ValidateProcessLimits(limits); err != nil {
 		return nil, err
 	}
 	props := []systemd.Property{
-		property("CPUQuotaPerSecUSec", uint64(limits.CPUQuotaMicros)*10), property("CPUQuotaPeriodUSec", cgroupCPUPeriodMicros),
+		property("CPUQuotaPerSecUSec", uint64(limits.CPUQuotaMicros)*10), property("CPUQuotaPeriodUSec", CPUPeriodMicros),
 		property("MemoryMax", uint64(limits.MemoryMaxBytes)), property("MemorySwapMax", uint64(0)), property("TasksMax", uint64(limits.PidsMax)),
 	}
 	for name, rate := range map[string]uint64{"IOReadBandwidthMax": limits.ReadBPS, "IOWriteBandwidthMax": limits.WriteBPS, "IOReadIOPSMax": limits.ReadIOPS, "IOWriteIOPSMax": limits.WriteIOPS} {
@@ -122,32 +122,37 @@ func systemdMissing(err error) bool {
 	return errors.As(err, &e) && (e.Name == "org.freedesktop.systemd1.NoSuchUnit" || e.Name == "org.freedesktop.systemd1.LoadFailed" || e.Name == "org.freedesktop.DBus.Error.UnknownObject")
 }
 
-func (p *VMProcessPolicy) prepare(config Config) error {
-	if config.Launch.Sandbox.UID == "" {
-		return errors.New("VM supervision requires a Sandbox owner UID")
+// Prepare validates and applies the owner scope, fences units left by a prior
+// Runner incarnation, and returns a factory for processes in that scope.
+func (p *SystemdPolicy) Prepare(stateDir, sandboxUID string) (*Supervisor, error) {
+	if p == nil {
+		return nil, errors.New("VM process policy is required")
 	}
-	if p.Slice != workloadSlice && p.Slice != executorSlice {
-		return errors.New("invalid native systemd slice")
+	if sandboxUID == "" {
+		return nil, errors.New("VM supervision requires a Sandbox owner UID")
+	}
+	if p.Slice != WorkloadSlice && p.Slice != ExecutorSlice {
+		return nil, errors.New("invalid native systemd slice")
 	}
 	if p.AgentUID == 0 || p.AgentGID == 0 {
-		return errors.New("VM native services require a non-root identity")
+		return nil, errors.New("VM native services require a non-root identity")
 	}
 	if err := p.AggregateLimits.Validate(); err != nil {
-		return err
+		return nil, err
 	}
-	if err := p.validateProcessLimits(p.ProcessLimits); err != nil {
-		return err
+	if err := p.ValidateProcessLimits(p.ProcessLimits); err != nil {
+		return nil, err
 	}
 	marker, err := prepareRunnerLifetime()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	p.lifetimeMarker = marker
-	sum := sha256.Sum256([]byte(config.StateDir + "\x00" + config.Launch.Sandbox.UID))
+	sum := sha256.Sum256([]byte(stateDir + "\x00" + sandboxUID))
 	p.scope = fmt.Sprintf("agentplane-native-%x-", sum[:8])
 	conn, cancelConnection, err := openSystemdConnection()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer cancelConnection()
 	defer conn.Close()
@@ -155,29 +160,40 @@ func (p *VMProcessPolicy) prepare(config Config) error {
 	defer cancel()
 	props, err := p.properties(p.AggregateLimits)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := conn.SetUnitPropertiesContext(ctx, p.Slice, true, props...); err != nil {
-		return err
+		return nil, err
 	}
 	units, err := conn.ListUnitsByPatternsContext(ctx, []string{}, []string{p.scope + "*.service"})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, unit := range units {
 		service, err := conn.GetUnitTypePropertiesContext(ctx, unit.Name, "Service")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if service["Slice"] != p.Slice {
 			continue
 		}
 		if err := fenceSystemdUnit(ctx, conn, unit.Name, true, ""); err != nil {
-			return fmt.Errorf("fence prior native unit %s: %w", unit.Name, err)
+			return nil, fmt.Errorf("fence prior native unit %s: %w", unit.Name, err)
 		}
 		_ = conn.ResetFailedUnitContext(ctx, unit.Name)
 	}
-	return nil
+	return p.newSupervisor(), nil
+}
+
+// newSupervisor creates a factory from an immutable snapshot of prepared policy state.
+func (p *SystemdPolicy) newSupervisor() *Supervisor {
+	prepared := *p
+	prepared.BlockDevices = append([]string(nil), p.BlockDevices...)
+	return &Supervisor{makeBackend: func(config ProcessConfig) processBackend {
+		policy := prepared
+		policy.BlockDevices = append([]string(nil), prepared.BlockDevices...)
+		return &systemdBackend{config: config, policy: &policy}
+	}}
 }
 
 // systemd removes this directory synchronously when the Runner service dies.
@@ -289,6 +305,13 @@ func systemdGroupEmpty(group string) (bool, error) {
 	return false, errors.New("native cgroup.events has no populated state")
 }
 
-func (p *VMProcessPolicy) identityProperties() []systemd.Property {
+func (p *SystemdPolicy) identityProperties() []systemd.Property {
 	return []systemd.Property{property("User", strconv.FormatUint(uint64(p.AgentUID), 10)), property("Group", strconv.FormatUint(uint64(p.AgentGID), 10)), property("SetLoginEnvironment", false), property("NoNewPrivileges", true), property("CapabilityBoundingSet", uint64(0)), property("AmbientCapabilities", uint64(0))}
+}
+
+func (p *SystemdPolicy) parentUnit() string {
+	if p.lifetimeUnit != "" {
+		return p.lifetimeUnit
+	}
+	return runnerUnit
 }

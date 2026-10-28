@@ -1,9 +1,21 @@
 # Native process supervision
 
-COSI controllers own demand, readiness, restart backoff, quiesce and sealing. `Process` owns a
-native launch's pipes, PID, exit result and cleanup barrier. The environment chooses its backend:
-VMs require systemd; Pods use their existing subprocess supervisor. A manager failure never
-switches a VM to the Pod backend.
+COSI controllers own demand, readiness, restart backoff, quiesce and sealing. They schedule
+asynchronous operations whose completion wakes reconciliation. Harness and server code builds
+`supervision.ProcessConfig` values containing command, working directory and explicit environment.
+
+Runner selects a `supervision.Supervisor` during startup while holding state ownership, before
+opening Session stores. Each supervisor creates `Process` handles through a private backend
+interface. `Process` owns the common streams, PID and completion result; backend implementations
+own launch, observation and execution-domain cleanup. `Start` bounds startup independently of
+process lifetime. `Stop` requests graceful shutdown and cleanup; `Wait` returns only after exit
+and cleanup. A canceled wait cancels observation, not execution.
+
+VMs prepare systemd supervision, including slice budgets and prior-owner cleanup. Pods use the
+subprocess supervisor with its inherited state-owner descriptor. Backend choice stays out of
+controllers and per-launch specifications. A manager failure never switches a VM to the Pod
+backend. The Pod exec-server container retains its separate control-socket ownership protocol.
+The shared API is imperative; there is no generic COSI process-intent resource.
 
 ## VM services
 
@@ -77,7 +89,7 @@ exec-server's separate container provides its stronger execution-domain fence. T
 neither systemd nor privileges to containers.
 
 The system-test guest boots real systemd and a system bus with the same static runner/slice units.
-Before Runner starts, `runner_systemd_fixture` exercises credentials, separate streams, kernel
+Before Runner starts, `//agentplane/runner/supervision:runner_systemd_fixture` exercises credentials, separate streams, kernel
 resource limits, lost/canceled launch replies, detached descendants, parent-unit death, ordinary
 stop and scoped startup fencing. Existing VM scenarios then exercise storage, actual harnesses,
 tool OOM and suspend/resume through the platform. The fixture's test wrapper and read-only observer

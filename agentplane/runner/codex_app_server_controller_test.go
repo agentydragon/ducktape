@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"errors"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/codex"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 )
 
 func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
@@ -152,7 +152,7 @@ func TestCodexFailedStopBlocksRunnerFencing(t *testing.T) {
 	r.codexAppServer.mu.Lock()
 	r.codexAppServer.current = &codexAppServerProcess{
 		id:      "test-process",
-		process: &Process{started: true, cmd: &exec.Cmd{}, waitDone: make(chan struct{})},
+		process: newControllerTestProcess(t),
 		router:  codex.NewRouter[*Session](),
 	}
 	r.codexAppServer.stopEffect = func(context.Context) error {
@@ -203,7 +203,7 @@ func TestCodexExitSnapshotRejectsLateSessionAttachment(t *testing.T) {
 	late := &Session{id: "late-attachment"}
 	p := &codexAppServerProcess{
 		id:      "test-process",
-		process: &Process{started: true, cmd: &exec.Cmd{}, waitDone: make(chan struct{})},
+		process: newControllerTestProcess(t),
 		router:  codex.NewRouter[*Session](),
 	}
 	p.router.Host(owner)
@@ -416,4 +416,25 @@ func sessionIDs(sessions []*Session) []string {
 		ids = append(ids, session.id)
 	}
 	return ids
+}
+
+func newControllerTestProcess(t *testing.T) *supervision.Process {
+	t.Helper()
+	process, err := supervision.NewSubprocessSupervisor(nil).NewProcess(supervision.ProcessConfig{
+		Command: []string{"/bin/sleep", "60"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+	defer cancel()
+	if err := process.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := process.Stop(context.Background(), 0); err != nil {
+			t.Error(err)
+		}
+	})
+	return process
 }

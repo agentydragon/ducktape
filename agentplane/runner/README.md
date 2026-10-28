@@ -44,10 +44,10 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   to their originating commands, session metadata, ingress acknowledgements and ownership lock.
   Transactions use `database/sql` with the cgo-free SQLite driver. Outcomes and all
   coalesced command receipts commit together; publication and startup handshake replies follow commit.
-- `process.go` selects native supervision from the configured environment. VM launches use
-  `systemd_process.go` and `systemd_policy.go`: transient services, resource properties and startup
-  fencing. Pod launches use `supervisor.go`: inherited state ownership and process-group cleanup.
-  `cgroups.go` reads kernel OOM diagnostics. See [supervision](docs/supervision.md).
+- `supervision/`: the shared native-process API and its private systemd/subprocess backends.
+  Runner prepares supervision while holding state ownership; controllers launch through the
+  selected supervisor. The package owns streams, exit observation and execution-domain cleanup.
+  `systemd/` contains the static guest units. See [supervision](docs/supervision.md).
 - `claude/` and `codex/`: harness-specific launch, frame translation and native
   history readers. They depend on the shared adapter contract and recovery types in
   `harness/`, independently of the runner runtime. Unknown frames remain in raw history,
@@ -135,7 +135,7 @@ default ACL and private `.home` directory.
 `//agentplane/runner:runner_test` and `//agentplane/runner/codex:codex_test` run with Go's race detector. The
 Codex router test drives parallel sessions through shared host, request, and thread routing state. The
 runner suite includes its journal, process, and Session tests. The VM fixture runs the separate
-pure-Go `runner_systemd_fixture` test binary against its real systemd manager before starting
+pure-Go `//agentplane/runner/supervision:runner_systemd_fixture` test binary against its real systemd manager before starting
 Runner. It exercises streams and credentials, resource mapping, lost launch replies, Runner death,
 detached descendants and scoped startup fencing; VM system tests exercise actual tools and OOM.
 The production `//agentplane/runner/cmd:agentplane-runner` remains pure-Go.

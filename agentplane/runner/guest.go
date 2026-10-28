@@ -7,42 +7,44 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 )
 
 type guestResources struct {
-	GuestMemoryBytes       int64           `json:"guest_memory_bytes"`
-	GuestVCPUCount         int64           `json:"guest_vcpu_count"`
-	OSReserveBytes         int64           `json:"os_reserve_bytes"`
-	ServiceMemoryHighBytes int64           `json:"service_memory_high_bytes"`
-	ServiceMemoryMaxBytes  int64           `json:"service_memory_max_bytes"`
-	ServiceCPUQuotaMicros  int64           `json:"service_cpu_quota_micros"`
-	ServicePidsMax         int64           `json:"service_pids_max"`
-	Aggregate              ResourceLimits  `json:"aggregate"`
-	Process                ResourceLimits  `json:"process"`
-	Executor               *ResourceLimits `json:"executor"`
+	GuestMemoryBytes       int64                       `json:"guest_memory_bytes"`
+	GuestVCPUCount         int64                       `json:"guest_vcpu_count"`
+	OSReserveBytes         int64                       `json:"os_reserve_bytes"`
+	ServiceMemoryHighBytes int64                       `json:"service_memory_high_bytes"`
+	ServiceMemoryMaxBytes  int64                       `json:"service_memory_max_bytes"`
+	ServiceCPUQuotaMicros  int64                       `json:"service_cpu_quota_micros"`
+	ServicePidsMax         int64                       `json:"service_pids_max"`
+	Aggregate              supervision.ResourceLimits  `json:"aggregate"`
+	Process                supervision.ResourceLimits  `json:"process"`
+	Executor               *supervision.ResourceLimits `json:"executor"`
 }
 
 func (r guestResources) Validate() error {
 	if r.GuestMemoryBytes <= 0 || r.GuestVCPUCount <= 0 || r.OSReserveBytes < 0 || r.OSReserveBytes >= r.GuestMemoryBytes {
 		return errors.New("guest memory, vCPU count and OS reserve are inconsistent")
 	}
-	if r.GuestVCPUCount > int64(^uint64(0)>>1)/int64(cgroupCPUPeriodMicros) {
+	if r.GuestVCPUCount > int64(^uint64(0)>>1)/int64(supervision.CPUPeriodMicros) {
 		return errors.New("guest vCPU count is too large")
 	}
 	if r.ServiceMemoryHighBytes <= 0 || r.ServiceMemoryMaxBytes < r.ServiceMemoryHighBytes || r.ServiceMemoryMaxBytes > r.GuestMemoryBytes-r.OSReserveBytes {
 		return errors.New("service memory caps must leave the configured OS reserve")
 	}
-	if r.ServiceCPUQuotaMicros <= 0 || r.ServiceCPUQuotaMicros > r.GuestVCPUCount*int64(cgroupCPUPeriodMicros) || r.ServiceCPUQuotaMicros%1000 != 0 {
+	if r.ServiceCPUQuotaMicros <= 0 || r.ServiceCPUQuotaMicros > r.GuestVCPUCount*int64(supervision.CPUPeriodMicros) || r.ServiceCPUQuotaMicros%1000 != 0 {
 		return errors.New("service CPU quota must fit guest vCPU capacity and map to an integral systemd CPUQuota percent")
 	}
 	if r.ServicePidsMax <= 0 {
 		return errors.New("service PID max must be positive")
 	}
-	groups := VMProcessPolicy{AggregateLimits: r.Aggregate, ProcessLimits: r.Process}
+	groups := supervision.SystemdPolicy{AggregateLimits: r.Aggregate, ProcessLimits: r.Process}
 	if err := groups.AggregateLimits.Validate(); err != nil {
 		return fmt.Errorf("invalid aggregate limits: %w", err)
 	}
-	if err := groups.validateProcessLimits(groups.ProcessLimits); err != nil {
+	if err := groups.ValidateProcessLimits(groups.ProcessLimits); err != nil {
 		return fmt.Errorf("invalid process limits: %w", err)
 	}
 	if r.Aggregate.MemoryMaxBytes > r.ServiceMemoryHighBytes || r.Aggregate.PidsMax > r.ServicePidsMax || r.Aggregate.CPUQuotaMicros > r.ServiceCPUQuotaMicros {

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"go.uber.org/zap"
 )
 
@@ -138,19 +139,19 @@ type VMEnvironmentConfiguration struct {
 	Executor         *VMExecutorConfiguration `json:"executor"`
 }
 
-func (v VMEnvironmentConfiguration) policy(slice string, aggregate, process ResourceLimits) *VMProcessPolicy {
-	return &VMProcessPolicy{Slice: slice, AgentUID: v.AgentUID, AgentGID: v.AgentGID, BlockDevices: v.BlockDevices, AggregateLimits: aggregate, ProcessLimits: process}
+func (v VMEnvironmentConfiguration) policy(slice string, aggregate, process supervision.ResourceLimits) *supervision.SystemdPolicy {
+	return &supervision.SystemdPolicy{Slice: slice, AgentUID: v.AgentUID, AgentGID: v.AgentGID, BlockDevices: v.BlockDevices, AggregateLimits: aggregate, ProcessLimits: process}
 }
 
 // The environment selects resource ownership and executor transport together.
-func (f Configuration) resolveEnvironment() (*VMProcessPolicy, *CodexExecServerConfig, *VMEnvironmentConfiguration, error) {
+func (f Configuration) resolveEnvironment() (*supervision.SystemdPolicy, *CodexExecServerConfig, *VMEnvironmentConfiguration, error) {
 	var tag struct {
 		Kind string `json:"kind"`
 	}
 	if err := json.Unmarshal(f.Environment, &tag); err != nil {
 		return nil, nil, nil, fmt.Errorf("environment is required: %w", err)
 	}
-	var isolation *VMProcessPolicy
+	var isolation *supervision.SystemdPolicy
 	var executor *CodexExecServerConfig
 	var vm *VMEnvironmentConfiguration
 	switch tag.Kind {
@@ -181,12 +182,12 @@ func (f Configuration) resolveEnvironment() (*VMProcessPolicy, *CodexExecServerC
 				return nil, nil, nil, errors.New("block device path must be absolute")
 			}
 		}
-		isolation = vm.policy(workloadSlice, vm.Resources.Aggregate, vm.Resources.Process)
+		isolation = vm.policy(supervision.WorkloadSlice, vm.Resources.Aggregate, vm.Resources.Process)
 		if (vm.Executor == nil) != (vm.Resources.Executor == nil) {
 			return nil, nil, nil, errors.New("executor endpoint and resource budget must be supplied together")
 		}
 		if vm.Executor != nil {
-			executor = &CodexExecServerConfig{URL: vm.Executor.URL, Isolation: vm.policy(executorSlice, *vm.Resources.Executor, *vm.Resources.Executor)}
+			executor = &CodexExecServerConfig{URL: vm.Executor.URL, Isolation: vm.policy(supervision.ExecutorSlice, *vm.Resources.Executor, *vm.Resources.Executor)}
 		}
 	default:
 		return nil, nil, nil, fmt.Errorf("unknown environment kind %q", tag.Kind)
