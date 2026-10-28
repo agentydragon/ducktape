@@ -242,6 +242,12 @@ func (p *Process) stopSystemd(ctx context.Context, grace time.Duration) error {
 	// Signal first: StopUnit could collect an inactive unit before the reaper
 	// reads ExecMainStatus. RemainAfterExit/CollectMode retain signal results.
 	if err := systemdCall(ctx, b.conn, "KillUnit", b.name, "all", int32(15)).Err; err != nil && !systemdMissing(err) {
+		if errors.Is(err, dbus.ErrClosed) {
+			// Release may race Stop after the reaper has started fencing. Its
+			// completed Wait, rather than the connection, is the cleanup barrier.
+			_, waitErr := p.Wait(ctx)
+			return waitErr
+		}
 		return err
 	}
 	timer := time.NewTimer(max(grace, 0))
@@ -252,6 +258,10 @@ func (p *Process) stopSystemd(ctx context.Context, grace time.Duration) error {
 		return err
 	case <-timer.C:
 		if err := systemdCall(ctx, b.conn, "KillUnit", b.name, "all", int32(9)).Err; err != nil && !systemdMissing(err) {
+			if errors.Is(err, dbus.ErrClosed) {
+				_, waitErr := p.Wait(ctx)
+				return waitErr
+			}
 			return err
 		}
 	case <-ctx.Done():
