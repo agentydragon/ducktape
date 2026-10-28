@@ -4,8 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"testing"
+	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/entrystoragepb"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *testing.T) {
@@ -26,7 +30,7 @@ func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t
 		MessageEvent{MessageID: messageID, Sender: ServiceAccount{Namespace: "sender-ns", Name: "sender"}},
 	}
 	for _, event := range events {
-		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, `{}`)
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
 	}
 	rows, err := f.db.QueryContext(t.Context(), `SELECT identity_provider,
 		actions_request_id::text, actions_sequence,
@@ -87,6 +91,51 @@ func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t
 		got[6].messageSenderNamespace.String != "sender-ns" || got[6].messageSenderName.String != "sender" {
 		t.Errorf("message identity columns = %+v", got[6])
 	}
+	for i, wantNull := range []bool{false, true, true, true, false, false, false} {
+		var isNull bool
+		var encoded []byte
+		if err := f.db.QueryRowContext(t.Context(), `SELECT typed_payload IS NULL, typed_payload
+			FROM entry WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1).Scan(&isNull, &encoded); err != nil {
+			t.Fatal(err)
+		}
+		if isNull != wantNull {
+			t.Errorf("event %d typed_payload IS NULL = %t, want %t", i, isNull, wantNull)
+			continue
+		}
+		if wantNull {
+			continue
+		}
+		var content entrystoragepb.EntryContent
+		if err := proto.Unmarshal(encoded, &content); err != nil {
+			t.Fatalf("event %d typed payload is not protobuf: %v", i, err)
+		}
+		switch event := events[i].(type) {
+		case ActionsEvent:
+			action := content.GetAction()
+			wantAt := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+			wantActor := &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{
+				Issuer: "https://issuer.example", Subject: "subject-123",
+			}}}
+			if action == nil || action.GetState() != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING ||
+				action.GetAt() == nil || !action.GetAt().AsTime().Equal(wantAt) || !proto.Equal(action.GetActor(), wantActor) {
+				t.Errorf("Action typed content = %v", content.GetAction())
+			}
+		case GitHubMergeabilityEvent, GitHubMergeabilitySnapshotEvent:
+			mergeability := content.GetMergeability()
+			if mergeability == nil || mergeability.GetRepository() != "owner/repository" ||
+				mergeability.GetPreviousMergeability() != entrystoragepb.GitHubMergeabilityState_GITHUB_MERGEABILITY_STATE_UNKNOWN ||
+				mergeability.GetMergeability() != entrystoragepb.GitHubMergeabilityState_GITHUB_MERGEABILITY_STATE_CONFLICTING {
+				t.Errorf("mergeability typed content = %v", mergeability)
+			}
+		case MessageEvent:
+			message := content.GetMessage()
+			if message == nil || message.GetBody() != "stored message" || message.FromSession == nil || *message.FromSession != "sender-session" {
+				t.Errorf("message typed content = %v", message)
+			}
+		default:
+			t.Fatalf("unexpected event in typed content test: %T", event)
+		}
+	}
 }
 
 func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
@@ -106,7 +155,7 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 		MessageEvent{MessageID: messageID, Sender: ServiceAccount{Namespace: "sender-ns", Name: "sender"}},
 	}
 	for _, event := range events {
-		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, `{}`)
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
 	}
 	// Make one legacy copy disagree with the relational identity so this test proves that new reads and retries
 	// use the populated columns. Production writers still dual-write the correct JSON for old readers in rollout.
@@ -150,7 +199,7 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(summaries) != len(events)-1 || summaries[0].Summary != "Action "+requestID.String()+" · event 18" {
+	if len(summaries) != len(events)-1 || summaries[0].Summary != "Action "+requestID.String()+" · event 18 · decision_pending" {
 		t.Fatalf("pending summaries from relational identity = %+v", summaries)
 	}
 }

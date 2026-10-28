@@ -10,6 +10,7 @@ go_library(
         "creation_backfill.go",
         "creation_validation.go",
         "destination_backfill.go",
+        "entry_content.go",
         "event_identity_backfill.go",
         "event_identity_runtime.go",
         "event_identity_storage.go",
@@ -32,6 +33,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/store",
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/notification_service:entry_storage_go_proto",
         "//agentplane/notification_service:storage_go_proto",
         "//agentplane/postgres/go:postgres",
         "//agentplane/proto:event_log_go_proto",
@@ -39,6 +41,7 @@ go_library(
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
@@ -97,6 +100,7 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/notification_service:entry_storage_go_proto",
         "//agentplane/notification_service/migrations",
         "//agentplane/postgres/go/wakeups",
         "//agentplane/proto:command_go_proto",

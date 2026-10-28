@@ -1,0 +1,44 @@
+// Private Notification Service storage representation. These messages contain non-key content only; source
+// identities are stored in entry's relational columns. API responses continue to use notifications.proto.
+syntax = "proto3";
+
+package agentplane.notification_service.storage;
+
+import "agentplane/action_service/action_service.proto";
+import "google/protobuf/timestamp.proto";
+
+message EntryContent {
+  oneof content {
+    ActionContent action = 1;
+    MergeabilityContent mergeability = 2;
+    MessageContent message = 3;
+  }
+}
+
+message ActionContent {
+  agentplane.action_service.ActionState state = 1;
+  google.protobuf.Timestamp at = 2;
+  agentplane.action_service.Principal actor = 3;
+}
+
+enum GitHubMergeabilityState {
+  GITHUB_MERGEABILITY_STATE_UNSPECIFIED = 0;
+  GITHUB_MERGEABILITY_STATE_UNKNOWN = 1;
+  GITHUB_MERGEABILITY_STATE_MERGEABLE = 2;
+  GITHUB_MERGEABILITY_STATE_CONFLICTING = 3;
+}
+
+message MergeabilityContent {
+  string repository = 1;
+  string base_ref = 2;
+  string head_sha = 3;
+  string base_sha = 4;
+  GitHubMergeabilityState previous_mergeability = 5;
+  GitHubMergeabilityState mergeability = 6;
+  google.protobuf.Timestamp observed_at = 7;
+}
+
+message MessageContent {
+  string body = 1;
+  optional string from_session = 2;
+}

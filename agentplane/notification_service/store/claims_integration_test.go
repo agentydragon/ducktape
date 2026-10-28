@@ -39,7 +39,8 @@ func (f fixture) addEvents(t *testing.T, subscription Subscription, first, last 
 	t.Helper()
 	request := subscription.Source.(ActionsSource).RequestID
 	for sequence := first; sequence <= last; sequence++ {
-		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, ActionsEvent{RequestID: request, Sequence: sequence}, `{}`)
+		event := ActionsEvent{RequestID: request, Sequence: sequence}
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 	}
 }
 

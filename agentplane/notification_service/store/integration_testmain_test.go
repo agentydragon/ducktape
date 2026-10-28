@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -96,6 +97,49 @@ func insertBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor i
 		VALUES ($1, $2, $3::jsonb, $4::jsonb, now(), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`, args...)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func entryPayloadForTest(t *testing.T, event EventIdentity) string {
+	t.Helper()
+	var value any
+	switch event := event.(type) {
+	case ActionsEvent:
+		value = ActionEvent{
+			Sequence: event.Sequence, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING,
+			At: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+			Actor: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{
+				Issuer: "https://issuer.example", Subject: "subject-123",
+			}}},
+		}
+	case GitHubEvent:
+		return `{}`
+	case GitHubMergeabilityEvent:
+		value = testMergeabilityPayload(event.PullRequestNumber)
+	case GitHubMergeabilitySnapshotEvent:
+		value = testMergeabilityPayload(event.PullRequestNumber)
+	case MessageEvent:
+		fromSession := "sender-session"
+		value = struct {
+			Body        string  `json:"body"`
+			FromSession *string `json:"from_session,omitempty"`
+		}{Body: "stored message", FromSession: &fromSession}
+	default:
+		t.Fatalf("unsupported entry test identity %T", event)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
+
+func testMergeabilityPayload(pullRequestNumber int64) mergeabilityPayload {
+	return mergeabilityPayload{
+		Repository: "owner/repository", PullRequestNumber: pullRequestNumber,
+		BaseRef: "main", HeadSHA: "head", BaseSHA: "base",
+		PreviousMergeability: GitHubMergeabilityUnknown, Mergeability: GitHubConflicting,
+		ObservedAt: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
 	}
 }
 

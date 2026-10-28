@@ -186,13 +186,22 @@ func insertEntry(
 	if err != nil {
 		return err
 	}
+	typedPayload, err := marshalEntryContent(event, payload)
+	if err != nil {
+		return fmt.Errorf("encode %T entry payload: %w", event, err)
+	}
+	var typedPayloadParameter any
+	if typedPayload != nil {
+		typedPayloadParameter = typedPayload
+	}
+	args := append([]any{inboxID, cursor, string(identity), string(payload), createdAt}, columns.args()...)
+	args = append(args, typedPayloadParameter)
 	_, err = tx.ExecContext(ctx, `INSERT INTO entry (inbox_id, cursor, event, payload, created_at,
 		identity_provider, actions_request_id, actions_sequence,
 		github_app_id, github_delivery_id, github_repository_id, github_event, github_action,
 		github_pull_request_number, github_mergeability_sequence, github_snapshot_version,
-		message_id, message_sender_namespace, message_sender_name)
-		VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
-		append([]any{inboxID, cursor, string(identity), string(payload), createdAt}, columns.args()...)...)
+		message_id, message_sender_namespace, message_sender_name, typed_payload)
+		VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`, args...)
 	return err
 }
 

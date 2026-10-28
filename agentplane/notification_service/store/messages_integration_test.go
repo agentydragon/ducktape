@@ -194,7 +194,7 @@ func TestMessagesDoNotCountTowardsTheInboxsEntryLimit(t *testing.T) {
 	f.send(t, f.message(sender, "second", "test body"))
 	f.addEvents(t, subscription, 1, 1)
 	requireQuota(t, f.appendEvent(subscription.InboxID, subscription.ID,
-		ActionsEvent{RequestID: subscription.Source.(ActionsSource).RequestID, Sequence: 2}, `{}`), EntriesPerInbox, 1)
+		ActionsEvent{RequestID: subscription.Source.(ActionsSource).RequestID, Sequence: 2}, payloadOf(ActionsEvent{Sequence: 2})), EntriesPerInbox, 1)
 }
 
 func TestTheDatabaseHoldsNoBodyBeyondTheCeiling(t *testing.T) {

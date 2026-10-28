@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"reflect"
 	"slices"
@@ -328,8 +329,9 @@ func (h *harness) addEvents(t *testing.T, subscription store.Subscription, first
 		if _, err := tx.ExecContext(t.Context(), `SELECT 1 FROM inbox WHERE id = $1 FOR UPDATE`, subscription.InboxID); err != nil {
 			t.Fatal(err)
 		}
+		payload := json.RawMessage(fmt.Sprintf(`{"sequence": %d, "state": "running", "at": "2026-01-01T00:00:00Z", "actor": null}`, sequence))
 		if err := h.store.AppendEvent(t.Context(), tx, subscription.InboxID, subscription.ID,
-			store.ActionsEvent{RequestID: request, Sequence: sequence}, json.RawMessage(`{}`)); err != nil {
+			store.ActionsEvent{RequestID: request, Sequence: sequence}, payload); err != nil {
 			t.Fatal(err)
 		}
 		if err := tx.Commit(); err != nil {

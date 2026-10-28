@@ -58,6 +58,15 @@ the runtime release that reads and deduplicates by relational keys until the com
 natural-key indexes. The runtime release has no JSONB fallback or per-append readiness probe. Keep the JSONB index
 until every old writer has drained and every reader has moved to relational keys.
 
+Typed entry content is a separate phase. `00010_entry_typed_payload_expand.sql` adds nullable protobuf `BYTEA` for
+Actions events, generated mergeability observations and messages. New writers fill it while retaining the existing
+JSON payload for older readers; cleanup clears both physical representations in one transaction. GitHub webhook
+payloads remain native JSONB and do not use the typed column. A later explicit, resumable command backfills retained
+typed-source payloads outside Pod init before readers switch to protobuf-backed content.
+During rollout, an older cleanup replica can clear only the legacy JSON column; a future typed reader must treat
+that column's SQL `NULL` as expired even if typed bytes remain, until every cleanup writer runs the dual-cleanup
+release.
+
 To roll back before the backfill/index command runs, restore the previous service image and leave the additive
 columns in place; do not run a migration's `Down` section while dual writers remain. If reverting after the
 command marks indexes ready, leave the columns, checkpoint and natural-key indexes in place as well. The previous
