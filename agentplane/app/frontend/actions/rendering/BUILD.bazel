@@ -1,20 +1,7 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
-
-genrule(
-    name = "ssh_exec_producer_fixture_json",
-    srcs = ["//ssh_mcp_server:exec_payload_fixture.json"],
-    outs = ["ssh/exec.producer.fixture.json"],
-    cmd = "cp $< $@",
-)
-
-js_library(
-    name = "ssh_exec_producer_fixture",
-    srcs = [":ssh_exec_producer_fixture_json"],
-)
 
 filegroup(
     name = "typed_lint_srcs",
@@ -239,12 +226,12 @@ agentplane_vitest_test(
         ":entry",
         ":result_entry",
         ":ssh",
-        ":ssh_exec_producer_fixture",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/actions:ssh_action_schemas",
         "//agentplane/app/frontend/actions/testing:harness",
+        "//ssh_mcp_server:exec_payload_fixture_js",
     ],
 )
 

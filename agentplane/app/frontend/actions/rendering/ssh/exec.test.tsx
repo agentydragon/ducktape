@@ -2,7 +2,7 @@
 import { act, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import producerFixture from "./exec.producer.fixture.json";
+import producerFixture from "../../../../../../ssh_mcp_server/exec_payload_fixture.json";
 import { mount } from "../../testing/harness";
 import { renderPreview } from "../entry";
 import { renderResultPreview } from "../result_entry";

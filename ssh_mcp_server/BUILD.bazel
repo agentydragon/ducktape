@@ -1,5 +1,7 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -53,6 +55,31 @@ genrule(
     visibility = ["//agentplane/app/frontend/actions:__pkg__"],
 )
 
+json_schema_js_library(
+    name = "exec_arguments_types",
+    schema = ":exec.arguments.schema.json",
+    visibility = ["//agentplane/app/frontend/actions:__pkg__"],
+)
+
+json_schema_js_library(
+    name = "exec_result_types",
+    schema = ":exec.result.schema.json",
+    visibility = ["//agentplane/app/frontend/actions:__pkg__"],
+)
+
+js_library(
+    name = "exec_schemas",
+    srcs = [
+        ":exec.arguments.schema.json",
+        ":exec.result.schema.json",
+    ],
+    visibility = ["//agentplane/app/frontend/actions:__pkg__"],
+    deps = [
+        ":exec_arguments_types",
+        ":exec_result_types",
+    ],
+)
+
 py_library(
     name = "export_exec_payload_fixture",
     testonly = True,
@@ -76,6 +103,13 @@ genrule(
     outs = ["exec_payload_fixture.json"],
     cmd = "$(location :export_exec_payload_fixture_bin) $@",
     tools = [":export_exec_payload_fixture_bin"],
+    visibility = ["//agentplane/app/frontend/actions/rendering:__pkg__"],
+)
+
+js_library(
+    name = "exec_payload_fixture_js",
+    testonly = True,
+    srcs = [":exec_payload_fixture.json"],
     visibility = ["//agentplane/app/frontend/actions/rendering:__pkg__"],
 )
 

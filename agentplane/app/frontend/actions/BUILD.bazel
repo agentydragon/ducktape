@@ -1,6 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
-load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
@@ -21,46 +20,13 @@ filegroup(
 
 TSCONFIG = "//agentplane/app/frontend:tsconfig"
 
-genrule(
-    name = "ssh_action_schema_json_files",
-    srcs = [
-        "//ssh_mcp_server:exec.arguments.schema.json",
-        "//ssh_mcp_server:exec.result.schema.json",
-    ],
-    outs = [
-        "schemas/ssh/exec.arguments.schema.json",
-        "schemas/ssh/exec.result.schema.json",
-    ],
-    cmd = "mkdir -p $(RULEDIR)/schemas/ssh && cp $(location //ssh_mcp_server:exec.arguments.schema.json) $(RULEDIR)/schemas/ssh/exec.arguments.schema.json && cp $(location //ssh_mcp_server:exec.result.schema.json) $(RULEDIR)/schemas/ssh/exec.result.schema.json",
-)
-
-js_library(
-    name = "ssh_action_schema_json",
-    srcs = [":ssh_action_schema_json_files"],
-)
-
-# These declarations mirror the schema filenames imported by `schemas/ssh/exec.ts`.
-json_schema_js_library(
-    name = "ssh_action_arguments_types",
-    out = "schemas/ssh/exec.arguments.d.ts",
-    schema = "//ssh_mcp_server:exec.arguments.schema.json",
-)
-
-json_schema_js_library(
-    name = "ssh_action_result_types",
-    out = "schemas/ssh/exec.result.d.ts",
-    schema = "//ssh_mcp_server:exec.result.schema.json",
-)
-
 ts_library(
     name = "ssh_action_schemas",
     srcs = ["schemas/ssh/exec.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":ssh_action_arguments_types",
-        ":ssh_action_result_types",
-        ":ssh_action_schema_json",
         "//:node_modules/zod",
+        "//ssh_mcp_server:exec_schemas",
     ],
 )
 
