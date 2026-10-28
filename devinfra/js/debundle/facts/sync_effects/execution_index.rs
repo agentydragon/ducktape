@@ -911,6 +911,7 @@ struct Callable {
     rebinds: BTreeSet<Id>,
     calls: Vec<Call>,
     local_assignments: Vec<(Id, ValueExpr)>,
+    declared_locals: BTreeSet<Id>,
     returns: Vec<ValueExpr>,
     local_functions: BTreeSet<Id>,
     literal_captures: BTreeSet<Id>,
@@ -922,6 +923,7 @@ struct Callable {
     callback_result_writes: Vec<CallbackResultWrite>,
     dynamic_property_effect: bool,
     dynamic_property_receivers: Vec<ValueExpr>,
+    implicit_capture: bool,
     opaque: bool,
     generator: bool,
     may_fall_through: bool,
@@ -1140,6 +1142,7 @@ impl Default for Callable {
             rebinds: BTreeSet::new(),
             calls: Vec::new(),
             local_assignments: Vec::new(),
+            declared_locals: BTreeSet::new(),
             returns: Vec::new(),
             local_functions: BTreeSet::new(),
             literal_captures: BTreeSet::new(),
@@ -1151,6 +1154,7 @@ impl Default for Callable {
             callback_result_writes: Vec::new(),
             dynamic_property_effect: false,
             dynamic_property_receivers: Vec::new(),
+            implicit_capture: false,
             opaque: false,
             generator: false,
             may_fall_through: true,
@@ -1165,30 +1169,19 @@ fn sole_return_expression(body: &FunctionBody) -> Option<&Expr> {
     }
 }
 
-fn is_callback_forwarder(expr: &Expr, callback: &Id) -> bool {
-    let body = match expr.unwrap_parens() {
-        Expr::Arrow(arrow) if !arrow.is_async && arrow.params.is_empty() => {
-            match arrow.body.as_ref() {
-                ArrowFunctionBody::Expr(expr) => Some(expr.as_ref()),
-                ArrowFunctionBody::FunctionBody(body) => sole_return_expression(body),
-            }
-        }
+fn returned_function_span(expr: &Expr) -> Option<Span> {
+    match expr.unwrap_parens() {
+        Expr::Arrow(arrow) if !arrow.is_async && arrow.params.is_empty() => Some(arrow.span),
         Expr::Fn(function)
             if !function.function.is_async
                 && !function.function.is_generator
                 && function.function.params.is_empty()
                 && function.function.decorators.is_empty() =>
         {
-            function
-                .function
-                .body
-                .as_ref()
-                .and_then(sole_return_expression)
+            Some(function.function.span)
         }
         _ => None,
-    };
-    matches!(body.map(Expr::unwrap_parens), Some(Expr::Call(call)) if call.args.is_empty()
-        && matches!(&call.callee, Callee::Expr(callee) if matches!(callee.unwrap_parens(), Expr::Ident(ident) if ident.to_id() == *callback)))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1866,7 +1859,7 @@ struct ExecutionIndex {
     no_reentry_exports: BTreeSet<Id>,
     no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
     no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
-    callback_factory_functions: BTreeSet<u32>,
+    returned_factory_candidates: BTreeMap<u32, Span>,
 }
 
 impl Default for ExecutionIndex {
@@ -1966,7 +1959,7 @@ impl Default for ExecutionIndex {
             no_reentry_exports: BTreeSet::new(),
             no_reentry_members: BTreeMap::new(),
             no_reentry_record_members: BTreeMap::new(),
-            callback_factory_functions: BTreeSet::new(),
+            returned_factory_candidates: BTreeMap::new(),
         }
     }
 }
@@ -3711,19 +3704,22 @@ impl Visit for ExecutionIndex {
         if function.is_async {
             self.async_callables.insert(function.span.lo.0);
         }
-        if let [param] = function.params.as_slice()
-            && let Pat::Ident(binding) = &param.pat
-            && param.decorators.is_empty()
+        if !function.params.is_empty()
+            && function
+                .params
+                .iter()
+                .all(|param| matches!(param.pat, Pat::Ident(_)) && param.decorators.is_empty())
             && !function.is_async
             && !function.is_generator
             && function.decorators.is_empty()
-            && function
+            && let Some(returned) = function
                 .body
                 .as_ref()
                 .and_then(sole_return_expression)
-                .is_some_and(|expr| is_callback_forwarder(expr, &binding.id.to_id()))
+                .and_then(returned_function_span)
         {
-            self.callback_factory_functions.insert(function.span.lo.0);
+            self.returned_factory_candidates
+                .insert(function.span.lo.0, returned);
         }
         // Decorator expressions run when the method is defined. Defaults in
         // parameter patterns and the body run only when it is called.
@@ -3762,6 +3758,23 @@ impl Visit for ExecutionIndex {
     fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
         if arrow.is_async {
             self.async_callables.insert(arrow.span.lo.0);
+        }
+        let returned = match arrow.body.as_ref() {
+            ArrowFunctionBody::Expr(expr) => returned_function_span(expr),
+            ArrowFunctionBody::FunctionBody(body) => {
+                sole_return_expression(body).and_then(returned_function_span)
+            }
+        };
+        if !arrow.is_async
+            && !arrow.params.is_empty()
+            && arrow
+                .params
+                .iter()
+                .all(|param| matches!(param, Pat::Ident(_)))
+            && let Some(returned) = returned
+        {
+            self.returned_factory_candidates
+                .insert(arrow.span.lo.0, returned);
         }
         let params = arrow.params.iter().map(Parameter::from_pattern).collect();
         self.with_callable(arrow.span.lo.0, params, |index| {
@@ -3810,6 +3823,18 @@ impl Visit for ExecutionIndex {
                     callable.literal_exposures.insert(ident.to_id());
                 }
             }
+        }
+    }
+
+    fn visit_this_expr(&mut self, _: &ThisExpr) {
+        if let Some(key) = self.current {
+            self.callables.get_mut(&key).unwrap().implicit_capture = true;
+        }
+    }
+
+    fn visit_meta_prop_expr(&mut self, _: &MetaPropExpr) {
+        if let Some(key) = self.current {
+            self.callables.get_mut(&key).unwrap().implicit_capture = true;
         }
     }
 
@@ -3876,6 +3901,15 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
+        if let Some(key) = self.current
+            && let Pat::Ident(binding) = &declarator.name
+        {
+            self.callables
+                .get_mut(&key)
+                .unwrap()
+                .declared_locals
+                .insert(binding.id.to_id());
+        }
         declarator.visit_children_with(self);
         if let Some(init) = &declarator.init {
             let kind = match &declarator.name {
@@ -4604,6 +4638,99 @@ impl Visit for ExecutionIndex {
         }
     }
 }
+/// An imported one-argument call supplies only the first parameter. A returned
+/// function can therefore retain that callback and omitted parameters, but it
+/// must not capture another source/host capability that the abstract returned
+/// callback graph would omit when the result is invoked later.
+fn returned_callback_factory(index: &ExecutionIndex, key: u32) -> bool {
+    let Some(returned) = index.returned_factory_candidates.get(&key) else {
+        return false;
+    };
+    let (Some(outer), Some(inner)) = (
+        index.callables.get(&key),
+        index.callables.get(&returned.lo.0),
+    ) else {
+        return false;
+    };
+    let Some(callback) = outer
+        .params
+        .first()
+        .and_then(|param| param.binding.as_ref())
+    else {
+        return false;
+    };
+    if outer.opaque
+        || outer.generator
+        || outer.implicit_capture
+        || index.async_callables.contains(&key)
+        || outer.may_fall_through
+        || outer
+            .params
+            .iter()
+            .any(|param| param.binding.is_none() || param.default.is_some())
+        || !outer.calls.is_empty()
+        || !outer.reads.is_empty()
+        || !outer.rebinds.is_empty()
+        || !outer.local_assignments.is_empty()
+        || !outer.member_writes.is_empty()
+        || !outer.member_value_writes.is_empty()
+        || outer.dynamic_property_effect
+        || outer.returns.len() != 1
+        || !matches!(outer.returns[0], ValueExpr::Origin(ValueOrigin::Function(inner_key)) if inner_key == returned.lo.0)
+        || inner.opaque
+        || inner.generator
+        || inner.implicit_capture
+        || index.async_callables.contains(&returned.lo.0)
+        || !inner.params.is_empty()
+        || inner.dynamic_property_effect
+        || !inner.member_writes.is_empty()
+        || !inner.member_value_writes.is_empty()
+        || !inner.callback_result_writes.is_empty()
+        || index
+            .callables
+            .range((returned.lo.0 + 1)..returned.hi.0)
+            .next()
+            .is_some()
+    {
+        return false;
+    }
+    let allowed: BTreeSet<_> = outer
+        .params
+        .iter()
+        .filter_map(|param| param.binding.clone())
+        .chain(inner.declared_locals.iter().cloned())
+        .collect();
+    let local_receivers: BTreeSet<_> = allowed
+        .iter()
+        .filter(|id| *id != callback)
+        .cloned()
+        .collect();
+    inner.reads.is_subset(&allowed)
+        && inner.rebinds.is_subset(&local_receivers)
+        && inner
+            .local_assignments
+            .iter()
+            .all(|(id, _)| local_receivers.contains(id))
+        && inner.calls.iter().all(|call| match (&call.kind, &call.callee) {
+            (CallKind::Call, ValueExpr::Binding(id)) => id == callback && !call.has_spread,
+            (CallKind::LocalMemberRead, ValueExpr::Member(receiver, Some(property), true)) => {
+                matches!(receiver.as_ref(), ValueExpr::Binding(id)
+                    if local_receivers.contains(id)
+                        && inner.local_assignments.iter().any(|(assigned, value)| {
+                            assigned == id
+                                && matches!(value, ValueExpr::ObjectLiteral(object, fields)
+                                    if index.plain_data_objects.contains(object)
+                                        && fields.iter().any(|(name, _)| name.as_ref() == Some(property)))
+                        })
+                        && inner.local_assignments.iter().filter(|(assigned, _)| assigned == id)
+                            .all(|(_, value)| matches!(value, ValueExpr::ObjectLiteral(object, fields)
+                                if index.plain_data_objects.contains(object)
+                                    && fields.iter().any(|(name, _)| name.as_ref() == Some(property)))))
+            }
+            _ => false,
+        })
+}
+
 pub(crate) fn infer_returned_callback_factories(
     body: &[TopLevelItemView<'_>],
     exported_locals: &BTreeSet<String>,
@@ -4618,14 +4745,32 @@ pub(crate) fn infer_returned_callback_factories(
     if !index.dynamic_scope_owners.is_empty() {
         return BTreeMap::new();
     }
-    let candidates: Vec<_> = index
+    let mut assignments: BTreeMap<Id, Vec<(SourceUnitOrdinal, &ValueExpr)>> = BTreeMap::new();
+    for (ordinal, writes) in index.top_assignments.iter().enumerate() {
+        for (id, value) in writes {
+            assignments
+                .entry(id.clone())
+                .or_default()
+                .push((SourceUnitOrdinal(ordinal), value));
+        }
+    }
+    let mut candidates: Vec<_> = index
         .hoisted_bindings
         .iter()
         .filter(|(id, key)| {
-            exported_locals.contains(id.0.as_ref())
-                && index.callback_factory_functions.contains(key)
+            exported_locals.contains(id.0.as_ref()) && returned_callback_factory(&index, **key)
         })
+        .map(|(id, key)| (id.clone(), *key))
         .collect();
+    candidates.extend(assignments.into_iter().filter_map(|(id, writes)| {
+        let [(owner, ValueExpr::Origin(ValueOrigin::Function(key)))] = writes.as_slice() else {
+            return None;
+        };
+        (exported_locals.contains(id.0.as_ref())
+            && index.top_definite_initializers[owner.0].contains(&id)
+            && returned_callback_factory(&index, *key))
+        .then_some((id, *key))
+    }));
     if candidates.is_empty() {
         return BTreeMap::new();
     }
@@ -4633,11 +4778,11 @@ pub(crate) fn infer_returned_callback_factories(
     candidates
         .into_iter()
         .filter_map(|(id, key)| {
-            let values = flow.values_of_binding(id);
+            let values = flow.values_of_binding(&id);
             values
                 .iter()
-                .eq([ValueOrigin::Function(*key)])
-                .then(|| (id.0.to_string(), *key))
+                .eq([ValueOrigin::Function(key)])
+                .then(|| (id.0.to_string(), key))
         })
         .collect()
 }

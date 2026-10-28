@@ -517,6 +517,21 @@ callback-effect paths.
 
 ## Audited callback-factory exports
 
+The analyzer also infers a narrower source-derived timing fact for a directly
+exported, stable function declaration or definite top-level function initializer
+that only returns a fresh zero-argument function. The outer function may have
+ordinary identifier parameters, but the admitted importer call supplies exactly
+one inline callback; all other parameters are omitted. The returned function
+may read those parameters and its own locals, call the first callback, and use
+static own data properties of fresh local objects. The proof rejects outer
+execution, exterior captures, extra nested functions, dynamic property effects,
+and any returned-body call or write that could introduce an unrepresented
+callback root. A top-level initializer must retain a single function identity;
+the fact says nothing about availability before that initializer runs in an
+import cycle. This inference only defers the supplied callback on a successful
+factory return. It does not claim purity, suppress eager import evaluation,
+remove possible throws, or relax the author assertions below.
+
 `chunk_export_purity.<defining chunk>.callback_factory_exports` and
 `callback_factory_members` are not purity annotations. They assert that a call
 to the named export or static namespace member, with one inline function or
