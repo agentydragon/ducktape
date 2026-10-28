@@ -580,6 +580,87 @@ fn prototype_absence_keeps_captured_census_provenance() {
 }
 
 #[test]
+fn checked_record_factory_purity_keeps_captured_prototype_census_dependencies() {
+    let provider = "var captured = globalThis.runtimeSettings.state;\ncaptured.marker = 1;\nexport const marker = 1;\n";
+    let source = "import './opaque.js';\nimport { marker } from './peer.js';\nclass Holder { constructor(record) { this.record = record; this.value = record.value ?? 3; } }\nfunction create(record) { return new Holder(record); }\nconst command = create({ execute: () => later });\nconst barrier = console.log('barrier');\nconst later = 42;\nconsole.log(command.value, command.record.execute(), marker);\n";
+    let chunks = [("static/peer", provider)];
+    let base_opts = || {
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&chunks)
+            .with_extra_files(OPAQUE_FILES)
+    };
+
+    let fixture =
+        run_fixture(base_opts().with_value_inputs("static/peer", vec![captured_input(provider)]));
+    assert_preserved_entry_output(&fixture, "barrier\n3 42 1\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let command = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|names| names.iter().any(|name| name["binding"] == "command"))
+        })
+        .expect("factory result node");
+    assert_eq!(command["purity"]["kind"], "pure", "{command}");
+    assert!(
+        input_refs(&command["purity"]["dependencies"]["value_inputs"]),
+        "the exact-call purity proof must retain its captured native premise: {command}"
+    );
+    assert_eq!(
+        command["synchronous_execution"]["complete"], true,
+        "{command}"
+    );
+    assert!(
+        command["synchronous_execution"]["native_prototype_property_checks"]
+            .as_array()
+            .is_some_and(|checks| checks
+                .iter()
+                .any(|check| { check["property"] == "value" && check["intact"] == true })),
+        "the missing constructor input property must consume prototype absence evidence: {command}"
+    );
+    assert!(
+        command["synchronous_execution"]["native_integrity_uses"]
+            .as_array()
+            .is_some_and(|uses| uses.iter().any(|usage| {
+                usage["guard"] == "ordinary_object_prototype"
+                    && input_refs(&usage["value_input_refs"])
+            })),
+        "the source-only constructor proof consumes the same census refinement: {command}"
+    );
+    assert!(
+        command["synchronous_execution"]["local_record_factory_uses"]
+            .as_array()
+            .is_none_or(Vec::is_empty),
+        "this path is proved from source and native census evidence, not an annotation: {command}"
+    );
+
+    let control = run_fixture(base_opts());
+    assert_preserved_entry_output(&control, "barrier\n3 42 1\n");
+    let control_graph = serde_json::to_value(control.dependency_graph()).unwrap();
+    let control_command = control_graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|names| names.iter().any(|name| name["binding"] == "command"))
+        })
+        .expect("control factory result node");
+    assert_eq!(
+        control_command["purity"]["kind"], "not_pure",
+        "{control_command}"
+    );
+    assert!(
+        control_command["purity"]["dependencies"].is_null(),
+        "without the selected capture input, the call stays conservative: {control_command}"
+    );
+}
+
+#[test]
 fn primitive_set_split_keeps_the_same_input_in_purity_and_callback_timing() {
     let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport const ready = true;\n";
     let source = "import './opaque.js';\nimport { ready } from './peer.js';\nglobalThis.saved = () => later;\nconst unique = new Set(['a', 'b']);\nconst later = 42;\nconsole.log(ready, unique.size, globalThis.saved());\n";
