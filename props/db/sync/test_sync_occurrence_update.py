@@ -1,8 +1,7 @@
-"""Tests for occurrence-level sync diffing (update path).
+"""Tests for occurrence-level sync behavior (update path).
 
-Verifies that _tp_occ_from_orm/_fp_occ_from_orm round-trip correctly and that
-_sync_tp_issue/_sync_fp_issue detect field-level changes, add/remove occurrences,
-and preserve unchanged rows.
+Verifies that _tp_occ_from_orm/_fp_occ_from_orm round-trip correctly and that issue
+sync persists field changes, adds/removes occurrences, and preserves unchanged rows.
 """
 
 from __future__ import annotations
@@ -118,9 +117,8 @@ def test_tp_occ_none_anchor_round_trip(
     )
     yaml_issue.occurrences.append(occ)
 
-    changed = _sync_tp_issue(synced_test_session, existing, yaml_issue)
+    _sync_tp_issue(synced_test_session, existing, yaml_issue)
     synced_test_session.flush()
-    assert changed
 
     # Verify ranges via ORM directly (critic_scopes are synced in a separate phase,
     # so _tp_occ_from_orm would fail validation on the freshly re-added occurrence)
@@ -145,10 +143,15 @@ def test_tp_occ_none_anchor_round_trip(
     # Expire it so the re-sync below sees the occurrence we just added.
     synced_test_session.expire(existing, ["occurrences"])
 
-    # Re-sync must detect no changes
-    changed_resync = _sync_tp_issue(synced_test_session, existing, _tp_issue_from_orm(existing))
+    range_ids = {r.id for r in db_occ.ranges}
+    scope_hashes = {scope.files_hash for scope in db_occ.critic_scopes_expected_to_recall}
+    created_at = db_occ.created_at
+    _sync_tp_issue(synced_test_session, existing, _tp_issue_from_orm(existing))
     synced_test_session.flush()
-    assert not changed_resync
+    synced_test_session.expire(db_occ, ["ranges", "critic_scopes_expected_to_recall"])
+    assert {r.id for r in db_occ.ranges} == range_ids
+    assert {scope.files_hash for scope in db_occ.critic_scopes_expected_to_recall} == scope_hashes
+    assert db_occ.created_at == created_at
 
 
 def test_fp_occ_unspecified_and_single_line_anchors_round_trip(synced_test_session: Session):
@@ -164,9 +167,8 @@ def test_fp_occ_unspecified_and_single_line_anchors_round_trip(synced_test_sessi
     )
     yaml_fp.occurrences.append(occ)
 
-    changed = _sync_fp_issue(synced_test_session, existing, yaml_fp)
+    _sync_fp_issue(synced_test_session, existing, yaml_fp)
     synced_test_session.flush()
-    assert changed
 
     db_occ = (
         synced_test_session.query(FalsePositiveOccurrenceORM)
@@ -179,16 +181,21 @@ def test_fp_occ_unspecified_and_single_line_anchors_round_trip(synced_test_sessi
         Path("add.py"): None,
         Path("subtract.py"): [LineRange(start_line=3, end_line=None, note=None)],
     }
+    range_ids = {r.id for r in db_occ.ranges}
+    relevant_files = {rf.file_path for rf in db_occ.relevant_file_orms}
 
     # _add_fp_occurrence adds new occurrences via session.add(), not by appending to
     # existing.occurrences, so that already-loaded relationship collection is now stale.
     # Expire it so the re-sync below sees the occurrence we just added.
     synced_test_session.expire(existing, ["occurrences"])
 
-    # Re-sync must detect no changes
-    changed_resync = _sync_fp_issue(synced_test_session, existing, _fp_issue_from_orm(existing))
+    created_at = db_occ.created_at
+    _sync_fp_issue(synced_test_session, existing, _fp_issue_from_orm(existing))
     synced_test_session.flush()
-    assert not changed_resync
+    synced_test_session.expire(db_occ, ["ranges", "relevant_file_orms"])
+    assert {r.id for r in db_occ.ranges} == range_ids
+    assert {rf.file_path for rf in db_occ.relevant_file_orms} == relevant_files
+    assert db_occ.created_at == created_at
 
 
 # ---------------------------------------------------------------------------
@@ -204,13 +211,16 @@ def test_unchanged_occurrence_preserved(synced_test_session: Session):
         .one()
     )
     original_created_at = db_occ.created_at
+    original_range_ids = {r.id for r in db_occ.ranges}
+    original_scope_hashes = {scope.files_hash for scope in db_occ.critic_scopes_expected_to_recall}
 
     existing = synced_test_session.query(TruePositive).filter_by(snapshot_slug=SLUG, tp_id="tp-006").one()
-    changed = _sync_tp_issue(synced_test_session, existing, _tp_issue_from_orm(existing))
+    _sync_tp_issue(synced_test_session, existing, _tp_issue_from_orm(existing))
     synced_test_session.flush()
 
-    assert not changed
-    synced_test_session.refresh(db_occ)
+    synced_test_session.expire(db_occ, ["ranges", "critic_scopes_expected_to_recall"])
+    assert {r.id for r in db_occ.ranges} == original_range_ids
+    assert {scope.files_hash for scope in db_occ.critic_scopes_expected_to_recall} == original_scope_hashes
     assert db_occ.created_at == original_created_at
 
 
@@ -237,10 +247,9 @@ def test_note_change_detected(synced_test_session: Session):
         for o in yaml_issue.occurrences
     ]
 
-    changed = _sync_tp_issue(synced_test_session, existing, yaml_issue)
+    _sync_tp_issue(synced_test_session, existing, yaml_issue)
     synced_test_session.flush()
 
-    assert changed
     refreshed = (
         synced_test_session.query(TruePositiveOccurrenceORM)
         .filter_by(snapshot_slug=SLUG, tp_id="tp-006", occurrence_id="occ-add")
@@ -263,10 +272,9 @@ def test_files_change_detected(synced_test_session: Session):
         )
     ]
 
-    changed = _sync_tp_issue(synced_test_session, existing, yaml_issue)
+    _sync_tp_issue(synced_test_session, existing, yaml_issue)
     synced_test_session.flush()
 
-    assert changed
     # Verify ranges via ORM directly (critic_scopes are synced in a separate phase,
     # so _tp_occ_from_orm would fail validation on the freshly re-added occurrence)
     db_occ = (
@@ -287,16 +295,15 @@ def test_rationale_change_detected(synced_test_session: Session):
     yaml_issue = _tp_issue_from_orm(existing)
     yaml_issue.rationale = "Updated rationale."
 
-    changed = _sync_tp_issue(synced_test_session, existing, yaml_issue)
+    _sync_tp_issue(synced_test_session, existing, yaml_issue)
     synced_test_session.flush()
 
-    assert changed
     synced_test_session.refresh(existing)
     assert existing.rationale == "Updated rationale."
 
 
-def test_critic_scopes_change_detected(synced_test_session: Session):
-    """Changing critic_scopes_expected_to_recall triggers re-sync (detected as changed)."""
+def test_critic_scopes_change_replaces_occurrence(synced_test_session: Session):
+    """Changing critic scopes replaces the occurrence row."""
     existing = synced_test_session.query(TruePositive).filter_by(snapshot_slug=SLUG, tp_id="tp-001").one()
     yaml_issue = _tp_issue_from_orm(existing)
     original_created_at = existing.occurrences[0].created_at
@@ -311,10 +318,9 @@ def test_critic_scopes_change_detected(synced_test_session: Session):
         )
     ]
 
-    changed = _sync_tp_issue(synced_test_session, existing, yaml_issue)
+    _sync_tp_issue(synced_test_session, existing, yaml_issue)
     synced_test_session.flush()
 
-    assert changed
     db_occ = (
         synced_test_session.query(TruePositiveOccurrenceORM)
         .filter_by(snapshot_slug=SLUG, tp_id="tp-001", occurrence_id="occ-1")
@@ -342,10 +348,9 @@ def test_occurrence_added(synced_test_session: Session):
         )
     )
 
-    changed = _sync_tp_issue(synced_test_session, existing, yaml_issue)
+    _sync_tp_issue(synced_test_session, existing, yaml_issue)
     synced_test_session.flush()
 
-    assert changed
     occ_ids = {
         o.occurrence_id
         for o in synced_test_session.query(TruePositiveOccurrenceORM)
@@ -361,17 +366,16 @@ def test_occurrence_removed(synced_test_session: Session):
     yaml_issue = _tp_issue_from_orm(existing)
     yaml_issue.occurrences = [yaml_issue.occurrences[0]]
 
-    changed = _sync_tp_issue(synced_test_session, existing, yaml_issue)
+    _sync_tp_issue(synced_test_session, existing, yaml_issue)
     synced_test_session.flush()
 
-    assert changed
     occ_ids = {
         o.occurrence_id
         for o in synced_test_session.query(TruePositiveOccurrenceORM)
         .filter_by(snapshot_slug=SLUG, tp_id="tp-006")
         .all()
     }
-    assert len(occ_ids) == 1
+    assert occ_ids == {yaml_issue.occurrences[0].occurrence_id}
 
 
 # ---------------------------------------------------------------------------
@@ -394,10 +398,9 @@ def test_fp_relevant_files_change_detected(synced_test_session: Session):
         )
     ]
 
-    changed = _sync_fp_issue(synced_test_session, existing, yaml_fp)
+    _sync_fp_issue(synced_test_session, existing, yaml_fp)
     synced_test_session.flush()
 
-    assert changed
     db_occ = (
         synced_test_session.query(FalsePositiveOccurrenceORM)
         .filter_by(snapshot_slug=SLUG, fp_id="fp-001", occurrence_id="fp-occ-1")
