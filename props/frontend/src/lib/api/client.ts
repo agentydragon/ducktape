@@ -122,39 +122,44 @@ function extractErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function unwrapApiResult<Result extends { data?: unknown; error?: unknown }>(
+  result: Result,
+  fallback: string
+): Result extends { data: infer Data } ? Data : never;
+function unwrapApiResult(result: { data?: unknown; error?: unknown }, fallback: string): unknown {
+  if ("error" in result) throw new Error(extractErrorMessage(result.error, fallback));
+  return result.data;
+}
+
 // Convenience wrapper for overview endpoint
 export async function fetchOverview() {
-  const { data, error } = await api.GET("/api/stats/overview");
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch overview"));
-  return data;
+  const result = await api.GET("/api/stats/overview");
+  return unwrapApiResult(result, "Failed to fetch overview");
 }
 
 // Fetch all definitions
 export async function fetchDefinitions(agentType?: AgentType) {
-  const { data, error } = await api.GET("/api/definitions", {
+  const result = await api.GET("/api/definitions", {
     params: { query: agentType ? { agent_type: agentType } : {} },
   });
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch definitions"));
-  return data;
+  return unwrapApiResult(result, "Failed to fetch definitions");
 }
 
 // Trigger validation runs
 export async function triggerValidationRuns(request: ValidationRunRequest) {
-  const { data, error } = await api.POST("/api/runs/validation", {
+  const result = await api.POST("/api/runs/validation", {
     body: request,
   });
-  if (error) throw new Error(extractErrorMessage(error, "Failed to trigger validation runs"));
-  return data;
+  return unwrapApiResult(result, "Failed to trigger validation runs");
 }
 
 // Fetch run details
 export async function fetchRun(runId: string, signal?: AbortSignal) {
-  const { data, error } = await api.GET("/api/runs/{run_id}", {
+  const result = await api.GET("/api/runs/{run_id}", {
     params: { path: { run_id: runId } },
     signal,
   });
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch run"));
-  return data;
+  return unwrapApiResult(result, "Failed to fetch run");
 }
 
 // Fetch all runs with filters and pagination
@@ -171,11 +176,10 @@ export interface RunsFilters {
 }
 
 export async function fetchRuns(filters?: RunsFilters) {
-  const { data, error } = await api.GET("/api/runs", {
+  const result = await api.GET("/api/runs", {
     params: { query: filters ?? {} },
   });
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch runs"));
-  return data;
+  return unwrapApiResult(result, "Failed to fetch runs");
 }
 
 // Fetch definition detail with per-example stats
@@ -184,11 +188,10 @@ export type ExampleStats = components["schemas"]["ExampleStats"];
 export type LLMCostStats = components["schemas"]["LLMCostStats"];
 
 export async function fetchDefinitionDetail(definitionId: string) {
-  const { data, error } = await api.GET("/api/stats/definitions/{image_digest}", {
+  const result = await api.GET("/api/stats/definitions/{image_digest}", {
     params: { path: { image_digest: definitionId } },
   });
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch definition"));
-  return data;
+  return unwrapApiResult(result, "Failed to fetch definition");
 }
 
 // Fetch example detail with per-definition stats
@@ -196,7 +199,7 @@ export type ExampleDetailResponse = components["schemas"]["ExampleDetailResponse
 export type DefinitionStatsForExample = components["schemas"]["DefinitionStatsForExample"];
 
 export async function fetchExampleDetail(snapshotSlug: string, exampleKind: ExampleKind, filesHash: string | null) {
-  const { data, error } = await api.GET("/api/stats/examples", {
+  const result = await api.GET("/api/stats/examples", {
     params: {
       query: {
         snapshot_slug: snapshotSlug,
@@ -205,8 +208,7 @@ export async function fetchExampleDetail(snapshotSlug: string, exampleKind: Exam
       },
     },
   });
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch example detail"));
-  return data;
+  return unwrapApiResult(result, "Failed to fetch example detail");
 }
 
 // --- Overview ---
@@ -231,9 +233,8 @@ export type LLMRequestsResponse = components["schemas"]["LLMRequestsResponse"];
 export type RunLogsResponse = components["schemas"]["RunLogsResponse"];
 
 export async function fetchSnapshots() {
-  const { data, error } = await api.GET("/api/gt/snapshots");
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch snapshots"));
-  return data;
+  const result = await api.GET("/api/gt/snapshots");
+  return unwrapApiResult(result, "Failed to fetch snapshots");
 }
 
 export async function fetchSnapshotDetail(
@@ -284,22 +285,20 @@ export async function fetchSnapshotFiles(
 
 // Fetch LLM requests for an agent run
 export async function fetchLLMRequests(runId: string, signal?: AbortSignal) {
-  const { data, error } = await api.GET("/api/runs/{run_id}/llm_requests", {
+  const result = await api.GET("/api/runs/{run_id}/llm_requests", {
     params: { path: { run_id: runId } },
     signal,
   });
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch LLM requests"));
-  return data;
+  return unwrapApiResult(result, "Failed to fetch LLM requests");
 }
 
 // Fetch container logs (from Loki) for an agent run
 export async function fetchRunLogs(runId: string, signal?: AbortSignal) {
-  const { data, error } = await api.GET("/api/runs/{run_id}/logs", {
+  const result = await api.GET("/api/runs/{run_id}/logs", {
     params: { path: { run_id: runId } },
     signal,
   });
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch logs"));
-  return data;
+  return unwrapApiResult(result, "Failed to fetch logs");
 }
 
 // --- Clusters ---
@@ -316,9 +315,8 @@ export async function fetchSnapshotClusters(snapshotSlug: string): Promise<Clust
 export type ModelMetadataInfo = components["schemas"]["ModelMetadataInfo"];
 
 export async function fetchModelMetadata() {
-  const { data, error } = await api.GET("/api/model_metadata");
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch model metadata"));
-  return data;
+  const result = await api.GET("/api/model_metadata");
+  return unwrapApiResult(result, "Failed to fetch model metadata");
 }
 
 // --- Stats: occurrence stats, distributions, coverage ---
@@ -331,7 +329,7 @@ export type CoverageDefinition = components["schemas"]["CoverageDefinition"];
 export type CoverageCell = components["schemas"]["CoverageCell"];
 
 export async function fetchOccurrenceStats(snapshotSlug?: string, split?: Split) {
-  const { data, error } = await api.GET("/api/stats/occurrences", {
+  const result = await api.GET("/api/stats/occurrences", {
     params: {
       query: {
         limit: 500,
@@ -342,14 +340,12 @@ export async function fetchOccurrenceStats(snapshotSlug?: string, split?: Split)
       },
     },
   });
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch occurrence stats"));
-  return data;
+  return unwrapApiResult(result, "Failed to fetch occurrence stats");
 }
 
 export async function fetchCoverage(split: Split, limitDefinitions?: number) {
-  const { data, error } = await api.GET("/api/stats/coverage", {
+  const result = await api.GET("/api/stats/coverage", {
     params: { query: { split, ...(limitDefinitions ? { limit_definitions: limitDefinitions } : {}) } },
   });
-  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch coverage"));
-  return data;
+  return unwrapApiResult(result, "Failed to fetch coverage");
 }
