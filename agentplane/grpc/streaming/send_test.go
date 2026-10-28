@@ -226,21 +226,29 @@ func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, transport string, 
 
 	select {
 	case err := <-service.handlerDone:
-		if !errors.Is(err, context.Canceled) && !(cancelClient && status.Code(err) == codes.Canceled) {
-			t.Fatalf("handler error = %v, want context.Canceled after abort", err)
+		if cancelClient {
+			// Client cancellation may close the transport before the server context wins the SendWithin race.
+			if !errors.Is(err, context.Canceled) && status.Code(err) != codes.Canceled && status.Code(err) != codes.Unavailable {
+				t.Fatalf("handler error = %v, want cancellation or transport closure after client cancel", err)
+			}
+		} else if !errors.Is(err, context.Canceled) {
+			t.Fatalf("handler error = %v, want context.Canceled after drain", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("draining did not return the RPC handler")
 	}
-	for service.completed.Load() < blockedAttempt {
+	attempts := service.attempts.Load()
+	if !cancelClient && attempts != blockedAttempt {
+		t.Fatalf("underlying Send calls = %d, want no call after blocked write %d", attempts, blockedAttempt)
+	}
+	// A client cancellation can race a successful SendMsg return and start the next sequential write before the
+	// server observes the canceled stream. Once the handler returns, every started SendMsg must still be released.
+	for service.completed.Load() < attempts {
 		select {
 		case <-service.sendFinished:
 		case <-time.After(5 * time.Second):
-			t.Fatal("gRPC did not release the outstanding SendMsg after the handler returned")
+			t.Fatal("gRPC did not release every started SendMsg after the handler returned")
 		}
-	}
-	if got := service.attempts.Load(); got != blockedAttempt {
-		t.Fatalf("underlying Send calls = %d, want no call after blocked write %d", got, blockedAttempt)
 	}
 	if transport == "facade" {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
