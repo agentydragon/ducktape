@@ -4,7 +4,7 @@ load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
 load("//devinfra/js:json_schema.bzl", "js_json_schema")
-load("//devinfra/js:openapi_typescript.bzl", "openapi_typescript")
+load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
@@ -89,7 +89,7 @@ ts_config(
 
 # TypeScript types generated from the backend's OpenAPI schema (reuses the API
 # Pydantic models as the wire contract). Not checked in; regenerated each build.
-openapi_typescript(
+openapi_js_library(
     name = "schema",
     out = "api/schema.d.ts",
     schema = "//haku/console:openapi_schema",

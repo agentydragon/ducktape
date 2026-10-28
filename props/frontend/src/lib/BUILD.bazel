@@ -1,4 +1,4 @@
-load("//devinfra/js:openapi_typescript.bzl", "openapi_typescript")
+load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = [
@@ -20,7 +20,7 @@ filegroup(
     visibility = ["//props/frontend:__pkg__"],
 )
 
-openapi_typescript(
+openapi_js_library(
     name = "schema",
     out = "api/schema.d.ts",
     schema = "//props/backend:openapi_schema",

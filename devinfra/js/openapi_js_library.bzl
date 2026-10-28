@@ -2,7 +2,7 @@
 
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 
-def openapi_typescript(name, schema, out, schema_files = [], visibility = None):
+def openapi_js_library(name, schema, out, schema_files = [], visibility = None):
     """Generate API declarations from a declared OpenAPI JSON file.
 
     `schema` and `schema_files` are single-file Bazel targets. List every file

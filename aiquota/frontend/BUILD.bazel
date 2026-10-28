@@ -2,7 +2,7 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("//devinfra/js:openapi_typescript.bzl", "openapi_typescript")
+load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
@@ -54,7 +54,7 @@ ts_config(
 
 # Wire types generated from the API's own OpenAPI document, so the dashboard's idea of a
 # quota window is the Pydantic model rather than a hand-kept copy. Not checked in.
-openapi_typescript(
+openapi_js_library(
     name = "schema",
     out = "api/schema.d.ts",
     schema = "//aiquota:openapi_schema",

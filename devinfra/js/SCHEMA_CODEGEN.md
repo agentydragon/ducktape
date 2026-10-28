@@ -1,11 +1,11 @@
 # OpenAPI TypeScript declarations
 
-The `openapi_typescript` macro converts a declared OpenAPI JSON artifact into a TypeScript
+The `openapi_js_library` macro converts a declared OpenAPI JSON artifact into a TypeScript
 declaration file and packages it in a `js_library` under the requested target name. The schema owner
 produces the artifact; the converter does not invoke a backend exporter.
 
 ```starlark
-load("//devinfra/js:openapi_typescript.bzl", "openapi_typescript")
+load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 genrule(
@@ -15,7 +15,7 @@ genrule(
     tools = [":export_schema_bin"],
 )
 
-openapi_typescript(
+openapi_js_library(
     name = "schema",
     schema = ":openapi_schema",
     out = "api/schema.d.ts",
