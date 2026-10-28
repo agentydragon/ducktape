@@ -351,8 +351,8 @@ func TestCloseWaitsForAdmissionAndPublishesAdmissionTransitions(t *testing.T) {
 
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close() }()
-	if err := watchLifecycle(ctx, r.lifecycle, "runner", func(runtime runnerRuntimeSpec) (bool, error) {
-		return runtime.Stage == stageDraining, nil
+	if err := runnerlifecycle.WatchStatus(ctx, r.lifecycle.state, func(runtime runnerlifecycle.Status) (bool, error) {
+		return runtime.Stage == runnerlifecycle.Draining, nil
 	}); err != nil {
 		s.admitMu.Unlock()
 		t.Fatalf("wait for Close to drain admission: %v", err)
@@ -383,8 +383,8 @@ func TestCloseProgressesForEmptyRunner(t *testing.T) {
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatalf("Close empty Runner: %v", err)
 	}
-	current, found, err := lifecycleRead[runnerRuntimeSpec](context.Background(), r.lifecycle.state, "runner")
-	if err != nil || !found || current.Stage != stageClosed {
+	current, found, err := runnerlifecycle.ReadStatus(context.Background(), r.lifecycle.state)
+	if err != nil || !found || current.Stage != runnerlifecycle.Closed {
 		t.Fatalf("empty Runner runtime after Close = %+v, found=%v err=%v; want CLOSED", current, found, err)
 	}
 }

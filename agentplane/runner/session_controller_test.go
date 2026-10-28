@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -41,7 +42,7 @@ func TestSessionControllerMapsAppServerRuntimeToCodexSessions(t *testing.T) {
 	}
 	c := &sessionLifecycleController{l: r.lifecycle}
 	ctx := context.Background()
-	input := reducedLifecycleMetadata{Pointer: resource.NewMetadata(lifecycleNamespace, codexAppServerRuntimeType, codexAppServerResourceID, resource.VersionUndefined)}
+	input := reducedLifecycleMetadata{Pointer: resource.NewMetadata(runnerlifecycle.Namespace, codexAppServerRuntimeType, codexAppServerResourceID, resource.VersionUndefined)}
 	mapped, err := c.MapInput(ctx, nil, sessionControllerTestRuntime{state: r.lifecycle.state}, input)
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +51,7 @@ func TestSessionControllerMapsAppServerRuntimeToCodexSessions(t *testing.T) {
 		t.Fatalf("app-server runtime mappings = %v, want %v", got, want)
 	}
 
-	input.Pointer = resource.NewMetadata(lifecycleNamespace, runnerRuntimeType, "runner", resource.VersionUndefined)
+	input.Pointer = resource.NewMetadata(runnerlifecycle.Namespace, runnerlifecycle.AggregateStatusType, runnerlifecycle.ResourceID, resource.VersionUndefined)
 	mapped, err = c.MapInput(ctx, nil, sessionControllerTestRuntime{state: r.lifecycle.state}, input)
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +73,7 @@ type sessionControllerTestRuntime struct {
 }
 
 func (r sessionControllerTestRuntime) List(ctx context.Context, _ resource.Kind, opts ...state.ListOption) (resource.List, error) {
-	return r.state.List(ctx, resource.NewMetadata(lifecycleNamespace, sessionInputType, "", resource.VersionUndefined), opts...)
+	return r.state.List(ctx, resource.NewMetadata(runnerlifecycle.Namespace, sessionInputType, "", resource.VersionUndefined), opts...)
 }
 
 func pointerIDs(pointers []resource.Pointer) []string {
