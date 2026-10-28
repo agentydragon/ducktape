@@ -16,13 +16,15 @@ var subscriptionCreationConstraints = []string{
 
 var inboxDestinationConstraints = []string{"inbox_destination_fields_valid"}
 
-// ValidateSubscriptionCreationConstraints proves the typed storage invariants before the final contract. Each constraint is validated and committed independently so a long scan does not hold a
-// transaction open across other proofs. It is safe to rerun after interruption.
+// ValidateSubscriptionCreationConstraints proves the typed storage invariants before the final contract.
+// Each constraint commits independently so a long scan does not hold a transaction open across other proofs.
+// It is safe to rerun after interruption.
 func ValidateSubscriptionCreationConstraints(ctx context.Context, db *sql.DB) error {
 	return validateStorageConstraints(ctx, db, "subscription", subscriptionCreationConstraints)
 }
 
-// ValidateInboxDestinationConstraints proves the normalized destination shape before the final contract. It validates even on an empty table so future writes are covered by a catalog proof.
+// ValidateInboxDestinationConstraints proves the normalized destination shape before the final contract.
+// It validates even on an empty table so future writes are covered by a catalog proof.
 func ValidateInboxDestinationConstraints(ctx context.Context, db *sql.DB) error {
 	return validateStorageConstraints(ctx, db, "inbox", inboxDestinationConstraints)
 }
