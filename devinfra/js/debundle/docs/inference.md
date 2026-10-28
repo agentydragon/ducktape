@@ -166,15 +166,15 @@ so value and dependency growth still wake their consumers.
 ## Dependency regions and barriers
 
 Completion barriers are valid only at actual one-way dependencies; the old pass
-order alone is insufficient. The source-level evidence is recorded in
-`plans/shared_inference.md`.
+order alone is insufficient.
 
-- Native integrity requires a completed conditional write census from every
-  analyzed chunk. Native branch refinement consumes
+- `facts/semantic_inference.rs` requires a completed conditional native write
+  census from every analyzed chunk. Native branch refinement consumes
   `callback_object_arguments` from the source-only canonical AST collectors.
   Later generic callback-factory certificates do not produce that field or feed
   the census.
-- Source-only aliases and assignments precede captured author-input validation.
+- `facts/sync_effects/execution_index.rs` completes source-only aliases and
+  assignments before captured author-input validation.
   Author assertions cannot establish the source-only absence premises used to
   validate those assertions.
 - Completed static read/rebind and function facts feed execution-prefix heap,

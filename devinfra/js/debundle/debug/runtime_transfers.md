@@ -45,9 +45,39 @@ The combined port moves those outcomes as well. Its first paired measurement
 passed output and Node comparisons, but cached fallback rose from 2.27 seconds
 to 5.48 seconds median user CPU (+141.4%); median peak RSS rose 0.4%. The other
 three controls stayed within budget. Raw results are under
-`results/paired-runtime-final/`. This candidate is rejected pending profiling.
+`results/paired-runtime-final/`. This candidate was rejected.
+
+The optimized `perf` profiles in
+`profiles/cached-fallback-fanout-diagnostic-20261028T210348Z/` locate 22.29% of
+inclusive cycles in copying `BTreeSet<RuntimeKey>`. Invocation memo reads
+accumulated completed version keys in the current producer's read set; every
+ephemeral request and result copied those keys and their operation paths.
+`read_final` now carries immutable memo dependencies without installing live
+watchers or premise keys. Growing facts retain ordinary watched reads.
 
 The private Claude control also aborted with a stack overflow after four graph
 outputs; the baseline completed analysis and rejected the configured assignment.
 Execution state is now heap-owned throughout transfer calls so suspended Rust
-frames retain a compact ownership slot. Validation of this change is pending.
+frames retain a compact ownership slot. A neutral two-chunk fixture with
+60-function call chains reproduces the old abort and now exits successfully.
+The fixture is covered by `synchronous_precision_report_test`.
+
+## Compact transfers
+
+The optimized build is
+[a8841792-1e87-4b08-b829-457e351bfce7](https://app.buildbuddy.io/invocation/a8841792-1e87-4b08-b829-457e351bfce7),
+with binary SHA-256 `eba539992087a8f7f59738747632870b3ad502cfede647ad7a671e8b05dfd27b`.
+Three alternating pairs per control pass the CPU and RSS budget:
+
+| Control                | Median user CPU change | Median peak RSS change |
+| ---------------------- | ---------------------: | ---------------------: |
+| Cached fallback        |                +17.22% |                 +1.86% |
+| 1,024 callbacks        |                +18.75% |                 +7.38% |
+| Capture DAGs           |                +11.11% |                 +0.00% |
+| Property-write reentry |                 +0.00% |                 +0.49% |
+
+All 24 CLI runs exit zero. All 12 output pairs match except executable identity
+and invocation-path provenance. All 12 source and emitted-entry Node controls
+exit zero and print `7`. Raw samples and comparisons are under
+`results/paired-compact-transfers/`. Private-corpus parity and the full suite
+remain pending.
