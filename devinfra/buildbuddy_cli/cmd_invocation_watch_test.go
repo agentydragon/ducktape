@@ -257,7 +257,7 @@ func TestWatchInvocationWritesTerminalResult(t *testing.T) {
 	}
 }
 
-func TestWatchInvocationPreservesObservedTerminalOutcomeWhenLogReadFails(t *testing.T) {
+func TestWatchInvocationResultWhenLogReadFails(t *testing.T) {
 	tests := []struct {
 		name         string
 		status       string
@@ -286,6 +286,12 @@ func TestWatchInvocationPreservesObservedTerminalOutcomeWhenLogReadFails(t *test
 			status:     "DISCONNECTED_INVOCATION_STATUS",
 			wantState:  "error",
 			wantReason: "disconnected",
+		},
+		{
+			name:       "still-running",
+			status:     "PARTIAL_INVOCATION_STATUS",
+			wantState:  "pending",
+			wantReason: "watching",
 		},
 	}
 
