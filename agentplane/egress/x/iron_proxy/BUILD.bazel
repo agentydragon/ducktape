@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+# Pure mode disables cgo and race instrumentation for these test binaries; they have no
+# separately instrumented subprocesses to exercise in the race pass.
 go_test(
     name = "comparison_test",
     srcs = [
@@ -7,6 +9,7 @@ go_test(
         "transport_test.go",
     ],
     pure = "on",
+    tags = ["no_go_race"],
     deps = [
         "@ducktape_iron_proxy//:certcache",
         "@ducktape_iron_proxy//:dnsguard",
@@ -24,6 +27,7 @@ go_test(
     ],
     args = ["-iron-streaming-patch"],
     pure = "on",
+    tags = ["no_go_race"],
     deps = [
         "@ducktape_iron_proxy//:patched_certcache",
         "@ducktape_iron_proxy//:patched_dnsguard",

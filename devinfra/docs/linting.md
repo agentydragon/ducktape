@@ -86,6 +86,10 @@ Aspect definitions in `devinfra/lint/linters.bzl`:
 The Go race pass is a separate CI gate after the ordinary test and build, so its
 instrumented outputs are not reused for publication. Go tests that explicitly
 require `pure = "on"` retain that mode and cannot use Go's cgo-based race detector.
+The `no_go_race` tag excludes a test target from that separate pass, while its
+ordinary test still runs. Use it only when the test binary cannot be race-instrumented
+and the test does not exercise any separately built subprocess that can be
+race-instrumented; excluding the target would otherwise lose that subprocess coverage.
 
 ## Formatting
 
