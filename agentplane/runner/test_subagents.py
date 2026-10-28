@@ -110,7 +110,7 @@ async def test_codex_child_completion_does_not_complete_parent(
         )
     async with await endpoint.await_next_request() as first, await endpoint.await_next_request() as second:
         parent, child = (first, second) if first.request.client_metadata.thread_id == root_id else (second, first)
-        child_id = json.loads(parent.request.function_call_outputs[-1].output)["agent_id"]
+        child_id = json.loads(parent.request.function_call_outputs[-1].text)["agent_id"]
         assert child.request.client_metadata.thread_id == child_id
         root_turn = (await driver.attach("delegation")).attached.active_turn_id
         assert root_turn

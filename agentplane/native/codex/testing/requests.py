@@ -55,7 +55,15 @@ class FunctionCall(BaseModel):
 class FunctionCallOutput(BaseModel):
     type: Literal["function_call_output"]
     call_id: str
-    output: str
+    output: str | list[Annotated[InputText | InputImage, Field(discriminator="type")]]
+
+    @property
+    def text(self) -> str:
+        return (
+            self.output
+            if isinstance(self.output, str)
+            else "".join(part.text for part in self.output if isinstance(part, InputText))
+        )
 
 
 class CustomToolCall(BaseModel):

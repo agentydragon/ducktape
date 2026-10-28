@@ -180,7 +180,7 @@ async def test_subagent_spawn_and_wait_report_the_child_identity(
                     assert result.call_id not in handled
                     handled.add(result.call_id)
                     if result.call_id == "call_spawn_child":
-                        spawned_id = json.loads(result.output)["agent_id"]
+                        spawned_id = json.loads(result.text)["agent_id"]
                         assert spawned_id != turn.thread_id
                         stream = responses_sse.response_stream(
                             [
@@ -195,7 +195,7 @@ async def test_subagent_spawn_and_wait_report_the_child_identity(
                         )
                     else:
                         assert result.call_id == "call_wait_child"
-                        waited = json.loads(result.output)
+                        waited = json.loads(result.text)
                         assert waited["timed_out"] is False
                         assert waited["status"] == {spawned_id: {"completed": "CHILD_DONE"}}
                         stream = responses_sse.response_stream([responses_sse.Message("PARENT_DONE")], model=MODEL)
@@ -286,7 +286,7 @@ async def test_subagent_spawn_and_wait_report_the_child_identity(
             async with await openai_responses.await_next_request() as exchange:
                 result = exchange.request.function_call_outputs[-1]
                 assert result.call_id == "call_wait_after_resume"
-                assert json.loads(result.output)["status"] == {spawned_id: "not_found"}, result
+                assert json.loads(result.text)["status"] == {spawned_id: "not_found"}, result
                 await exchange.send(
                     *responses_sse.response_stream([responses_sse.Message("RESUME_PROBE_DONE")], model=MODEL).events
                 )

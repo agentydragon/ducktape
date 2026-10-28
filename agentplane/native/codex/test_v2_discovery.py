@@ -142,7 +142,7 @@ async def test_v2_child_discovery_and_resume(
                 child_id = child.request.client_metadata.thread_id
                 assert child_id != root_id
                 assert parent.request.function_call_outputs[-1].call_id == "call_v2_spawn"
-                assert json.loads(parent.request.function_call_outputs[-1].output)["task_name"]
+                assert json.loads(parent.request.function_call_outputs[-1].text)["task_name"]
                 before = (await rpc(process, "thread/read", threadId=child_id, includeTurns=False))["thread"]
                 assert before["parentThreadId"] == root_id
                 assert before["sessionId"] == root["sessionId"]
@@ -284,7 +284,7 @@ async def test_concurrent_child_transcripts_and_recovery(
                     children[name] = child
                     assert parent.request.function_call_outputs[-1].call_id == f"spawn_{name}"
                     if not v2:
-                        assert json.loads(parent.request.function_call_outputs[-1].output)["agent_id"] == child_id
+                        assert json.loads(parent.request.function_call_outputs[-1].text)["agent_id"] == child_id
                     snapshot = (await rpc(process, "thread/read", threadId=child_id, includeTurns=False))["thread"]
                     assert snapshot["status"]["type"] == "active"
                     assert snapshot["parentThreadId"] == root_id
