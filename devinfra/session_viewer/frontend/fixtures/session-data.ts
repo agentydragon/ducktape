@@ -1,4 +1,5 @@
-import type { EventRecord, Machine, SessionBrowserApi, SessionSummary, SessionVersion } from "../schema";
+import type { SessionBrowserApi } from "../api";
+import type { EventRecord, Machine, SessionSummary, SessionVersion } from "../schema";
 
 const machines: Machine[] = [
   { id: "thinkpad", display_name: "ThinkPad" },
