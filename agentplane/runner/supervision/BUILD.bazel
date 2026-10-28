@@ -38,7 +38,10 @@ go_test(
     name = "supervision_test",
     srcs = glob(
         ["*_test.go"],
-        exclude = ["systemd_kernel_test.go"],
+        exclude = [
+            "pid1_kernel_test.go",
+            "systemd_kernel_test.go",
+        ],
     ),
     embed = [":supervision"],
     exec_properties = {"test.dockerUser": "0:0"},
@@ -56,6 +59,15 @@ go_test(
         "@org_golang_x_sys//unix",
         "@org_uber_go_zap//:zap",
     ],
+)
+
+go_test(
+    name = "runner_pid1_fixture",
+    srcs = ["pid1_kernel_test.go"],
+    embed = [":supervision"],
+    pure = "on",
+    tags = ["manual"],
+    deps = ["@org_golang_x_sys//unix"],
 )
 
 go_test(

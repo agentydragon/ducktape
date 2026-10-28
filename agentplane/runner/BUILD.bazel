@@ -425,6 +425,27 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_pid1_container",
+    srcs = ["test_pid1_container.py"],
+    data = ["//agentplane/runner/supervision:runner_pid1_fixture"],
+    env = {"DOCKER_HOST": "tcp://127.0.0.1:2375"},
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/runner/testing:process_fixtures",
+        "//third_party/containers:debian_slim",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:container_logs",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 proto_library(
     name = "runner_service_proto",
     srcs = ["runner_service.proto"],

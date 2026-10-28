@@ -109,6 +109,45 @@ group cleanup. Deliberately escaped process groups are outside that per-harness 
 exec-server's separate container provides its stronger execution-domain fence. This change adds
 neither systemd nor privileges to containers.
 
+### PID 1 and the outer fence
+
+The production Pod template executes Runner directly as container PID 1, with a private PID
+namespace. That container boundary kills even descendants that created another session or closed
+the inherited state-owner descriptor. The internal supervisor still owns each native leader's
+`exec.Cmd.Wait` and retains a trusted copy of the descriptor through group cleanup. Ordinary
+completion and `Stop` fence the native group; they do not fence escaped groups. Escaped descendants
+can also retain stdout/stderr pipes, so a whole-container exit must not wait indefinitely for their
+readers. Non-PID1 integration fixtures rely on the internal supervisor's parent-liveness protocol.
+
+The namespace fence is complete when the outer runtime has observed the container's init exit.
+Successful acquisition of the state lock alone does not prove that boundary. Linux's
+[`do_exit`](https://github.com/torvalds/linux/blob/v6.12/kernel/exit.c) closes the exiting task's files
+before `exit_notify` reaches namespace teardown;
+[`zap_pid_ns_processes`](https://github.com/torvalds/linux/blob/v6.12/kernel/pid_namespace.c) then kills
+and joins the remaining namespace tasks. An untrusted native may close every inherited descriptor.
+Consequently, removing the trusted per-native supervisor needs an explicit startup contract that
+proves the prior container's runtime exit before opening stores or admitting native work. Inferring
+that contract from `os.Getpid() == 1` would not establish it.
+
+The Sandbox Controller waits for the previous Pod's deletion event before creating its successor
+(`converge` in `sandbox_controller/controller.go`). Normal kubelet restarts and graceful Pod deletion
+have an outer runtime boundary. An API deletion event after force deletion or loss of a node is not
+evidence that the old container stopped. The checked-in node-local storage and fixed inode lock
+remain part of the supported contract; neither a Pod UID nor PVC access mode replaces runtime
+fencing. Production direct spawning remains gated on specifying and proving this replacement
+boundary, explicit backend selection with PID1 validation, and one reaping owner for direct children
+and adopted orphans. The systemd backend's startup inventory fence is independent.
+
+`//agentplane/runner:test_pid1_container` runs the current production subprocess backend as true PID 1
+in a real Docker container. Its test-only `runner_pid1_fixture` closes the native's inherited owner
+descriptor, starts TERM-resistant same-group and escaped descendants, and covers native exit,
+Runner TERM and abrupt Runner SIGKILL. It checks ownership while the trusted supervisor is live,
+then waits for outer runtime exit, observes descendant death and reacquires the lock before
+restarting the same container. JSON evidence and container logs go to undeclared test outputs.
+This proves that observed runtime exit is a usable replacement boundary; it does not prove that
+lock availability or a Kubernetes API deletion establishes it. It adds no production endpoint or
+service and does not select a direct-spawn backend.
+
 The system-test guest boots real systemd and a system bus with the same static runner/slice units.
 Before Runner starts, `//agentplane/runner/supervision:runner_systemd_fixture` exercises credentials, separate streams, kernel
 resource limits, lost/canceled launch replies, detached descendants, parent-unit death, ordinary

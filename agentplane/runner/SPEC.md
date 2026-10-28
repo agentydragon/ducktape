@@ -329,7 +329,11 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   native persistence, then force-stops the group. Leader exit immediately kills its remaining
   group. The supervisor and any child retaining the descriptor exclude a replacement until they
   exit. A process deliberately escaping that group and closing inherited descriptors is outside
-  that containment boundary.
+  that containment boundary. In the production Pod's private PID namespace, Runner runs as PID 1;
+  observed container-runtime exit supplies the outer fence for escaped descendants. Acquiring the
+  owner lock or observing a force-deleted Pod's API disappearance does not prove that fence.
+  Direct spawning without the trusted supervisor requires an explicit, proven prior-container
+  startup fence; [supervision](docs/supervision.md#pid-1-and-the-outer-fence) records that gate.
 - In VMs every native launch is a systemd transient `Type=exec` service, bound to the Runner unit,
   with `Restart=no` and five-second stop grace. A condition requires the current Runner invocation's
   marker in its systemd-managed runtime directory; delayed requests from a previous invocation
