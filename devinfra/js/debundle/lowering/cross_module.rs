@@ -16,7 +16,7 @@ use analysis::cross_module_purity::{
     resolve_asserted_no_reentry_members, resolve_asserted_no_reentry_record_members,
     resolve_asserted_pure_new_bindings, resolve_asserted_retained_callback_constructors,
     resolve_asserted_retained_callback_factories,
-    resolve_asserted_retained_callback_factory_members, resolve_imported_callback_factories,
+    resolve_asserted_retained_callback_factory_members, resolve_imported_callable_summaries,
     resolve_imported_purities,
 };
 use analysis::purity::Purity;
@@ -598,7 +598,7 @@ pub(super) fn collect_cross_module_imported_purities(
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
         constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
-        imported_callables: resolve_imported_callback_factories(
+        imported_callables: resolve_imported_callable_summaries(
             &modules,
             &asserted_callback_factories,
         ),

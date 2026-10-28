@@ -106,6 +106,14 @@ retained-signature, and namespace-member author contracts remain distinct.
 The per-chunk `modules.json` report projects these imported summaries for
 diagnosis, including the defining source path when available.
 
+A source-composed returned-record summary is separate from that callback-input
+contract. It certifies only zero-argument construction timing under the shared
+empty-Map integrity guard. The imported summary retains member/capture source
+provenance, and the returned foreign capability activates conservative binding
+and callback obligations when later consumed. See
+[purity soundness](purity_soundness.md#source-composed-returned-records) for the
+exact eager skeleton and fallback boundary.
+
 Soundness does not require every inference to hold for arbitrary JS. An
 inference may be **conditionally correct** — sound only when the input
 satisfies a checkable precondition — provided the implementation:

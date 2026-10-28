@@ -92,6 +92,10 @@ pub(super) enum AbstractValue {
     InlineCallbackFactory,
     /// A fresh opaque return value retaining callbacks without publishing them.
     DeferredCallbacks(Captured<Values>),
+    /// A foreign source factory's deferred object graph. Provider captures are
+    /// retained in its imported summary; using this token activates the full
+    /// conservative importer binding/callback pool, never foreign SWC IDs.
+    ForeignDeferredRecord,
     ObjectAssign,
     /// Array constructor/prototype capability obtained from a proven array.
     ArrayIntrinsic,

@@ -37,7 +37,9 @@ use swc_common::{BytePos, Span};
 use swc_ecma_ast::ModuleItem;
 
 use crate::SourceLocation;
-use crate::analysis_inputs::{CallableSummary, CallbackFactoryEvidence};
+use crate::analysis_inputs::{
+    CallableSummary, CallbackFactoryEvidence, DeferredRecordMember, ReturnedRecordSummary,
+};
 use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
 };
@@ -317,9 +319,9 @@ pub fn resolve_imported_purities(
 }
 
 /// Callback transfer is independent of purity, including asserted purity.
-/// Infer only immutable one-return function wrappers; more complex providers
-/// need an explicit audited return-only contract. Missing exports stay opaque.
-pub fn resolve_imported_callback_factories(
+/// Compose checked source call timing and returned capabilities separately
+/// from author assertions. Missing exports and unsupported bodies stay opaque.
+pub fn resolve_imported_callable_summaries(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
 ) -> BTreeMap<ModuleKey, BTreeMap<String, CallableSummary>> {
@@ -349,29 +351,29 @@ pub fn resolve_imported_callback_factories(
             }
         }
     }
+    let inferred: BTreeMap<_, _> = modules
+        .iter()
+        .map(|(module, facts)| {
+            let locals = facts.exports.values().cloned().collect();
+            let views = top_level_item_views(facts.body);
+            (
+                module,
+                crate::facts::sync_effects::execution_index::infer_callable_capabilities(
+                    &views, &locals,
+                ),
+            )
+        })
+        .collect();
     for (module, facts) in modules {
-        let locals: BTreeSet<_> = facts
-            .exports
-            .iter()
-            .filter(|(export, _)| {
-                let key = (module.clone(), (*export).clone());
-                required.contains(&key) && !factories.contains_key(&key)
-            })
-            .map(|(_, local)| local.clone())
-            .collect();
-        if locals.is_empty() {
-            continue;
-        }
-        let views = top_level_item_views(facts.body);
-        let inferred =
-            crate::facts::sync_effects::execution_index::infer_returned_callback_factories(
-                &views, &locals,
-            );
+        let callback_factories = &inferred[module].callback_factories;
         for (export, local) in &facts.exports {
-            let Some(&function_start) = inferred.get(local) else {
+            let key = (module.clone(), export.clone());
+            if !required.contains(&key) || factories.contains_key(&key) {
+                continue;
+            }
+            let Some(&function_start) = callback_factories.get(local) else {
                 continue;
             };
-            let key = (module.clone(), export.clone());
             factories
                 .entry(key)
                 .or_default()
@@ -392,6 +394,54 @@ pub fn resolve_imported_callback_factories(
                         }),
                     },
                 ));
+        }
+    }
+    // A source-composed native premise must survive every analyzed chunk's
+    // canonical intrinsic-write census, including the importing chunk.
+    if inferred
+        .values()
+        .all(|capabilities| capabilities.map_integrity)
+    {
+        for (module, facts) in modules {
+            let records = &inferred[module].returned_records;
+            let locate = |start| {
+                facts.source.as_ref().and_then(|(path, index)| {
+                    let (line, column) = index.line_and_column_for_pos(BytePos(start))?;
+                    Some(SourceLocation {
+                        source_path: path.clone(),
+                        start_line: line,
+                        end_line: line,
+                        start_column: Some(column),
+                    })
+                })
+            };
+            for (export, local) in &facts.exports {
+                let key = (module.clone(), export.clone());
+                if !required.contains(&key) {
+                    continue;
+                }
+                let Some(record) = records.get(local) else {
+                    continue;
+                };
+                factories
+                    .entry(key)
+                    .or_default()
+                    .merge(CallableSummary::returned_record(ReturnedRecordSummary {
+                        defining_module: module.clone(),
+                        export: export.clone(),
+                        local: local.clone(),
+                        source_location: locate(record.function_start),
+                        members: record
+                            .members
+                            .iter()
+                            .map(|(name, start, captures)| DeferredRecordMember {
+                                name: name.clone(),
+                                source_location: locate(*start),
+                                captures: captures.clone(),
+                            })
+                            .collect(),
+                    }));
+            }
         }
     }
     modules
@@ -849,7 +899,7 @@ mod tests {
             ("lib".to_string(), BTreeSet::from(["audited".to_string()])),
             ("vendor".to_string(), BTreeSet::from(["wrap".to_string()])),
         ]);
-        let resolved = resolve_imported_callback_factories(&modules, &asserted);
+        let resolved = resolve_imported_callable_summaries(&modules, &asserted);
         assert_eq!(
             resolved["app"]["localWrap"].callback_factory_evidence(),
             &BTreeSet::from([CallbackFactoryEvidence::InferredImmutableWrapper {

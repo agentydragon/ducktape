@@ -53,17 +53,48 @@ pub enum CallbackFactoryEvidence {
     },
 }
 
+/// A source-derived successful-return capability. Deferred bodies may have
+/// arbitrary effects and exterior captures; consumers must activate the foreign
+/// capability pool when this record is read, invoked, or exposed.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+pub struct ReturnedRecordSummary {
+    pub defining_module: String,
+    pub export: String,
+    pub local: String,
+    pub source_location: Option<SourceLocation>,
+    pub members: Vec<DeferredRecordMember>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+pub struct DeferredRecordMember {
+    pub name: String,
+    pub source_location: Option<SourceLocation>,
+    /// Includes the fresh state binding as well as exterior binding names.
+    /// These are provider-local provenance, never importer binding IDs.
+    pub captures: BTreeSet<String>,
+}
+
 /// Capabilities of one bare imported callable, keyed by the importer's local
 /// binding name. More than one proof can support the same capability.
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize)]
 pub struct CallableSummary {
     callback_factory_evidence: BTreeSet<CallbackFactoryEvidence>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub returned_record: Option<ReturnedRecordSummary>,
 }
 
 impl CallableSummary {
     pub fn callback_factory(evidence: CallbackFactoryEvidence) -> Self {
         Self {
             callback_factory_evidence: BTreeSet::from([evidence]),
+            returned_record: None,
+        }
+    }
+
+    pub fn returned_record(summary: ReturnedRecordSummary) -> Self {
+        Self {
+            returned_record: Some(summary),
+            ..Self::default()
         }
     }
 
@@ -76,6 +107,14 @@ impl CallableSummary {
     }
 
     pub fn merge(&mut self, other: Self) {
+        if let Some(record) = other.returned_record {
+            assert!(
+                self.returned_record
+                    .as_ref()
+                    .is_none_or(|previous| previous == &record)
+            );
+            self.returned_record = Some(record);
+        }
         self.callback_factory_evidence
             .extend(other.callback_factory_evidence);
     }

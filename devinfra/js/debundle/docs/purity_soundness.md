@@ -88,6 +88,31 @@ all four empty constructors, global constructor replacement, and callback
 reentry through a shadowed constructor, a replaced Set adder, and a replaced
 Array iterator.
 
+## Source-composed returned records
+
+A stable directly exported hoisted function declaration can supply a separate
+successful-return timing summary for a zero-argument function with exactly two statements: allocation of a fresh
+empty `Map` in one identifier binding, then return of an object containing only
+noncomputed ordinary methods and getters. Eager data properties, spreads,
+duplicate keys, `__proto__`, decorators and other outer execution are excluded.
+The proof uses the canonical execution index and the same undeclared,
+unshadowed empty-collection constructor guard as direct construction. Every
+analyzed module must retain Map/global integrity in that index. A11 remains the
+premise for code outside the analyzed source. An exact export/entry projection
+and one stable function identity are required. Function initializers and
+reexports are outside this first proof.
+
+`CallableSummary.returned_record` retains the defining module, export, local,
+source locations and deferred member capture provenance. Construction does
+not activate those bodies. Its returned value is an opaque foreign capability,
+not plain data or a noncallable value. A later member read, invocation, or
+opaque consumption activates every importer top-level binding read and the
+ordinary escaped/exported callback pool. This deliberately preserves direct
+live ESM-cell captures as well as callback-mediated reentry without transplanting
+provider-local SWC IDs. Publication retains the token in the existing callback
+value graph; callbacks installed by later writes remain ordinary escape roots.
+No member precision, purity or exception-free execution is asserted.
+
 ## Guarded native call summaries
 
 The synchronous interpreter uses one model lookup for both returned values and
