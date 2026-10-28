@@ -1,0 +1,52 @@
+{
+  "execution": [
+    {
+      "targetLabel": "//agentplane/app:test_thread_browser",
+      "actionMnemonic": "TestRunner",
+      "invocationLinkType": 1,
+      "executedActionMetadata": {
+        "executionStartTimestamp": "2026-10-28T04:36:24.279111Z",
+        "executionCompletedTimestamp": "2026-10-28T04:38:14.390244Z",
+        "usageStats": {
+          "cpuNanos": "220214262000"
+        }
+      }
+    },
+    {
+      "targetLabel": "//agentplane/app:test_thread_browser",
+      "actionMnemonic": "TestRunner",
+      "invocationLinkType": 1,
+      "executedActionMetadata": {
+        "executionStartTimestamp": "2026-10-28T04:36:24.698835Z",
+        "executionCompletedTimestamp": "2026-10-28T04:38:27.169785Z",
+        "usageStats": {
+          "cpuNanos": "252549905000"
+        }
+      }
+    },
+    {
+      "targetLabel": "//agentplane/app:test_thread_debug",
+      "actionMnemonic": "TestRunner",
+      "invocationLinkType": 2,
+      "executedActionMetadata": {
+        "executionStartTimestamp": "2026-10-28T04:36:22.932189Z",
+        "executionCompletedTimestamp": "2026-10-28T04:37:29.580035Z",
+        "usageStats": {
+          "cpuNanos": "117703212000"
+        }
+      }
+    },
+    {
+      "targetLabel": "//agentplane/runner:configuration",
+      "actionMnemonic": "mypy",
+      "invocationLinkType": 1,
+      "executedActionMetadata": {
+        "executionStartTimestamp": "2026-10-28T04:34:30.870527Z",
+        "executionCompletedTimestamp": "2026-10-28T04:34:42.190608Z",
+        "usageStats": {
+          "cpuNanos": "10505609000"
+        }
+      }
+    }
+  ]
+}

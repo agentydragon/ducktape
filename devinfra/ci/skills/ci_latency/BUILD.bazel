@@ -16,6 +16,7 @@ skill_package(
                 "scripts/evidence.sh",
                 "scripts/inspect.sh",
                 "scripts/summarize.jq",
+                "scripts/test_costs.jq",
             ],
             preserve_paths = True,
         ),
@@ -82,4 +83,23 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+# Sanitized GetExecution records: two new shards, merged work, and a build action.
+jq(
+    name = "test_costs_fixture",
+    srcs = ["testdata/test_executions.json"],
+    filter_file = "scripts/test_costs.jq",
+)
+
+jq(
+    name = "assert_test_costs",
+    srcs = [":test_costs_fixture"],
+    filter_file = "testdata/assert_test_costs.jq",
+)
+
+diff_test(
+    name = "test_test_costs",
+    file1 = ":assert_test_costs",
+    file2 = "testdata/true.json",
 )

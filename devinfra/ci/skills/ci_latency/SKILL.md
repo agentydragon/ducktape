@@ -168,6 +168,30 @@ rulesets. An inaccessible endpoint or timeout fails visibly; record the visibili
 limit and retain successful independent evidence. GitHub's legacy branch-protection
 endpoint can return 404 while rulesets still require checks.
 
+## Rank fresh test cost before choosing probes
+
+Use originating remote executions, not cached target-summary durations:
+
+```bash
+bbapi execution "$INVOCATION" --json > executions.json
+jq -f scripts/test_costs.jq executions.json
+```
+
+The tested recipe counts `TestRunner` actions with `invocationLinkType=1`
+(`NEW`); type 2 is work reused from another invocation. Process seconds sum
+across shards, while `longest_action_seconds` is one action's duration; neither
+is invocation critical-path time. CPU seconds are separate, and missing CPU
+records are counted rather than assumed zero. A target's summary can retain
+old cached durations and aggregate many shards, so do not rank fresh cost from
+that field alone. Inspect the critical path before promising feedback savings.
+
+`GetTarget` pages each status group separately (currently 12 targets per page).
+Check every `nextPageToken` before treating a listing as complete. For a cost
+shortlist, collect `GetExecution` first and fetch logs/XML only for selected
+labels; enumerating thousands of cached target/artifact pages is unnecessary.
+When testing fewer shards, preserve every case and compare both process/CPU
+totals and the slowest shard; repeated session setup may dominate cheap cases.
+
 ## Primary outcome: commit-to-actionable feedback
 
 Measure clocks for **one PR head SHA at a time**, including superseded heads as
