@@ -30,8 +30,8 @@ def main() -> None:
     elif args and args[0] in {"test", "build"}:
         if "--@io_bazel_rules_go//go/config:race" in args:
             (log_dir / "race-args.log").write_text("\n".join(args))
-            target_file = next(arg.split("=", 1)[1] for arg in args if arg.startswith("--target_pattern_file="))
-            (log_dir / "race-targets.log").write_text(Path(target_file).read_text())
+            race_target_file = next(arg.split("=", 1)[1] for arg in args if arg.startswith("--target_pattern_file="))
+            (log_dir / "race-targets.log").write_text(Path(race_target_file).read_text())
             raise SystemExit(int(os.environ.get("FAKE_RACE_EXIT", "0")))
         if args[0] == "test":
             (log_dir / "test-args.log").write_text("\n".join(args))
