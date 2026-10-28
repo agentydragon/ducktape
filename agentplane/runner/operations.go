@@ -39,9 +39,8 @@ func operationDone(op *operation) bool {
 	}
 }
 
+// Each operation has one publisher; its host mutex orders completion and consumption.
 func (l *lifecycle) operationResult(session, controller string, op *operation, done bool) {
-	l.publishMu.Lock()
-	defer l.publishMu.Unlock()
 	value := operationResultSpec{Session: session, Controller: controller, Done: done}
 	l.runner.fail(publishLifecycle(l, op.id, value))
 }
@@ -50,8 +49,6 @@ func (l *lifecycle) forgetOperation(op *operation) {
 	if op == nil {
 		return
 	}
-	l.publishMu.Lock()
-	defer l.publishMu.Unlock()
 	err := l.state.Destroy(l.runner.ctx, resource.NewMetadata(lifecycleNamespace, operationResultType, op.id, resource.VersionUndefined), state.WithDestroyOwner("runner-host"))
 	if !state.IsNotFoundError(err) {
 		l.runner.fail(err)
@@ -90,11 +87,9 @@ func (h operationHost) start(slot **operation, work func(context.Context) error)
 		err := work(ctx)
 		h.mu.Lock()
 		op.err = err
-		h.mu.Unlock()
 		// Publish before making the slot consumable, so a late completion cannot
 		// recreate a result that its controller has already removed.
 		h.l.operationResult(h.session, h.controller, op, true)
-		h.mu.Lock()
 		close(op.done)
 		h.mu.Unlock()
 		if h.refresh != nil {
