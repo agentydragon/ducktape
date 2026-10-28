@@ -203,6 +203,32 @@ func TestQuiesceDoesNotWaitForModelLookupOrCreateLateSession(t *testing.T) {
 	}
 }
 
+func TestFreshSessionAdmissionInvalidatesIdleToken(t *testing.T) {
+	proxy := modelConfigServer(t)
+	workspace := t.TempDir()
+	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	before, err := r.facts()
+	if err != nil || before.GetIdleSince() == nil {
+		t.Fatalf("initial idle facts = %v, %v", before, err)
+	}
+	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
+	if _, err := r.OpenSession(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	// No observer samples facts during admission. The old idle token must still
+	// become invalid, even when the reservation returns to idle before the next poll.
+	if _, err := r.Quiesce(context.Background(), &runnerpb.QuiesceRequest{IfIdleSince: before.IdleSince}); status.Code(err) != codes.Aborted {
+		t.Fatalf("quiesce with pre-admission idle token = %v, want Aborted", err)
+	}
+	after, err := r.facts()
+	if err != nil || after.GetIdleSince() == nil {
+		t.Fatalf("post-admission idle facts = %v, %v", after, err)
+	}
+	if _, err := r.Quiesce(context.Background(), &runnerpb.QuiesceRequest{IfIdleSince: after.IdleSince}); err != nil {
+		t.Fatalf("quiesce with current idle token = %v", err)
+	}
+}
+
 func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 	stateDir := t.TempDir()
 	workspace := t.TempDir()
