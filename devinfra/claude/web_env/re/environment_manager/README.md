@@ -617,5 +617,7 @@ changes — the source contains dead code that must be removed:
 
 **Unchanged:** V0/V1 session context structs, CLI flags, sandbox settings, API endpoints.
 
-See `BINDIFF_RESULTS.md` for full analysis and `PLAN.md` for
-detailed status.
+`BINDIFF_RESULTS.md` records the historical binary comparison. Current
+unresolved work across the environment-manager and `process_api`
+reconstructions is tracked in <../TODO.md>; build-specific caveats remain in
+the source tree's `TODO(re):` markers.
