@@ -1,4 +1,4 @@
-"""Pytest configuration for mcp_infra tests."""
+"""Pytest fixtures for mcp_infra tests."""
 
 import pytest
 
@@ -8,11 +8,6 @@ from agent_core.testing.mcp.fixtures import *  # noqa: F403
 from mcp_infra.testing.fixtures import *  # noqa: F403
 from util.db_url import render_postgresql_url
 from util.testing.postgres_fixtures import postgres_admin_url, postgres_container, postgres_image
-
-
-def pytest_configure(config: pytest.Config) -> None:
-    """Configure pytest-asyncio auto mode."""
-    config.option.asyncio_mode = "auto"
 
 
 @pytest.fixture(scope="session")

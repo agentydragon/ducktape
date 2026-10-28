@@ -32,18 +32,10 @@ py_test(
     name = "test_twenty_questions",
     srcs = ["test_twenty_questions.py"],
     deps = [
-        ":conftest",
         ":twenty_questions",
         "//:conftest",
         "//skills/info_gathering/evals/twenty_questions:conftest",
         "@pypi//openai_agents",
         "@pypi//pytest_bazel",
     ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = ["//skills/info_gathering/evals/twenty_questions/x/shared:conftest"],
 )

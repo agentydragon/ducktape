@@ -166,14 +166,20 @@ To stop as soon as BuildBuddy indexes the first non-passing `TestResult`, use
 label; the normal workflow continues collecting its remaining test results.
 `--result-file` atomically writes versioned JSON state without mixing it into
 the streamed log. It first writes `state: "pending"`, `reason: "watching"`;
-then it writes one final result. The schema has `version`, `invocation_id`,
+then it writes the terminal invocation result as soon as BuildBuddy reports it,
+while continuing to stream the log. If later log retrieval fails, the command
+still exits nonzero and the result file keeps the observed invocation outcome.
+If `--fail-on-test-failure` finds a failed target, that result records
+`reason: "test_failure"`, even if a completed invocation result was written
+first. The schema has `version`, `invocation_id`,
 `url`, `state`, `reason`, and `invocation_complete` fields, plus `failed_test`
 when a test fails. States are `pending`, `success`, `failure`, and `error`;
 reasons are `watching`, `completed`, `test_failure`, and `disconnected`. On
 early failure it writes `state: "failure"` and `reason: "test_failure"` before
 returning nonzero. `invocation_complete` says whether BuildBuddy had already
 marked the invocation complete. If the watcher exits before it observes an
-outcome, the file remains pending; do not treat that as a test result.
+outcome, or cannot persist the terminal result, the file can remain pending;
+do not treat that as a test result.
 The shell must capture `watch_exit` before reading the result file.
 
 The status is informational and settles to the final invocation result; the

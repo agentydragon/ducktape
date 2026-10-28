@@ -32,8 +32,9 @@ func invocationWatchCmd() *cobra.Command {
 The log comes from BuildBuddy's event log, which is written from the Build Event
 Stream. Use --fail-on-test-failure to exit as soon as BuildBuddy indexes a
 non-passing test result, even if Bazel is still running other tests. Use
---result-file to atomically write a versioned JSON outcome while keeping the
-live log on stdout.`,
+--result-file to atomically write a versioned JSON outcome as soon as a terminal
+invocation status is observed, while keeping the live log on stdout. Log
+streaming continues after that status is recorded.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			c, err := newClient()
@@ -107,6 +108,21 @@ func invocationWatchOutcome(c *client, invocationID, state, reason string, compl
 	}
 }
 
+func terminalInvocationWatchOutcome(c *client, invocationID string, inv *invocationpb.Invocation) (invocationWatchResult, bool) {
+	switch inv.GetInvocationStatus() {
+	case invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS:
+		state := "failure"
+		if inv.GetSuccess() {
+			state = "success"
+		}
+		return invocationWatchOutcome(c, invocationID, state, "completed", true, ""), true
+	case invocationstatuspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS:
+		return invocationWatchOutcome(c, invocationID, "error", "disconnected", false, ""), true
+	default:
+		return invocationWatchResult{}, false
+	}
+}
+
 func recordInvocationWatchOutcome(resultFile string, c *client, invocationID, state, reason string, complete bool, failedTest string) error {
 	return writeInvocationWatchResult(
 		resultFile,
@@ -162,6 +178,24 @@ func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval
 	if err != nil {
 		return err
 	}
+	terminalOutcomeRecorded := false
+	recordObservedOutcome := func(inv *invocationpb.Invocation) error {
+		if terminalOutcomeRecorded {
+			return nil
+		}
+		outcome, terminal := terminalInvocationWatchOutcome(c, invocationID, inv)
+		if !terminal {
+			return nil
+		}
+		if err := writeInvocationWatchResult(resultFile, outcome); err != nil {
+			return err
+		}
+		terminalOutcomeRecorded = true
+		return nil
+	}
+	if err := recordObservedOutcome(inv); err != nil {
+		return err
+	}
 	groupID := inv.GetAcl().GetGroupId()
 	if groupID == "" {
 		return fmt.Errorf("BuildBuddy did not return a group ID for invocation %s", invocationID)
@@ -176,6 +210,9 @@ func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval
 	for {
 		inv, err = getInvocation(c, invocationID)
 		if err != nil {
+			return err
+		}
+		if err := recordObservedOutcome(inv); err != nil {
 			return err
 		}
 		if chunkID == "" {
@@ -246,18 +283,8 @@ func watchInvocation(c *client, invocationID string, out io.Writer, pollInterval
 
 		switch inv.GetInvocationStatus() {
 		case invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS:
-			state := "failure"
-			if inv.GetSuccess() {
-				state = "success"
-			}
-			if err := recordInvocationWatchOutcome(resultFile, c, invocationID, state, "completed", true, ""); err != nil {
-				return err
-			}
 			return nil
 		case invocationstatuspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS:
-			if err := recordInvocationWatchOutcome(resultFile, c, invocationID, "error", "disconnected", false, ""); err != nil {
-				return err
-			}
 			return fmt.Errorf("BuildBuddy invocation %s disconnected before completion", invocationID)
 		}
 		<-ticker.C

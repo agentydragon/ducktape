@@ -1,4 +1,4 @@
-"""Pytest configuration for claude tests."""
+"""Pytest fixtures for Claude tests."""
 
 import uuid
 from pathlib import Path
@@ -6,11 +6,6 @@ from pathlib import Path
 import pytest
 
 from devinfra.claude.session_paths import SessionPaths
-
-
-def pytest_configure(config: pytest.Config) -> None:
-    """Configure pytest-asyncio auto mode."""
-    config.option.asyncio_mode = "auto"
 
 
 @pytest.fixture

@@ -79,7 +79,6 @@ py_library(
     deps = [
         "//agent_core/testing:fixtures",
         "//openai_utils/testing:fixtures",
-        "@pypi//pytest",
     ],
 )
 

@@ -14,10 +14,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     visibility = ["//x/wt:__subpackages__"],
-    deps = [
-        "//x/wt/testing:conftest",
-        "@pypi//pytest",
-    ],
+    deps = ["//x/wt/testing:conftest"],
 )
 
 py_library(

@@ -1,11 +1,4 @@
-"""Pytest configuration for wt/client tests."""
-
-import pytest
+"""Shared pytest fixtures for wt/client tests."""
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from x.wt.testing.conftest import *  # noqa: F403
-
-
-def pytest_configure(config: pytest.Config) -> None:
-    """Configure pytest-asyncio auto mode."""
-    config.option.asyncio_mode = "auto"

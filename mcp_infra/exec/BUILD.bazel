@@ -50,7 +50,6 @@ py_library(
         "//mcp_infra/testing:fixtures",
         "//openai_utils/testing:fixtures",
         "//third_party/containers:fixtures",
-        "@pypi//pytest",
     ],
 )
 

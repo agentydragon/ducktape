@@ -18,10 +18,3 @@ py_library(
     srcs = ["cli.py"],
     visibility = ["//skills/info_gathering/evals/twenty_questions/x:__subpackages__"],
 )
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    visibility = ["//skills/info_gathering/evals/twenty_questions/x:__subpackages__"],
-)
