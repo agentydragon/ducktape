@@ -55,12 +55,16 @@ impl<R: IterativeRules> IterativeInference<R> {
             .map(|(round, rule)| (rule.clone(), *round))
             .collect();
         let mut watchers: BTreeMap<R::Key, BTreeSet<R::Rule>> = BTreeMap::new();
+        #[cfg(test)]
         let mut evaluations = 0usize;
         while let Some((round, rule)) = pending.pop_first() {
             scheduled.remove(&rule);
             let mut context = IterativeContext::<R>::new(&mut facts);
             rules.evaluate(&rule, &mut context);
-            evaluations += 1;
+            #[cfg(test)]
+            {
+                evaluations += 1;
+            }
             for key in context.reads {
                 watchers.entry(key).or_default().insert(rule.clone());
             }
@@ -87,7 +91,11 @@ impl<R: IterativeRules> IterativeInference<R> {
                 }
             }
         }
-        IterativeFacts { facts, evaluations }
+        IterativeFacts {
+            facts,
+            #[cfg(test)]
+            evaluations,
+        }
     }
 }
 
@@ -147,16 +155,12 @@ impl<'a, R: IterativeRules> IterativeContext<'a, R> {
     pub(crate) fn assume(&mut self, dependencies: &ProofDependencies) {
         self.dependencies.extend(dependencies);
     }
-
-    pub(crate) fn import<'b, Key, Fact>(&mut self, judgment: &'b Judgment<Key, Fact>) -> &'b Fact {
-        self.dependencies.extend(judgment.dependencies());
-        judgment.value()
-    }
 }
 
 /// Immutable results after every supplied producer and its dependents settle.
 pub(crate) struct IterativeFacts<Key, Fact> {
     facts: BTreeMap<Key, Judgment<Key, Fact>>,
+    #[cfg(test)]
     evaluations: usize,
 }
 
@@ -172,6 +176,7 @@ impl<Key: Ord, Fact> IterativeFacts<Key, Fact> {
             .collect()
     }
 
+    #[cfg(test)]
     pub(crate) fn evaluations(&self) -> usize {
         self.evaluations
     }

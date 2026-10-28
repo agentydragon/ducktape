@@ -1,4 +1,5 @@
 use super::*;
+use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
 
 /// Identifier names that, when not shadowed by a chunk-top-level
 /// declaration or import, evaluate to the global object in the
@@ -60,49 +61,57 @@ pub(crate) fn apply_global_escape_taint(
     global_object_names: &BTreeSet<&'static str>,
     per_statement: &mut [StructuralStatementFacts],
 ) {
-    let mut tainted: Vec<bool> = body
-        .iter()
-        .map(|item| {
-            let mut finder = GlobalObjectEscapeFinder {
-                names: global_object_names,
-                escaped: false,
-            };
-            item.as_module_item().visit_with(&mut finder);
-            finder.escaped
-        })
-        .collect();
-    let mut suspects: BTreeSet<Id> = BTreeSet::new();
-    loop {
-        let mut changed = false;
-        for (idx, facts) in per_statement.iter().enumerate() {
-            if !tainted[idx]
-                && facts
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+    enum Key {
+        Statement(usize),
+        Binding(Id),
+    }
+    struct EscapeRules<'a>(&'a [StructuralStatementFacts]);
+    impl IterativeRules for EscapeRules<'_> {
+        type Key = Key;
+        type Fact = ();
+        type Rule = usize;
+
+        fn evaluate(&self, index: &usize, context: &mut IterativeContext<'_, Self>) {
+            let facts = &self.0[*index];
+            let escaped = context.read(Key::Statement(*index)).is_some()
+                || facts
                     .reads
                     .eager
                     .iter()
-                    .chain(facts.reads.lazy.iter())
-                    .any(|id| suspects.contains(id))
-            {
-                tainted[idx] = true;
-                changed = true;
-            }
-            if tainted[idx] {
+                    .chain(&facts.reads.lazy)
+                    .any(|id| context.read(Key::Binding(id.clone())).is_some());
+            if escaped {
+                context.propose(Key::Statement(*index), ());
                 for id in facts
                     .declared
                     .iter()
-                    .chain(facts.rebinds.eager.iter())
-                    .chain(facts.rebinds.lazy.iter())
+                    .chain(&facts.rebinds.eager)
+                    .chain(&facts.rebinds.lazy)
                 {
-                    changed |= suspects.insert(id.clone());
+                    context.propose(Key::Binding(id.clone()), ());
                 }
             }
         }
-        if !changed {
-            break;
+
+        fn merge(_: &Key, _: &mut (), _: ()) -> bool {
+            false
         }
     }
-    for (idx, facts) in per_statement.iter_mut().enumerate() {
-        if tainted[idx] {
+    let mut inference = IterativeInference::new(EscapeRules(per_statement));
+    for (index, item) in body.iter().enumerate() {
+        let mut finder = GlobalObjectEscapeFinder {
+            names: global_object_names,
+            escaped: false,
+        };
+        item.as_module_item().visit_with(&mut finder);
+        if finder.escaped {
+            inference.seed(Key::Statement(index), ());
+        }
+    }
+    let closure = inference.solve(0..per_statement.len());
+    for (index, facts) in per_statement.iter_mut().enumerate() {
+        if closure.get(&Key::Statement(index)).is_some() {
             facts.dataflow_summarizable = false;
         }
     }
