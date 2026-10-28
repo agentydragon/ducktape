@@ -23,6 +23,7 @@ from aiquota.models import (
 FIXTURE_NAMES = (
     "empty",
     "tints",
+    "binding_summary",
     "hot",
     "exhausted",
     "extra_enabled_not_burning",
@@ -104,6 +105,7 @@ def _window(node: object) -> QuotaWindow | None:
     if not isinstance(node, dict):
         raise ValueError("window fixture must be a mapping")
     return QuotaWindow(
+        name=node.get("name"),
         used_percent=float(node["usedPercent"]),
         reset_seconds=float(node["resetSeconds"]),
         window_seconds=float(node["windowSeconds"]),

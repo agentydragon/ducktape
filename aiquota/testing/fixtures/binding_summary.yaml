@@ -1,0 +1,23 @@
+# Compact summary follows one window for both tint and pace.
+# Claude: short=warn (+10), long=cool (-15) -> warn +10.
+# Codex: short=ok (+0), long=hot (+18) -> hot +18.
+# z.ai: short=cool (-15), long=ok (+0) tie in rank -> preserve cool and -15.
+# Named windows also exercise the last-window preference when its tint wins.
+claude:
+  short: { name: burst, usedPercent: 60, resetSeconds: 9000, windowSeconds: 18000 }
+  long: { name: weekly, usedPercent: 15, resetSeconds: 423360, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  extraSpend: null
+codex:
+  short: { name: primary, usedPercent: 30, resetSeconds: 12600, windowSeconds: 18000 }
+  long: { name: secondary, usedPercent: 48, resetSeconds: 423360, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  extraSpend: null
+zai:
+  short: { name: burst, usedPercent: 15, resetSeconds: 12600, windowSeconds: 18000 }
+  long: { name: weekly, usedPercent: 30, resetSeconds: 423360, windowSeconds: 604800 }
+  lastFetch: 1
+  error: null
+  extraSpend: null

@@ -57,6 +57,22 @@ export function bindingTint(tints: Tint[]): Tint {
   return tints.reduce((worst, tint) => (rank[tint] > rank[worst] ? tint : worst), "unknown");
 }
 
+export function bindingSummary(windows: { name?: string | null; tint: Tint }[]): { tint: Tint; index: number | null } {
+  const tint = bindingTint(windows.map((window) => window.tint));
+  if (windows.length === 0) return { tint, index: null };
+
+  let preferredIndex = windows.length - 1;
+  for (let index = windows.length - 1; index >= 0; index--) {
+    if (windows[index].name == null) {
+      preferredIndex = index;
+      break;
+    }
+  }
+  const matchingIndex = windows.findIndex((window) => window.tint === tint);
+  const index = windows[preferredIndex].tint === tint ? preferredIndex : matchingIndex === -1 ? null : matchingIndex;
+  return { tint, index };
+}
+
 export function formatDuration(seconds: number): string {
   const total = Math.max(0, roundHalfToEven(seconds));
   const days = Math.floor(total / 86400);

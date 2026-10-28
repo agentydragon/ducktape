@@ -2,15 +2,6 @@
 
 See `DESIGN.md` for the UX design and rationale; this file lists deferred work.
 
-## Pace label currently tracks the long window only
-
-`_renderProvider` shows `formatPace(longPace)` next to the icon. The icon's
-_tint_ already follows the binding window (short overrides long when hot), but
-the numeral always shows the long window's deviation. When the short window is
-the binding one, the numeral and the tint can disagree (icon red, numeral
-shows a small long-window deviation). Fix: track which window's tint won and
-show that window's pace numeral.
-
 ## v2: burn rate over a rolling history window
 
 The cumulative pace metric (used now) answers "will I make it to reset?". A

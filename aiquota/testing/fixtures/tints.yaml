@@ -1,9 +1,8 @@
 # All named tints in one render.
 # claude: error.
 # codex: short=warn(dev+10, 60% used at 50% elapsed),
-#        long=cool(dev-15, 15% used at 30% elapsed) -> panel warn.
-# zai: short=absolute-hot(90% >= 85), long=ok(dev+0) -> panel hot "+0%",
-#      demonstrating that the label comes from long even when short drives tint.
+#        long=cool(dev-15, 15% used at 30% elapsed) -> panel warn "+10%".
+# zai: short=absolute-hot(90% >= 85), long=ok(dev+0) -> panel hot "+40%".
 claude:
   short: null
   long: null

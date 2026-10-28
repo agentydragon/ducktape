@@ -1,4 +1,19 @@
 # serializer version: 1
+# name: test_renders_shared_fixture[binding_summary]
+  '''
+  claude
+    burst (5h):  60%  ↻ 2h30m  Δ+10%  exhausts ~50m before reset
+    weekly (7d):  15%  ↻ 4d21h  Δ-15%  leaves ~50% unused at reset
+  codex
+    primary (5h):  30%  ↻ 3h30m  Δ+0%   on pace
+    secondary (7d):  48%  ↻ 4d21h  Δ+18%  exhausts ~2d15h before reset
+  zai
+    1x burn — next 3x window in 18h00m
+      3x windows (local): Fri 06:00-10:00  Mon 06:00-10:00  Tue 06:00-10:00
+    burst (5h):  15%  ↻ 3h30m  Δ-15%  leaves ~50% unused at reset
+    weekly (7d):  30%  ↻ 4d21h  Δ+0%   on pace
+  '''
+# ---
 # name: test_renders_shared_fixture[claude_prepaid_balance]
   '''
   claude

@@ -9,7 +9,7 @@ import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 import {
-  bindingTint,
+  bindingSummary,
   computePace as sharedComputePace,
   displayUsedPercent as sharedDisplayUsedPercent,
   elapsedFraction as sharedElapsedFraction,
@@ -947,16 +947,10 @@ const QuotaIndicator = GObject.registerClass(
       );
       const overPlan = state.currentlyOverPlan === true || state.paidCreditsActive === true;
       const stale = staleAge != null || isStaleFetch(state.lastFetch);
-      const tint = overPlan ? "hot" : stale ? "stale" : exhaustedWindows.length > 0 ? "hot" : bindingTint(tints);
+      const binding = bindingSummary(liveWindows.map((window, index) => ({ name: window.name, tint: tints[index] })));
+      const tint = overPlan ? "hot" : stale ? "stale" : exhaustedWindows.length > 0 ? "hot" : binding.tint;
       this._setTint(icon, paceLabel, tint);
-      let summaryIndex = liveWindows.length - 1;
-      for (let index = liveWindows.length - 1; index >= 0; index--) {
-        if (liveWindows[index].name == null) {
-          summaryIndex = index;
-          break;
-        }
-      }
-      const paceText = formatPace(paces[summaryIndex]) ?? "";
+      const paceText = binding.index == null ? "" : (formatPace(paces[binding.index]) ?? "");
       // A peak window costs a multiple per token, so it belongs in the panel
       // where it is visible without opening the popup.
       const burning = state.burn?.in_peak === true ? "🔥" : "";

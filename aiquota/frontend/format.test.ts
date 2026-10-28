@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import { displayUsedPercent, formatWindowLabel } from "./format";
 import cases from "./fixtures/format_cases.json";
 import {
+  bindingSummary,
   computePace,
   formatDuration,
   formatPace,
@@ -62,11 +63,47 @@ describe("the Python renderers' output", () => {
   }
 });
 
-describe("formatWindowLabel", () => {
-  // No scenario names its windows, so the named form has no generated case above; Codex's
-  // real response does name them ("primary").
-  it("qualifies a named window with its length", () => {
-    expect(formatWindowLabel({ name: "primary", window_seconds: 3600 })).toBe("primary (1h)");
+describe("compact binding summary", () => {
+  it.each([
+    [
+      [
+        { name: "burst", tint: "warn" },
+        { name: "weekly", tint: "cool" },
+      ],
+      { tint: "warn", index: 0 },
+    ],
+    [
+      [
+        { name: "primary", tint: "ok" },
+        { name: "secondary", tint: "hot" },
+      ],
+      { tint: "hot", index: 1 },
+    ],
+    [
+      [
+        { name: "burst", tint: "cool" },
+        { name: "weekly", tint: "ok" },
+      ],
+      { tint: "cool", index: 0 },
+    ],
+    [
+      [
+        { name: "primary", tint: "ok" },
+        { name: "secondary", tint: "ok" },
+      ],
+      { tint: "ok", index: 1 },
+    ],
+    [
+      [
+        { name: "primary", tint: "ok" },
+        { name: null, tint: "ok" },
+        { name: "secondary", tint: "ok" },
+      ],
+      { tint: "ok", index: 1 },
+    ],
+    [[{ name: "stale", tint: "stale" }], { tint: "unknown", index: null }],
+  ])("keeps pace on a window with the summary tint", (windows, expected) => {
+    expect(bindingSummary(windows)).toEqual(expected);
   });
 });
 
