@@ -1,0 +1,28 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//devinfra/x/schema_codegen:__pkg__"],
+)
+
+py_library(
+    name = "fixture",
+    srcs = ["fixture.py"],
+    deps = ["//x/google_mcp_server:google_discovery"],
+)
+
+py_test(
+    name = "test_advertised_schema",
+    srcs = ["test_advertised_schema.py"],
+    data = ["sample_discovery.json"],
+    deps = [
+        ":fixture",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "//x/google_mcp_server:google_discovery",
+        "@pypi//fastmcp_slim",
+        "@pypi//jsonschema",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

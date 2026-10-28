@@ -1,5 +1,9 @@
 # TypeScript schema conversion
 
+The [repository pipeline map](../docs/schema_codegen.md) covers schema producers, intermediates,
+and consumers across languages, including Agentplane's runtime Go Action inputs and generated Sandbox
+Action-name enums.
+
 The `openapi_js_library` macro converts a declared OpenAPI JSON artifact into a TypeScript
 declaration file and packages it in a `js_library` under the requested target name. The schema owner
 produces the artifact; the converter does not invoke a backend exporter.
@@ -70,7 +74,7 @@ API's config-file API with the declared schema path; plugin settings stay in the
 
 Both OpenAPI launchers use the shared remote-reference guard. They fail closed if a generator
 attempts HTTP resolution during the build. The production packages expose the conversion interfaces;
-generator-specific fixtures and no-fetch proof live in the separate schema spike PR #12342.
+generator-specific fixtures and no-fetch proof live in [the schema conversion spike](../x/schema_codegen/).
 
 Remote references are disabled during generation. Schema exporters remain responsible for their
 source contract and serialization choices; this rule does not normalize schema dialects or merge

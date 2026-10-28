@@ -1,0 +1,30 @@
+package(default_testonly = True)
+
+test_suite(
+    name = "tests",
+    tests = [
+        "//devinfra/x/schema_codegen/infrastructure/discovery:test_advertised_schema",
+        "//devinfra/x/schema_codegen/infrastructure/grocy_openapi:test_openapi_adapter",
+        "//devinfra/x/schema_codegen/infrastructure/kubernetes:test_construct_consumer",
+        "//devinfra/x/schema_codegen/infrastructure/kubernetes:test_generated_clients",
+        "//devinfra/x/schema_codegen/infrastructure/pydantic:test_published_schema",
+        "//devinfra/x/schema_codegen/infrastructure/quicktype:test_models",
+        "//devinfra/x/schema_codegen/protobuf:consumer_test",
+        "//devinfra/x/schema_codegen/protobuf:go_grpc_test",
+        "//devinfra/x/schema_codegen/protobuf:go_producer_test",
+        "//devinfra/x/schema_codegen/protobuf:openapi_test",
+        "//devinfra/x/schema_codegen/protobuf:python_grpc_test",
+        "//devinfra/x/schema_codegen/protobuf:python_schema_test",
+        "//devinfra/x/schema_codegen/protobuf:rust_consumer_test",
+        "//devinfra/x/schema_codegen/typescript:external_openapi_zod_test",
+        "//devinfra/x/schema_codegen/typescript:openapi_consumers_test",
+        "//devinfra/x/schema_codegen/typescript:openapi_plain_js_consumer_test",
+        "//devinfra/x/schema_codegen/typescript:openapi_types_naming_edges_test",
+        "//devinfra/x/schema_codegen/typescript:policy_vocabulary_test",
+        "//devinfra/x/schema_codegen/typescript:schema_remote_references_test",
+        "//devinfra/x/schema_codegen/typescript:standalone_consumers_test",
+        "//devinfra/x/schema_codegen/typescript:zod_python_schema_test",
+        "//loom/gym:test_schema_codegen",
+    ],
+    visibility = ["//visibility:public"],
+)
