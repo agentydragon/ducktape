@@ -581,9 +581,9 @@ fn prototype_absence_keeps_captured_census_provenance() {
 
 #[test]
 fn checked_record_factory_purity_keeps_captured_prototype_census_dependencies() {
-    // The unaudited receiver could be Object.prototype. Write the exact
-    // property read by the constructor so the control really blocks absence.
-    let provider = "var captured = globalThis.runtimeSettings.state;\ncaptured.value = 1;\nexport const marker = 1;\n";
+    // The capture audit preserves Symbol identity. Only then can the census
+    // prove this prototype write disjoint from the constructor's string fields.
+    let provider = "var captured = globalThis.runtimeSettings.state;\ncaptured.marker = 1;\nconst key = Symbol.for('factoryMarker');\nObject.prototype[key] = 1;\nexport const marker = 1;\n";
     let source = "import './opaque.js';\nimport { marker } from './peer.js';\nclass Holder { constructor(record) { this.record = record; this.value = record.value ?? 3; } }\nfunction create(record) { return new Holder(record); }\nconst command = create({ execute: () => later });\nconst barrier = console.log('barrier');\nconst later = 42;\nconsole.log(command.value, command.record.execute(), marker);\n";
     let chunks = [("static/peer", provider)];
     let base_opts = || {
