@@ -234,6 +234,7 @@ func (b *systemdBackend) reap(p *Process) {
 				}
 				continue
 			}
+			zap.L().Warn("native systemd process observation failed; fencing", zap.String("unit", b.name), zap.Error(err))
 			break
 		}
 		pid, _ := props["MainPID"].(uint32)

@@ -17,6 +17,11 @@ PR #12745, Runner head `197d4a47f882dbd4c65c17ac1f2b276e8c8ba1bb`.
   app-server survived that kill, and a follow-up command completed in the same
   executor cgroup. Afterwards, the final Runner snapshot had no app-server and a
   failed Session at cursor 117. No global OOM or Runner restart was observed.
+- Full-event invocation `9660462b-122c-5900-92a2-9e097ae2bf56`: Claude and tool-OOM
+  cases passed. The ordinary Codex turn failed with `TURN_STATUS_PROCESS_LOST` and
+  `HarnessExited.exit_code = 125`, without `stopped_by_runner`. This is the
+  reaper's synthesized status after failed observation, not an intentional
+  Session shutdown. An executor health probe also timed out near that exit.
 
 In the latter guest, the kernel marked TSC unstable and switched to `acpi_pm` at
 21:03:39 UTC. An app-server item-completed frame emitted at approximately 21:03:37
@@ -24,7 +29,7 @@ was journaled at 21:03:57. Executor health probes timed out; native systemd fenc
 logged a deadline failure at 21:03:58. Scheduling and event delivery were degraded,
 but those observations alone do not identify the app-server's exit cause.
 
-## Candidate mechanism
+## Observation-to-fence mechanism
 
 `systemdBackend.reap` uses a five-second deadline for manager status reads. Any
 read error currently exits its observation loop with default exit code 125 and
@@ -38,6 +43,8 @@ inject the deadline at the reaper boundary while launching and observing a real
 systemd service; an intentional later exit must retain its true status.
 
 The exporter now preserves all Session events, including stderr and lifecycle
-observations. Subsequent runs can distinguish natural exit, Runner-requested
-stop, and synthesized code 125. The archived events are needed to connect the
-candidate mechanism to a particular CI failure.
+observations. The latest archive establishes synthesized code 125. The old
+reaper did not retain its initiating read error; transient deadline failure is
+consistent with the concurrent probe timeouts, but its exact error cannot be
+recovered retrospectively. The fix logs both retryable timeouts and errors that
+still require fencing.
