@@ -703,7 +703,10 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "bindings_assign_cli_test",
-    deps = ["@crates//:serde_yaml"],
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
 )
 
 debundle_e2e_test(

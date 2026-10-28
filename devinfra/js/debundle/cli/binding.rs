@@ -400,6 +400,178 @@ pub fn rename_binding(
     })
 }
 
+/// A names-only request resolved against the invocation's original spec.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Rename {
+    pub sym: String,
+    pub readable: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct RenameResult {
+    pub sym: String,
+    pub module: String,
+    pub binding: String,
+    pub old_readable: String,
+    pub new_readable: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct RenameBatchOutcome {
+    #[serde(flatten)]
+    pub outcome: MutationOutcome,
+    pub renames_applied: usize,
+    pub renames: Vec<RenameResult>,
+}
+
+/// Preflight the complete final map before replacing any file. Persistence is
+/// atomic per file, rather than a crash-atomic transaction across the tree.
+pub fn rename_bindings(
+    modules_root: &Path,
+    requests: Vec<Rename>,
+    dry_run: bool,
+    no_verify: bool,
+) -> Result<RenameBatchOutcome> {
+    let original_docs = load_module_docs(modules_root)?;
+    let mut resolved = BTreeMap::new();
+    for request in requests {
+        if request.readable.trim().is_empty() {
+            bail!("readable name must not be blank");
+        }
+        let hit = resolve_in_docs(modules_root, &original_docs, &request.sym)?;
+        let identity = (hit.module_path.clone(), hit.location);
+        if let Some((previous, _)) = resolved.get(&identity) {
+            let previous: &Rename = previous;
+            if previous.readable != request.readable {
+                bail!(
+                    "contradictory renames for {}#{}",
+                    hit.file.display(),
+                    hit.location.describe()
+                );
+            }
+            eprintln!(
+                "duplicate rename for {}#{} collapsed",
+                hit.file.display(),
+                hit.location.describe()
+            );
+        } else {
+            resolved.insert(identity, (request, hit));
+        }
+    }
+    // Only requested targets introduce a constraint: unrelated pre-existing
+    // duplicate names remain outside this edit's verdict.
+    if !no_verify {
+        for (identity, (request, _)) in &resolved {
+            for (module, (file, doc)) in &original_docs {
+                for binding in binding_matches_in_doc(file, module, doc) {
+                    let other = (module.clone(), binding.location);
+                    if &other == identity {
+                        continue;
+                    }
+                    let final_name = resolved
+                        .get(&other)
+                        .map(|(rename, _)| rename.readable.as_str())
+                        .unwrap_or_else(|| binding_effective_name(&binding.name));
+                    if final_name == request.readable {
+                        bail!(
+                            "name collision: \"{}\" used by {}#{}",
+                            request.readable,
+                            file.display(),
+                            binding.location.describe()
+                        );
+                    }
+                }
+            }
+        }
+    }
+    let mut docs = original_docs.clone();
+    let mut annotations = BTreeMap::new();
+    // Remove every moving key before inserting any target key. Metadata belongs
+    // to a binding only when that old effective name has one owner in its module.
+    for (identity, (request, hit)) in &resolved {
+        let old = binding_effective_name(&hit.name);
+        if old == request.readable {
+            continue;
+        }
+        let (file, original) = &original_docs[&hit.module_path];
+        if original.annotations.contains_key(old) {
+            let owners = binding_matches_in_doc(file, &hit.module_path, original)
+                .into_iter()
+                .filter(|binding| binding_effective_name(&binding.name) == old)
+                .count();
+            if owners != 1 {
+                bail!(
+                    "ambiguous annotation ownership: {} annotations.{old}",
+                    file.display()
+                );
+            }
+        }
+        let (_, doc) = docs
+            .get_mut(&hit.module_path)
+            .expect("resolved module is loaded");
+        annotations.insert(identity.clone(), doc.annotations.remove(old));
+    }
+    let mut renames = Vec::new();
+    let mut renames_applied = 0;
+    for (identity, (request, hit)) in &resolved {
+        let old = binding_effective_name(&hit.name);
+        if old != request.readable {
+            let (_, doc) = docs
+                .get_mut(&hit.module_path)
+                .expect("resolved module is loaded");
+            if doc.annotations.contains_key(&request.readable) {
+                bail!(
+                    "annotations.{} already exists in {}",
+                    request.readable,
+                    hit.file.display()
+                );
+            }
+            set_readable_name(doc, &hit.location, &request.readable);
+            insert_annotation(
+                doc,
+                &request.readable,
+                annotations.remove(identity).flatten(),
+            )?;
+            renames_applied += 1;
+        }
+        renames.push(RenameResult {
+            sym: request.sym.clone(),
+            module: hit.module_path.clone(),
+            binding: hit.name.minified().to_string(),
+            old_readable: old.to_string(),
+            new_readable: request.readable.clone(),
+        });
+    }
+    let (files_written, files_deleted) =
+        apply_doc_changes(&original_docs, &docs, &BTreeSet::new(), dry_run)?;
+    Ok(RenameBatchOutcome {
+        outcome: MutationOutcome {
+            verb: "rename",
+            action: if resolved.is_empty() {
+                "noop"
+            } else if files_written.is_empty() {
+                "unchanged"
+            } else if dry_run {
+                "dry-run"
+            } else {
+                "applied"
+            },
+            gate: if resolved.is_empty() {
+                GateOutcome::NotRequired
+            } else if no_verify {
+                GateOutcome::Skipped
+            } else {
+                GateOutcome::NamesOnly
+            },
+            files_written,
+            files_deleted,
+        },
+        renames_applied,
+        renames,
+    })
+}
+
 fn find_readable_collisions(
     docs: &ModuleDocs,
     new_readable: &str,

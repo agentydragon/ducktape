@@ -78,6 +78,12 @@ Then rename that spec entry:
 debundle bindings rename --modules <modules-dir> <current-name> <new-name>
 ```
 
+For a coherent map, use `bindings rename --modules <modules-dir> --batch names.json`
+(or `--batch -` for stdin), with rows `{ "sym": "currentName", "readable": "newName" }`.
+The [names-only batch contract](cli.md#names-only-batches-bindings-rename) allows
+chains and swaps resolved against the pre-edit spec. Aliases resolve anew on a
+retry; replaying a successful map can select different bindings.
+
 It checks readable-name collisions within the chunk. If editing YAML directly,
 change only the existing member's `name:` field. A rename may affect other
 `source_match` templates: identifiers can stop resolving to the old export name

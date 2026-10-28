@@ -635,6 +635,53 @@ output counts them, then prints one line per reference and ambiguous name:
 then one per template (`section: template`), then a `summary` line with the
 counts.
 
+## Names-only batches (`bindings rename`)
+
+Rename one binding with the existing positional pair, or supply a JSON array
+with `--batch <file|->` (`-` reads stdin). The modes are mutually exclusive:
+
+```json
+[
+  { "sym": "Alpha", "readable": "Beta" },
+  { "sym": "Beta", "readable": "Gamma" }
+]
+```
+
+Each row requires `sym` and a nonblank `readable`; unknown fields are rejected.
+Use one chunk's `--modules` root per invocation. Lookup and collisions cover
+that entire recursive root, so an aggregate root cannot partition names by chunk.
+No graph is required. This changes names and annotation keys without moving
+claims or rewriting selectors, template locals, template bodies, or notes.
+
+All rows resolve against one pre-edit snapshot. Identical requests for the same
+resolved binding collapse; contradictory requests and ambiguous lookups reject
+the complete batch before writes. Each requested target must have a unique final
+owner among claimed member and source-match identities. Chains and swaps are
+allowed; unrelated pre-existing duplicate names do not reject a fresh target.
+`--no-verify` skips name collisions, as for the positional form.
+
+Annotations move with their binding after all moving keys are removed. Ambiguous
+annotation ownership and occupied or orphan target metadata reject the batch,
+even with `--no-verify`. Other annotation entries remain untouched.
+
+The aggregate outcome has `renames_applied` (changed bindings), canonical
+`renames` rows (`sym`, `module`, `binding`, `old_readable`, `new_readable`),
+and the shared mutation fields. `binding` is the member selector name or
+source-template local; `old_readable` includes the effective fallback name.
+A verified nonempty batch reports `gate: names_only`; an empty array reports
+`action: noop`, `gate: not_required`. A requested current name reports
+`unchanged` without rewriting shorthand/default encoding, after collision checks.
+`--dry-run` runs the same preflight and reports every file that would change.
+Each changed YAML file is replaced atomically; this is not a crash-atomic
+transaction across files.
+
+Aliases resolve anew on every invocation: after a chain or swap, replaying the
+same readable names can select different bindings or become ambiguous. There is
+no replay-idempotence promise. Names-only validation does not prove selector or
+free-reference identities. Run the separate source-only validation and compare
+its outcomes and templates; use fresh graph-backed validation for relational
+selectors. See [Naming](naming.md).
+
 ## Batch atomicity (`bindings assign`)
 
 `bindings assign` takes one or more positional triples

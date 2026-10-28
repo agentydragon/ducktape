@@ -1,8 +1,9 @@
 //! `bindings` command arguments, dispatch, and presentation. Spec edits live
 //! in `binding`; this module adapts the CLI to that shared editing API.
 use crate::binding::{
-    AssignOutcome, BindingsListFilters, Move, UnassignOutcome, parse_batch_json, parse_move_triple,
-    rename_binding, run_bindings_assign, run_bindings_list, run_bindings_unassign,
+    AssignOutcome, BindingsListFilters, Move, Rename, UnassignOutcome, parse_batch_json,
+    parse_move_triple, rename_binding, rename_bindings, run_bindings_assign, run_bindings_list,
+    run_bindings_unassign,
 };
 use crate::comment::{BindingCommentArgs, run_binding_comment_cmd};
 use crate::edit_gate::GraphEditArgs;
@@ -84,12 +85,12 @@ enum BindingsNsCommand {
     /// template local), home module, readable name if any, and
     /// `orphan` (sole member of its module) / `unrenamed` flags.
     List(BindingsListNsArgs),
-    /// Rename a binding's readable `name:` without moving it.
+    /// Rename one or more bindings without moving them.
     ///
-    /// Validation is name-collision detection: no two bindings in the
-    /// chunk get the same readable name. A convenience over
-    /// `bindings assign` for the rename-without-move case. It also
-    /// works on `source_matches[].bindings[]` entries.
+    /// Requested targets must have unique final names among spec members
+    /// and source-match bindings. Batch chains/swaps are checked together,
+    /// with no graph or assignment gate. Run source-only validation afterward
+    /// to check selectors and template references.
     Rename(BindingsRenameArgs),
     /// Move one or more bindings into named logical modules atomically.
     ///
@@ -147,11 +148,25 @@ struct BindingsRenameArgs {
     /// Modules tree root.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub modules_root: PathBuf,
-    /// Current spec selector-binding, template-local, or explicit readable name
+    /// Current selector-binding, source-match template local, or readable name
     /// (must not contain `:`).
-    pub original: String,
+    #[arg(
+        required_unless_present = "batch",
+        conflicts_with = "batch",
+        requires = "readable"
+    )]
+    pub original: Option<String>,
     /// New readable name (must not contain `:`).
-    pub readable: String,
+    #[arg(
+        required_unless_present = "batch",
+        conflicts_with = "batch",
+        requires = "original"
+    )]
+    pub readable: Option<String>,
+    /// Read a names-only JSON array of {sym, readable} from a file or `-` for stdin.
+    /// Resolve the complete map against the original spec; chains and swaps are allowed.
+    #[arg(long)]
+    pub batch: Option<String>,
     /// Validate but do not modify any file.
     #[arg(long)]
     pub dry_run: bool,
@@ -235,10 +250,34 @@ fn render_bindings_list_text(report: &crate::binding::BindingsListReport, out: &
 }
 
 fn run_bindings_rename_cmd(args: BindingsRenameArgs) -> Result<()> {
+    if let Some(path) = &args.batch {
+        use std::io::Read;
+        let text = if path == "-" {
+            let mut text = String::new();
+            std::io::stdin().read_to_string(&mut text)?;
+            text
+        } else {
+            std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?
+        };
+        let requests: Vec<Rename> = serde_json::from_str(&text)?;
+        let out = rename_bindings(&args.modules_root, requests, args.dry_run, args.no_verify)?;
+        return match OutputFormat::resolve(args.format) {
+            OutputFormat::Text => {
+                println!(
+                    "{}: {} rename(s); {} file(s) written",
+                    out.outcome.action,
+                    out.renames_applied,
+                    out.outcome.files_written.len()
+                );
+                Ok(())
+            }
+            format => print_outcome_json(&out, format),
+        };
+    }
     let out = rename_binding(
         &args.modules_root,
-        &args.original,
-        &args.readable,
+        args.original.as_deref().expect("clap requires original"),
+        args.readable.as_deref().expect("clap requires readable"),
         args.dry_run,
         args.no_verify,
     )?;

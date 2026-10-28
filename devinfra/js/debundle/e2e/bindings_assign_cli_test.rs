@@ -3,9 +3,9 @@
 use std::fs;
 
 use debundle_e2e_support::{GraphFixture, write_text_file};
-use serde_yaml::Value;
+use serde_json::Value;
 
-fn module(fixture: &GraphFixture, path: &str) -> Value {
+fn module(fixture: &GraphFixture, path: &str) -> serde_yaml::Value {
     serde_yaml::from_slice(&fs::read(fixture.modules.join(path)).unwrap()).unwrap()
 }
 
@@ -161,6 +161,314 @@ fn rename_members_and_source_match_shorthand_rekeys_annotations() {
         );
         fixture.assert_runs("1\n");
     }
+}
+
+#[test]
+fn rename_batch_swaps_members_and_source_matches_without_graph() {
+    let fixture = GraphFixture::new(
+        "const a = 1; const b = 2; const c = 3; console.log(a + b + c);",
+        &[
+            (
+                "pair.yaml",
+                "note: module note\nmembers: [{name: Alpha, selector: {binding: {name: a}}}]\nsource_matches: [{match: 'const local = 2;', bindings: [{local: local, name: Beta}], note: claim note}]\nannotations: {Alpha: {note: first}, Beta: {note: second}}\n",
+            ),
+            (
+                "third.yaml",
+                "source_matches: [{match: 'const third = 3;', bindings: [third]}]",
+            ),
+        ],
+    );
+    let batch = fixture.root().join("renames.json");
+    write_text_file(
+        &batch,
+        r#"[{"sym":"a","readable":"Beta"},{"sym":"Alpha","readable":"Beta"},{"sym":"local","readable":"Alpha"},{"sym":"third","readable":"Third"}]"#,
+    );
+    let pair_before = module(&fixture, "pair.yaml");
+    let files =
+        ["pair.yaml", "third.yaml"].map(|path| fs::read(fixture.modules.join(path)).unwrap());
+    for dry_run in [true, false] {
+        let mut command = fixture.process(&[
+            "bindings",
+            "rename",
+            "--batch",
+            batch.to_str().unwrap(),
+            "--format",
+            "json",
+        ]);
+        command.env_remove("DEBUNDLE_GRAPH");
+        if dry_run {
+            command.arg("--dry-run");
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            report["action"],
+            if dry_run { "dry-run" } else { "applied" }
+        );
+        assert_eq!(report["gate"], "names_only");
+        assert_eq!(report["renames_applied"], 3);
+        assert_eq!(report["files_written"].as_array().unwrap().len(), 2);
+        if dry_run {
+            for (path, before) in ["pair.yaml", "third.yaml"].iter().zip(&files) {
+                assert_eq!(&fs::read(fixture.modules.join(path)).unwrap(), before);
+            }
+        }
+    }
+    let pair = module(&fixture, "pair.yaml");
+    assert_eq!(pair["members"][0]["name"], "Beta");
+    assert_eq!(pair["source_matches"][0]["bindings"][0]["name"], "Alpha");
+    assert_eq!(pair["source_matches"][0]["bindings"][0]["local"], "local");
+    assert_eq!(
+        pair["members"][0]["selector"],
+        pair_before["members"][0]["selector"]
+    );
+    assert_eq!(
+        pair["source_matches"][0]["match"],
+        pair_before["source_matches"][0]["match"]
+    );
+    assert_eq!(
+        pair["source_matches"][0]["note"],
+        pair_before["source_matches"][0]["note"]
+    );
+    assert_eq!(pair["note"], pair_before["note"]);
+    assert_eq!(pair["annotations"]["Beta"]["note"], "first");
+    assert_eq!(pair["annotations"]["Alpha"]["note"], "second");
+    fixture.assert_runs("6\n");
+}
+
+fn rename_batch(fixture: &GraphFixture, json: &str) -> Value {
+    let batch = fixture.root().join("renames.json");
+    write_text_file(&batch, json);
+    fixture.json(&["bindings", "rename", "--batch", batch.to_str().unwrap()])
+}
+
+#[test]
+fn rename_batch_chains_noops_and_alias_replay() {
+    let fixture = GraphFixture::new(
+        "const a = 1; const b = 2; console.log(a + b);",
+        &[(
+            "m.yaml",
+            "members: [{name: Alpha, selector: {binding: {name: a}}}, {name: Beta, selector: {binding: {name: b}}}]\nannotations: {Alpha: {note: first}, Beta: {note: second}}",
+        )],
+    );
+    let report = rename_batch(
+        &fixture,
+        r#"[{"sym":"Alpha","readable":"Beta"},{"sym":"Beta","readable":"Gamma"}]"#,
+    );
+    assert_eq!(report["renames_applied"], 2);
+    let doc = module(&fixture, "m.yaml");
+    assert_eq!(doc["annotations"]["Beta"]["note"], "first");
+    assert_eq!(doc["annotations"]["Gamma"]["note"], "second");
+    // Current aliases are resolved anew: Beta now denotes the first binding.
+    let replay = rename_batch(&fixture, r#"[{"sym":"Beta","readable":"Delta"}]"#);
+    assert_eq!(replay["renames"][0]["binding"], "a");
+    let before = fs::read(fixture.modules.join("m.yaml")).unwrap();
+    assert_eq!(
+        rename_batch(&fixture, r#"[{"sym":"a","readable":"Delta"}]"#)["action"],
+        "unchanged"
+    );
+    assert_eq!(rename_batch(&fixture, "[]")["action"], "noop");
+    assert_eq!(fs::read(fixture.modules.join("m.yaml")).unwrap(), before);
+    fixture.assert_runs("3\n");
+
+    let shorthand = GraphFixture::new(
+        "const a = 1; console.log(a);",
+        &[(
+            "m.yaml",
+            "source_matches: [{match: 'const a = 1;', bindings: [a]}]",
+        )],
+    );
+    let before = fs::read(shorthand.modules.join("m.yaml")).unwrap();
+    assert_eq!(
+        rename_batch(&shorthand, r#"[{"sym":"a","readable":"a"}]"#)["renames_applied"],
+        0
+    );
+    assert_eq!(fs::read(shorthand.modules.join("m.yaml")).unwrap(), before);
+}
+
+#[test]
+fn rename_batch_preflight_rejects_collisions_and_invalid_requests() {
+    let fixture = GraphFixture::new(
+        "const a = 1; const b = 2; console.log(a + b);",
+        &[
+            (
+                "a.yaml",
+                "members: [{name: Alpha, selector: {binding: {name: a}}}]",
+            ),
+            (
+                "b.yaml",
+                "members: [{name: Beta, selector: {binding: {name: b}}}]",
+            ),
+        ],
+    );
+    write_text_file(
+        &fixture.modules.join("a.yaml"),
+        "members: [{name: Alpha, selector: {binding: {name: a}}}]\nannotations: {Orphan: {note: retained}}",
+    );
+    for json in [
+        r#"[{"sym":"a","readable":"Beta"}]"#,
+        r#"[{"sym":"a","readable":"Alpha"},{"sym":"b","readable":"Alpha"}]"#,
+        r#"[{"sym":"a","readable":"Shared"},{"sym":"b","readable":"Shared"}]"#,
+        r#"[{"sym":"a","readable":"New"},{"sym":"Alpha","readable":"Other"}]"#,
+        r#"[{"sym":"a","readable":"New"},{"sym":"unknown","readable":"Other"}]"#,
+        r#"[{"sym":"a","readable":"Orphan"}]"#,
+        r#"[{"sym":"a","readable":" "}]"#,
+        r#"[{"sym":"a"}]"#,
+        r#"[{"sym":"a","readable":"New","module":"elsewhere"}]"#,
+    ] {
+        let batch = fixture.root().join("renames.json");
+        write_text_file(&batch, json);
+        fixture.assert_rejected_unchanged_without_graph(
+            &["bindings", "rename", "--batch", batch.to_str().unwrap()],
+            &[],
+        );
+    }
+    let batch = fixture.root().join("renames.json");
+    write_text_file(&batch, r#"[{"sym":"a","readable":"Orphan"}]"#);
+    fixture.assert_rejected_unchanged_without_graph(
+        &[
+            "bindings",
+            "rename",
+            "--batch",
+            batch.to_str().unwrap(),
+            "--no-verify",
+        ],
+        &[],
+    );
+    write_text_file(&batch, "[]");
+    for pair in [&["a"][..], &["a", "New"][..]] {
+        let mut args = vec!["bindings", "rename", "--batch", batch.to_str().unwrap()];
+        args.extend(pair);
+        fixture.assert_rejected_unchanged_without_graph(&args, &[]);
+    }
+    // Unrelated duplicate identities must not veto a fresh target. A no-op
+    // request for their duplicated name still has to pass collision validation.
+    write_text_file(
+        &fixture.modules.join("duplicates.yaml"),
+        "members: [{name: Duplicate, selector: {binding: {name: x}}}, {name: Duplicate, selector: {binding: {name: y}}}]",
+    );
+    assert_eq!(
+        rename_batch(&fixture, r#"[{"sym":"a","readable":"New"}]"#)["action"],
+        "applied"
+    );
+    write_text_file(&batch, r#"[{"sym":"x","readable":"Duplicate"}]"#);
+    fixture.assert_rejected_unchanged_without_graph(
+        &["bindings", "rename", "--batch", batch.to_str().unwrap()],
+        &[],
+    );
+    write_text_file(&batch, r#"[{"sym":"Duplicate","readable":"Unique"}]"#);
+    fixture.assert_rejected_unchanged_without_graph(
+        &["bindings", "rename", "--batch", batch.to_str().unwrap()],
+        &[],
+    );
+    write_text_file(
+        &fixture.modules.join("duplicates.yaml"),
+        "members: [{name: Duplicate, selector: {binding: {name: x}}}, {name: Duplicate, selector: {binding: {name: y}}}]\nannotations: {Duplicate: {note: unclear owner}}",
+    );
+    write_text_file(&batch, r#"[{"sym":"x","readable":"Unique"}]"#);
+    fixture.assert_rejected_unchanged_without_graph(
+        &["bindings", "rename", "--batch", batch.to_str().unwrap()],
+        &[],
+    );
+}
+
+#[test]
+fn rename_batch_reads_stdin_and_renders_each_format() {
+    use std::io::Write;
+    use std::process::Stdio;
+    let fixture = GraphFixture::new(
+        "const a = 1; console.log(a);",
+        &[("m.yaml", "members: [{selector: {binding: {name: a}}}]")],
+    );
+    for format in ["text", "json", "ndjson"] {
+        let mut process = fixture.process(&[
+            "bindings",
+            "rename",
+            "--batch",
+            "-",
+            "--format",
+            format,
+            "--dry-run",
+        ]);
+        process
+            .env_remove("DEBUNDLE_GRAPH")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = process.spawn().unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(br#"[{"sym":"a","readable":"Readable"}]"#)
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if format == "text" {
+            assert!(!output.stdout.is_empty());
+        } else {
+            let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(report["gate"], "names_only");
+            assert_eq!(report["action"], "dry-run");
+            if format == "ndjson" {
+                assert_eq!(String::from_utf8_lossy(&output.stdout).lines().count(), 1);
+            }
+        }
+    }
+}
+
+#[test]
+fn rename_batch_names_only_verdict_does_not_validate_template_references() {
+    let fixture = GraphFixture::new(
+        "const a = {value: 1}; const b = {value: 2}; const c = a.value; const d = b.value; console.log(c, d);",
+        &[
+            (
+                "owner.yaml",
+                "members: [{name: Owner, selector: {binding: {name: a}}}]",
+            ),
+            (
+                "use.yaml",
+                "source_matches: [{match: 'const result = Owner.value;', bindings: [{local: result, name: Result}]}]",
+            ),
+        ],
+    );
+    let validate = || {
+        let output = debundle_e2e_support::run_source_only_validate(
+            &fixture.modules,
+            &fixture.source_path(),
+            &["--format", "json"],
+        );
+        assert!(output.status.success(), "{}", output.stderr);
+        serde_json::from_str::<Value>(&output.stdout).unwrap()
+    };
+    let before = validate();
+    assert_eq!(
+        before["templates"][0]["identifiers"][0]["kind"],
+        "reference"
+    );
+    assert_eq!(
+        rename_batch(&fixture, r#"[{"sym":"Owner","readable":"Renamed"}]"#)["gate"],
+        "names_only"
+    );
+    let after = validate();
+    assert_eq!(after["templates"][0]["identifiers"][0]["kind"], "wildcard");
+    // The text is preserved; a new source-only verdict is required to notice
+    // that the old reference became a wildcard and now matches both objects.
+    assert_eq!(
+        module(&fixture, "use.yaml")["source_matches"][0]["match"],
+        "const result = Owner.value;"
+    );
+    assert_eq!(after["validation"]["success"], false);
+    fixture.assert_current_pipeline_rejects(&[]);
 }
 
 #[test]
