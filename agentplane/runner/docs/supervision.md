@@ -62,6 +62,11 @@ Sandbox UID and state directory, verifies their expected workload/executor slice
 Only then can it open Session stores or journals and admit native execution. Other owner scopes
 are untouched. This startup barrier also covers surviving setup and workspace helpers.
 
+Each native launch also requires a marker for its Runner service invocation. Systemd removes the
+service's runtime directory before restarting Runner. A start request still queued on an old
+connection therefore fails its condition if it arrives after replacement, rather than starting
+work after the replacement's inventory scan. A skipped start condition never counts as native exec.
+
 ## Pods and tests
 
 Pods retain the internal supervisor's parent-liveness pipe, inherited owner descriptor and process

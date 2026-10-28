@@ -329,8 +329,10 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   exit. A process deliberately escaping that group and closing inherited descriptors is outside
   that containment boundary.
 - In VMs every native launch is a systemd transient `Type=exec` service, bound to the Runner unit,
-  with `Restart=no` and five-second stop grace. Systemd contains descendants across process-group
-  changes. Runner reports completion only after the service is inactive/failed and its execution
+  with `Restart=no` and five-second stop grace. A condition requires the current Runner invocation's
+  marker in its systemd-managed runtime directory; delayed requests from a previous invocation
+  cannot execute after replacement. Systemd contains descendants across process-group changes.
+  Runner reports completion only after the service is inactive/failed and its execution
   domain is empty. Native services do not inherit the state-owner descriptor: a replacement may
   acquire the lock after Runner death, but it must discover and fence the prior units in its
   explicit Sandbox/state owner scope before opening Session stores, journals or admitting native

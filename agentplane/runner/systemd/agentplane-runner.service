@@ -7,6 +7,9 @@ RequiresMountsFor=/state /state/workspaces /run/agentplane/runner /run/agentplan
 [Service]
 Type=exec
 Slice=agentplane.slice
+RuntimeDirectory=agentplane-runner-lifetime
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=no
 EnvironmentFile=/run/agentplane/config/runner.env
 Environment=ANTHROPIC_AUTH_TOKEN=agentplane-credential-agentplane-workload
 Environment=OPENAI_API_KEY=agentplane-credential-agentplane-workload

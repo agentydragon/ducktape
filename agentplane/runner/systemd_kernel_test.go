@@ -63,6 +63,32 @@ func TestSystemdKernelFixture(t *testing.T) {
 	defer cancelConnection()
 	defer conn.Close()
 
+	t.Run("stale_runner_invocation_cannot_execute", func(t *testing.T) {
+		stale := *policy
+		stale.lifetimeMarker = filepath.Join(runnerLifetimeDirectory, strings.ReplaceAll(uuid.NewString(), "-", ""))
+		effect := filepath.Join(dir, "stale-runner-effect")
+		p, err := NewProcess(ProcessConfig{Command: []string{"/bin/busybox", "touch", effect}, Dir: dir, Env: map[string]string{}, VMProcessPolicy: &stale})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Start(ctx); err == nil {
+			t.Fatal("missing Runner invocation marker admitted a native process")
+		}
+		if _, err := p.Wait(ctx); err == nil {
+			t.Fatal("skipped invocation start lost its error")
+		}
+		if p.PID() != 0 {
+			t.Fatalf("skipped invocation published native PID %d", p.PID())
+		}
+		if _, err := os.Stat(effect); !os.IsNotExist(err) {
+			t.Fatalf("stale invocation performed native effect: %v", err)
+		}
+		if p.systemd == nil {
+			t.Fatal("stale invocation proof did not reach the manager")
+		}
+		assertSystemdProofEmpty(t, ctx, conn, p.systemd.name)
+	})
+
 	t.Run("workspace_created_as_agent", func(t *testing.T) {
 		cwd := filepath.Join(dir, "nested", "workspace")
 		created, err := EnsureWorkspace(ctx, cwd, dir, policy)
@@ -243,7 +269,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		ownedName := policy.scope + uuid.NewString() + ".service"
 		unrelatedName := "agentplane-proof-unrelated-" + uuid.NewString() + ".service"
 		for _, name := range []string{ownedName, unrelatedName} {
-			if _, err := conn.StartTransientUnitContext(ctx, name, "fail", proofUnitProperties("/bin/sleep", []string{"/bin/sleep", "60"}, workloadSlice), nil); err != nil {
+			if _, err := conn.StartTransientUnitContext(ctx, name, "fail", proofUnitProperties("/bin/busybox", []string{"/bin/busybox", "sleep", "60"}, workloadSlice), nil); err != nil {
 				t.Fatal(err)
 			}
 			defer fenceSystemdUnit(context.Background(), conn, name, true)
@@ -263,7 +289,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 	})
 	t.Run("parent_death_graceful_cleanup", func(t *testing.T) {
 		parent := "agentplane-proof-parent-" + uuid.NewString() + ".service"
-		if _, err := conn.StartTransientUnitContext(ctx, parent, "fail", proofUnitProperties("/bin/sleep", []string{"/bin/sleep", "60"}, "agentplane.slice"), nil); err != nil {
+		if _, err := conn.StartTransientUnitContext(ctx, parent, "fail", proofUnitProperties("/bin/busybox", []string{"/bin/busybox", "sleep", "60"}, "agentplane.slice"), nil); err != nil {
 			t.Fatal(err)
 		}
 		defer fenceSystemdUnit(context.Background(), conn, parent, true)
