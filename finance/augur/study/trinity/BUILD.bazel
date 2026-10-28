@@ -56,6 +56,9 @@ py_test(
     # See the package README.
     size = "large",
     srcs = ["replay_test.py"],
+    # The SAFEMAX and table cases each need minutes of active simulation. Separate test
+    # processes keep their time budgets independent while retaining every historical window.
+    shard_count = 4,
     tags = ["manual"],
     deps = [
         ":evidence_snapshot",
