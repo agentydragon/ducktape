@@ -5,12 +5,13 @@ use super::super::value_model::{
     Context, DenseArray, FrozenNamespaceProof, ValueExpr, Values,
 };
 use super::native_calls::{CallInputs, CallReturn, NativeCallModel};
+use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_inference::{RuntimeOperation, RuntimeQueries, RuntimeValue};
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, IntrinsicRoot, LocalConstructor,
     RetainedCallbackCall,
 };
-use crate::analysis_inputs::AnalysisInputs;
+use crate::analysis_inputs::{AnalysisInputs, ProofDependencies};
 use crate::facts::ExportReentryPolicy;
 use crate::facts::callable_inference::CallableInferenceInputs;
 use crate::facts::fresh_receiver::fresh_mutation_callables;
@@ -171,7 +172,7 @@ struct OwnDescriptorMapState {
 }
 
 #[derive(Debug, Clone)]
-struct NativeCallResolution {
+pub(super) struct NativeCallResolution {
     returns: CallReturn,
     own_property_projection: Option<OwnPropertyProof>,
 }
@@ -230,12 +231,35 @@ pub(super) struct ExecutionInputs<'source> {
     needed_bindings: BTreeSet<Id>,
 }
 
+pub(super) struct OwnPropertyQuery {
+    source_object: u32,
+    source_values: Values,
+    prefix_properties: BTreeMap<Option<String>, Values>,
+    tainted: bool,
+    request: OwnPropertyRequest,
+}
+
+impl ExecutionInputs<'_> {
+    pub(super) fn project_own_property(&self, query: OwnPropertyQuery) -> Option<OwnPropertyProof> {
+        infer_own_property_projection(
+            query.source_object,
+            &query.source_values,
+            self.index.own_descriptor_shapes.get(&query.source_object)?,
+            &query.prefix_properties,
+            query.tainted,
+            self.index.semantic_facts.as_deref()?,
+            query.request,
+        )
+    }
+}
+
 #[derive(Clone, Default)]
 pub(super) struct ExecutionState {
     native_integrity_checks: RefCell<BTreeSet<NativeIntegrityCheck>>,
     native_prototype_property_checks: RefCell<BTreeMap<String, NativePrototypePropertyCheck>>,
     author_host_contract_uses: Vec<crate::reports::schema::HostNoReentryUse>,
     native_integrity_uses: RefCell<BTreeSet<crate::reports::schema::NativeIntegrityUse>>,
+    proof_dependencies: RefCell<ProofDependencies>,
     inference_uses: RefCell<BTreeSet<crate::reports::schema::InferenceUse>>,
     class_member_effects: BTreeMap<SourceUnitOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
     class_superclasses: OrdMap<u32, Values>,
@@ -427,8 +451,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut intact = true;
         for root in roots {
             let key = SemanticKey::NativeIntegrity(*root);
-            if let Some(proof) = facts.inference_use(&key) {
-                self.record_inference_use(guard, proof);
+            if let Some(judgment) = facts.judgment(&key)
+                && let Some(proof) = facts.inference_use(&key)
+            {
+                self.record_inference_use(guard, proof, judgment.dependencies());
             } else {
                 intact = false;
             }
@@ -543,6 +569,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         guard: NativeIntegrityGuard,
         dependencies: &crate::analysis_inputs::ProofDependencies,
     ) {
+        self.queries.assume(dependencies);
+        self.state
+            .proof_dependencies
+            .borrow_mut()
+            .extend(dependencies);
         if !dependencies.is_empty() {
             self.state.native_integrity_uses.borrow_mut().insert(
                 crate::reports::schema::NativeIntegrityUse {
@@ -557,15 +588,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &self,
         guard: NativeIntegrityGuard,
         proof: crate::reports::schema::InferenceUse,
+        dependencies: &ProofDependencies,
     ) {
-        if !proof.value_input_refs.is_empty() {
-            self.state.native_integrity_uses.borrow_mut().insert(
-                crate::reports::schema::NativeIntegrityUse {
-                    guard,
-                    value_input_refs: proof.value_input_refs.clone(),
-                },
-            );
-        }
+        self.record_proof_dependencies(guard, dependencies);
         self.state.inference_uses.borrow_mut().insert(proof);
     }
 
@@ -590,18 +615,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if values.len() != 1 {
             return None;
         }
-        let shape = self.inputs.index.own_descriptor_shapes.get(object)?;
         let properties = self.state.prefix_object_properties.get(object)?;
-        let semantic_facts = self.inputs.index.semantic_facts.as_deref()?;
-        infer_own_property_projection(
-            *object,
-            values,
-            shape,
-            properties,
-            self.state.tainted_objects.contains(object),
-            semantic_facts,
+        self.queries.project_own_property(OwnPropertyQuery {
+            source_object: *object,
+            source_values: values.clone(),
+            prefix_properties: properties.clone(),
+            tainted: self.state.tainted_objects.contains(object),
             request,
-        )
+        })
     }
 
     fn ordinary_source_object(&self, values: &Values) -> Option<OwnPropertyProof> {
@@ -702,6 +723,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn apply_own_descriptor_map(&mut self, args: &[Values]) {
+        let RuntimeValue::Heap(HeapResult::Updated) =
+            self.request(RuntimeOperation::Heap(HeapOperation::ApplyDescriptors {
+                arguments: args.to_vec(),
+            }))
+        else {
+            unreachable!("descriptor application produces a successor heap");
+        };
+    }
+
+    pub(super) fn apply_own_descriptor_map_transfer(&mut self, args: &[Values]) {
         let [target_values, map_values] = args else {
             return;
         };
@@ -770,20 +801,41 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         callee: &ValueExpr,
     ) -> Option<(NativeCallModel, SemanticKey)> {
         let (model, key) = super::native_call_identity_key(kind, callee)?;
-        let proof = self
-            .inputs
-            .index
-            .semantic_facts
-            .as_ref()?
-            .inference_use(&key)?;
-        self.record_inference_use(NativeIntegrityGuard::NativeCallIdentity, proof);
+        let facts = self.inputs.index.semantic_facts.as_ref()?;
+        let judgment = facts.judgment(&key)?;
+        let proof = facts.inference_use(&key)?;
+        self.record_inference_use(
+            NativeIntegrityGuard::NativeCallIdentity,
+            proof,
+            judgment.dependencies(),
+        );
         Some((model, key))
     }
 
     /// A successful model lookup certifies the operation after its inputs
     /// have evaluated. It does not infer purity or exception freedom.
     fn resolve_native_call(
-        &self,
+        &mut self,
+        kind: CallKind,
+        callee: &ValueExpr,
+        expressions: &[ValueExpr],
+        args: &[Values],
+    ) -> Option<NativeCallResolution> {
+        let RuntimeValue::Heap(HeapResult::Native(resolution)) =
+            self.request(RuntimeOperation::Heap(HeapOperation::ResolveNative {
+                kind,
+                callee: callee.clone(),
+                expressions: expressions.to_vec(),
+                arguments: args.to_vec(),
+            }))
+        else {
+            unreachable!("native model resolution produces an optional model");
+        };
+        *resolution
+    }
+
+    pub(super) fn resolve_native_call_transfer(
+        &mut self,
         kind: CallKind,
         callee: &ValueExpr,
         expressions: &[ValueExpr],
@@ -3090,6 +3142,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         certified_data_receivers: &BTreeSet<u32>,
         deferred_global_write: bool,
     ) {
+        if writes.is_empty() {
+            return;
+        }
+        let RuntimeValue::Heap(HeapResult::Updated) =
+            self.request(RuntimeOperation::Heap(HeapOperation::WriteMembers {
+                writes: writes.to_vec(),
+                environment: env.clone(),
+                captures: captures.clone(),
+                certified_data_receivers: certified_data_receivers.clone(),
+                deferred_global_write,
+            }))
+        else {
+            unreachable!("member writes produce a successor heap");
+        };
+    }
+
+    pub(super) fn apply_member_value_writes_transfer(
+        &mut self,
+        writes: &[(Id, Option<String>, ValueExpr)],
+        env: &Context,
+        captures: &Context,
+        certified_data_receivers: &BTreeSet<u32>,
+        deferred_global_write: bool,
+    ) {
         for (receiver, property, expression) in writes {
             let receivers = self.evaluate(&ValueExpr::Binding(receiver.clone()), env, captures);
             let values = self.evaluate(expression, env, captures);
@@ -3368,7 +3444,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .local_class_construction_proof
             .inference_use_for_class(key)
         {
-            self.record_inference_use(NativeIntegrityGuard::LocalClassConstruction, proof);
+            self.record_inference_use(
+                NativeIntegrityGuard::LocalClassConstruction,
+                proof,
+                self.inputs
+                    .index
+                    .local_class_construction_proof
+                    .dependencies_for_class(key)
+                    .expect("a class certificate retains its typed dependencies"),
+            );
         }
         let outcome = constructor.key.map_or_else(
             || Outcome {
@@ -4220,6 +4304,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.record_inference_use(
             NativeIntegrityGuard::NativeCallIdentity,
             summary.inference.clone(),
+            &summary.dependencies,
         );
         Some(*source_object)
     }
@@ -5375,7 +5460,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .set_iterable_proof
                 .inference_use_for_constructor(call.span)
         {
-            self.record_inference_use(NativeIntegrityGuard::SetIterable, proof);
+            self.record_inference_use(
+                NativeIntegrityGuard::SetIterable,
+                proof,
+                self.inputs
+                    .set_iterable_proof
+                    .dependencies_for_constructor(call.span)
+                    .expect("a set certificate retains its typed dependencies"),
+            );
             return;
         }
         let targets = self.evaluate(&call.callee, env, captures);
@@ -6246,6 +6338,7 @@ pub(crate) fn annotate_synchronous_calls(
         native_prototype_property_checks: RefCell::default(),
         author_host_contract_uses: Vec::new(),
         native_integrity_uses: RefCell::default(),
+        proof_dependencies: RefCell::default(),
         inference_uses: RefCell::default(),
         class_member_effects: BTreeMap::new(),
         class_superclasses: OrdMap::new(),
@@ -6322,6 +6415,7 @@ impl Executor<'_, '_> {
             .borrow_mut()
             .clear();
         self.state.native_integrity_uses.borrow_mut().clear();
+        *self.state.proof_dependencies.borrow_mut() = ProofDependencies::default();
         self.state.inference_uses.borrow_mut().clear();
         self.state.current_top_owner = Some(fact.ordinal);
         self.state.proof_uses.clear();
@@ -6637,12 +6731,7 @@ impl Executor<'_, '_> {
             && outcome.effects.uninitialized_reads.is_empty()
             && let Some(proof) = checked_local_constructor_factory
         {
-            let mut dependencies = crate::analysis_inputs::ProofDependencies::default();
-            for usage in &outcome.effects.native_integrity_uses {
-                dependencies
-                    .value_inputs
-                    .extend(usage.value_input_refs.iter().cloned());
-            }
+            let dependencies = self.state.proof_dependencies.borrow().clone();
             outcome.effects.local_record_factory_purity =
                 Some(crate::facts::LocalRecordFactoryPurityCertificate {
                     call_span: proof.call_span,

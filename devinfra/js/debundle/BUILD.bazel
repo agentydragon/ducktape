@@ -508,6 +508,7 @@ rust_library(
         "facts/sync_effects/native_calls.rs",
         "facts/sync_effects/property_inference.rs",
         "facts/sync_effects/receiver_identity.rs",
+        "facts/sync_effects/runtime_heap.rs",
         "facts/sync_effects/runtime_inference.rs",
         "facts/sync_effects/value_model.rs",
         "facts/value_flow.rs",
