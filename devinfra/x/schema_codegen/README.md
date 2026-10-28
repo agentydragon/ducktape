@@ -6,8 +6,8 @@ bindings, and consumers. The TypeScript cases use the file-input rules documente
 outputs. The `openapi_js_library` and `json_schema_js_library` macros expose declarations through a
 `js_library` named by the macro call while preserving the raw `.d.ts` output label. Both default the
 raw file to `<name>.d.ts`; the TypeScript fixtures cover omitted outputs and explicit module-path
-overrides. Zod generation stays file-only and is compiled by its explicit `ts_library` consumer;
-application generators and wire contracts are unchanged.
+overrides. `openapi_zod_ts_library` returns a compiled `ts_library` and preserves the generated
+source label, defaulting to `<name>.ts`. Application generators and wire contracts are unchanged.
 
 Run all cases, including lint and language checks on the explicitly selected library targets:
 

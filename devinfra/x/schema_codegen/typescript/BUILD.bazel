@@ -2,7 +2,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary"
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
 load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
-load("//devinfra/js:openapi_zod.bzl", "openapi_zod")
+load("//devinfra/js:openapi_zod_ts_library.bzl", "openapi_zod_ts_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
@@ -83,18 +83,12 @@ openapi_js_library(
     schema_files = ["//devinfra/x/schema_codegen/typescript/fixtures:external_model_artifact"],
 )
 
-openapi_zod(
-    name = "external_openapi_zod_codegen",
-    out = "external_openapi_zod.ts",
+openapi_zod_ts_library(
+    name = "external_openapi_zod",
     config = "//devinfra/x/schema_codegen/typescript/fixtures:openapi_config_artifact",
     config_files = ["//devinfra/x/schema_codegen/typescript/fixtures:openapi_config_helper_artifact"],
     schema = "//devinfra/x/schema_codegen/typescript/fixtures:openapi_artifact",
     schema_files = ["//devinfra/x/schema_codegen/typescript/fixtures:external_model_artifact"],
-)
-
-ts_library(
-    name = "external_openapi_zod",
-    srcs = [":external_openapi_zod_codegen"],
     tsconfig = ":tsconfig",
     deps = ["//:node_modules/zod"],
 )
@@ -127,16 +121,10 @@ js_library(
     srcs = [":invoice_response_json"],
 )
 
-openapi_zod(
-    name = "openapi_zod_codegen",
-    out = "openapi_zod.ts",
+openapi_zod_ts_library(
+    name = "openapi_zod",
     config = "openapi-ts.config.mjs",
     schema = ":openapi.json",
-)
-
-ts_library(
-    name = "openapi_zod",
-    srcs = [":openapi_zod_codegen"],
     tsconfig = ":tsconfig",
     deps = ["//:node_modules/zod"],
 )
