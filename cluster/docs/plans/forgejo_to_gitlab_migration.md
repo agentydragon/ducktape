@@ -2,9 +2,11 @@
 
 Pre-think for replacing the in-cluster Forgejo with GitLab. Motivated by
 [the git-write latency + HA investigation](../../../cluster/debug/git_storage_latency_and_ha.md):
-GitLab's **Gitaly Cluster (Praefect)** gives fast git writes **and** no single-node dependency,
-which the Forgejo multi-replica RWX share cannot. This note scopes what a migration
-touches and — importantly — what is actually in **Free/CE** vs paid tiers.
+GitLab's **Gitaly Cluster (Praefect)** could address the git storage single-node
+dependency that the Forgejo multi-replica RWX share cannot. Its Kubernetes
+deployment maturity is a gating question, not an established HA solution here.
+This note scopes what a migration touches and what is actually in **Free/CE**
+versus paid tiers.
 
 Not a decision to migrate; a map of the surface and the gotchas.
 
@@ -45,12 +47,15 @@ mature. Our resources map cleanly, and the runner-token wiring gets _simpler_:
 | `forgejo_branch_protection`         | `gitlab_branch_protection`                               |
 | _(API-fetch hack for runner token)_ | **`gitlab_user_runner`** — mints the auth token natively |
 
-**Operator — yes.** The official **GitLab Operator** wraps the cloud-native chart with a
-`GitLab` CR and sequences the version-upgrade DB migrations (the ~13-min ones observed in
-the bench) safely. Heavier + assumes nginx-ingress; on our Talos/Cilium/Gateway-API stack
+**Operator — available, with limits.** The official **GitLab Operator** wraps the cloud-native chart with a
+`GitLab` CR and [sequences version-upgrade DB migrations](https://docs.gitlab.com/operator/gitlab_upgrades/).
+It inherits chart limitations and requires external PostgreSQL, Redis, and object storage;
+its default zero-downtime path advances one minor release at a time
+([operator limitations](https://docs.gitlab.com/operator/)). Heavier + assumes
+nginx-ingress; on our Talos/Cilium/Gateway-API stack
 we'd disable that and wire an `HTTPRoute` (the bench already used the ingress-off shape).
 For our scale a **Flux `HelmRelease` on the chart directly** may be simpler; the operator's
-real value is upgrade safety.
+real value is managed upgrade sequencing, subject to those limits.
 
 **GitLab Agent for Kubernetes (`agentk`/KAS) — optional.** Native secure CI→cluster access
 without exposing the kube API. We'd likely keep Flux-from-GitHub for GitOps, but `agentk`
@@ -70,15 +75,16 @@ is worth it for CI that needs cluster access.
   (seaweedfs S3 / MinIO); ~13-min fresh migrations; slow Puma boot. A real step up from a
   single Go binary on el-cheapo OVH — the central "does it earn its footprint?" question.
 
-## CE (Free) vs paid — verified against GitLab docs (2026-07)
+## CE (Free) vs paid — checked against GitLab docs (2026-07; HA caveat rechecked 2026-10-28)
 
-Everything the current Forgejo setup depends on is **Free**. The paid gates only bite
-"nice to have" workflow polish. Verified per-feature (`docs.gitlab.com`):
+Most of the current Forgejo setup maps to **Free**; its GitHub → Forgejo pull
+mirror is a paid-tier exception. Other paid gates affect optional workflow
+features. Checked per feature against `docs.gitlab.com`:
 
 | Capability                                                              | Tier                                                       |
 | ----------------------------------------------------------------------- | ---------------------------------------------------------- |
 | Git hosting, projects, groups, SSH/deploy keys                          | **Free**                                                   |
-| **Gitaly Cluster (Praefect)** — the HA win                              | **Free** (self-managed; GitLab _support_ is Premium+ only) |
+| **Gitaly Cluster (Praefect)** — HA storage capability                   | **Free** (self-managed; GitLab _support_ is Premium+ only) |
 | GitLab CI + GitLab Runner (Kubernetes executor)                         | **Free**                                                   |
 | Merge-request pipelines                                                 | **Free**                                                   |
 | Container Registry, Package Registry                                    | **Free**                                                   |
@@ -96,6 +102,15 @@ Everything the current Forgejo setup depends on is **Free**. The paid gates only
 | **Merge trains**                                                        | **Premium**                                                |
 | MR / code-review analytics                                              | **Premium**                                                |
 | Security Dashboard, MR vulnerability widgets, vulnerability management  | **Ultimate**                                               |
+
+The tier table describes licensing, not production support for this topology.
+[Gitaly Cluster on Kubernetes is beta](https://docs.gitlab.com/administration/gitaly/kubernetes/),
+and GitLab calls its [Praefect Helm chart experimental and unsuitable for
+production](https://docs.gitlab.com/charts/charts/gitlab/praefect/). The
+[configuration guide](https://docs.gitlab.com/administration/gitaly/praefect/configure/)
+still says Gitaly Cluster is not yet supported in Kubernetes. A Kubernetes
+GitLab migration cannot claim the planned git-storage HA win without a
+supported topology or an explicit decision to accept these limitations.
 
 ### The one gotcha that hits our current setup
 
@@ -120,7 +135,8 @@ already cover the 99% case, so the Premium gates are mostly cosmetic here.
 
 ## Migration order (sketch, if we do it)
 
-1. Stand up GitLab (Gitaly Cluster + CNPG PG16 + Redis + seaweedfs-S3 object storage +
+1. Decide on a supported git-storage topology and its HA requirement; then
+   stand up GitLab (CNPG PG16 + Redis + seaweedfs-S3 object storage +
    `HTTPRoute` + Authentik OIDC), no ingress, bench-shaped values as a base.
 2. Port `tf/gitops` Forgejo resources to the GitLab provider (users/projects/membership/
    variables/hooks/runners) — mostly mechanical.
