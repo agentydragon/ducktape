@@ -1,5 +1,5 @@
 use super::*;
-use crate::facts::{LocalClassConstructionProof, SetIterableProof};
+use crate::facts::{DynamicScopeFact, LocalClassConstructionProof, SetIterableProof};
 use std::sync::Arc;
 
 /// Chunk-wide code graph: indexes top-level bindings and answers
@@ -175,10 +175,16 @@ impl ChunkCodeGraph {
     ) -> Self {
         let value_flow = crate::facts::ChunkValueFlow::analyze(body);
         let plain_data_bindings = collect_plain_data_bindings(body, shadowed, &value_flow);
-        let set_iterable_proof =
-            SetIterableProof::analyze(body, shadowed, &value_flow, &plain_data_bindings);
+        let dynamic_scope = DynamicScopeFact::analyze(body);
+        let set_iterable_proof = SetIterableProof::analyze(
+            body,
+            shadowed,
+            &value_flow,
+            &plain_data_bindings,
+            dynamic_scope,
+        );
         let local_class_construction_proof =
-            LocalClassConstructionProof::analyze(body, shadowed, &value_flow, &set_iterable_proof);
+            LocalClassConstructionProof::analyze(body, shadowed, &value_flow, dynamic_scope);
         Self::build_full_with_prepared_plain_data(
             body,
             shadowed,

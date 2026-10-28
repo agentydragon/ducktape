@@ -9,7 +9,6 @@ use super::*;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SetIterableProof {
     constructor_starts: BTreeSet<u32>,
-    has_dynamic_scope: bool,
 }
 
 impl SetIterableProof {
@@ -18,7 +17,11 @@ impl SetIterableProof {
         shadowed: &BTreeSet<&'static str>,
         flow: &ChunkValueFlow,
         plain_data_bindings: &[String],
+        dynamic_scope: DynamicScopeFact,
     ) -> Self {
+        if dynamic_scope.present || shadowed.contains("Set") {
+            return Self::default();
+        }
         let candidates = collect_const_primitive_arrays(body);
         let mut scanner = ArrayUseScanner {
             candidates: &candidates,
@@ -27,19 +30,9 @@ impl SetIterableProof {
             invalid: BTreeSet::new(),
             alias_consumers: Vec::new(),
             direct_literal_calls: BTreeSet::new(),
-            has_dynamic_scope: false,
         };
         for item in body {
             item.as_module_item().visit_with(&mut scanner);
-        }
-        if scanner.has_dynamic_scope {
-            return Self {
-                has_dynamic_scope: true,
-                ..Self::default()
-            };
-        }
-        if shadowed.contains("Set") {
-            return Self::default();
         }
 
         let mut invalid = scanner.invalid;
@@ -83,18 +76,11 @@ impl SetIterableProof {
             flow,
             plain_data_bindings,
         ));
-        Self {
-            constructor_starts,
-            has_dynamic_scope: false,
-        }
+        Self { constructor_starts }
     }
 
     pub(crate) fn contains_constructor(&self, span: Span) -> bool {
         self.constructor_starts.contains(&span.lo.0)
-    }
-
-    pub(crate) fn has_dynamic_scope(&self) -> bool {
-        self.has_dynamic_scope
     }
 }
 
@@ -303,7 +289,6 @@ struct ArrayUseScanner<'a> {
     invalid: BTreeSet<Id>,
     alias_consumers: Vec<(Id, u32)>,
     direct_literal_calls: BTreeSet<u32>,
-    has_dynamic_scope: bool,
 }
 
 impl Visit for ArrayUseScanner<'_> {
@@ -350,20 +335,6 @@ impl Visit for ArrayUseScanner<'_> {
             self.invalid.insert(id);
         }
     }
-
-    fn visit_with_stmt(&mut self, node: &WithStmt) {
-        self.has_dynamic_scope = true;
-        node.visit_children_with(self);
-    }
-
-    fn visit_call_expr(&mut self, node: &CallExpr) {
-        if matches!(&node.callee, Callee::Expr(callee)
-            if matches!(callee.unwrap_parens(), Expr::Ident(ident) if ident.sym.as_ref() == "eval"))
-        {
-            self.has_dynamic_scope = true;
-        }
-        node.visit_children_with(self);
-    }
 }
 
 #[cfg(test)]
@@ -379,7 +350,13 @@ mod tests {
         let shadowed = compute_shadowed_globals(&body);
         let flow = ChunkValueFlow::analyze(&body);
         let plain_data = collect_plain_data_bindings(&body, &shadowed, &flow);
-        let proof = SetIterableProof::analyze(&body, &shadowed, &flow, &plain_data);
+        let proof = SetIterableProof::analyze(
+            &body,
+            &shadowed,
+            &flow,
+            &plain_data,
+            DynamicScopeFact::analyze(&body),
+        );
         struct NewSpans(Vec<Span>);
         impl Visit for NewSpans {
             fn visit_new_expr(&mut self, node: &NewExpr) {

@@ -86,17 +86,19 @@ impl<'a> ModulePurityFacts<'a> {
         let shadowed = compute_shadowed_globals(&views);
         let value_flow = ChunkValueFlow::analyze(&views);
         let plain_data_bindings = collect_plain_data_bindings(&views, &shadowed, &value_flow);
+        let dynamic_scope = crate::facts::DynamicScopeFact::analyze(&views);
         let set_iterable_proof = crate::facts::SetIterableProof::analyze(
             &views,
             &shadowed,
             &value_flow,
             &plain_data_bindings,
+            dynamic_scope,
         );
         let local_class_construction_proof = crate::facts::LocalClassConstructionProof::analyze(
             &views,
             &shadowed,
             &value_flow,
-            &set_iterable_proof,
+            dynamic_scope,
         );
         PreparedModulePurityFacts {
             views,

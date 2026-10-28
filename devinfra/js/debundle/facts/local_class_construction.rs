@@ -18,9 +18,9 @@ impl LocalClassConstructionProof {
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         flow: &ChunkValueFlow,
-        set_iterable_proof: &SetIterableProof,
+        dynamic_scope: DynamicScopeFact,
     ) -> Self {
-        if set_iterable_proof.has_dynamic_scope() {
+        if dynamic_scope.present {
             return Self::default();
         }
         let mut proof = Self::default();

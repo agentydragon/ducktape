@@ -480,6 +480,7 @@ rust_library(
         "facts/analyze.rs",
         "facts/at_init_fallback.rs",
         "facts/collector.rs",
+        "facts/dynamic_scope.rs",
         "facts/fresh_receiver.rs",
         "facts/global_object.rs",
         "facts/item_views.rs",

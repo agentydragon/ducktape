@@ -46,6 +46,7 @@ pub(crate) use crate::purity::{
 mod analyze;
 mod at_init_fallback;
 mod collector;
+mod dynamic_scope;
 mod fresh_receiver;
 mod global_object;
 mod item_views;
@@ -68,6 +69,7 @@ mod value_set_tests;
 // crate-internal items through `use super::*;`, which sees these globs.
 pub(crate) use at_init_fallback::*;
 pub(crate) use collector::*;
+pub(crate) use dynamic_scope::DynamicScopeFact;
 pub(crate) use global_object::*;
 pub(crate) use item_views::*;
 pub(crate) use lazy_boundary::*;
