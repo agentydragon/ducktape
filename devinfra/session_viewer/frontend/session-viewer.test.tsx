@@ -230,9 +230,11 @@ it("labels a resolved Codex parent_thread_id link and navigates to the captured 
 
 it("does not append an event page after switching sessions", async () => {
   const pending = deferred<EventPage<EventRecord>>();
+  const eventRequests: Array<[string, string]> = [];
   const api: SessionBrowserApi = {
     ...sessionFixtureApi,
     listEvents(sessionId, versionId, cursor, signal) {
+      eventRequests.push([sessionId, versionId]);
       if (sessionId === "codex-thread-1" && cursor === 3) return pending.promise;
       return sessionFixtureApi.listEvents(sessionId, versionId, cursor, signal);
     },
@@ -265,6 +267,8 @@ it("does not append an event page after switching sessions", async () => {
   await act(async () => flush());
 
   expect(view.textContent).toContain("Review this local conversation.");
+  expect(eventRequests).toContainEqual(["claude-session-1", "claude-version-1"]);
+  expect(eventRequests).not.toContainEqual(["claude-session-1", "codex-version-2"]);
   expect(view.textContent).not.toContain("Stale page content");
 });
 
