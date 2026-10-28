@@ -665,6 +665,37 @@ fn returned_wrapper_does_not_invoke_its_callback_at_creation() {
     )];
     let fixture = run_fixture(FixtureOpts::new(SOURCE, modules()).with_extra_chunks(&peers));
     assert_preserved_entry_output(&fixture, "42\n");
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    let evidence = &report["imported_callables"]["factory"]["callback_factory_evidence"][0];
+    assert_eq!(evidence["origin"], "inferred_immutable_wrapper");
+    assert_eq!(evidence["defining_module"], "static/peer");
+    assert_eq!(evidence["export"], "factory");
+    assert_eq!(evidence["local"], "factory");
+    assert_eq!(evidence["source_path"], "static/peer.js");
+    assert!(evidence["function_start"].as_u64().is_some());
+}
+
+#[test]
+fn vendor_affected_provider_does_not_supply_inferred_factory_summary() {
+    let peers = [(
+        "static/peer",
+        "export function factory(callback) { return () => callback(); }\n",
+    )];
+    let vendor_marks = [(
+        "static/peer.js",
+        VendorMark {
+            identity: "neutral-provider".into(),
+            role: Default::default(),
+            level: VendorLevel::Suppress,
+        },
+    )];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(SOURCE, modules())
+            .with_extra_chunks(&peers)
+            .with_vendor_marks(&vendor_marks),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
 }
 
 #[test]
@@ -972,6 +1003,11 @@ fn audited_factory_keeps_callbacks_in_its_returned_object() {
         .with_chunk_export_purity(&contracts),
     );
     assert_preserved_entry_output(&fixture, "42\n");
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    assert_eq!(
+        report["imported_callables"]["factory"]["callback_factory_evidence"],
+        serde_json::json!([{ "origin": "author_assertion", "defining_module": "static/peer", "export": "factory" }]),
+    );
 }
 
 #[test]

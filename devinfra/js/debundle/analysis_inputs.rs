@@ -5,6 +5,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::Serialize;
+
 use crate::purity::Purity;
 use spec::BuiltinGlobalRoot;
 
@@ -29,6 +31,54 @@ pub enum LocalEffectPolicy {
     /// that field's doc (`spec::DependencyGraphOptions`) for the soundness
     /// precondition the spec author accepts.
     LocalPropertyWrites,
+}
+
+/// Evidence for a bare imported callable's return-only callback-factory behavior.
+/// An assertion is an author contract; an inferred wrapper depends on the
+/// defining chunk's checked source shape.
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize)]
+#[serde(tag = "origin", rename_all = "snake_case")]
+pub enum CallbackFactoryEvidence {
+    AuthorAssertion {
+        defining_module: String,
+        export: String,
+    },
+    InferredImmutableWrapper {
+        defining_module: String,
+        export: String,
+        local: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        source_path: Option<String>,
+        function_start: u32,
+    },
+}
+
+/// Capabilities of one bare imported callable, keyed by the importer's local
+/// binding name. More than one proof can support the same capability.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize)]
+pub struct CallableSummary {
+    callback_factory_evidence: BTreeSet<CallbackFactoryEvidence>,
+}
+
+impl CallableSummary {
+    pub fn callback_factory(evidence: CallbackFactoryEvidence) -> Self {
+        Self {
+            callback_factory_evidence: BTreeSet::from([evidence]),
+        }
+    }
+
+    pub fn supports_callback_factory(&self) -> bool {
+        !self.callback_factory_evidence.is_empty()
+    }
+
+    pub fn callback_factory_evidence(&self) -> &BTreeSet<CallbackFactoryEvidence> {
+        &self.callback_factory_evidence
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        self.callback_factory_evidence
+            .extend(other.callback_factory_evidence);
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -63,9 +113,6 @@ pub struct AnalysisAssumptions {
     /// falling back to opaque barriers. Set from
     /// `DependencyGraphOptions::trusted_dataflow_summaries`.
     pub trusted_dataflow_summaries: bool,
-    /// Imported callback factories with the return-only callback-flow contract.
-    /// Independent of call purity; used only for checked fresh-callback calls.
-    pub callback_factories: BTreeSet<String>,
     /// Imported factories audited only for a single syntactic inline callback.
     /// Retained results passed as arguments remain conservative.
     pub inline_callback_factories: BTreeSet<String>,
@@ -111,7 +158,55 @@ pub struct AnalysisInputs {
     /// oracle (`crate::cross_module_purity`); empty in strictly per-chunk
     /// paths, where imported callees stay `unknown_call`.
     pub imported_purities: BTreeMap<String, std::sync::Arc<Purity>>,
+    /// Bare imported callable capabilities, retaining the evidence that
+    /// established each one. These may depend on defining-chunk author
+    /// contracts; they are never local author assumptions.
+    pub imported_callables: BTreeMap<String, CallableSummary>,
     /// Inferred direct ESM import bindings whose possible values are primitive.
     /// Used only to suppress ToPrimitive callback promotion, never eager reads.
     pub imported_primitives: BTreeSet<String>,
+}
+
+impl AnalysisInputs {
+    pub fn merge_imported_callables(&mut self, incoming: BTreeMap<String, CallableSummary>) {
+        for (local, summary) in incoming {
+            self.imported_callables
+                .entry(local)
+                .or_default()
+                .merge(summary);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn imported_callable_merge_retains_independent_evidence() {
+        let asserted = CallbackFactoryEvidence::AuthorAssertion {
+            defining_module: "lib".into(),
+            export: "wrap".into(),
+        };
+        let inferred = CallbackFactoryEvidence::InferredImmutableWrapper {
+            defining_module: "lib".into(),
+            export: "wrap".into(),
+            local: "wrap".into(),
+            source_path: None,
+            function_start: 42,
+        };
+        let mut inputs = AnalysisInputs::default();
+        inputs.merge_imported_callables(BTreeMap::from([(
+            "localWrap".into(),
+            CallableSummary::callback_factory(asserted.clone()),
+        )]));
+        inputs.merge_imported_callables(BTreeMap::from([(
+            "localWrap".into(),
+            CallableSummary::callback_factory(inferred.clone()),
+        )]));
+        assert_eq!(
+            inputs.imported_callables["localWrap"].callback_factory_evidence(),
+            &BTreeSet::from([asserted, inferred]),
+        );
+    }
 }

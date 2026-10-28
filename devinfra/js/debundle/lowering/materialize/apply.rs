@@ -182,6 +182,7 @@ mod tests {
                 },
                 final_module_contents: Vec::new(),
                 requested_logical_modules: Vec::new(),
+                imported_callables: BTreeMap::new(),
                 redundant_purity_hints: Vec::new(),
             },
             vendor_reference_rewrites: BTreeMap::new(),

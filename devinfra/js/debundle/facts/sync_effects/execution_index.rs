@@ -2079,9 +2079,9 @@ impl ExecutionIndex {
                     let local = specifier.local();
                     index.imported_bindings.insert(local.to_id());
                     if hints
-                        .assumptions
-                        .callback_factories
-                        .contains(local.sym.as_ref())
+                        .imported_callables
+                        .get(local.sym.as_ref())
+                        .is_some_and(|summary| summary.supports_callback_factory())
                     {
                         index.callback_factory_imports.insert(local.to_id());
                     }
@@ -4588,10 +4588,10 @@ impl Visit for ExecutionIndex {
 pub(crate) fn infer_returned_callback_factories(
     body: &[TopLevelItemView<'_>],
     exported_locals: &BTreeSet<String>,
-) -> BTreeSet<String> {
+) -> BTreeMap<String, u32> {
     let index = ExecutionIndex::collect(body, &AnalysisInputs::default(), None, &BTreeSet::new());
     if !index.dynamic_scope_owners.is_empty() {
-        return BTreeSet::new();
+        return BTreeMap::new();
     }
     let candidates: Vec<_> = index
         .hoisted_bindings
@@ -4602,7 +4602,7 @@ pub(crate) fn infer_returned_callback_factories(
         })
         .collect();
     if candidates.is_empty() {
-        return BTreeSet::new();
+        return BTreeMap::new();
     }
     let flow = ChunkValueFlow::analyze(body);
     candidates
@@ -4612,7 +4612,7 @@ pub(crate) fn infer_returned_callback_factories(
             values
                 .iter()
                 .eq([ValueOrigin::Function(*key)])
-                .then(|| id.0.to_string())
+                .then(|| (id.0.to_string(), *key))
         })
         .collect()
 }

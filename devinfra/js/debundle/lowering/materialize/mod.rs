@@ -469,11 +469,8 @@ pub(super) fn finish_logical_chunk(
                 .declared_pure_new
                 .extend(constructors.iter().cloned());
         }
-        if let Some(callback_factories) = cross_module_purities.callback_factories.get(chunk_id) {
-            inputs
-                .assumptions
-                .callback_factories
-                .extend(callback_factories.iter().cloned());
+        if let Some(callables) = cross_module_purities.imported_callables.get(chunk_id) {
+            inputs.merge_imported_callables(callables.clone());
         }
         if let Some(factories) = cross_module_purities
             .retained_callback_factories
@@ -747,6 +744,7 @@ pub(super) fn finish_logical_chunk(
                 residual: request.residual,
             })
             .collect(),
+        imported_callables: analysis_inputs.imported_callables.clone(),
         redundant_purity_hints,
     };
     Ok(MaterializedLogicalChunk {

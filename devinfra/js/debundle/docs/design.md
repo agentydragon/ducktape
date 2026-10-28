@@ -97,6 +97,14 @@ purity, callback behavior, and audited global publication. `AnalysisInputs` pair
 those assertions with imported call summaries and the caller's local-effect
 policy. Imported summaries may depend on assertions in their defining chunks;
 neither author assertions nor imported summaries are unconditional source facts.
+For bare named imports with a return-only callback-factory capability,
+`imported_callables` retains the defining module and export plus its evidence:
+an author assertion or the checked immutable wrapper's local binding and
+function start. Projection onto the importer's local name preserves this evidence;
+the execution index uses the capability only for eligible call shapes. Inline-only,
+retained-signature, and namespace-member author contracts remain distinct.
+The per-chunk `modules.json` report projects these imported summaries for
+diagnosis, including the defining source path when available.
 
 Soundness does not require every inference to hold for arbitrary JS. An
 inference may be **conditionally correct** — sound only when the input

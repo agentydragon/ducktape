@@ -128,7 +128,10 @@ debundle_e2e_test(name = "set_iterable_reentry_test")
 
 debundle_e2e_test(
     name = "imported_callback_timing_test",
-    deps = ["//devinfra/js/debundle:analysis"],
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
 )
 
 debundle_e2e_test(name = "class_callback_reachability_test")

@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use analysis::analysis_inputs::CallableSummary;
 use analysis::cross_module_purity::{
     ModulePurityFacts, ResolvedImport, resolve_asserted_callback_factory_members,
     resolve_asserted_fluent_bindings, resolve_asserted_inline_callback_factories,
@@ -72,9 +73,8 @@ pub(super) struct CrossModulePurities {
     /// Per-chunk local names whose imported exports have an asserted pure
     /// construction contract (`chunk_export_purity.pure_new_exports`).
     pub(super) constructors: BTreeMap<String, BTreeSet<String>>,
-    /// Per-chunk local names whose imported exports have an audited
-    /// callback-factory contract (`chunk_export_purity.callback_factory_exports`).
-    pub(super) callback_factories: BTreeMap<String, BTreeSet<String>>,
+    /// Per-chunk bare imported callable summaries with their defining evidence.
+    pub(super) imported_callables: BTreeMap<String, BTreeMap<String, CallableSummary>>,
     pub(super) inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) retained_callback_factories:
@@ -492,7 +492,7 @@ pub(super) fn collect_cross_module_imported_purities(
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
         constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
-        callback_factories: resolve_imported_callback_factories(
+        imported_callables: resolve_imported_callback_factories(
             &modules,
             &asserted_callback_factories,
         ),

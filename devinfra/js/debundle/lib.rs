@@ -27,7 +27,10 @@ pub mod module_assignment;
 pub mod purity;
 pub mod reports;
 
-pub use analysis_inputs::{AnalysisAssumptions, AnalysisInputs, KnownEffect, LocalEffectPolicy};
+pub use analysis_inputs::{
+    AnalysisAssumptions, AnalysisInputs, CallableSummary, CallbackFactoryEvidence, KnownEffect,
+    LocalEffectPolicy,
+};
 pub use assignment_assembly::{
     AssemblyOutcome, AtomicGroupConflict, ConflictingClaim, assemble_assignment,
 };

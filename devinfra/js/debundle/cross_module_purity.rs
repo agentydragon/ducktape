@@ -37,6 +37,7 @@ use swc_common::Span;
 use swc_ecma_ast::ModuleItem;
 
 use crate::SourceLocation;
+use crate::analysis_inputs::{CallableSummary, CallbackFactoryEvidence};
 use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
 };
@@ -293,20 +294,26 @@ pub fn resolve_imported_purities(
 pub fn resolve_imported_callback_factories(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
-) -> BTreeMap<ModuleKey, BTreeSet<String>> {
+) -> BTreeMap<ModuleKey, BTreeMap<String, CallableSummary>> {
     let required: BTreeSet<_> = modules
         .values()
         .flat_map(|facts| facts.imports.values())
         .map(|target| (target.module.clone(), target.export.clone()))
         .collect();
-    let mut factories = BTreeSet::new();
+    let mut factories: BTreeMap<(ModuleKey, String), CallableSummary> = BTreeMap::new();
     for (module, exports) in asserted {
         for export in exports {
             if modules
                 .get(module)
                 .is_some_and(|facts| facts.exports.contains_key(export))
             {
-                factories.insert((module.clone(), export.clone()));
+                factories.insert(
+                    (module.clone(), export.clone()),
+                    CallableSummary::callback_factory(CallbackFactoryEvidence::AuthorAssertion {
+                        defining_module: module.clone(),
+                        export: export.clone(),
+                    }),
+                );
             } else {
                 eprintln!(
                     "cross_module_purity: dangling callback_factory_exports assertion {module}:{export} — no such analyzed module export; ignoring"
@@ -320,7 +327,7 @@ pub fn resolve_imported_callback_factories(
             .iter()
             .filter(|(export, _)| {
                 let key = (module.clone(), (*export).clone());
-                required.contains(&key) && !factories.contains(&key)
+                required.contains(&key) && !factories.contains_key(&key)
             })
             .map(|(_, local)| local.clone())
             .collect();
@@ -332,13 +339,24 @@ pub fn resolve_imported_callback_factories(
             crate::facts::sync_effects::execution_index::infer_returned_callback_factories(
                 &views, &locals,
             );
-        factories.extend(
-            facts
-                .exports
-                .iter()
-                .filter(|(_, local)| inferred.contains(*local))
-                .map(|(export, _)| (module.clone(), export.clone())),
-        );
+        for (export, local) in &facts.exports {
+            let Some(&function_start) = inferred.get(local) else {
+                continue;
+            };
+            let key = (module.clone(), export.clone());
+            factories
+                .entry(key)
+                .or_default()
+                .merge(CallableSummary::callback_factory(
+                    CallbackFactoryEvidence::InferredImmutableWrapper {
+                        defining_module: module.clone(),
+                        export: export.clone(),
+                        local: local.clone(),
+                        source_path: facts.source.as_ref().map(|(path, _)| path.clone()),
+                        function_start,
+                    },
+                ));
+        }
     }
     modules
         .iter()
@@ -346,10 +364,11 @@ pub fn resolve_imported_callback_factories(
             let bindings = facts
                 .imports
                 .iter()
-                .filter(|(_, target)| {
-                    factories.contains(&(target.module.clone(), target.export.clone()))
+                .filter_map(|(local, target)| {
+                    factories
+                        .get(&(target.module.clone(), target.export.clone()))
+                        .map(|summary| (local.clone(), summary.clone()))
                 })
-                .map(|(local, _)| local.clone())
                 .collect();
             (module.clone(), bindings)
         })
@@ -731,6 +750,66 @@ mod tests {
             BTreeSet::from(["forwardRef".to_string()]),
         )]);
         assert!(resolve_imported_purities(&modules, &asserted)["app"]["forwardRef"].is_pure());
+    }
+
+    #[test]
+    fn callback_factory_summaries_keep_source_and_assertion_provenance() {
+        let app = parse(
+            "import { wrap as localWrap, audited as localAudited } from 'lib';\n\
+             import { wrap as missingWrap } from 'vendor';",
+        );
+        let lib = parse(
+            "export function wrap(callback) { return () => callback(); }\n\
+             export const audited = makeOpaque();",
+        );
+        let function_start = match &lib.body[0] {
+            ModuleItem::ModuleDecl(swc_ecma_ast::ModuleDecl::ExportDecl(export)) => {
+                match &export.decl {
+                    swc_ecma_ast::Decl::Fn(function) => function.function.span.lo.0,
+                    _ => panic!("expected function export"),
+                }
+            }
+            _ => panic!("expected export declaration"),
+        };
+        let modules = BTreeMap::from([
+            (
+                "app".to_string(),
+                facts(
+                    &app,
+                    &[
+                        ("localWrap", "lib", "wrap"),
+                        ("localAudited", "lib", "audited"),
+                        ("missingWrap", "vendor", "wrap"),
+                    ],
+                    &[],
+                ),
+            ),
+            (
+                "lib".to_string(),
+                facts(&lib, &[], &[("wrap", "wrap"), ("audited", "audited")]),
+            ),
+        ]);
+        let asserted =
+            BTreeMap::from([("lib".to_string(), BTreeSet::from(["audited".to_string()]))]);
+        let resolved = resolve_imported_callback_factories(&modules, &asserted);
+        assert_eq!(
+            resolved["app"]["localWrap"].callback_factory_evidence(),
+            &BTreeSet::from([CallbackFactoryEvidence::InferredImmutableWrapper {
+                defining_module: "lib".to_string(),
+                export: "wrap".to_string(),
+                local: "wrap".to_string(),
+                source_path: None,
+                function_start,
+            }]),
+        );
+        assert_eq!(
+            resolved["app"]["localAudited"].callback_factory_evidence(),
+            &BTreeSet::from([CallbackFactoryEvidence::AuthorAssertion {
+                defining_module: "lib".to_string(),
+                export: "audited".to_string(),
+            }]),
+        );
+        assert!(!resolved["app"].contains_key("missingWrap"));
     }
 
     #[test]
