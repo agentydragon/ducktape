@@ -470,6 +470,14 @@ py_binary(
     deps = [":export_schema"],
 )
 
+genrule(
+    name = "frontend_openapi_json",
+    outs = ["frontend_openapi.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+    visibility = ["//finance/augur/frontend/lib:__pkg__"],
+)
+
 filegroup(
     name = "public_fixture_config",
     srcs = ["testdata/config.yaml"],

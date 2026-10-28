@@ -22,13 +22,6 @@ js_library(
 )
 
 js_binary(
-    name = "strip_ts_types",
-    data = ["//:node_modules/typescript"],
-    entry_point = "strip_ts_types.mjs",
-    visibility = ["//visibility:public"],
-)
-
-js_binary(
     name = "openapi_typescript_codegen",
     data = [
         ":schema_remote_fetch_guard",
@@ -38,6 +31,15 @@ js_binary(
     visibility = ["//visibility:public"],
 )
 
+js_binary(
+    name = "openapi_zod_codegen",
+    data = [
+        ":schema_remote_fetch_guard",
+        "//:node_modules/@hey-api/openapi-ts",
+    ],
+    entry_point = "openapi_zod_codegen.mjs",
+    visibility = ["//visibility:public"],
+)
 js_library(
     name = "schema_remote_fetch_guard",
     srcs = ["schema_remote_fetch_guard.mjs"],

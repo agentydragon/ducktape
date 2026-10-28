@@ -202,6 +202,14 @@ py_binary(
     deps = [":export_schema"],
 )
 
+genrule(
+    name = "frontend_openapi_json",
+    outs = ["frontend_openapi.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+    visibility = ["//study_casino/frontend/lib:__pkg__"],
+)
+
 py_binary(
     name = "server",
     data = ["//study_casino/frontend:bundle"],
