@@ -2609,6 +2609,12 @@ struct ExecutionIndex {
     native_write_census: NativeWriteCensus,
     binding_declaration_writes: BTreeMap<Id, Vec<BindingDeclarationWrite>>,
     direct_top_level_var_declaration: bool,
+    direct_top_level_const_declaration: bool,
+    /// Direct primitive literal initializers for simple top-level `const`
+    /// bindings. Reassignment and dynamic-scope checks are applied after the
+    /// single canonical AST walk is complete.
+    direct_primitive_const_bindings: BTreeSet<Id>,
+    reassigned_bindings: BTreeSet<Id>,
     ordinary_input_refs: BTreeMap<Id, (ValueInputRef, SourceUnitOrdinal)>,
     value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,
     resolved_value_inputs: Vec<ResolvedBindingValueInput>,
@@ -2744,6 +2750,9 @@ impl Default for ExecutionIndex {
             native_write_census: NativeWriteCensus::default(),
             binding_declaration_writes: BTreeMap::new(),
             direct_top_level_var_declaration: false,
+            direct_top_level_const_declaration: false,
+            direct_primitive_const_bindings: BTreeSet::new(),
+            reassigned_bindings: BTreeSet::new(),
             ordinary_input_refs: BTreeMap::new(),
             value_input_evidence: BTreeMap::new(),
             resolved_value_inputs: Vec::new(),
@@ -3308,6 +3317,8 @@ impl ExecutionIndex {
                         ..
                     }))
             );
+            index.direct_top_level_const_declaration = var_decl_of_item(item.as_module_item())
+                .is_some_and(|declaration| declaration.kind == VarDeclKind::Const);
             index.past_await = false;
             index.may_skip_await_depth = 0;
             index.conditional_depth = 0;
@@ -3452,6 +3463,7 @@ impl ExecutionIndex {
             }
             item.as_module_item().visit_with(&mut index);
             index.direct_top_level_var_declaration = false;
+            index.direct_top_level_const_declaration = false;
         }
         for (offset, proof) in index.array_iterations.values_mut().enumerate() {
             proof.result = u32::try_from(offset)
@@ -4438,6 +4450,22 @@ impl ExecutionIndex {
                     .extend(index.global_membership_candidates.keys().copied());
             }
         }
+        let primitive_const_candidates = std::mem::take(&mut index.direct_primitive_const_bindings);
+        index.direct_primitive_const_bindings = primitive_const_candidates
+            .into_iter()
+            .filter(|binding| {
+                if !index.dynamic_scope_owners.is_empty()
+                    || index.reassigned_bindings.contains(binding)
+                {
+                    return false;
+                }
+                matches!(
+                    index.binding_declaration_writes.get(binding).map(Vec::as_slice),
+                    Some([declaration])
+                        if declaration.direct_top_level && declaration.simple_identifier
+                )
+            })
+            .collect();
         index
     }
 
@@ -5934,6 +5962,13 @@ impl Visit for ExecutionIndex {
             .map(|value| ValueExpr::from_expr(value));
         let direct_top_level = self.direct_top_level_var_declaration && self.current.is_none();
         if let Pat::Ident(binding) = &declarator.name {
+            if self.direct_top_level_const_declaration
+                && direct_top_level
+                && declarator.init.as_deref().is_some_and(primitive_literal)
+            {
+                self.direct_primitive_const_bindings
+                    .insert(binding.id.to_id());
+            }
             self.binding_declaration_writes
                 .entry(binding.id.to_id())
                 .or_default()
@@ -6135,6 +6170,8 @@ impl Visit for ExecutionIndex {
         match head {
             ForHead::Pat(pattern) => {
                 collect_pattern_assignments(pattern, &ValueExpr::Unknown, &mut assignments);
+                self.reassigned_bindings
+                    .extend(assignments.iter().map(|(binding, _)| binding.clone()));
             }
             ForHead::VarDecl(declaration) => {
                 for declarator in &declaration.decls {
@@ -6182,6 +6219,8 @@ impl Visit for ExecutionIndex {
             }
             _ => {}
         }
+        self.reassigned_bindings
+            .extend(assigned.iter().map(|(binding, _)| binding.clone()));
         for (binding, _) in assigned {
             self.receiver_identity
                 .definition(binding, self.current, assignment.span, None);
@@ -6392,6 +6431,7 @@ impl Visit for ExecutionIndex {
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
         if let Expr::Ident(ident) = expression.arg.unwrap_parens() {
+            self.reassigned_bindings.insert(ident.to_id());
             self.receiver_identity
                 .definition(ident.to_id(), self.current, expression.span, None);
             self.property_key_assignments

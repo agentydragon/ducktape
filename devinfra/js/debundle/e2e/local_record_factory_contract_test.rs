@@ -28,6 +28,15 @@ const FRESH_RECORD: &str = r#"{
   mode: Flags.FIRST,
 }"#;
 
+const FRESH_RECORD_WITH_NAME: &str = r#"{
+  name: label,
+  execute: () => later,
+  nested: { callback: function () { return later; }, enabled: true },
+  items: [{ callback: () => later }],
+  values: [1, "ready", null, false],
+  mode: Flags.FIRST,
+}"#;
+
 const FLAGS: &str = r#"var Flags = ((values) => ((values[(values.FIRST = 1)] = "FIRST"), (values[(values.SECOND = 2)] = "SECOND"), values))(Flags || {});
 "#;
 
@@ -138,6 +147,93 @@ fn annotation_admits_a_direct_fresh_record_to_the_checked_constructor_factory() 
         &["class Holder", "function create", "const command"],
         &[],
     );
+}
+
+#[test]
+fn initialized_primitive_const_property_keeps_the_constructor_result_deferred() {
+    let source = fixture_source(
+        "",
+        FACTORY,
+        "const label = \"Example\";\n",
+        &format!("create({FRESH_RECORD_WITH_NAME})"),
+        "",
+        "console.log(command.record.name, command.run(), command.weight);",
+    );
+    let fixture = run_fixture(fixture_opts(&source, true, &["label"], &[], &[]));
+
+    assert_preserved_entry_output(&fixture, "Example 169 0\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/callbacks/wrapped.js",
+        &["command", "label"],
+        &["later"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/callbacks/wrapped.js",
+        &["const label", "function create", "const command"],
+        &[],
+    );
+}
+
+#[test]
+fn only_initialized_unreassigned_top_level_primitive_literals_are_closed_inputs() {
+    let cases = [
+        (
+            "const label = { value: \"Example\" };\n",
+            "",
+            "create({ name: label, execute: () => later })",
+            &["label"][..],
+        ),
+        (
+            "const label = { get value() { return \"Example\"; } };\n",
+            "",
+            "create({ name: label.value, execute: () => later })",
+            &["label"][..],
+        ),
+        (
+            "",
+            "const label = \"Example\";\n",
+            "create({ name: label, execute: () => later })",
+            &["label"][..],
+        ),
+        (
+            "const label = \"Example\";\nfunction updateLabel() { label = \"Changed\"; }\n",
+            "",
+            "create({ name: label, execute: () => later })",
+            &["label", "updateLabel"][..],
+        ),
+        (
+            "const label = typeof missingValue;\n",
+            "",
+            "create({ name: label, execute: () => later })",
+            &["label"][..],
+        ),
+        (
+            "const label = true ? \"Example\" : \"Other\";\n",
+            "",
+            "create({ name: label, execute: () => later })",
+            &["label"][..],
+        ),
+        (
+            "let label = \"Example\";\nlabel = \"Changed\";\n",
+            "",
+            "create({ name: label, execute: () => later })",
+            &["label"][..],
+        ),
+    ];
+
+    for (before_command, before_later, call, callback_members) in cases {
+        let source = fixture_source(
+            "",
+            FACTORY,
+            before_command,
+            call,
+            before_later,
+            "console.log(command.run());",
+        );
+        assert_atomic_fallback(&source, callback_members, &[], &[]);
+    }
 }
 
 #[test]

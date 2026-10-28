@@ -2124,6 +2124,13 @@ impl Executor<'_> {
                         .all(|(name, value)| name.is_some() && self.closed_constructor_input(value))
             }
             ValueExpr::Member(..) => self.closed_enum_member_read(value),
+            ValueExpr::Binding(binding) => {
+                self.index.direct_primitive_const_bindings.contains(binding)
+                    && self.initialized_bindings.contains(binding)
+                    && self.prefix_values.get(binding).is_some_and(|values| {
+                        values.len() == 1 && values.contains(&AbstractValue::NonCallable)
+                    })
+            }
             ValueExpr::Primitive(operands) => operands
                 .iter()
                 .all(|operand| matches!(operand, ValueExpr::NonCallable | ValueExpr::Undefined)),
