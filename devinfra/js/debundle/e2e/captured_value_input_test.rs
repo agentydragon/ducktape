@@ -470,9 +470,9 @@ fn prototype_absence_keeps_captured_census_provenance() {
         .unwrap()
         .iter()
         .find(|node| {
-            node["declared"]
+            node["declared_bindings"]
                 .as_array()
-                .is_some_and(|names| names.iter().any(|name| name == "result"))
+                .is_some_and(|names| names.iter().any(|name| name["binding"] == "result"))
         })
         .expect("result node");
     assert!(
