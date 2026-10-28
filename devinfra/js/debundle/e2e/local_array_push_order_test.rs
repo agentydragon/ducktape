@@ -361,3 +361,40 @@ fn array_allocation_keeps_opaque_heap_frontier_live_without_read_syntax() {
     assert_preserved_entry_output(&fixture, "");
     assert_sequenced_path(&fixture.dependency_graph(), 2, 0);
 }
+
+#[test]
+fn fresh_array_allocation_can_precede_an_earlier_opaque_call() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "function opaque() { return globalThis.initial; }\nconst before = opaque();\nconst values = [42];\nconsole.log(values[0], before);\n",
+        vec![
+            logical_module("values", &[Member::new("values")]),
+            logical_module("before", &[Member::new("opaque"), Member::new("before")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "42 undefined\n");
+    assert_no_sequenced_edge(&fixture.dependency_graph(), 2, 1);
+}
+
+#[test]
+fn eager_native_array_input_does_not_inherit_pre_allocation_heap_barrier() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const before = (() => 1)();\nconst keys = Object.keys([10]);\nconsole.log(keys.length + before);\n",
+        vec![logical_module("keys", &[Member::new("keys")])],
+    ));
+    assert_preserved_entry_output(&fixture, "2\n");
+    assert_no_sequenced_edge(&fixture.dependency_graph(), 1, 0);
+}
+
+#[test]
+fn lazy_array_origins_keep_opaque_calls_live_before_lexical_allocation() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "globalThis.make = make;\nfunction make() { return []; }\nconst first = globalThis.make();\nconst second = globalThis.make();\nconsole.log(first.length, second.length);\n",
+        vec![
+            logical_module_with_anon("make", &[Member::new("make")], &["globalThis.make = make;"]),
+            logical_module("first", &[Member::new("first")]),
+            logical_module("second", &[Member::new("second")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "0 0\n");
+    assert_sequenced_edge(&fixture.dependency_graph(), 3, 2);
+}

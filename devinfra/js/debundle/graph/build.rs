@@ -357,20 +357,6 @@ fn emit_array_content_order(
         .iter()
         .flat_map(|stmt| stmt.rebinds.eager.iter().chain(&stmt.rebinds.lazy).cloned())
         .collect();
-    let all_array_cells: BTreeSet<_> = facts
-        .iter()
-        .flat_map(|stmt| {
-            stmt.array_contents
-                .reads
-                .eager
-                .iter()
-                .chain(&stmt.array_contents.reads.lazy)
-                .chain(&stmt.array_contents.writes.eager)
-                .chain(&stmt.array_contents.writes.lazy)
-                .cloned()
-        })
-        .filter(|cell| matches!(cell, EffectCell::ArrayContents(_)))
-        .collect();
 
     let resolved_callee = |binding: &swc_ecma_ast::Id| -> Option<SourceUnitId> {
         resolve_direct_function_source_unit(
@@ -382,10 +368,16 @@ fn emit_array_content_order(
         )
     };
 
-    let has_array_contents = !all_array_cells.is_empty();
+    // A hoisted or escaped callable can allocate before its lexical statement.
+    // Keep those origins live from the start; eager-only arrays become live
+    // when their allocation or first precise content effect is encountered.
+    let mut has_live_array_contents = facts
+        .iter()
+        .any(|stmt| !stmt.array_contents.allocations.lazy.is_empty());
     let mut lazy_effects: Vec<_> = facts
         .iter()
         .map(|stmt| ArrayContentSummary {
+            allocations: stmt.array_contents.allocations.first_order_lazy.clone(),
             effects: array_content_cells(
                 &stmt.array_contents.reads.first_order_lazy,
                 &stmt.array_contents.writes.first_order_lazy,
@@ -408,6 +400,11 @@ fn emit_array_content_order(
                     continue;
                 };
                 let target_effects = lazy_effects[target.0].clone();
+                let allocation_count = lazy_effects[source].allocations.len();
+                lazy_effects[source]
+                    .allocations
+                    .extend(target_effects.allocations);
+                changed |= lazy_effects[source].allocations.len() != allocation_count;
                 changed |=
                     union_effects(&mut lazy_effects[source].effects, &target_effects.effects);
                 if target_effects.opaque && !lazy_effects[source].opaque {
@@ -423,6 +420,7 @@ fn emit_array_content_order(
 
     let mut events = Vec::new();
     for stmt in facts {
+        let mut allocations = stmt.array_contents.allocations.eager.clone();
         let mut effects = array_content_cells(
             &stmt.array_contents.reads.eager,
             &stmt.array_contents.writes.eager,
@@ -443,13 +441,28 @@ fn emit_array_content_order(
         // at-init call inherits their first-order effects.
         for callee in &stmt.calls.eager {
             if let Some(target) = resolved_callee(callee) {
+                allocations.extend(lazy_effects[target.0].allocations.iter().cloned());
                 union_effects(&mut effects, &lazy_effects[target.0].effects);
                 opaque |= lazy_effects[target.0].opaque;
             } else {
                 opaque = true;
             }
         }
-        if has_array_contents && (!effects.reads.is_empty() || !effects.writes.is_empty() || opaque)
+        has_live_array_contents |=
+            !allocations.is_empty() || !effects.reads.is_empty() || !effects.writes.is_empty();
+        if !allocations.is_empty() {
+            events.push((
+                SourceUnitId(stmt.ordinal.0),
+                stmt.ordinal,
+                crate::StatementEffectSummary {
+                    reads: BTreeSet::new(),
+                    writes: allocations,
+                },
+                CellOrderBarrier::HeapAllocation,
+            ));
+        }
+        if has_live_array_contents
+            && (!effects.reads.is_empty() || !effects.writes.is_empty() || opaque)
         {
             events.push((
                 SourceUnitId(stmt.ordinal.0),
@@ -520,6 +533,7 @@ fn union_effects(
 
 #[derive(Clone, Default)]
 struct ArrayContentSummary {
+    allocations: BTreeSet<EffectCell>,
     effects: crate::StatementEffectSummary,
     opaque: bool,
 }
@@ -527,6 +541,9 @@ struct ArrayContentSummary {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CellOrderBarrier {
     None,
+    /// A fresh allocation seeds later heap observations without depending on
+    /// prior heap effects or resetting an existing source-origin timeline.
+    HeapAllocation,
     /// Preserve the S-chain behavior: an unsummarized impure statement
     /// depends on every preceding impure source unit.
     AllPriorEvents,
@@ -645,10 +662,20 @@ fn emit_cell_order_events(
         BTreeMap::new();
     let mut prior_source_units: Vec<SourceUnitId> = Vec::new();
     let mut opaque_barrier: Option<SourceUnitId> = None;
+    let mut pending_allocations: BTreeMap<EffectCell, BTreeSet<SourceUnitId>> = BTreeMap::new();
     for (from, ordinal, effects, barrier_mode) in events {
+        if barrier_mode == CellOrderBarrier::HeapAllocation {
+            for cell in effects.writes {
+                pending_allocations.entry(cell).or_default().insert(from);
+            }
+            continue;
+        }
         let mut targets: BTreeSet<SourceUnitId> = BTreeSet::new();
         if barrier_mode != CellOrderBarrier::AllPriorEvents {
             for cell in effects.reads.iter().chain(effects.writes.iter()) {
+                if let Some(allocations) = pending_allocations.get(cell) {
+                    targets.extend(allocations.iter().copied());
+                }
                 if let Some(&to) = last_writer.get(cell) {
                     targets.insert(to);
                 }
@@ -673,6 +700,12 @@ fn emit_cell_order_events(
             // Every earlier read/write is either on that frontier or already
             // constrained before a frontier event. Reset the per-cell state
             // so later observations depend on the opaque operation itself.
+            targets.extend(
+                pending_allocations
+                    .values()
+                    .flat_map(|allocations| allocations.iter().copied()),
+            );
+            pending_allocations.clear();
             targets.extend(last_writer.values().copied());
             targets.extend(
                 readers_since_last_write
@@ -1387,6 +1420,87 @@ impl UnresolvedCallFallback {
 #[cfg(test)]
 mod array_heap_frontier_tests {
     use super::*;
+
+    fn heap_event(
+        ordinal: usize,
+        reads: &[u32],
+        writes: &[u32],
+        barrier: CellOrderBarrier,
+    ) -> (
+        SourceUnitId,
+        SourceUnitOrdinal,
+        crate::StatementEffectSummary,
+        CellOrderBarrier,
+    ) {
+        (
+            SourceUnitId(ordinal),
+            SourceUnitOrdinal(ordinal),
+            crate::StatementEffectSummary {
+                reads: reads
+                    .iter()
+                    .copied()
+                    .map(EffectCell::ArrayContents)
+                    .collect(),
+                writes: writes
+                    .iter()
+                    .copied()
+                    .map(EffectCell::ArrayContents)
+                    .collect(),
+            },
+            barrier,
+        )
+    }
+
+    #[test]
+    fn fresh_allocation_is_pending_without_reading_prior_opaque_effects() {
+        let events = [
+            heap_event(0, &[], &[], CellOrderBarrier::HeapFrontier),
+            heap_event(1, &[], &[10], CellOrderBarrier::HeapAllocation),
+            heap_event(2, &[], &[], CellOrderBarrier::HeapFrontier),
+        ];
+        let mut edges = Vec::new();
+        let mut pairs = BTreeSet::new();
+        emit_cell_order_events(events, &mut edges, &mut pairs);
+        assert!(!pairs.contains(&(SourceUnitId(1), SourceUnitId(0))));
+        assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(1))));
+        assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(0))));
+    }
+
+    #[test]
+    fn repeated_source_origin_allocation_preserves_content_writer_and_readers() {
+        let events = [
+            heap_event(0, &[], &[10], CellOrderBarrier::HeapAllocation),
+            heap_event(1, &[], &[10], CellOrderBarrier::None),
+            heap_event(2, &[10], &[], CellOrderBarrier::None),
+            heap_event(3, &[], &[10], CellOrderBarrier::HeapAllocation),
+            heap_event(4, &[10], &[], CellOrderBarrier::None),
+            heap_event(5, &[], &[10], CellOrderBarrier::None),
+        ];
+        let mut edges = Vec::new();
+        let mut pairs = BTreeSet::new();
+        emit_cell_order_events(events, &mut edges, &mut pairs);
+        assert!(pairs.contains(&(SourceUnitId(4), SourceUnitId(1))));
+        assert!(pairs.contains(&(SourceUnitId(4), SourceUnitId(3))));
+        assert!(pairs.contains(&(SourceUnitId(5), SourceUnitId(2))));
+        assert!(pairs.contains(&(SourceUnitId(5), SourceUnitId(4))));
+    }
+
+    #[test]
+    fn allocation_does_not_exempt_same_statement_opaque_execution() {
+        let events = [
+            heap_event(0, &[], &[10], CellOrderBarrier::HeapAllocation),
+            heap_event(1, &[], &[], CellOrderBarrier::HeapFrontier),
+            heap_event(2, &[], &[20], CellOrderBarrier::HeapAllocation),
+            heap_event(2, &[], &[], CellOrderBarrier::HeapFrontier),
+            heap_event(3, &[10], &[], CellOrderBarrier::None),
+        ];
+        let mut edges = Vec::new();
+        let mut pairs = BTreeSet::new();
+        emit_cell_order_events(events, &mut edges, &mut pairs);
+        assert!(pairs.contains(&(SourceUnitId(1), SourceUnitId(0))));
+        assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(1))));
+        assert!(pairs.contains(&(SourceUnitId(3), SourceUnitId(2))));
+    }
 
     #[test]
     fn repeated_opaque_heap_barriers_keep_edges_linear_in_the_live_frontier() {

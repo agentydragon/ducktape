@@ -203,7 +203,13 @@ impl Visit for ArrayContentCollector<'_> {
         // Materialization initializes this fresh identity's contents. Keep an
         // allocation cell even when all later observations use an unsupported
         // protocol and therefore cannot name a precise array read.
-        self.record(&BTreeSet::from([node.span.lo.0]), false, true, false);
+        let (depth, past_await) = self.position();
+        record_set(
+            &mut self.effects.allocations,
+            EffectCell::ArrayContents(node.span.lo.0),
+            depth,
+            past_await,
+        );
         node.visit_children_with(self);
     }
 
