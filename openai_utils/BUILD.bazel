@@ -149,6 +149,7 @@ py_test(
         ":conftest",
         ":model",
         "//:conftest",
+        "@pypi//httpx2",
         "@pypi//openai",
         "@pypi//pydantic",
         "@pypi//pytest",

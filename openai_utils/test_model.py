@@ -2,8 +2,10 @@
 
 from typing import Any, cast
 
+import httpx2
 import pytest
 import pytest_bazel
+from openai import AsyncOpenAI
 from openai.types.responses import (
     Response,
     ResponseFunctionToolCall,
@@ -54,67 +56,65 @@ def test_response_usage_serializes_reported_cache_write_tokens() -> None:
 
 
 @pytest.mark.parametrize(
-    ("sdk_input", "sdk_output", "expected_input", "expected_output"),
+    ("details", "expected_input", "expected_output"),
     [
-        (None, None, None, None),
+        ({}, None, None),
+        ({"input_tokens_details": None, "output_tokens_details": None}, None, None),
+        ({"input_tokens_details": {}, "output_tokens_details": {}}, InputTokensDetails(), OutputTokensDetails()),
         (
-            response_usage.InputTokensDetails.model_construct(),
-            response_usage.OutputTokensDetails.model_construct(),
-            InputTokensDetails(),
-            OutputTokensDetails(),
-        ),
-        (
-            response_usage.InputTokensDetails.model_construct(cache_write_tokens=2),
-            response_usage.OutputTokensDetails.model_construct(reasoning_tokens=None),
+            {"input_tokens_details": {"cache_write_tokens": 2}, "output_tokens_details": {"reasoning_tokens": None}},
             InputTokensDetails(cache_write_tokens=2),
             OutputTokensDetails(),
         ),
         (
-            response_usage.InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
-            response_usage.OutputTokensDetails(reasoning_tokens=0),
+            {
+                "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+                "output_tokens_details": {"reasoning_tokens": 0},
+            },
             InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
             OutputTokensDetails(reasoning_tokens=0),
         ),
         (
-            response_usage.InputTokensDetails.model_construct(cached_tokens=3, cache_write_tokens=2, audio_tokens=1),
-            response_usage.OutputTokensDetails(reasoning_tokens=4),
+            {
+                "input_tokens_details": {"cached_tokens": 3, "cache_write_tokens": 2, "audio_tokens": 1},
+                "output_tokens_details": {"reasoning_tokens": 4},
+            },
             InputTokensDetails(cached_tokens=3, cache_write_tokens=2, audio_tokens=1),
             OutputTokensDetails(reasoning_tokens=4),
         ),
     ],
-    ids=["null", "empty", "partial", "zero", "positive"],
+    ids=["omitted", "null", "empty", "partial", "zero", "positive"],
 )
-def test_response_usage_preserves_reported_details(
-    sdk_input: response_usage.InputTokensDetails | None,
-    sdk_output: response_usage.OutputTokensDetails | None,
-    expected_input: InputTokensDetails | None,
-    expected_output: OutputTokensDetails | None,
+async def test_response_usage_preserves_reported_details(
+    details: dict[str, Any], expected_input: InputTokensDetails | None, expected_output: OutputTokensDetails | None
 ) -> None:
-    # Compatible providers can omit fields required by the SDK's declared types.
-    usage = response_usage.ResponseUsage.model_construct(
-        input_tokens=10,
-        output_tokens=5,
-        total_tokens=15,
-        input_tokens_details=sdk_input,
-        output_tokens_details=sdk_output,
-    )
+    def handler(_: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            json={
+                "id": "resp_usage",
+                "object": "response",
+                "created_at": 1,
+                "model": "test-model",
+                "output": [],
+                "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15, **details},
+            },
+        )
 
-    assert ResponseUsage.from_sdk(usage) == ResponseUsage(
+    async with AsyncOpenAI(
+        base_url="http://test/v1",
+        api_key="sk-test",
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+    ) as client:
+        response = await client.responses.create(model="test-model", input="hello")
+
+    assert ResponsesResult.from_sdk(response).usage == ResponseUsage(
         input_tokens=10,
         output_tokens=5,
         total_tokens=15,
         input_tokens_details=expected_input,
         output_tokens_details=expected_output,
     )
-
-
-def test_response_usage_preserves_omitted_details() -> None:
-    usage = response_usage.ResponseUsage.model_construct(input_tokens=10, output_tokens=5, total_tokens=15)
-
-    result = ResponseUsage.from_sdk(usage)
-
-    assert result.input_tokens_details is None
-    assert result.output_tokens_details is None
 
 
 def test_reasoning_content_item_stays_strict() -> None:
