@@ -360,7 +360,7 @@ flowchart LR
     api_typegen["B: openapi_js_library(name, schema, out=None)<br/>openapi-typescript + root-type flags"]:::proposed
     api_types["API .d.ts<br/>paths, operations, components<br/>named model exports; raw name.d.ts by default"]:::proposed
     api_types_library["Named js_library from the macro<br/>JsInfo.transitive_types"]:::proposed
-    zod_gen["B: openapi_zod_ts_library(name, schema, config, tsconfig, deps)<br/>Hey API Zod 4 + TypeScript compilation"]:::proposed
+    zod_gen["B: openapi_zod_ts_library macro<br/>Hey API Zod 4 plugin"]:::proposed
     python_models --> http_export
     http_export --> http_json
     http_json --> api_typegen
@@ -378,8 +378,9 @@ flowchart LR
     tool_export --> tool_json
     model_json --> json_typegen
     tool_json --> json_typegen
-    zod_ts["Generated Zod .ts"]:::artifact
-    zod_modules["Compiled Zod ES modules<br/>.js and .d.ts"]:::artifact
+    zod_ts["Generated Zod .ts / .mts<br/>raw file label"]:::artifact
+    zod_compile["B: ts_library / tsc<br/>inside macro; named target is compiled library"]:::proposed
+    zod_modules["Compiled Zod outputs<br/>.js + .d.ts or .mjs + .d.mts"]:::artifact
     zod_validation["Runtime request / response validation<br/>Augur and Study Casino<br/>TS and plain-JS consumers"]:::consumer
     model_types["Model / catalog .d.ts<br/>raw :out file label"]:::artifact
     model_types_library["Named js_library from the macro<br/>JsInfo.transitive_types"]:::proposed
@@ -390,7 +391,8 @@ flowchart LR
     tool_consumers["Haku tool previews and validation<br/>SSH action rendering"]:::consumer
     tool_package["B: js_library wrapper<br/>runtime JSON srcs + declaration-library deps"]:::proposed
     zod_gen --> zod_ts
-    zod_gen -->|"compiled library output"| zod_modules
+    zod_ts --> zod_compile
+    zod_compile --> zod_modules
     zod_modules -->|"import / safeParse"| zod_validation
     json_typegen --> model_types
     model_types --> model_types_library
