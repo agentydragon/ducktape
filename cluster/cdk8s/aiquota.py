@@ -8,7 +8,6 @@ container's `unset` placeholder tag.
 
 from __future__ import annotations
 
-import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -76,14 +75,9 @@ NAMESPACE = cli_proxy_api_app.NAMESPACE  # created by CLIProxyAPI's Kustomizatio
 BEARER_SECRET_NAME = "aiquota-api-bearer"  # the SOPS-managed Secret; every mirror below copies its one key
 # The API reads its config at the Settings default; nothing sets AIQUOTA_CONFIG.
 _CONFIG_PATH: Path = Settings.model_fields["config_path"].default
-_CONFIG_HEADER = textwrap.dedent(
-    """\
-    # The CLIProxyAPI integration keeps the Claude and Codex OAuth credentials and
-    # performs the authenticated usage requests. The legacy Claude setup token
-    # remains owned by Haku's existing egress proxy, not by this Deployment.
-
-    """
-)
+# The CLIProxyAPI integration keeps the Claude and Codex OAuth credentials and performs
+# authenticated usage requests. Haku's existing egress proxy still owns the legacy Claude
+# setup token.
 _CONFIG = Config(
     cli_proxy_api=CLIProxyAPISettings(url=f"{cli_proxy_api_app.SERVICE.url}/v0/management"),
     claude=ClaudeSettings(enabled=True),
@@ -93,7 +87,7 @@ _CONFIG = Config(
 CONFIG_CONFIG_MAP = ConfigMapArgs(
     name="aiquota-api-config",
     namespace=NAMESPACE,
-    data={_CONFIG_PATH.name: _CONFIG_HEADER + tomli_w.dumps(_CONFIG.model_dump(mode="json", exclude_unset=True))},
+    data={_CONFIG_PATH.name: tomli_w.dumps(_CONFIG.model_dump(mode="json", exclude_unset=True))},
 )
 
 _API_NAME = "aiquota-api"

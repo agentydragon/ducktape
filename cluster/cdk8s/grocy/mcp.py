@@ -97,15 +97,12 @@ def _config_map(household: str) -> ConfigMapArgs:
         "persistence": {"kind": "postgres"},
     }
     oidc = _oidc(household)
-    header = (
-        f"# Non-secret config for the {oidc.namespace} MCP server, mounted at {CONFIG_FILE_ENV}.\n"
-        f"# Secrets (oidc client_id/secret, proxy client_id) come from env ({oidc.name}\n"
-        "# k8s Secret), so no single field here is secret.\n"
-    )
+    # This file contains only non-secret settings. OIDC and proxy credentials are supplied
+    # through env vars from the Secret named by `oidc`.
     return ConfigMapArgs(
         name=_CONFIG_MAP,
         namespace=oidc.namespace,
-        data={_CONFIG_FILE: header + yaml_config(validate_settings_fragment(ServerSettings, settings))},
+        data={_CONFIG_FILE: yaml_config(validate_settings_fragment(ServerSettings, settings))},
     )
 
 

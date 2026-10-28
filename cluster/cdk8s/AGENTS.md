@@ -87,6 +87,8 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
   tofu-controller module's inputs are a frozen pydantic model mirroring `variables.tf`
   (`gitops_terraform(variables=...)`, `test_terraform_vars.py`), since tofu only warns on
   undeclared variables.
+  Put authoring explanations in Python comments, not prose prepended to serialized
+  ConfigMap values. Keep syntax required by the consumer, such as parser directives.
 - **What the generator knows, it renders** as a Python constant. Flux `postBuild`
   substitution is only for values only the cluster has: it costs a Kustomization plus a
   `dependsOn` edge per consumer, and the committed manifests see only
