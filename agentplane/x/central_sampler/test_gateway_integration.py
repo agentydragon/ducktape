@@ -99,7 +99,9 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 target=gateway.runner_target,
                 tls=gateway.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
             )
-            ingress = configuration.Endpoint(target=history.ingress_target, bearer=await history.writer_token(sandbox.owner))
+            ingress = configuration.Endpoint(
+                target=history.ingress_target, bearer=await history.writer_token(sandbox.owner)
+            )
             async with RunningRunner(
                 config, runner_gateway, history=history.reader, ingress_endpoint=ingress, control_endpoint=control
             ) as running_runner:
