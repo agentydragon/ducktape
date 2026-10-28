@@ -276,3 +276,29 @@ fn a_nested_for_head_can_rebind_the_captured_receiver() {
 }"#,
     );
 }
+
+#[test]
+fn logical_assignment_initializer_can_return_the_existing_native_value() {
+    assert_unsafe_receiver_rejected(
+        r#"function update(value, branch) {
+  var receiver = (globalThis.slot ||= {});
+  if (branch) receiver.flag = true;
+  else receiver = globalThis.slot;
+  return receiver;
+}"#,
+    );
+}
+
+#[test]
+fn a_wrapper_must_directly_return_the_fresh_construction() {
+    assert_unsafe_receiver_rejected(
+        r#"function Holder(value) { this.value = value; }
+function clone(value) { return (globalThis.slot ||= new Holder(value)); }
+function update(value, branch) {
+  var receiver = clone(value);
+  if (branch) receiver.flag = true;
+  else receiver = globalThis.slot;
+  return receiver;
+}"#,
+    );
+}

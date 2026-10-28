@@ -3,7 +3,7 @@
 use super::value_model::ValueExpr;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::Span;
-use swc_ecma_ast::Id;
+use swc_ecma_ast::{Callee, Expr, Id};
 
 #[derive(Debug, Clone)]
 pub(super) enum ReceiverOrigin {
@@ -43,22 +43,37 @@ enum ReceiverInitializer {
 }
 
 impl ReceiverInitializer {
-    fn from_value(value: &ValueExpr) -> Option<Self> {
-        match value {
-            ValueExpr::ObjectLiteral(..) => Some(Self::ObjectLiteral),
-            ValueExpr::New(callee, ..) => match callee.as_ref() {
-                ValueExpr::Binding(binding) => Some(Self::Construction(binding.clone())),
-                _ => None,
-            },
-            ValueExpr::Call(callee, ..) => match callee.as_ref() {
-                ValueExpr::Binding(binding) => Some(Self::WrapperCall(binding.clone())),
-                _ => None,
-            },
-            ValueExpr::Alternatives(options) if !options.is_empty() => options
-                .iter()
-                .map(Self::from_value)
-                .collect::<Option<Vec<_>>>()
-                .map(Self::Alternatives),
+    // The executor's ValueExpr intentionally erases assignment operators.
+    // Identity cannot use that projection: `slot ||= {}` may return a native.
+    fn from_expression(value: &Expr) -> Option<Self> {
+        match value.unwrap_parens() {
+            Expr::Object(_) => Some(Self::ObjectLiteral),
+            Expr::New(construction)
+                if construction
+                    .args
+                    .as_deref()
+                    .unwrap_or_default()
+                    .iter()
+                    .all(|argument| argument.spread.is_none()) =>
+            {
+                match construction.callee.unwrap_parens() {
+                    Expr::Ident(binding) => Some(Self::Construction(binding.to_id())),
+                    _ => None,
+                }
+            }
+            Expr::Call(call) if call.args.iter().all(|argument| argument.spread.is_none()) => {
+                match &call.callee {
+                    Callee::Expr(callee) => match callee.unwrap_parens() {
+                        Expr::Ident(binding) => Some(Self::WrapperCall(binding.to_id())),
+                        _ => None,
+                    },
+                    _ => None,
+                }
+            }
+            Expr::Cond(condition) => Some(Self::Alternatives(vec![
+                Self::from_expression(&condition.cons)?,
+                Self::from_expression(&condition.alt)?,
+            ])),
             _ => None,
         }
     }
@@ -97,7 +112,7 @@ impl ReceiverIdentityFacts {
         binding: Id,
         callable: Option<u32>,
         span: Span,
-        initializer: Option<&ValueExpr>,
+        initializer: Option<&Expr>,
     ) {
         self.definitions
             .entry(binding)
@@ -105,7 +120,7 @@ impl ReceiverIdentityFacts {
             .push(Definition {
                 callable,
                 span,
-                initializer: initializer.and_then(ReceiverInitializer::from_value),
+                initializer: initializer.and_then(ReceiverInitializer::from_expression),
             });
     }
 

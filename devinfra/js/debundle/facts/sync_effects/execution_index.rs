@@ -4350,11 +4350,20 @@ impl Visit for ExecutionIndex {
                 .body
                 .as_ref()
                 .and_then(sole_return_expression)
-                .and_then(|expression| match ValueExpr::from_expr(expression) {
-                    ValueExpr::New(callee, ..) => match *callee {
-                        ValueExpr::Binding(binding) => Some(binding),
-                        _ => None,
-                    },
+                .and_then(|expression| match expression.unwrap_parens() {
+                    Expr::New(construction)
+                        if construction
+                            .args
+                            .as_deref()
+                            .unwrap_or_default()
+                            .iter()
+                            .all(|argument| argument.spread.is_none()) =>
+                    {
+                        match construction.callee.unwrap_parens() {
+                            Expr::Ident(binding) => Some(binding.to_id()),
+                            _ => None,
+                        }
+                    }
                     _ => None,
                 });
             self.receiver_identity.function(
@@ -4872,7 +4881,7 @@ impl Visit for ExecutionIndex {
                 &ValueExpr::from_expr(init),
                 &mut assignments,
             );
-            for (binding, value) in &assignments {
+            for (binding, _) in &assignments {
                 self.receiver_identity.definition(
                     binding.clone(),
                     self.current,
@@ -4880,7 +4889,7 @@ impl Visit for ExecutionIndex {
                     (self.current.is_some()
                         && matches!(declarator.name, Pat::Ident(_))
                         && self.conditional_depth == 0)
-                        .then_some(value),
+                        .then_some(init.as_ref()),
                 );
             }
             if let Some(key) = self.current {
