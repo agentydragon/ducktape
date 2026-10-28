@@ -193,6 +193,8 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request, path string, 
 			installationToken, time.Now().Add(time.Hour).UTC().Format(time.RFC3339)))
 	case path == "/repos/owner/repo" || path == "/repositories/100":
 		reply(http.StatusOK, `{"id": 100, "full_name": "owner/repo"}`)
+	case strings.HasSuffix(path, "/reviews"):
+		reply(http.StatusOK, `[]`)
 	case path == "/repos/owner/repo/pulls/7":
 		reply(http.StatusOK, fmt.Sprintf(`{"number": 7, "state": "open", "merged": false, "base": {"ref": "main", "sha": %q}, "mergeable": true, "merge_commit_sha": %q, "head": {"sha": %q, "repo": {"id": 200, "full_name": "fork/repo"}}}`, testBaseSHA, testMergeCommitSHA, testSHA))
 	case path == "/repos/owner/repo/issues/8":

@@ -498,6 +498,11 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 			}
 		}
 	}
+	ingest.Review, ingest.Lifecycle, err = webhookPRState(body, event, common.action)
+	if err != nil {
+		return store.GitHubIngest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
+	}
+
 	return ingest, nil
 }
 

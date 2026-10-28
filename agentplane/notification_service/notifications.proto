@@ -301,7 +301,8 @@ message GitHubSource {
   // `pull_request_review_comment` and Agentplane-observed `mergeability_changed` events, and a branch's
   // `push`, `create` and `delete` events. For pull requests, default repair includes completed check-run facts
   // and all commit-status facts. An explicitly unfiltered `check_run` filter selects all observed check-run
-  // states. Explicit action selectors apply to raw webhook activity; repair does not synthesize actions.
+  // states. Explicit check-run action selectors apply to raw webhook activity; check-run repair does not
+  // synthesize actions.
   // Selecting events
   // explicitly allows, for a pull request those and the CI events, for a branch the ref events and the CI
   // events, for a commit the CI events, and for an issue only its two defaults. The CI events are `check_run`,
@@ -423,6 +424,8 @@ message GitHubStatus {
   // Independent current check-run and commit-status refresh states for this subject and installation.
   GitHubRefreshStatus check_runs = 3;
   GitHubRefreshStatus commit_statuses = 4;
+  // Current review refresh state for this pull request and installation.
+  GitHubRefreshStatus reviews = 5;
 }
 
 // The refresh state of one category of current GitHub observations.

@@ -73,8 +73,19 @@ func TestCleanupGitHubDeliveriesRetainsSnapshotsAndInboxCopies(t *testing.T) {
 	destination.Name = "after-retention"
 	late := g.followIn(t, destination, g.source(PullRequestSubject{Number: 7}), "after-retention")
 	g.reconcileSubscription(t, late)
-	if got := len(g.read(t, late.InboxID, 0).Entries); got != 1 {
-		t.Fatalf("late subscriber received %d total entries after retention, want only the current snapshot", got)
+	if got := len(g.read(t, late.InboxID, 0).Entries); got != 2 {
+		t.Fatalf("late subscriber received %d total entries after retention, want current conflict and lifecycle snapshots", got)
+	}
+	lifecycle := observationEntries(t, g.read(t, late.InboxID, 0).Entries)
+	if len(lifecycle) != 1 {
+		t.Fatalf("lifecycle snapshots = %d, want one", len(lifecycle))
+	}
+	var currentLifecycle GitHubPRLifecycleObservation
+	if err := json.Unmarshal(lifecycle[0].Payload, &currentLifecycle); err != nil {
+		t.Fatal(err)
+	}
+	if currentLifecycle.HeadSHA != currentHead {
+		t.Fatalf("lifecycle snapshot head = %s, want %s", currentLifecycle.HeadSHA, currentHead)
 	}
 	entries := mergeabilitySnapshotEntries(t, g, late.InboxID)
 	if len(entries) != 1 {

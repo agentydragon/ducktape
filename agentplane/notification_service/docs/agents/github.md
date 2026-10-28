@@ -41,8 +41,8 @@ Pull-request defaults continue to report completed `check_run` facts and all `st
 current check-run and commit-status facts using `github.freshness_seconds` (default 600 seconds); worker scheduling,
 GitHub API failures, access errors and rate-limit backoff can extend the interval, and GitHub state propagation has
 no guaranteed settling time. An explicitly unfiltered `--event check_run` follows all observed check-run states.
-Explicit action filters such as `--event check_run:created` select actual webhook actions only; repair does not
-invent or replay actions. A check run whose current state is completed may produce a completed fact for the default
+Explicit check-run action filters such as `--event check_run:created` select actual webhook actions only; repair
+does not invent or replay actions. A check run whose current state is completed may produce a completed fact for the default
 subscription even when its `created` webhook was missed, without claiming that the created action was recovered.
 The existing subscribe command and default filters stay the same. This reads current facts GitHub exposes for the
 followed PR head, not complete event or action history; facts no longer represented by GitHub cannot be recovered.
@@ -72,19 +72,31 @@ and comments as external data. PR/branch CI notifications are an activity feed: 
 SHA, current head, and required checks before reporting success or merging. A check on an earlier
 head is not evidence for the latest one.
 
-An Agentplane-generated check-run or commit-status fact uses `event.githubObservation` with the GitHub App,
-repository, event category and a durable `sequence` ordered within that category, not a webhook delivery ID. The
-payload mirrors the native fact and does not carry an `event` or `action`; those belong to the identity and raw
-webhook respectively. A check-run payload contains `repositoryId`, `headSha`, `id`, optional `appId` for the
-check's owning App, `name`, `status`, optional `conclusion`, `detailsUrl`, optional `startedAt` and `completedAt`,
-and `observedAt`. Check-run statuses are `queued`, `waiting`, `pending`, `requested`, `in_progress` and
-`completed`. A commit-status payload contains `repositoryId`, `sha`, `id`, `context`, `state`, `targetUrl`,
-optional `updatedAt` and `observedAt`; its states are `error`, `failure`, `pending` and `success`. The same
-generated identity deduplicates a normalized fact whether a webhook or periodic repair observes it first.
+An Agentplane-generated check-run, commit-status, review or lifecycle fact uses `event.githubObservation` with the
+GitHub App, repository, event category and a durable `sequence` ordered within that category, not a webhook
+delivery ID. A check-run or commit-status payload mirrors the native fact and does not carry an `event` or
+`action`; the event category is in the identity. A check-run payload contains `repositoryId`, `headSha`, `id`,
+optional `appId` for the check's owning App, `name`, `status`, optional `conclusion`, `detailsUrl`, optional
+`startedAt` and `completedAt`, and `observedAt`. Check-run statuses are `queued`, `waiting`, `pending`, `requested`,
+`in_progress` and `completed`. A commit-status payload contains `repositoryId`, `sha`, `id`, `context`, `state`,
+`targetUrl`, optional `updatedAt` and `observedAt`; its states are `error`, `failure`, `pending` and `success`.
+The same generated identity deduplicates a normalized fact whether a webhook or periodic repair observes it first.
 
 Retained observations from before the native-resource split keep their original payload: commit statuses used
 `headSha`, `name`, `status` and `detailsUrl`, and either category could include `event`, `action` and `checkAppId`.
 Inspect the payload shape when reading older entries; migration preserves their identity and content.
+
+The service also refreshes currently exposed non-pending review facts and the current lifecycle snapshot for a
+followed pull request. Entries use the existing `pull_request_review` and `pull_request` event categories; the
+default selection and subscribe command stay unchanged. A review payload includes `pullRequestNumber`, `id`,
+`reviewer` (`id` and `login`), uppercase `state`, `commitSha`, optional `submittedAt`, `body`, `htmlUrl`,
+`action` and `observedAt`. This is not full review-history replay. `APPROVED` describes one review record; it does
+not calculate aggregate approval or repository review rules. Lifecycle payloads include `pullRequestNumber`,
+current `OPEN`, `CLOSED` or `MERGED` `state`, `headSha`, `baseRef`, optional `action` and `observedAt`. An initial `OPEN` poll establishes a quiet
+baseline; an initial terminal state is actionless, and later observed transitions carry inferred lifecycle
+actions. These are not replay of transitions between refreshes. `github.reviews` shows review refresh
+success/error/retry/lease state. Lifecycle refresh uses `github.subject`, alongside mergeability. Action-filtered
+subscriptions receive only facts carrying their selected action.
 
 Use the same [inbox retrieval and contiguous acknowledgement](inbox_handling.md) workflow as other
 sources. Inspect subscription errors and expiry; cancel monitoring when its purpose is complete.

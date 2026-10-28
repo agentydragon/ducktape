@@ -558,8 +558,19 @@ func TestLateSubscriberGetsCurrentConflictSnapshotAfterHeadChanges(t *testing.T)
 	newSubscriber := g.followIn(t, destination, g.source(PullRequestSubject{Number: 7}), "late-subscriber")
 	g.reconcileSubscription(t, newSubscriber)
 	allEntries := g.read(t, newSubscriber.InboxID, 0).Entries
-	if len(allEntries) != 1 {
-		t.Fatalf("new subscriber received %d total entries, want only the current snapshot", len(allEntries))
+	if len(allEntries) != 2 {
+		t.Fatalf("new subscriber received %d total entries, want current conflict and lifecycle snapshots", len(allEntries))
+	}
+	lifecycle := observationEntries(t, allEntries)
+	if len(lifecycle) != 1 {
+		t.Fatalf("lifecycle snapshots = %d, want one", len(lifecycle))
+	}
+	var currentLifecycle GitHubPRLifecycleObservation
+	if err := json.Unmarshal(lifecycle[0].Payload, &currentLifecycle); err != nil {
+		t.Fatal(err)
+	}
+	if currentLifecycle.HeadSHA != commitC {
+		t.Fatalf("lifecycle snapshot head = %s, want %s", currentLifecycle.HeadSHA, commitC)
 	}
 	entries := mergeabilitySnapshotEntries(t, g, newSubscriber.InboxID)
 	if len(entries) != 1 {

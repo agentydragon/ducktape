@@ -126,6 +126,8 @@ func TestDeliveriesPythonAcceptsAreStoredAsPythonStoresThem(t *testing.T) {
 			// These vectors pin raw receipt correlation. Complete current-state facts have separate tests.
 			got.CheckRun = nil
 			got.CommitStatus = nil
+			got.Review = nil
+			got.Lifecycle = nil
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("stored\n%+v\nwant\n%+v", got, want)
 			}
@@ -245,4 +247,16 @@ func TestMalformedCompleteCIWebhookFactsAreRejected(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReviewBodyEditsRetainTheirRawActionAndPayload(t *testing.T) {
+	raw := []byte(`{"action":"edited","installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},"pull_request":{"number":7,"head":{"sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}},"review":{"id":31,"user":{"id":101,"login":"reviewer"},"state":"approved","commit_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","body":"revised body"}}`)
+	ingest, err := ParseDelivery(testAppID, "pull_request_review", uuid.New(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ingest.Action == nil || *ingest.Action != "edited" || ingest.Review != nil || ingest.Lifecycle != nil {
+		t.Fatalf("ingest = %+v, want raw edited review activity", ingest)
+	}
+	sameJSON(t, ingest.Payload, raw)
 }

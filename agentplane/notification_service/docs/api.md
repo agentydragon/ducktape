@@ -219,7 +219,7 @@ The service also repairs current check-run and commit-status facts for followed 
 `github.freshness_seconds` (default 600 seconds). Worker scheduling, GitHub API/access failures and rate-limit
 backoff can extend the interval; GitHub state propagation has no guaranteed settling time. The existing PR
 defaults repair completed check-run facts and all commit statuses. An explicitly unfiltered `check_run` filter
-follows all observed check-run states. Explicit action filters such as `check_run:created` or
+follows all observed check-run states. Explicit check-run action filters such as `check_run:created` or
 `check_run:completed` select actual webhook actions only; polling does not invent or replay those actions. A
 currently completed check run may yield a completed fact to the default subscription even when its created webhook
 was missed, without claiming recovery of the `created` action. The subscribe command and filters are unchanged.
@@ -320,3 +320,16 @@ mergeability observations but do not recover missing webhook activity.
 pull request: last success, any refresh error and its observation time, the next retry, and an in-flight refresh
 lease. A failure refreshing one category does not hide the other's state or block its repair. These statuses are
 separate from webhook-subscription processing and do not promise complete event history or runner delivery.
+
+`github.reviews` reports independent refresh state for currently exposed, non-pending review facts. Lifecycle
+refresh uses the existing `github.subject` state. Generated review and lifecycle entries use the existing
+`pull_request_review` and `pull_request` event categories; default filters and the subscription command are
+unchanged. Review facts include `pullRequestNumber`, `id`, `reviewer` (`id` and `login`), uppercase `state`,
+`commitSha`, optional `submittedAt`, `body`, `htmlUrl`, `action` and `observedAt`. `APPROVED` is one review
+record, not an aggregate approval result or an evaluation of repository review rules. Lifecycle facts include
+`pullRequestNumber`, current `OPEN`, `CLOSED` or `MERGED` `state`, `headSha`, `baseRef`, optional `action` and
+`observedAt`. An initial `OPEN` poll establishes a quiet baseline; an initial terminal state is an
+actionless current fact; later observed state or ref changes infer lifecycle actions. Action filters receive only
+facts carrying a matching action. Refresh failures, access boundaries and retry state for reviews are reported
+under `github.reviews`, independently of webhook-subscription processing. These observations do not reconstruct
+full review history or lifecycle transitions between refreshes.

@@ -191,6 +191,44 @@ type GitHubCommitStatus struct {
 	UpdatedAt    *time.Time              `json:"updatedAt,omitempty"`
 }
 
+// GitHubReviewer is the stable identity of a review's author.
+type GitHubReviewer struct {
+	ID    int64  `json:"id"`
+	Login string `json:"login"`
+}
+
+// GitHubReviewState is the review state reported by GitHub after submission or dismissal.
+type GitHubReviewState string
+
+const (
+	ReviewApproved         GitHubReviewState = "APPROVED"
+	ReviewChangesRequested GitHubReviewState = "CHANGES_REQUESTED"
+	ReviewCommented        GitHubReviewState = "COMMENTED"
+	ReviewDismissed        GitHubReviewState = "DISMISSED"
+)
+
+// GitHubReviewObservation is one submitted or dismissed pull request review, as returned by REST or a webhook.
+type GitHubReviewObservation struct {
+	ID          int64             `json:"id"`
+	Reviewer    GitHubReviewer    `json:"reviewer"`
+	State       GitHubReviewState `json:"state"`
+	CommitSHA   string            `json:"commitSha"`
+	SubmittedAt *time.Time        `json:"submittedAt,omitempty"`
+	Body        string            `json:"body"`
+	HTMLURL     string            `json:"htmlUrl"`
+	Action      *string           `json:"action,omitempty"`
+}
+
+// GitHubPRLifecycleObservation is the lifecycle subset that can be recovered from the current PR snapshot.
+type GitHubPRLifecycleObservation struct {
+	PullRequestNumber int64                  `json:"pullRequestNumber"`
+	State             GitHubPullRequestState `json:"state"`
+	HeadSHA           string                 `json:"headSha"`
+	BaseRef           string                 `json:"baseRef"`
+	// Action is the actual webhook action or a lifecycle action inferred from a prior observed snapshot.
+	Action *string `json:"action,omitempty"`
+}
+
 // GitHubMergeabilityEvent is one Agentplane-generated observation of a pull request's mergeability.
 // Sequence is a durable, globally increasing generated-event sequence, not a GitHub delivery ID.
 type GitHubMergeabilityEvent struct {

@@ -184,6 +184,14 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 		repairAt = earlier(repairAt, resourceRepair)
 	}
 
+	if reviewsSelected(source) {
+		reviewRepair, err := p.refreshReviews(ctx, subject, base)
+		if err != nil {
+			return err
+		}
+		repairAt = earlier(repairAt, reviewRepair)
+	}
+
 	deliveries, err := p.store.GitHubDeliveries(ctx, store.GitHubMatch{
 		SubscriptionID: due.ID, InboxID: claim.ID, AppID: binding.AppID, Subject: subject,
 		Filters: source.Filters(), Fences: fences,

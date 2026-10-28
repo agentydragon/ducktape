@@ -271,6 +271,20 @@ func (g *GitHubState) Acquire(ctx context.Context, key GitHubRefreshKey) (*GitHu
 			commitGeneration = &generation
 			commitHeadSHA = headSHA
 		}
+		var reviewGeneration *int64
+		if review, ok := key.(GitHubReviewRefreshKey); ok {
+			if err := ensureGitHubReviewRefresh(ctx, tx, review); err != nil {
+				return err
+			}
+			generation, exists, err := githubReviewParent(ctx, tx, review)
+			if err != nil {
+				return err
+			}
+			if !exists {
+				return nil
+			}
+			reviewGeneration = &generation
+		}
 		row, err := loadRefresh(ctx, tx, key)
 		if err != nil {
 			return err
@@ -313,6 +327,9 @@ func (g *GitHubState) Acquire(ctx context.Context, key GitHubRefreshKey) (*GitHu
 		lease = &GitHubRefreshLease{
 			Key: key, Claim: claim, Generation: row.generation, InstallationGeneration: installation,
 			SubjectGeneration: commitGeneration, HeadSHA: commitHeadSHA,
+		}
+		if reviewGeneration != nil {
+			lease.SubjectGeneration = reviewGeneration
 		}
 		return nil
 	})
@@ -361,6 +378,13 @@ func leased(ctx context.Context, tx *sql.Tx, lease GitHubRefreshLease) (refreshR
 		}
 		current = lease.SubjectGeneration != nil && generation == *lease.SubjectGeneration && headSHA == lease.HeadSHA
 	}
+	if review, ok := lease.Key.(GitHubReviewRefreshKey); ok && current {
+		generation, exists, err := githubReviewParent(ctx, tx, review)
+		if err != nil {
+			return refreshRow{}, err
+		}
+		current = exists && lease.SubjectGeneration != nil && generation == *lease.SubjectGeneration
+	}
 	if !current {
 		return refreshRow{}, &RefreshDeferredError{Until: at}
 	}
@@ -380,6 +404,8 @@ type GitHubSuccess struct {
 	// These are nil when their endpoint was not read and nonnil (including empty) on a successful endpoint read.
 	CheckRuns      []GitHubCheckRun
 	CommitStatuses []GitHubCommitStatus
+	// Reviews is nil when review history was not read and nonnil when it was read successfully, including empty.
+	Reviews []GitHubReviewObservation
 }
 
 // Succeed records a refresh and releases the lease. It fails with *RefreshDeferredError, recording nothing,
@@ -400,10 +426,10 @@ func (g *GitHubState) Succeed(ctx context.Context, lease GitHubRefreshLease, suc
 			return &RefreshDeferredError{Until: now()}
 		}
 		if commit, ok := lease.Key.(GitHubCommitRefreshKey); ok {
-			if commit.Event == EventCheckRun && (success.CheckRuns == nil || success.CommitStatuses != nil) {
+			if commit.Event == EventCheckRun && (success.CheckRuns == nil || success.CommitStatuses != nil || success.Reviews != nil) {
 				return errors.New("a check-run refresh success must include only the check-run result")
 			}
-			if commit.Event == EventStatus && (success.CommitStatuses == nil || success.CheckRuns != nil) {
+			if commit.Event == EventStatus && (success.CommitStatuses == nil || success.CheckRuns != nil || success.Reviews != nil) {
 				return errors.New("a status refresh success must include only the commit-status result")
 			}
 			baseFence := false
@@ -497,6 +523,66 @@ func (g *GitHubState) Succeed(ctx context.Context, lease GitHubRefreshLease, suc
 				return notify(ctx, tx)
 			}
 			return nil
+		}
+		if review, ok := lease.Key.(GitHubReviewRefreshKey); ok {
+			if success.Reviews == nil || success.CheckRuns != nil || success.CommitStatuses != nil {
+				return errors.New("a review refresh success must distinguish an empty observation from no review read")
+			}
+			baseFence := false
+			for _, fence := range success.Fences {
+				if fence.Key.AppID == review.AppID && fence.Key.InstallationID == review.InstallationID &&
+					fence.Key.RepositoryID == review.Subject.RepositoryID {
+					baseFence = true
+					break
+				}
+			}
+			if !baseFence {
+				return errors.New("a review refresh requires its pull request repository access fence")
+			}
+			if len(success.Revisions) != 0 || success.PullRequest != nil || success.RepositoryName != nil ||
+				success.CheckRuns != nil || success.CommitStatuses != nil {
+				return errors.New("a review refresh cannot record another GitHub refresh result")
+			}
+			parentGeneration, exists, err := githubReviewParent(ctx, tx, review)
+			if err != nil {
+				return err
+			}
+			if !exists || lease.SubjectGeneration == nil || parentGeneration != *lease.SubjectGeneration {
+				return &RefreshDeferredError{Until: now()}
+			}
+			at := now()
+			changed := false
+			for _, observation := range success.Reviews {
+				didChange, err := observeGitHubPRReview(ctx, tx, review.AppID, review.InstallationID,
+					review.Subject.RepositoryID, mustPRNumber(review.Subject), observation, at)
+				if err != nil {
+					return err
+				}
+				changed = changed || didChange
+			}
+			if changed {
+				if err := invalidateOtherGitHubReviewRefreshes(ctx, tx, review.AppID, review.InstallationID,
+					review.Subject.RepositoryID, mustPRNumber(review.Subject)); err != nil {
+					return err
+				}
+			}
+			table, where, args := lease.Key.row()
+			settledArgs := append(append([]any(nil), args...), at)
+			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET last_success_at = $%d, error_kind = NULL,
+				error = NULL, error_since = NULL, error_observed_at = NULL, next_attempt = NULL,
+				claim = NULL, claim_until = NULL WHERE %s`, table, len(args)+1, where), settledArgs...); err != nil {
+				return err
+			}
+			if changed {
+				if err := wakeGitHubInboxes(ctx, tx, review.AppID); err != nil {
+					return err
+				}
+				return notify(ctx, tx)
+			}
+			return nil
+		}
+		if success.CheckRuns != nil || success.CommitStatuses != nil || success.Reviews != nil {
+			return errors.New("commit observations and reviews require their matching refresh")
 		}
 		table, where, args := lease.Key.row()
 		if len(success.Revisions) > 0 {

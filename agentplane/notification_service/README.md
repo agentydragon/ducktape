@@ -122,7 +122,7 @@ to disable cleanup of both raw deliveries and generated mergeability transitions
 including their IDs, digests and subject links. This bounds source replay, late association
 matching and delivery-ID deduplication, including for active subscriptions. Inbox payload copies
 keep their independent 30-day retention. The same setting also deletes up to 1000 expired generated
-pull-request mergeability transitions and 1000 generated CI transitions per pass, including transitions not consumed by an inbox;
+pull-request mergeability transitions and 1000 generated CI transitions and 1000 generated review/lifecycle transitions per pass, including transitions not consumed by an inbox;
 current pull-request snapshots remain. Old CI heads without active PR followers are pruned in bounded batches;
 current facts for an actively followed head and copied inbox payloads retain their independent lifetimes. Changing this setting does not enable the GitHub provider.
 
@@ -131,17 +131,21 @@ from 60 to 3600 seconds via `AGENTPLANE_NOTIFICATIONS_GITHUB__FRESHNESS_SECONDS`
 or access failures, and rate-limit backoff can extend the interval; GitHub state propagation has no guaranteed
 settling time. It observes current facts for followed PR heads, not full event or action history. PR defaults
 continue to report completed check-run facts and all commit statuses; an explicitly unfiltered `check_run` filter
-reports all observed check-run states. Explicit action filters select actual webhook actions only; repair does not
-invent `created`, `in_progress` or `completed` actions. The existing pull-request subscription command and default
-filters are unchanged. Branch and fixed-commit CI notifications continue to use raw webhook events. See the
+reports all observed check-run states. Explicit check-run action filters select actual webhook actions only;
+repair does not invent `created`, `in_progress` or `completed` actions. The existing pull-request subscription
+command and default filters are unchanged. Branch and fixed-commit CI notifications continue to use raw webhook events. See the
 [agent GitHub guide](docs/agents/github.md#follow-github-activity) for identity, payload and filter details.
 
 Migration 00007 copies the landed aggregate recovery tables into native-resource storage, preserving observation
 sequences, payloads, subscription boundaries and pending snapshots. It retains the legacy tables and columns;
-both event logs use GitHub retention. Stop legacy GitHub workers before applying this copy and starting the new
-writers, so writes cannot continue in the old tables after the copy. Keep the reader-capable image available for
-rollback with its GitHub provider disabled, and preserve the migrated database. Existing notifications retain
-their original payload shape; only new facts use the native resource fields.
+both legacy and native event logs use GitHub retention. Stop legacy GitHub workers before applying this copy and
+starting the new writers, so writes cannot continue in the old tables after the copy. Keep the reader-capable
+image available for rollback with its GitHub provider disabled, and preserve the migrated database. Existing
+notifications retain their original payload shape; only new facts use the native resource fields.
+
+Migration 00008 adds durable current review refresh state and pull-request review/lifecycle observations. These
+records use the same retention setting and do not reconstruct review history or lifecycle transitions missed
+between observations.
 
 The migration gives existing deliveries its own timestamp because their actual ingestion times
 were not recorded. They first become eligible after the configured retention interval from migration.
@@ -194,6 +198,12 @@ Current PR check-run and commit-status repair use independent installation-token
 and Commit statuses read respectively. These permissions are not added to the ordinary notification-read token
 profile. If an installation cannot grant one repair profile, that refresh reports the access error while the other
 resource and ordinary webhook processing continue.
+
+The service also refreshes currently exposed non-pending PR review facts on an independent durable deadline and
+observes PR lifecycle state through the existing subject refresh. Lifecycle changes do not require a second API read.
+These are current-state observations, not a replay of all review or lifecycle events. An `APPROVED` review is one
+review fact, not an aggregate approval result or an evaluation of repository review rules. See the
+[agent GitHub guide](docs/agents/github.md#follow-github-activity) for payload fields and scope.
 
 ### GitHub API transport overrides
 

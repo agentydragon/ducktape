@@ -97,6 +97,8 @@ func (w *world) serve(rw http.ResponseWriter, r *http.Request, path string) bool
 		reply(http.StatusOK, fmt.Sprintf(`{"id": %d, "full_name": %q}`, baseRepository, baseRepositoryName))
 	case path == "/repos/fork/repo" || path == "/repositories/200":
 		reply(http.StatusOK, fmt.Sprintf(`{"id": %d, "full_name": "fork/repo"}`, forkRepository))
+	case strings.HasSuffix(path, "/reviews"):
+		reply(http.StatusOK, `[]`)
 	case strings.Contains(path, "/pulls/"):
 		repository := fmt.Sprintf(`{"id": %d, "full_name": %q}`, baseRepository, baseRepositoryName)
 		if fork {

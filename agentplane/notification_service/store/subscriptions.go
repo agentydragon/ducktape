@@ -140,6 +140,7 @@ type sourceBinding struct {
 	// githubStartPosition is the newest delivery when a GitHub subscription was created: only later ones are owed.
 	githubStartPosition                             sql.NullInt64
 	githubCommitAfterSequence                       sql.NullInt64
+	githubPRStateAfterSequence                      sql.NullInt64
 	githubApp, githubInstallation, githubRepository sql.NullInt64
 	githubSubjectKind, githubSubjectKey             sql.NullString
 }
@@ -178,6 +179,10 @@ func bindSource(ctx context.Context, tx *sql.Tx, source Source, access *GitHubAc
 		if err := tx.QueryRowContext(ctx, `SELECT coalesce(max(sequence), 0) FROM github_commit_event`).Scan(&commitSequence); err != nil {
 			return sourceBinding{}, err
 		}
+		var prStateSequence int64
+		if err := tx.QueryRowContext(ctx, `SELECT coalesce(max(sequence), 0) FROM github_pr_state_event`).Scan(&prStateSequence); err != nil {
+			return sourceBinding{}, err
+		}
 		if err := insertGrant(ctx, tx, *access, source.Repository); err != nil {
 			return sourceBinding{}, err
 		}
@@ -187,13 +192,14 @@ func bindSource(ctx context.Context, tx *sql.Tx, source Source, access *GitHubAc
 			return sourceBinding{}, err
 		}
 		return sourceBinding{
-			githubStartPosition:       sql.NullInt64{Int64: start, Valid: true},
-			githubCommitAfterSequence: sql.NullInt64{Int64: commitSequence, Valid: true},
-			githubApp:                 sql.NullInt64{Int64: access.AppID, Valid: true},
-			githubInstallation:        sql.NullInt64{Int64: access.InstallationID, Valid: true},
-			githubRepository:          sql.NullInt64{Int64: access.RepositoryID, Valid: true},
-			githubSubjectKind:         sql.NullString{String: subject.Kind, Valid: true},
-			githubSubjectKey:          sql.NullString{String: subject.Key, Valid: true},
+			githubStartPosition:        sql.NullInt64{Int64: start, Valid: true},
+			githubCommitAfterSequence:  sql.NullInt64{Int64: commitSequence, Valid: true},
+			githubPRStateAfterSequence: sql.NullInt64{Int64: prStateSequence, Valid: true},
+			githubApp:                  sql.NullInt64{Int64: access.AppID, Valid: true},
+			githubInstallation:         sql.NullInt64{Int64: access.InstallationID, Valid: true},
+			githubRepository:           sql.NullInt64{Int64: access.RepositoryID, Valid: true},
+			githubSubjectKind:          sql.NullString{String: subject.Kind, Valid: true},
+			githubSubjectKey:           sql.NullString{String: subject.Key, Valid: true},
 		}, nil
 	default:
 		return sourceBinding{}, invalid("source must be an Action request or a GitHub subject")
@@ -259,11 +265,12 @@ func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscr
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO subscription (id, inbox_id, idempotency_key, creation, version, actions_after_sequence,
 				github_start_position, github_app_id, github_installation_id, github_repository_id, github_subject_kind,
-				github_subject_key, github_commit_after_sequence, generation, cancelled, expires_at, next_attempt)
-			VALUES ($1, $2, $3, $4::jsonb, 1, $5, $6, $7, $8, $9, $10, $11, coalesce($12, 0), 0, false, $13, $14)`,
+				github_subject_key, github_commit_after_sequence, github_pr_state_after_sequence, generation, cancelled, expires_at, next_attempt)
+			VALUES ($1, $2, $3, $4::jsonb, 1, $5, $6, $7, $8, $9, $10, $11, coalesce($12, 0), coalesce($13, 0), 0, false, $14, $15)`,
 			id, inbox.ID, body.IdempotencyKey, string(creation), binding.actionsAfterSequence,
 			binding.githubStartPosition, binding.githubApp, binding.githubInstallation, binding.githubRepository,
-			binding.githubSubjectKind, binding.githubSubjectKey, binding.githubCommitAfterSequence, expiry(written, body.LifetimeDays), written); err != nil {
+			binding.githubSubjectKind, binding.githubSubjectKey, binding.githubCommitAfterSequence,
+			binding.githubPRStateAfterSequence, expiry(written, body.LifetimeDays), written); err != nil {
 			return err
 		}
 		if _, ok := body.Source.(GitHubSource); ok {
@@ -278,6 +285,9 @@ func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscr
 					return err
 				}
 				if err := snapshotGitHubCommitObservations(ctx, tx, id, access.AppID, subject, source); err != nil {
+					return err
+				}
+				if err := snapshotGitHubPRState(ctx, tx, id, access.AppID, access.InstallationID, subject, prStateFilters(source)); err != nil {
 					return err
 				}
 			}

@@ -15,6 +15,12 @@ import (
 // ErrDeliveryReused is a delivery ID the App already received with different content.
 var ErrDeliveryReused = errors.New("GitHub delivery ID reused with different content")
 
+// GitHubPRReviewObservation ties a normalized review to its pull request.
+type GitHubPRReviewObservation struct {
+	PullRequestNumber int64
+	Review            GitHubReviewObservation
+}
+
 // GitHubIngest is a validated webhook delivery as it is stored.
 type GitHubIngest struct {
 	AppID          int64
@@ -38,6 +44,9 @@ type GitHubIngest struct {
 	// remain raw deliveries and do not claim normalized coverage.
 	CheckRun     *GitHubCheckRun
 	CommitStatus *GitHubCommitStatus
+	// Review and Lifecycle are complete PR state facts from the shared webhook normalizer.
+	Review    *GitHubPRReviewObservation
+	Lifecycle *GitHubPRLifecycleObservation
 }
 
 // IngestGitHub stores a delivery and wakes every inbox following the App, and reports whether the delivery was
@@ -110,6 +119,78 @@ func (s *Store) storeDelivery(ctx context.Context, tx *sql.Tx, ingest GitHubInge
 		return err
 	}
 	commitNormalized := false
+	prNormalized := false
+	var prNormalizedAction any
+	if ingest.Review != nil {
+		if ingest.Repository == nil || ingest.Event != string(EventPullRequestReview) {
+			return errors.New("a normalized review delivery needs its repository and pull_request_review event")
+		}
+		if ingest.Review.PullRequestNumber <= 0 {
+			return invalid("a normalized review delivery needs a positive pull request number")
+		}
+		reviewObservation := ingest.Review.Review
+		if reviewObservation.Action == nil {
+			reviewObservation.Action = ingest.Action
+		}
+		changed, err := observeGitHubPRReview(ctx, tx, ingest.AppID, ingest.InstallationID, ingest.Repository.ID,
+			ingest.Review.PullRequestNumber, reviewObservation, now())
+		if err != nil {
+			return err
+		}
+		if changed {
+			if err := invalidateGitHubReviewForPullRequest(ctx, tx, ingest.Repository.ID,
+				ingest.Review.PullRequestNumber); err != nil {
+				return err
+			}
+		}
+		review, err := normalizeGitHubReview(reviewObservation)
+		if err != nil {
+			return err
+		}
+		covered, action, err := githubPRStateCurrentAction(ctx, tx, ingest.AppID, ingest.InstallationID,
+			ingest.Repository.ID, ingest.Review.PullRequestNumber, review.ID, EventPullRequestReview,
+			githubPRStatePayload{PullRequestNumber: ingest.Review.PullRequestNumber, GitHubReviewObservation: review})
+		if err != nil {
+			return err
+		}
+		if covered && (changed || (ingest.Action != nil && action.Valid && action.String == *ingest.Action)) &&
+			(ingest.Action == nil || *ingest.Action == "submitted" || *ingest.Action == "dismissed") {
+			prNormalized = true
+			if ingest.Action != nil && action.Valid && action.String == *ingest.Action {
+				prNormalizedAction = *ingest.Action
+			}
+		}
+	}
+	if ingest.Lifecycle != nil {
+		if ingest.Repository == nil || ingest.Event != string(EventPullRequest) {
+			return errors.New("a normalized lifecycle delivery needs its repository and pull_request event")
+		}
+		if ingest.Lifecycle.PullRequestNumber <= 0 {
+			return invalid("a normalized lifecycle delivery needs a positive pull request number")
+		}
+		lifecycle := *ingest.Lifecycle
+		if lifecycle.Action == nil {
+			lifecycle.Action = ingest.Action
+		}
+		changed, err := observeGitHubPRLifecycle(ctx, tx, ingest.AppID, ingest.InstallationID,
+			ingest.Repository.ID, lifecycle, now())
+		if err != nil {
+			return err
+		}
+		covered, action, err := githubPRStateCurrentAction(ctx, tx, ingest.AppID, ingest.InstallationID,
+			ingest.Repository.ID, ingest.Lifecycle.PullRequestNumber, ingest.Lifecycle.PullRequestNumber,
+			EventPullRequest, githubPRLifecyclePayload{GitHubPRLifecycleObservation: lifecycle})
+		if err != nil {
+			return err
+		}
+		if covered && (changed || (ingest.Action != nil && action.Valid && action.String == *ingest.Action &&
+			*ingest.Action != "edited")) {
+			prNormalized = true
+			if ingest.Action != nil && action.Valid && action.String == *ingest.Action {
+				prNormalizedAction = *ingest.Action
+			}
+		}
+	}
 	if run := ingest.CheckRun; run != nil {
 		if ingest.Repository == nil {
 			return errors.New("a normalized check-run delivery needs its repository")
@@ -152,10 +233,10 @@ func (s *Store) storeDelivery(ctx context.Context, tx *sql.Tx, ingest GitHubInge
 	}
 	var position int64
 	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO github_delivery (app_id, delivery_id, installation_id, repository_id, event, action, head_sha, digest, payload, commit_normalized)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10) RETURNING position`,
+		INSERT INTO github_delivery (app_id, delivery_id, installation_id, repository_id, event, action, head_sha, digest, payload, commit_normalized, pr_normalized, pr_normalized_action)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12) RETURNING position`,
 		ingest.AppID, ingest.DeliveryID, ingest.InstallationID, repositoryID, ingest.Event, ingest.Action, ingest.HeadSHA,
-		ingest.Digest, string(ingest.Payload), commitNormalized).Scan(&position); err != nil {
+		ingest.Digest, string(ingest.Payload), commitNormalized, prNormalized, prNormalizedAction).Scan(&position); err != nil {
 		return err
 	}
 	for _, key := range ingest.Subjects {
@@ -190,7 +271,10 @@ func invalidateInstallation(ctx context.Context, tx *sql.Tx, appID, installation
 	if err != nil {
 		return err
 	}
-	return invalidateGitHubCommitForInstallation(ctx, tx, appID, installationID)
+	if err := invalidateGitHubCommitForInstallation(ctx, tx, appID, installationID); err != nil {
+		return err
+	}
+	return invalidateGitHubReviewForInstallation(ctx, tx, appID, installationID)
 }
 
 // wakeGitHubInboxes makes every inbox with a live subscription to the App due now, and its GitHub subscriptions
@@ -234,7 +318,7 @@ func wakeGitHubInboxes(ctx context.Context, tx *sql.Tx, appID int64) error {
 	return err
 }
 
-// CleanupGitHubDeliveries deletes bounded batches of raw receipts, generated events and obsolete CI facts
+// CleanupGitHubDeliveries deletes bounded batches of raw receipts, generated events and obsolete commit facts
 // older than cutoff.
 // Expired transition rows are removed even if no inbox consumed them. Inbox entries and current pull-request
 // snapshots have independent lifetimes. The GitHub lock serializes this with ingestion and recording.
@@ -268,6 +352,12 @@ func (s *Store) CleanupGitHubDeliveries(ctx context.Context, cutoff time.Time) e
 		// rollback data remains available. Bound their retention by the same cutoff while both schemas coexist.
 		_, err = tx.ExecContext(ctx, `DELETE FROM github_ci_event WHERE sequence IN (
 			SELECT sequence FROM github_ci_event WHERE created_at < $1 ORDER BY created_at, sequence LIMIT 1000
+		)`, cutoff)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `DELETE FROM github_pr_state_event WHERE sequence IN (
+			SELECT sequence FROM github_pr_state_event WHERE created_at < $1 ORDER BY created_at, sequence LIMIT 1000
 		)`, cutoff)
 		if err != nil {
 			return err

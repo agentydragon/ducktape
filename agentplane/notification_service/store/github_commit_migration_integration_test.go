@@ -230,6 +230,7 @@ func notificationMigrationProvider(t *testing.T, db *sql.DB) *goose.Provider {
 		"00005_github_mergeability_freshness.sql",
 		"00006_github_ci_recovery.sql",
 		"00007_native_github_commit_observations.sql",
+		"00008_github_pr_state_recovery.sql",
 	}
 	files := make(fstest.MapFS, len(names))
 	for _, name := range names {

@@ -670,7 +670,17 @@ func TestInboxSummaryNamesGitHubObservations(t *testing.T) {
 }
 
 func TestSubscriptionSummarySerializesGitHubStatus(t *testing.T) {
-	line, err := subscriptionLine([]byte(`{"id":"subscription","source":{"github":{"repository":"owner/repo","subject":{"pullRequest":{"number":7}}}},"version":"1","github":{"checkRuns":{"lastSuccessAt":"2026-10-27T10:00:00Z","errorKind":"SOURCE_FAILURE_KIND_RATE_LIMITED","error":"check runs rate limited","retryAt":"2026-10-27T10:02:00Z"},"commitStatuses":{"lastSuccessAt":"2026-10-27T11:00:00Z","errorKind":"SOURCE_FAILURE_KIND_ACCESS_DENIED","error":"statuses denied","retryAt":"2026-10-27T11:02:00Z"}}}`))
+	raw := []byte(`{
+		"id":"subscription",
+		"source":{"github":{"repository":"owner/repo","subject":{"pullRequest":{"number":7}}}},
+		"version":"1",
+		"github":{
+			"checkRuns":{"lastSuccessAt":"2026-10-27T10:00:00Z","errorKind":"SOURCE_FAILURE_KIND_RATE_LIMITED","error":"check runs rate limited","retryAt":"2026-10-27T10:02:00Z"},
+			"commitStatuses":{"lastSuccessAt":"2026-10-27T11:00:00Z","errorKind":"SOURCE_FAILURE_KIND_ACCESS_DENIED","error":"statuses denied","retryAt":"2026-10-27T11:02:00Z"},
+			"reviews":{"lastSuccessAt":"2026-10-27T12:00:00Z","errorKind":"SOURCE_FAILURE_KIND_UNAVAILABLE","error":"reviews unavailable","retryAt":"2026-10-27T12:02:00Z","refreshingUntil":"2026-10-27T12:03:00Z"}
+		}
+	}`)
+	line, err := subscriptionLine(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -687,5 +697,10 @@ func TestSubscriptionSummarySerializesGitHubStatus(t *testing.T) {
 	}
 	if status.GetCommitStatuses().GetError() != "statuses denied" || status.GetCommitStatuses().GetErrorKind() != notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_ACCESS_DENIED || status.GetCommitStatuses().GetRetryAt().AsTime().UTC().Format(time.RFC3339) != "2026-10-27T11:02:00Z" {
 		t.Fatalf("summary did not preserve GitHub status: %v", &status)
+	}
+	if status.GetReviews() == nil || status.GetReviews().GetError() != "reviews unavailable" || status.GetReviews().GetErrorKind() != notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_UNAVAILABLE ||
+		status.GetReviews().GetRetryAt().AsTime().UTC().Format(time.RFC3339) != "2026-10-27T12:02:00Z" ||
+		status.GetReviews().GetRefreshingUntil().AsTime().UTC().Format(time.RFC3339) != "2026-10-27T12:03:00Z" {
+		t.Fatalf("summary did not preserve review status: %v", &status)
 	}
 }

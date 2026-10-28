@@ -44,6 +44,7 @@ type GitHubStatus struct {
 	Subject        GitHubSubjectStatus
 	CheckRuns      *GitHubRefreshStatus
 	CommitStatuses *GitHubRefreshStatus
+	Reviews        *GitHubRefreshStatus
 }
 
 func (row refreshRow) status() (GitHubRefreshStatus, error) {
@@ -159,6 +160,20 @@ func loadGitHubStatus(ctx context.Context, q querier, subscription *Subscription
 			}
 		}
 	}
+	if subject.Kind == "pull_request" {
+		reviewRow, err := loadRefresh(ctx, q, GitHubReviewRefreshKey{AppID: app, InstallationID: installation, Subject: subject})
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err == nil {
+			reviewStatus, err := reviewRow.status()
+			if err != nil {
+				return err
+			}
+			status.Reviews = &reviewStatus
+		}
+	}
+
 	subscription.GitHub = &status
 	return nil
 }

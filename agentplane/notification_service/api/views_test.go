@@ -115,7 +115,7 @@ func TestGitHubObservationIdentityViewRoundTrips(t *testing.T) {
 	}
 }
 
-func TestGitHubRefreshStatusViewsSeparateCheckRunsAndCommitStatuses(t *testing.T) {
+func TestGitHubRefreshStatusViewsSeparateCheckRunsCommitStatusesAndReviews(t *testing.T) {
 	lastSuccess := time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
 	errorSince := lastSuccess.Add(time.Minute)
 	errorObserved := errorSince.Add(time.Second)
@@ -126,6 +126,11 @@ func TestGitHubRefreshStatusViewsSeparateCheckRunsAndCommitStatuses(t *testing.T
 	statusesErrorObserved := statusesErrorSince.Add(time.Second)
 	statusesRetryAt := statusesErrorObserved.Add(time.Minute)
 	statusesRefreshingUntil := statusesRetryAt.Add(time.Minute)
+	reviewsLastSuccess := statusesLastSuccess.Add(time.Hour)
+	reviewsErrorSince := reviewsLastSuccess.Add(time.Minute)
+	reviewsErrorObserved := reviewsErrorSince.Add(time.Second)
+	reviewsRetryAt := reviewsErrorObserved.Add(time.Minute)
+	reviewsRefreshingUntil := reviewsRetryAt.Add(time.Minute)
 	status, err := githubStatusView(&store.GitHubStatus{
 		Subject: store.GitHubSubjectStatus{Key: store.GitHubSubjectKey{RepositoryID: 22, Kind: "pull_request", Key: "7"}},
 		CheckRuns: &store.GitHubRefreshStatus{
@@ -142,6 +147,13 @@ func TestGitHubRefreshStatusViewsSeparateCheckRunsAndCommitStatuses(t *testing.T
 			},
 			RetryAt: &statusesRetryAt, RefreshingUntil: &statusesRefreshingUntil,
 		},
+		Reviews: &store.GitHubRefreshStatus{
+			LastSuccessAt: &reviewsLastSuccess,
+			Failure: &store.SourceFailure{
+				Kind: store.FailureUnavailable, Message: "reviews unavailable", Since: reviewsErrorSince, ObservedAt: reviewsErrorObserved,
+			},
+			RetryAt: &reviewsRetryAt, RefreshingUntil: &reviewsRefreshingUntil,
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -157,5 +169,11 @@ func TestGitHubRefreshStatusViewsSeparateCheckRunsAndCommitStatuses(t *testing.T
 		status.GetCommitStatuses().GetErrorSince().AsTime() != statusesErrorSince || status.GetCommitStatuses().GetErrorObservedAt().AsTime() != statusesErrorObserved ||
 		status.GetCommitStatuses().GetRetryAt().AsTime() != statusesRetryAt || status.GetCommitStatuses().GetRefreshingUntil().AsTime() != statusesRefreshingUntil {
 		t.Errorf("commit-status refresh view = %v", status.GetCommitStatuses())
+	}
+	if status.GetReviews() == nil || status.GetReviews().GetErrorKind() != notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_UNAVAILABLE ||
+		status.GetReviews().GetError() != "reviews unavailable" || status.GetReviews().GetLastSuccessAt().AsTime() != reviewsLastSuccess ||
+		status.GetReviews().GetErrorSince().AsTime() != reviewsErrorSince || status.GetReviews().GetErrorObservedAt().AsTime() != reviewsErrorObserved ||
+		status.GetReviews().GetRetryAt().AsTime() != reviewsRetryAt || status.GetReviews().GetRefreshingUntil().AsTime() != reviewsRefreshingUntil {
+		t.Errorf("review refresh view = %v", status.GetReviews())
 	}
 }

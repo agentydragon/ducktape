@@ -203,7 +203,17 @@ func githubStatusView(status *store.GitHubStatus) (*notificationspb.GitHubStatus
 			RetryAt: timestamp(status.CommitStatuses.RetryAt), RefreshingUntil: timestamp(status.CommitStatuses.RefreshingUntil),
 		}
 	}
-
+	if status.Reviews != nil {
+		seen, err := refreshStatus(*status.Reviews)
+		if err != nil {
+			return nil, err
+		}
+		view.Reviews = &notificationspb.GitHubRefreshStatus{
+			LastSuccessAt: seen.lastSuccessAt, ErrorKind: seen.errorKind, Error: seen.errorMessage,
+			ErrorSince: seen.errorSince, ErrorObservedAt: seen.errorObserved,
+			RetryAt: timestamp(status.Reviews.RetryAt), RefreshingUntil: timestamp(status.Reviews.RefreshingUntil),
+		}
+	}
 	for _, access := range status.Access {
 		seen, err := refreshStatus(access.GitHubRefreshStatus)
 		if err != nil {

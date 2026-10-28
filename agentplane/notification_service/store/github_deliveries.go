@@ -77,7 +77,7 @@ func (a *argList) add(value any) string {
 
 // GitHubDeliveries returns the next deliveries, by position, that the subscription is owed and has not been
 // given: those after its start position, of its App, of a repository it reads under a fence, selected by its
-// filters, and about its subject. A delivery is about the subject if it names it, or, for a CI event, if it is
+// filters, and about its subject. A delivery is about the subject if it names it, or, for a commit event, if it is
 // for a commit the subject has been seen at. A commit subject is only ever matched the second way.
 func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitHubDelivery, error) {
 	if len(match.Filters) == 0 || len(match.Fences) == 0 {
@@ -98,6 +98,18 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 				actions[j] = args.add(action)
 			}
 			selected[i] += " AND d.action IN (" + strings.Join(actions, ", ") + ")"
+		}
+		if match.Subject.Kind == "pull_request" {
+			switch filter.Event {
+			case EventPullRequestReview:
+				selected[i] += " AND NOT d.pr_normalized"
+			case EventPullRequest:
+				if filter.Actions == nil {
+					selected[i] += " AND NOT d.pr_normalized"
+				} else {
+					selected[i] += " AND NOT (d.pr_normalized AND d.action = d.pr_normalized_action)"
+				}
+			}
 		}
 		selected[i] += ")"
 	}
@@ -247,9 +259,13 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 		if err != nil {
 			return err
 		}
+		prStateCount, prStateMore, err := s.recordGitHubPRState(ctx, tx, claim.ID, recording)
+		if err != nil {
+			return err
+		}
 		// Ingress that committed since the subscription was read must not be overwritten by an idle schedule.
 		next := recording.RepairAt
-		if recording.More || mergeabilityMore || commitMore || generation != recording.Generation {
+		if recording.More || mergeabilityMore || commitMore || prStateMore || generation != recording.Generation {
 			next = now()
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -258,7 +274,7 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 			WHERE id = $1`, recording.SubscriptionID, next, now()); err != nil {
 			return err
 		}
-		if len(recording.Matched) > 0 || mergeabilityCount > 0 || commitCount > 0 {
+		if len(recording.Matched) > 0 || mergeabilityCount > 0 || commitCount > 0 || prStateCount > 0 {
 			if _, err := tx.ExecContext(ctx, `UPDATE inbox SET updated_at = $2 WHERE id = $1`, claim.ID, now()); err != nil {
 				return err
 			}

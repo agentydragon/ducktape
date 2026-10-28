@@ -74,8 +74,16 @@ func (s *Store) observePullRequest(ctx context.Context, tx *sql.Tx, subject GitH
 	if err != nil {
 		return err
 	}
-	access := success.Fences[0].Key
-	if access.RepositoryID != subject.RepositoryID {
+	var access GitHubAccessKey
+	foundAccess := false
+	for _, fence := range success.Fences {
+		if fence.Key.RepositoryID == subject.RepositoryID {
+			access = fence.Key
+			foundAccess = true
+			break
+		}
+	}
+	if !foundAccess {
 		return errors.New("pull request observation access does not match its repository")
 	}
 	observation := *success.PullRequest
@@ -105,6 +113,39 @@ func (s *Store) observePullRequest(ctx context.Context, tx *sql.Tx, subject GitH
 		subject.RepositoryID, number).Scan(&previousHead)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
+	}
+	var previousLifecycle struct {
+		state   GitHubPullRequestState
+		headSHA string
+		baseRef string
+	}
+	previousLifecycleFound := false
+	err = tx.QueryRowContext(ctx, `SELECT payload->>'state', payload->>'headSha', payload->>'baseRef'
+		FROM github_pr_state_current WHERE app_id = $1 AND installation_id = $2 AND repository_id = $3
+			AND pull_request_number = $4 AND event = 'pull_request' AND entity_id = $4`,
+		access.AppID, access.InstallationID, subject.RepositoryID, number).
+		Scan(&previousLifecycle.state, &previousLifecycle.headSHA, &previousLifecycle.baseRef)
+	if err == nil {
+		previousLifecycleFound = true
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	var lifecycleAction *string
+	if previousLifecycleFound {
+		action := ""
+		switch {
+		case previousLifecycle.state == GitHubPullRequestOpen && observation.State != GitHubPullRequestOpen:
+			action = "closed"
+		case previousLifecycle.state != GitHubPullRequestOpen && observation.State == GitHubPullRequestOpen:
+			action = "reopened"
+		case previousLifecycle.headSHA != observation.HeadSHA:
+			action = "synchronize"
+		case previousLifecycle.baseRef != observation.BaseRef:
+			action = "edited"
+		}
+		if action != "" {
+			lifecycleAction = &action
+		}
 	}
 	previous := GitHubMergeabilityUnknown
 	var attempt int
@@ -147,6 +188,22 @@ func (s *Store) observePullRequest(ctx context.Context, tx *sql.Tx, subject GitH
 	}
 	if previousHead.Valid && previousHead.String != observation.HeadSHA {
 		if err := invalidateGitHubCommitForPullRequest(ctx, tx, subject.RepositoryID, subject.Key, nil); err != nil {
+			return err
+		}
+	}
+	lifecycleChanged, err := observeGitHubPRLifecycle(ctx, tx, access.AppID, access.InstallationID,
+		subject.RepositoryID, GitHubPRLifecycleObservation{
+			PullRequestNumber: number, State: observation.State, HeadSHA: observation.HeadSHA,
+			BaseRef: observation.BaseRef, Action: lifecycleAction,
+		}, at)
+	if err != nil {
+		return err
+	}
+	if lifecycleChanged {
+		if err := wakeGitHubInboxes(ctx, tx, access.AppID); err != nil {
+			return err
+		}
+		if err := notify(ctx, tx); err != nil {
 			return err
 		}
 	}
