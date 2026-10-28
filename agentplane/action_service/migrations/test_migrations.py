@@ -50,5 +50,20 @@ def test_concurrent_runners_serialize(postgres_admin_url: str, database_names: D
             assert conn.scalar(text(f"SELECT count(*) FROM {_GOOSE_VERSION} WHERE version_id = 1 AND is_applied")) == 1
 
 
+def test_storage_backfill_requires_writer_rollout_confirmation(
+    postgres_admin_url: str, database_names: DatabaseNames
+) -> None:
+    with create_temporary_database(postgres_admin_url, database_names()) as url:
+        runner = subprocess.run(
+            [str(_MIGRATOR), "backfill-storage"],
+            env={"AGENTPLANE_ACTIONS_DATABASE_URL": _wire_url(url)},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert runner.returncode == 2, (runner.stdout, runner.stderr)
+        assert "--confirm-all-writers-dual-write" in runner.stderr
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

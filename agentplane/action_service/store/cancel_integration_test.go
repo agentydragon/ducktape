@@ -9,6 +9,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 func (f fixture) cancel(t *testing.T, id uuid.UUID) CancellationResult {
@@ -40,6 +41,19 @@ func TestAPendingCancellationIsDurableAndIdempotent(t *testing.T) {
 	if !slices.Equal(eventStates(events), []action_servicepb.ActionState{action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, action_servicepb.ActionState_ACTION_STATE_CANCELLED}) ||
 		(events[1].Actor.GetCaller().GetNamespace() != caller.Account.Namespace || events[1].Actor.GetCaller().GetName() != caller.Account.Name) || !events[1].At.Equal(result.Request.UpdatedAt) {
 		t.Errorf("events %+v", events)
+	}
+	var encodedActor []byte
+	if err := f.db.QueryRowContext(t.Context(), `SELECT actor_proto FROM action_event WHERE request_id = $1 AND sequence = $2`,
+		pending.ID, events[1].Sequence).Scan(&encodedActor); err != nil {
+		t.Fatal(err)
+	}
+	var storedActor action_servicepb.Principal
+	if err := proto.Unmarshal(encodedActor, &storedActor); err != nil {
+		t.Fatal(err)
+	}
+	wantActor := &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: caller.Account.Proto()}}
+	if !proto.Equal(&storedActor, wantActor) {
+		t.Errorf("protobuf actor = %v, want %v", &storedActor, wantActor)
 	}
 
 	// Neither the version the operator saw nor a refreshed one authorizes a late approval.

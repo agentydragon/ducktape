@@ -11,7 +11,9 @@ go_library(
         "executions.go",
         "legacy_action.go",
         "models.go",
+        "protobuf.go",
         "requests.go",
+        "storage_backfill.go",
         "store.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/store",
@@ -21,6 +23,7 @@ go_library(
         "//agentplane/proto:sandboxes_go_proto",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -53,6 +56,7 @@ go_test(
         "leases_integration_test.go",
         "python_rows_integration_test.go",
         "reads_integration_test.go",
+        "storage_backfill_integration_test.go",
         "submit_integration_test.go",
         "wakeups_integration_test.go",
     ],
@@ -66,5 +70,6 @@ go_test(
         "//agentplane/testing/postgres",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
+        "@org_golang_google_protobuf//proto",
     ],
 )
