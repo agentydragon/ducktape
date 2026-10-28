@@ -41,7 +41,7 @@ def assign_token(client, cache_dir):
     if token_path.exists():
         with token_path.open() as f:
             access_token = json.load(f)
-            logging.info("Access token loaded from %s", access_token)
+            logging.info("Access token loaded from %s", token_path)
     else:
         port = 3003
         url, secret = client.getAuthorizeURL()
@@ -53,7 +53,7 @@ def assign_token(client, cache_dir):
         token_path.parent.mkdir(parents=True, exist_ok=True)
         with token_path.open("w") as f:
             json.dump(access_token, f)
-            logging.info("Access token saved to %s", access_token)
+            logging.info("Access token saved to %s", token_path)
     client.setAccessToken(access_token)
 
 
@@ -67,11 +67,11 @@ def retrieve_get_params(port):
         nonlocal get_params
         query = request.url.query
         get_params = urllib.parse.parse_qs(query)
-        logging.info("parsed query string: %s", get_params)
+        logging.info("OAuth callback parameters received")
         completion_event.set()
         return PlainTextResponse("Auth handled, you can close this tab.")
 
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", access_log=False)
     server = uvicorn.Server(config)
     server_thread = threading.Thread(target=server.run, daemon=True)
     server_thread.start()
