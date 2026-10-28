@@ -67,11 +67,11 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
 - **The service's `Settings` is its deployment contract.** Render flags, env vars and
   settings files through the consumer's model (`util/settings_contract.py`:
   `cli_args`, `env_name`, `validate_settings_fragment`, `checked_value`) so a renamed
-  field fails at synth. For a complete settings file, validate against the full model
-  and serialize its typed result before passing the rendered string to `SettingsFile`.
+  field fails at synth. For a complete settings file, construct the full model with
+  typed keyword arguments and serialize it before passing the rendered string to `SettingsFile`.
   For a file fragment whose other values come from runtime sources, check the present
-  keys and values with `validate_settings_fragment(...)`, then render the original
-  mapping with `config_format.yaml_config(...)`. Fragment checks do not establish
+  keys and values with `yaml_config(validate_settings_fragment(Settings, content))`;
+  the helper returns the original mapping unchanged. Fragment checks do not establish
   completeness or cross-field consistency; runtime settings validation checks the
   effective file-plus-environment configuration. `SettingsFile` only creates the
   ConfigMap and wires its mount and path env var. The code package owns `Settings` and

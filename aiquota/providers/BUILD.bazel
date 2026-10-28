@@ -31,7 +31,10 @@ py_library(
     name = "claude_lib",
     srcs = ["claude.py"],
     imports = ["../.."],
-    visibility = ["//aiquota:__subpackages__"],
+    visibility = [
+        "//aiquota:__subpackages__",
+        "//cluster/cdk8s:__pkg__",
+    ],
     deps = [
         ":base",
         ":cli_proxy_lib",
@@ -48,7 +51,10 @@ py_library(
     name = "codex_lib",
     srcs = ["codex.py"],
     imports = ["../.."],
-    visibility = ["//aiquota:__subpackages__"],
+    visibility = [
+        "//aiquota:__subpackages__",
+        "//cluster/cdk8s:__pkg__",
+    ],
     deps = [
         ":base",
         ":cli_proxy_lib",
@@ -64,7 +70,10 @@ py_library(
     name = "zai_lib",
     srcs = ["zai.py"],
     imports = ["../.."],
-    visibility = ["//aiquota:__subpackages__"],
+    visibility = [
+        "//aiquota:__subpackages__",
+        "//cluster/cdk8s:__pkg__",
+    ],
     deps = [
         ":base",
         ":client",

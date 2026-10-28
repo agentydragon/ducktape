@@ -55,10 +55,6 @@ data:
     192.168.1.100 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDJKANlp+W5MVndg58Qaf78yjTCJydv9S+D2Xx2p3wbX+143lJ7plTW87NTj87gQ6NV/ZaEAE6eHL2HH53m+yG8bc7DSwfrD12OJU5M6y8b+KZY/6johBx7geWp7BL1VsigZV2hncHCrcIP+I85wFw1Z3kFj2VZvoCOAnEaVrJ6PbS/AKJ2yKhdaS74E4R+ke0rD6wdfRikCwOnB/XSpY82OZKm/N0io0/dDSE8A96pcDPjh/AuIQOu8j+XDiziLmVX/crJiZSPagN3ei7F6Zxs9pau3BukreByEoy83iDFtDP7uxPs704PDUKcbmvq8/CzcYg4Q5TOgXquCAYcWgsN
   settings.yaml: |
     known_hosts_file: /etc/ssh-mcp/known_hosts
-    command_timeout_seconds: 300
-    connect_timeout_seconds: 10
-    output_limit_bytes: 65536
-    max_concurrent_executions: 4
     targets:
       - host: wyrm2.nebula.allegedly.works
         user: agentydragon
@@ -81,6 +77,10 @@ data:
       - host: 192.168.1.100
         user: agentplane
         identity_file: /etc/ssh-mcp/keys-agentplane/home-switch-agentplane
+    command_timeout_seconds: 300
+    connect_timeout_seconds: 10
+    output_limit_bytes: 65536
+    max_concurrent_executions: 4
 immutable: false
 ---
 apiVersion: apps/v1
