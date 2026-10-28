@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -269,33 +268,25 @@ func (h *harness) awaitQueryWaitingForARow(t *testing.T) {
 func (h *harness) insertGitHubSubscription(t *testing.T, inboxID uuid.UUID) uuid.UUID {
 	t.Helper()
 	repository := "owner/repository-" + uuid.NewString()
-	creation, err := json.Marshal(model.Subscribe{
-		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: "github",
-		Source: model.GitHubSource{Repository: repository, Subject: model.PullRequestSubject{Number: 1}}, LifetimeDays: 7,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	h.exec(t, `INSERT INTO github_installation (app_id, installation_id, generation) VALUES (1, 2, 0) ON CONFLICT DO NOTHING`)
 	var repositoryID int64
 	if err := h.db.QueryRowContext(t.Context(),
 		`INSERT INTO github_repository (full_name) VALUES ($1) RETURNING repository_id`, repository).Scan(&repositoryID); err != nil {
 		t.Fatal(err)
 	}
-	h.exec(t, `INSERT INTO github_repository_access (app_id, installation_id, repository_id, generation) VALUES (1, 2, $1, 0)`, repositoryID)
-	h.exec(t, `INSERT INTO github_subject (repository_id, kind, subject_key, generation) VALUES ($1, 'pull_request', '1', 0)`, repositoryID)
-	id := uuid.New()
-	h.exec(t, `ALTER TABLE subscription DROP CONSTRAINT subscription_creation_typed_required`)
-	h.exec(t, `
-		INSERT INTO subscription (id, inbox_id, idempotency_key, creation, version, github_start_position, generation,
-			github_app_id, github_installation_id, github_repository_id, github_subject_kind, github_subject_key,
-			cancelled, expires_at, next_attempt)
-		VALUES ($1, $2, 'github', $3::jsonb, 1, 0, 0, 1, 2, $4, 'pull_request', '1', false, now() + interval '1 day', now())`,
-		id, inboxID, string(creation), repositoryID)
-	if err := store.BackfillSubscriptionCreations(t.Context(), h.db); err != nil {
+	creation := model.Subscribe{
+		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: "github",
+		Source: model.GitHubSource{Repository: repository, Subject: model.PullRequestSubject{Number: 1}}, LifetimeDays: 7,
+	}
+	access := &store.GitHubAccessKey{AppID: 1, InstallationID: 2, RepositoryID: repositoryID}
+	subscription, err := h.store.Subscribe(t.Context(), testOwner, creation, access)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return id
+	if subscription.InboxID != inboxID {
+		t.Fatalf("GitHub subscription inbox = %s, want %s", subscription.InboxID, inboxID)
+	}
+	return subscription.ID
 }
 
 func TestGitHubSubscriptionsAreReadByTheGitHubProvider(t *testing.T) {

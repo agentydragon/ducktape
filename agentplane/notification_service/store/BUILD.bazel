@@ -7,9 +7,6 @@ go_library(
     srcs = [
         "actions.go",
         "claims.go",
-        "creation_backfill.go",
-        "creation_validation.go",
-        "destination_backfill.go",
         "entry_content.go",
         "entry_content_backfill.go",
         "event_identity_backfill.go",
@@ -74,8 +71,7 @@ go_test(
     srcs = [
         "actions_integration_test.go",
         "claims_integration_test.go",
-        "creation_backfill_integration_test.go",
-        "destination_backfill_integration_test.go",
+        "creation_contract_integration_test.go",
         "entry_content_backfill_integration_test.go",
         "event_identity_backfill_integration_test.go",
         "event_identity_storage_integration_test.go",
@@ -92,6 +88,7 @@ go_test(
         "github_state_integration_test.go",
         "github_subscribe_integration_test.go",
         "golden_vectors_test.go",
+        "inbox_destination_contract_integration_test.go",
         "inboxes_integration_test.go",
         "integration_testmain_test.go",
         "messages_integration_test.go",

@@ -25,7 +25,7 @@ ALTER TABLE inbox
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
 
--- The normalized columns belong to 00005 and remain required by the previous dual-write release.
+-- The normalized columns belong to 00009 and remain required by the previous dual-write release.
 -- Typed-only writers leave JSON NULL, so refuse Down until the retained copies have been restored.
 -- +goose StatementBegin
 DO $$

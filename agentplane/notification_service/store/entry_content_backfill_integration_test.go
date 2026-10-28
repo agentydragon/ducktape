@@ -131,6 +131,19 @@ func TestBackfillEntryContentConvertsSourceVariantsAndClearsExpiredBytes(t *test
 					mergeCommit.GetHeadSha() != "cccccccccccccccccccccccccccccccccccccccc" {
 					t.Errorf("cursor %d merge commit content = %v", cursor+1, mergeCommit)
 				}
+				reconstructed, err := entryPayloadFromStoredContent(event, []byte(legacyPayloads[int64(cursor+1)].String), encoded, payload.Valid)
+				if err != nil {
+					t.Fatalf("cursor %d reconstruct typed mergeability payload: %v", cursor+1, err)
+				}
+				var restored mergeabilityPayload
+				if err := json.Unmarshal(reconstructed, &restored); err != nil {
+					t.Fatalf("cursor %d decode reconstructed mergeability payload: %v", cursor+1, err)
+				}
+				if restored.MergeCommit == nil || restored.MergeCommit.SHA != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ||
+					restored.MergeCommit.BaseSHA != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ||
+					restored.MergeCommit.HeadSHA != "cccccccccccccccccccccccccccccccccccccccc" {
+					t.Errorf("cursor %d reconstructed merge commit = %+v", cursor+1, restored.MergeCommit)
+				}
 			}
 		case model.MessageEvent:
 			message := content.GetMessage()

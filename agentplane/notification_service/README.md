@@ -139,6 +139,36 @@ and can still read retained legacy JSON, and it repopulates JSON for new inboxes
 check API ownership, inbox authorization, writes, reads and readiness. Once the contract migration drops JSON, an
 older image that depends on `destination_ref` is no longer a supported rollback.
 
+`00017_inbox_destination_contract.sql` requires the validated destination-shape proof on populated databases. That
+catalog proof establishes every existing row and all later writes, so the migration does not scan the backfill
+checkpoint or repeat table validation. It sets the normalized destination fields `NOT NULL`, drops `destination_ref`
+and retires the destination checkpoint columns. The validated shape constraint remains to enforce the namespace,
+name and UID length limits. A fresh empty database follows a bounded empty-table path and validates the constraint
+during migration. The migration has a five-second lock wait and does not rewrite inbox rows. Before applying it,
+finish the typed-only rollout and proof command from the preceding release. The destination backfill and validation
+commands are retired with this contract; the shared progress table remains for subscription-creation backfill.
+
+Before `00017`, roll back only to the typed-capable dual-write release: it reads relational fields and can still read
+retained legacy JSON, and it repopulates JSON for new inboxes. Keep the additive columns and `00015` applied during
+rollback; its Down step refuses to run while any typed-only row lacks JSON. After rollback, check API ownership,
+inbox authorization, writes, reads and readiness. After `00017`, roll application code back only to the typed-only
+release and keep the contract applied; older images that depend on `destination_ref` are no longer supported.
+
+`00018_subscription_creation_contract.sql` requires all four validated creation proofs on populated databases.
+Their catalog state proves existing rows and later writes satisfy the contract, so the migration does not scan the
+checkpoint or repeat table validation. A fresh empty database validates the checks in the migration's bounded
+empty-table path. It sets `creation_proto` and `source_provider` `NOT NULL`, drops creation JSON and its checkpoint
+data, and removes the now-unused shared backfill-progress table. The source-provider and source-specific-state
+constraints remain as permanent relational invariants. The contract image retires the creation backfill and
+validation commands; operators must run each command from its earlier dual-write or typed-only image, respectively.
+
+Before `00018`, roll back only to the typed-capable dual-write release while retaining the additive migrations and
+columns; it reads typed-only rows and writes both representations. Keep `00013` applied during code rollback,
+because its Down step requires every row to have JSON creation data again. After the rollback rollout settles,
+verify readiness, inbox authorization, reads and writes. After `00018`, roll back only to a typed-only compatible
+image and keep the contract migration applied. The JSON and checkpoint data are gone, so images that read or write
+creation JSON are no longer supported; the contract `Down` fails rather than recreating empty columns.
+
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
 flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,
 and `watch_lease_s` (default 300) is how long a watch lasts before it ends with `reconnect_required`.

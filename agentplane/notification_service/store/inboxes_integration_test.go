@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -72,6 +73,49 @@ func TestOverlappingSubscriptionsCommitOnePrefixAndReadDoesNotAcknowledge(t *tes
 	}
 	if _, err := f.Acknowledge(t.Context(), Owner{Account: newOwner(), SandboxUID: testSandboxUID}, a.InboxID, 1); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestReadReconstructsTypedPayloadsAndKeepsGitHubJSONNative(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, body("typed-content-reader"))
+	requestID := uuid.New()
+	events := []model.EventIdentity{
+		model.ActionsEvent{RequestID: requestID, Sequence: 1},
+		model.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 2},
+		model.GitHubMergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 3},
+		model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender", Name: "sandbox"}},
+		model.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: model.EventPullRequest},
+	}
+	wantPayloads := make([][]byte, len(events))
+	for i, event := range events {
+		payload := entryPayloadForTest(t, event)
+		wantPayloads[i] = []byte(payload)
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payload)
+		if _, nativeJSON := event.(model.GitHubEvent); !nativeJSON {
+			// After the cleanup-writer and content-backfill gates, typed payloads stand on their own.
+			f.exec(t, `UPDATE entry SET payload = NULL WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1)
+		}
+	}
+
+	page := f.read(t, subscription.InboxID, 0)
+	if len(page.Entries) != len(events) {
+		t.Fatalf("read returned %d entries, want %d", len(page.Entries), len(events))
+	}
+	for i := range events {
+		sameJSON(t, page.Entries[i].Payload, wantPayloads[i])
+	}
+}
+
+func TestReadRejectsMissingTypedContentInsteadOfFallingBackToJSON(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, body("missing-typed-content"))
+	event := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
+	f.exec(t, `UPDATE entry SET typed_payload = NULL WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
+	_, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, 0, 128)
+	if err == nil || !strings.Contains(err.Error(), "typed content is missing") {
+		t.Fatalf("read error = %v, want a missing typed content error", err)
 	}
 }
 

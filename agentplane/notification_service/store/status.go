@@ -196,6 +196,14 @@ func summarize(cursor int64, event model.EventIdentity, payload []byte, createdA
 	return summary, nil
 }
 
+func summarizeStored(cursor int64, event model.EventIdentity, legacyPayload, typedPayload []byte, legacyPayloadPresent bool, createdAt time.Time) (EntrySummary, error) {
+	payload, err := entryPayloadFromStoredContent(event, legacyPayload, typedPayload, legacyPayloadPresent)
+	if err != nil {
+		return EntrySummary{}, fmt.Errorf("entry %d content: %w", cursor, err)
+	}
+	return summarize(cursor, event, payload, createdAt)
+}
+
 func truncate(s string) string {
 	if characters := []rune(s); len(characters) > maxSummaryField {
 		return string(characters[:maxSummaryField])
@@ -324,7 +332,8 @@ func subscriptionStatuses(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, ob
 
 func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, after int64) ([]EntrySummary, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT cursor, `+eventIdentityReadColumns+`, payload, created_at FROM entry
+		`SELECT cursor, `+eventIdentityReadColumns+`,
+			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, payload IS NOT NULL, typed_payload, created_at FROM entry
 			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inboxID, after, maxPendingEntrySummaries)
 	if err != nil {
@@ -335,10 +344,11 @@ func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, a
 	for rows.Next() {
 		var cursor int64
 		var identityRead eventIdentityRead
-		var payload []byte
+		var payload, typedPayload []byte
+		var payloadPresent bool
 		var createdAt time.Time
 		destinations := append([]any{&cursor}, identityRead.destinations()...)
-		destinations = append(destinations, &payload, &createdAt)
+		destinations = append(destinations, &payload, &payloadPresent, &typedPayload, &createdAt)
 		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
@@ -346,7 +356,7 @@ func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, a
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inboxID, cursor, err)
 		}
-		summary, err := summarize(cursor, identity, payload, createdAt)
+		summary, err := summarizeStored(cursor, identity, payload, typedPayload, payloadPresent, createdAt)
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s: %w", inboxID, err)
 		}
