@@ -65,5 +65,5 @@ on the host during a burst (which interface still gains or loses an address), an
 
 - <../../../debug/kernel_6_18_amd_kvm_stall.md> — the kernel bug causing the pod churn
 - <../../../cluster/debug/pve-cp0-notready-2026-03-23/README.md> — original NMI incident investigation
-- <../../../debug/atlas/ethernet_recurring/README.md> — atlas physical link flaps (different issue)
+- <../../../docs/atlas_network.md> — atlas physical link flaps (different issue)
 - <../wyrm2/wyrm2_freezes.md> — wyrm2 UI freezes (QXL TTM, resolved)

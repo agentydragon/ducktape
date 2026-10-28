@@ -5,7 +5,7 @@
 
 The card is the board's onboard Wi-Fi 7 / BT combo. It is **idle on atlas** — the
 active uplink is the 10G Aquantia NIC (`enp12s0`) bridged into `vmbr0`
-(see `ethernet_recurring/README.md`). Nothing on atlas depends on this card.
+(see [Atlas network diagnostics](../../docs/atlas_network.md)). Nothing on atlas depends on this card.
 
 ## Hardware
 

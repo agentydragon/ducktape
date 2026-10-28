@@ -252,4 +252,4 @@ separately (Option C debugging) without blocking the primary use case.
 
 - <black_screen_lockup.md> — chipset PCIe fabric instability (incidents 1–10)
 - <wyrm_gpu_lockup.md> — GPU lockwatch timeouts under VFIO
-- <ethernet_recurring/README.md> — network drops (cable issue, separate)
+- <../../docs/atlas_network.md> — physical-link diagnostics (separate issue)

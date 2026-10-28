@@ -15,6 +15,9 @@ reads these fixed addresses from `cluster/cdk8s/home_lan.py`; `home-nodes.tf` an
 Addresses outside the pool and not listed here are free for fixed assignments. DHCP-leased hosts
 (`atlas`, `wyrm2`, `optiplex`'s own lease) are not listed: their addresses can change.
 
+For Atlas carrier, bridge and interface-renaming checks, see
+[Atlas network diagnostics](atlas_network.md).
+
 ## Physical wiring
 
 ```text

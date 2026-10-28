@@ -114,10 +114,9 @@ if BGW320-CLI proves too immature.
   `ens18` is its only default-route/DNS path (DNS 1.1.1.1/1.0.0.1); explains why
   losing that route surfaces as `ping`'s `System error` rather than a DNS-name
   failure.
-- `debug/atlas/ethernet_recurring/README.md` — prior, similarly-shaped incident: a
-  bad self-crimped cable on `atlas`'s own uplink caused a month of flapping before
-  total failure. Flagged there as possibly stale since the cable was touched again
-  for a GPU install.
+- [Atlas network diagnostics](../../docs/atlas_network.md) — the resolved
+  self-crimped-cable incident and the interface-renaming gotcha. This does not
+  establish the cause of the current gateway-to-switch outage.
 - `cluster/terraform/main/proxmox-vms.tf`, `ansible/atlas.yaml` — `wyrm2` is a
   Proxmox VM on `atlas` (`vm_id=110`), bridged (`vmbr0`) onto `atlas`'s single
   physical uplink (`enp11s0`); it has no static network config of its own, so its
