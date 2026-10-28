@@ -376,11 +376,12 @@ func TestPreparationCompletingAfterCloseCannotMakeSessionReady(t *testing.T) {
 }
 
 func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testing.T) {
-	s, previous := frameTestSession(t, []string{"/bin/true"})
-	if _, err := previous.Wait(context.Background()); err != nil {
-		t.Fatal(err)
-	}
 	synctest.Test(t, func(t *testing.T) {
+		// COSI publishers and their resource watchers must share this bubble.
+		s, previous := frameTestSession(t, []string{"/bin/true"})
+		if _, err := previous.Wait(context.Background()); err != nil {
+			t.Fatal(err)
+		}
 		// The OS process has exited, but its stdout callback still owns the
 		// attachment until its final journal writes and exit handling complete.
 		s.readers.Add(1)
