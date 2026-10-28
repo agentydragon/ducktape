@@ -16,14 +16,24 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 )
 
 func TestMain(m *testing.M) {
+	logger, err := zap.NewProduction()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cgroup test logging setup failed: %v\n", err)
+		os.Exit(1)
+	}
+	zap.ReplaceGlobals(logger)
 	if handled, code := InternalMode(os.Args[1:]); handled {
+		_ = logger.Sync()
 		os.Exit(code)
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	_ = logger.Sync()
+	os.Exit(code)
 }
 
 // TestCgroupKernelFixture runs in the privileged, private cgroup namespace owned

@@ -590,7 +590,10 @@ go_test(
     embed = [":runner"],
     pure = "on",
     tags = ["manual"],
-    deps = ["@org_golang_x_sys//unix"],
+    deps = [
+        "@org_golang_x_sys//unix",
+        "@org_uber_go_zap//:zap",
+    ],
 )
 
 py_library(
