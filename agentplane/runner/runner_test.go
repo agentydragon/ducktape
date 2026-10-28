@@ -20,6 +20,7 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
+	"github.com/cosi-project/runtime/pkg/state"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -172,13 +173,27 @@ func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 }
 
 func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
-	proxy := modelConfigServer(t)
-	workspace := t.TempDir()
-	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
-	if _, err := r.OpenSession(context.Background(), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	// Facts project a supplied snapshot. Do not run controllers that can replace
+	// synthetic runtime values while the test switches from busy to idle.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store, err := NewSessionStore(t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
-	session := r.sessions["session-1"]
+	r := &Runner{ctx: ctx, store: store, fatal: make(chan error, 1)}
+	r.lifecycle, err = newLifecycle(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := &Session{runner: r, id: "session-1", pending: map[string]bool{}}
+	r.sessions = map[string]*Session{session.id: session}
+	if err := r.lifecycle.state.Create(ctx, lifecycleResourceFor(session.id, sessionRuntimeSpec{}), state.WithCreateOwner(sessionControllerName)); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.lifecycle.state.Create(ctx, lifecycleResourceFor("bootstrap", bootstrapRuntimeSpec{}), state.WithCreateOwner(bootstrapControllerName)); err != nil {
+		t.Fatal(err)
+	}
 	bootstrapScript := "unused test bootstrap"
 	r.config.Launch.Bootstrap = &bootstrapScript
 	setBootstrapRuntime := func(phase bootstrapPhase) error {
@@ -203,7 +218,6 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 		session.pending = map[string]bool{}
 		session.setup = runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED
 		session.mu.Unlock()
-		session.wake()
 		if err := setSessionRuntimePhaseForTest(r, session, executionDormant); err != nil {
 			t.Errorf("restore session runtime: %v", err)
 		}
@@ -214,7 +228,6 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 			t.Errorf("restore bootstrap input: %v", err)
 		}
 	}
-	defer resetManualState()
 
 	session.mu.Lock()
 	session.activeTurn = "turn-1"
