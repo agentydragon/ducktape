@@ -191,11 +191,13 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(
     original_stat = main_path.stat()
     main_path.write_bytes(repeated + repeated + ending_c)
     os.utime(main_path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
-    _backup(env, claude_root)
+    _backup(env, claude_root, codex_root)
     snapshots = repository.list_snapshots()
     same_metadata_snapshot = snapshots[-1]
     changes = repository.diff_snapshots(snapshots[-2].id, same_metadata_snapshot.id)
-    assert any(change.path == str(main_path) and change.modifier == "?" for change in changes)
+    assert any(
+        change.path.endswith("/main-session.jsonl") and change.modifier == "?" for change in changes
+    ), [(change.path, change.modifier) for change in changes]
     report = ingestor.ingest()
     assert report.files_failed == 0
     with factory() as db:
@@ -212,11 +214,11 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(
         assert changed_row.change_kind == "?"
 
     main_path.write_bytes(repeated)
-    _backup(env, claude_root)
+    _backup(env, claude_root, codex_root)
     truncation_snapshot = repository.list_snapshots()[-1]
     ingestor.ingest()
     main_path.unlink()
-    _backup(env, claude_root)
+    _backup(env, claude_root, codex_root)
     deletion_snapshot = repository.list_snapshots()[-1]
     ingestor.ingest()
 

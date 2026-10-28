@@ -55,12 +55,18 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    deps = [":archive"],
+)
+
 py_binary(
     name = "ingest_cli",
     data = ["//third_party/restic:restic"],
     main_module = "x.ai_session_archive.cli",
     visibility = ["//visibility:public"],
-    deps = [":archive"],
+    deps = [":cli"],
 )
 
 py_test(
