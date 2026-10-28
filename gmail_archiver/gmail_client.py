@@ -200,10 +200,7 @@ class GmailClient:
         Returns successful GmailMessageWithHeaders objects and per-message failures.
         """
         attempt = self._get_messages_batched(
-            message_ids,
-            batch_size,
-            message_format="metadata",
-            parse_response=GmailMessageWithHeaders.model_validate,
+            message_ids, batch_size, message_format="metadata", parse_response=GmailMessageWithHeaders.model_validate
         )
         return (
             [attempt.results[msg_id] for msg_id in message_ids if msg_id in attempt.results],
@@ -249,9 +246,7 @@ class GmailClient:
             [(msg_id, attempt.errors[msg_id][1]) for msg_id in message_ids if msg_id in attempt.errors],
         )
 
-    def get_messages_batch(
-        self, message_ids: list[str], batch_size: int
-    ) -> tuple[list[Email], list[tuple[str, str]]]:
+    def get_messages_batch(self, message_ids: list[str], batch_size: int) -> tuple[list[Email], list[tuple[str, str]]]:
         attempt = self._get_messages_batched(
             message_ids,
             batch_size,
@@ -266,12 +261,7 @@ class GmailClient:
         )
 
     def _get_messages_batched[T](
-        self,
-        message_ids: list[str],
-        batch_size: int,
-        *,
-        message_format: str,
-        parse_response: Callable[[dict], T],
+        self, message_ids: list[str], batch_size: int, *, message_format: str, parse_response: Callable[[dict], T]
     ) -> _MessageBatchAttempt[T]:
         results: dict[str, T] = {}
         errors: dict[str, tuple[Exception | None, str]] = {}
@@ -317,10 +307,7 @@ class GmailClient:
         return _MessageBatchAttempt(results, errors, individual_retry_ids)
 
     def _get_message_batch[T](
-        self,
-        message_ids: list[str],
-        message_format: str,
-        parse_response: Callable[[dict], T],
+        self, message_ids: list[str], message_format: str, parse_response: Callable[[dict], T]
     ) -> _MessageBatchAttempt[T]:
         results: dict[str, T] = {}
         errors: dict[str, tuple[Exception | None, str]] = {}
@@ -328,6 +315,7 @@ class GmailClient:
 
         batch_request = self.service.new_batch_http_request()
         for msg_id in message_ids:
+
             def callback(request_id, response, exception, *, requested_id: str = msg_id) -> None:
                 if exception:
                     errors[requested_id] = (exception, str(exception))
@@ -341,8 +329,7 @@ class GmailClient:
                     individual_retry_ids.add(requested_id)
 
             batch_request.add(
-                self.service.users().messages().get(userId="me", id=msg_id, format=message_format),
-                callback=callback,
+                self.service.users().messages().get(userId="me", id=msg_id, format=message_format), callback=callback
             )
 
         batch_request.execute()

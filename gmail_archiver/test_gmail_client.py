@@ -29,9 +29,7 @@ class _MockTransport:
     """Mock transport that runs real googleapiclient BatchHttpRequest parsing."""
 
     def __init__(
-        self,
-        batch_responses: list[dict[str, _Outcome]],
-        individual_responses: dict[str, list[_Outcome]] | None = None,
+        self, batch_responses: list[dict[str, _Outcome]], individual_responses: dict[str, list[_Outcome]] | None = None
     ) -> None:
         self.batch_responses = list(batch_responses)
         self.individual_responses = individual_responses or {}
@@ -72,9 +70,7 @@ class _MockTransport:
             response_boundary = "gmail-test-response"
             response_parts = []
             for request_id, message_id in request_parts:
-                response_parts.append(
-                    self._multipart_part(request_id, outcomes[message_id])
-                )
+                response_parts.append(self._multipart_part(request_id, outcomes[message_id]))
             response_body = "".join(response_parts) + f"--{response_boundary}--\r\n"
             return self._sdk_response(
                 uri,
@@ -89,12 +85,7 @@ class _MockTransport:
         self.individual_calls.append(message_id)
         outcome = self.individual_responses[message_id].pop(0)
         return self._sdk_response(
-            uri,
-            method,
-            body,
-            headers,
-            json.dumps(outcome.response).encode(),
-            self._headers(outcome),
+            uri, method, body, headers, json.dumps(outcome.response).encode(), self._headers(outcome)
         )
 
     @staticmethod
@@ -142,12 +133,15 @@ class _MockMessages:
         self.transport = transport
 
     def get(self, *, userId: str, id: str, format: str) -> HttpRequest:  # noqa: N803 - matches Gmail API parameter
-        return cast(HttpRequest, HttpRequest(
-            http=self.transport,
-            postproc=JsonModel().response,
-            uri=f"{_MESSAGE_PREFIX}{id}?format={format}",
-            method="GET",
-        ))
+        return cast(
+            HttpRequest,
+            HttpRequest(
+                http=self.transport,
+                postproc=JsonModel().response,
+                uri=f"{_MESSAGE_PREFIX}{id}?format={format}",
+                method="GET",
+            ),
+        )
 
 
 class _MockUsers:
@@ -221,9 +215,7 @@ def test_raw_batch_retains_successes_and_retries_only_rate_limited_ids() -> None
 
 def test_raw_batch_reports_rate_limit_exhaustion_and_unattempted_ids() -> None:
     rate_limit = _http_error(429, retry_after="0")
-    transport = _MockTransport(
-        [{"a": _ok("a"), "b": rate_limit}, *[{"b": rate_limit} for _ in range(9)]]
-    )
+    transport = _MockTransport([{"a": _ok("a"), "b": rate_limit}, *[{"b": rate_limit} for _ in range(9)]])
 
     results, errors = _client(transport).get_messages_raw_batch(["a", "b", "c"], 2, retry_failures=False)
 
@@ -251,10 +243,7 @@ def test_raw_batch_keeps_individual_retry_for_non_rate_limit_failures() -> None:
 
 def test_metadata_batch_retries_rate_limited_ids_and_returns_per_id_failures() -> None:
     transport = _MockTransport(
-        [
-            {"a": _ok("a", metadata=True), "b": _http_error(503, retry_after="0")},
-            {"b": _ok("b", metadata=True)},
-        ]
+        [{"a": _ok("a", metadata=True), "b": _http_error(503, retry_after="0")}, {"b": _ok("b", metadata=True)}]
     )
 
     messages, errors = _client(transport).get_messages_metadata_batch(["a", "b"], 2)
