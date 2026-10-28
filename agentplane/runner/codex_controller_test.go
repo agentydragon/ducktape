@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/codex"
@@ -86,43 +88,60 @@ func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
 }
 
 func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
-	entered := make(chan struct{}, 1)
-	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*executorInstance, error) {
-		entered <- struct{}{}
-		<-ctx.Done()
-		return nil, ctx.Err()
-	}, nil)
+	stateDir := t.TempDir()
+	synctest.Test(t, func(t *testing.T) {
+		entered := make(chan struct{})
+		var enteredOnce sync.Once
+		r := newCodexSynctestRunner(t, stateDir, func(ctx context.Context) (*executorInstance, error) {
+			enteredOnce.Do(func() { close(entered) })
+			<-ctx.Done()
+			return nil, ctx.Err()
+		})
 
-	if _, err := r.codex.request(nil); err != nil {
-		t.Fatalf("publish first Codex demand: %v", err)
-	}
-	select {
-	case <-entered:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("executor startup did not begin")
-	}
-	waiting := waitCodex(t, r, func(current codexRuntimeSpec) bool {
-		return current.Phase == codexStarting && !current.ExecutorReadyDeadline.IsZero()
-	}, "initial Codex executor dependency deadline")
-	remaining := time.Until(waiting.ExecutorReadyDeadline)
-	if remaining < codexExecutorReadyBudget-2*time.Second || remaining > codexExecutorReadyBudget {
-		t.Fatalf("initial executor readiness budget = %s, want about %s", remaining, codexExecutorReadyBudget)
-	}
+		if _, err := r.codex.request(nil); err != nil {
+			t.Fatalf("publish first Codex demand: %v", err)
+		}
+		synctest.Wait()
+		select {
+		case <-entered:
+		default:
+			t.Fatal("executor startup did not begin")
+		}
+		initial := codexRuntime(t, r)
+		if initial.Phase != codexStarting || initial.ExecutorReadyDeadline.IsZero() {
+			t.Fatalf("Codex initial dependency state = %+v, want a 30s executor wait", initial)
+		}
+		if remaining := initial.ExecutorReadyDeadline.Sub(time.Now()); remaining != codexExecutorReadyBudget {
+			t.Fatalf("initial executor readiness budget = %s, want %s", remaining, codexExecutorReadyBudget)
+		}
 
-	// Expire the original deadline, then publish a joined request. The controller must
-	// consume that request against the first waiter's deadline instead of granting it a
-	// fresh 30-second startup budget.
-	waiting.ExecutorReadyDeadline = time.Now().Add(-time.Millisecond)
-	setCodexRuntime(t, r, waiting)
-	if _, err := r.codex.request(nil); err != nil {
-		t.Fatalf("publish joined Codex demand: %v", err)
-	}
-	expired := waitCodex(t, r, func(current codexRuntimeSpec) bool {
-		return current.Phase == codexStopped && current.Attempt == 2 && strings.Contains(current.Error, "within 30s")
-	}, "expired shared executor readiness deadline")
-	if !expired.ExecutorReadyDeadline.IsZero() {
-		t.Errorf("Codex retained expired dependency deadline: %s", expired.ExecutorReadyDeadline)
-	}
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		if _, err := r.codex.request(nil); err != nil {
+			t.Fatalf("publish joined Codex demand: %v", err)
+		}
+		synctest.Wait()
+		joined := codexRuntime(t, r)
+		if joined.ExecutorReadyDeadline != initial.ExecutorReadyDeadline {
+			t.Fatalf("joined demand changed executor deadline: got %s, want original %s", joined.ExecutorReadyDeadline, initial.ExecutorReadyDeadline)
+		}
+		if demand := codexDemand(t, r); demand != 2 {
+			t.Fatalf("joined Codex demand = %d, want 2", demand)
+		}
+
+		time.Sleep(20 * time.Second)
+		synctest.Wait()
+		expired := codexRuntime(t, r)
+		if expired.Phase != codexStopped || expired.Attempt != 2 || !strings.Contains(expired.Error, "within 30s") {
+			t.Fatalf("Codex state at original 30s deadline = %+v, want demand 2 consumed", expired)
+		}
+		if !expired.ExecutorReadyDeadline.IsZero() {
+			t.Errorf("Codex retained expired dependency deadline: %s", expired.ExecutorReadyDeadline)
+		}
+		if err := r.Close(); err != nil {
+			t.Fatalf("close synctest Runner: %v", err)
+		}
+	})
 }
 
 func TestCodexFailedStopBlocksRunnerFencing(t *testing.T) {
@@ -227,6 +246,54 @@ func newCodexOnlyRunner(t *testing.T) *Runner {
 		if r.closeErr == nil {
 			if err := r.Close(); err != nil {
 				t.Errorf("close Codex controller test Runner: %v", err)
+			}
+		}
+		forceStopTestRunner(t, r)
+	})
+	return r
+}
+
+func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(context.Context) (*executorInstance, error)) *Runner {
+	t.Helper()
+	owner, err := OpenStateOwner(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewSessionStore(filepath.Join(stateDir, "sessions"))
+	if err != nil {
+		_ = owner.Close()
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	executorConfig := CodexExecutorConfig{URL: "ws://127.0.0.1:4599"}
+	codexConfig := harness.LaunchConfig{Binary: "/bin/false"}
+	config := Config{StateDir: stateDir, Codex: &codexConfig, CodexExecutor: &executorConfig}
+	r := &Runner{
+		config: config, ctx: ctx, cancel: cancel, owner: owner, store: store,
+		sessions: map[string]*Session{}, changes: make(chan struct{}), fatal: make(chan error, 1),
+	}
+	// Configure every native host before lifecycle controllers or their goroutines exist.
+	r.executor = newCodexExecutor(r, executorConfig)
+	r.executor.startEffect = startEffect
+	r.codex = newCodexServer(r, codexConfig)
+	lifecycle, err := newLifecycle(r)
+	if err != nil {
+		cancel()
+		_ = owner.Close()
+		t.Fatal(err)
+	}
+	r.lifecycle = lifecycle
+	go lifecycle.run()
+	if err := r.store.AdoptIncarnation("codex-synctest"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Startup(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if r.closeErr == nil {
+			if err := r.Close(); err != nil {
+				t.Errorf("close Codex synctest Runner: %v", err)
 			}
 		}
 		forceStopTestRunner(t, r)

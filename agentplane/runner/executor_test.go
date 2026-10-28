@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
@@ -215,6 +216,68 @@ func TestExecutorHealthToleratesFailuresResetsAndFencesBeforeSuccessor(t *testin
 	waitExecutor(t, r, func(current executorRuntimeSpec) bool {
 		return current.Generation == 2 && current.Phase == executorReady && starts.Load() == 2 && stops.Load() == 1
 	}, "successor after completed fence")
+}
+
+func TestExecutorFailedFenceRetainsOwnershipAndBlocksSuccessor(t *testing.T) {
+	stateDir := t.TempDir()
+	synctest.Test(t, func(t *testing.T) {
+		var starts, stops atomic.Int32
+		fenceFailure := errors.New("executor container could not prove fencing")
+		done := make(chan error, 1)
+		instance := &executorInstance{
+			done: done,
+			stop: func(context.Context) error {
+				stops.Add(1)
+				return fenceFailure
+			},
+		}
+		r := newCodexSynctestRunner(t, stateDir, func(context.Context) (*executorInstance, error) {
+			if starts.Add(1) == 1 {
+				return instance, nil
+			}
+			return newTestExecutorInstance(&stops), nil
+		})
+
+		if err := r.executor.request(); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		ready := r.executor.runtimeState()
+		if ready.Phase != executorReady {
+			t.Fatalf("executor before native exit = %+v, want ready", ready)
+		}
+		done <- errors.New("executor exited unexpectedly")
+		synctest.Wait()
+
+		failed := r.executor.runtimeState()
+		if !strings.Contains(failed.StopError, fenceFailure.Error()) {
+			t.Fatalf("executor StopError = %q, want %q", failed.StopError, fenceFailure)
+		}
+		if failed.Phase != executorStopped || failed.Generation != ready.Generation {
+			t.Fatalf("executor runtime after failed fence = %+v, want stopped generation %d", failed, ready.Generation)
+		}
+		retained, generation := r.executor.currentInstance()
+		if retained != instance || generation != ready.Generation {
+			t.Fatalf("executor ownership after failed fence = (%p, %d), want retained instance (%p, %d)", retained, generation, instance, ready.Generation)
+		}
+		if got := starts.Load(); got != 1 || stops.Load() != 1 {
+			t.Fatalf("executor starts/stops after failed fence = %d/%d, want 1/1", got, stops.Load())
+		}
+
+		if err := r.executor.request(); err != nil {
+			t.Fatalf("publish additional executor demand after failed fence: %v", err)
+		}
+		synctest.Wait()
+		blocked := r.executor.runtimeState()
+		if blocked.Phase != executorStopped || blocked.Generation != ready.Generation || blocked.StopError == "" || starts.Load() != 1 {
+			t.Fatalf("executor advanced after failed fence and new demand: runtime=%+v starts=%d", blocked, starts.Load())
+		}
+
+		closeErr := r.Close()
+		if closeErr == nil || !strings.Contains(closeErr.Error(), fenceFailure.Error()) {
+			t.Fatalf("Runner Close after failed executor fence = %v, want the fence failure", closeErr)
+		}
+	})
 }
 
 func TestExecutorCloseCancelsConcurrentStartupWithoutRestart(t *testing.T) {

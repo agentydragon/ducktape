@@ -460,6 +460,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 	if err != nil || len(statusResponse.Sessions) != 1 || statusResponse.Sessions[0].SetupState != runnerpb.SetupState_SETUP_STATE_SUCCEEDED {
 		t.Fatalf("restarted setup state = %v, %v", statusResponse, err)
 	}
+	waitLifecycle(t, restarted, restarted.bootstrapSettled, "reconstructed bootstrap outcome")
 	facts, err := restarted.facts()
 	if err != nil || facts.Bootstrap != controlpb.RunnerFacts_BOOTSTRAP_SUCCEEDED {
 		t.Fatalf("restarted bootstrap state = %v, %v", facts, err)
