@@ -12,6 +12,11 @@ The TypeScript fixtures cover omitted outputs and explicit module-path overrides
 `openapi_zod_ts_library` returns a compiled `ts_library` and preserves the generated source label,
 defaulting to `<name>.ts`.
 
+Agentplane's Action path is also in the repository map: `catalog.Input[T]` reflects and validates Go
+inputs at runtime, while the Sandbox `action.schema.json` generates Go and Python enums through pinned
+`quicktype-core`. The production roster check is
+[`//agentplane/action_service/sandbox/contract:contract_test`](../../../agentplane/action_service/sandbox/contract/BUILD.bazel).
+
 Run all cases, including lint and language checks on the explicitly selected library targets:
 
 ```bash
@@ -31,7 +36,7 @@ not independently select every Python library for its mypy/ruff aspects.
 | `infrastructure/discovery`       | Google Discovery fixture → actual MCP adapter → advertised JSON Schema                                                                                                                         |
 | `infrastructure/grocy_openapi`   | OpenAPI → real Grocy/FastMCP tool adapter → advertised schemas and mocked HTTP invocation                                                                                                      |
 | `//loom/gym:test_schema_codegen` | Private Loom adapter → flattened nested provider JSON Schema; test stays in owning package                                                                                                     |
-| `infrastructure/pydantic`        | Pydantic → provider-specific JSON Schema → strict-subset and payload validation                                                                                                                |
+| `infrastructure/pydantic`        | Pydantic → shared OpenAI strict-schema helper → strict-subset and payload validation                                                                                                           |
 
 These are tool-composition and boundary-contract tests. They do not prove that every production
 schema is supported, that Python custom validators survive export, or that a remote provider accepts

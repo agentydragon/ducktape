@@ -1,7 +1,8 @@
 # TypeScript schema conversion
 
 The [repository pipeline map](../docs/schema_codegen.md) covers schema producers, intermediates,
-and consumers across languages.
+and consumers across languages, including Agentplane's runtime Go Action inputs and generated Sandbox
+Action-name enums.
 
 The `openapi_js_library` macro converts a declared OpenAPI JSON artifact into a TypeScript
 declaration file and packages it in a `js_library` under the requested target name. The schema owner
