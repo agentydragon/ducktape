@@ -5,7 +5,6 @@ for pytest auto-discovery. Tests anywhere in props/ will have access
 to these fixtures.
 """
 
-import logging
 import os
 from collections.abc import Generator
 
@@ -74,20 +73,11 @@ def pytest_configure(config: pytest.Config) -> None:
     if not os.environ.get("PROPS_AGENT_PASSWORD_SALT"):
         os.environ["PROPS_AGENT_PASSWORD_SALT"] = "test-agent-password-salt"
 
-    # Enable live logging by attaching pytest's log_cli_handler to root logger
-    # This replicates what log_cli=true does, but programmatically
-    logging_plugin = config.pluginmanager.get_plugin("logging-plugin")
-    if logging_plugin and hasattr(logging_plugin, "log_cli_handler"):
-        handler = logging_plugin.log_cli_handler
-        handler.setLevel(logging.INFO)
-        handler.setFormatter(
-            logging.Formatter(fmt="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S")
-        )
-        # Attach to root logger so all loggers emit to console
-        root_logger = logging.getLogger()
-        if handler not in root_logger.handlers:
-            root_logger.addHandler(handler)
-            root_logger.setLevel(logging.INFO)
+    # Set pytest's supported live logging options before its trylast configure
+    # hook creates the logging plugin and its CLI handler.
+    config.option.log_cli_level = "INFO"
+    config.option.log_cli_format = "%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s"
+    config.option.log_cli_date_format = "%H:%M:%S"
 
     config.addinivalue_line("markers", "live_openai_api: marks tests calling real OpenAI API")
 
