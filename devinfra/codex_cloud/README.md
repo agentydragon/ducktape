@@ -1,4 +1,4 @@
-# Codex Cloud environment bootstrap for `ducktape`
+# Codex Cloud (Legacy) environment bootstrap for `ducktape`
 
 This directory contains a unified Codex Cloud setup/maintenance script for this monorepo,
 modeled after the Claude web setup goals:
@@ -7,12 +7,16 @@ modeled after the Claude web setup goals:
 - optionally install Nix + `.#devtools` for tool parity with local workflows
 - support SOPS via `SOPS_AGE_KEY` injected through Codex environment config
 
+The `install` and `maintenance` modes documented here target Codex Cloud
+(Legacy) environments. The current Cloud environments for web, mobile, and
+desktop use a separate setup workflow; see the [current environment guide](https://learn.chatgpt.com/docs/environments/cloud-environments).
+
 ## Files
 
 - `setup.sh`: unified script with `--mode=install|maintenance`
 - `codex_cloud_agent_configuration_plan.md`: detailed research/plan doc collected for Cloud behavior, hooks, and rollout strategy
 
-## Codex Cloud environment configuration
+## Codex Cloud (Legacy) environment configuration
 
 Recommended initial config in Codex Cloud:
 
@@ -66,9 +70,13 @@ pre-commit hooks, then validates `bb` / `bbr` availability.
 ## Known gaps / risks
 
 1. **Hooks in Codex Cloud are not yet guaranteed**
-   - OpenAI docs clearly describe setup/maintenance scripts and AGENTS behavior.
-   - They do not clearly confirm delegated Cloud execution of `.codex/hooks.json`.
-   - Plan as if hooks are unavailable unless validated empirically.
+   - Legacy environment docs describe setup/maintenance scripts but do not
+     confirm delegated execution of project `.codex/hooks.json`.
+   - The [current Cloud hooks guide](https://learn.chatgpt.com/docs/hooks)
+     says local/project hooks and command hooks are unsupported with cloud
+     orchestration. That statement does not settle behavior in legacy
+     environment tasks.
+   - This setup remains independent of hooks unless legacy behavior is tested.
 
 2. **SOPS key handling trade-off**
    - `SOPS_AGE_KEY` in environment variables makes runtime decryption possible but is less restrictive than setup-only secrets.

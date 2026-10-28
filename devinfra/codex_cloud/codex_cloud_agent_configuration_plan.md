@@ -1,10 +1,16 @@
-# Codex Cloud agent: environment behavior, hookability, and ducktape configuration plan
+# Codex Cloud (Legacy): environment behavior, hookability, and ducktape configuration plan
 
-_Last updated: 2026-04-27_
+_Last checked: 2026-10-28_
+
+This plan and `setup.sh` describe the Codex Cloud (Legacy) environment flow,
+which remains available for Code Review and the GitHub and Linear integrations.
+The current Cloud experience for web, mobile, and desktop has separate
+environment documentation and setup controls; do not infer its behavior from
+the legacy workflow.
 
 ## 1) What is known (documented) about Codex Cloud environments
 
-Primary source: OpenAI Codex Cloud docs and changelog.
+Primary source: OpenAI's Codex Cloud (Legacy) environment docs.
 
 - Codex Cloud runs tasks in an isolated container, checks out the requested branch/SHA, runs setup, then runs the agent loop.
 - Setup scripts run in a different shell session than the agent loop; shell exports from setup do not automatically carry into agent shell unless persisted (for example via shell startup files).
@@ -15,11 +21,10 @@ Primary source: OpenAI Codex Cloud docs and changelog.
 
 References:
 
-- https://developers.openai.com/codex/cloud/environments
-- https://developers.openai.com/codex/cloud/internet-access
-- https://developers.openai.com/codex/changelog
+- https://learn.chatgpt.com/docs/environments/cloud-environment
+- https://learn.chatgpt.com/docs/cloud/internet-access
 
-## 2) Does Codex Cloud follow `.codex` settings and hooks?
+## 2) Does Codex Cloud (Legacy) follow `.codex` settings and hooks?
 
 ## 2.1 What OpenAI docs clearly say
 
@@ -29,22 +34,32 @@ References:
 
 References:
 
-- https://developers.openai.com/codex/config-basic
-- https://developers.openai.com/codex/config-reference
-- https://developers.openai.com/codex/hooks
-- https://developers.openai.com/codex/guides/agents-md
+- https://learn.chatgpt.com/docs/config-file/config-reference
+- https://learn.chatgpt.com/docs/hooks
+- https://learn.chatgpt.com/docs/agent-configuration/agents-md
 
 ## 2.2 What is _not_ clearly documented for Cloud
 
-I could not find explicit OpenAI documentation stating that delegated Cloud runs execute project/user `hooks.json` from `.codex` inside the Cloud container.
+I could not find explicit OpenAI documentation stating that legacy Cloud
+environment tasks execute project/user `hooks.json` from `.codex` inside the
+Cloud container. The current Cloud hooks guide now says that local/project
+hooks and command/shell hooks are unsupported with cloud orchestration. That
+describes the current Cloud workflow and does not establish legacy behavior.
 
-Cloud environment docs document setup + maintenance scripts + AGENTS.md + internet policy. They do not explicitly mention hook execution in Cloud runtime.
+The legacy environment docs cover setup and maintenance scripts, `AGENTS.md`,
+and internet policy, but do not mention hook execution in the legacy runtime.
 
 ### Conclusion (confidence: medium)
 
-- **Documented, supported, and reliable for Cloud**: setup script, maintenance script, env vars, secrets (setup-only), AGENTS.md, internet policy.
-- **Not explicitly confirmed for Cloud delegated runtime**: `.codex/hooks.json` execution.
-- Treat hooks in Cloud as **unknown/unsupported until validated experimentally**.
+- **Documented for Codex Cloud (Legacy)**: setup and maintenance scripts,
+  environment variables, setup-only secrets, `AGENTS.md`, and internet policy.
+- **Not explicitly confirmed for legacy delegated tasks**: project
+  `.codex/hooks.json` execution.
+- **Documented for current Cloud orchestration**: local/project hooks and
+  command/shell handlers are unsupported. Keep this distinct from legacy
+  environment tasks.
+- Treat hooks as non-authoritative for this legacy setup until its behavior is
+  validated experimentally.
 
 ## 2.3 What is hookable where hooks are supported
 
@@ -57,7 +72,7 @@ From hooks docs (general Codex hooks surface):
 
 Reference:
 
-- https://developers.openai.com/codex/hooks
+- https://learn.chatgpt.com/docs/hooks
 
 ## 2.4 Additional online signals checked
 
@@ -89,7 +104,7 @@ References:
 - `nix/home/codex/default.nix`
 - `devinfra/setup_buildbuddy.sh`
 
-## 4) Practical configuration plan for Codex Cloud in this repo
+## 4) Practical configuration plan for Codex Cloud (Legacy) in this repo
 
 Goal: make Codex Cloud behave as close as feasible to our canonical Nix/devshell workflows, while remaining robust when hooks are unavailable.
 
@@ -176,9 +191,11 @@ Use this as the operator checklist for Codex Cloud environment config:
 
 ## 6) Open questions / follow-up research
 
-1. Does OpenAI Codex Cloud execute `.codex/hooks.json` in delegated tasks?
+1. Does Codex Cloud (Legacy) execute project `.codex/hooks.json` in delegated tasks?
 2. If yes, are all hook events supported in Cloud, or only a subset?
 3. Are hook side effects persisted in cached container resumes exactly once or per resumed session?
 4. What are current setup script timeout and resource ceilings by plan tier?
 
-Until (1)-(2) are verified, this repo should treat hooks as non-authoritative for Cloud.
+Until (1)-(2) are verified, this repo should treat hooks as non-authoritative
+for legacy Cloud tasks. Current Cloud orchestration's local-hook restriction is
+already documented above and does not answer question (1).
