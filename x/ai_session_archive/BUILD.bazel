@@ -65,21 +65,27 @@ py_binary(
     deps = [":cli"],
 )
 
+py_library(
+    name = "testing",
+    testonly = True,
+    srcs = ["testing.py"],
+    deps = [
+        ":database",
+        ":restic",
+        "//util/testing:postgres",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)
+
 py_test(
     name = "test_ingest",
     srcs = ["test_ingest.py"],
-    args = ["-k=real_restic_import_retains_every_changed_and_deleted_version"],
-    data = ["//third_party/restic"],
-    requires_docker = True,
     deps = [
-        ":database",
         ":ingest",
         ":models",
-        ":queries",
         ":restic",
         "//:conftest",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -87,44 +93,71 @@ py_test(
 )
 
 py_test(
-    name = "test_ingest_unit",
-    srcs = ["test_ingest.py"],
-    args = ["-k=unit_"],
+    name = "test_initial_import",
+    srcs = ["test_initial_import.py"],
     data = ["//third_party/restic"],
-    main = "test_ingest.py",
+    requires_docker = True,
     deps = [
         ":database",
         ":ingest",
         ":models",
         ":queries",
-        ":restic",
+        ":testing",
         "//:conftest",
-        "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
 
+py_test(
+    name = "test_modified_version",
+    srcs = ["test_modified_version.py"],
+    data = ["//third_party/restic"],
+    requires_docker = True,
+    deps = [
+        ":database",
+        ":ingest",
+        ":models",
+        ":queries",
+        ":testing",
+        "//:conftest",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_truncated_deleted_version",
+    srcs = ["test_truncated_deleted_version.py"],
+    data = ["//third_party/restic"],
+    requires_docker = True,
+    deps = [
+        ":database",
+        ":ingest",
+        ":models",
+        ":queries",
+        ":testing",
+        "//:conftest",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
 
 py_test(
     name = "test_parentless_snapshot",
-    srcs = ["test_ingest.py"],
-    args = ["-k=parentless_restic_snapshot"],
+    srcs = ["test_parentless_snapshot.py"],
     data = ["//third_party/restic"],
-    main = "test_ingest.py",
     requires_docker = True,
     deps = [
         ":database",
         ":ingest",
         ":models",
-        ":queries",
-        ":restic",
+        ":testing",
         "//:conftest",
-        "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -132,21 +165,33 @@ py_test(
 
 py_test(
     name = "test_postgres_retry",
-    srcs = ["test_ingest.py"],
-    args = ["-k=test_postgres_file_transaction"],
+    srcs = ["test_postgres_retry.py"],
     data = ["//third_party/restic"],
-    main = "test_ingest.py",
     requires_docker = True,
     deps = [
         ":database",
         ":ingest",
         ":models",
-        ":queries",
-        ":restic",
+        ":testing",
         "//:conftest",
-        "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
-        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_codex_parent_links",
+    srcs = ["test_codex_parent_links.py"],
+    requires_docker = True,
+    deps = [
+        ":database",
+        ":ingest",
+        ":models",
+        ":restic",
+        ":testing",
+        "//:conftest",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

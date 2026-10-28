@@ -10,11 +10,11 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from x.ai_session_archive.database import (
-    ResticSnapshotRow,
     FileVersionRecordRow,
     FileVersionRow,
     MachineRow,
     RecordPayloadRow,
+    ResticSnapshotRow,
     SessionRow,
     SnapshotFileRow,
 )
@@ -59,8 +59,13 @@ def _summary(row: Any) -> SessionSummary:
         title=session_row.title,
         cwd=session_row.cwd,
         parent_session_id=session_row.parent_session_id,
+        parent_native_session_id=session_row.parent_native_session_id,
         parent_link_kind=session_row.parent_link_kind,
         identity_inferred=session_row.identity_inferred,
+        native_session_id_conflict=session_row.native_session_id_conflict,
+        native_session_id_candidates=session_row.native_session_id_candidates,
+        parent_native_session_id_conflict=session_row.parent_native_session_id_conflict,
+        parent_native_session_id_candidates=session_row.parent_native_session_id_candidates,
         started_at=session_row.started_at,
         last_activity_at=session_row.last_activity_at,
         version_count=version_count,

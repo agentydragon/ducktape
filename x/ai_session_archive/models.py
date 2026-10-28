@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Harness(StrEnum):
@@ -25,8 +25,13 @@ class SessionSummary(BaseModel):
     title: str | None
     cwd: str | None
     parent_session_id: UUID | None = None
+    parent_native_session_id: str | None = None
     parent_link_kind: str | None = None
     identity_inferred: bool = False
+    native_session_id_conflict: bool = False
+    native_session_id_candidates: list[str] = Field(default_factory=list)
+    parent_native_session_id_conflict: bool = False
+    parent_native_session_id_candidates: list[str] = Field(default_factory=list)
     started_at: datetime | None
     last_activity_at: datetime | None
     version_count: int

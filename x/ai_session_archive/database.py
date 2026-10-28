@@ -79,8 +79,14 @@ class SessionRow(Base):
     source_path: Mapped[str] = mapped_column(String, nullable=False)
     source_relative_path: Mapped[str] = mapped_column(String, nullable=False)
     native_session_id: Mapped[str | None] = mapped_column(String)
+    native_session_id_inferred: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    native_session_id_conflict: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    native_session_id_candidates: Mapped[list[str]] = mapped_column(JsonType, nullable=False, default=list)
     parent_session_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
-    parent_link_kind: Mapped[str | None] = mapped_column(String(30))
+    parent_native_session_id: Mapped[str | None] = mapped_column(String)
+    parent_native_session_id_conflict: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    parent_native_session_id_candidates: Mapped[list[str]] = mapped_column(JsonType, nullable=False, default=list)
+    parent_link_kind: Mapped[str | None] = mapped_column(String(40))
     identity_inferred: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     title: Mapped[str | None] = mapped_column(String)
     cwd: Mapped[str | None] = mapped_column(String)
@@ -90,6 +96,8 @@ class SessionRow(Base):
         CheckConstraint("harness IN ('claude', 'codex')", name="ck_sessions_harness"),
         UniqueConstraint("machine_id", "harness", "source_path", name="uq_sessions_source_path"),
         Index("idx_sessions_machine_harness_activity", "machine_id", "harness", "last_activity_at", "id"),
+        Index("idx_sessions_machine_harness_native", "machine_id", "harness", "native_session_id"),
+        Index("idx_sessions_machine_harness_conflict", "machine_id", "harness", "native_session_id_conflict"),
     )
 
 
