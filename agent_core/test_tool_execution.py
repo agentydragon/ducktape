@@ -45,12 +45,6 @@ def test_agent_tool_boundary_validates_nested_union() -> None:
     assert _make_strict_function_tool("sample", "sample", schema).strict is True
 
 
-@pytest.fixture
-def text_content():
-    """Helper to create TextContent blocks for tests."""
-    return lambda text: TextContent(text=text)
-
-
 # ---- Local fixtures (only used by this module) ----
 
 
@@ -321,8 +315,8 @@ async def test_malformed_json_parallel_tool_calls(mcp_tool_provider_echo, record
 # --- Null byte sanitization tests ---
 
 
-def test_no_nulls_unchanged(text_content):
-    result = ToolResult(content=[text_content("clean")], is_error=False)
+def test_no_nulls_unchanged():
+    result = ToolResult(content=[TextContent(text="clean")], is_error=False)
     sanitized = _sanitize_tool_result(result)
     assert sanitized.content == result.content
 
@@ -332,8 +326,8 @@ def _assert_null_notice(text: str, *, count: int) -> None:
     assert re.search(rf"\b{count}\b", text)
 
 
-def test_nulls_in_text(text_content):
-    result = ToolResult(content=[text_content("a\x00b\x00c")], is_error=False)
+def test_nulls_in_text():
+    result = ToolResult(content=[TextContent(text="a\x00b\x00c")], is_error=False)
     sanitized = _sanitize_tool_result(result)
     first_item = sanitized.content[0]
     assert isinstance(first_item, TextContent)
@@ -343,9 +337,9 @@ def test_nulls_in_text(text_content):
     _assert_null_notice(text, count=2)
 
 
-def test_nulls_in_structured(text_content):
+def test_nulls_in_structured():
     result = ToolResult(
-        content=[text_content("kept")], structured_content={"k": "v\x00", "nested": {"d": "x\x00"}}, is_error=False
+        content=[TextContent(text="kept")], structured_content={"k": "v\x00", "nested": {"d": "x\x00"}}, is_error=False
     )
     sanitized = _sanitize_tool_result(result)
     assert sanitized.structured_content == {"k": "v", "nested": {"d": "x"}}
@@ -365,8 +359,8 @@ def test_empty_content_nulls_in_structured():
     _assert_null_notice(first_item.text, count=1)
 
 
-def test_prepends_to_first_text_block(text_content):
-    result = ToolResult(content=[text_content("a\x00"), text_content("b\x00")], is_error=False)
+def test_prepends_to_first_text_block():
+    result = ToolResult(content=[TextContent(text="a\x00"), TextContent(text="b\x00")], is_error=False)
     sanitized = _sanitize_tool_result(result)
     first_item = sanitized.content[0]
     second_item = sanitized.content[1]
@@ -378,9 +372,9 @@ def test_prepends_to_first_text_block(text_content):
     assert second_item.text == "b"
 
 
-def test_inserts_before_non_text_first_block(text_content):
+def test_inserts_before_non_text_first_block():
     result = ToolResult(
-        content=[ImageContent(mime_type="image/png", data="data"), text_content("a\x00")], is_error=False
+        content=[ImageContent(mime_type="image/png", data="data"), TextContent(text="a\x00")], is_error=False
     )
     sanitized = _sanitize_tool_result(result)
     assert len(sanitized.content) == 3
@@ -390,16 +384,16 @@ def test_inserts_before_non_text_first_block(text_content):
     assert isinstance(sanitized.content[1], ImageContent)
 
 
-def test_nested_structures(text_content):
+def test_nested_structures():
     result = ToolResult(
-        content=[text_content("x")], structured_content={"a": {"b": {"c": ["x\x00", "y\x00"]}}}, is_error=False
+        content=[TextContent(text="x")], structured_content={"a": {"b": {"c": ["x\x00", "y\x00"]}}}, is_error=False
     )
     sanitized = _sanitize_tool_result(result)
     assert sanitized.structured_content == {"a": {"b": {"c": ["x", "y"]}}}
 
 
-def test_preserves_error_flag(text_content):
-    result = ToolResult(content=[text_content("err\x00")], is_error=True)
+def test_preserves_error_flag():
+    result = ToolResult(content=[TextContent(text="err\x00")], is_error=True)
     sanitized = _sanitize_tool_result(result)
     assert sanitized.is_error is True
 
