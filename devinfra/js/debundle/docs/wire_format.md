@@ -27,6 +27,16 @@ strings), **not** as SWC `Id = (Atom, SyntaxContext)`. The
 `Serialize` impl. That impl writes the **string content** — interned
 in memory, but the wire form is the string itself, which is portable.
 
+## Saved-graph input provenance
+
+`dependency_graph.json.provenance` records the graph's file inputs by named
+root and SHA-256. Its `present_directories` entries record package subpaths
+whose directory presence affected analysis; they assert only that the path is a
+directory, not that its contents were read. `debundle snapshot create` recreates
+these as empty directories, while file bytes remain individually captured in
+`files`. Readers default a missing `present_directories` field to an empty
+list for older provenance records.
+
 ## Atomic graph reports
 
 `dependency_graph.json.atomic_graph.nodes[]` contains atomic groups. Each node

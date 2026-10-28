@@ -128,6 +128,12 @@ fn create(args: CreateArgs, current: CurrentRoots) -> Result<SnapshotOutcome> {
             .files
             .iter()
             .map(|file| &file.root)
+            .chain(
+                provenance
+                    .present_directories
+                    .iter()
+                    .map(|directory| &directory.root),
+            )
             .chain(provenance.absent_files.iter().map(|file| &file.root))
             .chain(
                 provenance
@@ -173,6 +179,11 @@ fn create(args: CreateArgs, current: CurrentRoots) -> Result<SnapshotOutcome> {
             &staging.path().join(placement(&original)?),
             &file.sha256,
         )?;
+    }
+    for directory in &provenance.present_directories {
+        let original =
+            provenance.resolve(&directory.root, &directory.path, &CurrentRoots::default())?;
+        fs::create_dir_all(staging.path().join(placement(&original)?))?;
     }
     // Empty module roots still participate in membership verification.
     for membership in &provenance.yaml_memberships {
@@ -475,6 +486,17 @@ fn verify(directory: &Path) -> Result<SnapshotOutcome> {
             "snapshot graph has an unrelocated absolute input"
         );
         let path = provenance.resolve(&file.root, &file.path, &current)?;
+        let relative = path
+            .strip_prefix(&directory)
+            .context("snapshot input escapes its directory")?;
+        contained(&directory, relative)?;
+    }
+    for input in &provenance.present_directories {
+        ensure!(
+            input.root != InputRoot::Absolute,
+            "snapshot graph has an unrelocated absolute input"
+        );
+        let path = provenance.resolve(&input.root, &input.path, &current)?;
         let relative = path
             .strip_prefix(&directory)
             .context("snapshot input escapes its directory")?;

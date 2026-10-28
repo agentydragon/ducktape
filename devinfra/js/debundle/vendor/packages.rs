@@ -89,6 +89,7 @@ pub(super) fn resolve_package_subpath(
         &real_root,
         &format!("Package {package_name} subpath realpath escapes package root: {subpath}"),
     )?;
+    graph_provenance::record_package_input(package_name, &file_path)?;
     Ok(file_path)
 }
 

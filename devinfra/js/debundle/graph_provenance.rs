@@ -68,6 +68,10 @@ pub struct GraphProvenance {
     pub config_path: Option<PathBuf>,
     pub module_roots_by_chunk: BTreeMap<String, Vec<PathBuf>>,
     pub files: Vec<InputFile>,
+    /// Package subpaths whose existence as a directory affects analysis.
+    /// Snapshot replay recreates these directories without copying their contents.
+    #[serde(default)]
+    pub present_directories: Vec<InputPath>,
     pub absent_files: Vec<InputPath>,
     pub chunk_sources: Vec<ChunkSource>,
     pub yaml_memberships: Vec<YamlMembership>,
@@ -255,6 +259,7 @@ impl InputCapture {
             config_path: None,
             module_roots_by_chunk: BTreeMap::new(),
             files: Vec::new(),
+            present_directories: Vec::new(),
             absent_files: Vec::new(),
             chunk_sources: Vec::new(),
             yaml_memberships: Vec::new(),
@@ -316,6 +321,9 @@ impl InputCapture {
                 .expect("capture started");
             provenance
                 .files
+                .sort_by(|a, b| (&a.root, &a.path).cmp(&(&b.root, &b.path)));
+            provenance
+                .present_directories
                 .sort_by(|a, b| (&a.root, &a.path).cmp(&(&b.root, &b.path)));
             provenance
                 .absent_files
@@ -396,6 +404,69 @@ pub fn read_source_to_string(path: &Path) -> Result<String> {
 pub fn read_package_to_string(name: &str, path: &Path) -> Result<String> {
     String::from_utf8(read_bytes_with_role(path, ReadRole::Package(name))?)
         .with_context(|| format!("{} is not UTF-8", path.display()))
+}
+
+/// Capture the package subpath kind and, for files, its opaque bytes even when
+/// the pipeline does not need to inspect those bytes (for example, an import
+/// target validated for a bundled vendor replacement).
+pub fn record_package_input(name: &str, path: &Path) -> Result<()> {
+    let Some(state) = active_capture() else {
+        return Ok(());
+    };
+    let (root, relative) = {
+        let guard = state.lock().expect("capture lock");
+        guard
+            .as_ref()
+            .context("graph capture ended before package input check")?
+            .classify_package(name, path)?
+    };
+
+    let metadata = fs::metadata(path).with_context(|| format!("reading {}", path.display()))?;
+    if metadata.is_dir() {
+        let mut guard = state.lock().expect("capture lock");
+        let provenance = guard
+            .as_mut()
+            .context("graph capture ended before package input check")?;
+        let entry = InputPath {
+            root,
+            path: relative,
+        };
+        if !provenance.present_directories.contains(&entry) {
+            provenance.present_directories.push(entry);
+        }
+        return Ok(());
+    }
+    anyhow::ensure!(
+        metadata.is_file(),
+        "package subpath is not a regular file or directory: {}",
+        path.display()
+    );
+
+    let mut file = fs::File::open(path).with_context(|| format!("reading {}", path.display()))?;
+    let entry = InputFile {
+        root,
+        path: relative,
+        sha256: sha256_reader(&mut file).with_context(|| format!("hashing {}", path.display()))?,
+    };
+    let mut guard = state.lock().expect("capture lock");
+    let provenance = guard
+        .as_mut()
+        .context("graph capture ended before package input check")?;
+    if let Some(previous) = provenance
+        .files
+        .iter()
+        .find(|file| file.root == entry.root && file.path == entry.path)
+    {
+        if previous.sha256 != entry.sha256 {
+            bail!(
+                "input {} changed during graph analysis; rerun on a stable snapshot",
+                path.display()
+            );
+        }
+    } else {
+        provenance.files.push(entry);
+    }
+    Ok(())
 }
 
 pub fn record_absent(path: &Path) -> Result<()> {
@@ -700,6 +771,21 @@ impl GraphProvenance {
                 .into());
             }
         }
+        for directory in &self.present_directories {
+            let path = self.resolve(&directory.root, &directory.path, current)?;
+            if !path.is_dir() {
+                return Err(GraphMismatch::new(
+                    GraphMismatchReason::Directory {
+                        path: path.clone(),
+                        expected: "directory".to_string(),
+                        actual: if path.exists() { "file" } else { "missing" }.to_string(),
+                    },
+                    regenerate_command.clone(),
+                    Some(regenerate_cwd.clone()),
+                )
+                .into());
+            }
+        }
         for file in &self.files {
             let path = self.resolve(&file.root, &file.path, current)?;
             let actual = match fs::read(&path) {
@@ -827,6 +913,19 @@ pub fn sha256(bytes: &[u8]) -> String {
     hex(digest::digest(&SHA256, bytes).as_ref())
 }
 
+fn sha256_reader(mut reader: impl Read) -> std::io::Result<String> {
+    let mut hasher = digest::Context::new(&SHA256);
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(hex(hasher.finish().as_ref()))
+}
+
 fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -839,17 +938,7 @@ fn hex(bytes: &[u8]) -> String {
 
 fn engine_sha256() -> Result<String> {
     let file = fs::File::open(std::env::current_exe()?)?;
-    let mut reader = BufReader::new(file);
-    let mut hasher = digest::Context::new(&SHA256);
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let count = reader.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        hasher.update(&buffer[..count]);
-    }
-    Ok(hex(hasher.finish().as_ref()))
+    sha256_reader(BufReader::new(file)).context("hashing debundle executable")
 }
 
 #[cfg(test)]
@@ -867,6 +956,34 @@ mod tests {
             sha256(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    #[test]
+    fn older_provenance_defaults_package_directory_inputs() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let capture = InputCapture::start(
+            ProvenanceRoots {
+                spec: temp.path().to_path_buf(),
+                source: temp.path().to_path_buf(),
+                packages: BTreeMap::new(),
+            },
+            None,
+            vec![
+                std::env::current_exe()?.to_string_lossy().into_owned(),
+                "run".to_string(),
+                "--spec".to_string(),
+                temp.path().join("spec.yaml").to_string_lossy().into_owned(),
+            ],
+        )?;
+        let provenance = capture.finish()?;
+        let mut value = serde_json::to_value(provenance)?;
+        value
+            .as_object_mut()
+            .context("serialized provenance is not an object")?
+            .remove("present_directories");
+        let older: GraphProvenance = serde_json::from_value(value)?;
+        assert!(older.present_directories.is_empty());
+        Ok(())
     }
 
     #[test]

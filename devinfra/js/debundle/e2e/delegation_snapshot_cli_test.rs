@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use debundle_e2e_support::{TreeFixture, debundler_path, run_tree_fixture};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tempfile::TempDir;
 
 fn checked(command: &mut Command) -> Value {
@@ -33,6 +33,30 @@ fn verify(directory: &Path) -> Output {
         .arg(directory)
         .output()
         .expect("verify snapshot")
+}
+
+fn app_files(root: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Vec<u8>> {
+    fn collect(
+        root: &Path,
+        directory: &Path,
+        files: &mut std::collections::BTreeMap<std::path::PathBuf, Vec<u8>>,
+    ) {
+        for entry in fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                collect(root, &path, files);
+            } else {
+                files.insert(
+                    path.strip_prefix(root).unwrap().to_path_buf(),
+                    fs::read(path).unwrap(),
+                );
+            }
+        }
+    }
+
+    let mut files = std::collections::BTreeMap::new();
+    collect(root, root, &mut files);
+    files
 }
 
 #[test]
@@ -117,6 +141,149 @@ fn delegated_workers_replay_after_original_inputs_are_removed_and_edit_independe
     fs::write(module, yaml).unwrap();
     assert!(!verify(&first).status.success());
     assert!(verify(&moved_second).status.success());
+}
+
+#[test]
+fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
+    let fixture = run_tree_fixture(
+        &TreeFixture {
+            chunks: &[(
+                "main",
+                "export const value = () => 3; export const directoryValue = () => 4;\n",
+            )],
+            module_roots: &[("main", "main")],
+            modules: &[("main/empty.yaml", "members: []\n")],
+        },
+        &[],
+    );
+    assert!(fixture.result.status.success(), "{}", fixture.result.stderr);
+
+    let package = TempDir::new().unwrap();
+    fs::create_dir_all(package.path().join("dist")).unwrap();
+    fs::write(
+        package.path().join("package.json"),
+        r#"{"name":"fixture-package","version":"1.0.0","type":"module"}"#,
+    )
+    .unwrap();
+    fs::write(package.path().join("dist/index.js"), [0x00, 0xff, 0x01]).unwrap();
+    let directory_package = TempDir::new().unwrap();
+    fs::create_dir_all(directory_package.path().join("dist")).unwrap();
+    fs::write(
+        directory_package.path().join("package.json"),
+        r#"{"name":"fixture-directory-package","version":"1.0.0","type":"module"}"#,
+    )
+    .unwrap();
+    fs::write(
+        fixture.root().join("bundle.js"),
+        "const packageDefault = () => 3; const directoryDefault = () => 4;\nexport { packageDefault, directoryDefault };\n",
+    )
+    .unwrap();
+    fs::write(
+        fixture.root().join("vendor_marks.yaml"),
+        serde_json::to_vec(&json!({
+            "vendor_marks": [{
+                "chunk_path": "main.js",
+                "identity": "fixture package bundle",
+                "level": "bundled_partial_swap",
+                "bundle": {"path": "bundle.js"},
+                "packages": {
+                    "fixture-package": {
+                        "version": "1.0.0",
+                        "subpath": "dist/index.js",
+                        "bundle_export": "packageDefault"
+                    },
+                    "fixture-directory-package": {
+                        "version": "1.0.0",
+                        "subpath": "dist",
+                        "bundle_export": "directoryDefault"
+                    }
+                },
+                "symbols": {
+                    "value": {"package": "fixture-package", "kind": "default"},
+                    "directoryValue": {"package": "fixture-directory-package", "kind": "default"}
+                }
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    fs::remove_dir_all(&fixture.out_root).unwrap();
+    let original = Command::new(debundler_path())
+        .args(["run", "--tree-config"])
+        .arg(fixture.root().join("spec_config.yaml"))
+        .arg("--tree-modules")
+        .arg(fixture.root().join("modules"))
+        .arg("--tree-vendor-marks")
+        .arg(fixture.root().join("vendor_marks.yaml"))
+        .arg("--tree-source-root")
+        .arg(fixture.root())
+        .arg("--package-root")
+        .arg(format!("fixture-package={}", package.path().display()))
+        .arg("--package-root")
+        .arg(format!(
+            "fixture-directory-package={}",
+            directory_package.path().display()
+        ))
+        .arg("--out-root")
+        .arg(&fixture.out_root)
+        .output()
+        .unwrap();
+    assert!(
+        original.status.success(),
+        "{}",
+        String::from_utf8_lossy(&original.stderr)
+    );
+    let original_app = app_files(&fixture.out_root.join("app"));
+
+    let workers = TempDir::new().unwrap();
+    let destination = workers.path().join("worker");
+    let report = create(
+        &fixture.report_root.join("main/dependency_graph.json"),
+        &destination,
+    );
+    package.close().unwrap();
+    directory_package.close().unwrap();
+    assert!(verify(&destination).status.success());
+
+    let argv: Vec<_> = report["regeneration_argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arg| arg.as_str().unwrap())
+        .collect();
+    let replay = Command::new(argv[0]).args(&argv[1..]).output().unwrap();
+    assert!(
+        replay.status.success(),
+        "{}",
+        String::from_utf8_lossy(&replay.stderr)
+    );
+    let snapshot_file = Path::new(
+        report["graph_package_roots"]["fixture-package"]
+            .as_str()
+            .unwrap(),
+    )
+    .join("dist/index.js");
+    assert_eq!(fs::read(snapshot_file).unwrap(), [0x00, 0xff, 0x01]);
+    let snapshot_directory = Path::new(
+        report["graph_package_roots"]["fixture-directory-package"]
+            .as_str()
+            .unwrap(),
+    )
+    .join("dist");
+    assert!(snapshot_directory.is_dir());
+    assert_eq!(fs::read_dir(&snapshot_directory).unwrap().count(), 0);
+    assert_eq!(original_app, app_files(&destination.join("output/app")));
+
+    fs::remove_dir(&snapshot_directory).unwrap();
+    fs::write(&snapshot_directory, b"directory replaced by a file").unwrap();
+    let stale = verify(&destination);
+    assert!(!stale.status.success());
+    assert!(
+        String::from_utf8_lossy(&stale.stderr).contains("actual: \"file\""),
+        "{}",
+        String::from_utf8_lossy(&stale.stderr)
+    );
 }
 
 #[test]
