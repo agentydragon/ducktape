@@ -120,8 +120,7 @@ def test_pr_target_selection(
     assert "--@io_bazel_rules_go//go/config:race" in race_args
     assert "--build_metadata=DISABLE_TARGET_TRACKING=true" in race_args
     go_test_query = (tmp_path / "go-test-query.log").read_text()
-    assert go_test_query.startswith('let go_tests = kind("go_test rule",')
-    assert go_test_query.endswith("in $go_tests\n")
+    assert go_test_query.startswith('kind("go_test rule",')
     assert 'except attr("tags"' not in go_test_query
 
 
