@@ -9,7 +9,7 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("//devinfra/js:openapi.bzl", "js_openapi_schema")
+load("//devinfra/js:openapi_typescript.bzl", "openapi_typescript")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
@@ -113,9 +113,16 @@ ts_config(
 
 # TypeScript types from the app's OpenAPI document: the inventory's models and routes. The bridge's
 # proto-JSON bodies are plain objects there; the runner's shared protocol types them.
-js_openapi_schema(
+openapi_typescript(
+    name = "_schema_types",
+    out = "api/schema.d.ts",
+    schema = "//agentplane/app:openapi_schema",
+)
+
+js_library(
     name = "schema",
-    generator = "//agentplane/app:export_schema_bin",
+    srcs = [":_schema_types"],
+    tags = ["no-lint"],
 )
 
 ts_library(

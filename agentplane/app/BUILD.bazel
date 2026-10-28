@@ -28,6 +28,14 @@ py_binary(
     deps = [":export_schema"],
 )
 
+genrule(
+    name = "openapi_schema",
+    outs = ["openapi.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+    visibility = ["//agentplane/app/frontend:__pkg__"],
+)
+
 py_library(
     name = "api",
     srcs = ["api.py"],

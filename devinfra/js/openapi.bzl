@@ -1,18 +1,7 @@
-"""Macros that turn an OpenAPI-emitting binary into JS schema artifacts.
-
-Both macros share the same intermediate: ``$(location <generator>) > json``.
-They differ in what they run on that JSON:
-
-  - ``js_openapi_schema`` runs ``openapi-typescript`` and produces a ``.d.ts``
-    file with named root-level schema types and type definitions only (no runtime).
-  - ``js_openapi_zod`` runs ``@hey-api/openapi-ts`` with the Zod plugin and
-    produces a ``.mjs`` module of native Zod 4 schemas exported as
-    ``z<Name>`` consts (consumed by esbuild or Node directly).
-"""
+"""Legacy macro for OpenAPI-to-Zod callers awaiting migration to file inputs."""
 
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 load("@npm_ducktape//:@hey-api/openapi-ts/package_json.bzl", openapi_ts_bin = "bin")
-load("@npm_ducktape//:openapi-typescript/package_json.bzl", openapi_typescript_bin = "bin")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 def _openapi_json_genrule(name, generator):
@@ -24,48 +13,6 @@ def _openapi_json_genrule(name, generator):
         tools = [generator],
     )
     return json_out
-
-def js_openapi_schema(name, generator, out = "api/schema.d.ts", visibility = None):
-    """Generate a js_library with TypeScript type definitions from an OpenAPI schema.
-
-    Runs *generator* (a binary that prints an OpenAPI JSON schema to stdout),
-    then pipes the result through ``openapi-typescript`` to produce a ``.d.ts``
-    file, and wraps that in a ``js_library`` target.
-
-    Args:
-        name:       Name of the output ``js_library`` target.
-        generator:  Label of the executable that writes OpenAPI JSON to stdout.
-        out:        Package-relative path for the generated ``.d.ts`` file.
-                    Defaults to ``api/schema.d.ts``.
-        visibility: Visibility of the output ``js_library``.
-    """
-    json_out = _openapi_json_genrule(name, generator)
-
-    openapi_typescript_bin.openapi_typescript_binary(
-        name = "_" + name + "_openapi_typescript_bin",
-    )
-
-    js_run_binary(
-        name = "_" + name + "_generate",
-        srcs = [":_" + name + "_openapi_json"],
-        outs = [out],
-        args = [
-            json_out,
-            "--root-types",
-            "--root-types-no-schema-prefix",
-            "-o",
-            out,
-        ],
-        chdir = native.package_name(),
-        tool = ":_" + name + "_openapi_typescript_bin",
-    )
-
-    js_library(
-        name = name,
-        srcs = [":_" + name + "_generate"],
-        tags = ["no-lint"],
-        visibility = visibility,
-    )
 
 def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None, isolated_typecheck = False, visibility = None):
     """Generate a js_library with runtime Zod 4 schemas from an OpenAPI schema.
