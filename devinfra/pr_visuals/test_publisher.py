@@ -38,6 +38,7 @@ from devinfra.pr_visuals.publisher import (
     success_comment_body,
     target_slug,
     upload_bundle,
+    wait_for_test_invocations,
     write_baseline_pointers,
 )
 from devinfra.pr_visuals.pull_request import PullRequestRef
@@ -139,6 +140,140 @@ def test_a_genuine_query_failure_still_raises() -> None:
     broken = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="Error: HTTP 503: upstream timeout")
     with pytest.raises(RuntimeError):
         list_ci_artifacts(["a", "b"], run=lambda *_a, **_k: broken)
+
+
+def test_late_invocation_artifacts_are_read_only_after_completion(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
+) -> None:
+    candidate = _single_asset_test(tmp_path / "candidate")
+    states = iter(["PARTIAL_INVOCATION_STATUS", "COMPLETE_INVOCATION_STATUS"])
+    complete = False
+    listed_after_completion: list[bool] = []
+
+    def fetch(request: urllib.request.Request) -> bytes:
+        nonlocal complete
+        if request.full_url.endswith("/SearchInvocation"):
+            return b'{"invocation":[{"invocationId":"late-sweep","pattern":["//..."]}]}'
+        state = next(states)
+        complete = state == "COMPLETE_INVOCATION_STATUS"
+        return json.dumps({"invocation": [{"invocationStatus": state}]}).encode()
+
+    def download(_invocations: list[str], _destination: Path, *, api_key: str) -> list[DownloadedVisualTest]:
+        listed_after_completion.append(complete)
+        return [candidate] if complete else []
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher._read", fetch)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", download)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.INVOCATION_POLL_SECONDS", 0)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.boto3.client", lambda *_a, **_k: EmptyBucket())
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.upload_bundle", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        "devinfra.pr_visuals.publisher.find_reviewable_pull_request", lambda **_k: PullRequestRef(8733, "c" * 40)
+    )
+
+    main()
+
+    assert listed_after_completion == [True]
+    assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
+
+
+def test_incomplete_invocation_cannot_advance_a_devel_baseline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
+) -> None:
+    monkeypatch.setattr("sys.argv", _publisher_argv(tmp_path / "work"))
+    monkeypatch.setattr("devinfra.pr_visuals.publisher._read", lambda _request: b'{"invocation":[]}')
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.wait_for_test_invocations", lambda *_a, **_k: "incomplete")
+    _forbid(monkeypatch, "download_visual_tests", "upload_bundle", "write_baseline_pointers")
+
+    with pytest.raises(RuntimeError, match="did not complete"):
+        main()
+
+    assert [check["conclusion"] for check in publisher_run.checks] == ["failure"]
+
+
+@pytest.mark.parametrize("first", [None, "PARTIAL_INVOCATION_STATUS", "DISCONNECTED_INVOCATION_STATUS"])
+def test_wait_for_invocations_uses_terminal_state(first: str | None) -> None:
+    statuses = iter([first, "COMPLETE_INVOCATION_STATUS"])
+    waits: list[float] = []
+    assert (
+        wait_for_test_invocations(
+            ["known"],
+            api_key="key",
+            fetch=lambda _request: json.dumps(
+                {"invocation": [{"invocationStatus": state}] if (state := next(statuses)) else []}
+            ).encode(),
+            monotonic=lambda: 0,
+            wait=waits.append,
+        )
+        == "complete"
+    )
+    assert waits == [2]
+
+
+def test_wait_for_invocations_has_a_bounded_deadline() -> None:
+    clock = iter([0, 300])
+    assert (
+        wait_for_test_invocations(
+            ["still-running"],
+            api_key="key",
+            fetch=lambda _request: b'{"invocation":[{"invocationStatus":"PARTIAL_INVOCATION_STATUS"}]}',
+            monotonic=lambda: next(clock),
+            wait=lambda _seconds: pytest.fail("the deadline elapsed"),
+        )
+        == "incomplete"
+    )
+
+
+def test_failed_workflow_does_not_treat_missing_invocations_as_no_tests() -> None:
+    states = iter([None, "PARTIAL_INVOCATION_STATUS", "COMPLETE_INVOCATION_STATUS"])
+    waits: list[float] = []
+
+    def fetch(request: urllib.request.Request) -> bytes:
+        assert isinstance(request.data, bytes)
+        selected = json.loads(request.data)["selector"]["invocationId"]
+        if selected == "build":
+            return b"{}"
+        state = next(states)
+        return json.dumps({"invocation": [{"invocationStatus": state}] if state else []}).encode()
+
+    assert (
+        wait_for_test_invocations(
+            ["test"],
+            api_key="key",
+            allow_build_only=True,
+            build_invocation_id="build",
+            fetch=fetch,
+            monotonic=lambda: 0,
+            wait=waits.append,
+        )
+        == "complete"
+    )
+    assert waits == [2, 2]
+
+
+def test_successful_build_only_run_has_no_visuals_without_waiting(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
+) -> None:
+    monkeypatch.setattr("sys.argv", _publisher_argv(tmp_path / "work"))
+
+    def fetch(request: urllib.request.Request) -> bytes:
+        if request.full_url.endswith("/SearchInvocation"):
+            return b'{"invocation":[]}'
+        assert isinstance(request.data, bytes)
+        selector = json.loads(request.data)["selector"]["invocationId"]
+        build_id = str(invocation_id(run_id="33060467222", attempt="1", role="build"))
+        return (
+            b'{"invocation":[{"invocationStatus":"COMPLETE_INVOCATION_STATUS"}]}'
+            if selector == build_id
+            else b'{"invocation":[]}'
+        )
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher._read", fetch)
+    _forbid(monkeypatch, "download_visual_tests", "upload_bundle", "write_baseline_pointers")
+
+    main()
+
+    assert [check["conclusion"] for check in publisher_run.checks] == ["neutral"]
 
 
 def test_download_visual_tests_groups_manifests_by_executed_target(tmp_path: Path) -> None:
@@ -664,6 +799,7 @@ def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
     # BuildBuddy holds nothing under this commit — a PR run records the merge SHA — so
     # the lookup falls through to the IDs derived from the run.
     monkeypatch.setattr("devinfra.pr_visuals.publisher._read", lambda _request: b'{"invocation": []}')
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.wait_for_test_invocations", lambda *_a, **_k: "incomplete")
     monkeypatch.setenv("GITHUB_TOKEN", "token")
     monkeypatch.setenv("BUILDBUDDY_API_KEY", "key")
     monkeypatch.setattr(
@@ -705,8 +841,15 @@ def publisher_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PublisherR
     monkeypatch.setattr(
         "devinfra.pr_visuals.publisher.upsert_pull_request_comment", lambda **kwargs: run.comments.append(kwargs)
     )
-    # BuildBuddy holds nothing under the PR head's SHA, so the lookup falls through to the run-derived IDs.
-    monkeypatch.setattr("devinfra.pr_visuals.publisher._read", lambda _request: b'{"invocation": []}')
+
+    # The PR head is absent from SearchInvocation (CI records the merge SHA), but
+    # its derived test invocation is complete when publication begins.
+    def fetch(request: urllib.request.Request) -> bytes:
+        if request.full_url.endswith("/GetInvocation"):
+            return b'{"invocation":[{"invocationStatus":"COMPLETE_INVOCATION_STATUS"}]}'
+        return b'{"invocation": []}'
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher._read", fetch)
     monkeypatch.setenv("GITHUB_TOKEN", "token")
     monkeypatch.setenv("BUILDBUDDY_API_KEY", "key")
     monkeypatch.delenv("GITHUB_OUTPUT", raising=False)

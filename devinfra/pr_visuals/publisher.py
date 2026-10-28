@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -19,6 +20,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Event
 from typing import Annotated, Any, Literal, Protocol, cast
 
 import boto3
@@ -211,6 +213,8 @@ Fetcher = Callable[[urllib.request.Request], bytes]
 # Measured against BuildBuddy: 40 blobs took 2.3s at this width, so a commit's ~294
 # files land in under 20s. Raising it buys little and is less polite to the service.
 DOWNLOAD_WORKERS = 8
+INVOCATION_WAIT_SECONDS = 300
+INVOCATION_POLL_SECONDS = 2
 
 
 def search_ci_test_invocations(commit_sha: str, *, api_key: str, fetch: Fetcher) -> list[str]:
@@ -262,6 +266,54 @@ def find_test_invocations(*, run_id: str, run_attempt: str, commit_sha: str, api
     if found := search_ci_test_invocations(commit_sha, api_key=api_key, fetch=fetch):
         return found
     return [str(invocation_id(run_id=run_id, attempt=run_attempt, role=role)) for role in ("test", "build")]
+
+
+def wait_for_test_invocations(
+    invocations: list[str],
+    *,
+    api_key: str,
+    workflow_succeeded: bool = False,
+    allow_build_only: bool = False,
+    build_invocation_id: str | None = None,
+    fetch: Fetcher = _read,
+    monotonic: Callable[[], float] = time.monotonic,
+    wait: Callable[[float], object] | None = None,
+) -> Literal["complete", "absent", "incomplete"]:
+    """Wait for BuildBuddy to finish streaming known invocations before listing artifacts.
+
+    A successful workflow can have no Bazel invocation when no targets were
+    affected. A completed build with no test invocation proves Bazel selected no
+    tests. A failed or cancelled workflow alone cannot prove an absent remote
+    invocation will not appear later.
+    """
+
+    def status(invocation: str) -> str | None:
+        request = urllib.request.Request(
+            f"{BUILDBUDDY_APP}/api/v1/GetInvocation",
+            data=json.dumps({"selector": {"invocationId": invocation}}).encode(),
+            headers={"Content-Type": "application/json", "x-buildbuddy-api-key": api_key},
+        )
+        found = json.loads(fetch(request)).get("invocation") or []
+        return found[0].get("invocationStatus") if found else None
+
+    wait = wait or Event().wait
+    deadline = monotonic() + INVOCATION_WAIT_SECONDS
+    while True:
+        observed = [status(invocation) for invocation in invocations]
+        if all(item == "COMPLETE_INVOCATION_STATUS" for item in observed):
+            return "complete"
+        if all(item is None for item in observed) and (workflow_succeeded or allow_build_only):
+            # bazel_ci.py skips `bazel test` when no tests are selected, then runs
+            # the build. It can also skip both commands when nothing is affected.
+            build_status = status(build_invocation_id) if build_invocation_id else None
+            if (allow_build_only and build_status == "COMPLETE_INVOCATION_STATUS") or (
+                workflow_succeeded and build_status is None
+            ):
+                return "absent"
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            return "incomplete"
+        wait(min(INVOCATION_POLL_SECONDS, remaining))
 
 
 def list_ci_failures(invocations: list[str], *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run) -> list[str]:
@@ -1237,6 +1289,12 @@ def publish_only(args: argparse.Namespace, *, github_token: str, api_key: str, d
         token=github_token,
     )
     invocations = _invocations_for(args, api_key=api_key)
+    test_id = str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="test"))
+    readiness = wait_for_test_invocations(
+        [test_id] if test_id in invocations else invocations, api_key=api_key, fetch=_read
+    )
+    if readiness != "complete":
+        print("Superseded invocation did not finish before publication; publishing available artifacts only.")
     tests = download_visual_tests(invocations, args.work_dir / "tests", api_key=api_key)
     if tests:
         s3 = boto3.client("s3", endpoint_url=args.endpoint)
@@ -1292,9 +1350,24 @@ def main() -> None:
                 return
             pull_request, base_sha = found.number, found.base_sha
         invocations = _invocations_for(args, api_key=api_key)
+        test_id = str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="test"))
+        readiness = wait_for_test_invocations(
+            [test_id] if test_id in invocations else invocations,
+            api_key=api_key,
+            workflow_succeeded=args.ci_conclusion == "success" and test_id in invocations,
+            allow_build_only=args.ci_conclusion in ("success", "failure") and test_id in invocations,
+            build_invocation_id=str(invocation_id(run_id=args.ci_run_id, attempt=args.ci_run_attempt, role="build")),
+            fetch=_read,
+        )
+        if readiness == "incomplete":
+            raise RuntimeError("Bazel test invocation did not complete before visual publication")
         if args.ci_conclusion != "success":
             ci_failures = list_ci_failures(invocations)
-        tests = download_visual_tests(invocations, args.work_dir / "tests", api_key=api_key)
+        tests = (
+            download_visual_tests(invocations, args.work_dir / "tests", api_key=api_key)
+            if readiness == "complete"
+            else []
+        )
         github_output = os.environ.get("GITHUB_OUTPUT")
         if github_output:
             with Path(github_output).open("a") as output:
@@ -1330,13 +1403,8 @@ def main() -> None:
         upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"reviews/{args.sha}", client=s3)
         if not base_sha:
             # Devel push: advance the mutable per-target fallback pointers now
-            # that this commit's immutable bundle is fully uploaded.
-            #
-            # Reachable only for a run that was not cancelled, so the invocation
-            # behind `tests` has necessarily finished. That is what keeps a
-            # superseded run's half-streamed read (README.md § Gotcha: a
-            # superseded run's publish races its own Bazel invocation) able to
-            # leave a pointer stale but never to move it somewhere wrong.
+            # that this commit's immutable bundle is fully uploaded and the
+            # invocation is confirmed complete.
             write_baseline_pointers([test.slug for test in tests], commit_sha=args.sha, bucket=args.bucket, client=s3)
         public_url = f"{args.public_base_url.rstrip('/')}/reviews/{args.sha}/"
         review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests

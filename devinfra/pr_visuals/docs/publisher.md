@@ -40,27 +40,25 @@ none, which is what lets it advance baseline pointers.
 
 ## Superseded runs
 
-A run cancelled as superseded publishes whatever artifacts have reached BuildBuddy
-and posts nothing else (the superseding run brings the real review).
-
-**Gotcha: that publish races its own Bazel invocation.** Cancelling the workflow
-doesn't cancel the invocation: the CI run completes at once while Bazel streams
-results for minutes. The publish takes what's there (often nothing) and nothing
-revisits it — e.g. `29154c806`'s publish (14:29–14:31) found no manifests; its sweep
-ended 14:32:27 with all 34; that commit has no bundle.
+A run cancelled as superseded waits for its known BuildBuddy test invocation to
+reach `COMPLETE_INVOCATION_STATUS` before listing artifacts, then publishes its
+immutable commit bundle and posts nothing else (the superseding run brings the
+real review). Cancelling the workflow can precede creation of the remote
+invocation, or BuildBuddy can briefly report it as disconnected, so neither state
+ends the wait. The wait is bounded to five minutes; after that, the cancelled run
+may publish whatever artifacts have arrived but never advances baseline pointers.
 
 Damage is bounded to **staleness, never wrongness**, by two properties to preserve:
 
 - Bundles and baseline resolution are per-target, so a partial commit is not a broken
   baseline: missing targets resolve via the pointer, marked `baseline_fallback`.
-- Only a complete invocation advances a pointer: `publish_only` never writes
-  pointers, and the other path writes only when the run was not cancelled (so
-  bazel-ci finished).
+- Only a confirmed complete invocation advances a pointer: `publish_only` never
+  writes pointers, and the other path rejects incomplete invocations before
+  listing artifacts. A successful CI workflow with no test invocation has no
+  visual bundle; `bazel_ci.py` skips `bazel test` when no tests are selected.
 
-Rapid devel merges (`bazel-ci.yml` cancels superseded runs, ~8 in 10 pushes per
-`ci.yml`) therefore age baselines and add `baseline_fallback` warnings until the
-first uncancelled run. Deferred fix: <../../ci/TODO.md> § Visual publishing races the
-invocation it reads.
+If a cancelled invocation runs longer than the bound, the commit bundle may be
+partial. Missing targets resolve via the pointer with a `baseline_fallback` warning.
 
 ## Baseline resolution
 

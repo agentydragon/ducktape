@@ -19,7 +19,7 @@ pages show Before beside After in fixed-aspect frames, and explain the missing d
 overlay when dimensions change. `//devinfra/pr_visuals:test_gallery_visual` captures
 the index and a test page on desktop and mobile.
 
-Publisher internals — invocation discovery, PR resolution, superseded-run races,
+Publisher internals — invocation discovery, PR resolution, superseded-run completion,
 baseline resolution, check-runs, storage layout, releases: <docs/publisher.md>.
 
 ## Opting a visual test in
