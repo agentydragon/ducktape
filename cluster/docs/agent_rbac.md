@@ -213,6 +213,23 @@ any subject and delete any ClusterRoleBinding. Generated names and labels guide 
 reconciliation; they do not limit this ServiceAccount's authority. This cluster-wide binding
 authority is part of the current trusted-controller boundary.
 
+Putting ClusterRoleBinding writes in a separate controller would isolate the Policy Controller's
+credential, but would not contain compromise of the new writer: it would need the same unscoped
+cluster-wide ClusterRoleBinding `create`, `patch`, and `delete` permissions and the same `bind`
+authority for assignable ClusterRoles. Without an admission guard, a compromised writer could still
+grant those roles to any subject and delete any ClusterRoleBinding. Static bindings avoid a runtime
+writer but give up PolicyBindings' runtime ServiceAccount subjects.
+
+Containment after writer compromise would require admission to check each ClusterRoleBinding's
+subject and role against its PolicyBinding and PolicySets. Expiry deletes the PolicyBinding first;
+the subsequent NotFound reconciliation deletes its native bindings. The cleanup check must therefore
+authorize deletion from ownership data on the old ClusterRoleBinding after its source PolicyBinding
+has disappeared. A `ValidatingAdmissionPolicy` evaluates the admission object and its old object, plus
+an explicitly selected parameter resource; it does not fetch arbitrary related objects. This dynamic
+cross-object check needs a validating webhook or another authoritative server-side source. See
+Kubernetes' [RBAC resource-name and bind rules](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
+and [ValidatingAdmissionPolicy CEL inputs](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/).
+
 ### Shared deployment definitions and parity contract
 
 `cluster/cdk8s/agent_access_profiles.py` holds existing Kubernetes grant references,
