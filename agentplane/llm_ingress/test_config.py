@@ -5,12 +5,12 @@ import pytest
 import pytest_bazel
 
 from agentplane.llm_ingress.configpb import config_pb2
-from util.protobuf_config import config_dict
+from util.protobuf import message_dict
 
 # gazelle:include_dep @pypi//protobuf
 
 
-def test_file_validation_uses_environment_values_without_serializing_them() -> None:
+def test_source_fragment_serializes_without_claiming_complete_validation() -> None:
     content = config_pb2.Config(
         allowed_service_account_namespaces=["config-test"],
         models=[config_pb2.ModelConfig(model="test/model", total_context_budget_tokens=262144)],
@@ -23,14 +23,9 @@ def test_file_validation_uses_environment_values_without_serializing_them() -> N
             ]
         ),
     )
-    supplied = config_pb2.Config(
-        token_audience="config-test",
-        litellm_url="http://backend.example.test:4000/prefix",
-        litellm_key="secret-reference",
-    )
     with pytest.raises(protovalidate.ValidationError):
-        config_dict(content)
-    rendered = config_dict(content, supplied=supplied)
+        protovalidate.validate(content)
+    rendered = message_dict(content)
     assert "litellm_key" not in rendered
     assert "litellm_url" not in rendered
     assert "token_audience" not in rendered

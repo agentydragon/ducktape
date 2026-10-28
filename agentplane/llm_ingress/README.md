@@ -136,9 +136,10 @@ bbr test //agentplane/llm_ingress/...
 `AGENTPLANE_LLM_INGRESS_*` environment values override it; empty environment values are ignored.
 Lists, maps and attribution remain file-only. Unknown and duplicate file keys are rejected.
 The Go loader owns omitted listener and attribution defaults and validates the completed config.
-Python synthesis validates the same annotations, including attribution header restrictions and
-uniqueness, against file fields plus supplied environment values. The LiteLLM key remains a
-Kubernetes Secret reference and is never serialized into the ConfigMap; config errors omit values.
+Python synthesis validates the complete nested model and attribution values, including header
+restrictions and uniqueness, then serializes the file fragment. It does not manufacture missing
+environment values or credentials to claim full validation. The LiteLLM key remains a Kubernetes
+Secret reference and is never serialized into the ConfigMap; config errors omit values.
 
 Model budgets are `int64`: canonical protobuf JSON writes them as decimal strings in YAML, while
 `GET /agentplane/model-config` retains numeric JSON for the runner.

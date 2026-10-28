@@ -290,10 +290,12 @@ py_library(
         "//cluster/cdk8s:token_reviewer_rbac",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
+        "//util:protobuf",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
         "@pypi//protobuf",
+        "@pypi//protovalidate",
     ],
 )
 

@@ -83,7 +83,7 @@ py_test(
     deps = [
         "//:conftest",
         "//agentplane/llm_ingress/configpb:config_pb2",
-        "//util:protobuf_config",
+        "//util:protobuf",
         "@pypi//protobuf",
         "@pypi//protovalidate",
         "@pypi//pytest",
