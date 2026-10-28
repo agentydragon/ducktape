@@ -29,15 +29,21 @@ container into the identical failure, and a companion in restart backoff leaves 
 Runner to fence — a Sandbox could then neither run Codex nor prove it may stop. Runner records the
 reason, surfaces it to every Session waiting on isolated execution instead of its own startup deadline,
 and keeps retrying at its backoff until a new container generation answers.
-The companion also reaps orphaned children while running. Its Kubernetes liveness probe checks the
-control socket, including while waiting for Runner to claim it. Pod OOM evidence remains in
+The companion also reaps orphaned children while running. It serves `GET /healthz` on `0.0.0.0:8090`;
+the handler performs the same Unix-socket `inspect` used by Runner, and returns success for both idle
+and claimed generations. Kubernetes uses native HTTP readiness and liveness probes against that
+listener, so an idle companion can be Ready before the Runner claims it. Cilium admits this port from
+the node host for kubelet probes; there is no Service or public route. The response exposes no
+generation, claim, or fence operation. This check proves only that the companion control loop answers;
+Runner's independent WebSocket initialize, `environment/status`, and ongoing RPC-progress probes still
+check Codex itself. Pod OOM evidence remains in
 `status.containerStatuses[].lastState.terminated` and `restartCount`; an ownership disconnect alone
 does not establish that the container was OOM-killed.
 
 The common Runner configuration selects this mode with `environment.kind: "pod"` with
 `environment.executor.url` and `environment.executor.socket`. The endpoint
-is loopback-only; no Service, inbound network rule, Kubernetes credentials or cgroup privileges are
-needed by Runner. The template owns the endpoint and socket paths used on both sides.
+is the Codex WebSocket endpoint and remains loopback-only; no Service, Kubernetes credentials or cgroup
+privileges are needed by Runner. The template owns the endpoint and socket paths used on both sides.
 
 ## VMs
 

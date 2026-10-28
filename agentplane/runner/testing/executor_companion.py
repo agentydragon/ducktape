@@ -5,6 +5,8 @@ import os
 import shlex
 import socket
 import time
+import urllib.error
+import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +24,7 @@ from util.testing.container_logs import LoggedContainer
 class ExecutorCompanion:
     url: str
     socket: Path
+    health_url: str
     container: LoggedContainer
 
 
@@ -52,6 +55,14 @@ def inspect_executor(path: Path) -> ExecutorStatus:
     return ExecutorStatus(generation=status["generation"], owned=status["owned"])
 
 
+def executor_health_ok(health_url: str) -> bool:
+    try:
+        with urllib.request.urlopen(health_url, timeout=2) as response:
+            return response.status == 200
+    except OSError, urllib.error.URLError:
+        return False
+
+
 @pytest.fixture
 def executor_companion(tmp_path: Path) -> Iterator[ExecutorCompanion]:
     load_oci_image(debian_slim.IMAGE)
@@ -59,6 +70,8 @@ def executor_companion(tmp_path: Path) -> Iterator[ExecutorCompanion]:
     codex_binary = get_required_path(launches.CODEX_BINARY).resolve()
     socket_path = tmp_path / "executor.sock"
     url = f"ws://127.0.0.1:{_free_port()}"
+    health_port = _free_port()
+    health_url = f"http://127.0.0.1:{health_port}/healthz"
     container = (
         LoggedContainer(debian_slim.IMAGE.tag, test_name="runner-executor-companion")
         .with_kwargs(network_mode="host", mem_limit="512m", pids_limit=64, user=f"{os.getuid()}:{os.getgid()}")
@@ -74,6 +87,8 @@ def executor_companion(tmp_path: Path) -> Iterator[ExecutorCompanion]:
                     str(socket_path),
                     "--listen",
                     url,
+                    "--health-listen",
+                    f"0.0.0.0:{health_port}",
                     "--binary",
                     "/opt/codex/bin/codex",
                 ]
@@ -85,9 +100,11 @@ def executor_companion(tmp_path: Path) -> Iterator[ExecutorCompanion]:
         while True:
             try:
                 inspect_executor(socket_path)
+                if not executor_health_ok(health_url):
+                    raise ConnectionError("executor health endpoint is not ready")
                 break
             except OSError:
                 if time.monotonic() >= deadline:
                     raise TimeoutError("executor companion did not create its ownership socket") from None
                 time.sleep(0.05)
-        yield ExecutorCompanion(url=url, socket=socket_path, container=container)
+        yield ExecutorCompanion(url=url, socket=socket_path, health_url=health_url, container=container)

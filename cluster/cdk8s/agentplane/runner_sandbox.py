@@ -23,6 +23,13 @@ from typing import Any, Literal
 
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
 from cdk8s_plus_34 import ConfigMap, k8s
+from cilium_crds.io.cilium import (
+    CiliumNetworkPolicySpecIngress,
+    CiliumNetworkPolicySpecIngressFromEntities,
+    CiliumNetworkPolicySpecIngressToPorts,
+    CiliumNetworkPolicySpecIngressToPortsPorts,
+    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
+)
 from constructs import Construct
 
 from agentplane.crd_group import GROUP, VERSION
@@ -50,6 +57,7 @@ from cluster.cdk8s.agentplane import (
     telemetry,
 )
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.probes import k8s_http_probe
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -83,6 +91,9 @@ _EXECUTOR_VOLUME_NAME = "codex-executor"
 _EXECUTOR_DIR = "/run/agentplane/executor"
 _EXECUTOR_SOCKET = f"{_EXECUTOR_DIR}/control.sock"
 _EXECUTOR_URL = "ws://127.0.0.1:4501"
+_EXECUTOR_HEALTH_PORT = 8090
+_EXECUTOR_HEALTH_LISTEN = f"0.0.0.0:{_EXECUTOR_HEALTH_PORT}"
+_EXECUTOR_HEALTH_PATH = "/healthz"
 _EXECUTOR_CONTAINER_NAME = "codex-executor"
 _CONFIG_VOLUME = "runner-config"
 # The bearers a Session presents: the placeholders the agentplane-workload and the notifications
@@ -276,7 +287,22 @@ class RunnerSandbox(Construct):
             "networkpolicy",
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=pods(namespace).selector,
-            ingress=isolate_ingress(),
+            ingress=[
+                *isolate_ingress(),
+                CiliumNetworkPolicySpecIngress(
+                    from_entities=[CiliumNetworkPolicySpecIngressFromEntities.HOST],
+                    to_ports=[
+                        CiliumNetworkPolicySpecIngressToPorts(
+                            ports=[
+                                CiliumNetworkPolicySpecIngressToPortsPorts(
+                                    port=str(_EXECUTOR_HEALTH_PORT),
+                                    protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
+                                )
+                            ]
+                        )
+                    ],
+                ),
+            ],
             egress=[cilium.dns_egress(), egress.proxy(namespace).egress()],
         )
         platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
@@ -344,17 +370,6 @@ class RunnerTemplate(Construct):
             k8s.VolumeMount(name=_EXECUTOR_VOLUME_NAME, mount_path=_EXECUTOR_DIR),
         ]
 
-    def _executor_health_probe(self) -> k8s.Probe:
-        return k8s.Probe(
-            exec=k8s.ExecAction(
-                command=[f"{_RUNNER_DIR}/bin/agentplane-runner", "--executor-container-health", _EXECUTOR_SOCKET]
-            ),
-            initial_delay_seconds=5,
-            period_seconds=5,
-            timeout_seconds=2,
-            failure_threshold=1,
-        )
-
     def _executor_container(self) -> k8s.Container:
         return k8s.Container(
             name=_EXECUTOR_CONTAINER_NAME,
@@ -366,6 +381,8 @@ class RunnerTemplate(Construct):
                 _EXECUTOR_SOCKET,
                 "--listen",
                 _EXECUTOR_URL,
+                "--health-listen",
+                _EXECUTOR_HEALTH_LISTEN,
                 "--binary",
                 "/bin/codex",
             ],
@@ -379,8 +396,23 @@ class RunnerTemplate(Construct):
                 requests={"cpu": k8s.Quantity.from_string("250m"), "memory": k8s.Quantity.from_string("512Mi")},
                 limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("2Gi")},
             ),
-            liveness_probe=self._executor_health_probe(),
-            readiness_probe=self._executor_health_probe(),
+            ports=[k8s.ContainerPort(name="health", container_port=_EXECUTOR_HEALTH_PORT)],
+            liveness_probe=k8s_http_probe(
+                _EXECUTOR_HEALTH_PATH,
+                port=_EXECUTOR_HEALTH_PORT,
+                initial_delay_seconds=5,
+                period_seconds=5,
+                timeout_seconds=2,
+                failure_threshold=1,
+            ),
+            readiness_probe=k8s_http_probe(
+                _EXECUTOR_HEALTH_PATH,
+                port=_EXECUTOR_HEALTH_PORT,
+                initial_delay_seconds=5,
+                period_seconds=5,
+                timeout_seconds=2,
+                failure_threshold=1,
+            ),
             volume_mounts=[
                 *self._execution_mounts(),
                 *self._isolated_executor_mounts(),

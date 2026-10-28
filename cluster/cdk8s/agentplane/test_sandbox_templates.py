@@ -99,16 +99,24 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
         "/run/agentplane/executor/control.sock",
         "--listen",
         "ws://127.0.0.1:4501",
+        "--health-listen",
+        "0.0.0.0:8090",
         "--binary",
         "/bin/codex",
     ]
-    health = [
-        "/run/agentplane/runner/bin/agentplane-runner",
-        "--executor-container-health",
-        "/run/agentplane/executor/control.sock",
-    ]
-    assert executor["livenessProbe"]["exec"]["command"] == health
-    assert executor["readinessProbe"]["exec"]["command"] == health
+    assert executor["ports"] == [{"containerPort": 8090, "name": "health"}]
+    for probe_name in ("livenessProbe", "readinessProbe"):
+        probe = executor[probe_name]
+        assert "exec" not in probe
+        assert probe["httpGet"]["path"] == "/healthz"
+        assert probe["httpGet"]["port"] == 8090
+
+    policy = _by_name(staging_manifests, "CiliumNetworkPolicy", "runner")
+    assert any(
+        rule.get("fromEntities") == ["host"]
+        and rule.get("toPorts") == [{"ports": [{"port": "8090", "protocol": "TCP"}]}]
+        for rule in policy["spec"]["ingress"]
+    )
     assert executor["image"] == runner["image"]
     assert executor["workingDir"] == runner["workingDir"] == "/state"
 

@@ -16,7 +16,12 @@ from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.driver import RunnerDriver, SessionFollow, SessionSealedError
-from agentplane.runner.testing.executor_companion import ExecutorCompanion, ExecutorStatus, inspect_executor
+from agentplane.runner.testing.executor_companion import (
+    ExecutorCompanion,
+    ExecutorStatus,
+    executor_health_ok,
+    inspect_executor,
+)
 from agentplane.runner.testing.fixtures import ModelEndpoint
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner.testing.process_fixtures import wait_for_exit
@@ -161,6 +166,7 @@ async def test_companion_namespace_restarts_without_restarting_codex_app_server(
     spec: runner_pb2.SessionSpec,
     executor_companion: ExecutorCompanion,
 ) -> None:
+    assert executor_health_ok(executor_companion.health_url), "idle companion should pass its native health endpoint"
     session = await driver.attach("isolated-executor", spec=spec)
     detached_marker = f"detached-child-{uuid4().hex}"
     first_command = f"{_detached_command(detached_marker)} printf FIRST_TOOL_OK"
@@ -170,14 +176,17 @@ async def test_companion_namespace_restarts_without_restarting_codex_app_server(
     detached_host_pid = await asyncio.to_thread(_wait_for_host_pid, executor_companion, detached_marker)
     initial_executor = await asyncio.to_thread(inspect_executor, executor_companion.socket)
     assert initial_executor.owned
+    assert executor_health_ok(executor_companion.health_url), "claimed companion should remain healthy"
     initial_app_server = await _codex_process(driver)
     assert initial_app_server.HasField("pid")
 
     await asyncio.to_thread(_kill_exec_server, executor_companion)
     await asyncio.to_thread(_wait_for_container_exit, executor_companion)
+    assert not executor_health_ok(executor_companion.health_url), "stopped companion must close its health listener"
     await asyncio.wait_for(wait_for_exit(detached_host_pid), timeout=30)
     await asyncio.to_thread(_start_container, executor_companion)
     restarted_executor = await _wait_for_generation(executor_companion.socket, initial_executor.generation, owned=True)
+    assert executor_health_ok(executor_companion.health_url), "restarted companion should reopen its health listener"
 
     recovered_app_server = await _codex_process(driver)
     assert recovered_app_server.pid == initial_app_server.pid

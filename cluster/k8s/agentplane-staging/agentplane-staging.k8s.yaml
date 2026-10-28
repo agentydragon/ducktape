@@ -4117,6 +4117,8 @@ spec:
             - /run/agentplane/executor/control.sock
             - --listen
             - ws://127.0.0.1:4501
+            - --health-listen
+            - 0.0.0.0:8090
             - --binary
             - /bin/codex
           command:
@@ -4152,23 +4154,22 @@ spec:
               value: America/Los_Angeles
           image: git.allegedly.works/ducktape-ci/runner-ducktape:unset
           livenessProbe:
-            exec:
-              command:
-                - /run/agentplane/runner/bin/agentplane-runner
-                - --executor-container-health
-                - /run/agentplane/executor/control.sock
             failureThreshold: 1
+            httpGet:
+              path: /healthz
+              port: 8090
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 2
           name: codex-executor
+          ports:
+            - containerPort: 8090
+              name: health
           readinessProbe:
-            exec:
-              command:
-                - /run/agentplane/runner/bin/agentplane-runner
-                - --executor-container-health
-                - /run/agentplane/executor/control.sock
             failureThreshold: 1
+            httpGet:
+              path: /healthz
+              port: 8090
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 2
@@ -4859,6 +4860,12 @@ spec:
       app.kubernetes.io/name: agentplane-runner
   ingress:
     - {}
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8090"
+              protocol: TCP
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

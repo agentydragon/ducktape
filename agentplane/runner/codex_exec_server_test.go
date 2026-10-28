@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -328,8 +329,11 @@ func newExecutorLifecycleRunner(t *testing.T, start func(context.Context) (*code
 	socket := filepath.Join(dir, "executor-control.sock")
 	companionCtx, cancelCompanion := context.WithCancel(context.Background())
 	companionDone := make(chan error, 1)
+	healthListener := newExecutorHealthListener(t)
 	go func() {
-		companionDone <- serveCodexExecServerContainer(companionCtx, socket, filepath.Join(dir, "unused-codex"), "ws://127.0.0.1:4599")
+		companionDone <- serveCodexExecServerContainer(
+			companionCtx, socket, filepath.Join(dir, "unused-codex"), "ws://127.0.0.1:4599", healthListener,
+		)
 	}()
 	waitForSocket(t, socket)
 
@@ -449,10 +453,13 @@ func TestExecutorCompanionRefusesClaimAndKeepsServing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	served := make(chan error, 1)
+	healthListener := newExecutorHealthListener(t)
+	healthURL := "http://" + healthListener.Addr().String() + executorHealthPath
 	go func() {
-		served <- serveCodexExecServerContainer(ctx, socket, filepath.Join(dir, "absent-codex"), "ws://127.0.0.1:4501")
+		served <- serveCodexExecServerContainer(ctx, socket, filepath.Join(dir, "absent-codex"), "ws://127.0.0.1:4501", healthListener)
 	}()
 	waitForSocket(t, socket)
+	assertExecutorHealthStatus(t, healthURL, http.StatusOK)
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		_, err := claimCodexExecServerContainer(ctx, socket, map[string]string{"PATH": "/usr/bin"})
@@ -472,9 +479,141 @@ func TestExecutorCompanionRefusesClaimAndKeepsServing(t *testing.T) {
 	if status.Owned || status.Error != "" {
 		t.Errorf("inspect after refusals = %+v, want an unowned generation reporting no error", status)
 	}
+	assertExecutorHealthStatus(t, healthURL, http.StatusOK)
 	cancel()
 	if err := <-served; err != nil {
 		t.Fatalf("companion after cancellation: %v", err)
+	}
+	assertExecutorHealthUnavailable(t, healthURL)
+}
+
+func TestExecutorHealthEndpointTracksIdleAndClaimedControlLoop(t *testing.T) {
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "control.sock")
+	binary := filepath.Join(dir, "codex")
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\nsleep 1\n"), 0o700); err != nil {
+		t.Fatalf("write fake Codex executable: %v", err)
+	}
+	healthListener := newExecutorHealthListener(t)
+	healthURL := "http://" + healthListener.Addr().String() + executorHealthPath
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	served := make(chan error, 1)
+	go func() {
+		served <- serveCodexExecServerContainer(ctx, socket, binary, "ws://127.0.0.1:4501", healthListener)
+	}()
+	waitForSocket(t, socket)
+	assertExecutorHealthStatus(t, healthURL, http.StatusOK)
+
+	owner, status, err := codexExecServerControl(ctx, socket, codexExecServerControlRequest{
+		Operation: "claim", Environment: map[string]string{"PATH": "/usr/bin:/bin"},
+	})
+	if err != nil {
+		t.Fatalf("claim executor container: %v", err)
+	}
+	defer owner.Close()
+	if !status.Owned {
+		t.Fatalf("claimed status = %+v, want owned", status)
+	}
+	assertExecutorHealthStatus(t, healthURL, http.StatusOK)
+
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Fatalf("companion after fake executor exit: %v", err)
+		}
+	case <-time.After(codexExecServerTestTimeout):
+		t.Fatal("companion did not shut down after fake executor exit")
+	}
+	assertExecutorHealthUnavailable(t, healthURL)
+}
+
+func TestExecutorHealthEndpointFailsWhenControlLoopStopsResponding(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "control.sock")
+	controlListener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatalf("listen for fake control loop: %v", err)
+	}
+	defer controlListener.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		connection, err := controlListener.Accept()
+		if err != nil {
+			return
+		}
+		accepted <- connection
+		<-ctx.Done()
+		_ = connection.Close()
+	}()
+
+	healthServer := httptest.NewServer(executorHealthHandler(socket))
+	defer healthServer.Close()
+	assertExecutorHealthStatus(t, healthServer.URL+executorHealthPath, http.StatusServiceUnavailable)
+	select {
+	case connection := <-accepted:
+		_ = connection.Close()
+	case <-time.After(codexExecServerTestTimeout):
+		t.Fatal("health request did not reach the stalled control loop")
+	}
+}
+
+func TestExecutorHealthEndpointExposesOnlyReadOnlyHealthCheck(t *testing.T) {
+	healthServer := httptest.NewServer(executorHealthHandler(filepath.Join(t.TempDir(), "missing.sock")))
+	defer healthServer.Close()
+	assertExecutorHealthStatus(t, healthServer.URL+executorHealthPath+"/fence", http.StatusNotFound)
+
+	response, err := http.Post(healthServer.URL+executorHealthPath, "application/json", strings.NewReader(`{"operation":"fence"}`))
+	if err != nil {
+		t.Fatalf("POST %s: %v", healthServer.URL+executorHealthPath, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("POST health endpoint status = %d, want %d", response.StatusCode, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestValidateExecutorHealthAddress(t *testing.T) {
+	for _, address := range []string{"", "localhost:8090", "127.0.0.1", "0.0.0.0:0", "0.0.0.0:65536"} {
+		if err := validateExecutorHealthAddress(address); err == nil {
+			t.Errorf("validateExecutorHealthAddress(%q) succeeded, want an error", address)
+		}
+	}
+	if err := validateExecutorHealthAddress("0.0.0.0:8090"); err != nil {
+		t.Errorf("validateExecutorHealthAddress(0.0.0.0:8090): %v", err)
+	}
+}
+
+func newExecutorHealthListener(t *testing.T) net.Listener {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for executor health test: %v", err)
+	}
+	return listener
+}
+
+func assertExecutorHealthStatus(t *testing.T, endpoint string, want int) {
+	t.Helper()
+	client := http.Client{Timeout: 2 * time.Second}
+	response, err := client.Get(endpoint)
+	if err != nil {
+		t.Fatalf("GET %s: %v", endpoint, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != want {
+		t.Fatalf("GET %s status = %d, want %d", endpoint, response.StatusCode, want)
+	}
+}
+
+func assertExecutorHealthUnavailable(t *testing.T, endpoint string) {
+	t.Helper()
+	client := http.Client{Timeout: 2 * time.Second}
+	response, err := client.Get(endpoint)
+	if err == nil {
+		_ = response.Body.Close()
+		t.Fatalf("GET %s succeeded with status %d after listener shutdown", endpoint, response.StatusCode)
 	}
 }
 

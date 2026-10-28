@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -21,8 +23,9 @@ import (
 )
 
 const (
-	codexExecServerContainerMode       = "--executor-container"
-	codexExecServerContainerHealthMode = "--executor-container-health"
+	codexExecServerContainerMode = "--executor-container"
+	executorHealthPath           = "/healthz"
+	executorHealthTimeout        = time.Second
 )
 
 // CodexExecServerContainerMain must be PID 1 in a private container PID namespace.
@@ -32,6 +35,7 @@ func CodexExecServerContainerMain(args []string) int {
 	flags := flag.NewFlagSet("executor container", flag.ContinueOnError)
 	socket := flags.String("socket", "", "local ownership socket")
 	listen := flags.String("listen", "", "Codex WebSocket endpoint")
+	healthListen := flags.String("health-listen", "", "HTTP health listener address")
 	binary := flags.String("binary", "", "Codex executable")
 	if err := flags.Parse(args); err != nil {
 		return 64
@@ -44,30 +48,41 @@ func CodexExecServerContainerMain(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 64
 	}
+	if err := validateExecutorHealthAddress(*healthListen); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 64
+	}
+	healthListener, err := net.Listen("tcp", *healthListen)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "listen for executor health:", err)
+		return 1
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	if err := serveCodexExecServerContainer(ctx, *socket, *binary, *listen); err != nil {
+	if err := serveCodexExecServerContainer(ctx, *socket, *binary, *listen, healthListener); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return 0
 }
 
-func CodexExecServerContainerHealthMain(args []string) int {
-	if len(args) != 1 {
-		return 64
+func validateExecutorHealthAddress(address string) error {
+	host, portText, err := net.SplitHostPort(address)
+	if err != nil || net.ParseIP(host) == nil {
+		return fmt.Errorf("executor health listener must be an IP address and port: %q", address)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	c, _, err := codexExecServerControl(ctx, args[0], codexExecServerControlRequest{Operation: "inspect"})
-	if err != nil {
-		return 1
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("executor health listener must use a port from 1 to 65535: %q", address)
 	}
-	_ = c.Close()
-	return 0
+	return nil
 }
 
-func serveCodexExecServerContainer(ctx context.Context, socket, binary, listen string) error {
+func serveCodexExecServerContainer(ctx context.Context, socket, binary, listen string, healthListener net.Listener) error {
+	if healthListener == nil {
+		return errors.New("executor health listener is required")
+	}
+	defer healthListener.Close()
 	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
 		return err
 	}
@@ -82,15 +97,40 @@ func serveCodexExecServerContainer(ctx context.Context, socket, binary, listen s
 	if err := os.Chmod(socket, 0o600); err != nil {
 		return err
 	}
+	healthServer := &http.Server{
+		Handler:           executorHealthHandler(socket),
+		ReadHeaderTimeout: executorHealthTimeout,
+		WriteTimeout:      2 * executorHealthTimeout,
+	}
 	lifetime, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stop := context.AfterFunc(lifetime, func() { _ = listener.Close() })
-	defer stop()
+	healthServerErrors := make(chan error, 1)
+	go func() {
+		err := healthServer.Serve(healthListener)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			healthServerErrors <- err
+			cancel()
+		}
+	}()
+	stop := context.AfterFunc(lifetime, func() {
+		_ = listener.Close()
+		_ = healthServer.Close()
+	})
+	defer func() {
+		stop()
+		_ = listener.Close()
+		_ = healthServer.Close()
+	}()
 	status := codexExecServerControlStatus{Generation: uuid.NewString()}
 	var mu sync.Mutex
 	for {
 		connection, err := listener.Accept()
 		if lifetime.Err() != nil {
+			select {
+			case healthErr := <-healthServerErrors:
+				return fmt.Errorf("executor health server: %w", healthErr)
+			default:
+			}
 			return nil
 		}
 		if err != nil {
@@ -159,6 +199,30 @@ func serveCodexExecServerContainer(ctx context.Context, socket, binary, listen s
 			}
 		}(connection)
 	}
+}
+
+func executorHealthHandler(socket string) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc(executorHealthPath, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != executorHealthPath {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), executorHealthTimeout)
+		defer cancel()
+		connection, _, err := codexExecServerControl(ctx, socket, codexExecServerControlRequest{Operation: "inspect"})
+		if err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_ = connection.Close()
+		w.WriteHeader(http.StatusOK)
+	})
+	return mux
 }
 
 // PID 1 also reaps orphaned grandchildren. A single wait4 owner avoids races
