@@ -1,18 +1,10 @@
+import type { PairingStart, SessionDetail, SessionEventPage, SessionListPage, SyncStatus } from "./api/schema";
+
 /**
  * The pairing page's API. Types come from the API's own OpenAPI document
  * (`//devinfra/claude/session_export/frontend:schema`), so the wire contract is the Pydantic
  * models rather than a hand-kept copy of them.
  */
-
-import type { components } from "./api/schema";
-
-export type SyncStatus = components["schemas"]["SyncStatus"];
-export type PairingStart = components["schemas"]["PairingStart"];
-export type SessionSummary = components["schemas"]["SessionSummary"];
-export type SessionDetail = components["schemas"]["SessionDetail"];
-export type SessionEvent = components["schemas"]["Event"];
-export type SessionListPage = components["schemas"]["SessionListPage"];
-export type SessionEventPage = components["schemas"]["SessionEventPage"];
 
 export class ApiError extends Error {
   readonly status: number;

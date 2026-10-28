@@ -1,18 +1,18 @@
 import { useId, useState, type JSX } from "react";
 import { Box, Button, Text } from "@mantine/core";
 
-import type { SessionEvent } from "./api";
+import type { Event } from "./api/schema";
 import { EventInspector, eventKind } from "./event-inspector";
 
 export type EventTimelineItem = {
   id: string;
-  events: SessionEvent[];
+  events: Event[];
 };
 
 export type EventStrip = {
   kind: "event-strip";
   id: string;
-  events: SessionEvent[];
+  events: Event[];
 };
 
 type EventAnchor = {
@@ -21,14 +21,14 @@ type EventAnchor = {
 };
 
 type OrderedEvent = {
-  event: SessionEvent;
+  event: Event;
   sequence: bigint;
   index: number;
 };
 
 type EventDotBucket = {
   id: string;
-  events: SessionEvent[];
+  events: Event[];
 };
 
 type EventSelection = { kind: "all" } | { kind: "bucket"; anchorEventId: string; eventIds: string[] };
@@ -39,13 +39,13 @@ function compareSequence(left: bigint, right: bigint): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function orderEvents(events: readonly SessionEvent[]): OrderedEvent[] {
+function orderEvents(events: readonly Event[]): OrderedEvent[] {
   return events
     .map((event, index) => ({ event, index, sequence: BigInt(event.sequence_num) }))
     .sort((left, right) => compareSequence(left.sequence, right.sequence) || left.index - right.index);
 }
 
-function firstSequence(events: readonly SessionEvent[]): bigint | undefined {
+function firstSequence(events: readonly Event[]): bigint | undefined {
   let first: bigint | undefined;
   for (const event of events) {
     const sequence = BigInt(event.sequence_num);
@@ -54,7 +54,7 @@ function firstSequence(events: readonly SessionEvent[]): bigint | undefined {
   return first;
 }
 
-function makeStrip(events: SessionEvent[]): EventStrip {
+function makeStrip(events: Event[]): EventStrip {
   const firstEvent = events[0];
   if (firstEvent === undefined) throw new Error("Event strips require at least one event.");
   return {
@@ -71,7 +71,7 @@ function makeStrip(events: SessionEvent[]): EventStrip {
  */
 export function buildEventTimeline<T extends EventTimelineItem>(
   items: readonly T[],
-  events: readonly SessionEvent[]
+  events: readonly Event[]
 ): Array<T | EventStrip> {
   const orderedEvents = orderEvents(events);
   if (orderedEvents.length === 0) return [...items];
@@ -92,7 +92,7 @@ export function buildEventTimeline<T extends EventTimelineItem>(
   });
   const anchors = [...anchorsBySequence.values()];
 
-  const eventsByAnchor = new Map<bigint | null, SessionEvent[]>();
+  const eventsByAnchor = new Map<bigint | null, Event[]>();
   let anchorIndex = -1;
   for (const { event, sequence } of orderedEvents) {
     while (anchorIndex + 1 < anchors.length && anchors[anchorIndex + 1]!.sequence <= sequence) anchorIndex += 1;
@@ -123,7 +123,7 @@ export function buildEventTimeline<T extends EventTimelineItem>(
   return timeline;
 }
 
-function eventColor(event: SessionEvent): string {
+function eventColor(event: Event): string {
   if (event.event_type === "user") return "blue";
   if (event.event_type === "assistant") return "violet";
   if (event.event_type === "system") return "gray";
@@ -131,14 +131,14 @@ function eventColor(event: SessionEvent): string {
   return "teal";
 }
 
-function eventRange(events: SessionEvent[]): string {
+function eventRange(events: Event[]): string {
   const first = events[0]?.sequence_num;
   const last = events.at(-1)?.sequence_num;
   if (first === undefined) return "";
   return first === last ? first : `${first}–${last}`;
 }
 
-function eventDotBuckets(events: SessionEvent[]): EventDotBucket[] {
+function eventDotBuckets(events: Event[]): EventDotBucket[] {
   const count = Math.min(events.length, MAX_EVENT_DOTS);
   return Array.from({ length: count }, (_, index) => {
     const start = Math.floor((index * events.length) / count);
@@ -150,7 +150,7 @@ function eventDotBuckets(events: SessionEvent[]): EventDotBucket[] {
   });
 }
 
-function eventIdentity(event: SessionEvent): string {
+function eventIdentity(event: Event): string {
   return event.event_id || event.sequence_num;
 }
 
@@ -169,7 +169,7 @@ function bucketTitle(bucket: EventDotBucket): string {
   return `${count === 1 ? "Event" : `${count} events`} ${label}: ${kinds.join(", ")}`;
 }
 
-export function EventTimelineStrip({ events }: { events: SessionEvent[] }): JSX.Element | null {
+export function EventTimelineStrip({ events }: { events: Event[] }): JSX.Element | null {
   const [selection, setSelection] = useState<EventSelection | null>(null);
   const detailsId = useId();
   if (events.length === 0) return null;

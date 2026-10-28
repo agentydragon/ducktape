@@ -4,7 +4,7 @@ Both macros share the same intermediate: ``$(location <generator>) > json``.
 They differ in what they run on that JSON:
 
   - ``js_openapi_schema`` runs ``openapi-typescript`` and produces a ``.d.ts``
-    file with type definitions only (no runtime).
+    file with named root-level schema types and type definitions only (no runtime).
   - ``js_openapi_zod`` runs ``@hey-api/openapi-ts`` with the Zod plugin and
     produces a ``.mjs`` module of native Zod 4 schemas exported as
     ``z<Name>`` consts (consumed by esbuild or Node directly).
@@ -51,6 +51,8 @@ def js_openapi_schema(name, generator, out = "api/schema.d.ts", visibility = Non
         outs = [out],
         args = [
             json_out,
+            "--root-types",
+            "--root-types-no-schema-prefix",
             "-o",
             out,
         ],

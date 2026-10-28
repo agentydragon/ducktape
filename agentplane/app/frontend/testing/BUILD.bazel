@@ -38,6 +38,7 @@ ts_library(
     deps = [
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:model_catalog",
+        "//agentplane/app/frontend:schema",
     ],
 )
 
@@ -48,6 +49,7 @@ ts_library(
     deps = [
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:langfuse_search",
+        "//agentplane/app/frontend:schema",
     ],
 )
 

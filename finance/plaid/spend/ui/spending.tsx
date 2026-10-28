@@ -14,19 +14,20 @@ import {
   Title,
 } from "@mantine/core";
 
+import type { AllowanceView, CardView, SpendTransactionsView, SpendView } from "./api/schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
 import { Metric, Money, SignalLabel, time, periodLabels, type Signal } from "./spend_display";
 import { SpendingHistoryChart } from "./SpendingHistoryChart";
-import type { Allowance, AllowancePeriodId, CardView, EstimatePeriodId, SpendView, TransactionsView } from "./types";
+import type { AllowancePeriodId, EstimatePeriodId } from "./types";
 
 function cardTitle(card: CardView): string {
   return `${card.label || card.account_name || "Card"}${card.mask ? ` ···· ${card.mask}` : ""}`;
 }
-function spendPeriod(allowance: Allowance, periodId: AllowancePeriodId) {
+function spendPeriod(allowance: AllowanceView, periodId: AllowancePeriodId) {
   return allowance.spend_periods.find((report) => report.period.id === periodId);
 }
-function pacePeriod(allowance: Allowance, periodId: AllowancePeriodId) {
+function pacePeriod(allowance: AllowanceView, periodId: AllowancePeriodId) {
   return allowance.recorded_pace_periods.find((report) => report.period.id === periodId);
 }
 function signalFor(available: number, projected: number): Signal {
@@ -39,7 +40,7 @@ function PurchaseCheck({
   onPurchaseChange,
   estimateLoading,
 }: {
-  allowance: Allowance;
+  allowance: AllowanceView;
   purchase: number | string;
   onPurchaseChange: (value: number | string) => void;
   estimateLoading: boolean;
@@ -155,7 +156,7 @@ function AllowancePanel({
   onPurchaseChange,
   estimateLoading,
 }: {
-  allowance: Allowance;
+  allowance: AllowanceView;
   purchase: number | string;
   onPurchaseChange: (value: number | string) => void;
   estimateLoading: boolean;
@@ -481,7 +482,7 @@ export function SpendingPage({
   view: SpendView | null;
   connectionState: string;
   error: string | null;
-  transactions: TransactionsView | null;
+  transactions: SpendTransactionsView | null;
   transactionsLoading: boolean;
   transactionsError: string | null;
   estimatePeriodId: EstimatePeriodId;

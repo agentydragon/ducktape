@@ -1,9 +1,6 @@
-import type { components } from "./api/schema";
+import type { Harness, ModelCatalog, ModelOption } from "./api/schema";
 import { api, ok } from "./client";
 
-export type Harness = components["schemas"]["Harness"];
-export type ModelOption = components["schemas"]["ModelOption"];
-export type ModelCatalog = components["schemas"]["ModelCatalog"];
 /** An empty model list disables new-session selection, not the native harness. */
 export function harnessOptions(catalog: ModelCatalog | null): { value: Harness; label: string; disabled: boolean }[] {
   const harnesses: { value: Harness; label: string }[] = [

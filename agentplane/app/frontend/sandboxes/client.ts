@@ -1,20 +1,9 @@
 import { toJson, type JsonObject } from "@bufbuild/protobuf";
 
-import type { components } from "../api/schema";
+import type { RunnerStatusView } from "../api/schema";
 import { api, ok } from "../client";
 import { SessionSpecSchema, type SessionSpec } from "../../../proto/runner_pb";
 
-export type SandboxView = components["schemas"]["SandboxView"];
-export type RunnerStatusView = components["schemas"]["RunnerStatusView"];
-export type PodView = components["schemas"]["PodView"];
-export type NewSandbox = components["schemas"]["NewSandbox"];
-export type NewSandboxDefaults = components["schemas"]["NewSandboxDefaults"];
-export type BindingView = components["schemas"]["BindingView"];
-export type PolicySetView = components["schemas"]["PolicySetView"];
-export type EgressRuleView = components["schemas"]["EgressRuleView"];
-export type Decision = components["schemas"]["Decision"];
-export type SandboxPresetView = components["schemas"]["SandboxPresetView"];
-export type SessionDefaults = components["schemas"]["SessionDefaults"];
 export type SessionOpening = {
   sessionId: string;
   sandbox: string;

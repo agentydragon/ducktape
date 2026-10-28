@@ -1,12 +1,12 @@
 import { useEffect, useState, type JSX } from "react";
 
+import type { AllQuotasView } from "./api/schema";
 import { Dashboard } from "./dashboard";
-import type { QuotasView } from "./quotas";
 
 const TICK_MS = 1_000;
 
 export function App(): JSX.Element {
-  const [quotas, setQuotas] = useState<QuotasView | null>(null);
+  const [quotas, setQuotas] = useState<AllQuotasView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(true);
   const [stopped, setStopped] = useState(false);
@@ -21,7 +21,7 @@ export function App(): JSX.Element {
     events.addEventListener("view", (event) => {
       if (!active) return;
       try {
-        setQuotas(JSON.parse(event.data) as QuotasView);
+        setQuotas(JSON.parse(event.data) as AllQuotasView);
         setError(null);
         setConnecting(false);
       } catch {

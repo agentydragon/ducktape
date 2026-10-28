@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { SandboxView } from "../sandboxes/client";
-import type { ThreadView } from "./client";
+import type { SandboxView, ThreadView } from "../api/schema";
 import { threadStatusFromSnapshot } from "./thread_status";
 
 afterEach(() => vi.restoreAllMocks());

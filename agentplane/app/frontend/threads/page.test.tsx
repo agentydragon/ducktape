@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { create } from "@bufbuild/protobuf";
+import type { LangfuseSearchSettings, SandboxView, ThreadView, TraceSearchSettings } from "../api/schema";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";
@@ -16,11 +17,9 @@ import type * as ModelCatalogModule from "../model_catalog";
 import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { api } from "../client";
-import { submitInput, changeModel, changeReasoningEffort, interruptTurn, getThread, type ThreadView } from "./client";
+import { submitInput, changeModel, changeReasoningEffort, interruptTurn, getThread } from "./client";
 import { models } from "../model_catalog";
-import { resumeSandbox, type SandboxView } from "../sandboxes/client";
-import { type LangfuseSearchSettings } from "../langfuse_search";
-import { type TraceSearchSettings } from "../trace_search";
+import { resumeSandbox } from "../sandboxes/client";
 import { historyRows, rowKey } from "./history_rows";
 import { SandboxesLiveProvider } from "../sandboxes/live";
 import { ThreadsLiveProvider, useRequiredThreadsLive } from "./live";

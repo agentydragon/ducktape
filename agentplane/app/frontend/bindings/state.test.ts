@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { BindingView } from "../api/schema";
 import { bindingState } from "./state";
-import type { BindingView } from "../sandboxes/client";
 
 function binding(overrides: Partial<BindingView>): BindingView {
   return {

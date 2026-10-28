@@ -1,8 +1,8 @@
 import { Alert, Badge, Box, Card, Divider, Group, Paper, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 
+import type { SpendConfigurationView } from "./api/schema";
 import { Metric, Money, periodLabels } from "./spend_display";
 import { ruleConditionText, ruleKindDisplay, rulesFootnote } from "./rule_display";
-import type { SpendConfiguration } from "./types";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
 export function ConfigurationPage({
@@ -10,7 +10,7 @@ export function ConfigurationPage({
   loading,
   error,
 }: {
-  configuration: SpendConfiguration | null;
+  configuration: SpendConfigurationView | null;
   loading: boolean;
   error: string | null;
 }) {

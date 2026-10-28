@@ -41,6 +41,7 @@ ts_library(
         "//props/frontend:node_modules/react-router",
         "//props/frontend/src/components:RunsBrowser",
         "//props/frontend/src/lib:runModalContext",
+        "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:types",
     ],
 )
@@ -55,6 +56,7 @@ ts_library(
         "//props/frontend:node_modules/react",
         "//props/frontend/src/components:DefinitionDetail",
         "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:schema",
     ],
 )
 
@@ -69,6 +71,7 @@ ts_library(
         "//props/frontend:node_modules/react-router",
         "//props/frontend/src/components:ExampleDetail",
         "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:schema",
     ],
 )
 
@@ -83,6 +86,7 @@ ts_library(
         "//props/frontend:node_modules/react-router",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:colors",
+        "//props/frontend/src/lib:schema",
     ],
 )
 
@@ -101,6 +105,7 @@ ts_library(
         "//props/frontend/src/components/stats:SummaryCards",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:runModalContext",
+        "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:toast",
         "//props/frontend/src/lib:types",
     ],
@@ -126,6 +131,7 @@ ts_library(
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:colors",
         "//props/frontend/src/lib:formatters",
+        "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:toast",
     ],
 )

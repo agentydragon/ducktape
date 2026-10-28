@@ -1,20 +1,17 @@
 import { Badge, Button, Group, Paper, Select, Table, Text, Title } from "@mantine/core";
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 
-import {
-  AGENT_RUN_STATUS_VALUES,
-  AGENT_TYPE_VALUES,
-  fetchRuns,
-  type AgentRunStatus,
-  type AgentType,
-  type CriticTypeConfig,
-  type ExampleKind,
-  type RunInfo,
-  type RunSortDirection,
-  type RunSortKey,
-  type RunsFilters,
-  type Split,
-} from "../lib/api/client";
+import type {
+  AgentRunStatus,
+  AgentType,
+  CriticTypeConfig,
+  ExampleKind,
+  RunInfo,
+  RunSortDirection,
+  RunSortKey,
+  Split,
+} from "../lib/api/schema";
+import { AGENT_RUN_STATUS_VALUES, AGENT_TYPE_VALUES, fetchRuns, type RunsFilters } from "../lib/api/client";
 import { formatAge } from "../lib/formatters";
 import { formatStatus } from "../lib/status";
 import { toast } from "../lib/toast";

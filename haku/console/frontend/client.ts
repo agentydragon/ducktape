@@ -1,6 +1,14 @@
 import createClient from "openapi-fetch";
 
-import type { components, paths } from "./api/schema";
+import type {
+  AgentListResponse,
+  AgentView,
+  ConfigResponse,
+  DeploymentInfo,
+  LaunchRoutineResult,
+  OperatorResponse,
+  paths,
+} from "./api/schema";
 import { operatorLoginRedirectStarted, redirectToOperatorLogin } from "./operator_login";
 
 // Same-origin typed client (nginx serves this bundle and proxies /api). Types are generated from
@@ -19,12 +27,6 @@ api.use({
   },
 });
 
-export type ConfigResponse = components["schemas"]["ConfigResponse"];
-export type OperatorResponse = components["schemas"]["OperatorResponse"];
-export type DeploymentInfo = components["schemas"]["DeploymentInfo"];
-export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
-export type AgentView = components["schemas"]["AgentView"];
-export type AgentListResponse = components["schemas"]["AgentListResponse"];
 // FastAPI error responses are `{detail: string}`; surface that real reason, falling back when the
 // body isn't shaped that way. Shared with the per-integration client files.
 export function errorDetail(error: unknown, fallback: string): string {

@@ -1,11 +1,10 @@
 import { ActionIcon, Button, Group, Menu, Stack, Table, Text } from "@mantine/core";
+import type { SandboxView, ThreadView, TraceSearchSettings } from "../api/schema";
 import { IconDotsVertical } from "../icons";
 import type { JSX } from "react";
 
 import { harnessLabel } from "../model_catalog";
-import { type SandboxView } from "../sandboxes/client";
-import { type ThreadView } from "./client";
-import { type TraceSearchSettings, traceSearchUrl } from "../trace_search";
+import { traceSearchUrl } from "../trace_search";
 
 import { TimeAgo } from "../time_ago";
 import { archiveBlockReason, threadStatusFromSnapshot } from "./thread_status";

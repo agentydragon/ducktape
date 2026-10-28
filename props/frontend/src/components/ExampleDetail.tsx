@@ -1,7 +1,7 @@
 import { Group, Paper, Table, Text, Title } from "@mantine/core";
 import type { JSX } from "react";
 
-import type { ExampleDetailResponse } from "../lib/api/client";
+import type { ExampleDetailResponse } from "../lib/api/schema";
 import { recallColorClass } from "../lib/colors";
 import { formatStatsWithCI } from "../lib/formatters";
 import BackButton from "./BackButton";

@@ -1,10 +1,8 @@
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
 import { useMatch } from "react-router";
 
-import type { components } from "../api/schema";
+import type { ThreadsSnapshot } from "../api/schema";
 import { useLive, type Live } from "../live";
-
-export type ThreadsSnapshot = components["schemas"]["ThreadsSnapshot"];
 
 /** What the thread lists ask of `/live/threads`: a window of the newest threads, which grows a page
  * at a time, and the filters it is read under. */

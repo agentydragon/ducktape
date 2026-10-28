@@ -95,6 +95,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/actions:policy",
         "//agentplane/app/frontend/bindings:table",
         "//util/frontend:help_tooltip",
@@ -114,6 +115,7 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend:schema",
     ],
 )
 

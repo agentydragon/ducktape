@@ -1,5 +1,13 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
+import type {
+  LangfuseSearchSettings,
+  RunnerStatusView,
+  SandboxSnapshot,
+  SandboxView,
+  ThreadView,
+  TraceSearchSettings,
+} from "../api/schema";
 import { TEST_REASONING_EFFORTS, testModelCatalog } from "../testing/model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -7,14 +15,9 @@ import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
 import { api } from "../client";
-import { type LangfuseSearchSettings } from "../langfuse_search";
-import { type TraceSearchSettings } from "../trace_search";
-import { type RunnerStatusView, type SandboxView } from "./client";
-import { type ThreadView } from "../threads/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import type * as LiveModule from "../live";
 import type { Live } from "../live";
-import type { SandboxSnapshot } from "./live";
 import { SandboxRoute } from "../app";
 import { SandboxPage } from "./sandbox_page";
 import { TopbarContext } from "../topbar";

@@ -3,8 +3,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import type { SpendTransactionsView, SpendView } from "./api/schema";
 import { useSpendData } from "./use_spend_data";
-import type { SpendTab, SpendView, TransactionPeriodId, TransactionsView } from "./types";
+import type { SpendTab, TransactionPeriodId } from "./types";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -80,7 +81,7 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
-function transactionView(periodId: TransactionPeriodId): TransactionsView {
+function transactionView(periodId: TransactionPeriodId): SpendTransactionsView {
   return {
     generated_at: "2026-01-01T00:00:00Z",
     requested_period_id: periodId,
@@ -97,7 +98,7 @@ function transactionView(periodId: TransactionPeriodId): TransactionsView {
     },
     allowance: null,
     rows: [],
-  } satisfies TransactionsView;
+  } satisfies SpendTransactionsView;
 }
 
 function transactionResponse(periodId: TransactionPeriodId): Response {

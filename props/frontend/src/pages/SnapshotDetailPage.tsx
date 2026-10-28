@@ -24,17 +24,19 @@ import FileTree from "$components/FileTree";
 import FileViewer from "$components/FileViewer";
 import OccurrenceStats from "$components/stats/OccurrenceStats";
 import CreditBadge from "$components/stats/CreditBadge";
+import type {
+  ClusterResponse,
+  FileContentResponse,
+  FileTreeResponse,
+  OccurrenceStatsRow,
+  SnapshotDetailResponse,
+} from "$lib/api/schema";
 import {
   fetchOccurrenceStats,
   fetchSnapshotClusters,
   fetchSnapshotDetail,
   fetchSnapshotFile,
   fetchSnapshotTree,
-  type ClusterResponse,
-  type FileContentResponse,
-  type FileTreeResponse,
-  type OccurrenceStatsRow,
-  type SnapshotDetailResponse,
 } from "$lib/api/client";
 import { formatLocationAnchor } from "$lib/formatters";
 import { Link, useSearchParams } from "react-router";

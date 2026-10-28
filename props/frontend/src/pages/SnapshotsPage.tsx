@@ -3,10 +3,11 @@ import { useEffect, useState } from "react";
 import { Badge, Card, Center, Loader, Table, Text, Title } from "@mantine/core";
 
 import { useNavigate } from "react-router";
-import { fetchSnapshots, type SnapshotsResponse } from "$lib/api/client";
+import type { SnapshotsListResponse } from "$lib/api/schema";
+import { fetchSnapshots } from "$lib/api/client";
 
 interface Props {
-  initialData?: SnapshotsResponse["snapshots"];
+  initialData?: SnapshotsListResponse["snapshots"];
 }
 
 function splitColor(split: string): string {
@@ -24,7 +25,7 @@ function splitColor(split: string): string {
 
 export default function SnapshotsPage({ initialData }: Props) {
   const navigate = useNavigate();
-  const [snapshots, setSnapshots] = useState<SnapshotsResponse["snapshots"]>(initialData ?? []);
+  const [snapshots, setSnapshots] = useState<SnapshotsListResponse["snapshots"]>(initialData ?? []);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
 

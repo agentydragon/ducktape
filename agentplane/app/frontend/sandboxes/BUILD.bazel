@@ -32,6 +32,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:icons",
+        "//agentplane/app/frontend:schema",
     ],
 )
 
@@ -60,6 +61,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:schema",
     ],
 )
 
@@ -73,6 +75,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:schema",
     ],
 )
 
@@ -93,6 +96,7 @@ ts_library(
         "//agentplane/app/frontend:model_catalog",
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:sandbox_status",
+        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend/threads:client",
         "//util/frontend:help_tooltip",
@@ -120,6 +124,7 @@ ts_library(
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:mark_glyph",
         "//agentplane/app/frontend:sandbox_status",
+        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend/actions:action_client",
@@ -134,6 +139,7 @@ ts_library(
     deps = [
         ":client",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:schema",
     ],
 )
 
@@ -145,6 +151,7 @@ agentplane_vitest_test(
         ":decision_groups",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:schema",
     ],
 )
 
@@ -163,6 +170,7 @@ ts_library(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:live_stream",
+        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:time_ago",
     ],
@@ -178,6 +186,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/bindings:table",
         "//util/frontend:help_tooltip",
     ],
@@ -235,6 +244,7 @@ ts_library(
         "//agentplane/app/frontend:mark_glyph",
         "//agentplane/app/frontend:notification_status",
         "//agentplane/app/frontend:sandbox_status",
+        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend:trace_search",
@@ -266,6 +276,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:langfuse_search",
         "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend:trace_search",
         "//agentplane/app/frontend/testing:langfuse_search",
         "//agentplane/app/frontend/testing:model_catalog",
@@ -287,6 +298,7 @@ agentplane_vitest_test(
         "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/testing:model_catalog",
     ],

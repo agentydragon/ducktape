@@ -1,5 +1,6 @@
+import type { DeploymentInfo } from "../api/schema";
+
 // Stable deployment metadata for the screenshot harness settings scene.
-import type { DeploymentInfo } from "../client";
 
 export const SAMPLE_DEPLOYMENT: DeploymentInfo = {
   server: {

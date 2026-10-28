@@ -1,7 +1,6 @@
 import { expect, it } from "vitest";
 
-import type { SandboxView } from "../sandboxes/client";
-import type { ThreadView } from "./client";
+import type { SandboxView, ThreadView } from "../api/schema";
 import { groupThreads } from "./thread_groups";
 
 function sandboxView(name: string, overrides: Partial<SandboxView> = {}): SandboxView {

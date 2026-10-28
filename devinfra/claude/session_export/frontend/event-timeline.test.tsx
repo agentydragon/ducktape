@@ -5,12 +5,12 @@ import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { SessionEvent } from "./api";
+import type { Event } from "./api/schema";
 import { buildEventTimeline, EventTimelineStrip, type EventStrip, type EventTimelineItem } from "./event-timeline";
 
 type FixtureItem = EventTimelineItem & { label: string };
 
-function event(sequence: string | number, eventType = "system", marker = `fixture marker ${sequence}`): SessionEvent {
+function event(sequence: string | number, eventType = "system", marker = `fixture marker ${sequence}`): Event {
   const sequenceNumber = String(sequence);
   return {
     event_id: `fixture-event-${sequenceNumber}`,
@@ -27,7 +27,7 @@ function event(sequence: string | number, eventType = "system", marker = `fixtur
   };
 }
 
-function item(label: string, events: SessionEvent[]): FixtureItem {
+function item(label: string, events: Event[]): FixtureItem {
   return { id: label, label, events };
 }
 
@@ -35,7 +35,7 @@ function isStrip(value: FixtureItem | EventStrip): value is EventStrip {
   return "kind" in value && value.kind === "event-strip";
 }
 
-function sequences(events: SessionEvent[]): string[] {
+function sequences(events: Event[]): string[] {
   return events.map((source) => source.sequence_num);
 }
 
@@ -108,7 +108,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function render(events: SessionEvent[]): Promise<void> {
+async function render(events: Event[]): Promise<void> {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -186,7 +186,7 @@ it("filters accessible event details and mounts raw JSON only after a row is exp
 });
 
 it("keeps the selected inspector batch and filter state when strip growth rebuckets it", async () => {
-  function TimelineHarness({ events }: { events: SessionEvent[] }): JSX.Element {
+  function TimelineHarness({ events }: { events: Event[] }): JSX.Element {
     const timeline = buildEventTimeline([], events);
     return (
       <>

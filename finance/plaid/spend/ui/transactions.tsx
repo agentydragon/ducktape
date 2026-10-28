@@ -19,19 +19,13 @@ import {
 import IconChevronDown from "@tabler/icons-react/dist/esm/icons/IconChevronDown.mjs";
 import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRight.mjs";
 
+import type { AllowanceView, SpendTransactionRow, SpendTransactionsView } from "./api/schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { Metric, Money, money, periodLabels, time } from "./spend_display";
 import { ruleConditionText, ruleKindDisplay } from "./rule_display";
-import type {
-  Allowance,
-  AllowancePeriodId,
-  RuleKind,
-  TransactionPeriodId,
-  TransactionRow,
-  TransactionsView,
-} from "./types";
+import type { AllowancePeriodId, RuleKind, TransactionPeriodId } from "./types";
 
-function spendPeriod(allowance: Allowance, periodId: AllowancePeriodId) {
+function spendPeriod(allowance: AllowanceView, periodId: AllowancePeriodId) {
   return allowance.spend_periods.find((report) => report.period.id === periodId);
 }
 
@@ -46,7 +40,7 @@ const dispositionText = {
   card_payment: "Card payment excluded from spend",
   superseded_pending: "Pending version replaced by posted charge",
   other_currency: "Different currency · outside allowance",
-} satisfies Record<NonNullable<TransactionRow["disposition"]>, string>;
+} satisfies Record<NonNullable<SpendTransactionRow["disposition"]>, string>;
 
 const statementText = {
   counted: "Counted in card cycle",
@@ -55,9 +49,9 @@ const statementText = {
   card_payment: "Card payment excluded from card spend",
   other_currency: "Different currency excluded from card spend",
   unavailable: "Card cycle unavailable",
-} satisfies Record<NonNullable<TransactionRow["statement_reason"]>, string>;
+} satisfies Record<NonNullable<SpendTransactionRow["statement_reason"]>, string>;
 
-function isReviewRow(row: TransactionRow): boolean {
+function isReviewRow(row: SpendTransactionRow): boolean {
   // The server resolves which rule governs the money (first match in the ordered list); the client only reads it.
   const kind = row.effective_kind;
   return (
@@ -73,7 +67,7 @@ const dispositionKindText = {
   flexible: "Counted as flexible",
 } satisfies Record<RuleKind, string>;
 
-function classificationForRow(row: TransactionRow): { label: string; color: string } {
+function classificationForRow(row: SpendTransactionRow): { label: string; color: string } {
   if (row.disposition === "reversed") return { label: "Full reversal", color: "teal" };
   if (row.disposition === "held_refund") return { label: "Refund held", color: "orange" };
   if (row.disposition === "superseded_pending") return { label: "Superseded", color: "gray" };
@@ -87,11 +81,11 @@ function classificationForRow(row: TransactionRow): { label: string; color: stri
   return { label: "Unmatched", color: "orange" };
 }
 
-function categoryForRow(row: TransactionRow): string {
+function categoryForRow(row: SpendTransactionRow): string {
   return row.category?.label || row.rule?.analysis_category || "No category inferred";
 }
 
-function CategoryMarker({ row }: { row: TransactionRow }): ReactNode {
+function CategoryMarker({ row }: { row: SpendTransactionRow }): ReactNode {
   if (!row.category) return null;
   return (
     <Box
@@ -110,7 +104,7 @@ function CategoryMarker({ row }: { row: TransactionRow }): ReactNode {
   );
 }
 
-function CompactCounterparties({ counterparties }: { counterparties: TransactionRow["counterparties"] }) {
+function CompactCounterparties({ counterparties }: { counterparties: SpendTransactionRow["counterparties"] }) {
   if (!counterparties?.length) return null;
   return (
     <Text size="xs" c="dimmed" lineClamp={1}>
@@ -119,7 +113,7 @@ function CompactCounterparties({ counterparties }: { counterparties: Transaction
   );
 }
 
-function TransactionTitle({ row }: { row: TransactionRow }) {
+function TransactionTitle({ row }: { row: SpendTransactionRow }) {
   const title = row.merchant_name || row.name;
   const counterparties = row.counterparties || [];
   const merchants = counterparties.filter((party) => party.type?.toLowerCase() === "merchant");
@@ -178,7 +172,7 @@ function PlaidFieldGroup({ title, fields }: { title: string; fields: Array<[stri
   );
 }
 
-function PlaidSourceFields({ row }: { row: TransactionRow }) {
+function PlaidSourceFields({ row }: { row: SpendTransactionRow }) {
   const details = row.details;
   return (
     <Accordion variant="contained">
@@ -270,7 +264,7 @@ function PlaidSourceFields({ row }: { row: TransactionRow }) {
   );
 }
 
-function TransactionDetails({ row, currency }: { row: TransactionRow; currency: string }) {
+function TransactionDetails({ row, currency }: { row: SpendTransactionRow; currency: string }) {
   const m = (value: number | null | undefined) => <Money value={value} currency={currency} />;
   return (
     <Stack gap="sm">
@@ -543,7 +537,7 @@ export function TransactionsPage({
   periodId,
   onPeriodChange,
 }: {
-  transactions: TransactionsView | null;
+  transactions: SpendTransactionsView | null;
   loading: boolean;
   error: string | null;
   periodId: TransactionPeriodId;

@@ -1,6 +1,6 @@
 import { UnstyledButton } from "@mantine/core";
+import type { GradingEdgeInfo, LocationAnchor } from "../lib/api/schema";
 import { CheckCircle, Link, XCircle } from "../lib/icons";
-import type { GradingEdgeInfo, LocationAnchor } from "../lib/api/client";
 import { issueColors } from "../lib/colors";
 import { formatLocationAnchor } from "../lib/formatters";
 import OccurrenceLink from "../lib/OccurrenceLink";

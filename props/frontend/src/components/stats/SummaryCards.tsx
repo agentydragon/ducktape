@@ -1,5 +1,5 @@
 import { Card, SimpleGrid, Text } from "@mantine/core";
-import type { OverviewResponse, DefinitionRow, StatsWithCI } from "../../lib/types";
+import type { DefinitionRow, OverviewResponse, StatsWithCi } from "../../lib/api/schema";
 import { formatStatsWithCI } from "../../lib/formatters";
 import DefinitionIdLink from "../../lib/DefinitionIdLink";
 
@@ -8,7 +8,7 @@ interface Props {
 }
 
 export default function SummaryCards({ data }: Props) {
-  let bestDefinition: { definition: DefinitionRow; recallStats: StatsWithCI } | null = null;
+  let bestDefinition: { definition: DefinitionRow; recallStats: StatsWithCi } | null = null;
   for (const definition of data.definitions) {
     const stats = definition.stats["valid"]?.["whole_snapshot"];
     const recallStats = stats?.recall_stats;

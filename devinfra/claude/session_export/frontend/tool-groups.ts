@@ -1,11 +1,11 @@
-import type { SessionEvent } from "./api";
+import type { Event } from "./api/schema";
 import type { TranscriptItem, TranscriptThinking, TranscriptToolRun } from "./transcript";
 
 export type ToolGroup = {
   kind: "tool-group";
   id: string;
   items: Array<TranscriptToolRun | TranscriptThinking>;
-  events: SessionEvent[];
+  events: Event[];
 };
 
 /** Group adjacent tool work without crossing prose, notices, or subagent boundaries. */

@@ -13,7 +13,7 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import type { SessionSummary } from "./api";
+import type { SessionSummary } from "./api/schema";
 import { isRoutineSession, sessionRoutineId, sessionSubtitle, statusColor, type StatusFilter } from "./session-info";
 
 function SessionRow({

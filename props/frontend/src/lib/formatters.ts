@@ -4,7 +4,7 @@
  */
 
 import { formatDistanceToNow } from "date-fns";
-import type { StatsWithCI } from "./types";
+import type { StatsWithCi } from "./api/schema";
 
 // --- Percentage formatting ---
 
@@ -26,7 +26,7 @@ export function formatPct(value: number, decimals = 1): string {
 }
 
 /** Format StatsWithCI as "mean ± margin". */
-export function formatStatsWithCI(stats: StatsWithCI, options?: { showN?: boolean }): string {
+export function formatStatsWithCI(stats: StatsWithCi, options?: { showN?: boolean }): string {
   const mean = formatPct(stats.mean);
 
   if (stats.lcb95 != null && stats.ucb95 != null) {

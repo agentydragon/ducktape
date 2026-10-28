@@ -25,6 +25,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:thread_sync",
     ],

@@ -1,11 +1,10 @@
 import { Button, Group, Paper, Table, Text, Title } from "@mantine/core";
 import type { JSX } from "react";
 
-import type { DefinitionDetailResponse } from "../lib/api/client";
+import type { DefinitionDetailResponse, ExampleKind, Split } from "../lib/api/schema";
 import { recallColorClass } from "../lib/colors";
 import { formatAge, formatStatsWithCI } from "../lib/formatters";
 import { useRunModal } from "../lib/runModalContext";
-import type { ExampleKind, Split } from "../lib/types";
 import BackButton from "./BackButton";
 import Breadcrumb from "./Breadcrumb";
 import RunsBrowser from "./RunsBrowser";

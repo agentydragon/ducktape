@@ -14,6 +14,19 @@ import {
   routes,
   UNANSWERED,
 } from "./network";
+import type {
+  ActionPolicyView,
+  BindingView,
+  Decision,
+  DecisionsSnapshot,
+  PolicySetView,
+  SandboxSnapshot,
+  SandboxView,
+  SandboxesSnapshot,
+  ThreadView,
+  ThreadsSnapshot,
+  WatchHealth,
+} from "../api/schema";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import "@mantine/core/styles.css";
 
@@ -41,15 +54,11 @@ import {
 } from "../actions/testing/proto_fixtures";
 import { sampleConnection } from "../connections/testing/fixture";
 import type { Connection } from "../connections/models";
-import { type BindingView, type PolicySetView, type Decision, type SandboxView } from "../sandboxes/client";
 
-import type { DispatchReceipt, ThreadView } from "../threads/client";
+import type { DispatchReceipt } from "../threads/client";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
-import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
+import type { ActionGroupView, ActionRequestView } from "../actions/client";
 import type { McpLinkageView } from "../mcp_linkage_client";
-import type { DecisionsSnapshot, SandboxesSnapshot, SandboxSnapshot } from "../sandboxes/live";
-import type { ThreadsSnapshot } from "../threads/live";
-import type { WatchHealth } from "../live";
 import type {
   GitHubSubject,
   InboxNoticeState,

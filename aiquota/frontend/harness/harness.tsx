@@ -12,9 +12,9 @@
 
 import { createRoot } from "react-dom/client";
 
+import type { AllQuotasView } from "../api/schema";
 import { App } from "../app";
 import { Dashboard } from "../dashboard";
-import type { QuotasView } from "../quotas";
 import scenes from "../fixtures/scenes.json";
 
 import "../board.css";
@@ -22,7 +22,7 @@ import "../page.css";
 
 // A JSON module's `kind: "success"` widens to `string`, which no amount of shape agreement
 // will make assignable to the tagged union — hence the cast rather than a plain annotation.
-const SCENES = scenes as unknown as Record<string, QuotasView>;
+const SCENES = scenes as unknown as Record<string, AllQuotasView>;
 
 const query = new URLSearchParams(globalThis.location.search);
 const name = query.get("scene") ?? "";

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { listSessionEvents, type SessionEvent } from "./api";
+import type { Event } from "./api/schema";
+import { listSessionEvents } from "./api";
 import { errorMessage, retryTransient } from "./session-fetch";
 
 type TranscriptScrollIntent =
@@ -16,7 +17,7 @@ type TranscriptScrollIntent =
     };
 
 type TranscriptHistory = {
-  events: SessionEvent[];
+  events: Event[];
   eventError: string | null;
   loadingEvents: boolean;
   nextEventCursor: string | null;
@@ -27,13 +28,13 @@ type TranscriptHistory = {
   refreshSelectedEvents: (sessionId: string | null) => void;
 };
 
-function sequenceOrder(left: SessionEvent, right: SessionEvent): number {
+function sequenceOrder(left: Event, right: Event): number {
   const leftSequence = BigInt(left.sequence_num);
   const rightSequence = BigInt(right.sequence_num);
   return leftSequence < rightSequence ? -1 : leftSequence > rightSequence ? 1 : 0;
 }
 
-function mergeSessionEvents(previous: SessionEvent[], incoming: SessionEvent[]): SessionEvent[] {
+function mergeSessionEvents(previous: Event[], incoming: Event[]): Event[] {
   if (incoming.length === 0) return previous;
   const bySequence = new Map(previous.map((event) => [event.sequence_num, event]));
   let changed = false;
@@ -48,10 +49,10 @@ function mergeSessionEvents(previous: SessionEvent[], incoming: SessionEvent[]):
 }
 
 export function useTranscriptHistory(selectedId: string | null): TranscriptHistory {
-  const [events, setEvents] = useState<SessionEvent[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const loadedSession = useRef<string | null>(null);
   const loadedEventsSession = useRef<string | null>(null);
-  const eventHistory = useRef<SessionEvent[]>([]);
+  const eventHistory = useRef<Event[]>([]);
   const eventViewport = useRef<HTMLDivElement | null>(null);
   const followTail = useRef(true);
   const pendingTranscriptScroll = useRef<TranscriptScrollIntent | null>(null);
@@ -139,7 +140,7 @@ export function useTranscriptHistory(selectedId: string | null): TranscriptHisto
             )
               return;
             const previousNewest = eventHistory.current.at(-1);
-            const catchUpEvents: SessionEvent[] = [];
+            const catchUpEvents: Event[] = [];
             if (previousNewest !== undefined) {
               const frontier = newestPage.data.reduce(
                 (latest, event) => (BigInt(event.sequence_num) > latest ? BigInt(event.sequence_num) : latest),

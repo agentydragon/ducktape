@@ -144,6 +144,7 @@ agentplane_vitest_test(
     name = "trace_search_test",
     srcs = ["trace_search.test.ts"],
     deps = [
+        ":schema",
         ":trace_search",
         "//:node_modules/vitest",
     ],
@@ -164,6 +165,7 @@ agentplane_vitest_test(
     srcs = ["langfuse_search.test.ts"],
     deps = [
         ":langfuse_search",
+        ":schema",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/testing:langfuse_search",
     ],
@@ -555,6 +557,7 @@ ts_library(
     deps = [
         ":client",
         ":format_time",
+        ":schema",
         ":status_mark",
         "//agentplane/app/frontend/sandboxes:client",
     ],
@@ -566,6 +569,7 @@ agentplane_vitest_test(
     deps = [
         ":client",
         ":sandbox_status",
+        ":schema",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/sandboxes:client",
     ],
@@ -658,6 +662,7 @@ agentplane_vitest_test(
         ":client",
         ":live",
         ":notification_types",
+        ":schema",
         ":sidebar",
         ":stream_status",
         "//:node_modules/@mantine/core",
@@ -704,6 +709,7 @@ agentplane_vitest_test(
     srcs = ["system.test.tsx"],
     deps = [
         ":client",
+        ":schema",
         ":system",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -916,6 +922,7 @@ ts_library(
         ":live",
         ":mcp_linkage_client",
         ":notification_types",
+        ":schema",
         ":shell_command_view",
         ":stream_status",
         ":text_block",

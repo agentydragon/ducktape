@@ -1,5 +1,17 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@mantine/core";
+import type {
+  AgentRunDetail,
+  CriticDevImproveTypeConfig,
+  CriticDevOptimizeTypeConfig,
+  CriticTypeConfig,
+  FileContentResponse,
+  GraderTypeConfig,
+  GradingEdgeInfo,
+  LlmRequestInfo,
+  ReportedIssueInfo,
+  SnapshotDetailResponse,
+} from "../lib/api/schema";
 import { toast } from "../lib/toast";
 import BackButton from "./BackButton";
 import Breadcrumb from "./Breadcrumb";
@@ -10,16 +22,6 @@ import {
   fetchSnapshotFiles,
   fetchLLMRequests,
   fetchRunLogs,
-  type AgentRunDetail,
-  type CriticTypeConfig,
-  type GraderTypeConfig,
-  type CriticDevImproveTypeConfig,
-  type CriticDevOptimizeTypeConfig,
-  type SnapshotDetailResponse,
-  type FileContentResponse,
-  type GradingEdgeInfo,
-  type ReportedIssueInfo,
-  type LLMRequestInfo,
   isCriticRun,
   isGraderRun,
 } from "../lib/api/client";
@@ -36,7 +38,7 @@ interface Props {
   initialRun?: AgentRunDetail;
   initialSnapshotDetail?: SnapshotDetailResponse;
   initialFileContents?: Map<string, FileContentResponse>;
-  initialLLMRequests?: LLMRequestInfo[];
+  initialLLMRequests?: LlmRequestInfo[];
 }
 
 type RunLoad = { status: "loading" } | { status: "loaded"; run: AgentRunDetail } | { status: "error"; message: string };
@@ -107,7 +109,7 @@ export default function RunDetail({
     () => new Map(initialFileContents ?? [])
   );
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
-  const [llmRequests, setLlmRequests] = useState<LLMRequestInfo[]>(initialLLMRequests ?? []);
+  const [llmRequests, setLlmRequests] = useState<LlmRequestInfo[]>(initialLLMRequests ?? []);
   const [loadingLLMRequests, setLoadingLLMRequests] = useState(false);
   const [containerLogs, setContainerLogs] = useState<string | null>(null);
   const [loadingLogs, setLoadingLogs] = useState(false);
@@ -363,7 +365,7 @@ interface LoadedRunContentProps {
   snapshotDetail: SnapshotDetailResponse | null;
   fileContents: Map<string, FileContentResponse>;
   loadingSnapshot: boolean;
-  llmRequests: LLMRequestInfo[];
+  llmRequests: LlmRequestInfo[];
   loadingLLMRequests: boolean;
   containerLogs: string | null;
   loadingLogs: boolean;

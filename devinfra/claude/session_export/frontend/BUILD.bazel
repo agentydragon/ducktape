@@ -83,6 +83,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":api",
+        ":schema",
         ":status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -97,6 +98,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":api",
+        ":schema",
         ":status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -113,6 +115,7 @@ ts_library(
         ":api",
         ":overview",
         ":pairing",
+        ":schema",
         ":viewer",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -128,6 +131,7 @@ ts_library(
     deps = [
         ":api",
         ":narration",
+        ":schema",
     ],
 )
 
@@ -145,6 +149,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":api",
+        ":schema",
         ":transcript",
     ],
 )
@@ -156,6 +161,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":api",
+        ":schema",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -170,6 +176,7 @@ ts_library(
     deps = [
         ":api",
         ":event_inspector",
+        ":schema",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -181,7 +188,10 @@ ts_library(
     srcs = ["session-info.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
-    deps = [":api"],
+    deps = [
+        ":api",
+        ":schema",
+    ],
 )
 
 ts_library(
@@ -199,6 +209,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":api",
+        ":schema",
         ":session_info",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -215,6 +226,7 @@ ts_library(
         ":api",
         ":event_inspector",
         ":event_timeline",
+        ":schema",
         ":session_info",
         ":tool_groups",
         ":transcript",
@@ -232,6 +244,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":api",
+        ":schema",
         ":session_fetch",
         ":session_info",
         "//:node_modules/@types/react",
@@ -246,6 +259,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":api",
+        ":schema",
         ":session_fetch",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -313,6 +327,7 @@ session_export_vitest_test(
     isolated_typecheck = True,
     deps = [
         ":api",
+        ":schema",
         ":transcript",
         "//:node_modules/vitest",
     ],
@@ -344,7 +359,10 @@ ts_library(
     srcs = ["fixtures/noisy-session.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
-    deps = [":api"],
+    deps = [
+        ":api",
+        ":schema",
+    ],
 )
 
 session_export_vitest_test(
@@ -383,6 +401,7 @@ session_export_vitest_test(
     deps = [
         ":api",
         ":event_timeline",
+        ":schema",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -411,6 +430,7 @@ ts_library(
         ":api",
         ":app",
         ":noisy_session_fixture",
+        ":schema",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",

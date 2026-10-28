@@ -10,7 +10,8 @@ import { useNavigate } from "react-router";
 import { useRunModal } from "$lib/runModalContext";
 import { toast } from "$lib/toast";
 import type { RunModalPrefill } from "$lib/types";
-import { fetchCoverage, fetchOverview, type CoverageResponse, type OverviewResponse } from "$lib/api/client";
+import type { CoverageResponse, OverviewResponse } from "$lib/api/schema";
+import { fetchCoverage, fetchOverview } from "$lib/api/client";
 
 interface Props {
   initialData?: OverviewResponse;

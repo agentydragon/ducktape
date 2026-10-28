@@ -1,4 +1,4 @@
-import type { LangfuseSearchSettings } from "../langfuse_search";
+import type { LangfuseSearchSettings } from "../api/schema";
 
 export const LANGFUSE_SEARCH_SETTINGS: LangfuseSearchSettings = {
   base_url: "https://langfuse.test.invalid",

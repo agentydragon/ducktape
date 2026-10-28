@@ -17,6 +17,7 @@
 
 import { type JSX } from "react";
 
+import type { AllQuotasView, BurnStatus, ExtraSpend, PaidCredits, ProviderView, QuotaWindow } from "./api/schema";
 import { displayUsedPercent, formatKnownExpiries, formatUsd, formatUsdWhole, formatWindowLabel } from "./format";
 import {
   bindingTint,
@@ -36,19 +37,7 @@ import {
   type Tint,
   type WindowMath,
 } from "../shared/presentation.js";
-import {
-  effectiveQuota,
-  isShortWindow,
-  resetSeconds,
-  type BurnStatus,
-  type EffectiveQuota,
-  type ExtraSpend,
-  type PaidCredits,
-  type PrepaidBalance,
-  type ProviderView,
-  type QuotasView,
-  type QuotaWindow,
-} from "./quotas";
+import { effectiveQuota, isShortWindow, resetSeconds, type EffectiveQuota, type PrepaidBalance } from "./quotas";
 
 // The payload carries provider ids; these are how the vendors write their names, matching the
 // GNOME panel's labels. An id with no entry shows as itself rather than being guessed at.
@@ -58,7 +47,7 @@ const PROVIDER_NAMES: Record<string, string> = { claude: "Claude", codex: "Codex
  * One card per provider. `aiquota-scope` carries the palette (board.css), so a host page's own
  * tokens are neither read nor overwritten.
  */
-export function QuotaBoard({ quotas, now }: { quotas: QuotasView; now: number }): JSX.Element {
+export function QuotaBoard({ quotas, now }: { quotas: AllQuotasView; now: number }): JSX.Element {
   return (
     <section className="aiquota-scope aiquota-board" aria-live="polite">
       {quotas.providers.map((provider) => (

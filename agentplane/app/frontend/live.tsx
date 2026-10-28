@@ -12,12 +12,11 @@
  */
 import { useEffect, useState } from "react";
 
-import type { components } from "./api/schema";
+import type { WatchHealth } from "./api/schema";
 import { ageAgo } from "./format_time";
 import { followStream, type StreamConnection } from "./live_stream";
 import { type StreamStatus, useStreamStatus } from "./stream_status";
 
-export type WatchHealth = components["schemas"]["WatchHealth"];
 export interface Live<T> {
   /** The last snapshot, or null until the first frame arrives. */
   snapshot: T | null;

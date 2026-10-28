@@ -1,14 +1,13 @@
 import { useState, type JSX } from "react";
 import { Box, Code, Group, NativeSelect, Stack, Text, TextInput } from "@mantine/core";
+import type { Event } from "./api/schema";
 
-import type { SessionEvent } from "./api";
-
-export function eventKind(event: SessionEvent): string {
+export function eventKind(event: Event): string {
   const subtype = event.payload.subtype;
   return typeof subtype === "string" ? `${event.event_type} · ${subtype}` : event.event_type;
 }
 
-function EventRow({ event }: { event: SessionEvent }): JSX.Element {
+function EventRow({ event }: { event: Event }): JSX.Element {
   const [open, setOpen] = useState(false);
   return (
     <Box
@@ -42,7 +41,7 @@ function EventRow({ event }: { event: SessionEvent }): JSX.Element {
   );
 }
 
-export function EventInspector({ events }: { events: SessionEvent[] }): JSX.Element {
+export function EventInspector({ events }: { events: Event[] }): JSX.Element {
   const [kind, setKind] = useState("");
   const [search, setSearch] = useState("");
   const needle = search.trim().toLowerCase();

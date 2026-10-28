@@ -1,13 +1,7 @@
 import { useEffect, useState } from "react";
 
-import type {
-  EstimatePeriodId,
-  SpendConfiguration,
-  SpendTab,
-  SpendView,
-  TransactionPeriodId,
-  TransactionsView,
-} from "./types";
+import type { SpendConfigurationView, SpendTransactionsView, SpendView } from "./api/schema";
+import type { EstimatePeriodId, SpendTab, TransactionPeriodId } from "./types";
 
 export function useSpendData({
   activeTab,
@@ -21,10 +15,10 @@ export function useSpendData({
   const [view, setView] = useState<SpendView | null>(null);
   const [connectionState, setConnectionState] = useState("Connecting");
   const [error, setError] = useState<string | null>(null);
-  const [configuration, setConfiguration] = useState<SpendConfiguration | null>(null);
+  const [configuration, setConfiguration] = useState<SpendConfigurationView | null>(null);
   const [configurationLoading, setConfigurationLoading] = useState(false);
   const [configurationError, setConfigurationError] = useState<string | null>(null);
-  const [transactions, setTransactions] = useState<TransactionsView | null>(null);
+  const [transactions, setTransactions] = useState<SpendTransactionsView | null>(null);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
   const [viewRevision, setViewRevision] = useState(0);
@@ -111,7 +105,7 @@ export function useSpendData({
           return;
         }
         if (!response.ok) throw new Error(`Configuration request returned ${response.status}`);
-        const data: SpendConfiguration = await response.json();
+        const data: SpendConfigurationView = await response.json();
         if (mounted) setConfiguration(data);
       } catch (cause) {
         if (mounted) setConfigurationError(cause instanceof Error ? cause.message : "Configuration request failed");
@@ -143,7 +137,7 @@ export function useSpendData({
           return;
         }
         if (!response.ok) throw new Error(`Transactions request returned ${response.status}`);
-        const data: TransactionsView = await response.json();
+        const data: SpendTransactionsView = await response.json();
         if (!controller.signal.aborted) setTransactions(data);
       } catch (cause) {
         if (!controller.signal.aborted) {
