@@ -217,3 +217,109 @@ fn aliased_function_call_is_a_heap_barrier_when_body_summary_is_unavailable() {
         assert_sequenced_edge(&fixture.dependency_graph(), 4, 3);
     }
 }
+
+#[test]
+fn pure_for_in_reader_precedes_later_array_write() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const values = [];\nfunction count() { let n = 0; for (const key in values) n++; return n; }\nconst first = count();\nvalues.push(42);\nconsole.log(first);\n",
+        vec![
+            logical_module("values", &[Member::new("values")]),
+            logical_module(
+                "a_reader",
+                &[
+                    Member::new("count").with_purity(MemberPurity::Pure),
+                    Member::new("first"),
+                ],
+            ),
+            logical_module_with_anon("z_mutation", &[], &["values.push(42);"]),
+            logical_module_with_anon("observe", &[], &["console.log(first);"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "0\n");
+    assert_sequenced_edge(&fixture.dependency_graph(), 3, 2);
+}
+
+#[test]
+fn pure_coercion_reader_precedes_later_array_write() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const values = [];\nfunction text() { return '' + values; }\nconst before = text();\nvalues.push(42);\nconsole.log(before);\n",
+        vec![
+            logical_module("values", &[Member::new("values")]),
+            logical_module(
+                "a_reader",
+                &[
+                    Member::new("text").with_purity(MemberPurity::Pure),
+                    Member::new("before"),
+                ],
+            ),
+            logical_module_with_anon("z_mutation", &[], &["values.push(42);"]),
+            logical_module_with_anon("observe", &[], &["console.log(before);"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "\n");
+    assert_sequenced_edge(&fixture.dependency_graph(), 3, 2);
+}
+
+#[test]
+fn pure_getter_carrier_reader_precedes_later_array_write() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const values = [];\nconst box = { get value() { return values.length; } };\nfunction read() { return box.value; }\nconst before = read();\nvalues.push(42);\nconsole.log(before);\n",
+        vec![
+            logical_module("values", &[Member::new("values")]),
+            logical_module(
+                "a_reader",
+                &[
+                    Member::new("box"),
+                    Member::new("read").with_purity(MemberPurity::Pure),
+                    Member::new("before"),
+                ],
+            ),
+            logical_module_with_anon("z_mutation", &[], &["values.push(42);"]),
+            logical_module_with_anon("observe", &[], &["console.log(before);"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "0\n");
+    assert_sequenced_edge(&fixture.dependency_graph(), 4, 3);
+}
+
+#[test]
+fn pure_optional_reader_precedes_later_array_write() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const values = [];\nfunction read() { return values.length; }\nconst before = read?.();\nvalues.push(42);\nconsole.log(before);\n",
+        vec![
+            logical_module("values", &[Member::new("values")]),
+            logical_module(
+                "a_reader",
+                &[
+                    Member::new("read").with_purity(MemberPurity::Pure),
+                    Member::new("before"),
+                ],
+            ),
+            logical_module_with_anon("z_mutation", &[], &["values.push(42);"]),
+            logical_module_with_anon("observe", &[], &["console.log(before);"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "0\n");
+    assert_sequenced_edge(&fixture.dependency_graph(), 3, 2);
+}
+
+#[test]
+fn pure_tagged_template_reader_precedes_later_array_write() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const values = [];\nfunction tag(_strings, before) { return before; }\nconst first = tag`${values.length}`;\nvalues.push(42);\nconsole.log(first);\n",
+        vec![
+            logical_module("values", &[Member::new("values")]),
+            logical_module(
+                "a_reader",
+                &[
+                    Member::new("tag").with_purity(MemberPurity::Pure),
+                    Member::new("first"),
+                ],
+            ),
+            logical_module_with_anon("z_mutation", &[], &["values.push(42);"]),
+            logical_module_with_anon("observe", &[], &["console.log(first);"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "0\n");
+    assert_sequenced_edge(&fixture.dependency_graph(), 3, 2);
+}
