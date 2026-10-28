@@ -1446,6 +1446,21 @@ impl PropertyKeyExpr {
     fn from_expr(expression: &Expr) -> Self {
         match expression.unwrap_parens() {
             Expr::Lit(Lit::Str(value)) => Self::String(value.value.to_string_lossy().into_owned()),
+            Expr::Lit(Lit::Num(value))
+                if value.value >= 0.0
+                    && value.value <= u32::MAX as f64
+                    && value.value.fract() == 0.0 =>
+            {
+                Self::String((value.value as u32).to_string())
+            }
+            // Simple assignment returns its RHS, independent of an inherited
+            // setter's return value. Keep coercive and compound forms opaque.
+            Expr::Assign(assignment)
+                if assignment.op == AssignOp::Assign
+                    && matches!(assignment.right.unwrap_parens(), Expr::Lit(_)) =>
+            {
+                Self::from_expr(&assignment.right)
+            }
             Expr::Ident(ident) => Self::Binding(ident.to_id()),
             Expr::Call(call)
                 if call.args.len() == 1
@@ -2238,6 +2253,7 @@ struct ExecutionIndex {
     prototype_calls: Vec<Call>,
     prototype_field_writes: Vec<(SourceUnitOrdinal, Span, PropertyKeyExpr)>,
     prototype_callable_reads: BTreeMap<u32, BTreeSet<Id>>,
+    prototype_capture_stack: Vec<u32>,
     property_key_assignments: BTreeMap<Id, Vec<PropertyKeyExpr>>,
     property_key_declarations: BTreeSet<Id>,
     native_write_census: NativeWriteCensus,
@@ -2363,6 +2379,7 @@ impl Default for ExecutionIndex {
             prototype_calls: Vec::new(),
             prototype_field_writes: Vec::new(),
             prototype_callable_reads: BTreeMap::new(),
+            prototype_capture_stack: Vec::new(),
             property_key_assignments: BTreeMap::new(),
             property_key_declarations: BTreeSet::new(),
             native_write_census: NativeWriteCensus::default(),
@@ -3812,7 +3829,9 @@ impl ExecutionIndex {
             opaque: opaque_params,
             ..Callable::default()
         });
+        self.prototype_capture_stack.push(key);
         visit(self);
+        self.prototype_capture_stack.pop();
         self.current = saved_current;
         self.past_await = saved_await;
         self.may_skip_await_depth = saved_may_skip;
@@ -4827,9 +4846,10 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_ident(&mut self, ident: &Ident) {
-        if let Some(key) = self.current {
+        // A published outer closure can expose a nested closure's capabilities.
+        for key in &self.prototype_capture_stack {
             self.prototype_callable_reads
-                .entry(key)
+                .entry(*key)
                 .or_default()
                 .insert(ident.to_id());
         }
