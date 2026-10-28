@@ -13,6 +13,7 @@ Kubernetes JSON a template holds.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from cdk8s import ApiObjectMetadata, App, Chart
@@ -229,29 +230,24 @@ def add_sidecar_settings(
 ) -> SettingsFile:
     """The ConfigMap `name` holding the settings of the egress sidecar of one Pod template, which
     `pod_spec` mounts. Every Pod of a template gets the same file; nothing in it is per Pod."""
-    content = {
-        "proxy_host": egress.proxy(env.namespace).fqdn,
-        "proxy_port": egress.PROXY_PORT,
-        "readiness_listen_address": sidecar_config.READINESS_LISTEN_ADDRESS,
-        **({"listen_address": listen_address} if listen_address is not None else {}),
-        "token_file": f"{_EGRESS_TOKEN_DIR}/token",
-        "audience_token_files": {audience: audience_token_file(audience) for audience in _SUBSTITUTABLE_AUDIENCE_FILES},
-        **(
-            {
-                "platform_routes": {
-                    route: spec.model_dump(mode="json", exclude_none=True) for route, spec in platform_routes.items()
-                }
-            }
-            if platform_routes
-            else {}
-        ),
-    }
-    settings = sidecar_config.Settings.model_validate(content)
+    settings = sidecar_config.Settings(
+        proxy_host=egress.proxy(env.namespace).fqdn,
+        proxy_port=egress.PROXY_PORT,
+        readiness_listen_address=sidecar_config.READINESS_LISTEN_ADDRESS,
+        token_file=Path(_EGRESS_TOKEN_DIR) / "token",
+        audience_token_files={
+            audience: Path(audience_token_file(audience)) for audience in _SUBSTITUTABLE_AUDIENCE_FILES
+        },
+    )
+    if listen_address is not None:
+        settings.listen_address = listen_address
+    if platform_routes:
+        settings.platform_routes = dict(platform_routes)
     return SettingsFile(
         scope,
         f"{name}-settings",
         metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-        content=yaml_config(settings.model_dump(mode="json", exclude_unset=True)),
+        content=yaml_config(settings.model_dump(mode="json", exclude_unset=True, exclude_none=True)),
         path=_SIDECAR_SETTINGS_PATH,
     )
 

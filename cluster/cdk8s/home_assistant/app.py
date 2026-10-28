@@ -177,11 +177,7 @@ def _backend_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Pr
 
 
 def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: ConfigMap) -> None:
-    installer_content: dict[str, object] = {
-        "config_dir": _CONFIG_DIR,
-        "components": [component.model_dump(mode="json", exclude_defaults=True) for component in _COMPONENTS],
-    }
-    installer_model = components.Config.model_validate(installer_content)
+    installer_model = components.Config(config_dir=Path(_CONFIG_DIR), components=_COMPONENTS)
     installer_settings = _settings_config_map(
         scope, "component-installer", installer_model.model_dump(mode="json", exclude_unset=True)
     )

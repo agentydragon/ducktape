@@ -169,6 +169,7 @@ py_test(
     data = ["//agentplane/egress/sidecar:egress-sidecar"],
     deps = [
         ":conftest",
+        ":platform_routes",
         "//:conftest",
         "//agentplane/egress/testing:sidecar_process",
         "@pypi//grpcio",

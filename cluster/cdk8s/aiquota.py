@@ -41,7 +41,10 @@ from external_secrets_crds.io.external_secrets import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from aiquota.config import Config
+from aiquota.config import CLIProxyAPISettings, Config
+from aiquota.providers.claude import ClaudeSettings
+from aiquota.providers.codex import CodexSettings
+from aiquota.providers.zai import ZaiSettings
 from aiquota.settings import Settings
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_CREDENTIALS_NAMESPACE
@@ -81,13 +84,11 @@ _CONFIG_HEADER = textwrap.dedent(
 
     """
 )
-_CONFIG = Config.model_validate(
-    {
-        "cli_proxy_api": {"url": f"{cli_proxy_api_app.SERVICE.url}/v0/management"},
-        "claude": {"enabled": True},
-        "codex": {"enabled": True},
-        "zai": {"enabled": False},
-    }
+_CONFIG = Config(
+    cli_proxy_api=CLIProxyAPISettings(url=f"{cli_proxy_api_app.SERVICE.url}/v0/management"),
+    claude=ClaudeSettings(enabled=True),
+    codex=CodexSettings(enabled=True),
+    zai=ZaiSettings(enabled=False),
 )
 CONFIG_CONFIG_MAP = ConfigMapArgs(
     name="aiquota-api-config",

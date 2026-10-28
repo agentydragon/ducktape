@@ -11,6 +11,7 @@ import grpc
 import pytest
 import pytest_bazel
 
+from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 
 UNARY = "/test.Echo/Unary"
@@ -90,7 +91,7 @@ def token_file(tmp_path: Path) -> Path:
 async def route_channel(upstream: tuple[Upstream, int], token_file: Path) -> AsyncIterator[RouteUnderTest]:
     handler, port = upstream
     route_config = {
-        "control": {"listen_address": "127.0.0.1:0", "upstream": f"127.0.0.1:{port}", "token_file": str(token_file)}
+        "control": PlatformRoute(listen_address="127.0.0.1:0", upstream=f"127.0.0.1:{port}", token_file=token_file)
     }
     async with (
         SidecarProcess(

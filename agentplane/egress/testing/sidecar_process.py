@@ -12,6 +12,7 @@ from types import MappingProxyType
 import aiohttp
 import yaml
 
+from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.egress.sidecar_config import Settings
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import Listener, listen_tcp
@@ -27,7 +28,7 @@ class SidecarProcess:
         proxy_port: int,
         token_file: Path,
         audience_token_files: Mapping[str, Path] = MappingProxyType({}),
-        platform_routes: Mapping[str, Mapping[str, object]] = MappingProxyType({}),
+        platform_routes: Mapping[str, PlatformRoute] = MappingProxyType({}),
     ) -> None:
         self._proxy_host = proxy_host
         self._proxy_port = proxy_port
@@ -47,28 +48,27 @@ class SidecarProcess:
         try:
             self._proxy_listener = self._listener_stack.enter_context(listen_tcp())
             self._readiness_listener = self._listener_stack.enter_context(listen_tcp())
-            routes: dict[str, dict[str, object]] = {}
+            routes: dict[str, PlatformRoute] = {}
             for name, config in self._platform_routes.items():
-                route = dict(config)
-                if not isinstance(route.get("listen_address"), str):
-                    raise TypeError(f"platform route {name!r} must have a listen_address")
                 listener = self._listener_stack.enter_context(listen_tcp())
                 self._route_listeners[name] = listener
-                route["listen_address"] = self._fd_address(listener)
-                routes[name] = route
+                routes[name] = PlatformRoute(
+                    listen_address=self._fd_address(listener), upstream=config.upstream, token_file=config.token_file
+                )
 
-            settings = {
-                "proxy_host": self._proxy_host,
-                "proxy_port": self._proxy_port,
-                "token_file": str(self._token_file),
-                "audience_token_files": {audience: str(path) for audience, path in self._audience_token_files.items()},
-                "platform_routes": routes,
-                "listen_address": self._fd_address(self.proxy_listener),
-                "readiness_listen_address": self._fd_address(self.readiness_listener),
-            }
-            validated_settings = Settings.model_validate(settings)
+            settings = Settings(
+                proxy_host=self._proxy_host,
+                proxy_port=self._proxy_port,
+                token_file=self._token_file,
+                audience_token_files=dict(self._audience_token_files),
+                platform_routes=routes,
+                listen_address=self._fd_address(self.proxy_listener),
+                readiness_listen_address=self._fd_address(self.readiness_listener),
+            )
             settings_path = Path(self._settings_dir.name) / "settings.yaml"
-            settings_path.write_text(yaml.safe_dump(validated_settings.model_dump(mode="json", exclude_unset=True)))
+            settings_path.write_text(
+                yaml.safe_dump(settings.model_dump(mode="json", exclude_unset=True, exclude_none=True))
+            )
             env = {Settings.config_file_env: str(settings_path)}
             listeners = [self.proxy_listener, self.readiness_listener, *self._route_listeners.values()]
             pass_fds = tuple(listener.socket.fileno() for listener in listeners)

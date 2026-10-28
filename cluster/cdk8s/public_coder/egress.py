@@ -4,6 +4,8 @@ Only the relay holds the Pod-bound token. Credential values stay in the gateway'
 isolated namespace; the app receives canonical placeholders under its existing env names.
 """
 
+from pathlib import Path
+
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
@@ -53,8 +55,9 @@ _SETTINGS_PATH = "/etc/agentplane-egress-sidecar/settings.yaml"
 
 def add_relay_settings(scope: Construct) -> PodWiring:
     """The relay's settings ConfigMap, and what the Pod needs to mount it."""
-    content = {"proxy_host": GATEWAY.fqdn, "proxy_port": GATEWAY.pod_port, "token_file": f"{_TOKEN_DIR}/token"}
-    settings = sidecar_config.Settings.model_validate(content)
+    settings = sidecar_config.Settings(
+        proxy_host=GATEWAY.fqdn, proxy_port=GATEWAY.pod_port, token_file=Path(_TOKEN_DIR) / "token"
+    )
     return SettingsFile(
         scope,
         "egress-sidecar-settings",
