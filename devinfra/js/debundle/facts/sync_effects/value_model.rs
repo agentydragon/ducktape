@@ -113,20 +113,6 @@ pub(super) enum AbstractValue {
     Unknown,
 }
 
-/// A direct edge from an abstract value to another value it retains. These
-/// edges describe stored capabilities; following getter or setter edges never
-/// invokes their bodies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum StoredReferenceKind {
-    ObjectProperty,
-    AppliedGetter,
-    AppliedSetter,
-    ClosureCapture,
-    InstanceCapture,
-    DeferredCallbackCapture,
-    DescriptorMapCapture,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ArrayIterationMethod {
     ForEach,
