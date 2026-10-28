@@ -41,28 +41,33 @@ type frameTestAdapter struct {
 }
 
 func TestStaleNativeCodexCompletionRetainsFrameAndSuccessor(t *testing.T) {
-	s, _, m := frameTestSessionWithController(t, []string{"/bin/cat"}, true)
+	var gate sync.Mutex
+	s, _, m := frameTestSessionWithControllerGate(t, []string{"/bin/cat"}, true, &gate)
 	ctx := context.Background()
-	setRuntimeReady(t, m, s)
-	threadID := "thread-1"
-	s.mu.Lock()
-	s.record.NativeSessionID = &threadID
-	s.mu.Unlock()
-	ptr := componentResource(s.id, Runtime{}).Metadata()
-	if _, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[Runtime, componentExtension[Runtime]]) error {
-		value.TypedSpec().Resuming = true
-		return nil
-	}, state.WithUpdateOwner(ControllerName)); err != nil {
-		t.Fatal(err)
-	}
-	adapter := codexadapter.New(s)
+	var adapter harness.Adapter
+	withSessionControllerGate(t, s, &gate, func() {
+		setRuntimeReady(t, m, s)
+		threadID := "thread-1"
+		s.mu.Lock()
+		s.record.NativeSessionID = &threadID
+		s.mu.Unlock()
+		ptr := componentResource(s.id, Runtime{}).Metadata()
+		if _, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[Runtime, componentExtension[Runtime]]) error {
+			value.TypedSpec().Resuming = true
+			return nil
+		}, state.WithUpdateOwner(ControllerName)); err != nil {
+			t.Fatal(err)
+		}
+		adapter = codexadapter.New(s)
+	})
 	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "finished-turn"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "finished-turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "active-successor"}), nil); err != nil {
+	successorFrame := []byte(`{"method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"active-successor"}}}`)
+	if err := s.receive(ctx, successorFrame, adapter); err != nil {
 		t.Fatal(err)
 	}
 	before := s.journal.LastCursor()
@@ -703,12 +708,15 @@ func (a *rpcReconciliationAdapter) Reconcile(ctx context.Context, turn string, _
 }
 
 func TestInterruptedReconciliationLeavesStdoutFreeForHistoryRPC(t *testing.T) {
-	s, p, m := frameTestSessionWithController(t, []string{"/bin/sh", "-c", `while IFS= read -r line; do printf '%s\n' "$line"; done`}, true)
+	var gate sync.Mutex
+	s, p, m := frameTestSessionWithControllerGate(t, []string{"/bin/sh", "-c", `while IFS= read -r line; do printf '%s\n' "$line"; done`}, true, &gate)
 	adapter := &rpcReconciliationAdapter{session: s}
-	s.mu.Lock()
-	s.adapter = adapter
-	s.mu.Unlock()
-	setRuntimeReady(t, m, s)
+	withSessionControllerGate(t, s, &gate, func() {
+		setRuntimeReady(t, m, s)
+		s.mu.Lock()
+		s.adapter = adapter
+		s.mu.Unlock()
+	})
 	if err := s.Emit(context.Background(), observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -758,6 +766,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// setRuntimeReady directly seeds controller-owned Runtime state; callers with a
+// live Session controller must pause it for the fixture mutation.
 func setRuntimeReady(t *testing.T, m *Manager, s *Session) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

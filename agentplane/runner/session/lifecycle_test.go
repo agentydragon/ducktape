@@ -56,6 +56,16 @@ func waitSession(t *testing.T, s *Session, predicate func(Runtime) bool, label s
 	}
 }
 
+func withSessionControllerGate(t *testing.T, s *Session, gate *sync.Mutex, setup func()) {
+	t.Helper()
+	waitSession(t, s, func(Runtime) bool { return true }, "initial Session runtime")
+	gate.Lock()
+	defer gate.Unlock()
+	setup()
+}
+
+// setSessionPhase directly changes controller-owned Runtime state; callers must
+// pause the Session controller for the fixture mutation.
 func setSessionPhase(t *testing.T, s *Session, phase Phase) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
@@ -78,8 +88,8 @@ func setSessionPhase(t *testing.T, s *Session, phase Phase) {
 func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 	for _, phase := range []string{"handshake", "recovery"} {
 		t.Run(phase, func(t *testing.T) {
-			s, p, m := frameTestSessionWithController(t, []string{"/bin/cat"}, true)
-			setSessionPhase(t, s, Preparing)
+			var gate sync.Mutex
+			s, p, m := frameTestSessionWithControllerGate(t, []string{"/bin/cat"}, true, &gate)
 			adapter := preparationDuringQuiesceAdapter{started: make(chan struct{}), release: make(chan struct{}), session: s}
 			t.Cleanup(func() {
 				select {
@@ -88,33 +98,37 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 					close(adapter.release)
 				}
 			})
-			s.connection.readers.Add(2)
-			go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
-			go s.connection.readStderr(p)
 			preparing := make(chan context.Context, 1)
-			s.startOperation(&s.preparation, func(ctx context.Context) error {
-				preparing <- ctx
-				if phase == "recovery" {
-					return s.recoverAdapter(ctx, adapter)
-				}
-				return s.prepare(ctx, adapter, p.PID())
-			})
-			s.mu.Lock()
-			op := s.preparation
-			s.mu.Unlock()
 			ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 			defer cancel()
-			select {
-			case <-adapter.started:
-			case <-ctx.Done():
-				t.Fatal("preparation did not start")
-			}
-			if _, err := s.Admit(ctx, &commandpb.Command{CommandId: "test-input", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test input"}}}, false); err != nil {
-				t.Fatal(err)
-			}
-			if err := runnerlifecycle.PublishDesired(ctx, m.state, runnerlifecycle.Desired{Mode: runnerlifecycle.Quiescing, Generation: 1}); err != nil {
-				t.Fatal(err)
-			}
+			var op *operation.Operation
+			withSessionControllerGate(t, s, &gate, func() {
+				setSessionPhase(t, s, Preparing)
+				s.connection.readers.Add(2)
+				go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+				go s.connection.readStderr(p)
+				s.startOperation(&s.preparation, func(ctx context.Context) error {
+					preparing <- ctx
+					if phase == "recovery" {
+						return s.recoverAdapter(ctx, adapter)
+					}
+					return s.prepare(ctx, adapter, p.PID())
+				})
+				s.mu.Lock()
+				op = s.preparation
+				s.mu.Unlock()
+				select {
+				case <-adapter.started:
+				case <-ctx.Done():
+					t.Fatal("preparation did not start")
+				}
+				if _, err := s.Admit(ctx, &commandpb.Command{CommandId: "test-input", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test input"}}}, false); err != nil {
+					t.Fatal(err)
+				}
+				if err := runnerlifecycle.PublishDesired(ctx, m.state, runnerlifecycle.Desired{Mode: runnerlifecycle.Quiescing, Generation: 1}); err != nil {
+					t.Fatal(err)
+				}
+			})
 			preparationCtx := <-preparing
 			select {
 			case <-preparationCtx.Done():
@@ -149,19 +163,9 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 }
 
 func TestPreparationCompletingAfterShutdownCannotMakeSessionReady(t *testing.T) {
-	s, _, m := frameTestSessionWithController(t, []string{"/bin/cat"}, true)
-	setSessionPhase(t, s, Preparing)
+	var gate sync.Mutex
+	s, _, m := frameTestSessionWithControllerGate(t, []string{"/bin/cat"}, true, &gate)
 	started, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	s.startOperation(&s.preparation, func(ctx context.Context) error {
-		close(started)
-		<-release
-		defer close(finished)
-		if ctx.Err() == nil {
-			return fmt.Errorf("preparation was not canceled")
-		}
-		return nil
-	})
-	<-started
 	t.Cleanup(func() {
 		select {
 		case <-release:
@@ -169,9 +173,22 @@ func TestPreparationCompletingAfterShutdownCannotMakeSessionReady(t *testing.T) 
 			close(release)
 		}
 	})
-	if err := runnerlifecycle.PublishDesired(context.Background(), m.state, runnerlifecycle.Desired{Mode: runnerlifecycle.Closing, Generation: 1}); err != nil {
-		t.Fatal(err)
-	}
+	withSessionControllerGate(t, s, &gate, func() {
+		setSessionPhase(t, s, Preparing)
+		s.startOperation(&s.preparation, func(ctx context.Context) error {
+			close(started)
+			<-release
+			defer close(finished)
+			if ctx.Err() == nil {
+				return fmt.Errorf("preparation was not canceled")
+			}
+			return nil
+		})
+		<-started
+		if err := runnerlifecycle.PublishDesired(context.Background(), m.state, runnerlifecycle.Desired{Mode: runnerlifecycle.Closing, Generation: 1}); err != nil {
+			t.Fatal(err)
+		}
+	})
 	waitSession(t, s, func(current Runtime) bool { return current.Phase == Stopping }, "shutdown to stop Session")
 	select {
 	case <-finished:
@@ -213,8 +230,9 @@ func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testin
 }
 
 func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
-	s, p, manager := frameTestSessionWithController(t, []string{"/bin/sh", "-c", "cat >/dev/null"}, true)
-	setRuntimeReady(t, manager, s)
+	var gate sync.Mutex
+	s, p, manager := frameTestSessionWithControllerGate(t, []string{"/bin/sh", "-c", "cat >/dev/null"}, true, &gate)
+	withSessionControllerGate(t, s, &gate, func() { setRuntimeReady(t, manager, s) })
 	s.requestExecution()
 	s.requestExecution()
 	if err := p.Stop(context.Background()); err != nil {
@@ -233,12 +251,9 @@ func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
 func TestPreparationCompletionRefreshesStaleSchedulingInput(t *testing.T) {
 	var gate sync.Mutex
 	s, p, m := frameTestSessionWithControllerGate(t, []string{"/bin/cat"}, true, &gate)
-	waitSession(t, s, func(Runtime) bool { return true }, "initial Session runtime")
-	func() {
+	withSessionControllerGate(t, s, &gate, func() {
 		// Wait for any in-flight reconcile before constructing the synthetic
 		// preparation. Otherwise it can overwrite the test's Preparing phase.
-		gate.Lock()
-		defer gate.Unlock()
 		setSessionPhase(t, s, Preparing)
 		// Model the completion resource becoming visible before the worker refreshes
 		// its Session input. The native process is already live, but input is stale.
@@ -270,6 +285,6 @@ func TestPreparationCompletionRefreshesStaleSchedulingInput(t *testing.T) {
 		case <-time.After(lifecycleTestTimeout):
 			t.Fatal("preparation operation did not finish")
 		}
-	}()
+	})
 	waitSession(t, s, func(current Runtime) bool { return current.Phase == Ready && current.ProcessID == p.ID() }, "preparation ready after stale input")
 }
