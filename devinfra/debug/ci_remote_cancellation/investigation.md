@@ -161,7 +161,9 @@ attempts separate when interpreting execution indexes.
 1. **Attribute the existing execution.** Correlate both execution IDs in the
    retained evidence with scheduler admission/retry/hedge decisions, all linked
    invocations, and the outer cancellation RPC. Retain an explicit access boundary
-   if those facts require BuildBuddy's server logs. Resolve sharing before
+   if those facts require BuildBuddy's server logs. The
+   [hosted trace handoff](host_trace_request.md) records the current access
+   boundary and exact probe identities. Resolve sharing before
    classifying the continued action as avoidable waste.
 2. **Confirm the hosted lease.** Obtain the runtime lease response and the
    outer worker's task-deletion, lease-error, and command-stop timestamps. Record

@@ -7,6 +7,9 @@ is a separate control of the cancellation API's scope.
 
 Related evidence in this folder:
 
+- [Hosted worker trace request](host_trace_request.md): unsent operator handoff
+  for the blocked-analysis case, with [API access evidence](host_trace_access.json).
+
 - [Producer-stop witness](producer_stop_witness.md): one normal zero-retry build
   finished and its original Java server accepted another command; the blocked-
   analysis case retained no stop receipt. [Selected evidence](producer_stop_witness.json).

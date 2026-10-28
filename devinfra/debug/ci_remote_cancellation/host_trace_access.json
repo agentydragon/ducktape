@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "date_utc": "2026-10-28",
+  "source_commit": "05b71b8533968ed1992c3f5541be7932a5642f83",
+  "checks": [
+    {
+      "method": "GetExecution",
+      "request": {
+        "executionLookup": {
+          "invocationId": "96c2cba2-507f-4c5e-9231-8b19602d337b"
+        },
+        "inlineExecuteResponse": true
+      },
+      "http_status": 200,
+      "response_saved_at": "2026-10-28T05:18:47.502006+00:00",
+      "raw_response_sha256": "257d647ce801a7df913e7153959605faa16e35946281f7e3269d9b125aafaab3",
+      "executions": [
+        {
+          "execution_id": "bb-snapshot/uploads/44f97f92-f798-4029-ba2c-35a80f52b413/blobs/blake3/7cc68722c4c9f597251afead78f3734884d74254561ab476b6464e5ced290cd4/149",
+          "stage": "COMPLETED",
+          "status": {
+            "code": 1,
+            "message": "invocation cancelled"
+          },
+          "execute_response_digest": {
+            "hash": "d04e8ce8faa01176659528b99afabe4e8f60b27060a7b43e491ed5878a741c64",
+            "sizeBytes": "138"
+          },
+          "inline_response_status": {
+            "code": 1,
+            "message": "invocation cancelled"
+          },
+          "inline_response_has_result": false,
+          "record_worker_present": false,
+          "record_timestamps": {
+            "queuedTimestamp": "1970-01-01T00:00:00Z",
+            "workerStartTimestamp": "1970-01-01T00:00:00Z",
+            "workerCompletedTimestamp": "1970-01-01T00:00:00Z",
+            "inputFetchStartTimestamp": "1970-01-01T00:00:00Z",
+            "inputFetchCompletedTimestamp": "1970-01-01T00:00:00Z",
+            "executionStartTimestamp": "1970-01-01T00:00:00Z",
+            "executionCompletedTimestamp": "1970-01-01T00:00:00Z",
+            "outputUploadStartTimestamp": "1970-01-01T00:00:00Z",
+            "outputUploadCompletedTimestamp": "1970-01-01T00:00:00Z"
+          },
+          "inline_result_metadata_present": false
+        }
+      ]
+    },
+    {
+      "method": "GetExecution",
+      "request": {
+        "executionLookup": {
+          "invocationId": "ac648165-ec92-4138-943f-17c49026f596"
+        },
+        "inlineExecuteResponse": true
+      },
+      "http_status": 200,
+      "response_saved_at": "2026-10-28T05:18:47.587059+00:00",
+      "raw_response_sha256": "df0ea4feb134d341aa7dd96ce615c325b603d70eda1ef390aa31c390db513c88",
+      "executions": [
+        {
+          "execution_id": "/uploads/6a19728a-2528-4627-8ee0-4454d12ae906/blobs/47290b996b9bad63cef5e0eeac414f53e3ab2c42ff4636715440fb91622f13c6/310",
+          "stage": "COMPLETED",
+          "status": {
+            "code": 1,
+            "message": "invocation cancelled"
+          },
+          "execute_response_digest": {
+            "hash": "737891f89d2b364df4401899bd1a72b1ef7264d89d47ea70385f8a4f5c7af3dc",
+            "sizeBytes": "120"
+          },
+          "inline_response_status": {
+            "code": 1,
+            "message": "invocation cancelled"
+          },
+          "inline_response_has_result": false,
+          "record_worker_present": false,
+          "record_timestamps": {
+            "queuedTimestamp": "1970-01-01T00:00:00Z",
+            "workerStartTimestamp": "1970-01-01T00:00:00Z",
+            "workerCompletedTimestamp": "1970-01-01T00:00:00Z",
+            "inputFetchStartTimestamp": "1970-01-01T00:00:00Z",
+            "inputFetchCompletedTimestamp": "1970-01-01T00:00:00Z",
+            "executionStartTimestamp": "1970-01-01T00:00:00Z",
+            "executionCompletedTimestamp": "1970-01-01T00:00:00Z",
+            "outputUploadStartTimestamp": "1970-01-01T00:00:00Z",
+            "outputUploadCompletedTimestamp": "1970-01-01T00:00:00Z"
+          },
+          "inline_result_metadata_present": false
+        }
+      ]
+    },
+    {
+      "method": "GetExecutionNodes",
+      "request": {},
+      "http_status": 403,
+      "error_code": "PermissionDenied",
+      "response_saved_at": "2026-10-28T05:18:47.660635+00:00",
+      "raw_response_sha256": "ecfa1ee6041eb858a65aa96df966a016c58cade9a78fd4734fc0abe129ffb9f5"
+    }
+  ],
+  "interpretation": [
+    "The API refresh retained terminal cancellation without worker results or useful worker timestamps. It does not identify process stop time.",
+    "The current API key cannot enumerate executor nodes. A node-list response would not itself be a host-side process or lease trace.",
+    "No hosted operator logs, lease response, or physical VMM-stop event was retrieved.",
+    "No new remote probe, key expansion, deployment change, or third-party message was performed for these checks."
+  ],
+  "related_bazel_fix": {
+    "issue_url": "https://github.com/bazelbuild/bazel/issues/30954",
+    "fix_commit": "29b6ec37e9aff603d4da51570ffb175071605de1",
+    "fix_commit_url": "https://github.com/bazelbuild/bazel/commit/29b6ec37e9aff603d4da51570ffb175071605de1",
+    "fix_committed_at": "2026-10-01T14:33:38Z",
+    "latest_release_checked": "9.3.1",
+    "latest_release_published_at": "2026-10-21T02:23:16Z",
+    "source_checks": [
+      {
+        "ref": "9.2.0",
+        "path": "src/main/java/com/google/devtools/build/lib/server/GrpcServerImpl.java",
+        "sha256": "ac18f033ebbda0344ac334cdc41f3aac47d754e1426057dd64c9704704e8db22",
+        "cancel_handler_interrupts_command_thread": false
+      },
+      {
+        "ref": "9.3.1",
+        "path": "src/main/java/com/google/devtools/build/lib/server/GrpcServerImpl.java",
+        "sha256": "c36e5b1911217f2898e49dbfe9d2633cc193bc0964d44bd5c3d0d4cd8cd668b1",
+        "cancel_handler_interrupts_command_thread": false
+      },
+      {
+        "ref": "29b6ec37e9aff603d4da51570ffb175071605de1",
+        "path": "src/main/java/com/google/devtools/build/lib/server/GrpcCommandServerImpl.java",
+        "sha256": "f31454bcc9fcb5cc89cf49468329477682ddf3729bffae5f44ea5b302b358cbe",
+        "cancel_handler_interrupts_command_thread": true
+      }
+    ],
+    "limits": "Related killed-client behavior and a candidate fix; not an attribution of the hosted blocked-analysis probe."
+  }
+}

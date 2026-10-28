@@ -152,7 +152,9 @@ therefore still needs a reliable stop channel and acknowledgment covering the
 blocked case. The passive witness is not that implementation. Do not replace
 that missing guarantee with a fixed delay or a successful cancellation record.
 
-For hosted-side follow-up, use the gated child/outer pair above and request:
+The [hosted trace request](host_trace_request.md) records a fresh API check and
+the unsent operator handoff. For hosted-side follow-up, use the gated child/outer
+pair above and request:
 outer task-deletion time, actual lease response, lease-renewal failure, guest
 command cleanup, Bazel client/server exit or command-lock release, and VMM-stop
 timestamps, with deployed versions. A host-side event can survive destruction
