@@ -27,13 +27,6 @@ next refresh (1h) with no manifest change.
 
 **Delete this section once rotated.**
 
-## Public-coder Iron proxy image — retired
-
-The public-coder Iron proxy was retired on 2026-10-21 after OpenClaw had moved to
-Agentplane egress and the KubeVirt devbox was decommissioned. Its image pinning
-question and return-to-upstream TODO no longer apply. Haku sandbox/CI continue to
-use their separate mitmproxy-based egress fence.
-
 ## Cost a Kubernetes `WorkerProvider` — the live candidate for W2
 
 The one hard-ish want still unmet is execution off the harness container, and the
@@ -74,26 +67,6 @@ worth a deliberate decision rather than a sweep: it is the right shape for what 
 want (see <../../docs/personal_agents/verdicts.md> § Control planes), and
 keeping the CRD costs
 nothing if the reason is recorded. Right now it is neither kept nor cleaned.
-
-## Use k3d, not production RBAC, for the next round of experiments
-
-**Standing preference, not a suggestion: experiment in `k3d` whenever it can
-answer the question, and use the real cluster only when it cannot.** `k3d` runs a
-real k3s cluster inside the agent container in about 30 seconds (F12), so
-structural work — CRD shapes, operator behaviour, admission, policy, whole
-third-party stacks — no longer needs time-boxed grants against production. Docker
-works in the container too, which is what let F13 stand up an entire OpenShell
-Docker-driver stack locally.
-
-When reaching for the live cluster anyway, name the dependency that forces it —
-Cilium, Authentik, Flux, the real LiteLLM — otherwise use k3d. `kind` does
-**not** work here: the host is cgroup v1 and kind's node image boots systemd,
-which cannot mount its own cgroup hierarchy nested.
-
-Two things to remember: `k3d cluster create` switches the default kubeconfig
-context, so pass `--context` explicitly or the next `kubectl` hits the toy
-cluster; and the local cluster has none of the real cluster's Cilium, Authentik
-or Flux wiring, so it answers "does this API work" and not "does this work here".
 
 ## Try Docker-in-Kubernetes if S5 becomes worth its cost
 

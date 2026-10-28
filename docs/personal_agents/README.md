@@ -8,10 +8,10 @@ personal-data agent with network isolation and full traces, and a git-backed
 knowledge garden — are scoped in [requirements.md](requirements.md) but not
 built.
 
-`public-coder-agent` (<../../cluster/parked/public-coder-agent/>) is
-deployed and meets the four hard requirements: stand up, open a PR end to end
-unaided, remember instructions across sessions, and be confinable to
-domain-level egress. Open work and the personal-data-agent design are tracked in
+`public-coder-agent` (<../../cluster/parked/public-coder-agent/>) previously
+met the four hard requirements: stand up, open a PR end to end unaided, remember
+instructions across sessions, and be confinable to domain-level egress. It is now
+paused; its parked README owns the current status and revival steps. Open work and the personal-data-agent design are tracked in
 the programme's plan directory under `plans/`.
 
 ## Where things are
@@ -38,17 +38,11 @@ established it.
   as the gateway — the documented second choice (C8, S5), not a shortfall. What
   it costs: a prompt injection that reaches the shell reaches the harness, and
   the credential-holding boundary is the proxy rather than the process.
-- **Deny-by-default egress, for this agent only.** Switched off by decision
-  rather than by failure; the passing configuration is kept commented in
-  `cnp-egress.yaml` and `iron.yaml` and must be re-enabled together. Rationale:
-  [success_criteria.md](success_criteria.md) § S4 waiver. Still a hard
-  requirement for anything holding personal data.
+- **Deny-by-default egress for personal data.** This remains a hard
+  requirement for any agent holding personal data; see
+  [success_criteria.md](success_criteria.md) § S4 waiver.
 
 ## Rough edges
 
-- **The credential path auto-updates.** The proxy image holding the GitHub and
-  BuildBuddy tokens is self-built and tracks a moving tag under Flux image
-  automation — defensible since the build is ours, but it should be a decision
-  rather than a side effect; the plan's TODO owns making it one.
 - **Every config-driven restart costs one prompt** on whatever session was
   live (F14). Upstream behaviour, self-healing, recurring.

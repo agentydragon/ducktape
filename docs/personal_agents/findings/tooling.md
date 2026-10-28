@@ -57,6 +57,10 @@ admitted here was **not** tested: creating a privileged pod was refused by the
 session's safety classifier, and working around that would have been the wrong
 move.
 
+**Experiment preference:** Use `k3d` when it can answer the question. Use the
+production cluster only when the experiment depends on its real components,
+such as Cilium, Authentik, Flux, or LiteLLM.
+
 **Local rig: `kind` does not work here, `k3d` does.** Worth knowing, because it
 removes the need for time-boxed production RBAC on future experiments.
 
