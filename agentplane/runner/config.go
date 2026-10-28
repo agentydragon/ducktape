@@ -58,6 +58,7 @@ type DebugCheckpointConfig struct{ Name, CommandID string }
 
 type Config struct {
 	StateDir                         string
+	SessionReconcileConcurrency      int
 	Launch                           SandboxLaunch
 	HarnessEnvironment               map[string]string
 	Claude, Codex                    *harness.LaunchConfig
@@ -66,6 +67,16 @@ type Config struct {
 	WorkspaceRoot, InitializationCwd string
 	DebugCheckpoint                  *DebugCheckpointConfig
 	HTTPClient                       *http.Client
+}
+
+func (c *Config) resolveSessionReconcileConcurrency() error {
+	if c.SessionReconcileConcurrency < 0 {
+		return errors.New("session reconcile concurrency must be positive")
+	}
+	if c.SessionReconcileConcurrency == 0 {
+		c.SessionReconcileConcurrency = defaultSessionReconcileConcurrency
+	}
+	return nil
 }
 
 // ResolveModelConfig returns the context budget the LLM ingress configures for `model`, or nil for none.

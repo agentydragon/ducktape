@@ -209,6 +209,7 @@ class RunnerSandbox(Construct):
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
         control_service: ServiceRef | None = None,
+        session_reconcile_concurrency: int | None = None,
     ) -> None:
         super().__init__(scope, id)
         if vm_workspace_storage_class is not None:
@@ -233,6 +234,7 @@ class RunnerSandbox(Construct):
             trust_mounts=trust_mounts,
             control_service=control_service,
             egress_api_service=egress_api_service,
+            session_reconcile_concurrency=session_reconcile_concurrency,
         )
         if env.vm_sandboxes:
             launcher_relay.LauncherRelayPolicy(
@@ -263,6 +265,7 @@ class RunnerSandbox(Construct):
                 ),
                 platform_instructions=platform_instructions(env, egress_api_service=egress_api_service),
                 harness_env=template.agent_cli_env,
+                session_reconcile_concurrency=session_reconcile_concurrency,
             )
 
     def add_platform_resources(self) -> None:
@@ -303,6 +306,7 @@ class RunnerTemplate(Construct):
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
         control_service: ServiceRef | None = None,
         egress_api_service: ServiceRef | None = None,
+        session_reconcile_concurrency: int | None = None,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
@@ -318,6 +322,7 @@ class RunnerTemplate(Construct):
         self.image_pull_secret_name = image_pull_secret_name
         self.trust_mounts = trust_mounts if trust_mounts is not None else sandbox_pod.proxy_trust_mounts()
         self.control_service = control_service
+        self.session_reconcile_concurrency = session_reconcile_concurrency
         self.agent_cli_env = agent_cli_environment(service_urls(env, egress_api_service=egress_api_service))
         if not env.isolated_codex_executor and executor_resources is not None:
             raise ValueError("executor_resources cannot be set when isolated Codex execution is disabled")
@@ -403,6 +408,7 @@ class RunnerTemplate(Construct):
         llm_url = llm_ingress.proxied_url(self.env.namespace)
         config = Configuration(
             version=2,
+            session_reconcile_concurrency=self.session_reconcile_concurrency,
             state_dir=_STATE_DIR,
             initialization_cwd=_STATE_DIR,
             control=Endpoint(target=control.local_target, bearer=platform_routes.ROUTE_BEARER),

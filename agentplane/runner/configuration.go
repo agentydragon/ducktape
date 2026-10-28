@@ -19,20 +19,23 @@ import (
 // Configuration is the file contract used by every Runner deployment. Sandbox
 // identity/bootstrap are supplied separately by the Sandbox Controller.
 type Configuration struct {
-	Version              int                           `json:"version"`
-	StateDir             string                        `json:"state_dir"`
-	WorkspaceRoot        *string                       `json:"workspace_root"`
-	InitializationCwd    string                        `json:"initialization_cwd"`
-	Control              Endpoint                      `json:"control"`
-	Ingress              Endpoint                      `json:"ingress"`
-	PlatformInstructions string                        `json:"platform_instructions"`
-	RunnerEnvironment    EnvironmentVariables          `json:"runner_environment"`
-	HarnessEnvironment   *EnvironmentVariables         `json:"harness_environment"`
-	Claude               *HarnessConfiguration         `json:"claude"`
-	Codex                *HarnessConfiguration         `json:"codex"`
-	Environment          json.RawMessage               `json:"environment"`
-	DebugCheckpoint      *DebugCheckpointConfiguration `json:"debug_checkpoint"`
+	Version                     int                           `json:"version"`
+	SessionReconcileConcurrency *int                          `json:"session_reconcile_concurrency"`
+	StateDir                    string                        `json:"state_dir"`
+	WorkspaceRoot               *string                       `json:"workspace_root"`
+	InitializationCwd           string                        `json:"initialization_cwd"`
+	Control                     Endpoint                      `json:"control"`
+	Ingress                     Endpoint                      `json:"ingress"`
+	PlatformInstructions        string                        `json:"platform_instructions"`
+	RunnerEnvironment           EnvironmentVariables          `json:"runner_environment"`
+	HarnessEnvironment          *EnvironmentVariables         `json:"harness_environment"`
+	Claude                      *HarnessConfiguration         `json:"claude"`
+	Codex                       *HarnessConfiguration         `json:"codex"`
+	Environment                 json.RawMessage               `json:"environment"`
+	DebugCheckpoint             *DebugCheckpointConfiguration `json:"debug_checkpoint"`
 }
+
+const defaultSessionReconcileConcurrency = 1000
 
 type DebugCheckpointConfiguration struct {
 	Name      string `json:"name"`
@@ -241,6 +244,13 @@ func loadConfiguration(path, launchPath string) (Config, Endpoint, Endpoint, map
 }
 
 func (f Configuration) compose(launchPath string) (Config, map[string]string, error) {
+	sessionReconcileConcurrency := defaultSessionReconcileConcurrency
+	if f.SessionReconcileConcurrency != nil {
+		if *f.SessionReconcileConcurrency <= 0 {
+			return Config{}, nil, errors.New("session_reconcile_concurrency must be positive")
+		}
+		sessionReconcileConcurrency = *f.SessionReconcileConcurrency
+	}
 	if !filepath.IsAbs(f.StateDir) || !filepath.IsAbs(f.InitializationCwd) || (f.WorkspaceRoot != nil && !filepath.IsAbs(*f.WorkspaceRoot)) {
 		return Config{}, nil, errors.New("state, initialization and configured workspace paths must be absolute")
 	}
@@ -298,7 +308,17 @@ func (f Configuration) compose(launchPath string) (Config, map[string]string, er
 		return Config{}, nil, errors.New("Sandbox namespace, name, UID and nonempty optional bootstrap are required")
 	}
 	launch.PlatformInstructions = strings.TrimSpace(f.PlatformInstructions)
-	config := Config{StateDir: f.StateDir, InitializationCwd: f.InitializationCwd, Launch: launch, HarnessEnvironment: child, Claude: claude, Codex: codex, ProcessIsolation: isolation, CodexExecutor: executor}
+	config := Config{
+		StateDir:                    f.StateDir,
+		SessionReconcileConcurrency: sessionReconcileConcurrency,
+		InitializationCwd:           f.InitializationCwd,
+		Launch:                      launch,
+		HarnessEnvironment:          child,
+		Claude:                      claude,
+		Codex:                       codex,
+		ProcessIsolation:            isolation,
+		CodexExecutor:               executor,
+	}
 	if f.WorkspaceRoot != nil {
 		config.WorkspaceRoot = *f.WorkspaceRoot
 	}

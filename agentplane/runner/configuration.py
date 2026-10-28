@@ -215,6 +215,11 @@ class Configuration(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     version: Literal[2]
+    session_reconcile_concurrency: int | None = Field(
+        default=None,
+        gt=0,
+        description="Optional maximum concurrent Session COSI reconciliations; does not limit Session admission.",
+    )
     state_dir: str
     workspace_root: str | None = None
     initialization_cwd: str

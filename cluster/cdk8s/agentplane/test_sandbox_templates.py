@@ -40,6 +40,7 @@ def _runner_pod(
     isolated_executor: bool,
     runner_resources: k8s.ResourceRequirements,
     executor_resources: k8s.ResourceRequirements | None,
+    session_reconcile_concurrency: int | None = None,
 ) -> dict[str, Any]:
     app = Cdk8sTesting.app()
     chart = Chart(app, "runner-template-test")
@@ -51,6 +52,7 @@ def _runner_pod(
         image="example.invalid/runner",
         runner_resources=runner_resources,
         executor_resources=executor_resources,
+        session_reconcile_concurrency=session_reconcile_concurrency,
     )
     template = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "SandboxTemplate")
     return cast(dict[str, Any], template["spec"]["pod"]["spec"])
@@ -67,6 +69,7 @@ def test_all_sandbox_workloads_use_shared_environment_defaults(staging_manifests
     # One Pod execution environment: no plain runner template beside the ducktape one.
     assert [template["metadata"]["name"] for template in templates] == [staging.POD_TEMPLATE]
     config = Configuration.model_validate(_runner_configuration(staging_manifests, templates[0]["spec"]["pod"]["spec"]))
+    assert config.session_reconcile_concurrency is None
     assert "TZ" in config.harness_environment.inherit
     assert "TZDIR" in config.harness_environment.inherit
 
@@ -169,6 +172,22 @@ def test_environment_can_keep_codex_execution_inside_the_runner() -> None:
     assert "codex-executor" not in containers
     assert containers["runner"]["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
     assert {"home", "tmp", "codex-executor"}.isdisjoint({volume["name"] for volume in pod["volumes"]})
+
+
+def test_runner_template_configures_session_reconcile_concurrency() -> None:
+    chart = Chart(Cdk8sTesting.app(), "runner-concurrency-test")
+    RunnerTemplate(
+        chart,
+        "runner-template",
+        staging.ENV,
+        name="test-runner",
+        image="example.invalid/runner",
+        session_reconcile_concurrency=2048,
+    )
+    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
+    template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
+    config = _runner_configuration(docs, template["spec"]["pod"]["spec"])
+    assert config["session_reconcile_concurrency"] == 2048
 
 
 def test_environment_cannot_configure_resources_for_a_disabled_executor() -> None:

@@ -83,6 +83,9 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 			if config.Launch.PlatformInstructions != "Test guidance." || config.Launch.Bootstrap == nil || *config.Launch.Bootstrap != "echo initialized" {
 				t.Fatalf("launch = %+v", config.Launch)
 			}
+			if config.SessionReconcileConcurrency != defaultSessionReconcileConcurrency {
+				t.Fatalf("session reconcile concurrency = %d, want default %d", config.SessionReconcileConcurrency, defaultSessionReconcileConcurrency)
+			}
 			if _, err := os.Stat(config.StateDir); !os.IsNotExist(err) {
 				t.Fatalf("configuration opened state: %v", err)
 			}
@@ -100,6 +103,8 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		update func(map[string]any)
 	}{
 		{"unknown field", func(v map[string]any) { v["unexpected"] = true }},
+		{"zero session reconcile concurrency", func(v map[string]any) { v["session_reconcile_concurrency"] = 0 }},
+		{"negative session reconcile concurrency", func(v map[string]any) { v["session_reconcile_concurrency"] = -1 }},
 		{"old version", func(v map[string]any) { v["version"] = 1 }},
 		{"relative state", func(v map[string]any) { v["state_dir"] = "relative" }},
 		{"missing initialization cwd", func(v map[string]any) { delete(v, "initialization_cwd") }},
@@ -169,6 +174,21 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 				t.Fatal("invalid configuration modified process environment")
 			}
 		})
+	}
+}
+
+func TestConfigurationUsesExplicitSessionReconcileConcurrency(t *testing.T) {
+	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
+	value, path, launchPath := configurationFixture(t)
+	value["session_reconcile_concurrency"] = 2048
+	writeJSONFixture(t, path, value)
+
+	config, _, _, _, err := loadConfiguration(path, launchPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.SessionReconcileConcurrency != 2048 {
+		t.Fatalf("session reconcile concurrency = %d, want 2048", config.SessionReconcileConcurrency)
 	}
 }
 

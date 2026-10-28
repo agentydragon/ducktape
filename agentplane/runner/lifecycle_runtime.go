@@ -25,6 +25,9 @@ type lifecycle struct {
 }
 
 func newLifecycle(r *Runner) (*lifecycle, error) {
+	if err := r.config.resolveSessionReconcileConcurrency(); err != nil {
+		return nil, err
+	}
 	store := state.WrapCore(namespaced.NewState(inmem.Build))
 	engine, err := cosiruntime.NewRuntime(store, zap.L().Named("lifecycle"))
 	if err != nil {

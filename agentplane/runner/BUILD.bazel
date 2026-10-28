@@ -579,6 +579,7 @@ go_test(
         "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_cosi_project_runtime//pkg/state",
         "@com_github_pressly_goose_v3//:goose",
+        "@com_github_siderolabs_gen//optional",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
