@@ -1,5 +1,7 @@
 """Visual check for the local workstation session browser."""
 
+import re
+
 import pytest
 import pytest_bazel
 from playwright.async_api import expect
@@ -124,7 +126,7 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
             await page.get_by_role("button", name="Session list").click()
         await page.get_by_role("link", name="Inspect a local transcript").click()
         if viewport.width <= 760:
-            await page.get_by_role("button", name="Related sessions", exact=True).click()
+            await page.get_by_role("button", name=re.compile(r"^Related sessions \(\d+\)$")).click()
 
         related = page.locator('#session-browser-sidebar [aria-label="Related sessions"]')
         children = page.get_by_role("region", name="Child sessions")

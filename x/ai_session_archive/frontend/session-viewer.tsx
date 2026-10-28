@@ -920,7 +920,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                 className="session-browser-mobile-related-toggle"
                 variant="default"
                 size="xs"
-                aria-label="Related sessions"
                 aria-controls="session-browser-sidebar"
                 aria-expanded={mobileSessionListOpen}
                 onClick={openMobileRelatedSessions}

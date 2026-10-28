@@ -136,7 +136,7 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
             await malformed_record.locator("details").first.locator("summary").first.click()
             await expect(malformed_record).to_contain_text('{"type":"assistant","message":')
 
-            related = page.locator('[aria-label="Related sessions"]')
+            related = page.get_by_role("region", name="Related sessions")
             await expect(related).to_contain_text("Review subagent notes")
             await related.get_by_role("link", name="Review subagent notes").click()
             await expect(transcript.get_by_role("heading", name="Review subagent notes")).to_be_visible()
