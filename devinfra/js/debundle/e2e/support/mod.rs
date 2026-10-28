@@ -84,28 +84,31 @@ impl Fixture {
 
 impl RejectedFixture {
     pub fn dependency_graph(&self) -> DependencyGraphReport {
-        read_dependency_graph(&self.report_root, &self.chunk_id)
+        self.read_report("dependency_graph.json")
     }
 
     /// `cycles.json`: one entry per blocking SCC, with its `modules` and `cut`.
     pub fn cycles(&self) -> Vec<Value> {
-        read_json(&self.report_root.join(&self.chunk_id).join("cycles.json"))
+        self.read_report("cycles.json")
     }
 
     /// `atomic_group_conflicts.json`: one entry per atomic group the spec splits, with its
     /// `claims` (source_unit, binding names, module) and `causes`.
     pub fn atomic_group_conflicts(&self) -> Vec<Value> {
-        read_json(
-            &self
-                .report_root
-                .join(&self.chunk_id)
-                .join("atomic_group_conflicts.json"),
-        )
+        self.read_report("atomic_group_conflicts.json")
     }
 
     /// The `outcomes` of `selector_diagnostics.json`.
     pub fn selector_outcomes(&self) -> Vec<Value> {
-        read_chunk_selector_outcomes(&self.report_root, &self.chunk_id)
+        let report: Value = self.read_report("selector_diagnostics.json");
+        outcomes(&report).to_vec()
+    }
+
+    fn read_report<T: DeserializeOwned>(&self, filename: &str) -> T {
+        read_json_with_stderr(
+            &self.report_root.join(&self.chunk_id).join(filename),
+            Some(&self.stderr),
+        )
     }
 }
 
@@ -851,11 +854,18 @@ pub fn write_yaml_file<T: Serialize + ?Sized>(path: &Path, value: &T) {
 }
 
 pub fn read_json<T: DeserializeOwned>(path: &Path) -> T {
+    read_json_with_stderr(path, None)
+}
+
+fn read_json_with_stderr<T: DeserializeOwned>(path: &Path, stderr: Option<&str>) -> T {
+    let context = stderr
+        .map(|stderr| format!("\ndebundler stderr:\n{stderr}"))
+        .unwrap_or_default();
     serde_json::from_str(
         &fs::read_to_string(path)
-            .unwrap_or_else(|err| panic!("read JSON report {}: {err}", path.display())),
+            .unwrap_or_else(|err| panic!("read JSON report {}: {err}{context}", path.display())),
     )
-    .unwrap_or_else(|err| panic!("parse JSON report {}: {err}", path.display()))
+    .unwrap_or_else(|err| panic!("parse JSON report {}: {err}{context}", path.display()))
 }
 
 pub fn debundler_path() -> PathBuf {
