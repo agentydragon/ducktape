@@ -11,11 +11,14 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Engine
 from starlette import status
 
+from util.bazel.runfiles import find_path
 from util.oidc_login import LoginConfig, install_login
 from x.ai_session_archive import queries
 from x.ai_session_archive.database import make_session_factory
 from x.ai_session_archive.models import EventPage, Harness, Machine, SessionPage, SessionSummary, SessionVersion
 from x.ai_session_archive.web_settings import WebSettings
+
+_FRONTEND_INDEX = "_main/devinfra/session_viewer/frontend/dist/index.html"
 
 
 class Machines(BaseModel):
@@ -94,6 +97,10 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
             return page
 
     app.include_router(api)
+    if frontend_dir is None:
+        index = find_path(_FRONTEND_INDEX)
+        if index is not None:
+            frontend_dir = index.parent
     if frontend_dir is not None:
         index = frontend_dir / "index.html"
 

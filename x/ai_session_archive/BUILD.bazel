@@ -284,6 +284,7 @@ py_library(
         ":queries",
         ":web_settings",
         "//util:oidc_login",
+        "//util/bazel:runfiles",
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -304,8 +305,34 @@ py_library(
 
 py_binary(
     name = "web_bin",
+    data = ["//devinfra/session_viewer/frontend:bundle"],
     main_module = "x.ai_session_archive.web_main",
     deps = [":web_main"],
+)
+
+aspect_py_binary(
+    name = "web_image_bin",
+    data = ["//devinfra/session_viewer/frontend:bundle"],
+    main = "web_main.py",
+    deps = [":web_main"],
+)
+
+py_image_layer(
+    name = "web_image_layers",
+    binary = ":web_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "web_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("web_image_bin"),
+    env = py_image_env(binary_name = "web_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":web_image_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
 )
 
 py_test(
@@ -318,6 +345,32 @@ py_test(
         "//:conftest",
         "@pypi//fastapi",
         "@pypi//itsdangerous",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_browser",
+    srcs = ["test_browser.py"],
+    data = ["//devinfra/session_viewer/frontend:bundle"],
+    tags = ["visual"],
+    deps = [
+        ":database",
+        ":models",
+        ":web",
+        ":web_settings",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "//util/testing:asgi",
+        "//util/testing:frontend_visual",
+        "//util/testing:undeclared_outputs",
+        "//util/testing:visual_capture",
+        "//util/testing:visual_fixtures",
+        "@pypi//httpx",
+        "@pypi//itsdangerous",
+        "@pypi//playwright",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

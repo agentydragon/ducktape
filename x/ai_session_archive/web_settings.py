@@ -10,7 +10,7 @@ class WebSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="AI_SESSION_ARCHIVE_")
 
     database_url: SecretStr
-    frontend_dir: Path
+    frontend_dir: Path | None = None
     public_base_url: str
     oidc_issuer: str
     oidc_client_id: str
