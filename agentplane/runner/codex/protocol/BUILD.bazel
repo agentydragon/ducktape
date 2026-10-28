@@ -1,5 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 js_binary(
     name = "generate",
@@ -25,6 +25,12 @@ go_library(
     srcs = [":generate_types"],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/codex/protocol",
     visibility = ["//agentplane/runner:__subpackages__"],
+)
+
+go_test(
+    name = "protocol_test",
+    srcs = ["protocol_test.go"],
+    embed = [":protocol"],
 )
 
 genrule(
