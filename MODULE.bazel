@@ -87,7 +87,7 @@ bazel_dep(name = "rules_conda", version = "0.3.2")
 # upstream issue was found; retire this patch after upstream removes the external
 # `touch` dependency, or after a supported narrow-PATH test proves it unnecessary.
 # The typed-tsconfig patch is an opt-in hook exercised by devinfra/lint/x/typed_eslint;
-# remove it with the spike or replace it when upstream supplies target-local config inputs.
+# remove it with the spike or replace it when upstream supplies target-local parser context.
 single_version_override(
     module_name = "aspect_rules_lint",
     patch_strip = 1,
@@ -734,6 +734,15 @@ bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
 bazel_dep(name = "aspect_rules_esbuild", version = "0.27.0")
 bazel_dep(name = "aspect_rules_js", version = "3.4.1")
 bazel_dep(name = "aspect_rules_ts", version = "3.10.1")
+
+# Generated configs should expose the same JsInfo closure as explicit ts_config targets.
+# Exercised by devinfra/lint/x/typed_eslint; retire when upstream wraps generated configs.
+single_version_override(
+    module_name = "aspect_rules_ts",
+    patch_strip = 1,
+    patches = ["//patches:aspect_rules_ts_generated_tsconfig.patch"],
+)
+
 bazel_dep(name = "rules_nodejs", version = "6.7.5")
 
 # Node.js toolchain
