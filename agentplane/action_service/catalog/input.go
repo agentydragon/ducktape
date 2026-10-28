@@ -7,6 +7,7 @@ import (
 	"reflect"
 
 	"github.com/invopop/jsonschema"
+	// Both schema libraries use the package name jsonschema.
 	validator "github.com/santhosh-tekuri/jsonschema/v6"
 )
 

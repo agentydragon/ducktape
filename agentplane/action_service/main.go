@@ -183,11 +183,11 @@ func sandboxExecutors(ctx context.Context, groups *catalog.Catalog, kube *rest.C
 		if err := inventory.CheckTemplates(ctx); err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}
-		if err := offer(key, group, sandbox.Actions(binding)); err != nil {
-			return nil, err
-		}
 		executor, err := sandbox.NewExecutor(binding, inventory)
 		if err != nil {
+			return nil, err
+		}
+		if err := offer(key, group, executor.Actions()); err != nil {
 			return nil, err
 		}
 		byGroup[key] = executor
@@ -233,12 +233,14 @@ func orchestrationExecutors(
 		if !isOrchestration {
 			continue
 		}
-		if err := offer(key, group, orchestrationv1.Actions()); err != nil {
-			return nil, err
-		}
-		if byGroup[key], err = orchestrationv1.NewExecutor(key, binding, kubeClient, dispatcher, history, directWait); err != nil {
+		executor, err := orchestrationv1.NewExecutor(key, binding, kubeClient, dispatcher, history, directWait)
+		if err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}
+		if err := offer(key, group, executor.Actions()); err != nil {
+			return nil, err
+		}
+		byGroup[key] = executor
 	}
 	return byGroup, nil
 }
