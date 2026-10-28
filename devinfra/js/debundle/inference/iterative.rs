@@ -65,6 +65,12 @@ pub(crate) trait IterativeRules: Sized {
 
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>);
 
+    /// Discover producers for a newly contributed request. Registration is
+    /// idempotent; subsequent changes wake a producer through its normal reads.
+    fn producers_for(&self, _key: &Self::Key, _fact: &Self::Fact) -> Vec<Self::Rule> {
+        Vec::new()
+    }
+
     /// Join a contribution into a fact, returning whether its value changed.
     /// The semantic domain must have finite height and an associative,
     /// commutative, idempotent join. A terminal diagnostic can retain its first
@@ -99,7 +105,15 @@ impl<R: IterativeRules> IterativeInference<R> {
         producers: impl IntoIterator<Item = R::Rule>,
     ) -> IterativeFacts<R::Key, R::Fact> {
         let Self { rules, mut facts } = self;
-        let mut pending: BTreeSet<_> = producers.into_iter().map(|rule| (0usize, rule)).collect();
+        let mut registered: BTreeSet<_> = producers.into_iter().collect();
+        for (key, fact) in &facts {
+            registered.extend(rules.producers_for(key, fact.value()));
+        }
+        let mut pending: BTreeSet<_> = registered
+            .iter()
+            .cloned()
+            .map(|rule| (0usize, rule))
+            .collect();
         let mut scheduled: BTreeMap<_, _> = pending
             .iter()
             .map(|(round, rule)| (rule.clone(), *round))
@@ -119,6 +133,18 @@ impl<R: IterativeRules> IterativeInference<R> {
                 watchers.entry(key).or_default().insert(rule.clone());
             }
             for key in context.changed {
+                let fact = facts.get(&key).expect("changed fact exists");
+                for producer in rules.producers_for(&key, fact.value()) {
+                    if registered.insert(producer.clone()) {
+                        let next_round = if producer > rule {
+                            round
+                        } else {
+                            round.checked_add(1).expect("inference round overflow")
+                        };
+                        scheduled.insert(producer.clone(), next_round);
+                        pending.insert((next_round, producer));
+                    }
+                }
                 let Some(dependents) = watchers.get(&key) else {
                     continue;
                 };
@@ -239,6 +265,66 @@ impl<Key: Ord, Fact> IterativeFacts<Key, Fact> {
 mod tests {
     use super::*;
     use crate::analysis_inputs::ValueInputRef;
+
+    struct RequestedRules;
+
+    impl IterativeRules for RequestedRules {
+        type Key = usize;
+        type Fact = BTreeSet<usize>;
+        type Rule = usize;
+
+        fn producers_for(&self, key: &usize, _: &Self::Fact) -> Vec<usize> {
+            match key {
+                1 => vec![1],
+                3 => vec![2],
+                _ => Vec::new(),
+            }
+        }
+
+        fn evaluate(&self, rule: &usize, context: &mut impl FactContext<usize, Self::Fact>) {
+            match rule {
+                0 => {
+                    context.propose(1, BTreeSet::from([10]));
+                }
+                1 => {
+                    if let Some(values) = context.read(1).cloned() {
+                        context.propose(3, values);
+                    }
+                }
+                2 => {
+                    if let Some(values) = context.read(3).cloned() {
+                        context.propose(5, values);
+                    }
+                }
+                4 => {
+                    context.propose(1, BTreeSet::from([20]));
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        fn merge(_: &usize, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+            let before = current.len();
+            current.extend(contribution);
+            current.len() != before
+        }
+    }
+
+    #[test]
+    fn requested_producers_are_discovered_and_wake_on_later_input_growth() {
+        let facts = IterativeInference::new(RequestedRules).solve([0, 4]);
+        assert_eq!(facts.get(&5).unwrap().value(), &BTreeSet::from([10, 20]));
+        assert!(facts.evaluations() < 10);
+    }
+
+    #[test]
+    fn seeded_requests_discover_producers_without_an_initial_rule_list() {
+        let mut inference = IterativeInference::new(RequestedRules);
+        inference.seed(1, BTreeSet::from([10]));
+        let facts = inference.solve([]);
+        assert_eq!(facts.get(&5).unwrap().value(), &BTreeSet::from([10]));
+        assert_eq!(facts.evaluations(), 2);
+    }
 
     struct Rules;
     impl IterativeRules for Rules {
