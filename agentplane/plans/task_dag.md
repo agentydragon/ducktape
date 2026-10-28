@@ -248,7 +248,7 @@ freshness problem is independent of the broader missed-event recovery decision.
 ```mermaid
 flowchart LR
     GITHUB_MERGEABILITY_FRESHNESS[Ready: obtain fresh results after base-only changes]
-    GITHUB_CI_RECOVERY[In flight: native check-run and commit-status follow-up]
+    GITHUB_CI_RECOVERY[In review: native check-run and commit-status follow-up]
     GITHUB_REVIEW_LIFECYCLE_RECOVERY[In review: review and PR lifecycle recovery]
     GITHUB_NOTIFICATION_RECOVERY[Capstone: eventual current PR state awareness]
     GITHUB_CI_RECOVERY --> GITHUB_NOTIFICATION_RECOVERY
@@ -308,8 +308,8 @@ new scheduler is required.
 
 ### `GITHUB_CI_RECOVERY` — repair current check runs and commit statuses
 
-**Baseline merged: [#12414](https://github.com/agentydragon/ducktape/pull/12414); native-resource follow-up in flight;
-Codex, 2026-10-27 PDT.**
+**Baseline merged: [#12414](https://github.com/agentydragon/ducktape/pull/12414); native-resource follow-up under
+review: [#12459](https://github.com/agentydragon/ducktape/pull/12459); Codex, 2026-10-27 PDT.**
 Reconcile paginated check runs and latest commit-status contexts as separate native records for the
 observed PR head in its authorized repositories. Give each resource independent refresh/error state
 so a failure in one does not block the other and pending mergeability does not accelerate either read.
