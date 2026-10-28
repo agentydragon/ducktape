@@ -103,9 +103,8 @@ order, loads only retained Message JSON that still needs text, and commits batch
 serialized JSON bytes (a single larger valid document is processed alone). It clears stale text for expired rows
 even below `expired_through`, verifies every retained Message JSON/text pair, and records progress in
 `notification_message_text_backfill`; it runs outside service startup and readiness. Do not move Message readers to
-canonical-text storage until this command reports `backfilled` on every database. Keep the dual-write image as the
-rollback version before the later Message text contract; that contract image will retire the backfill command and
-checkpoint.
+canonical-text storage until this command reports `backfilled` on every database. The checkpoint exists only for
+this bounded backfill release and is retired before text-only Message writes begin.
 
 Deploy the canonical Message text reader only after the `backfilled` checkpoint is complete on every database.
 It reconstructs Message JSON from `message_body` and `message_from_session` and refuses retained rows missing text;
@@ -125,6 +124,16 @@ identity contract: it checks that phase and the validated catalog proofs before 
 required and dropping the legacy identity JSON, its JSONB deduplication constraint, and the backfill checkpoint.
 The relational key indexes remain authoritative; retained Message JSON and native GitHub webhook/observation JSON
 remain stored until their respective content phases retire them.
+
+After every Message reader uses canonical text and the backfill reports `backfilled` on every database, deploy
+`00023_message_text_writer_only.sql`. It requires the terminal backfill checkpoint on populated databases and drops
+that table before Message writes stop filling JSON and protobuf; this fences the old backfill command before
+`payload IS NULL` becomes normal. Fresh empty databases need no backfill marker. Message JSON `message.digest`
+comparison bytes remain stable, while new entry content uses only `message_body` and `message_from_session`; the
+private Message protobuf variant is retired. Existing Message JSON and protobuf remain untouched until the separate
+bounded legacy-content cleanup. After every append, replay and expiry writer uses text-only Message storage and old
+writer pods are drained, attest `notification-message-text-only-v1` before the cleanup phase. Keep the migration
+applied and roll back only to a canonical-text reader release.
 
 The rollback floor after `00022` is the relational-identity reader release, which also supports the preceding
 Message text reader and typed-only content writer. Keep the migration applied; older readers need the identity JSON

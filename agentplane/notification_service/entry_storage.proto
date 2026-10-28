@@ -11,8 +11,9 @@ message EntryContent {
   oneof content {
     ActionContent action = 1;
     MergeabilityContent mergeability = 2;
-    MessageContent message = 3;
   }
+  reserved 3;
+  reserved "message";
 }
 
 message ActionContent {
@@ -43,9 +44,4 @@ message GitHubMergeCommitContent {
   string sha = 1;
   string base_sha = 2;
   string head_sha = 3;
-}
-
-message MessageContent {
-  string body = 1;
-  optional string from_session = 2;
 }
