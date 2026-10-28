@@ -5,7 +5,7 @@ use debundle_e2e_support::*;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-const PROVIDER: &str = "import { readLater } from './app.js';\nvar captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { get touched() { globalThis.runtimeSettings.events.push('getter'); return true; } });\nclass Store { entries = new Set(); }\nconst store = new Store();\nclass PlainStore { ready = 0; }\nconst plainStore = new PlainStore();\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
+const PROVIDER: &str = "import { readLater } from './app.js';\nvar captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { get touched() { globalThis.runtimeSettings.events.push('getter'); return true; } });\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
 const OPAQUE: &str = "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { value: 'ready', child: new Map() }; } };\n";
 const PROVIDER_CHUNKS: &[(&str, &str)] = &[("static/peer", PROVIDER)];
 // The raw fixture entry is `static/app.js`; the emitted entry is
@@ -47,7 +47,7 @@ fn captured_input(source: &str) -> ValueInputContract {
 }
 
 fn fixture_opts(inputs: Vec<ValueInputContract>) -> FixtureOpts<'static> {
-    let source = "import './opaque.js';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconst localMap = new Map();\nconst copied = [...[1, 2]];\nconsole.log(queue.size, queue.label(), localMap.size, copied.length, globalThis.runtimeSettings.events.join(','));\nexport { queue, Later };\n";
+    let source = "import './opaque.js';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nclass Store { entries = new Set(); }\nconst store = new Store();\nclass PlainStore { ready = 0; }\nconst plainStore = new PlainStore();\nconst localMap = new Map();\nconst copied = [...[1, 2]];\nconsole.log(queue.size, queue.label(), localMap.size, copied.length, globalThis.runtimeSettings.events.join(','));\nexport { queue, Later };\n";
     let opts = FixtureOpts::new(
         source,
         vec![
