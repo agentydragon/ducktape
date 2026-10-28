@@ -9,13 +9,19 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/entrystoragepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
 
 func TestEventIdentityProviderProofIsValidatedOfflineAndConstrainsNewWrites(t *testing.T) {
-	f := newIsolatedFixture(t, defaultQuotas())
+	db, ctx := newStorageIntegrationDatabase(t)
+	resetNotificationSchema(t, db)
+	if err := migrations.UpTo(ctx, db, 15); err != nil {
+		t.Fatalf("build schema through event identity proof migration 00015: %v", err)
+	}
+	f := fixtureForDatabase(t, db, defaultQuotas())
 	subscription := f.subscribe(t, body("event-identity-proof"))
 	event := ActionsEvent{RequestID: uuid.New(), Sequence: 1}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
