@@ -441,3 +441,31 @@ fn describe_reports_a_discharged_receiver_with_constructor_provenance_and_limits
             .is_none_or(Vec::is_empty)
     );
 }
+
+#[test]
+fn untracked_identity_paths_keep_prototype_absence_conservative() {
+    for capability in [
+        "host(({}).__proto__);",
+        "host(() => ({}).__proto__);",
+        "host({ get value() { return ({}).__proto__; } });",
+        "host({ get value() { return Object.prototype; } });",
+        "const { __proto__: prototype } = {}; host(prototype);",
+        "host(() => () => Object.prototype);",
+    ] {
+        let source = format!(
+            "function expose() {{ {capability} }}\nclass Box {{ constructor(config) {{ this.value = config.value; }} }}\nconst result = new Box({{value: 3}});"
+        );
+        let fixture = GraphFixture::new(&source, &[]);
+        let report = fixture.json(&["describe", "result", "--all"]);
+        assert!(
+            report["native_prototype_mutations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|mutation| mutation["kind"] == "escape"
+                    && mutation["statement_ordinal"] == 0
+                    && mutation["properties"].is_null()),
+            "{capability}: {report}"
+        );
+    }
+}

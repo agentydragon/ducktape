@@ -15,6 +15,10 @@ fn descriptor_method(property: &str) -> bool {
     )
 }
 
+fn identity_property(property: &str) -> bool {
+    matches!(property, "__proto__" | "constructor" | "prototype")
+}
+
 fn contained_roots(
     value: &ValueExpr,
     aliases: &BTreeMap<Id, IntrinsicRoots>,
@@ -66,7 +70,12 @@ fn contained_roots(
                 }
             }
         }
-        ValueExpr::Member(base, ..) => roots.extend(contained_roots(base, aliases, index)),
+        ValueExpr::Member(base, property, _) => {
+            roots.extend(contained_roots(base, aliases, index));
+            if property.as_deref().is_some_and(identity_property) {
+                roots.insert(IntrinsicRoot::Object);
+            }
+        }
         ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
             roots.extend(contained_roots(callee, aliases, index));
             for argument in args {
@@ -194,6 +203,21 @@ impl ExecutionIndex {
         // an imported helper, or a legacy accessor method. Such paths are not
         // closed by the older native-family mutation census.
         for call in &self.prototype_calls {
+            // Prototype/constructor paths on otherwise untracked receivers
+            // can recover a native without naming a builtin. Retain the read
+            // even inside a deferred closure or an unindexed accessor body.
+            if let ValueExpr::Member(base, Some(property), _) = &call.callee
+                && identity_property(property)
+                && intrinsic_roots(base, aliases, &self.global_object_names).is_empty()
+            {
+                mutations.push(mutation(
+                    call.owner,
+                    call.span,
+                    NativePrototypeMutationKind::Escape,
+                    None,
+                ));
+                continue;
+            }
             let member = match &call.callee {
                 ValueExpr::Member(_, property, _) => Some(property),
                 _ => None,
