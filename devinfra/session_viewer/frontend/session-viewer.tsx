@@ -22,6 +22,23 @@ import type { EventRecord, Harness, Machine, SessionSummary, SessionVersion } fr
 
 const SESSION_PAGE_SIZE = 50;
 
+function parentLinkLabel(kind: string | null): string | null {
+  switch (kind) {
+    case null:
+      return null;
+    case "claude_path_inferred":
+      return "Parent inferred from Claude subagent path";
+    case "codex_parent_thread_id":
+      return "Parent linked from Codex parent_thread_id";
+    case "codex_parent_thread_id_unresolved":
+      return "Codex parent_thread_id is unresolved";
+    case "codex_parent_thread_id_ambiguous":
+      return "Codex parent_thread_id is ambiguous";
+    default:
+      return `Parent link source: ${kind.replaceAll("_", " ")}`;
+  }
+}
+
 export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): JSX.Element {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [selectedMachineId, setSelectedMachineId] = useState("");
@@ -499,28 +516,40 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                   )}
                 </Box>
               </Group>
-              {(selectedSession.parent_session_id !== null || childSessions.length > 0 || loadingRelatedSessions) && (
+              {(selectedSession.parent_session_id !== null ||
+                selectedSession.parent_link_kind !== null ||
+                childSessions.length > 0 ||
+                loadingRelatedSessions) && (
                 <Paper withBorder radius="sm" p="xs" aria-label="Related sessions">
                   <Stack gap="xs">
                     <Text size="sm" fw={600}>
                       Related sessions
                     </Text>
-                    {selectedSession.parent_session_id !== null && (
+                    {(selectedSession.parent_session_id !== null || selectedSession.parent_link_kind !== null) && (
                       <Group gap="xs" wrap="wrap">
                         <Text size="xs" c="dimmed">
                           Parent
                         </Text>
-                        {parentSession !== null ? (
+                        {selectedSession.parent_session_id !== null && parentSession !== null ? (
                           <Button variant="subtle" size="xs" onClick={() => void navigateToSession(parentSession.id)}>
                             {parentSession.title || "Untitled parent session"}
                           </Button>
-                        ) : (
+                        ) : selectedSession.parent_session_id !== null ? (
                           <Loader size="xs" aria-label="Loading parent session" />
+                        ) : (
+                          <Text size="xs" c="dimmed">
+                            Parent session could not be resolved to a captured session.
+                          </Text>
                         )}
-                        {selectedSession.parent_link_kind === "claude_path_inferred" && (
+                        {parentLinkLabel(selectedSession.parent_link_kind) !== null && (
                           <Badge color="orange" variant="light">
-                            Parent inferred from Claude subagent path
+                            {parentLinkLabel(selectedSession.parent_link_kind)}
                           </Badge>
+                        )}
+                        {typeof selectedSession.parent_native_session_id === "string" && (
+                          <Text size="xs" c="dimmed">
+                            Native parent ID: {selectedSession.parent_native_session_id}
+                          </Text>
                         )}
                         {parentSession?.identity_inferred && (
                           <Text size="xs" c="orange">
@@ -539,9 +568,9 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                             <Button variant="subtle" size="xs" onClick={() => void navigateToSession(child.id)}>
                               {child.title || "Untitled child session"}
                             </Button>
-                            {child.parent_link_kind === "claude_path_inferred" && (
+                            {parentLinkLabel(child.parent_link_kind) !== null && (
                               <Badge color="orange" variant="light">
-                                Path-inferred link
+                                {parentLinkLabel(child.parent_link_kind)}
                               </Badge>
                             )}
                             <Text size="xs" c="dimmed">

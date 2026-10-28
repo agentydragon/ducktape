@@ -106,7 +106,7 @@ it("shows inferred subagent links and navigates to a placeholder parent", async 
     await flush();
   });
   expect(view.textContent).toContain("This path-derived placeholder has no captured transcript yet.");
-  expect(view.textContent).toContain("Path-inferred link");
+  expect(view.textContent).toContain("Parent inferred from Claude subagent path");
   expect(view.textContent).toContain("Inspect a local transcript");
 
   await act(async () => {
@@ -114,6 +114,82 @@ it("shows inferred subagent links and navigates to a placeholder parent", async 
     await flush();
   });
   expect(view.textContent).toContain("Review this local conversation.");
+});
+
+it("shows unresolved native parent metadata without inventing a session link", async () => {
+  const unresolvedSession: SessionSummary = {
+    id: "codex-child-unresolved",
+    machine_id: "thinkpad",
+    harness: "codex",
+    title: "Inspect native child transcript",
+    cwd: null,
+    started_at: null,
+    last_activity_at: null,
+    latest_version_id: null,
+    version_count: 0,
+    parent_session_id: null,
+    parent_link_kind: "codex_parent_thread_id_unresolved",
+    parent_native_session_id: "thread-parent-123",
+    identity_inferred: false,
+  };
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    listSessions(query) {
+      if (query.parentSessionId !== undefined) return Promise.resolve({ data: [], next_cursor: null });
+      return Promise.resolve({ data: [unresolvedSession], next_cursor: null });
+    },
+  };
+  const view = await renderViewer(api);
+
+  expect(view.textContent).toContain("Codex parent_thread_id is unresolved");
+  expect(view.textContent).toContain("Native parent ID: thread-parent-123");
+  expect(view.textContent).toContain("Parent session could not be resolved to a captured session.");
+});
+
+it("labels a resolved Codex parent_thread_id link and navigates to the captured parent", async () => {
+  const parent: SessionSummary = {
+    id: "codex-parent-session",
+    machine_id: "thinkpad",
+    harness: "codex",
+    title: "Captured Codex parent",
+    cwd: null,
+    started_at: null,
+    last_activity_at: null,
+    latest_version_id: null,
+    version_count: 0,
+    parent_session_id: null,
+    parent_link_kind: null,
+    parent_native_session_id: null,
+    identity_inferred: false,
+  };
+  const child: SessionSummary = {
+    ...parent,
+    id: "codex-child-session",
+    title: "Captured Codex child",
+    parent_session_id: parent.id,
+    parent_link_kind: "codex_parent_thread_id",
+    parent_native_session_id: "thread-parent-123",
+  };
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    listSessions(query) {
+      return Promise.resolve({ data: query.parentSessionId === undefined ? [child] : [], next_cursor: null });
+    },
+    getSession(sessionId) {
+      if (sessionId === parent.id) return Promise.resolve(parent);
+      throw new Error(`Unknown fixture session ${sessionId}`);
+    },
+  };
+  const view = await renderViewer(api);
+
+  expect(view.textContent).toContain("Parent linked from Codex parent_thread_id");
+  expect(view.textContent).toContain("Native parent ID: thread-parent-123");
+  await act(async () => {
+    findButton(view, "Captured Codex parent").click();
+    await flush();
+  });
+  expect(view.textContent).toContain("Captured Codex parent");
+  expect(view.querySelector('[aria-label="Related sessions"]')).toBeNull();
 });
 
 it("does not append an event page after switching sessions", async () => {
@@ -195,6 +271,7 @@ it("does not append a session page after changing the harness filter", async () 
         version_count: 0,
         parent_session_id: null,
         parent_link_kind: null,
+        parent_native_session_id: null,
         identity_inferred: false,
       },
     ],

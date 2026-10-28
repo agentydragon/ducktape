@@ -17,6 +17,7 @@ export type SessionSummary = {
   version_count: number;
   parent_session_id: string | null;
   parent_link_kind: string | null;
+  parent_native_session_id: string | null;
   identity_inferred: boolean;
 };
 

@@ -19,6 +19,7 @@ const sessions: SessionSummary[] = [
     version_count: 2,
     parent_session_id: null,
     parent_link_kind: null,
+    parent_native_session_id: null,
     identity_inferred: false,
   },
   {
@@ -33,6 +34,7 @@ const sessions: SessionSummary[] = [
     version_count: 1,
     parent_session_id: "inferred-claude-parent",
     parent_link_kind: "claude_path_inferred",
+    parent_native_session_id: null,
     identity_inferred: false,
   },
   {
@@ -47,6 +49,7 @@ const sessions: SessionSummary[] = [
     version_count: 0,
     parent_session_id: null,
     parent_link_kind: null,
+    parent_native_session_id: null,
     identity_inferred: true,
   },
 ];
