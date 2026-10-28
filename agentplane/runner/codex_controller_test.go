@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os/exec"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -127,6 +128,9 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 func TestCodexFailedStopBlocksRunnerFencing(t *testing.T) {
 	r := newCodexOnlyRunner(t)
 	entered, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	releaseStop := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseStop)
 	stopFailure := errors.New("fake Codex process would not stop")
 	r.codex.mu.Lock()
 	r.codex.current = &codexProcess{
@@ -161,8 +165,8 @@ func TestCodexFailedStopBlocksRunnerFencing(t *testing.T) {
 	default:
 	}
 
-	close(release)
-	if err := waitClose(t, closed); !errors.Is(err, stopFailure) && !strings.Contains(err.Error(), stopFailure.Error()) {
+	releaseStop()
+	if err := waitClose(t, closed); err == nil || !errors.Is(err, stopFailure) && !strings.Contains(err.Error(), stopFailure.Error()) {
 		t.Fatalf("Runner Close = %v, want Codex stop failure", err)
 	}
 	failed := waitCodex(t, r, func(current codexRuntimeSpec) bool {
@@ -303,15 +307,7 @@ func waitCodexDemand(t *testing.T, r *Runner, want uint64) uint64 {
 
 func setCodexRuntime(t *testing.T, r *Runner, current codexRuntimeSpec) {
 	t.Helper()
-	old, err := r.lifecycle.state.Get(r.ctx, resource.NewMetadata(lifecycleNamespace, codexRuntimeType, "codex", resource.VersionUndefined))
-	if err != nil {
-		t.Fatal(err)
-	}
-	value := lifecycleResourceFor(codexRuntimeType, "codex", current)
-	value.metadata = old.Metadata().Copy()
-	if err := r.lifecycle.state.Update(r.ctx, value, state.WithUpdateOwner(codexControllerName)); err != nil {
-		t.Fatal(err)
-	}
+	updateLifecycleValueForTest(t, r, codexRuntimeType, "codex", codexControllerName, current)
 }
 
 func delayExecutorRetry(t *testing.T, r *Runner) {
@@ -321,21 +317,41 @@ func delayExecutorRetry(t *testing.T, r *Runner) {
 		t.Fatalf("delay executor retry while phase=%d", current.Phase)
 	}
 	current.RetryAt = time.Now().Add(time.Minute)
-	old, err := r.lifecycle.state.Get(r.ctx, resource.NewMetadata(lifecycleNamespace, executorRuntimeType, "executor", resource.VersionUndefined))
-	if err != nil {
-		t.Fatal(err)
-	}
-	value := lifecycleResourceFor(executorRuntimeType, "executor", current)
-	value.metadata = old.Metadata().Copy()
-	if err := r.lifecycle.state.Update(r.ctx, value, state.WithUpdateOwner(executorControllerName)); err != nil {
-		t.Fatal(err)
-	}
+	updateLifecycleValueForTest(t, r, executorRuntimeType, "executor", executorControllerName, current)
 	if err := r.executor.request(); err != nil {
 		t.Fatal(err)
 	}
 	waitExecutor(t, r, func(latest executorRuntimeSpec) bool {
 		return latest.Phase == executorRetrying && latest.RetryAt == current.RetryAt
 	}, "delayed executor retry")
+}
+
+func updateLifecycleValueForTest[T comparable](t *testing.T, r *Runner, kind, id, owner string, spec T) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(r.ctx, lifecycleTestTimeout)
+	defer cancel()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	var lastErr error
+	for {
+		old, err := r.lifecycle.state.Get(ctx, resource.NewMetadata(lifecycleNamespace, kind, id, resource.VersionUndefined))
+		if err == nil {
+			value := lifecycleResourceFor(kind, id, spec)
+			value.metadata = old.Metadata().Copy()
+			if updateErr := r.lifecycle.state.Update(ctx, value, state.WithUpdateOwner(owner)); updateErr == nil {
+				return
+			} else {
+				lastErr = updateErr
+			}
+		} else {
+			lastErr = err
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			t.Fatalf("update lifecycle test value %s/%s: %v (last update error: %v)", kind, id, ctx.Err(), lastErr)
+		}
+	}
 }
 
 func containsSession(sessions []*Session, target *Session) bool {

@@ -701,9 +701,15 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	s.mu.Lock()
 	processLive := s.process != nil && s.process.Running()
 	processID := s.processID
+	pending := len(s.pending)
 	s.mu.Unlock()
 	if current.Phase == executionReady && (!processLive || processID != current.ProcessID) {
 		current.Phase = executionDormant
+		if pending == 0 {
+			// Demand from commands completed by this process is already satisfied.
+			// Its exit must not turn an idle Session into a fresh startup request.
+			current.Attempt = input.Demand
+		}
 	}
 	s.mu.Lock()
 	inspecting := s.inspection != nil || len(s.reconciliations) > 0

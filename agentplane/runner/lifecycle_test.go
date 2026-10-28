@@ -380,3 +380,34 @@ func TestNewIncarnationWaitsForTeardownBeforeResettingDemand(t *testing.T) {
 		}
 	}
 }
+
+func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
+	s, p := frameTestSession(t, []string{"/bin/sh", "-c", "cat >/dev/null"})
+	s.mu.Lock()
+	s.processID = "completed-command-process"
+	s.mu.Unlock()
+	registerTestSession(t, s)
+	waitLifecycle(t, s.runner, func() bool {
+		_, found, _ := lifecycleRead[sessionRuntimeSpec](s.runner.ctx, s.runner.lifecycle.state, sessionRuntimeType, s.id)
+		return found
+	}, "initial Session runtime")
+	setRuntimeReady(t, s)
+	// Ordinary commands submitted to an already-ready process increment Demand
+	// without another preparation attempt. Both have completed before this exit.
+	s.requestExecution()
+	s.requestExecution()
+	if err := p.Stop(context.Background(), time.Second); err != nil {
+		t.Fatal(err)
+	}
+	s.wake()
+	waitLifecycle(t, s.runner, func() bool {
+		current := s.runtimeState()
+		return current.Phase == executionDormant && current.Attempt == 2
+	}, "idle process exit to consume completed demand")
+	s.mu.Lock()
+	preparation := s.preparation
+	s.mu.Unlock()
+	if preparation != nil {
+		t.Fatal("idle process exit started a successor without new work")
+	}
+}
