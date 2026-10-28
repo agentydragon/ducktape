@@ -71,26 +71,16 @@ genrule(
 )
 
 openapi_typescript(
-    name = "openapi_types_codegen",
+    name = "openapi_types",
     out = "openapi_types.d.ts",
     schema = ":openapi.json",
 )
 
-js_library(
-    name = "openapi_types",
-    srcs = [":openapi_types_codegen"],
-)
-
 openapi_typescript(
-    name = "external_openapi_types_codegen",
+    name = "external_openapi_types",
     out = "external_openapi_types.d.ts",
     schema = "//devinfra/x/schema_codegen/typescript/fixtures:openapi_artifact",
     schema_files = ["//devinfra/x/schema_codegen/typescript/fixtures:external_model_artifact"],
-)
-
-js_library(
-    name = "external_openapi_types",
-    srcs = [":external_openapi_types_codegen"],
 )
 
 openapi_zod(
@@ -110,26 +100,16 @@ ts_library(
 )
 
 json_schema_typescript(
-    name = "external_json_schema_types_codegen",
+    name = "external_json_schema_types",
     out = "external_json_schema_types.d.ts",
     schema = "//devinfra/x/schema_codegen/typescript/fixtures:standalone_artifact",
     schema_files = ["//devinfra/x/schema_codegen/typescript/fixtures:external_model_artifact"],
 )
 
-js_library(
-    name = "external_json_schema_types",
-    srcs = [":external_json_schema_types_codegen"],
-)
-
 openapi_typescript(
-    name = "openapi_types_naming_default_codegen",
+    name = "openapi_types_naming_default",
     out = "openapi_types_naming_default.d.ts",
     schema = ":openapi_types_naming.schema.json",
-)
-
-js_library(
-    name = "openapi_types_naming_default",
-    srcs = [":openapi_types_naming_default_codegen"],
 )
 
 openapi_types_from_file(
@@ -282,10 +262,8 @@ json_schema_typescript(
 
 js_library(
     name = "standalone_types",
-    srcs = [
-        ":standalone_schema_json",
-        ":standalone_types_codegen",
-    ],
+    srcs = [":standalone_schema_json"],
+    deps = [":standalone_types_codegen"],
 )
 
 ts_library(
