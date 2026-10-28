@@ -157,28 +157,18 @@ async def _serve_tana_proxy(
         assert request.url.host == "tana.invalid", f"unexpected external request: {request.url}"
         return handle_tana_request(request)
 
-    old_map = list(litellm.custom_provider_map)
-    old_providers = list(litellm.provider_list)
-    old_custom = list(litellm._custom_providers)
-    old_models = set(litellm.model_list_set)
-    try:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as tana_http:
-            monkeypatch.setattr(custom_handler, "tana_handler", TanaLiteLLM())
-            monkeypatch.setattr(
-                TanaLiteLLM,
-                "_make_client",
-                lambda _self, _config: TanaProxyClient(
-                    TanaProxyConfig(firebase_api_key="test-key", functions_base_url="https://tana.invalid/functions"),
-                    http_client=tana_http,
-                ),
-            )
-            async with serve_app_in_loop(proxy_server.app) as origin:
-                yield origin
-    finally:
-        litellm.custom_provider_map = old_map
-        litellm.provider_list = old_providers
-        litellm._custom_providers = old_custom
-        litellm.model_list_set = old_models
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as tana_http:
+        monkeypatch.setattr(custom_handler, "tana_handler", TanaLiteLLM())
+        monkeypatch.setattr(
+            TanaLiteLLM,
+            "_make_client",
+            lambda _self, _config: TanaProxyClient(
+                TanaProxyConfig(firebase_api_key="test-key", functions_base_url="https://tana.invalid/functions"),
+                http_client=tana_http,
+            ),
+        )
+        async with serve_app_in_loop(proxy_server.app) as origin:
+            yield origin
 
 
 class _KnownLiteLLMContractGapError(RuntimeError):
@@ -212,7 +202,11 @@ class _KnownLiteLLMContractGapError(RuntimeError):
     ],
 )
 async def test_anthropic_http_stream_tool_result_continuation_uses_tana_provider(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, include_usage: bool, require_cache_control: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_litellm_provider: None,
+    include_usage: bool,
+    require_cache_control: bool,
 ) -> None:
     requests: list[tuple[str, dict[str, Any]]] = []
 
@@ -340,7 +334,11 @@ def _chat_messages() -> list[ChatCompletionMessageParam]:
 @pytest.mark.parametrize("streaming", [False, True])
 @pytest.mark.parametrize("include_usage", [False, True])
 async def test_chat_completions_preserves_cache_and_optional_usage(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, streaming: bool, include_usage: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_litellm_provider: None,
+    streaming: bool,
+    include_usage: bool,
 ) -> None:
     requests: list[dict[str, Any]] = []
 
@@ -394,7 +392,7 @@ async def test_chat_completions_preserves_cache_and_optional_usage(
 
 
 async def test_chat_completions_stream_tool_roundtrip_without_usage(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_litellm_provider
 ) -> None:
     requests: list[dict[str, Any]] = []
 

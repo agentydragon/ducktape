@@ -27,3 +27,20 @@ counts (15 prompt, 1 completion tokens for this fixture) despite Tana reporting
 none. Those are locally generated counts, not upstream-reported measurements.
 When Tana supplies 7 input and 6 output tokens, both modes preserve those totals.
 These probes do not establish live Tana behavior.
+
+## Runtime target budget
+
+The expanded runtime suite sometimes exceeded the small target's 60 seconds after
+reporting 9 passed and 2 expected failures. Instrumented RBE runs measured
+14.6–23.0 seconds before pytest, plus 19.7–30.5 seconds of reported test work.
+Thread dumps showed normal pytest capture cleanup and `gc_collect_harder`, with
+only the main thread and the diagnostic daemon remaining; no executor or ASGI
+shutdown waiter was observed. Three instrumented small runs passed in 46.1–52.9
+seconds ([RBE](https://app.buildbuddy.io/invocation/e82ffdc9-7422-437a-a875-eb1a3e0e158c));
+a medium probe exited naturally ([RBE](https://app.buildbuddy.io/invocation/d9fe630d-64cc-4359-9300-725bcce5f092)).
+Target history also contained passing durations around 36 and 44 seconds.
+
+The target is now medium to accommodate the measured import, integration, and GC
+work. The exact original timeout stack was not captured, so these observations
+support a budget change rather than establish a repaired shutdown leak. Temporary
+watchdog instrumentation is not part of the test suite.

@@ -153,6 +153,8 @@ py_test(
 
 py_test(
     name = "test_proxy_runtime",
+    # Full LiteLLM/SDK imports, both HTTP protocols, and pytest GC approach the small budget.
+    size = "medium",
     srcs = ["test_proxy_runtime.py"],
     data = [
         "testdata/custom_provider.yaml",
