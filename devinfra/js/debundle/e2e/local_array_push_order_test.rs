@@ -416,3 +416,107 @@ fn fresh_allocation_still_preserves_an_earlier_binding_tdz_observation() {
     let fixture = run_fixture(FixtureOpts::new(source, vec![]));
     assert_preserved_entry_output(&fixture, "ReferenceError 42\n");
 }
+
+#[test]
+fn dense_array_primitive_push_does_not_invoke_published_callbacks() {
+    let source = "globalThis.observe = () => Later;\nconst values = [];\nvalues.push(1, 2);\nclass Later {}\nconsole.log(values.join(','));\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "values",
+                &[Member::new("values")],
+                &["globalThis.observe = () => Later;", "values.push(1, 2);"],
+            ),
+            logical_module("later", &[Member::new("Later")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "1,2\n");
+    let graph = fixture.dependency_graph();
+    let push = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == 2)
+        .expect("push unit");
+    assert!(
+        push.synchronous_execution
+            .as_ref()
+            .expect("execution report")
+            .complete
+    );
+    assert!(!push.purity.is_pure());
+}
+
+#[test]
+fn dense_array_push_retains_mutation_argument_and_escape_guards() {
+    for operation in [
+        "Array.prototype.push = function () { return Later; };\nvalues.push(1);",
+        "const alias = values;\nalias.push = () => Later;\nvalues.push(1);",
+        "Object.defineProperty(values, 'push', { get() { return () => Later; } });\nvalues.push(1);",
+        "Object.defineProperty(Array.prototype, '0', { set(value) { globalThis.observe(); }, configurable: true });\nvalues.push(1);",
+        "Object.defineProperty(Object.prototype, '0', { set(value) { globalThis.observe(); }, configurable: true });\nvalues.push(1);",
+        "consume(values);\nvalues.push(1);",
+        "values.push(() => Later);",
+        "const argument = { get value() { return Later; } };\nvalues.push(argument.value);",
+    ] {
+        let source = format!(
+            "globalThis.observe = () => Later;\nconst values = [];\n{operation}\nclass Later {{}}\n"
+        );
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module_with_anon(
+                        "values",
+                        &[Member::new("values")],
+                        &[operation.lines().last().expect("push statement")],
+                    ),
+                    logical_module("later", &[Member::new("Later")]),
+                ],
+            ),
+            &[],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn dense_array_push_invalidates_cached_iteration_without_losing_callbacks() {
+    let source = "const values = [];\nfunction read() { return values.map(() => Later); }\nconst before = read();\nvalues.push(1);\nconst after = read();\nclass Later {}\n";
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "values",
+                    &[
+                        Member::new("values"),
+                        Member::new("read"),
+                        Member::new("before"),
+                        Member::new("after"),
+                    ],
+                    &["values.push(1);"],
+                ),
+                logical_module("later", &[Member::new("Later")]),
+            ],
+        ),
+        &["values", "later"],
+        &["eager_use"],
+    );
+
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            "const values = [() => Later];\nvalues.push(1);\nconsume(values);\nclass Later {}\n",
+            vec![
+                logical_module_with_anon(
+                    "values",
+                    &[Member::new("values")],
+                    &["values.push(1);", "consume(values);"],
+                ),
+                logical_module("later", &[Member::new("Later")]),
+            ],
+        ),
+        &["values", "later"],
+        &["eager_use"],
+    );
+}

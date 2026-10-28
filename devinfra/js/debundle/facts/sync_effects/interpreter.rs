@@ -583,6 +583,41 @@ impl Executor<'_> {
         Some((*object, self.dense_arrays.get(object)?.clone()))
     }
 
+    fn execute_dense_array_push(
+        &mut self,
+        callee: &ValueExpr,
+        args: &[Values],
+        env: &Context,
+        captures: &Context,
+    ) -> bool {
+        let ValueExpr::Member(receiver, Some(method), true) = callee else {
+            return false;
+        };
+        if method != "push"
+            || !matches!(receiver.as_ref(), ValueExpr::Binding(_))
+            || args.iter().any(|values| {
+                values.is_empty()
+                    || values.iter().any(|value| {
+                        !matches!(value, AbstractValue::NonCallable | AbstractValue::Undefined)
+                    })
+            })
+        {
+            return false;
+        }
+        let receiver = self.evaluate(receiver, env, captures);
+        let Some((object, _)) = self.dense_source(&receiver) else {
+            return false;
+        };
+        // An intact ordinary array has its own writable length, and the
+        // guarded prototypes cannot intercept the appended primitive slots.
+        // Preserve its contained callbacks, but invalidate the precise array
+        // surface after this real mutation. Subsequent reads/calls therefore
+        // use the conservative path; this is only a call-timing proof.
+        self.tainted_objects.insert(object);
+        self.prefix_revision = self.prefix_revision.wrapping_add(1);
+        true
+    }
+
     fn retain_dense_array(&mut self, object: u32, slots: Vec<Values>) {
         let before = self.prefix_object_properties.get(&object).cloned();
         let dense = self
@@ -4502,6 +4537,12 @@ impl Executor<'_> {
         }
         if call.kind == CallKind::Call
             && self.execute_array_iteration(call.span.into(), env, captures, outcome)
+        {
+            return;
+        }
+        if call.kind == CallKind::Call
+            && !call.has_spread
+            && self.execute_dense_array_push(&call.callee, &args, env, captures)
         {
             return;
         }

@@ -1528,3 +1528,17 @@ reads, writes, coercions, and publication. Fresh results retain element aliases;
 iteration and spread do not invoke stored functions. Unsupported sources,
 mutation, intrinsic changes, and invocation limits retain conservative effects.
 See [the proof and fallback conditions](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/purity_soundness.md#retained-dense-array-iteration-effects).
+
+A direct static `binding.push(...)` with non-spread primitive arguments may
+also use a call-timing no-reentry proof when the binding resolves at
+the current prefix to one untainted dense ordinary array. The existing Array,
+Object and global native-integrity guards must hold. Callee/argument effects,
+throws and heap ordering remain represented; the call remains impure and its
+result remains unknown. This is not an array-like-object or general method
+model. Own-method changes, prototype changes, unknown publication/escape,
+spreads and uncertain arguments retain conservative callback effects.
+
+After a proved push, the array's precise surface is invalidated and cached
+invocations observe a new prefix revision. Its existing contained callbacks
+remain reachable by later reads or opaque consumers. Subsequent array
+operations use the conservative path rather than stale pre-push slots.

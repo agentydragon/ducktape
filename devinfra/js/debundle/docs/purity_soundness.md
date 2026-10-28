@@ -440,6 +440,23 @@ mutated or escaped tables remain conservative.
 
 ## Retained dense-array iteration effects
 
+Direct `binding.push(...)` can suppress synchronous callback promotion when
+the current binding is one untainted dense ordinary array and every non-spread
+argument is a retained primitive. It reuses the same Array/Object/global
+native-integrity guard as iteration. Under that guard, the
+[push algorithm](https://tc39.es/ecma262/2025/multipage/indexed-collections.html#sec-array.prototype.push)
+reads the array's own length and appends through ordinary data writes without
+intercepting accessors or calling stored functions. A11 still applies to hidden
+native-alias paths. This supplies no purity, throw-freedom or return-value
+claim. The existing heap-ordering analysis remains in force.
+
+The push invalidates precise array state and advances the invocation-cache
+revision while preserving the existing containment graph. Later operations
+must take conservative effects, including promoting retained callbacks through
+opaque consumers; they cannot reuse a pre-push iteration result. Tests cover
+visible intrinsic changes, own-method mutation, argument getters, escapes,
+retained callbacks and reads after mutation.
+
 The synchronous-effects executor models direct static `forEach`, `filter`, and
 `map` calls with one callback and no spread or `thisArg`. This is an effect
 model, not a purity admission: each known synchronous callback executes in the
