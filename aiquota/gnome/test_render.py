@@ -160,7 +160,8 @@ def test_render(render_session: tuple[GnomeSession, Path], undeclared_dir: Path,
             rows = json.loads(_string_reply(session.call("GetWindowRows", "codex")))
             assert len(rows) == 1
             assert rows[0].startswith("visible (5h):")
-            assert "↻45m" in rows[0]
+            assert "45m" in rows[0]
+            assert "-55%" in rows[0]
             assert "internal-only" not in "\n".join(rows)
         geometry = session.open_menu()
         try:
