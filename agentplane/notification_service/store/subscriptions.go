@@ -271,7 +271,7 @@ func (s *Store) Subscribe(ctx context.Context, owner model.ServiceAccount, body 
 				version, actions_after_sequence,
 				github_start_position, github_app_id, github_installation_id, github_repository_id, github_subject_kind,
 				github_subject_key, github_commit_after_sequence, github_pr_state_after_sequence, generation, cancelled, expires_at, next_attempt)
-			VALUES ($1, $2, $3, $4, $5, 1, $6, $7, $8, $9, $10, $11, $12, $13, $14, 0, false, $15, $16)`,
+			VALUES ($1, $2, $3, $4, $5, 1, $6, $7, $8, $9, $10, $11, $12, coalesce($13, 0), coalesce($14, 0), 0, false, $15, $16)`,
 			id, inbox.ID, body.IdempotencyKey, creationProto, sourceProvider, binding.actionsAfterSequence,
 			binding.githubStartPosition, binding.githubApp, binding.githubInstallation, binding.githubRepository,
 			binding.githubSubjectKind, binding.githubSubjectKey, binding.githubCommitAfterSequence,
