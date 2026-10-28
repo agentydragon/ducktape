@@ -13,10 +13,7 @@ a 474-rollout simulation. Hence `manual` — see the package README.
 from __future__ import annotations
 
 import asyncio
-import tempfile
-from collections.abc import Iterator
 from datetime import date
-from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -50,13 +47,12 @@ EQUITY_LED_4_PERCENT_TOLERANCE_POINTS = 5
 
 
 @pytest.fixture(scope="module")
-def replay() -> Iterator[Replay]:
+def replay(tmp_path_factory: pytest.TempPathFactory) -> Replay:
     """One sample for the whole module: every test below differs only in the portfolio."""
 
-    with tempfile.TemporaryDirectory() as raw:
-        directory = Path(raw)
-        asyncio.run(snapshot_evidence(directory, EVIDENCE))
-        yield sample_replay(directory)
+    directory = tmp_path_factory.mktemp("trinity_evidence")
+    asyncio.run(snapshot_evidence(directory, EVIDENCE))
+    return sample_replay(directory)
 
 
 def test_the_replayed_record_is_the_studys_own_period(replay: Replay) -> None:
