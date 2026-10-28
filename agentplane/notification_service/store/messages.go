@@ -146,10 +146,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 			return &QuotaError{Quota: UnacknowledgedMessagesPerSender, Limit: s.quotas.UnacknowledgedMessagesPerSender}
 		}
 		id = uuid.New()
-		identity, err := json.Marshal(model.MessageEvent{MessageID: id, Sender: message.Sender})
-		if err != nil {
-			return err
-		}
+		event := model.MessageEvent{MessageID: id, Sender: message.Sender}
 		accepted, cursor := now(), inbox.LastCursor+1
 		// A worker's release works out when the notice is due, so the inbox is only made due now.
 		if _, err := tx.ExecContext(ctx,
@@ -157,9 +154,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 			inbox.ID, cursor, accepted); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO entry (inbox_id, cursor, event, payload, created_at) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5)`,
-			inbox.ID, cursor, string(identity), string(payload), accepted); err != nil {
+		if err := insertEntry(ctx, tx, inbox.ID, cursor, event, json.RawMessage(payload), accepted); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -190,13 +185,18 @@ func (s *Store) SentMessage(ctx context.Context, sender model.ServiceAccount, id
 
 func sentMessage(ctx context.Context, tx *sql.Tx, sender model.ServiceAccount, id uuid.UUID) (SentMessage, error) {
 	sent := SentMessage{ID: id}
+	var inboxID uuid.UUID
 	var destination []byte
+	var namespace, name, uid sql.NullString
 	err := tx.QueryRowContext(ctx, `
-		SELECT i.destination_ref, i.session_id, m.idempotency_key, e.created_at,
+		SELECT i.id, CASE WHEN i.destination_namespace IS NULL AND i.destination_name IS NULL AND i.destination_uid IS NULL
+			THEN i.destination_ref END, i.destination_namespace, i.destination_name, i.destination_uid,
+			i.session_id, m.idempotency_key, e.created_at,
 			m.cursor <= i.covered, m.cursor <= i.acknowledged, i.retired
 		FROM message m JOIN inbox i ON i.id = m.inbox_id JOIN entry e ON e.inbox_id = m.inbox_id AND e.cursor = m.cursor
 		WHERE m.id = $1 AND m.sender_namespace = $2 AND m.sender_name = $3`,
-		id, sender.Namespace, sender.Name).Scan(&destination, &sent.SessionID, &sent.IdempotencyKey, &sent.AcceptedAt,
+		id, sender.Namespace, sender.Name).Scan(&inboxID, &destination, &namespace, &name, &uid,
+		&sent.SessionID, &sent.IdempotencyKey, &sent.AcceptedAt,
 		&sent.Covered, &sent.Acknowledged, &sent.InboxRetired)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SentMessage{}, ErrNotFound
@@ -205,7 +205,8 @@ func sentMessage(ctx context.Context, tx *sql.Tx, sender model.ServiceAccount, i
 		return SentMessage{}, err
 	}
 	sent.AcceptedAt = sent.AcceptedAt.UTC()
-	if err := decode(destination, &sent.DestinationRef); err != nil {
+	sent.DestinationRef, err = storedDestinationRef(inboxID, destination, namespace, name, uid)
+	if err != nil {
 		return SentMessage{}, err
 	}
 	return sent, nil

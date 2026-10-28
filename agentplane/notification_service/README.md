@@ -52,6 +52,46 @@ Do not overlap old GitHub workers with recovery writers during rollout. If rolli
 disable the GitHub provider until a recovery-capable image is restored, while retaining inbox reads and delivery.
 Never roll back to an older decoder or run a down migration that discards retained notifications.
 
+Entry source identities are being moved from JSONB equality to explicit relational natural keys. The expansion
+migration adds nullable columns and the serving writers dual-write them while the existing JSONB unique index
+continues to deduplicate. After every writer that predates the dual write has been rolled out, run the migrator
+image with `backfill-event-identities --writer-gate=notification-event-identity-dual-write-v1`; it resumes in short `(inbox_id, cursor)` batches, checks for legacy JSON
+shapes that collide under the natural key, validates the shape constraint, and builds the unique natural-key
+indexes concurrently. A collision stops the command with exact inbox/cursor groups, retaining every original
+entry and JSON document for explicit resolution. The command is separate from Pod init, so retained inboxes do
+not hold serving readiness while they are scanned. This phase keeps serving deduplication on JSONB; a later
+runtime release can switch readers after it observes the completed backfill/index phase. Keep the JSONB index
+until every old writer has drained and every reader has moved to relational keys.
+
+To roll back before the backfill/index command runs, restore the previous service image and leave the additive
+columns in place; do not run a migration's `Down` section while dual writers remain. If reverting after the
+command marks indexes ready, leave the columns, checkpoint and natural-key indexes in place as well. The previous
+image continues to use the JSONB key. After the rollback rollout settles, verify the previous API's reads, writes,
+replay deduplication and readiness. Only after no reader depends on relational keys should a later cleanup drop the
+natural-key indexes concurrently, then run the migration Down sections in reverse order. Before a later forward
+rollout, drain old writers and check for any unconverted rows; the backfill command stops with their inbox/cursors
+instead of silently cutting over.
+
+`00009_inbox_destination_expand.sql` adds nullable relational destination columns while the service continues to
+dual-write them and reads legacy `destination_ref` JSON when needed. After every Notification Service writer runs
+the dual-write release, run `bb run //agentplane/notification_service/storage_backfill/cmd:notification-destination-backfill -- --writer-gate=notification-destination-dual-write-v1`
+once against the service database. The command is resumable, uses short bounded batches, and preserves the JSON
+column; it is not part of service startup or readiness.
+
+`00012_subscription_creation_expand.sql` adds a binary typed snapshot and relational source discriminator while
+the service continues to dual-write and can still read retained `creation` JSON. After every Notification Service
+writer runs the dual-write release, run
+`bb run //agentplane/notification_service/storage_backfill/subscription_creation_cmd:notification-subscription-creation-backfill -- --writer-gate=notification-subscription-creation-dual-write-v1`
+once against the service database. This resumable command uses short bounded batches, stores its UUID cursor with
+each batch, and preserves the JSON creation record as a rollback copy; it is not part of startup or readiness.
+
+To roll the application back, stop the backfill command and roll every replica to the previous service image while
+leaving the additive migration applied; that image ignores the extra columns and continues to use the retained JSON.
+Only run either migration's down step after no replica or backfill process uses its new columns, reversing later
+Notification migrations first. The typed creation migration does not remove creation JSON. After Flux settles,
+verify the previous service's readiness, inbox authorization, and read/write behavior before considering the rollback
+complete.
+
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
 flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,
 and `watch_lease_s` (default 300) is how long a watch lasts before it ends with `reconnect_required`.

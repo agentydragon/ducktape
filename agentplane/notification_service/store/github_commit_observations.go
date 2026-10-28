@@ -351,13 +351,19 @@ func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx *sql.Tx, 
 		return 0, false, nil
 	}
 	var creation []byte
+	var creationProto sql.Null[[]byte]
+	var sourceProvider sql.NullString
+	var idempotencyKey string
 	var after int64
-	if err := tx.QueryRowContext(ctx, `SELECT creation, github_commit_after_sequence FROM subscription WHERE id = $1`,
-		recording.SubscriptionID).Scan(&creation, &after); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT
+		CASE WHEN creation_proto IS NULL AND source_provider IS NULL THEN creation END,
+		creation_proto, source_provider, idempotency_key, github_commit_after_sequence
+		FROM subscription WHERE id = $1`, recording.SubscriptionID).
+		Scan(&creation, &creationProto, &sourceProvider, &idempotencyKey, &after); err != nil {
 		return 0, false, err
 	}
-	var body model.Subscribe
-	if err := decode(creation, &body); err != nil {
+	body, err := decodeStoredSubscriptionCreation(recording.SubscriptionID, creation, creationProto, sourceProvider, idempotencyKey)
+	if err != nil {
 		return 0, false, err
 	}
 	source, ok := body.Source.(model.GitHubSource)
