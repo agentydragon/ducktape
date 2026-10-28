@@ -1,7 +1,12 @@
 # Cluster Backups to Google Drive (2 TB Google One)
 
 **Date**: 2026-06-20
-**Status**: design — nothing applied yet.
+**Status**: The Google Drive copy is still a design; no Drive provider or copy job
+is implemented. VolSync Restic-to-SeaweedFS backups do exist elsewhere: Home
+Assistant uses a Restic `ReplicationSource`, and the shared `ResticBackup`
+construct is used by paused Public Coder backup resources. Grocy's existing
+PVC-to-PVC backups still use `rsyncTLS`; migrating the named apps and adding the
+offsite Drive stage remain open work.
 **Scope**: small high-value PVCs (Grocy SF/Vallejo config, Tana-MCP state, app
 config DBs). Large media is explicitly out of scope for now.
 
@@ -14,8 +19,9 @@ deployed (<../../cdk8s/volsync.py>).
 ## The constraint that shapes everything
 
 VolSync **cannot write to Google Drive directly**. Its movers are
-`rsync(TLS)`, `restic`, `rclone`, `syncthing`. Today we only use `rsyncTLS`
-(PVC→PVC, e.g. <../../cdk8s/grocy/app.py>). Drive is reachable
+`rsync(TLS)`, `restic`, `rclone`, `syncthing`. Grocy's existing
+PVC→PVC backups use `rsyncTLS` (<../../cdk8s/grocy/app.py>); Restic-to-SeaweedFS
+is also used by Home Assistant and the shared `ResticBackup` construct. Drive is reachable
 only via the `restic` mover (restic repo on an `rclone:` backend) or the `rclone`
 mover (dumb file mirror).
 
