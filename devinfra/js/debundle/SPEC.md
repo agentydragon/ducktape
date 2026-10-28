@@ -685,6 +685,8 @@ by those callbacks. Argument evaluation and provider-private effects retain
 their normal checks and ordering. The contract does not assert construction
 purity: `pure_new_exports` or `purity: pure_new` requires its own audit.
 
+### Calls without synchronous reentry
+
 `chunk_export_purity.<defining chunk>.no_reentry_exports` asserts that direct
 calls of listed named imports cannot synchronously invoke caller-, importer-,
 or host-provided callbacks or read importer-owned lexical state. The author
@@ -698,6 +700,8 @@ expressions are still visited normally.
 Aliases, uncertain arguments, and result use retain ordinary reentry checks.
 The defining module still initializes in its usual order. This contract is
 independent of `pure_exports` and callback-factory assertions.
+
+### Callback registration without synchronous reentry
 
 `chunk_export_purity.<defining chunk>.no_reentry_callback_exports` is a separate
 author assertion for direct imported calls with exact callback-bearing signatures:
@@ -732,6 +736,8 @@ provider only returns it. Every later opaque call or protocol operation may
 invoke those callbacks. Sibling/operand evaluation and later invocation,
 publication or mutation retain their ordinary checks. The result stays opaque.
 This contract does not imply purity or any factory/constructor retention policy.
+
+### Namespace and record calls without synchronous reentry
 
 `chunk_export_purity.<defining chunk>.no_reentry_members` asserts a narrower
 call-timing fact for listed static namespace members: with admitted primitive
@@ -875,6 +881,8 @@ Without an assertion, source inference recognizes only immutable exported
 function declarations with one simple identifier parameter. The body must
 only return a zero-argument function or arrow that only calls that parameter
 with no arguments. Reassigned bindings and dynamic scopes remain opaque.
+
+### Deferred browser-global publication
 
 `chunk_analysis_options.<chunk>.deferred_global_publications` names audited
 browser-global data slots, for example `{globalThis: [inspectState]}` or

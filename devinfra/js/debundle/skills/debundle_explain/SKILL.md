@@ -12,6 +12,9 @@ description: >-
 If debundle tooling blocks the task, follow
 `references/docs/bug_reproductions.md` before working around it.
 
+The [task chooser](references/README.md#choose-a-task) links to the relevant
+inspection and editing recipes. Read the linked reference for the operation.
+
 Use this skill to answer a software-behavior question from the debundled code
 and leave the spec covering the code needed to answer it. Search for a matching
 spec when the target is unclear. If no spec or source snapshot exists, say so

@@ -11,13 +11,12 @@ description: >-
 
 If debundle tooling blocks the task, follow
 `references/docs/bug_reproductions.md` before working around it.
-@references/docs/cli.md
-@references/docs/selectors.md
 
-Stabilize selectors without renaming symbols or moving module boundaries.
-The transcluded `selectors.md` is the source of truth for the authoring ladder,
-anchor strengths, matcher syntax, examples, and selector debt. Use its guidance
-when choosing or repairing `source_matches[]`, `members[].selector` relations,
+The [task chooser](references/README.md#choose-a-task) links to command recipes.
+For selector work, read [authoring portable selectors](references/docs/selectors.md)
+for the ladder, anchor strengths, matcher syntax, examples, and selector debt.
+Stabilize selectors without renaming symbols or moving module boundaries. Use
+that guidance when choosing or repairing `source_matches[]`, `members[].selector` relations,
 and `anonymous_statements[].source_match`.
 
 ## Judgment and acceptance

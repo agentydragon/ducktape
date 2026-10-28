@@ -11,16 +11,12 @@ If debundle tooling blocks the task, follow
 Use this role to keep an AI-driven debundling loop moving. The orchestrator
 routes work between specialist roles and owns project-adapter details.
 
-Shared CLI workflows land here so planner, intake, and worker routing use the
-same command semantics:
-
-@references/docs/cli.md
-@references/docs/spec_editing.md
+Use the [task chooser](references/README.md#choose-a-task) to route each lane to
+its command recipe; read the linked reference for that operation.
 
 Read other bundled references as needed:
 
 - `references/workflow.md` for the adapter contract, round loop, state, and failure routing
-- `references/README.md` for the crate overview
 - `references/docs/bazel_integration.md` for the `debundle_pipeline` rule and profiling targets
 - `references/module_shape.md` for when to route to architect or lane workers
 - `references/docs/selectors.md` for the bar selector-stabilization work must meet

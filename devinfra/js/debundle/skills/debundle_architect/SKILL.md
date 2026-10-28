@@ -8,6 +8,9 @@ description: Audit a debundle spec's named modules for idiomatic JavaScript stru
 If debundle tooling blocks the task, follow
 `references/docs/bug_reproductions.md` before working around it.
 
+The [task chooser](references/README.md#choose-a-task) links to the relevant
+inspection and editing recipes. Read the linked reference for the operation.
+
 Use this role for structural review of an in-progress debundle spec. The
 architect owns source-tree taxonomy health for the target: it should infer,
 maintain, and course-correct the conventions that make the emitted tree read

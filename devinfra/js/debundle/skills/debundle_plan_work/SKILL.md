@@ -12,11 +12,11 @@ Use this skill to plan read-only debundling work from the current
 `dependency_graph.json` and spec `modules/` tree. The output is evidence for
 spec edits; this skill does not mutate YAML itself.
 
-## Shared CLI Workflows
+## Command recipes
 
-@references/docs/cli.md
-@references/docs/selectors.md
-@references/docs/spec_editing.md
+Choose inspection, residual extraction, reorganization, or selector work from the
+[task chooser](references/README.md#choose-a-task); read the linked recipe for the
+chosen operation.
 
 ## Setup Notes
 

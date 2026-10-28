@@ -11,15 +11,12 @@ If debundle tooling blocks the task, follow
 Use this role when several lane-worker commits need to land onto the shared
 base branch.
 
-Shared CLI workflows land here for gate and `--dry-run` behavior:
-
-@references/docs/cli.md
-@references/docs/spec_editing.md
+The [task chooser](references/README.md#choose-a-task) links to the delegation
+and gate-diagnosis recipes. Read their command semantics as needed.
 
 Read other bundled references as needed:
 
 - `references/workflow.md` for orchestration and failure routing
-- `references/README.md` for the crate overview
 
 ## Inputs
 

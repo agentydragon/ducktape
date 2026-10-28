@@ -11,15 +11,12 @@ If debundle tooling blocks the task, follow
 Use this role after `debundle_plan_work` has produced planner output. Intake
 translates certified structural proposals into work packets for lane workers.
 
-Shared CLI workflows land here so proposal/batch semantics stay in one place:
-
-@references/docs/cli.md
-@references/docs/spec_editing.md
+Use the [task chooser](references/README.md#choose-a-task) for the proposal and
+inspection recipes; read their command and batch semantics as needed.
 
 Read other bundled references as needed:
 
 - `references/workflow.md` for handoffs and scratch-state conventions
-- `references/README.md` for the crate overview
 - `references/module_shape.md` for destination and cohesion heuristics
 
 ## Inputs

@@ -14,18 +14,9 @@ JSON-on-stdout / structured-diagnostic-on-stderr convention.
 
 ## Find a workflow
 
-- Transform a spec: [Running the pipeline](#running-the-pipeline).
-- Inspect a binding or source: [Workflow: investigating a binding
-  end-to-end](#workflow-investigating-a-binding-end-to-end) and
-  [Inspecting source](#inspecting-source).
-- Edit assignments or claim proposals: [Batch atomicity](#batch-atomicity-bindings-assign),
-  [Claiming fresh proposals](#claiming-fresh-proposals-modules-apply), and
-  <spec_editing.md>.
-- Reorganize existing modules: [Plan a module assignment](#refining-existing-modules-modules-decompose),
-  then [apply reviewed source-unit assignments](#applying-reviewed-source-unit-assignments-modules-refine).
-- Diagnose a rejected edit: [Rejection diagnostics](#rejection-diagnostics)
-  and [Gate queries](#gate-queries).
-- Delegate an isolated spec edit: [Delegating with an input snapshot](#delegating-with-an-input-snapshot).
+The README's [task chooser](../README.md#choose-a-task) links to the recipe for
+inspection, extraction, reorganization, naming, selector stabilization, gate
+diagnosis, or delegation.
 
 Use `debundle <command> --help` for the current command and flag inventory.
 
@@ -845,6 +836,12 @@ applies the reviewed source-unit map as written; inspect the resulting modules a
 run the project extraction gate after an accepted edit.
 
 ## Rejection diagnostics
+
+Start with the reported source and constraint. If the investigation establishes
+an author assertion's premises, use the [initialization contract
+chooser](../skills/shared/initialization_contracts.md#choose-the-contract-for-the-established-fact)
+to select its scope and audit obligations. A rejection alone does not establish
+purity, callback timing, or a host/runtime premise.
 
 When validation refuses a mutating command, the diagnostic names exactly
 what's wrong:

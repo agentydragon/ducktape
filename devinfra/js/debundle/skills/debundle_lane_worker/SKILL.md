@@ -12,17 +12,12 @@ Use this role for one scoped implementation assignment: a seed cluster from
 intake, a binding-patch/residual cohort, or a firm reorganization task from
 the architect.
 
-Shared CLI workflows land here for binding moves, renames, module merges, and
-atom-split recovery:
-
-@references/docs/cli.md
-@references/docs/selectors.md
-@references/docs/spec_editing.md
+Choose the operation from the [task chooser](references/README.md#choose-a-task),
+then read its linked editing, CLI, or selector recipe.
 
 Read other bundled references as needed:
 
 - `references/workflow.md` for role boundaries and failure routing
-- `references/README.md` for the crate overview
 - `references/module_shape.md` for seam and layer-ownership heuristics
 
 ## Inputs

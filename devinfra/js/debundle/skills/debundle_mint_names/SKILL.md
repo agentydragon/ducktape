@@ -12,6 +12,9 @@ description: >
 If debundle tooling blocks the task, follow
 `references/docs/bug_reproductions.md` before working around it.
 
+The [task chooser](references/README.md#choose-a-task) links to the relevant
+inspection and editing recipes. Read the linked reference for the operation.
+
 Assign descriptive names to unrenamed symbols in any debundle spec.
 
 ## Scope

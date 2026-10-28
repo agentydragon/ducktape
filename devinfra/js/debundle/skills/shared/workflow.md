@@ -4,6 +4,10 @@ This reference describes the reusable multi-agent workflow for AI-assisted
 debundling. Project adapters supply concrete paths, commands, conventions, and
 verification gates.
 
+Use the [task chooser](README.md#choose-a-task) to select a CLI recipe before
+starting a lane. Read contract guidance only when source investigation requires
+an author assertion.
+
 ## Roles
 
 - Orchestrator: refreshes evidence, dispatches roles, tracks state, routes
@@ -165,8 +169,8 @@ spec; green worker checks do not prove the combined result.
 - Classify the actual blocker before choosing an author assertion: effect
   purity, callback retention or synchronous reentry, runtime loading, metadata
   mutation, and global publication have different contracts. Follow
-  `references/initialization_contracts.md` for the decision route and bundled
-  `references/SPEC.md` for callback, runtime, metadata, and publication audits.
+  `references/skills/shared/initialization_contracts.md` for the decision route
+  and bundled `references/SPEC.md` for callback, runtime, metadata, and publication audits.
   A cycle alone establishes none of these premises.
 - After a justified annotation, rerun source validation, the same extraction
   gate, and the adapter's runtime smoke. Inspect the remaining constraints;
