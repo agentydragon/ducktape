@@ -158,10 +158,9 @@ func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, transport string, 
 	}
 	draining, drain := context.WithCancel(t.Context())
 	service := &flowControlService{
-		draining:     draining,
-		sendStarted:  make(chan int64, 16),
-		sendFinished: make(chan int64, 16),
-		handlerDone:  make(chan error, 1),
+		draining:    draining,
+		sendChange:  make(chan struct{}, 1),
+		handlerDone: make(chan error, 1),
 	}
 	server := grpc.NewServer()
 	server.RegisterService(&flowControlServiceDesc, service)
@@ -201,21 +200,33 @@ func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, transport string, 
 		t.Fatal(err)
 	}
 
-	deadline := time.After(5 * time.Second)
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
 	var blockedAttempt int64
 	for blockedAttempt == 0 {
-		select {
-		case attempt := <-service.sendStarted:
-			if service.completed.Load() < attempt {
-				// The payload exceeds the peer's advertised receive window. Give the transport a moment to
-				// exhaust its write buffer, then verify this same SendMsg is still blocked.
-				time.Sleep(50 * time.Millisecond)
+		attempt := service.attempts.Load()
+		if service.completed.Load() < attempt {
+			// Wait for completion or a short observation window. The payload exceeds the peer's advertised
+			// receive window, so an incomplete send after the window shows that this SendMsg is blocked.
+			observation := time.NewTimer(50 * time.Millisecond)
+			select {
+			case <-service.sendChange:
+				observation.Stop()
+			case <-observation.C:
+				attempt = service.attempts.Load()
 				if service.completed.Load() < attempt {
 					blockedAttempt = attempt
 				}
+			case <-deadline.C:
+				observation.Stop()
+				t.Fatal("no SendMsg remained blocked under the unread stream's flow-control window")
 			}
-		case <-deadline:
-			t.Fatal("no SendMsg remained blocked under the unread stream's flow-control window")
+		} else {
+			select {
+			case <-service.sendChange:
+			case <-deadline.C:
+				t.Fatal("no SendMsg remained blocked under the unread stream's flow-control window")
+			}
 		}
 	}
 	if cancelClient {
@@ -238,15 +249,17 @@ func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, transport string, 
 		t.Fatal("draining did not return the RPC handler")
 	}
 	attempts := service.attempts.Load()
-	if !cancelClient && attempts != blockedAttempt {
-		t.Fatalf("underlying Send calls = %d, want no call after blocked write %d", attempts, blockedAttempt)
+	if service.overlappingWrites.Load() {
+		t.Fatal("started another SendMsg while the previous write was still outstanding")
 	}
-	// A client cancellation can race a successful SendMsg return and start the next sequential write before the
-	// server observes the canceled stream. Once the handler returns, every started SendMsg must still be released.
+	// Peer cancellation and the drain's AfterFunc can race a successful SendMsg return. A subsequent sequential
+	// write is allowed until cancellation is observed; every started write must finish after the handler exits.
+	doneDeadline := time.NewTimer(5 * time.Second)
+	defer doneDeadline.Stop()
 	for service.completed.Load() < attempts {
 		select {
-		case <-service.sendFinished:
-		case <-time.After(5 * time.Second):
+		case <-service.sendChange:
+		case <-doneDeadline.C:
 			t.Fatal("gRPC did not release every started SendMsg after the handler returned")
 		}
 	}
@@ -265,12 +278,19 @@ type flowControlServer interface {
 }
 
 type flowControlService struct {
-	draining     context.Context
-	sendStarted  chan int64
-	sendFinished chan int64
-	handlerDone  chan error
-	attempts     atomic.Int64
-	completed    atomic.Int64
+	draining          context.Context
+	sendChange        chan struct{}
+	handlerDone       chan error
+	attempts          atomic.Int64
+	completed         atomic.Int64
+	overlappingWrites atomic.Bool
+}
+
+func (s *flowControlService) notifySendChange() {
+	select {
+	case s.sendChange <- struct{}{}:
+	default:
+	}
 }
 
 func (s *flowControlService) Watch(stream grpc.ServerStream) (err error) {
@@ -285,16 +305,13 @@ func (s *flowControlService) Watch(stream grpc.ServerStream) (err error) {
 	defer cancel()
 	send := func(frame *wrapperspb.BytesValue) error {
 		attempt := s.attempts.Add(1)
-		select {
-		case s.sendStarted <- attempt:
-		default:
+		if s.completed.Load() != attempt-1 {
+			s.overlappingWrites.Store(true)
 		}
+		s.notifySendChange()
 		err := stream.SendMsg(frame)
-		s.completed.Store(attempt)
-		select {
-		case s.sendFinished <- attempt:
-		default:
-		}
+		s.completed.Add(1)
+		s.notifySendChange()
 		return err
 	}
 	frame := wrapperspb.Bytes([]byte(strings.Repeat("x", 1<<20)))
