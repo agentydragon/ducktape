@@ -11,7 +11,7 @@ ts_library(
     name = "fixture",
     srcs = ["fixture.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//agentplane/app/frontend/connections:models"],
+    deps = ["//agentplane/app/frontend/connections:connections"],
 )
 
 ts_library(
