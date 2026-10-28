@@ -23,7 +23,7 @@ type querier interface {
 
 type rowScanner interface{ Scan(...any) error }
 
-const requestColumns = `id, idempotency_key, action, arguments, title, description, caller_namespace, caller_name,
+const requestColumns = `id, idempotency_key, action_group, action_name, arguments, title, description, caller_namespace, caller_name,
 	state, version, created_at, updated_at, history_at`
 
 // requestRow is a request with the position in history its first non-pending Event gave it.
@@ -57,24 +57,21 @@ func utc(t *time.Time) *time.Time {
 	return &converted
 }
 
-func decodeRecordedActor(data []byte) (*action_servicepb.Principal, error) {
-	actor, err := decodeStoredActor(data)
-	if errors.Is(err, errInvalidActor) {
-		return nil, invalid("%s", err)
-	}
-	return actor, err
-}
-
 func scanRequest(row rowScanner) (requestRow, error) {
 	var r requestRow
-	var actionJSON, arguments []byte
+	var actionGroup, actionName sql.NullString
+	var arguments []byte
 	var state string
-	if err := row.Scan(&r.ID, &r.IdempotencyKey, &actionJSON, &arguments, &r.Title, &r.Description, &r.Caller.Namespace,
+	if err := row.Scan(&r.ID, &r.IdempotencyKey, &actionGroup, &actionName, &arguments, &r.Title, &r.Description, &r.Caller.Namespace,
 		&r.Caller.Name, &state, &r.Version, &r.CreatedAt, &r.UpdatedAt, &r.HistoryAt); err != nil {
 		return requestRow{}, err
 	}
-	if err := json.Unmarshal(actionJSON, &r.Action); err != nil {
-		return requestRow{}, fmt.Errorf("request %s action: %w", r.ID, err)
+	if !actionGroup.Valid || !actionName.Valid {
+		return requestRow{}, fmt.Errorf("request %s is missing typed Action identity; storage backfill is incomplete", r.ID)
+	}
+	r.Action = ActionIdentity{Group: actionGroup.String, Name: actionName.String}
+	if err := r.Action.Validate(); err != nil {
+		return requestRow{}, fmt.Errorf("request %s typed Action identity: %w", r.ID, err)
 	}
 	r.Arguments = arguments
 	var known bool
@@ -150,7 +147,7 @@ func attach(ctx context.Context, q querier, rows []requestRow) ([]ActionRequest,
 func loadDecisions(ctx context.Context, q querier, ids pq.StringArray) (map[uuid.UUID]*Decision, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT request_id, id, verdict, provider, operator_issuer, operator_subject, decision_note, reason_code,
-			reason_description, policy_evidence, idempotency_key, decided_at
+			reason_description, policy_evidence_proto, idempotency_key, decided_at
 		FROM action_decision WHERE request_id = ANY($1::uuid[])`, ids)
 	if err != nil {
 		return nil, err
@@ -175,9 +172,9 @@ func loadDecisions(ctx context.Context, q querier, ids pq.StringArray) (map[uuid
 		if issuer != nil && subject != nil {
 			decision.Operator = &OperatorPrincipal{Issuer: *issuer, Subject: *subject}
 		}
-		if document := jsonValue(evidence); document != nil {
-			decision.PolicyEvidence = new(PolicyEvidence)
-			if err := json.Unmarshal(document, decision.PolicyEvidence); err != nil {
+		if evidence != nil {
+			decision.PolicyEvidence, err = decodeStoredPolicyEvidenceProto(evidence)
+			if err != nil {
 				return nil, fmt.Errorf("decision %s policy_evidence: %w", decision.ID, err)
 			}
 		}
@@ -591,7 +588,7 @@ func (s *Store) Events(ctx context.Context, id uuid.UUID, principal ReadPrincipa
 		if _, err := readable(ctx, tx, id, principal); err != nil {
 			return err
 		}
-		query := `SELECT sequence, state, at, actor FROM action_event WHERE request_id = $1 AND sequence > $2
+		query := `SELECT sequence, state, at, actor_proto FROM action_event WHERE request_id = $1 AND sequence > $2
 			ORDER BY sequence`
 		args := []any{id, filter.AfterSequence}
 		if filter.Limit != nil {
@@ -606,8 +603,8 @@ func (s *Store) Events(ctx context.Context, id uuid.UUID, principal ReadPrincipa
 		for rows.Next() {
 			var event Event
 			var state string
-			var actor []byte
-			if err := rows.Scan(&event.Sequence, &state, &event.At, &actor); err != nil {
+			var actorProto []byte
+			if err := rows.Scan(&event.Sequence, &state, &event.At, &actorProto); err != nil {
 				return err
 			}
 			var known bool
@@ -616,9 +613,9 @@ func (s *Store) Events(ctx context.Context, id uuid.UUID, principal ReadPrincipa
 			if !known {
 				return fmt.Errorf("event %s/%d has unknown state %q", id, event.Sequence, state)
 			}
-			if document := jsonValue(actor); document != nil {
+			if actorProto != nil {
 				var err error
-				if event.Actor, err = decodeRecordedActor(document); err != nil {
+				if event.Actor, err = decodeStoredPrincipalProto(actorProto); err != nil {
 					return fmt.Errorf("event %s/%d actor: %w", id, event.Sequence, err)
 				}
 			}

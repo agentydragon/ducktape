@@ -19,7 +19,8 @@ type ServiceAccount struct {
 	Name      string `json:"name"`
 }
 
-// ActionIdentity names an Action by its group and name. It is stored as `action_request.action`.
+// ActionIdentity names an Action by its group and name. It is stored in the typed
+// `action_request.action_group` and `action_request.action_name` columns.
 type ActionIdentity struct {
 	Group string `json:"group"`
 	Name  string `json:"name"`
@@ -102,8 +103,8 @@ var policyKinds = []PolicyKind{
 // PolicySourceRules is the only list of a PolicySet a matched policy sits in.
 const PolicySourceRules = "rules"
 
-// PolicyEvidence is what a policy-set Decision evaluated, as the objects stood at admission. It is stored as
-// `action_decision.policy_evidence`.
+// PolicyEvidence is what a policy-set Decision evaluated, as the objects stood at admission. It is stored as a
+// protobuf in `action_decision.policy_evidence_proto`.
 type PolicyEvidence struct {
 	Bindings   []BindingEvidence   `json:"bindings"`
 	PolicySets []PolicySetEvidence `json:"policy_sets"`

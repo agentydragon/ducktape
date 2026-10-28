@@ -433,7 +433,12 @@ backfill is an explicit offline operation: first roll out the dual-writing Actio
 every writer, then run the migration image with
 `backfill-storage --confirm-all-writers-dual-write` against the same `actions` database. The
 confirmation flag is required; the backfill can be rerun after interruption. It is not part of
-serving startup or readiness.
+serving startup or readiness. Wait for the command to exit successfully; that run verifies that every
+present legacy Action identity, actor, and policy-evidence value has a typed copy. Roll out the
+typed-reader Action Service only after that verification and after every writer runs the dual-writing
+version. That reader version continues to write both representations so it can be rolled back to the
+prior JSON-reading version. Retain the legacy columns until the rollback window has ended and a later
+contract step removes them.
 
 ## MCP executor transports
 
