@@ -309,10 +309,11 @@ attaches the Pod's projected token for that ingress's own audience, `agentplane-
 the History Service, and an audience of its own for a historyless client. No other recipient
 can replay a token the ingress saw, and an ingress token opens no control connection.
 
-**Sealing.** `Quiesce` on the control stream seals every journal and returns each Session's seal cursor
-with `flushed`, which is true once the ingress has acknowledged that seal. The runner answers from
-its recorded acknowledgements, so the report survives a runner restart. Sealing again returns the
-same cursors and the current `flushed`. The Sandbox Controller retries an unfinished request at its
+**Sealing.** `Quiesce` closes admission and starts draining and sealing every journal, returning the
+current quiesce stage. The runner publishes subsequent stages through reverse heartbeats or forward
+`WatchState`; `quiesced` means every journal's seal is acknowledged by ingress. The runner records
+acknowledgements on its state volume, so progress survives a runner restart. Repeated `Quiesce`
+requests continue the same operation. The Sandbox Controller retries an unfinished request at its
 one-minute deadline; Lease stage changes enqueue it sooner, and the persisted request time prevents
 other watch events or a controller restart from bypassing that deadline. Only after every Session is
 flushed may the Sandbox's volume go. A runner that cannot report leaves the Sandbox in sealing for
@@ -363,7 +364,8 @@ endpoints: [{ addresses: [<owning replica's Pod IP>] }]
 ports: [{ name: grpc, port: 8080 }]
 ```
 
-No routing record is kept: runners dial out, so nothing is routed inbound.
+These records route callers to the Gateway holder. Forward runner addresses come from the current
+workload's Pod IP; reverse runners dial the Gateway's private listener.
 
 - **Accepting a connection.** After authenticating `Hello`, the replica updates the Lease with the
   `resourceVersion` it read: holder itself, transitions plus one, fresh renew time and annotations.
@@ -371,7 +373,7 @@ No routing record is kept: runners dial out, so nothing is routed inbound.
   newest-connection rule decides which stream survives. It then writes the EndpointSlice with the new epoch, and only then sends `Welcome`.
   An EndpointSlice write carrying an older epoch than the one stored is skipped.
 - **Runner facts.** The holder writes the runner's latest `RunnerFacts`, which arrive on
-  `RunnerHeartbeat`, into the Lease annotations with the renewal that records liveness, so the idle
+  `RunnerHeartbeat` or `WatchState`, into the Lease annotations with the renewal that records liveness, so the idle
   time adds no write. A change of quiesce stage or bootstrap result triggers that write at once. A
   blocker-only change waits for the regular Lease touch; it does not trigger a separate renewal. The
   Sandbox Controller watches blocker changes and copies them into `status.idleSuspendBlockers` only
