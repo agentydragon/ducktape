@@ -1,9 +1,7 @@
 # Artifact drafts: Haku on a provider-agnostic loop (Runtime C)
 
 Status: **sketches**, not landed code. Companion to
-[runtime_options.md](runtime_options.md) (Runtime C); pairs with
-[managed_agents_artifacts.md](managed_agents_artifacts.md) (Runtime B) so both
-runtimes are equally concrete before choosing. Framework shown: **Pydantic AI**
+[runtime_options.md](runtime_options.md) (Runtime C). Framework shown: **Pydantic AI**
 on the in-cluster **LiteLLM**. Graduates into a real `haku/runtime/x/agent_framework/` component once
 chosen. Kwarg/import names marked _(verify)_ move between Pydantic AI 1.x
 releases — pin a version and check.

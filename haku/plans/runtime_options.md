@@ -5,8 +5,7 @@ as manually configured Claude Code web routines. Runtime A stays primary despite
 real drawbacks — full Anthropic lock-in and the options it forecloses (see
 below). Runtimes B and C remain experiments at different levels of completeness,
 not production replacements. This is the "which runtime" comparison; the
-detailed design of Runtime B is in [managed_agents.md](managed_agents.md) (+ its
-[artifact drafts](managed_agents_artifacts.md)).
+remaining Runtime B design is in [managed_agents.md](managed_agents.md).
 
 ## The two layers of lock-in
 
