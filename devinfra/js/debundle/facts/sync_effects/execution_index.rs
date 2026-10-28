@@ -2,6 +2,7 @@
 
 mod callback_arguments;
 
+use super::receiver_identity::ReceiverIdentityFacts;
 use super::value_model::{
     ArrayElement, ArrayIteration, ArrayIterationMethod, CallSite, ClassSurface, ClassValueFacts,
     FromEntriesMappedProof, NamespaceValueFacts, ValueExpr, infer_namespace_aliases,
@@ -21,7 +22,10 @@ use crate::facts::statement_facts::{
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin};
 use crate::purity::ChunkCodeGraph;
-use crate::reports::schema::{NativeMutationOperation, NativeMutationWitness};
+use crate::reports::schema::{
+    NativeMutationOperation, NativeMutationWitness, NativeReceiverCertificate,
+    NativeReceiverOrigin, SourceLocation,
+};
 use source_identity::SourceUnitOrdinal;
 use spec::{BuiltinGlobalRoot, HostNoReentryOperation, HostNoReentryRuntime};
 use std::cell::RefCell;
@@ -1291,6 +1295,36 @@ fn native_mutation_roots(mut roots: IntrinsicRoots) -> IntrinsicRoots {
     roots
 }
 
+fn locate_receiver_certificate(
+    certificate: &mut NativeReceiverCertificate,
+    mut locate: impl FnMut(Span) -> Option<SourceLocation>,
+) {
+    certificate.source_location = locate(certificate.span);
+    certificate.initializer_location = locate(certificate.initializer_span);
+    for origin in &mut certificate.origins {
+        match origin {
+            NativeReceiverOrigin::ObjectLiteral => {}
+            NativeReceiverOrigin::Constructor {
+                source_location,
+                span,
+                ..
+            } => {
+                *source_location = locate(*span);
+            }
+            NativeReceiverOrigin::Wrapper {
+                source_location,
+                constructor_location,
+                span,
+                constructor_span,
+                ..
+            } => {
+                *source_location = locate(*span);
+                *constructor_location = locate(*constructor_span);
+            }
+        }
+    }
+}
+
 fn receiver_uses_intrinsic_alias(
     value: &ValueExpr,
     aliases: &BTreeMap<Id, IntrinsicRoots>,
@@ -1502,6 +1536,9 @@ fn property_key_evidence<'a>(
 #[derive(Debug)]
 struct IntrinsicWriteTarget {
     owner: SourceUnitOrdinal,
+    /// Only direct member operations retain the activation whose receiver read
+    /// precedes the key/RHS. Destructuring and reflective calls stay opaque.
+    receiver_callable: Option<u32>,
     span: Span,
     operation: NativeMutationOperation,
     receiver: ValueExpr,
@@ -1511,6 +1548,7 @@ struct IntrinsicWriteTarget {
 fn intrinsic_write_target(
     member: &MemberExpr,
     owner: SourceUnitOrdinal,
+    receiver_callable: Option<u32>,
     operation: NativeMutationOperation,
 ) -> IntrinsicWriteTarget {
     let key = match &member.prop {
@@ -1520,6 +1558,8 @@ fn intrinsic_write_target(
     };
     IntrinsicWriteTarget {
         owner,
+        receiver_callable: receiver_callable
+            .filter(|_| matches!(member.obj.unwrap_parens(), Expr::Ident(_))),
         span: member.span,
         operation,
         receiver: ValueExpr::from_expr(&member.obj),
@@ -1531,6 +1571,7 @@ fn intrinsic_write_target(
 pub(crate) struct NativeWriteCensus {
     unconditional: IntrinsicRoots,
     witnesses: Arc<Vec<NativeMutationWitness>>,
+    certificates: Arc<Vec<NativeReceiverCertificate>>,
     conditional: Vec<ConditionalIntrinsicWrite>,
 }
 
@@ -1585,6 +1626,12 @@ pub(crate) fn resolve_native_integrity<'a>(
     NativeIntegrity {
         mutated,
         witnesses: Arc::new(witnesses),
+        certificates: Arc::new(
+            censuses
+                .iter()
+                .flat_map(|census| census.certificates.iter().cloned())
+                .collect(),
+        ),
     }
 }
 
@@ -2112,6 +2159,7 @@ fn stored_global_alias(
 
 struct ExecutionIndex {
     owner: SourceUnitOrdinal,
+    receiver_identity: ReceiverIdentityFacts,
     current: Option<u32>,
     allowed_local_member_receiver: Option<u32>,
     past_await: bool,
@@ -2151,6 +2199,7 @@ struct ExecutionIndex {
     plain_array_bindings: BTreeSet<String>,
     mutated_intrinsic_roots: IntrinsicRoots,
     native_integrity_witnesses: Arc<Vec<NativeMutationWitness>>,
+    native_receiver_certificates: Arc<Vec<NativeReceiverCertificate>>,
     reassigned_map: bool,
     namespace_privacy: NamespacePrivacy,
     fresh_error_claims: Vec<FreshErrorWriteClaim>,
@@ -2231,6 +2280,7 @@ impl Default for ExecutionIndex {
     fn default() -> Self {
         Self {
             owner: SourceUnitOrdinal(0),
+            receiver_identity: ReceiverIdentityFacts::default(),
             current: None,
             allowed_local_member_receiver: None,
             past_await: false,
@@ -2270,6 +2320,7 @@ impl Default for ExecutionIndex {
             plain_array_bindings: BTreeSet::new(),
             mutated_intrinsic_roots: IntrinsicRoots::new(),
             native_integrity_witnesses: Arc::default(),
+            native_receiver_certificates: Arc::default(),
             reassigned_map: false,
             namespace_privacy: NamespacePrivacy::default(),
             fresh_error_claims: Vec::new(),
@@ -2757,6 +2808,57 @@ impl ExecutionIndex {
                 &intrinsic_aliases,
                 &index.global_object_names,
             );
+            if !roots.is_empty()
+                && index.dynamic_scope_owners.is_empty()
+                && let Some(proof) = index.receiver_identity.receiver(
+                    write.receiver_callable,
+                    &write.receiver,
+                    write.span,
+                )
+            {
+                use super::receiver_identity::ReceiverOrigin;
+                let origins = proof
+                    .origins
+                    .into_iter()
+                    .map(|origin| match origin {
+                        ReceiverOrigin::ObjectLiteral => NativeReceiverOrigin::ObjectLiteral,
+                        ReceiverOrigin::Constructor { binding, span } => {
+                            NativeReceiverOrigin::Constructor {
+                                binding: binding.0.to_string(),
+                                source_location: None,
+                                span,
+                            }
+                        }
+                        ReceiverOrigin::Wrapper {
+                            binding,
+                            span,
+                            constructor,
+                            constructor_span,
+                        } => NativeReceiverOrigin::Wrapper {
+                            binding: binding.0.to_string(),
+                            source_location: None,
+                            constructor: constructor.0.to_string(),
+                            constructor_location: None,
+                            span,
+                            constructor_span,
+                        },
+                    })
+                    .collect();
+                Arc::make_mut(&mut index.native_write_census.certificates).push(
+                    NativeReceiverCertificate {
+                        chunk_id: String::new(),
+                        statement_ordinal: write.owner,
+                        source_location: None,
+                        receiver_binding: proof.binding.0.to_string(),
+                        initializer_location: None,
+                        previously_affected_roots: native_mutation_roots(roots),
+                        origins,
+                        span: write.span,
+                        initializer_span: proof.initializer,
+                    },
+                );
+                continue;
+            }
             let witness = NativeMutationWitness {
                 chunk_id: String::new(),
                 statement_ordinal: write.owner,
@@ -2818,6 +2920,11 @@ impl ExecutionIndex {
         }
         let mut censuses = vec![&index.native_write_census];
         let external = NativeWriteCensus {
+            certificates: hints
+                .native_integrity
+                .as_ref()
+                .map(|integrity| integrity.certificates.clone())
+                .unwrap_or_default(),
             witnesses: hints
                 .native_integrity
                 .as_ref()
@@ -2833,10 +2940,12 @@ impl ExecutionIndex {
         censuses.push(&external);
         let mutated_intrinsics = if let Some(integrity) = &hints.native_integrity {
             index.native_integrity_witnesses = integrity.witnesses.clone();
+            index.native_receiver_certificates = integrity.certificates.clone();
             resolve_native_integrity_roots(&censuses)
         } else {
             let integrity = resolve_native_integrity(censuses);
             index.native_integrity_witnesses = integrity.witnesses;
+            index.native_receiver_certificates = integrity.certificates;
             integrity.mutated
         };
         index.mutated_intrinsic_roots = mutated_intrinsics.clone();
@@ -3456,6 +3565,17 @@ impl ExecutionIndex {
                 }
             }
         }
+        if self
+            .native_receiver_certificates
+            .iter()
+            .any(|certificate| certificate.chunk_id.is_empty())
+        {
+            for certificate in Arc::make_mut(&mut self.native_receiver_certificates) {
+                if certificate.chunk_id.is_empty() {
+                    locate_receiver_certificate(certificate, &mut locate);
+                }
+            }
+        }
     }
 
     fn set_iterable_intrinsics_are_unmodified(&self) -> bool {
@@ -3597,6 +3717,13 @@ impl ExecutionIndex {
     fn with_callable(&mut self, span: Span, params: Vec<Parameter>, visit: impl FnOnce(&mut Self)) {
         let key = span.lo.0;
         self.callable_spans.insert(key, span);
+        self.receiver_identity.callable(
+            key,
+            params
+                .iter()
+                .filter_map(|parameter| parameter.binding.clone())
+                .collect(),
+        );
         let created_after_parent_await = self
             .current
             .and_then(|parent| self.callables.get(&parent))
@@ -3900,6 +4027,7 @@ impl ExecutionIndex {
     }
 
     fn visit_may_skip<N: VisitWith<Self>>(&mut self, node: &N) {
+        self.receiver_identity.unsupported(self.current);
         let before = self.past_await;
         self.may_skip_await_depth += 1;
         self.conditional_depth += 1;
@@ -4185,6 +4313,7 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_fn_decl(&mut self, declaration: &FnDecl) {
+        let parent = self.current;
         self.property_key_declarations
             .insert(declaration.ident.to_id());
         self.property_key_assignments
@@ -4207,6 +4336,35 @@ impl Visit for ExecutionIndex {
                 .insert(declaration.ident.to_id(), declaration.function.span.lo.0);
         }
         declaration.visit_children_with(self);
+        let function = &declaration.function;
+        if !function.is_async
+            && !function.is_generator
+            && function.decorators.is_empty()
+            && function
+                .params
+                .iter()
+                .all(|param| param.decorators.is_empty())
+            && function.body.is_some()
+        {
+            let returned_construction = function
+                .body
+                .as_ref()
+                .and_then(sole_return_expression)
+                .and_then(|expression| match ValueExpr::from_expr(expression) {
+                    ValueExpr::New(callee, ..) => match *callee {
+                        ValueExpr::Binding(binding) => Some(binding),
+                        _ => None,
+                    },
+                    _ => None,
+                });
+            self.receiver_identity.function(
+                declaration.ident.to_id(),
+                parent,
+                function.span,
+                self.callables[&function.span.lo.0].returns.is_empty(),
+                returned_construction,
+            );
+        }
     }
 
     fn visit_class_decl(&mut self, declaration: &ClassDecl) {
@@ -4360,6 +4518,10 @@ impl Visit for ExecutionIndex {
     fn visit_while_stmt(&mut self, node: &WhileStmt) {
         self.visit_may_skip(node);
     }
+    fn visit_labeled_stmt(&mut self, node: &LabeledStmt) {
+        self.receiver_identity.unsupported(self.current);
+        node.visit_children_with(self);
+    }
     fn visit_do_while_stmt(&mut self, node: &DoWhileStmt) {
         self.visit_may_skip(node);
     }
@@ -4481,6 +4643,9 @@ impl Visit for ExecutionIndex {
             .map(|param| Parameter::from_pattern(&param.pat))
             .collect();
         self.with_callable(function.span, params, |index| {
+            if function.is_async || function.is_generator {
+                index.receiver_identity.unsupported(index.current);
+            }
             index
                 .callables
                 .get_mut(&function.span.lo.0)
@@ -4527,6 +4692,9 @@ impl Visit for ExecutionIndex {
         }
         let params = arrow.params.iter().map(Parameter::from_pattern).collect();
         self.with_callable(arrow.span, params, |index| {
+            if arrow.is_async {
+                index.receiver_identity.unsupported(index.current);
+            }
             for parameter in &arrow.params {
                 index.invalidate_property_key_pattern(parameter);
             }
@@ -4704,6 +4872,17 @@ impl Visit for ExecutionIndex {
                 &ValueExpr::from_expr(init),
                 &mut assignments,
             );
+            for (binding, value) in &assignments {
+                self.receiver_identity.definition(
+                    binding.clone(),
+                    self.current,
+                    declarator.span,
+                    (self.current.is_some()
+                        && matches!(declarator.name, Pat::Ident(_))
+                        && self.conditional_depth == 0)
+                        .then_some(value),
+                );
+            }
             if let Some(key) = self.current {
                 self.callables
                     .get_mut(&key)
@@ -4776,6 +4955,7 @@ impl Visit for ExecutionIndex {
                         self.intrinsic_writes.push(intrinsic_write_target(
                             member,
                             self.owner,
+                            None,
                             NativeMutationOperation::PropertyAssignment,
                         ));
                         ValueExpr::from_expr(&member.obj)
@@ -4813,6 +4993,26 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_for_head(&mut self, head: &ForHead) {
+        let mut assignments = Vec::new();
+        match head {
+            ForHead::Pat(pattern) => {
+                collect_pattern_assignments(pattern, &ValueExpr::Unknown, &mut assignments);
+            }
+            ForHead::VarDecl(declaration) => {
+                for declarator in &declaration.decls {
+                    collect_pattern_assignments(
+                        &declarator.name,
+                        &ValueExpr::Unknown,
+                        &mut assignments,
+                    );
+                }
+            }
+            _ => {}
+        }
+        for (binding, _) in assignments {
+            self.receiver_identity
+                .definition(binding, self.current, head.span(), None);
+        }
         if let ForHead::Pat(pattern) = head {
             self.invalidate_property_key_pattern(pattern);
         }
@@ -4834,6 +5034,20 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_assign_expr(&mut self, assignment: &AssignExpr) {
+        let mut assigned = Vec::new();
+        match &assignment.left {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
+                assigned.push((binding.id.to_id(), ValueExpr::Unknown));
+            }
+            AssignTarget::Pat(pattern) => {
+                collect_assign_target_assignments(pattern, &ValueExpr::Unknown, &mut assigned);
+            }
+            _ => {}
+        }
+        for (binding, _) in assigned {
+            self.receiver_identity
+                .definition(binding, self.current, assignment.span, None);
+        }
         match &assignment.left {
             AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => self
                 .property_key_assignments
@@ -4883,6 +5097,7 @@ impl Visit for ExecutionIndex {
             self.intrinsic_writes.push(intrinsic_write_target(
                 member,
                 self.owner,
+                self.current,
                 NativeMutationOperation::PropertyAssignment,
             ));
         }
@@ -5039,6 +5254,8 @@ impl Visit for ExecutionIndex {
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
         if let Expr::Ident(ident) = expression.arg.unwrap_parens() {
+            self.receiver_identity
+                .definition(ident.to_id(), self.current, expression.span, None);
             self.property_key_assignments
                 .entry(ident.to_id())
                 .or_default()
@@ -5052,6 +5269,7 @@ impl Visit for ExecutionIndex {
         {
             self.intrinsic_writes.push(IntrinsicWriteTarget {
                 owner: self.owner,
+                receiver_callable: None,
                 span: expression.span,
                 operation: NativeMutationOperation::Update,
                 receiver: ValueExpr::from_expr(&expression.arg),
@@ -5070,6 +5288,7 @@ impl Visit for ExecutionIndex {
             self.intrinsic_writes.push(intrinsic_write_target(
                 member,
                 self.owner,
+                self.current,
                 NativeMutationOperation::Update,
             ));
             self.mark_dynamic_property_effect(Some(&member.obj));
@@ -5100,6 +5319,7 @@ impl Visit for ExecutionIndex {
             self.intrinsic_writes.push(intrinsic_write_target(
                 member,
                 self.owner,
+                self.current,
                 NativeMutationOperation::Delete,
             ));
             self.mark_dynamic_property_effect(Some(&member.obj));
@@ -5254,6 +5474,7 @@ impl Visit for ExecutionIndex {
             ) {
                 IntrinsicWriteTarget {
                     owner: self.owner,
+                    receiver_callable: None,
                     span: call.span,
                     operation: NativeMutationOperation::MutationCall,
                     receiver,
@@ -5268,6 +5489,7 @@ impl Visit for ExecutionIndex {
             } else {
                 IntrinsicWriteTarget {
                     owner: self.owner,
+                    receiver_callable: None,
                     span: call.span,
                     operation: NativeMutationOperation::MutationCall,
                     receiver,
@@ -5662,37 +5884,28 @@ impl PreparedCallableCapabilities {
         chunk_id: &str,
         source: Option<&(String, js_ast::SourceLineIndex)>,
     ) {
-        let locate = |witness: &mut NativeMutationWitness| {
-            if witness.receiver_roots.is_empty() {
-                return;
-            }
-            witness.chunk_id = chunk_id.to_owned();
-            witness.source_location = source.and_then(|(path, index)| {
+        let source_location = |span| {
+            source.and_then(|(path, index)| {
                 let (start_line, end_line, start_column) =
-                    index.line_range_and_start_column_for_span(witness.span)?;
-                Some(crate::reports::schema::SourceLocation {
+                    index.line_range_and_start_column_for_span(span)?;
+                Some(SourceLocation {
                     source_path: path.clone(),
                     start_line,
                     end_line,
                     start_column: Some(start_column),
                 })
-            });
+            })
+        };
+        let locate = |witness: &mut NativeMutationWitness| {
+            if witness.receiver_roots.is_empty() {
+                return;
+            }
+            witness.chunk_id = chunk_id.to_owned();
+            witness.source_location = source_location(witness.span);
             if let Some(proof) = &mut witness.unreachable_branch {
-                let locate_span = |span| {
-                    source.and_then(|(path, index)| {
-                        let (start_line, end_line, start_column) =
-                            index.line_range_and_start_column_for_span(span)?;
-                        Some(crate::reports::schema::SourceLocation {
-                            source_path: path.clone(),
-                            start_line,
-                            end_line,
-                            start_column: Some(start_column),
-                        })
-                    })
-                };
-                proof.guard_location = locate_span(proof.guard_span);
-                proof.wrapper_call_location = locate_span(proof.wrapper_call_span);
-                proof.callback_location = locate_span(proof.callback_span);
+                proof.guard_location = source_location(proof.guard_span);
+                proof.wrapper_call_location = source_location(proof.wrapper_call_span);
+                proof.callback_location = source_location(proof.callback_span);
             }
         };
         for witness in Arc::make_mut(&mut self.index.native_write_census.witnesses) {
@@ -5700,6 +5913,10 @@ impl PreparedCallableCapabilities {
         }
         for write in &mut self.index.native_write_census.conditional {
             locate(&mut write.witness);
+        }
+        for certificate in Arc::make_mut(&mut self.index.native_write_census.certificates) {
+            certificate.chunk_id = chunk_id.to_owned();
+            locate_receiver_certificate(certificate, source_location);
         }
     }
 

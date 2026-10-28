@@ -796,6 +796,30 @@ through aliases and descendants; only proved global-object receivers receive
 key disjointness. A11 remains an author obligation for hidden native-alias
 paths. Key precision grants no call, purity, throw or return summary.
 
+## Inferred local receiver identity
+
+The canonical execution index can discharge a direct member mutation's native
+alias roots when an unconditional local initializer dominates that receiver
+read. It retains source-positioned definitions, applies overwrite kills, and
+rejects reaching assignments or rebinding from another activation. Receiver parameter cells,
+loops, exceptional transfers, labels, async/generator bodies and dynamic scope
+retain the existing census fallback. Destructuring and reflective mutation
+calls are outside this initial proof's evaluation-order boundary.
+
+Supported initializer results are fresh object literals, direct construction of
+a stable ordinary function declaration with no explicit returns, and a stable
+ordinary wrapper whose sole statement returns that construction. Every joined
+alternative must qualify. Identity is independent of constructor purity: argument
+effects, helper calls, throws and ordinary property effects remain represented.
+The proof never propagates clean identity through the allocation's members or
+through a global-slot read-back.
+
+Graph `native_receiver_certificates` records each discharged site, its prior
+mutation roots, initializer and constructor/wrapper source provenance. `describe`
+selects local certificates or those relevant to evaluated failed native roots,
+with the usual per-section row limits. Other native writes still contribute to
+the unchanged whole-program integrity fixed point. No author contract is added.
+
 ## Ordinary own descriptor inspection
 
 A guarded direct `Object.getOwnPropertyDescriptors` call on an exact ordinary

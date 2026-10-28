@@ -165,6 +165,21 @@ binding writes and unsupported operations remain conservative. This changes
 only the native write premise: ordinary effects, exceptions, loader return
 reads, accessor hazards and callback execution retain their existing analysis.
 
+## Local receiver identity
+
+The canonical collector separately retains a bounded [local receiver identity
+proof](../SPEC.md#inferred-local-receiver-identity). An unconditional initializer
+can establish a fresh direct receiver before a later or other-branch global
+alias assignment to the same activation-local binding. Source-positioned
+definitions prevent that later origin from flowing backward to the earlier
+write. Reaching or captured rebinding and unsupported control flow keep the
+union fallback. An ordinary function with no explicit return yields its fresh
+allocation on successful direct construction; an exact direct-return wrapper
+preserves that result. This is a result-identity fact, independent of purity,
+and does not certify descendants or global-slot descriptors. Discharged census
+sites retain their initializer and producer provenance in
+`native_receiver_certificates`.
+
 ## Ordinary own descriptor inspection
 
 A direct `Object.getOwnPropertyDescriptors` call with one exact ordinary object

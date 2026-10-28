@@ -212,3 +212,67 @@ fn fresh_receiver_identity_does_not_certify_a_native_descendant() {
 }"#,
     );
 }
+
+#[test]
+fn destructuring_reads_the_receiver_after_its_rhs() {
+    assert_unsafe_receiver_rejected(
+        r#"function update(value, branch) {
+  var receiver = {};
+  [receiver.flag] = (receiver = globalThis.slot, [true]);
+  return receiver;
+}"#,
+    );
+}
+
+#[test]
+fn a_receiver_expression_can_replace_the_binding_before_reading_it() {
+    assert_unsafe_receiver_rejected(
+        r#"function update(value, branch) {
+  var receiver = {};
+  (receiver = globalThis.slot, receiver).flag = true;
+  return receiver;
+}"#,
+    );
+}
+
+#[test]
+fn a_reassigned_constructor_is_not_a_stable_allocation_target() {
+    assert_unsafe_receiver_rejected(
+        r#"function Holder(value) { this.value = value; }
+function update(value, branch) {
+  Holder = value;
+  var receiver = new Holder();
+  if (branch) receiver.flag = true;
+  else receiver = globalThis.slot;
+  return receiver;
+}"#,
+    );
+}
+
+#[test]
+fn a_for_head_in_another_callable_can_rebind_the_constructor() {
+    assert_unsafe_receiver_rejected(
+        r#"function Holder(value) { this.value = value; }
+function replace(values) { for (Holder of values) {} }
+function update(value, branch) {
+  replace([value]);
+  var receiver = new Holder();
+  if (branch) receiver.flag = true;
+  else receiver = globalThis.slot;
+  return receiver;
+}"#,
+    );
+}
+
+#[test]
+fn a_nested_for_head_can_rebind_the_captured_receiver() {
+    assert_unsafe_receiver_rejected(
+        r#"function update(value, branch) {
+  var receiver = {};
+  value(() => { for (receiver of [Array.prototype]) {} });
+  if (branch) receiver.flag = true;
+  else receiver = globalThis.slot;
+  return receiver;
+}"#,
+    );
+}

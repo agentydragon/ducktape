@@ -5409,6 +5409,7 @@ pub(crate) fn annotate_synchronous_calls(
                 .into_iter()
                 .collect();
         outcome.effects.native_integrity_witnesses = index.native_integrity_witnesses.clone();
+        outcome.effects.native_receiver_certificates = index.native_receiver_certificates.clone();
         effects.push(outcome.effects);
     }
     for (fact, effect) in facts.iter_mut().zip(effects) {

@@ -377,3 +377,55 @@ fn describe_follows_key_premises_to_the_other_chunk_write() {
     assert!(witnesses.iter().any(|witness| witness["chunk_id"] == "main"
         && witness["affected_roots"] == serde_json::json!(["symbol"])));
 }
+
+#[test]
+fn describe_reports_a_discharged_receiver_with_constructor_provenance_and_limits() {
+    let fixture = GraphFixture::new(
+        "function Holder(value) { this.value = value; }\nfunction clone(value) { return new Holder(value); }\nexport function update(value, branch) {\n  var receiver = value instanceof Holder ? clone(value) : new Holder(value);\n  if (branch) { receiver.flag = true; receiver.other = true; }\n  else receiver = globalThis.slot;\n  return receiver;\n}\n",
+        &[],
+    );
+    let bounded = fixture.json(&["describe", "update", "--limit", "1"]);
+    assert_eq!(
+        bounded["limits"]["sections"]["native_receiver_certificates"],
+        serde_json::json!({"total": 2, "emitted": 1, "truncated": true})
+    );
+    let certificate = &bounded["native_receiver_certificates"][0];
+    assert_eq!(certificate["receiver_binding"], "receiver");
+    assert_eq!(certificate["chunk_id"], "main");
+    assert_eq!(certificate["source_location"]["start_line"], 5);
+    assert_eq!(certificate["initializer_location"]["start_line"], 4);
+    assert_eq!(
+        certificate["previously_affected_roots"],
+        serde_json::json!(["global_object"])
+    );
+    assert_eq!(certificate["origins"][0]["kind"], "wrapper");
+    assert_eq!(certificate["origins"][0]["binding"], "clone");
+    assert_eq!(
+        certificate["origins"][0]["source_location"]["start_line"],
+        2
+    );
+    assert_eq!(
+        certificate["origins"][0]["constructor_location"]["start_line"],
+        1
+    );
+    assert_eq!(certificate["origins"][1]["kind"], "constructor");
+    assert_eq!(certificate["origins"][1]["binding"], "Holder");
+    assert!(certificate.get("span").is_none());
+    let all = fixture.json(&["describe", "update", "--all"]);
+    assert_eq!(
+        all["native_receiver_certificates"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        all["limits"]["sections"]["native_receiver_certificates"],
+        serde_json::json!({"total": 2, "emitted": 2, "truncated": false})
+    );
+    assert!(
+        all["native_integrity_witnesses"]
+            .as_array()
+            .is_none_or(Vec::is_empty)
+    );
+}
