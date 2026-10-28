@@ -1,0 +1,25 @@
+.session-browser-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  gap: var(--mantine-spacing-sm);
+}
+
+.session-browser-sidebar,
+.session-browser-transcript {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.session-browser-events {
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 760px) {
+  .session-browser-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(180px, 34dvh) minmax(0, 1fr);
+  }
+}

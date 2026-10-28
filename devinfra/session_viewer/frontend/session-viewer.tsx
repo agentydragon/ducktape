@@ -1,0 +1,743 @@
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
+import {
+  Alert,
+  Badge,
+  Box,
+  Button,
+  Center,
+  Group,
+  Loader,
+  NativeSelect,
+  Paper,
+  ScrollArea,
+  Select,
+  Stack,
+  Text,
+  Title,
+} from "@mantine/core";
+
+import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
+import { recordLabel, RecordContent, rawRecordText } from "./event-content";
+import type { EventRecord, Harness, Machine, SessionSummary, SessionVersion } from "./schema";
+
+const SESSION_PAGE_SIZE = 50;
+
+export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): JSX.Element {
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [selectedMachineId, setSelectedMachineId] = useState("");
+  const [selectedHarness, setSelectedHarness] = useState("");
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessionCursor, setSessionCursor] = useState<string | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [versions, setVersions] = useState<SessionVersion[]>([]);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [events, setEvents] = useState<EventRecord[]>([]);
+  const [eventCursor, setEventCursor] = useState<number | null>(null);
+  const [parentSession, setParentSession] = useState<SessionSummary | null>(null);
+  const [childSessions, setChildSessions] = useState<SessionSummary[]>([]);
+  const [childSessionCursor, setChildSessionCursor] = useState<string | null>(null);
+  const [loadingMachines, setLoadingMachines] = useState(true);
+  const [loadingSessions, setLoadingSessions] = useState(true);
+  const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+  const [loadingMoreEvents, setLoadingMoreEvents] = useState(false);
+  const [loadingRelatedSessions, setLoadingRelatedSessions] = useState(false);
+  const [loadingMoreRelatedSessions, setLoadingMoreRelatedSessions] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sessionScope = `${selectedMachineId}\u0000${selectedHarness}`;
+  const sessionScopeRef = useRef(sessionScope);
+  sessionScopeRef.current = sessionScope;
+  const eventScope = `${selectedSessionId ?? ""}\u0000${selectedVersionId ?? ""}`;
+  const eventScopeRef = useRef(eventScope);
+  eventScopeRef.current = eventScope;
+  const sessionPageRequest = useRef<AbortController | null>(null);
+  const eventPageRequest = useRef<AbortController | null>(null);
+  const relatedPageRequest = useRef<AbortController | null>(null);
+  const navigationRequest = useRef<AbortController | null>(null);
+  const selectedSessionIdRef = useRef(selectedSessionId);
+  selectedSessionIdRef.current = selectedSessionId;
+
+  const machineNames = useMemo(
+    () => new Map(machines.map((machine) => [machine.id, machine.display_name])),
+    [machines]
+  );
+  const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
+  const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? null;
+
+  useEffect(
+    () => () => {
+      sessionPageRequest.current?.abort();
+      eventPageRequest.current?.abort();
+      relatedPageRequest.current?.abort();
+      navigationRequest.current?.abort();
+    },
+    []
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void api
+      .listMachines(controller.signal)
+      .then(setMachines)
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) setError(errorMessage(reason));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingMachines(false);
+      });
+    return () => controller.abort();
+  }, [api]);
+
+  useEffect(() => {
+    sessionPageRequest.current?.abort();
+    sessionPageRequest.current = null;
+    const controller = new AbortController();
+    setLoadingSessions(true);
+    setLoadingMoreSessions(false);
+    setError(null);
+    void api
+      .listSessions(
+        {
+          ...(selectedMachineId === "" ? {} : { machineId: selectedMachineId }),
+          ...(selectedHarness === "" ? {} : { harness: selectedHarness as Harness }),
+          limit: SESSION_PAGE_SIZE,
+        },
+        controller.signal
+      )
+      .then((page) => {
+        if (controller.signal.aborted) return;
+        setSessions(page.data);
+        setSessionCursor(page.next_cursor);
+        setSelectedSessionId((current) =>
+          current !== null && page.data.some((session) => session.id === current) ? current : (page.data[0]?.id ?? null)
+        );
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) setError(errorMessage(reason));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingSessions(false);
+      });
+    return () => {
+      controller.abort();
+      sessionPageRequest.current?.abort();
+      sessionPageRequest.current = null;
+    };
+  }, [api, selectedMachineId, selectedHarness]);
+
+  useEffect(() => {
+    eventPageRequest.current?.abort();
+    eventPageRequest.current = null;
+    setLoadingMoreEvents(false);
+    if (selectedSession === null) {
+      setVersions([]);
+      setSelectedVersionId(null);
+      setEvents([]);
+      setEventCursor(null);
+      return;
+    }
+    const controller = new AbortController();
+    setVersions([]);
+    setSelectedVersionId(null);
+    setEvents([]);
+    setEventCursor(null);
+    setLoadingVersions(true);
+    setError(null);
+    void api
+      .listVersions(selectedSession.id, controller.signal)
+      .then((items) => {
+        if (controller.signal.aborted) return;
+        setVersions(items);
+        const latest = items.find((version) => version.id === selectedSession.latest_version_id);
+        setSelectedVersionId(latest?.id ?? items[0]?.id ?? null);
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) setError(errorMessage(reason));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingVersions(false);
+      });
+    return () => controller.abort();
+  }, [api, selectedSession?.id, selectedSession?.latest_version_id]);
+
+  useEffect(() => {
+    eventPageRequest.current?.abort();
+    eventPageRequest.current = null;
+    setLoadingMoreEvents(false);
+    if (selectedSession === null || selectedVersionId === null) {
+      setEvents([]);
+      setEventCursor(null);
+      return;
+    }
+    const controller = new AbortController();
+    setEvents([]);
+    setEventCursor(null);
+    setLoadingEvents(true);
+    setError(null);
+    void api
+      .listEvents(selectedSession.id, selectedVersionId, undefined, controller.signal)
+      .then((page) => {
+        if (controller.signal.aborted) return;
+        setEvents(page.data);
+        setEventCursor(page.next_cursor);
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) setError(errorMessage(reason));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingEvents(false);
+      });
+    return () => {
+      controller.abort();
+      eventPageRequest.current?.abort();
+      eventPageRequest.current = null;
+    };
+  }, [api, selectedSession?.id, selectedVersionId]);
+
+  useEffect(() => {
+    relatedPageRequest.current?.abort();
+    relatedPageRequest.current = null;
+    setLoadingMoreRelatedSessions(false);
+    setParentSession(null);
+    setChildSessions([]);
+    setChildSessionCursor(null);
+    if (selectedSession === null) {
+      setLoadingRelatedSessions(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setLoadingRelatedSessions(true);
+    const parent =
+      selectedSession.parent_session_id === null
+        ? Promise.resolve()
+        : api.getSession(selectedSession.parent_session_id, controller.signal).then((item) => {
+            if (!controller.signal.aborted) setParentSession(item);
+          });
+    const children = api
+      .listSessions({ parentSessionId: selectedSession.id, limit: SESSION_PAGE_SIZE }, controller.signal)
+      .then((page) => {
+        if (controller.signal.aborted) return;
+        setChildSessions(page.data);
+        setChildSessionCursor(page.next_cursor);
+      });
+    void Promise.all([parent, children])
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) setError(errorMessage(reason));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingRelatedSessions(false);
+      });
+    return () => {
+      controller.abort();
+      relatedPageRequest.current?.abort();
+      relatedPageRequest.current = null;
+    };
+  }, [api, selectedSession?.id, selectedSession?.parent_session_id]);
+
+  const loadMoreSessions = async (): Promise<void> => {
+    if (sessionCursor === null || loadingMoreSessions) return;
+    const requestedScope = sessionScope;
+    const controller = new AbortController();
+    sessionPageRequest.current?.abort();
+    sessionPageRequest.current = controller;
+    setLoadingMoreSessions(true);
+    setError(null);
+    try {
+      const page = await api.listSessions(
+        {
+          ...(selectedMachineId === "" ? {} : { machineId: selectedMachineId }),
+          ...(selectedHarness === "" ? {} : { harness: selectedHarness as Harness }),
+          cursor: sessionCursor,
+          limit: SESSION_PAGE_SIZE,
+        },
+        controller.signal
+      );
+      if (!controller.signal.aborted && requestedScope === sessionScopeRef.current) {
+        setSessions((current) => mergeById(current, page.data));
+        setSessionCursor(page.next_cursor);
+      }
+    } catch (reason) {
+      if (!controller.signal.aborted && requestedScope === sessionScopeRef.current) setError(errorMessage(reason));
+    } finally {
+      if (sessionPageRequest.current === controller) {
+        sessionPageRequest.current = null;
+        setLoadingMoreSessions(false);
+      }
+    }
+  };
+
+  const loadMoreEvents = async (): Promise<void> => {
+    if (selectedSession === null || selectedVersionId === null || eventCursor === null || loadingMoreEvents) return;
+    const requestedScope = eventScope;
+    const controller = new AbortController();
+    eventPageRequest.current?.abort();
+    eventPageRequest.current = controller;
+    setLoadingMoreEvents(true);
+    setError(null);
+    try {
+      const page = await api.listEvents(selectedSession.id, selectedVersionId, eventCursor, controller.signal);
+      if (!controller.signal.aborted && requestedScope === eventScopeRef.current) {
+        setEvents((current) => mergeByOrdinal(current, page.data));
+        setEventCursor(page.next_cursor);
+      }
+    } catch (reason) {
+      if (!controller.signal.aborted && requestedScope === eventScopeRef.current) setError(errorMessage(reason));
+    } finally {
+      if (eventPageRequest.current === controller) {
+        eventPageRequest.current = null;
+        setLoadingMoreEvents(false);
+      }
+    }
+  };
+
+  const loadMoreRelatedSessions = async (): Promise<void> => {
+    if (selectedSession === null || childSessionCursor === null || loadingMoreRelatedSessions) return;
+    const requestedSessionId = selectedSession.id;
+    const controller = new AbortController();
+    relatedPageRequest.current?.abort();
+    relatedPageRequest.current = controller;
+    setLoadingMoreRelatedSessions(true);
+    try {
+      const page = await api.listSessions(
+        { parentSessionId: requestedSessionId, cursor: childSessionCursor, limit: SESSION_PAGE_SIZE },
+        controller.signal
+      );
+      if (!controller.signal.aborted && requestedSessionId === selectedSessionIdRef.current) {
+        setChildSessions((current) => mergeById(current, page.data));
+        setChildSessionCursor(page.next_cursor);
+      }
+    } catch (reason) {
+      if (!controller.signal.aborted && requestedSessionId === selectedSessionIdRef.current) {
+        setError(errorMessage(reason));
+      }
+    } finally {
+      if (relatedPageRequest.current === controller) {
+        relatedPageRequest.current = null;
+        setLoadingMoreRelatedSessions(false);
+      }
+    }
+  };
+
+  const navigateToSession = async (sessionId: string): Promise<void> => {
+    const controller = new AbortController();
+    navigationRequest.current?.abort();
+    navigationRequest.current = controller;
+    try {
+      const target = await api.getSession(sessionId, controller.signal);
+      if (controller.signal.aborted) return;
+      setSessions((current) => mergeById(current, [target]));
+      setSelectedMachineId("");
+      setSelectedHarness("");
+      setSelectedSessionId(target.id);
+    } catch (reason) {
+      if (!controller.signal.aborted) setError(errorMessage(reason));
+    } finally {
+      if (navigationRequest.current === controller) navigationRequest.current = null;
+    }
+  };
+
+  return (
+    <Stack gap="sm" style={{ height: "100%", minHeight: 0 }}>
+      <Group justify="space-between" align="end" wrap="wrap">
+        <Box>
+          <Title order={1} size="h3">
+            Local agent sessions
+          </Title>
+          <Text size="sm" c="dimmed">
+            Captured Claude Code and Codex CLI conversations
+          </Text>
+        </Box>
+        <Text size="xs" c="dimmed">
+          Sorted by last activity
+        </Text>
+      </Group>
+      {error !== null && (
+        <Alert color="red" title="Session data unavailable">
+          {error}
+        </Alert>
+      )}
+      <Box className="session-browser-layout">
+        <Paper
+          component="aside"
+          aria-label="Session list"
+          withBorder
+          radius="sm"
+          p="xs"
+          className="session-browser-sidebar"
+        >
+          <Stack gap="xs" style={{ height: "100%", minHeight: 0 }}>
+            <Select
+              label="Machine"
+              aria-label="Filter by machine"
+              data={[
+                { value: "", label: "All machines" },
+                ...machines.map((machine) => ({ value: machine.id, label: machine.display_name })),
+              ]}
+              value={selectedMachineId}
+              onChange={(value) => setSelectedMachineId(value ?? "")}
+              disabled={loadingMachines}
+              placeholder={loadingMachines ? "Loading machines…" : "All machines"}
+            />
+            <NativeSelect
+              label="Harness"
+              aria-label="Filter by harness"
+              value={selectedHarness}
+              onChange={(event) => setSelectedHarness(event.currentTarget.value)}
+              data={[
+                { value: "", label: "All harnesses" },
+                { value: "claude", label: "Claude Code" },
+                { value: "codex", label: "Codex CLI" },
+              ]}
+            />
+            <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
+              {loadingSessions ? (
+                <Center h={200}>
+                  <Loader size="sm" aria-label="Loading sessions" />
+                </Center>
+              ) : sessions.length === 0 ? (
+                <Center h={160} px="md">
+                  <Text size="sm" c="dimmed" ta="center">
+                    No captured sessions match these filters.
+                  </Text>
+                </Center>
+              ) : (
+                <Stack gap={4}>
+                  {sessions.map((session) => (
+                    <SessionRow
+                      key={session.id}
+                      session={session}
+                      machineName={machineNames.get(session.machine_id) ?? session.machine_id}
+                      selected={session.id === selectedSessionId}
+                      onSelect={() => setSelectedSessionId(session.id)}
+                    />
+                  ))}
+                </Stack>
+              )}
+              {sessionCursor !== null && (
+                <Button
+                  fullWidth
+                  variant="default"
+                  mt="xs"
+                  loading={loadingMoreSessions}
+                  onClick={() => void loadMoreSessions()}
+                >
+                  Load more sessions
+                </Button>
+              )}
+            </ScrollArea>
+          </Stack>
+        </Paper>
+
+        <Paper
+          component="section"
+          aria-label="Session transcript"
+          withBorder
+          radius="sm"
+          p="md"
+          className="session-browser-transcript"
+        >
+          {selectedSession === null ? (
+            <Center h="100%">
+              <Text c="dimmed">Select a session to view its captured versions.</Text>
+            </Center>
+          ) : (
+            <Stack gap="md" style={{ height: "100%", minHeight: 0 }}>
+              <Group justify="space-between" align="start" wrap="wrap">
+                <Box style={{ minWidth: 240, flex: 1 }}>
+                  <Group gap="xs" mb={4}>
+                    <Badge variant="light">{harnessLabel(selectedSession.harness)}</Badge>
+                    <Text size="sm" c="dimmed">
+                      {machineNames.get(selectedSession.machine_id) ?? selectedSession.machine_id}
+                    </Text>
+                    {selectedSession.identity_inferred && (
+                      <Badge color="orange" variant="light">
+                        Identity inferred
+                      </Badge>
+                    )}
+                  </Group>
+                  <Title order={2} size="h4" style={{ overflowWrap: "anywhere" }}>
+                    {selectedSession.title || "Untitled session"}
+                  </Title>
+                  {selectedSession.cwd !== null && (
+                    <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
+                      {selectedSession.cwd}
+                    </Text>
+                  )}
+                  <Text size="xs" c="dimmed" mt={4}>
+                    Started {formatDateTime(selectedSession.started_at)} · Last active{" "}
+                    {formatDateTime(selectedSession.last_activity_at)}
+                  </Text>
+                  {selectedSession.identity_inferred && (
+                    <Text size="xs" c="orange" mt={4}>
+                      This path-derived placeholder has no captured transcript yet.
+                    </Text>
+                  )}
+                </Box>
+                <Box style={{ width: "min(100%, 360px)" }}>
+                  <NativeSelect
+                    label="Captured version"
+                    aria-label="Captured version"
+                    value={selectedVersionId ?? ""}
+                    onChange={(event) => setSelectedVersionId(event.currentTarget.value || null)}
+                    disabled={loadingVersions || versions.length === 0}
+                    data={
+                      versions.length === 0
+                        ? [{ value: "", label: loadingVersions ? "Loading versions…" : "No captured versions" }]
+                        : versions.map((version) => ({
+                            value: version.id,
+                            label: `${version.id === selectedSession.latest_version_id ? "Latest captured · " : ""}${formatDateTime(version.captured_at)} · ${formatBytes(version.byte_size)}`,
+                          }))
+                    }
+                  />
+                  {selectedVersion !== null && (
+                    <Text size="xs" c="dimmed" mt={4} style={{ overflowWrap: "anywhere" }}>
+                      {selectedVersion.complete ? "All JSONL lines parsed" : "Some JSONL lines did not parse"} ·{" "}
+                      {selectedVersion.parse_issue_count} parse issues · SHA-256 {selectedVersion.sha256.slice(0, 12)}
+                    </Text>
+                  )}
+                </Box>
+              </Group>
+              {(selectedSession.parent_session_id !== null || childSessions.length > 0 || loadingRelatedSessions) && (
+                <Paper withBorder radius="sm" p="xs" aria-label="Related sessions">
+                  <Stack gap="xs">
+                    <Text size="sm" fw={600}>
+                      Related sessions
+                    </Text>
+                    {selectedSession.parent_session_id !== null && (
+                      <Group gap="xs" wrap="wrap">
+                        <Text size="xs" c="dimmed">
+                          Parent
+                        </Text>
+                        {parentSession !== null ? (
+                          <Button variant="subtle" size="xs" onClick={() => void navigateToSession(parentSession.id)}>
+                            {parentSession.title || "Untitled parent session"}
+                          </Button>
+                        ) : (
+                          <Loader size="xs" aria-label="Loading parent session" />
+                        )}
+                        {selectedSession.parent_link_kind === "claude_path_inferred" && (
+                          <Badge color="orange" variant="light">
+                            Parent inferred from Claude subagent path
+                          </Badge>
+                        )}
+                        {parentSession?.identity_inferred && (
+                          <Text size="xs" c="orange">
+                            Parent transcript is not captured; its identity is inferred.
+                          </Text>
+                        )}
+                      </Group>
+                    )}
+                    {childSessions.length > 0 && (
+                      <Stack gap={2}>
+                        <Text size="xs" c="dimmed">
+                          Child sessions
+                        </Text>
+                        {childSessions.map((child) => (
+                          <Group key={child.id} gap="xs" wrap="wrap">
+                            <Button variant="subtle" size="xs" onClick={() => void navigateToSession(child.id)}>
+                              {child.title || "Untitled child session"}
+                            </Button>
+                            {child.parent_link_kind === "claude_path_inferred" && (
+                              <Badge color="orange" variant="light">
+                                Path-inferred link
+                              </Badge>
+                            )}
+                            <Text size="xs" c="dimmed">
+                              {formatDateTime(child.last_activity_at)}
+                            </Text>
+                          </Group>
+                        ))}
+                      </Stack>
+                    )}
+                    {loadingRelatedSessions && <Loader size="xs" aria-label="Loading related sessions" />}
+                    {childSessionCursor !== null && (
+                      <Button
+                        variant="default"
+                        size="xs"
+                        loading={loadingMoreRelatedSessions}
+                        onClick={() => void loadMoreRelatedSessions()}
+                      >
+                        Load more child sessions
+                      </Button>
+                    )}
+                  </Stack>
+                </Paper>
+              )}
+              {selectedVersion === null && !loadingVersions ? (
+                <Center h={180}>
+                  <Text size="sm" c="dimmed">
+                    No captured version is available for this session.
+                  </Text>
+                </Center>
+              ) : loadingEvents && events.length === 0 ? (
+                <Center style={{ flex: 1 }}>
+                  <Loader size="sm" aria-label="Loading conversation records" />
+                </Center>
+              ) : (
+                <ScrollArea className="session-browser-events" type="auto">
+                  <Stack gap="sm" pb="md">
+                    {events.map((record) => (
+                      <EventRow key={`${record.ordinal}`} record={record} />
+                    ))}
+                    {events.length === 0 && !loadingEvents && (
+                      <Text size="sm" c="dimmed">
+                        This captured version contains no JSONL records.
+                      </Text>
+                    )}
+                    {eventCursor !== null && (
+                      <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
+                        Load more records
+                      </Button>
+                    )}
+                  </Stack>
+                </ScrollArea>
+              )}
+            </Stack>
+          )}
+        </Paper>
+      </Box>
+    </Stack>
+  );
+}
+
+function SessionRow({
+  session,
+  machineName,
+  selected,
+  onSelect,
+}: {
+  session: SessionSummary;
+  machineName: string;
+  selected: boolean;
+  onSelect: () => void;
+}): JSX.Element {
+  return (
+    <Button
+      variant={selected ? "light" : "subtle"}
+      color={selected ? "blue" : "gray"}
+      fullWidth
+      justify="flex-start"
+      onClick={onSelect}
+      aria-pressed={selected}
+      styles={{
+        root: { height: "auto", padding: "8px", textAlign: "left" },
+        label: { display: "block", width: "100%" },
+      }}
+    >
+      <Stack gap={2} style={{ width: "100%", alignItems: "stretch" }}>
+        <Group justify="space-between" gap="xs" wrap="nowrap">
+          <Text size="xs" fw={600} truncate>
+            {machineName}
+          </Text>
+          <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+            {formatDateTime(session.last_activity_at)}
+          </Text>
+        </Group>
+        <Text size="sm" fw={500} lineClamp={2} style={{ whiteSpace: "normal" }}>
+          {session.title || "Untitled session"}
+        </Text>
+        <Group justify="space-between" gap="xs">
+          <Text size="xs" c="dimmed">
+            {harnessLabel(session.harness)}
+          </Text>
+          <Text size="xs" c="dimmed">
+            {session.version_count} {session.version_count === 1 ? "version" : "versions"}
+          </Text>
+        </Group>
+      </Stack>
+    </Button>
+  );
+}
+
+function EventRow({ record }: { record: EventRecord }): JSX.Element {
+  return (
+    <Paper withBorder radius="sm" p="sm" data-event-ordinal={record.ordinal}>
+      <Stack gap="xs">
+        <Group justify="space-between" align="start" gap="xs">
+          <Group gap="xs">
+            <Badge variant="light">{recordLabel(record)}</Badge>
+            <Text size="xs" c="dimmed">
+              Line {record.ordinal}
+            </Text>
+            {record.parse_error != null && (
+              <Badge color="orange" variant="light">
+                Malformed JSONL
+              </Badge>
+            )}
+          </Group>
+          <Text size="xs" c="dimmed">
+            {formatDateTime(record.timestamp)}
+          </Text>
+        </Group>
+        <RecordContent record={record} />
+        <details>
+          <summary style={{ cursor: "pointer", fontSize: "var(--mantine-font-size-xs)" }}>Raw JSONL record</summary>
+          <Box
+            component="pre"
+            mt="xs"
+            p="xs"
+            style={{
+              background: "var(--mantine-color-default-hover)",
+              borderRadius: "var(--mantine-radius-sm)",
+              maxHeight: 360,
+              overflow: "auto",
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
+              fontSize: "var(--mantine-font-size-xs)",
+            }}
+          >
+            {rawRecordText(record.raw_base64)}
+          </Box>
+          <details>
+            <summary style={{ cursor: "pointer", fontSize: "var(--mantine-font-size-xs)" }}>
+              Exact line bytes (base64)
+            </summary>
+            <Box
+              component="pre"
+              mt="xs"
+              style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: "var(--mantine-font-size-xs)" }}
+            >
+              {record.raw_base64}
+            </Box>
+          </details>
+        </details>
+      </Stack>
+    </Paper>
+  );
+}
+
+function mergeById<T extends { id: string }>(previous: T[], incoming: T[]): T[] {
+  const byId = new Map(previous.map((item) => [item.id, item]));
+  for (const item of incoming) byId.set(item.id, item);
+  return [...byId.values()];
+}
+
+function mergeByOrdinal(previous: EventRecord[], incoming: EventRecord[]): EventRecord[] {
+  const byOrdinal = new Map(previous.map((event) => [event.ordinal, event]));
+  for (const event of incoming) byOrdinal.set(event.ordinal, event);
+  return [...byOrdinal.values()].sort((left, right) => left.ordinal - right.ordinal);
+}
+
+function formatDateTime(value: string | null): string {
+  if (value === null) return "Unknown time";
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return value;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes;
+  for (const unit of units) {
+    value /= 1024;
+    if (value < 1024 || unit === "GB") return `${value.toFixed(value < 10 ? 1 : 0)} ${unit}`;
+  }
+  return `${bytes} B`;
+}
+
+function errorMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : "Could not load local sessions.";
+}
