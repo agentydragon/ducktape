@@ -22,6 +22,7 @@ afterEach(async () => {
   container?.remove();
   root = null;
   container = null;
+  localStorage.removeItem("ai-session-archive-sidebar-width");
   vi.useRealTimers();
 });
 
@@ -69,6 +70,43 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   });
   return { promise, resolve };
 }
+
+it("resizes the session list from its accessible separator", async () => {
+  const view = await renderViewer(sessionFixtureApi);
+  const separator = view.querySelector<HTMLElement>('[role="separator"][aria-label="Resize session list"]');
+  expect(separator).not.toBeNull();
+  expect(separator?.getAttribute("aria-controls")).toBe("session-browser-sidebar");
+  expect(separator?.getAttribute("aria-valuenow")).toBe("320");
+
+  await act(async () => {
+    separator!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  });
+  expect(separator?.getAttribute("aria-valuenow")).toBe("336");
+
+  await act(async () => {
+    separator!.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
+  });
+  expect(separator?.getAttribute("aria-valuenow")).toBe("520");
+});
+
+it("opens and closes the mobile session list with Escape", async () => {
+  const view = await renderViewer(sessionFixtureApi);
+  const toggle = view.querySelector<HTMLButtonElement>(".session-browser-mobile-toggle");
+  const sidebar = view.querySelector<HTMLElement>("#session-browser-sidebar");
+  expect(toggle).not.toBeNull();
+  expect(sidebar).not.toBeNull();
+  expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+
+  await act(async () => toggle!.click());
+  expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+  expect(sidebar?.classList.contains("session-browser-sidebar-open")).toBe(true);
+
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  });
+  expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+  expect(sidebar?.classList.contains("session-browser-sidebar-open")).toBe(false);
+});
 
 it("opens a direct session link outside the first page and restores the requested version and filters", async () => {
   const api: SessionBrowserApi = {

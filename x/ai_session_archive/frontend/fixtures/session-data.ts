@@ -257,6 +257,40 @@ export const sessionFixtureApi: SessionBrowserApi = {
   },
 };
 
+const longRelatedChildren: SessionSummary[] = Array.from({ length: 63 }, (_unused, index) => ({
+  id: `claude-child-${String(index + 1).padStart(2, "0")}`,
+  machine_id: "atlas",
+  harness: "claude",
+  title: `Inspect module ${String(index + 1).padStart(2, "0")}`,
+  cwd: "/home/example/another-project",
+  started_at: "2026-10-27T18:00:00Z",
+  last_activity_at: "2026-10-27T18:45:00Z",
+  latest_version_id: null,
+  version_count: 0,
+  latest_version_record_count: null,
+  transcript_status: "unavailable",
+  parent_session_id: "claude-session-1",
+  parent_link_kind: "claude_path_inferred",
+  parent_native_session_id: null,
+  identity_inferred: false,
+}));
+
+export const longRelatedSessionFixtureApi: SessionBrowserApi = {
+  ...sessionFixtureApi,
+  async listSessions(query, signal) {
+    if (query.parentSessionId !== "claude-session-1") return sessionFixtureApi.listSessions(query, signal);
+    const offset = Number(query.cursor ?? "0");
+    const limit = query.limit ?? 50;
+    const data = longRelatedChildren.slice(offset, offset + limit);
+    const next = offset + data.length;
+    return { data, next_cursor: next < longRelatedChildren.length ? String(next) : null };
+  },
+  async getSession(sessionId, signal) {
+    const child = longRelatedChildren.find((session) => session.id === sessionId);
+    return child ?? sessionFixtureApi.getSession(sessionId, signal);
+  },
+};
+
 function record(ordinal: number, parsed: unknown | null, kind: string, malformedRaw?: string): EventRecord {
   const raw = malformedRaw ?? JSON.stringify(parsed);
   return {

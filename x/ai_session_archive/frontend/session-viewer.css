@@ -1,9 +1,9 @@
 .session-browser-layout {
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  grid-template-columns: var(--session-sidebar-width) 8px minmax(0, 1fr);
   flex: 1;
   min-height: 0;
-  gap: var(--mantine-spacing-sm);
+  gap: 0;
 }
 
 .session-browser-sidebar,
@@ -12,9 +12,66 @@
   overflow: hidden;
 }
 
+.session-browser-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-sm);
+}
+
 .session-browser-events {
   flex: 1;
   min-height: 0;
+}
+
+.session-browser-related-sessions {
+  max-height: min(20dvh, 156px);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.session-browser-related-sessions:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -2px;
+}
+
+.session-browser-resize-handle {
+  position: relative;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  z-index: 1;
+}
+
+.session-browser-resize-handle::after {
+  position: absolute;
+  inset: 0 auto 0 3px;
+  width: 1px;
+  background: var(--mantine-color-default-border);
+  content: "";
+}
+
+.session-browser-resize-handle:hover::after,
+.session-browser-resize-handle:focus-visible::after {
+  width: 3px;
+  left: 2px;
+  background: var(--mantine-primary-color-filled);
+  opacity: 0.65;
+}
+
+.session-browser-resize-handle:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -2px;
+}
+
+.session-browser-related-children {
+  max-height: min(12dvh, 96px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .session-import-progress-machines {
@@ -25,7 +82,59 @@
   display: none;
 }
 
+.session-browser-mobile-toggle,
+.session-browser-mobile-sidebar-heading,
+.session-browser-mobile-backdrop {
+  display: none;
+}
+
 @media (max-width: 760px) {
+  .session-browser-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .session-browser-sidebar {
+    display: none;
+  }
+
+  .session-browser-sidebar.session-browser-sidebar-open {
+    position: fixed;
+    inset: 0;
+    z-index: 21;
+    display: block;
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    background: var(--mantine-color-body);
+  }
+
+  .session-browser-mobile-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: block;
+    background: rgb(0 0 0 / 40%);
+  }
+
+  .session-browser-mobile-toggle,
+  .session-browser-mobile-sidebar-heading {
+    display: flex;
+  }
+
+  .session-browser-resize-handle {
+    display: none;
+  }
+
+  .session-browser-related-children {
+    max-height: min(9dvh, 72px);
+  }
+
+  .session-browser-related-sessions {
+    max-height: min(16dvh, 128px);
+  }
+
   .session-import-progress-machines {
     max-height: 144px;
   }
@@ -43,10 +152,5 @@
 
   .session-import-progress-explanation-mobile summary {
     cursor: pointer;
-  }
-
-  .session-browser-layout {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(180px, 34dvh) minmax(0, 1fr);
   }
 }

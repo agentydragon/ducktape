@@ -124,9 +124,9 @@ ts_library(
         "//:node_modules/react-router",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:icons",
-        "//agentplane/app/frontend:resize_handle",
         "//agentplane/app/frontend:text_block",
         "//agentplane/app/frontend/actions/rendering:index",
+        "//util/frontend:resize_handle",
     ],
 )
 

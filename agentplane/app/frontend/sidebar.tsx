@@ -5,7 +5,7 @@ import { type JSX, useEffect, useState } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
 
 import { ActionsSidebarSection } from "./actions/sidebar";
-import { ResizeHandle, usePaneSize } from "./resize_handle";
+import { ResizeHandle, usePaneSize } from "../../../util/frontend/resize_handle";
 import "./sidebar.css";
 import { ThreadList } from "./threads/thread_list";
 import { ScrollDebugTools } from "./threads/scroll_debug_tools";

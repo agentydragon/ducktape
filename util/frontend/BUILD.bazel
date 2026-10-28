@@ -129,6 +129,22 @@ ts_library(
 )
 
 ts_library(
+    name = "resize_handle",
+    srcs = ["resize_handle.tsx"],
+    isolated_typecheck = True,
+    tsconfig = ":tsconfig",
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+    deps = [
+        "//:node_modules/@mantine/hooks",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "test_intersection_observer",
     testonly = True,
     srcs = ["test_intersection_observer.ts"],

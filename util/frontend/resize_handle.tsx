@@ -46,6 +46,7 @@ export function ResizeHandle({
   className: string;
   "aria-label": string;
   "aria-controls"?: string;
+  "aria-valuetext"?: string;
 }): JSX.Element {
   const drag = useRef<{ pointerId: number; start: number; startSize: number } | null>(null);
   const along = (event: PointerEvent): number => (axis === "x" ? event.clientX : -event.clientY);
@@ -60,6 +61,8 @@ export function ResizeHandle({
       aria-valuemax={pane.max}
       tabIndex={0}
       onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
         drag.current = { pointerId: event.pointerId, start: along(event), startSize: pane.size };
         event.currentTarget.setPointerCapture?.(event.pointerId);
       }}
@@ -72,7 +75,21 @@ export function ResizeHandle({
         drag.current = null;
         event.currentTarget.releasePointerCapture?.(event.pointerId);
       }}
+      onPointerCancel={(event) => {
+        if (drag.current?.pointerId !== event.pointerId) return;
+        drag.current = null;
+      }}
       onKeyDown={(event) => {
+        if (event.key === "Home") {
+          event.preventDefault();
+          pane.resize(pane.min);
+          return;
+        }
+        if (event.key === "End") {
+          event.preventDefault();
+          pane.resize(pane.max);
+          return;
+        }
         if (event.key !== grow && event.key !== shrink) return;
         event.preventDefault();
         pane.step(event.key === grow ? KEYBOARD_STEP : -KEYBOARD_STEP);

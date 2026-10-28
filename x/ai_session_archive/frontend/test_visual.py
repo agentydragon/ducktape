@@ -58,30 +58,37 @@ async def test_import_progress_on_mobile(visual: VisualHarness, capture_name: st
         page = view.page
         progress = page.get_by_role("region", name="Import progress by machine")
         thinkpad_progress = page.get_by_role("progressbar", name="ThinkPad file-entry progress")
-        sidebar = page.get_by_role("complementary", name="Session list")
-        session_list_refresh = page.get_by_role("button", name="Refresh session list")
+        session_list_toggle = page.get_by_role("button", name="Session list")
         progress_explanation = page.locator(".session-import-progress-explanation-mobile")
         await expect(progress).to_contain_text("File entries: 27 processed · 4 pending · 0 failed")
         await expect(thinkpad_progress).to_have_attribute("aria-valuemax", "31")
-        await expect(session_list_refresh).to_be_visible()
+        await expect(session_list_toggle).to_be_visible()
         await expect(progress_explanation.locator("summary")).to_contain_text(
             "Denominator: inventoried entries so far; can grow"
         )
 
         progress_bounds = await thinkpad_progress.bounding_box()
-        sidebar_bounds = await sidebar.bounding_box()
-        refresh_bounds = await session_list_refresh.bounding_box()
         assert progress_bounds is not None
         assert progress_bounds["x"] >= 0
         assert progress_bounds["x"] + progress_bounds["width"] <= 390
         assert progress_bounds["y"] >= 0
         assert progress_bounds["y"] + progress_bounds["height"] <= 844
+
+        await view.check(context="the first machine progress bar and session-list button fit the mobile viewport")
+        await view.capture(target=page.locator("#root"))
+
+        await session_list_toggle.click()
+        sidebar = page.get_by_role("dialog", name="Session list")
+        session_list_refresh = sidebar.get_by_role("button", name="Refresh session list")
+        await expect(sidebar).to_be_visible()
+        await expect(session_list_refresh).to_be_visible()
+        sidebar_bounds = await sidebar.bounding_box()
+        refresh_bounds = await session_list_refresh.bounding_box()
         assert sidebar_bounds is not None
         assert refresh_bounds is not None
+        assert sidebar_bounds["y"] >= 0
+        assert sidebar_bounds["y"] + sidebar_bounds["height"] <= 844
         assert refresh_bounds["y"] + refresh_bounds["height"] <= sidebar_bounds["y"] + sidebar_bounds["height"]
-
-        await view.check(context="the first machine progress bar and session-list controls fit the mobile viewport")
-        await view.capture(target=page.locator("#root"))
 
 
 async def test_inferred_subagent_parent_link(visual: VisualHarness, capture_name: str) -> None:
@@ -101,6 +108,45 @@ async def test_inferred_subagent_parent_link(visual: VisualHarness, capture_name
         ).to_be_visible()
         await view.check(context="child transcript and inferred parent link are visible")
         await view.capture(target=page.locator("#root"))
+
+
+@pytest.mark.parametrize(
+    "viewport", [Viewport(width=1440, height=780), Viewport(width=390, height=844)], ids=["desktop", "mobile"]
+)
+async def test_long_child_list_stays_scrollable_without_covering_transcript(
+    visual: VisualHarness, capture_name: str, viewport: Viewport
+) -> None:
+    async with visual.open(
+        "long-child-list", viewport=viewport, color_scheme="light", capture_name=capture_name
+    ) as view:
+        page = view.page
+        if viewport.width <= 760:
+            await page.get_by_role("button", name="Session list").click()
+        await page.get_by_role("link", name="Inspect a local transcript").click()
+
+        related = page.locator('[aria-label="Related sessions"]')
+        children = page.get_by_role("region", name="Child sessions")
+        transcript = page.get_by_role("region", name="Session transcript")
+        await expect(related).to_contain_text("Inferred Claude parent · session 12ab")
+        await expect(children).to_contain_text("Inspect module 01")
+        await expect(transcript).to_contain_text("The capture preserves the original JSONL records.")
+        assert await children.evaluate("element => element.scrollHeight > element.clientHeight")
+
+        await related.get_by_role("button", name="Load more child sessions").click()
+        await expect(children).to_contain_text("Inspect module 63")
+        await children.evaluate("element => { element.scrollTop = element.scrollHeight; }")
+        last_child = children.get_by_role("link", name="Inspect module 63")
+        await expect(last_child).to_be_in_viewport()
+        await expect(transcript).to_contain_text("The capture preserves the original JSONL records.")
+        events = page.locator(".session-browser-events")
+        assert await events.evaluate(
+            "element => { const rect = element.getBoundingClientRect(); return element.clientHeight >= 150 && rect.top >= 0 && rect.bottom <= window.innerHeight; }"
+        )
+        assert await events.locator('[data-event-ordinal="1"]').evaluate(
+            "element => { const parent = element.closest('.session-browser-events'); const row = element.getBoundingClientRect(); const viewport = parent.getBoundingClientRect(); return row.top >= viewport.top && row.bottom <= viewport.bottom; }"
+        )
+        await view.check(context="child sessions scroll independently and the conversation stays visible")
+        await view.capture(target=page.locator("#root"), name=f"{capture_name}_child_list_end")
 
 
 if __name__ == "__main__":

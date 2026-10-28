@@ -625,17 +625,6 @@ ts_library(
 )
 
 ts_library(
-    name = "resize_handle",
-    srcs = ["resize_handle.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@mantine/hooks",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "sidebar",
     srcs = [
         "sidebar.tsx",
@@ -643,7 +632,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":icons",
-        ":resize_handle",
         ":sidebar_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -652,6 +640,7 @@ ts_library(
         "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/threads:scroll_debug_tools",
         "//agentplane/app/frontend/threads:thread_list",
+        "//util/frontend:resize_handle",
     ],
 )
 

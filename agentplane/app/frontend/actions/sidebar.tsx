@@ -4,7 +4,7 @@ import { type JSX, useContext, useEffect, useMemo, useRef, useState } from "reac
 import { Link, useLocation } from "react-router";
 
 import { JsonBlock } from "../text_block";
-import { ResizeHandle, usePaneSize } from "../resize_handle";
+import { ResizeHandle, usePaneSize } from "../../../../util/frontend/resize_handle";
 import {
   actionCompactCardExpands,
   actionOffersCardDecisionButtons,
