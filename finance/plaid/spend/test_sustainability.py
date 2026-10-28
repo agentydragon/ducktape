@@ -19,7 +19,7 @@ from finance.plaid.spend.allowance import (
     RuleScope,
     Transaction,
 )
-from finance.plaid.spend.models import SpendConfiguration
+from finance.plaid.spend.configuration import SpendConfiguration
 from finance.plaid.spend.portfolio_models import PlaidSourcePolicy, PortfolioPolicy, PortfolioSources, PortfolioView
 from finance.plaid.spend.reconciliation_views import sustainability_view
 from finance.plaid.spend.sustainability import (

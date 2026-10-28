@@ -18,7 +18,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 
 from finance.plaid.spend.allowance import EstimatePeriodId, PeriodId, TransactionPeriodId
-from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView, load_configuration
+from finance.plaid.spend.configuration import load_configuration
+from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView
 from finance.plaid.spend.portfolio import CoinbaseClient
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings

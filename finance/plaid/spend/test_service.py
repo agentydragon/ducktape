@@ -34,13 +34,8 @@ from finance.plaid.spend.allowance import (
     Status,
 )
 from finance.plaid.spend.app import _event_stream
-from finance.plaid.spend.models import (
-    AlertState,
-    AnalysisCategoryView,
-    CardConfig,
-    SpendConfiguration,
-    SpendTransactionRow,
-)
+from finance.plaid.spend.configuration import CardConfig, SpendConfiguration
+from finance.plaid.spend.models import AlertState, AnalysisCategoryView, SpendTransactionRow
 from finance.plaid.spend.portfolio_models import (
     HoldingValueCorrection,
     PlaidSourcePolicy,

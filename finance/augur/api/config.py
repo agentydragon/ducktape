@@ -33,7 +33,7 @@ from finance.augur.x.models.provider_config import CompositeProviderConfig, Mirr
 from finance.augur.x.models.state_space import StateSpaceProviderConfig
 from finance.augur.x.models.trained_private_equity import TrainedPrivateEquityProviderConfig
 from finance.budget.schema import BudgetConfig
-from util.yaml_decimal import DecimalSafeLoader
+from finance.yaml_decimal import DecimalSafeLoader
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")

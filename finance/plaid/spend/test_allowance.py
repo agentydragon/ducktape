@@ -35,12 +35,8 @@ from finance.plaid.spend.allowance import (
     matching_rule,
     month_anniversary,
 )
-from finance.plaid.spend.models import (
-    AllowanceConfigurationView,
-    SpendConfiguration,
-    SpendConfigurationView,
-    load_configuration,
-)
+from finance.plaid.spend.configuration import SpendConfiguration, load_configuration
+from finance.plaid.spend.models import AllowanceConfigurationView, SpendConfigurationView
 from finance.plaid.spend.reconciliation_views import allowance_view
 from util.bazel.runfiles import get_required_path
 

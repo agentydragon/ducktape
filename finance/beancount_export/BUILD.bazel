@@ -19,10 +19,10 @@ py_library(
     srcs = ["runner.py"],
     deps = [
         ":export",
+        "//finance:yaml_decimal",
         "//finance/budget:schema",
         "//finance/budget:sql_read_model",
         "//finance/plaid/db:models",
-        "//util:yaml_decimal",
         "@pypi//beancount",
         "@pypi//pygit2",
         "@pypi//pyyaml",

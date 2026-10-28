@@ -22,7 +22,9 @@ service publishes their generated schema at `/openapi.json`; the browser generat
 values calculated by the service are integer currency minor units. Original Plaid transaction amounts in the
 authenticated detail view remain decimal strings in major units. Card percentages and sustainability rates are
 `Decimal` values serialized as strings. Browser calculations use Decimal.js until the display/chart boundary.
-Configuration loading preserves YAML decimal tokens before validation, including tax rates and holding corrections.
+Server-side policy models and YAML loading live in [`configuration.py`](configuration.py), separate from the response
+models used by desktop clients. Loading preserves decimal tokens before validation, including tax rates and holding
+corrections, using [`finance.yaml_decimal`](../../yaml_decimal.py).
 
 - The shared spend configuration requires a root-level `time_zone` IANA zone.
   It determines local midnight for card, allowance, and sustainability reports,
@@ -84,7 +86,7 @@ each view. Private reports call the same preparation and disposition functions a
 
 ## Shared card configuration
 
-The private policy file follows `SpendConfiguration` in [`models.py`](models.py). Its `cards` list is required;
+The private policy file follows `SpendConfiguration` in [`configuration.py`](configuration.py). Its `cards` list is required;
 `allowance` is optional and can be omitted to disable the allowance.
 
 Use `null` for an optional limit or threshold. The service validates this file at startup and reads it from

@@ -30,7 +30,7 @@ from finance.beancount_export.export import ClassifiedTxn, render_ledger
 from finance.budget.schema import BudgetConfig
 from finance.budget.sql_read_model import ClassifiedRow, read_all_classified
 from finance.plaid.db.models import async_session_factory
-from util.yaml_decimal import DecimalSafeLoader
+from finance.yaml_decimal import DecimalSafeLoader
 
 log = structlog.get_logger()
 

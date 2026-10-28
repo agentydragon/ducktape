@@ -8,6 +8,7 @@ py_library(
     srcs = ["app.py"],
     deps = [
         ":allowance",
+        ":configuration",
         ":models",
         ":portfolio",
         ":service",
@@ -36,10 +37,7 @@ py_library(
     visibility = ["//finance/plaid/spend:__subpackages__"],
     deps = [
         ":allowance",
-        ":sustainability",
-        "//util:yaml_decimal",
         "@pypi//pydantic",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -48,6 +46,7 @@ py_library(
     srcs = ["service.py"],
     deps = [
         ":allowance",
+        ":configuration",
         ":models",
         ":portfolio",
         ":portfolio_models",
@@ -107,6 +106,7 @@ py_test(
     data = ["one-off-configuration.yaml"],
     deps = [
         ":allowance",
+        ":configuration",
         ":conftest",
         ":models",
         ":reconciliation_views",
@@ -150,6 +150,7 @@ py_test(
     deps = [
         ":allowance",
         ":app",
+        ":configuration",
         ":conftest",
         ":models",
         ":portfolio_models",
@@ -307,8 +308,8 @@ py_test(
     srcs = ["test_sustainability.py"],
     deps = [
         ":allowance",
+        ":configuration",
         ":conftest",
-        ":models",
         ":portfolio_models",
         ":reconciliation_views",
         ":sustainability",
@@ -380,5 +381,17 @@ py_library(
         ":allowance",
         ":reconciliation",
         ":sustainability",
+    ],
+)
+
+py_library(
+    name = "configuration",
+    srcs = ["configuration.py"],
+    deps = [
+        ":allowance",
+        ":sustainability",
+        "//finance:yaml_decimal",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
     ],
 )

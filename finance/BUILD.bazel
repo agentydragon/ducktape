@@ -1,5 +1,5 @@
 # gazelle:ignore
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "gnucash_util",
@@ -7,6 +7,25 @@ py_library(
     visibility = ["//finance:__subpackages__"],
     # TODO: add gnucash
     deps = [],
+)
+
+py_library(
+    name = "yaml_decimal",
+    srcs = ["yaml_decimal.py"],
+    visibility = ["//finance:__subpackages__"],
+    deps = ["@pypi//pyyaml"],
+)
+
+py_test(
+    name = "test_yaml_decimal",
+    srcs = ["test_yaml_decimal.py"],
+    deps = [
+        ":yaml_decimal",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
 )
 
 # NOTE: Rust linting uses --config=rust-check (clippy + rustfmt)

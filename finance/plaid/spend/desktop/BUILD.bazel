@@ -126,12 +126,8 @@ py_wheel(
         "dbus-next>=0.2.3",
         "httpx>=0.27.0",
         "pydantic>=2.0",
-        "PyYAML>=6.0.0",
     ],
     version = "0.1.0",
     visibility = ["//visibility:public"],
-    deps = [
-        ":plaid_spend_desktop_pkg",
-        "//util:yaml_decimal_pkg",
-    ],
+    deps = [":plaid_spend_desktop_pkg"],
 )

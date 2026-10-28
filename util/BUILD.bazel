@@ -495,29 +495,3 @@ py_wheel(
     visibility = ["//visibility:public"],
     deps = [":network_monitor_pkg"],
 )
-
-py_library(
-    name = "yaml_decimal",
-    srcs = ["yaml_decimal.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pyyaml"],
-)
-
-py_package(
-    name = "yaml_decimal_pkg",
-    packages = ["util"],
-    visibility = ["//finance/plaid/spend/desktop:__pkg__"],
-    deps = [":yaml_decimal"],
-)
-
-py_test(
-    name = "test_yaml_decimal",
-    srcs = ["test_yaml_decimal.py"],
-    deps = [
-        ":yaml_decimal",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)

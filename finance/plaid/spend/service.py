@@ -38,6 +38,7 @@ from finance.plaid.spend.allowance import (
     prepare_accounting,
     round_minor_units,
 )
+from finance.plaid.spend.configuration import SpendConfiguration
 from finance.plaid.spend.models import (
     AlertState,
     AllowanceConfigurationView,
@@ -48,7 +49,6 @@ from finance.plaid.spend.models import (
     PaceEffect,
     PlaidTransactionDetails,
     ProvisionalCardPeriod,
-    SpendConfiguration,
     SpendConfigurationView,
     SpendTransactionRow,
     SpendTransactionsView,

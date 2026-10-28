@@ -5,7 +5,7 @@ import pytest
 import pytest_bazel
 import yaml
 
-from util.yaml_decimal import DecimalSafeLoader
+from finance.yaml_decimal import DecimalSafeLoader
 
 
 def test_yaml_decimals_preserve_numeric_tokens_and_other_scalar_types() -> None:
