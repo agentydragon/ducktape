@@ -478,3 +478,22 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_codex_title_retry",
+    srcs = ["test_codex_title_retry.py"],
+    data = ["//third_party/restic"],
+    requires_docker = True,
+    deps = [
+        ":codex_titles_testing",
+        ":database",
+        ":ingest",
+        ":models",
+        ":restic",
+        ":testing",
+        "//:conftest",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

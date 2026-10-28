@@ -24,6 +24,11 @@ def test_codex_titles_backfill(tmp_path: Path, postgres_engine: Engine) -> None:
     codex = home / ".codex"
     transcript(home)
     _backup(env, Path(".codex"), cwd=home)
+    first_snapshot = repository.list_snapshots()[0]
+    assert repository.list_files(first_snapshot.id, "/.codex/session_index.jsonl") == []
+    assert (
+        repository.list_files(first_snapshot.id, "/.local/state/ducktape/ai-session-backup-sqlite/manifest.json") == []
+    )
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
     ingestor = SnapshotIngestor(
         factory, ArchiveSource("host", "Host", repository, (HarnessRoot(Harness.CODEX, "/.codex"),))

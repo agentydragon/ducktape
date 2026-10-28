@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from x.ai_session_archive.restic import ResticRepository
+from x.ai_session_archive.restic import ResticCommandError, ResticOutputError, ResticRepository
 
 SQLITE_MANIFEST = PurePosixPath("/.local/state/ducktape/ai-session-backup-sqlite/manifest.json")
 
@@ -85,7 +85,7 @@ def _manifest_image(manifest: Any) -> tuple[PurePosixPath, PurePosixPath, str] |
         source = entry.get("source")
         image = entry.get("image")
         digest = entry.get("sha256")
-        if not all(isinstance(value, str) for value in (source, image, digest)):
+        if not isinstance(source, str) or not isinstance(image, str) or not isinstance(digest, str):
             raise ValueError("invalid Codex SQLite manifest entry")
         source_path = PurePosixPath(source)
         image_path = PurePosixPath(image)
@@ -115,13 +115,14 @@ def _sqlite_titles(
     physical_root, image_path, digest = selected
     if not _snapshot_file(restic, snapshot_id, image_path):
         raise ValueError("Codex SQLite image listed in manifest is missing")
-    with tempfile.NamedTemporaryFile(suffix=".sqlite") as output:
-        restic.dump_to(snapshot_id, str(image_path), output)
-        output.flush()
-        with Path(output.name).open("rb") as source:
+    with tempfile.TemporaryDirectory() as scratch:
+        image_file = Path(scratch) / "state_5.sqlite"
+        with image_file.open("wb") as output:
+            restic.dump_to(snapshot_id, str(image_path), output)
+        with image_file.open("rb") as source:
             if hashlib.file_digest(source, "sha256").hexdigest() != digest:
                 raise ValueError("Codex SQLite image digest disagrees with manifest")
-        database = sqlite3.connect(f"file:{output.name}?mode=ro&immutable=1", uri=True)
+        database = sqlite3.connect(f"file:{image_file}?mode=ro&immutable=1", uri=True)
         try:
             if database.execute("PRAGMA quick_check").fetchone() != ("ok",):
                 raise ValueError("Codex SQLite image failed quick_check")
@@ -151,24 +152,31 @@ def _sqlite_titles(
 
 def read_codex_titles(
     restic: ResticRepository, snapshot_id: str, codex_roots: tuple[PurePosixPath, ...]
-) -> tuple[list[CodexTitle], list[str]]:
+) -> tuple[list[CodexTitle], list[str], list[str]]:
     """Prefer captured session-index names, retaining SQLite paths and title fallbacks."""
     if len(codex_roots) > 1:
         raise ValueError("Codex title import requires one configured archive root per machine")
     if not codex_roots:
-        return [], []
+        return [], [], []
     root = codex_roots[0]
-    warnings = []
+    warnings: list[str] = []
+    retry_errors: list[str] = []
     try:
         indexed, malformed = _index_titles(restic, snapshot_id, root)
         if malformed:
             warnings.append(f"Codex session index has {malformed} malformed records")
-    except Exception as exc:
+    except (ResticCommandError, ResticOutputError, OSError) as exc:
+        indexed = {}
+        retry_errors.append(f"Codex session index read failed: {type(exc).__name__}: {exc}")
+    except (ValueError, TypeError) as exc:
         indexed = {}
         warnings.append(f"Codex session index unavailable: {type(exc).__name__}: {exc}")
     try:
         sqlite = _sqlite_titles(restic, snapshot_id, root)
-    except Exception as exc:
+    except (ResticCommandError, ResticOutputError, OSError) as exc:
+        sqlite = {}
+        retry_errors.append(f"Codex SQLite image read failed: {type(exc).__name__}: {exc}")
+    except (ValueError, TypeError, sqlite3.DatabaseError) as exc:
         sqlite = {}
         warnings.append(f"Codex SQLite image unavailable: {type(exc).__name__}: {exc}")
     result = []
@@ -184,4 +192,4 @@ def read_codex_titles(
             )
         elif sqlite_value is not None:
             result.append(CodexTitle(native_id, sqlite_value[0], sqlite_value[1], sqlite_value[2], None))
-    return result, warnings
+    return result, warnings, retry_errors

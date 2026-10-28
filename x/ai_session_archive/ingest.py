@@ -413,14 +413,15 @@ class SnapshotIngestor:
                 return
         roots = tuple(root.path for root in self._roots if root.harness == Harness.CODEX)
         try:
-            observations, warnings = read_codex_titles(self._source.restic, snapshot.id, roots)
+            observations, warnings, retry_errors = read_codex_titles(self._source.restic, snapshot.id, roots)
             with self._session_factory() as db, db.begin():
                 row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id), with_for_update=True)
                 if row is None or row.codex_metadata_status in ("complete", "partial"):
                     return
                 for item in observations:
                     key = (self._source.machine_id, snapshot.id, item.native_session_id)
-                    if db.get(CodexTitleObservationRow, key) is None:
+                    existing = db.get(CodexTitleObservationRow, key)
+                    if existing is None:
                         db.add(
                             CodexTitleObservationRow(
                                 machine_id=self._source.machine_id,
@@ -432,8 +433,14 @@ class SnapshotIngestor:
                                 updated_at=item.updated_at,
                             )
                         )
-                row.codex_metadata_status = "partial" if warnings else "complete"
-                row.codex_metadata_error = "; ".join(warnings)[:4000] if warnings else None
+                    else:
+                        existing.source_path = item.source_path
+                        existing.title = item.title
+                        existing.title_source = item.title_source
+                        existing.updated_at = item.updated_at
+                row.codex_metadata_status = "failed" if retry_errors else "partial" if warnings else "complete"
+                issues = [*retry_errors, *warnings]
+                row.codex_metadata_error = "; ".join(issues)[:4000] if issues else None
         except Exception as exc:
             with self._session_factory() as db, db.begin():
                 row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id), with_for_update=True)
