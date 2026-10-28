@@ -8,12 +8,73 @@
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use roaring::RoaringBitmap;
 use swc_ecma_ast::Id;
 
 use super::StatementFacts;
+
+#[derive(Clone, Default)]
+struct LazyEffectBits {
+    reads: RoaringBitmap,
+    rebinds: RoaringBitmap,
+}
+
+struct SccLazyEffectRules {
+    successors: Vec<Vec<usize>>,
+}
+
+impl IterativeRules for SccLazyEffectRules {
+    type Key = usize;
+    type Fact = LazyEffectBits;
+    type Rule = usize;
+
+    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+        let mut reads = RoaringBitmap::new();
+        let mut rebinds = RoaringBitmap::new();
+        for &successor in &self.successors[*rule] {
+            if let Some(effects) = context.read(successor) {
+                reads |= &effects.reads;
+                rebinds |= &effects.rebinds;
+            }
+        }
+        context.propose(*rule, LazyEffectBits { reads, rebinds });
+    }
+
+    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        let mut changed = false;
+        for index in contribution.reads.iter() {
+            changed |= current.reads.insert(index);
+        }
+        for index in contribution.rebinds.iter() {
+            changed |= current.rebinds.insert(index);
+        }
+        changed
+    }
+}
+
+fn close_scc_lazy_effects(
+    local_effects: Vec<LazyEffectBits>,
+    successors: Vec<Vec<usize>>,
+) -> Vec<LazyEffectBits> {
+    debug_assert_eq!(local_effects.len(), successors.len());
+    let producers: Vec<_> = successors
+        .iter()
+        .enumerate()
+        .filter_map(|(scc, targets)| (!targets.is_empty()).then_some(scc))
+        .collect();
+    let mut inference = IterativeInference::new(SccLazyEffectRules { successors });
+    for (scc, effects) in local_effects.into_iter().enumerate() {
+        inference.seed(scc, effects);
+    }
+    inference
+        .solve(producers)
+        .into_values()
+        .into_values()
+        .collect()
+}
 
 /// SourceUnit read closure over one chunk's statement facts.
 ///
@@ -146,23 +207,21 @@ impl SourceUnitReadClosure {
                 )
             })
             .collect();
-        let mut read_bits = vec![RoaringBitmap::new(); sccs.len()];
-        let mut rebind_bits = vec![RoaringBitmap::new(); sccs.len()];
+        let mut local_effects = vec![LazyEffectBits::default(); sccs.len()];
+        let mut successors = vec![BTreeSet::new(); sccs.len()];
         for (scc_idx, scc) in sccs.iter().enumerate() {
-            let mut reads = RoaringBitmap::new();
-            let mut rebinds = RoaringBitmap::new();
             for source_unit in scc {
                 let Some(stmt) = stmt_by_source_unit.get(source_unit) else {
                     continue;
                 };
                 for id in &stmt.reads.lazy {
                     if let Some(&index) = binding_indices.get(id) {
-                        reads.insert(index);
+                        local_effects[scc_idx].reads.insert(index);
                     }
                 }
                 for id in &stmt.rebinds.lazy {
                     if let Some(&index) = binding_indices.get(id) {
-                        rebinds.insert(index);
+                        local_effects[scc_idx].rebinds.insert(index);
                     }
                 }
             }
@@ -174,20 +233,28 @@ impl SourceUnitReadClosure {
                     if target_scc == scc_idx {
                         continue;
                     }
-                    reads |= &read_bits[target_scc];
-                    rebinds |= &rebind_bits[target_scc];
+                    successors[scc_idx].insert(target_scc);
                 }
             }
-            read_bits[scc_idx] = reads;
-            rebind_bits[scc_idx] = rebinds;
         }
+        let closed_effects = close_scc_lazy_effects(
+            local_effects,
+            successors
+                .into_iter()
+                .map(|targets| targets.into_iter().collect())
+                .collect(),
+        );
         let materialize = |bits: RoaringBitmap| {
             bits.iter()
                 .map(|index| binding_ids[index as usize].clone())
                 .collect::<BTreeSet<_>>()
         };
-        let expanded_lazy_reads = read_bits.into_iter().map(materialize).collect();
-        let expanded_lazy_rebinds = rebind_bits.into_iter().map(materialize).collect();
+        let mut expanded_lazy_reads = Vec::with_capacity(closed_effects.len());
+        let mut expanded_lazy_rebinds = Vec::with_capacity(closed_effects.len());
+        for effects in closed_effects {
+            expanded_lazy_reads.push(materialize(effects.reads));
+            expanded_lazy_rebinds.push(materialize(effects.rebinds));
+        }
 
         Self {
             binding_source_unit,
@@ -229,5 +296,30 @@ impl SourceUnitReadClosure {
             ),
             None => (empty, empty),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LazyEffectBits, close_scc_lazy_effects};
+    use roaring::RoaringBitmap;
+
+    #[test]
+    fn scc_rules_propagate_transitive_reads_and_rebinds() {
+        let mut local = vec![LazyEffectBits::default(); 4];
+        local[0].reads.insert(0);
+        local[2].rebinds.insert(2);
+        local[3].reads.insert(3);
+
+        let effects = close_scc_lazy_effects(local, vec![vec![1], vec![2], vec![3], vec![]]);
+
+        assert_eq!(effects[0].reads, RoaringBitmap::from_iter([0, 3]));
+        assert_eq!(effects[0].rebinds, RoaringBitmap::from_iter([2]));
+        assert_eq!(effects[1].reads, RoaringBitmap::from_iter([3]));
+        assert_eq!(effects[1].rebinds, RoaringBitmap::from_iter([2]));
+        assert_eq!(effects[2].reads, RoaringBitmap::from_iter([3]));
+        assert_eq!(effects[2].rebinds, RoaringBitmap::from_iter([2]));
+        assert_eq!(effects[3].reads, RoaringBitmap::from_iter([3]));
+        assert!(effects[3].rebinds.is_empty());
     }
 }

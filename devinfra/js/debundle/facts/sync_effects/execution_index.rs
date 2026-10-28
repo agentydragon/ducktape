@@ -34,6 +34,7 @@ use crate::facts::statement_facts::{
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin};
 use crate::facts::{LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableShapes};
+use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePrototypeMutation,
@@ -2001,6 +2002,41 @@ struct ConditionalIntrinsicWrite {
     dependencies: IntrinsicRoots,
 }
 
+struct NativeIntegrityRootRules<'a> {
+    writes: Vec<&'a ConditionalIntrinsicWrite>,
+}
+
+impl IterativeRules for NativeIntegrityRootRules<'_> {
+    type Key = ();
+    type Fact = IntrinsicRoots;
+    type Rule = usize;
+
+    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+        let write = self.writes[*rule];
+        let invalid = {
+            let Some(mutated) = context.read(()) else {
+                return;
+            };
+            mutated.contains(&IntrinsicRoot::GlobalObject)
+                || !write.dependencies.is_disjoint(mutated)
+        };
+        context.propose(
+            (),
+            if invalid {
+                write.fallback.clone()
+            } else {
+                write.refined.clone()
+            },
+        );
+    }
+
+    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        let previous_len = current.len();
+        current.extend(contribution);
+        current.len() != previous_len
+    }
+}
+
 /// A11 supplies the initial native identities. Every retained write either
 /// preserves those identities under its operation premises or invalidates the
 /// affected families. Propagate invalidation to a fixed point, including writes
@@ -2094,27 +2130,144 @@ pub(crate) fn resolve_native_integrity<'a>(
 }
 
 fn resolve_native_integrity_roots(censuses: &[&NativeWriteCensus]) -> IntrinsicRoots {
-    let mut mutated: IntrinsicRoots = censuses
+    let mutated: IntrinsicRoots = censuses
         .iter()
         .flat_map(|census| census.unconditional.iter().copied())
         .collect();
-    loop {
-        let before = mutated.len();
-        for write in censuses.iter().flat_map(|census| &census.conditional) {
-            if write.witness.unreachable_branch.is_some() {
-                continue;
-            }
-            let invalid = mutated.contains(&IntrinsicRoot::GlobalObject)
-                || !write.dependencies.is_disjoint(&mutated);
-            mutated.extend(if invalid {
-                &write.fallback
-            } else {
-                &write.refined
-            });
+    let rules = NativeIntegrityRootRules {
+        writes: censuses
+            .iter()
+            .flat_map(|census| &census.conditional)
+            .filter(|write| write.witness.unreachable_branch.is_none())
+            .collect(),
+    };
+    let producer_count = rules.writes.len();
+    let mut inference = IterativeInference::new(rules);
+    inference.seed((), mutated);
+    inference
+        .solve(0..producer_count)
+        .into_values()
+        .remove(&())
+        .expect("unconditional native roots seed the shared closure fact")
+}
+
+#[cfg(test)]
+mod native_integrity_closure_tests {
+    use super::{
+        ConditionalIntrinsicWrite, IntrinsicRoots, NativeWriteCensus, resolve_native_integrity,
+    };
+    use crate::analysis_inputs::{
+        CallbackFactoryEvidence, CallbackObjectArguments, NativeIntrinsic,
+    };
+    use crate::reports::schema::{
+        NativeMutationOperation, NativeMutationWitness, NativeUnreachableBranch,
+    };
+    use source_identity::SourceUnitOrdinal;
+    use std::collections::BTreeSet;
+    use swc_common::DUMMY_SP;
+
+    fn conditional_write(
+        ordinal: usize,
+        dependencies: IntrinsicRoots,
+        refined: IntrinsicRoots,
+        fallback: IntrinsicRoots,
+        unreachable: bool,
+    ) -> ConditionalIntrinsicWrite {
+        ConditionalIntrinsicWrite {
+            witness: NativeMutationWitness {
+                chunk_id: "test".to_owned(),
+                statement_ordinal: SourceUnitOrdinal(ordinal),
+                source_location: None,
+                operation: NativeMutationOperation::PropertyAssignment,
+                receiver_roots: BTreeSet::new(),
+                through_local_alias: false,
+                affected_roots: BTreeSet::new(),
+                invalidated_key_dependencies: BTreeSet::new(),
+                value_input_refs: BTreeSet::new(),
+                value_input_evidence: Vec::new(),
+                unreachable_branch: unreachable.then(|| NativeUnreachableBranch {
+                    arguments: CallbackObjectArguments {
+                        wrapper: CallbackFactoryEvidence::AuthorAssertion {
+                            defining_module: "test".to_owned(),
+                            export: "wrapper".to_owned(),
+                        },
+                        object_arguments: BTreeSet::new(),
+                    },
+                    imported_local: "wrapper".to_owned(),
+                    wrapper_call_location: None,
+                    callback_location: None,
+                    guard_location: None,
+                    guard_span: DUMMY_SP,
+                    wrapper_call_span: DUMMY_SP,
+                    callback_span: DUMMY_SP,
+                }),
+                span: DUMMY_SP,
+            },
+            refined,
+            fallback,
+            dependencies,
         }
-        if before == mutated.len() {
-            return mutated;
-        }
+    }
+
+    #[test]
+    fn invalidation_watchers_revisit_writes_and_preserve_witnesses() {
+        let mut census = NativeWriteCensus::default();
+        census.unconditional.insert(NativeIntrinsic::Set);
+        // The first producer refines while Function is absent, then must run
+        // again after the later producer contributes Function.
+        census.conditional.push(conditional_write(
+            0,
+            BTreeSet::from([NativeIntrinsic::Function]),
+            BTreeSet::from([NativeIntrinsic::Math]),
+            BTreeSet::from([NativeIntrinsic::Array]),
+            false,
+        ));
+        census.conditional.push(conditional_write(
+            1,
+            BTreeSet::from([NativeIntrinsic::Set]),
+            BTreeSet::from([NativeIntrinsic::Promise]),
+            BTreeSet::from([NativeIntrinsic::Function]),
+            false,
+        ));
+        census.conditional.push(conditional_write(
+            2,
+            BTreeSet::from([NativeIntrinsic::Array]),
+            BTreeSet::new(),
+            BTreeSet::from([NativeIntrinsic::GlobalObject]),
+            true,
+        ));
+
+        let integrity = resolve_native_integrity([&census]);
+
+        assert_eq!(
+            integrity.mutated,
+            BTreeSet::from([
+                NativeIntrinsic::Set,
+                NativeIntrinsic::Function,
+                NativeIntrinsic::Array,
+                NativeIntrinsic::Math,
+            ])
+        );
+        let revisited = integrity
+            .witnesses
+            .iter()
+            .find(|witness| witness.statement_ordinal == SourceUnitOrdinal(0))
+            .expect("conditional witness remains visible");
+        assert_eq!(
+            revisited.affected_roots,
+            BTreeSet::from([NativeIntrinsic::Array])
+        );
+        assert_eq!(
+            revisited.invalidated_key_dependencies,
+            BTreeSet::from([NativeIntrinsic::Function])
+        );
+        let unreachable = integrity
+            .witnesses
+            .iter()
+            .find(|witness| witness.statement_ordinal == SourceUnitOrdinal(2))
+            .expect("unreachable write remains in provenance");
+        assert!(unreachable.affected_roots.is_empty());
+        assert!(!integrity.mutated.contains(&NativeIntrinsic::GlobalObject));
     }
 }
 
