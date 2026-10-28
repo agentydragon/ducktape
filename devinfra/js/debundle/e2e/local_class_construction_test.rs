@@ -27,29 +27,15 @@ fn registry_modules() -> Vec<LogicalModuleEntry> {
 }
 
 #[test]
-fn implicit_class_construction_preserves_a_live_array_heap_barrier() {
-    let rejected = run_rejection_fixture(FixtureOpts::new(REGISTRY_SOURCE, registry_modules()));
-    let graph = rejected.dependency_graph();
-    let construction = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "b")
-        })
-        .unwrap();
-    assert!(construction.purity.is_pure());
-    assert!(
-        graph.edges.iter().any(|edge| {
-            edge.source == construction.id && edge.edge_kind == analysis::DepKind::Sequenced
-        }),
-        "pure construction still needs its missing heap-effect capability"
+fn inferred_implicit_class_construction_breaks_a_live_array_sequenced_cycle() {
+    let fixture = assert_pure_cycle_break(
+        REGISTRY_SOURCE,
+        registry_modules(),
+        "registry",
+        &["class Registry", "const b = new Registry"],
+        &["const a"],
+        "1 clear\n",
     );
-    assert!(!rejected.cycles().is_empty());
-    // Preserve the original runtime control while the requested split remains
-    // rejected: constructor purity does not summarize unrelated array effects.
-    let fixture = run_fixture(FixtureOpts::new(REGISTRY_SOURCE, vec![]));
     assert_preserved_entry_output(&fixture, "1 clear\n");
 }
 
@@ -191,6 +177,20 @@ export {{ a, b, c, Registry }};
 
 #[test]
 fn effectful_and_unknown_field_initializers_stay_sequenced() {
+    for (prefix, field) in [
+        ("", "globalThis.events.length"),
+        (
+            "const receiver = { get value() { return globalThis.events.length; } };",
+            "receiver.value",
+        ),
+        (
+            "const receiver = { valueOf() { return globalThis.events.length; } };",
+            "+receiver",
+        ),
+    ] {
+        let class = format!("class Registry {{ value = {field}; }}");
+        assert_unproven_construction_stays_sequenced(prefix, &class, "new Registry()");
+    }
     assert_unproven_construction_stays_sequenced(
         "",
         "class Registry { value = globalThis.events.push('init'); }",
@@ -267,5 +267,126 @@ fn constructor_arguments_stay_sequenced() {
             "class Registry { value = 1; }",
             initializer,
         );
+    }
+}
+
+#[test]
+fn asserted_pure_field_calls_do_not_supply_a_heap_certificate() {
+    let source = "const values = [];\nconst a = (() => 1)();\nfunction read() { const first = values.length; values.push(42); return first; }\nclass Registry { value = read(); }\nconst b = new Registry();\nconst c = b ? a : 0;\nconsole.log(c);\n";
+    let rejected = run_rejection_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "registry",
+            &[
+                Member::new("Registry").with_purity(MemberPurity::PureNew),
+                Member::new("read").with_purity(MemberPurity::Pure),
+                Member::new("b"),
+            ],
+        )],
+    ));
+    let graph = rejected.dependency_graph();
+    let construction = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "b")
+        })
+        .unwrap();
+    assert!(construction.purity.is_pure());
+    assert!(graph.edges.iter().any(
+        |edge| edge.source == construction.id && edge.edge_kind == analysis::DepKind::Sequenced
+    ));
+    assert!(!rejected.cycles().is_empty());
+}
+
+#[test]
+fn certified_new_keeps_other_same_statement_constructor_and_argument_effects() {
+    let source = "const values = [];\nfunction read() { globalThis.observed = values.length; return 0; }\nclass Registry { value = 1; }\nconst { missing = new Registry(read()) } = new Registry();\nvalues.push(42);\nconsole.log(globalThis.observed, missing.value);\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module("values", &[Member::new("values")]),
+            logical_module(
+                "a_reader",
+                &[
+                    Member::new("read"),
+                    Member::new("Registry"),
+                    Member::new("missing"),
+                ],
+            ),
+            logical_module_with_anon("z_mutation", &[], &["values.push(42);"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "0 1\n");
+    let graph = fixture.dependency_graph();
+    let mutation = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == 4)
+        .unwrap();
+    let observation = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "missing")
+        })
+        .unwrap();
+    assert!(graph.edges.iter().any(|edge| edge.source == mutation.id
+        && edge.target == observation.id
+        && edge.edge_kind == analysis::DepKind::Sequenced));
+}
+
+#[test]
+fn certified_class_shape_keeps_earlier_binding_initialization_observations() {
+    let source = "function make() { try { return new Registry().value; } catch (error) { return error.name; } }\nconst before = make();\nclass Registry { value = 42; }\nconsole.log(before);\n";
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("maker", &[Member::new("make"), Member::new("before")]),
+                logical_module("registry", &[Member::new("Registry")]),
+            ],
+        ),
+        &["maker", "registry"],
+        &[],
+    );
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "ReferenceError\n");
+}
+
+#[test]
+fn certified_construction_retains_deferred_field_and_getter_captures() {
+    for (member, access) in [
+        ("read = () => later;", "registry.read()"),
+        ("get current() { return later; }", "registry.current"),
+    ] {
+        let source = format!(
+            "const values = [];\nclass Registry {{ {member} }}\nconst registry = new Registry();\nfunction probe() {{ try {{ return {access}; }} catch (error) {{ return error.name; }} }}\nconst before = probe();\nconst later = 42;\nconsole.log(before, values.length);\n"
+        );
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "reader",
+                        &[
+                            Member::new("Registry"),
+                            Member::new("registry"),
+                            Member::new("probe"),
+                            Member::new("before"),
+                        ],
+                    ),
+                    logical_module("value", &[Member::new("later")]),
+                ],
+            ),
+            &["reader", "value"],
+            &[],
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "ReferenceError 0\n");
     }
 }

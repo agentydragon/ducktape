@@ -114,6 +114,38 @@ impl LocalClassConstructionProof {
             classes,
         }
     }
+    pub(crate) fn heap_proof(
+        &self,
+        native_constructor_is_heap_local: impl Fn(&Id) -> bool,
+    ) -> LocalClassHeapProof {
+        let classes: BTreeSet<_> = self
+            .classes
+            .iter()
+            .filter(|(_, fields)| fields.iter().all(&native_constructor_is_heap_local))
+            .map(|(class, _)| *class)
+            .collect();
+        LocalClassHeapProof {
+            constructions: self
+                .constructions
+                .iter()
+                .filter(|(_, class)| classes.contains(class))
+                .map(|(span, _)| *span)
+                .collect(),
+        }
+    }
+}
+
+/// Exact stable construction sites whose initialization only creates fresh
+/// state. Callee and argument evaluation are separate effects.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct LocalClassHeapProof {
+    constructions: BTreeSet<u32>,
+}
+
+impl LocalClassHeapProof {
+    pub(crate) fn contains_construction(&self, span: Span) -> bool {
+        self.constructions.contains(&span.lo.0)
+    }
 }
 
 fn safe_implicit_class(

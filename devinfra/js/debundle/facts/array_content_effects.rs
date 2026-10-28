@@ -10,6 +10,7 @@ use super::*;
 pub(crate) fn annotate_array_content_effects(
     body: &[TopLevelItemView<'_>],
     value_flow: &ChunkValueFlow,
+    local_class_heap_proof: &LocalClassHeapProof,
     facts: &mut [StatementFacts],
 ) {
     let mut origins = ArrayOriginCollector::default();
@@ -21,6 +22,7 @@ pub(crate) fn annotate_array_content_effects(
     for (item, fact) in body.iter().zip(facts) {
         let mut collector = ArrayContentCollector {
             value_flow,
+            local_class_heap_proof,
             array_reachability: &reachability,
             array_origins: &origins.0,
             effects: ArrayContentEffects::default(),
@@ -48,6 +50,7 @@ impl Visit for ArrayOriginCollector {
 
 struct ArrayContentCollector<'a> {
     value_flow: &'a ChunkValueFlow,
+    local_class_heap_proof: &'a LocalClassHeapProof,
     array_reachability: &'a CandidateObjectIndex,
     array_origins: &'a BTreeSet<u32>,
     effects: ArrayContentEffects,
@@ -178,6 +181,19 @@ impl ArrayContentCollector<'_> {
         }
     }
 
+    fn record_call_target(&mut self, callee: &Expr) {
+        let (depth, past_await) = self.position();
+        let targets = self.value_flow.call_targets(callee);
+        if !targets.complete
+            && let Expr::Ident(binding) = callee.unwrap_parens()
+        {
+            record_set(&mut self.effects.calls, binding.to_id(), depth, past_await);
+        }
+        for binding in targets.bindings {
+            record_set(&mut self.effects.calls, binding, depth, past_await);
+        }
+    }
+
     fn record_opaque_call(&mut self) {
         let (depth, past_await) = self.position();
         record_opaque(&mut self.effects.opaque, depth, past_await);
@@ -250,6 +266,9 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
+        if let Callee::Expr(callee) = &node.callee {
+            self.record_call_target(callee);
+        }
         match &node.callee {
             Callee::Expr(callee) if let Expr::Member(member) = callee.unwrap_parens() => {
                 self.record_array_expr(&member.obj, true, true, true);
@@ -280,6 +299,7 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_opt_call(&mut self, node: &OptCall) {
+        self.record_call_target(&node.callee);
         // Optional invocation can reach a callable whose captured heap effects
         // are not represented by this source-unit summary.
         self.record_opaque_call();
@@ -287,6 +307,7 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_tagged_tpl(&mut self, node: &TaggedTpl) {
+        self.record_call_target(&node.tag);
         // A tag is a call with an arbitrary protocol. The synchronous-call
         // interpreter also records its precision loss; retain the barrier
         // here for analyses that do not request that interpreter pass.
@@ -295,10 +316,12 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_new_expr(&mut self, node: &NewExpr) {
-        // Constructors may read or mutate shared arrays through their body.
-        // The shared graph call summary does not represent every `new`
-        // expression, so keep it at the heap barrier.
-        self.record_opaque_call();
+        if !self.local_class_heap_proof.contains_construction(node.span) {
+            // Only this operation's body is certified. Other invocations of
+            // the same callee still contribute their own promotion/barrier.
+            self.record_call_target(&node.callee);
+            self.record_opaque_call();
+        }
         node.callee.visit_with(self);
         if let Some(args) = &node.args {
             for arg in args {
@@ -409,9 +432,9 @@ fn assign_member_target(target: &AssignTarget) -> Option<&MemberExpr> {
     }
 }
 
-fn record_set(
-    bucketed: &mut PositionBucketed<BTreeSet<EffectCell>>,
-    id: EffectCell,
+fn record_set<T: Ord + Clone>(
+    bucketed: &mut PositionBucketed<BTreeSet<T>>,
+    id: T,
     lazy_depth: u32,
     past_await: bool,
 ) {

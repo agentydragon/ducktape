@@ -74,7 +74,7 @@ pub(crate) use dynamic_scope::DynamicScopeFact;
 pub(crate) use global_object::*;
 pub(crate) use item_views::*;
 pub(crate) use lazy_boundary::*;
-pub(crate) use local_class_construction::LocalClassConstructionProof;
+pub(crate) use local_class_construction::{LocalClassConstructionProof, LocalClassHeapProof};
 pub(crate) use local_effect_targets::*;
 pub(crate) use purity_classification::*;
 pub(crate) use set_iterables::{SetIterableProof, primitive_literal_property_keys};

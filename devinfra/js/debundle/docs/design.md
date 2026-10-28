@@ -627,6 +627,19 @@ globalThis`) marks the bindings it flows into (transitively,
   summarize; absent a separate array-specific proof, it remains an opaque
   barrier.
 
+  An exact checked implicit local construction can omit its own opaque heap
+  effect. The shared local-class proof supplies accepted field shapes and stable
+  construction sites; the canonical native index validates every native field's
+  identity/integrity premise, and `NativeCallModel` separately supplies a
+  fresh-allocation heap capability for zero-argument collection construction.
+  This is not derived from purity or synchronous-call completeness. The array
+  collector projects call promotions per operation before unioning a source
+  unit, using the same value-flow call-target query as ordinary call facts.
+  Suppressing one certified `new` does not suppress another invocation of its
+  callee, argument evaluation, or unrelated operations in that statement.
+  Unresolved direct identifiers retain their syntactic opaque fallback.
+  Deferred methods, callbacks and getters retain their later-use obligations.
+
   The bit is `dataflow_summarizable` in `facts/statement_facts.rs`. Only the
   bailing statements pay the conservative cost, so the mode is safe
   on chunks mixing audited and unaudited code, but call-heavy

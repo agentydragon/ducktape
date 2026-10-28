@@ -306,6 +306,9 @@ pub struct StatementEffectSummary {
 /// rather than being copied onto every canonical array identity.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ArrayContentEffects {
+    /// Canonical local call targets whose heap summaries still need promotion.
+    /// Certified construction sites are excluded before sites are unioned.
+    pub calls: PositionBucketed<BTreeSet<Id>>,
     /// Fresh allocations seed later observations without overwriting a prior
     /// content timeline: source-span identities can denote many runtime arrays.
     pub allocations: PositionBucketed<BTreeSet<EffectCell>>,

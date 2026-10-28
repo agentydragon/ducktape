@@ -363,7 +363,13 @@ where
         })
         .collect();
     value_flow.augment_calls(&body, &mut facts);
-    super::array_content_effects::annotate_array_content_effects(&body, &value_flow, &mut facts);
+    let local_class_heap_proof = prepared_sync_index.local_class_heap_proof();
+    super::array_content_effects::annotate_array_content_effects(
+        &body,
+        &value_flow,
+        &local_class_heap_proof,
+        &mut facts,
+    );
     if matches!(synchronous_calls, SynchronousCallAnalysis::Include) {
         super::sync_effects::execution_index::interpreter::annotate_synchronous_calls(
             &body,

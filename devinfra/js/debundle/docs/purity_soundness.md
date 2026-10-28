@@ -642,6 +642,17 @@ install private fields with PrivateFieldAdd and public fields with
 CreateDataPropertyOrThrow, without consulting an inherited setter.
 The interpreter still tracks retained callbacks and defers later methods.
 The certificate does not prove later methods or field callbacks pure.
+
+The array-ordering analysis additionally requires a distinct heap capability.
+Admitted initializers only install fresh instance state; a native field requires
+an explicit fresh-allocation model under the same guarded native identity.
+Only a certified construction site's own opaque heap effect and body promotion
+are omitted. Callee/argument evaluation and every other call site still
+contribute their effects, including another call to the same binding within
+that statement. Deferred captures stay available for later calls and property
+accesses. Binding initialization and class TDZ constraints remain independent.
+This does not grant heap locality to arbitrary pure or synchronously complete
+calls, or to other native models.
 Direct `eval` or `with` anywhere in the chunk disables the certificate, using
 the same dynamic-scope scan as the shared Set-iterable proof.
 

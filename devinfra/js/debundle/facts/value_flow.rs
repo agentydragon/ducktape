@@ -31,6 +31,13 @@ pub(crate) enum ValueOrigin {
     Unknown,
 }
 
+pub(crate) struct CallTargets {
+    pub bindings: BTreeSet<Id>,
+    /// Every possible value has a canonical callable binding. Otherwise a
+    /// direct identifier's syntactic target must retain its opaque fallback.
+    pub complete: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct OriginId(u32);
 
@@ -1215,6 +1222,21 @@ impl ChunkValueFlow {
         aliases
     }
 
+    pub(crate) fn call_targets(&self, callee: &Expr) -> CallTargets {
+        let values = self.values_of_expr(callee);
+        let complete = !values.is_empty()
+            && values
+                .iter()
+                .all(|origin| self.canonical_callable(origin).is_some());
+        CallTargets {
+            bindings: values
+                .into_iter()
+                .filter_map(|origin| self.canonical_callable(origin).cloned())
+                .collect(),
+            complete,
+        }
+    }
+
     /// Add call targets discovered through parameters, aliases, returns and
     /// static object properties to the ordinary syntactic call buckets.
     pub(crate) fn augment_calls(
@@ -2359,24 +2381,19 @@ impl LazyBoundary for FlowCallCollector<'_> {
 
 impl FlowCallCollector<'_> {
     fn record(&mut self, callee: &Expr) {
-        let values = self.flow.values_of_expr(callee);
+        let targets = self.flow.call_targets(callee);
         if let Expr::Ident(ident) = callee.unwrap_parens() {
             let id = ident.to_id();
-            let bucket = if !values.is_empty()
-                && values
-                    .iter()
-                    .all(|origin| self.flow.canonical_callable(origin).is_some())
-            {
+            let bucket = if targets.complete {
                 &mut self.complete_ident_calls
             } else {
                 &mut self.incomplete_ident_calls
             };
             bucket.record(&id, self.lazy_depth, self.past_await);
         }
-        for origin in values {
-            if let Some(id) = self.flow.canonical_callable(origin) {
-                self.calls.record(id, self.lazy_depth, self.past_await);
-            }
+        for binding in targets.bindings {
+            self.calls
+                .record(&binding, self.lazy_depth, self.past_await);
         }
     }
 }

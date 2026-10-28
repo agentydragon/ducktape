@@ -3389,16 +3389,32 @@ impl ExecutionIndex {
             && !self.mutated_intrinsic_roots.contains(&root)
     }
 
+    fn native_call_identity_is_unmodified(
+        &self,
+        id: &Id,
+        intrinsic: IntrinsicRoot,
+        flow: &ChunkValueFlow,
+        shadowed: &BTreeSet<&'static str>,
+    ) -> bool {
+        !flow.is_declared(id)
+            && !shadowed.contains(id.0.as_ref())
+            && self.dynamic_scope_owners.is_empty()
+            && !self
+                .mutated_intrinsic_roots
+                .contains(&IntrinsicRoot::GlobalObject)
+            && !self.mutated_intrinsic_roots.contains(&intrinsic)
+    }
+
     fn empty_collection_constructor_is_unmodified(
         &self,
         id: &Id,
         flow: &ChunkValueFlow,
         shadowed: &BTreeSet<&'static str>,
     ) -> bool {
-        matches!(id.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet")
-            && !flow.is_declared(id)
-            && !shadowed.contains(id.0.as_ref())
-            && self.collection_intrinsic_is_unmodified(id.0.as_ref())
+        native_calls::native_call_model(id.0.as_ref(), None, CallKind::New).is_some_and(|model| {
+            model.heap_effect == native_calls::NativeHeapEffect::FreshAllocation
+                && self.native_call_identity_is_unmodified(id, model.intrinsic, flow, shadowed)
+        })
     }
 
     pub(crate) fn locate_native_integrity_witnesses(

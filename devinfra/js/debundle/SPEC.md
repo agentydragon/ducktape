@@ -124,10 +124,16 @@ also barriers when their array effects are not represented precisely. Barriers
 constrain the preceding array-content frontier and later array observations.
 
 Purity and binding-effect completeness do not prove heap locality or argument
-nonretention. Native calls consuming array literals and checked local
-constructors can therefore remain heap barriers once tracked arrays are live.
-Recovering those extraction patterns requires a reusable operation-specific
-heap-effect capability; this contract adds no author flag or purity exemption.
+nonretention. Native calls consuming array literals remain heap barriers once
+tracked arrays are live. Checked implicit local construction has a separate
+source-derived heap capability: admitted fields only initialize fresh instance
+state, and native fields require an explicit fresh-allocation model under the
+shared native identity/integrity guard. Only an exact certified `new` site omits
+its own opaque heap effect and constructor-body promotion. Other calls or
+constructors in the same statement, including another invocation of that callee,
+keep their own effects. Callee and argument evaluation, binding initialization
+order, and deferred method/callback effects remain independently constrained.
+This adds no author flag or purity exemption.
 The census tracks `ArrayLit` source origins, not arbitrary arrays returned by
 `Array()`, `Object.entries`, or foreign imports; it does not claim full heap
 ordering coverage.

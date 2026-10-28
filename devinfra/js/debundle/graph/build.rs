@@ -397,7 +397,7 @@ fn emit_array_content_order(
         let mut changed = false;
         for stmt in facts {
             let source = stmt.ordinal.0;
-            for callee in &stmt.calls.first_order_lazy {
+            for callee in &stmt.array_contents.calls.first_order_lazy {
                 let Some(target) = resolved_callee(callee) else {
                     if !lazy_effects[source].opaque {
                         lazy_effects[source].opaque = true;
@@ -445,7 +445,7 @@ fn emit_array_content_order(
                 .is_some_and(|calls| !calls.complete);
         // Function declarations are inert; only a recognized synchronous
         // at-init call inherits their first-order effects.
-        for callee in &stmt.calls.eager {
+        for callee in &stmt.array_contents.calls.eager {
             if let Some(target) = resolved_callee(callee) {
                 allocations.extend(lazy_effects[target.0].allocations.iter().cloned());
                 union_effects(&mut effects, &lazy_effects[target.0].effects);

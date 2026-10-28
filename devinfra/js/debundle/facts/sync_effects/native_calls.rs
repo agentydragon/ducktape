@@ -23,11 +23,20 @@ pub(super) enum CallInputs {
     OwnDescriptorLiteral,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum NativeHeapEffect {
+    Opaque,
+    /// Initializes fresh state without user-observable existing heap effects
+    /// under the guarded native identity/integrity premise.
+    FreshAllocation,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(super) struct NativeCallModel {
     pub(super) intrinsic: IntrinsicRoot,
     pub(super) inputs: CallInputs,
     pub(super) returns: CallReturn,
+    pub(super) heap_effect: NativeHeapEffect,
 }
 
 pub(super) fn native_call_model(
@@ -36,32 +45,49 @@ pub(super) fn native_call_model(
     kind: CallKind,
 ) -> Option<NativeCallModel> {
     match (receiver, member, kind) {
+        ("Map" | "Set" | "WeakMap" | "WeakSet", None, CallKind::New) => Some(NativeCallModel {
+            intrinsic: match receiver {
+                "Map" => IntrinsicRoot::Map,
+                "Set" => IntrinsicRoot::Set,
+                "WeakMap" => IntrinsicRoot::WeakMap,
+                "WeakSet" => IntrinsicRoot::WeakSet,
+                _ => unreachable!(),
+            },
+            inputs: CallInputs::Primitives { min: 0, max: 0 },
+            returns: CallReturn::Unknown,
+            heap_effect: NativeHeapEffect::FreshAllocation,
+        }),
         ("Math", Some("round" | "floor" | "ceil" | "trunc" | "abs" | "sign"), CallKind::Call) => {
             Some(NativeCallModel {
                 intrinsic: IntrinsicRoot::Math,
                 inputs: CallInputs::Primitives { min: 1, max: 1 },
                 returns: CallReturn::Primitive,
+                heap_effect: NativeHeapEffect::Opaque,
             })
         }
         ("Object", Some("getOwnPropertyDescriptors"), CallKind::Call) => Some(NativeCallModel {
             intrinsic: IntrinsicRoot::Object,
             inputs: CallInputs::OwnDescriptorLiteral,
             returns: CallReturn::DeferredArgument(0),
+            heap_effect: NativeHeapEffect::Opaque,
         }),
         ("Object", Some("freeze"), CallKind::Call) => Some(NativeCallModel {
             intrinsic: IntrinsicRoot::Object,
             inputs: CallInputs::FreshDataRecord,
             returns: CallReturn::Argument(0),
+            heap_effect: NativeHeapEffect::Opaque,
         }),
         ("RegExp", None, CallKind::Call | CallKind::New) => Some(NativeCallModel {
             intrinsic: IntrinsicRoot::RegExp,
             inputs: CallInputs::Primitives { min: 0, max: 2 },
             returns: CallReturn::Unknown,
+            heap_effect: NativeHeapEffect::Opaque,
         }),
         ("Symbol", None | Some("for"), CallKind::Call) => Some(NativeCallModel {
             intrinsic: IntrinsicRoot::Symbol,
             inputs: CallInputs::Primitives { min: 0, max: 1 },
             returns: CallReturn::Primitive,
+            heap_effect: NativeHeapEffect::Opaque,
         }),
         _ => None,
     }

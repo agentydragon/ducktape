@@ -336,15 +336,12 @@ impl Executor<'_> {
             _ => return None,
         };
         let model = native_call_model(binding.0.as_ref(), member, kind)?;
-        if self.flow.is_declared(binding)
-            || self.shadowed.contains(binding.0.as_ref())
-            || !self.index.dynamic_scope_owners.is_empty()
-            || self
-                .index
-                .mutated_intrinsic_roots
-                .iter()
-                .any(|root| *root == IntrinsicRoot::GlobalObject || *root == model.intrinsic)
-        {
+        if !self.index.native_call_identity_is_unmodified(
+            binding,
+            model.intrinsic,
+            self.flow,
+            self.shadowed,
+        ) {
             return None;
         }
         let admitted = match model.inputs {
@@ -4344,16 +4341,6 @@ impl Executor<'_> {
         {
             return;
         }
-        // Empty intrinsic collections return before consulting an adder or
-        // iterator. This proves only their construction has no callbacks;
-        // later operations and any constructor arguments remain conservative.
-        if call.kind == CallKind::New
-            && call.args.is_empty()
-            && matches!(&call.callee, ValueExpr::Binding(id)
-                if self.index.empty_collection_constructor_is_unmodified(id, self.flow, self.shadowed))
-        {
-            return;
-        }
         let targets = self.evaluate(&call.callee, env, captures);
         if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
             return;
@@ -4783,6 +4770,14 @@ impl PreparedSynchronousCallIndex {
 
     pub(crate) fn local_class_construction_proof(&self) -> &LocalClassConstructionProof {
         &self.index.local_class_construction_proof
+    }
+
+    pub(crate) fn local_class_heap_proof(&self) -> crate::facts::LocalClassHeapProof {
+        self.index.local_class_construction_proof.heap_proof(|id| {
+            native_call_model(id.0.as_ref(), None, CallKind::New).is_some_and(|model| {
+                model.heap_effect == super::native_calls::NativeHeapEffect::FreshAllocation
+            })
+        })
     }
 }
 
