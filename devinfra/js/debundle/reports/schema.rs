@@ -429,6 +429,11 @@ pub enum InferenceRule {
     StableFunction,
     CallbackFactory,
     ReturnedRecord,
+    OwnPropertySourceOrigin,
+    OwnPropertyShape,
+    OwnPropertyPrefixState,
+    OwnPropertyNamesProjection,
+    OwnPropertyDescriptorProjection,
 }
 
 /// A purpose-specific certificate actually used by synchronous execution.

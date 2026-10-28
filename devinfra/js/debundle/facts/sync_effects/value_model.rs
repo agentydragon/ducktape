@@ -41,6 +41,24 @@ impl From<Span> for CallSite {
     }
 }
 
+impl AbstractValue {
+    /// Whether this value is one of the exact primitive abstractions.
+    /// `Unknown` and `Unavailable` are intentionally excluded: either can
+    /// represent a non-primitive result or a throwing evaluation.
+    pub(super) fn is_primitive(&self) -> bool {
+        matches!(
+            self,
+            Self::NonCallable | Self::Undefined | Self::StringPrimitive(_)
+        )
+    }
+}
+
+impl CallSite {
+    pub(super) fn allocation_id(self) -> u32 {
+        self.start
+    }
+}
+
 /// Contexts are interned bottom-up by the executor. Structural equality of
 /// captures becomes identity equality, so comparing value sets and cache keys
 /// never recursively compares a shared capture DAG along every path.
@@ -97,6 +115,8 @@ pub(super) enum AbstractValue {
     /// through the paired defineProperties call; all other uses keep the
     /// carrier opaque.
     OwnDescriptorMap(CallSite),
+    /// An exact primitive string retained for own-name arrays and keyed reads.
+    StringPrimitive(String),
     /// A foreign source factory's deferred object graph. Provider captures are
     /// retained in its imported summary; using this token activates the full
     /// conservative importer binding/callback pool, never foreign SWC IDs.
@@ -167,6 +187,45 @@ pub(super) enum OwnPropertyDescriptorSyntax {
         getter: Option<u32>,
         setter: Option<u32>,
     },
+}
+
+/// Source-ordered string properties of one supported ordinary object literal.
+/// The map carries descriptor syntax; `creation_order` preserves insertion
+/// order for ECMAScript own-key enumeration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct OwnPropertyShape {
+    pub(super) properties: BTreeMap<String, OwnPropertyDescriptorSyntax>,
+    pub(super) creation_order: Vec<String>,
+}
+
+/// Returns ECMAScript's own string-key order for a source-ordered ordinary
+/// object shape: array-index keys numerically first, followed by other string
+/// keys in their original insertion order. `BTreeMap` order is never a proxy
+/// for JavaScript property order.
+pub(super) fn ordered_own_property_names(creation_order: &[String]) -> Vec<String> {
+    let mut indices = Vec::new();
+    let mut strings = Vec::new();
+    let mut seen = BTreeSet::new();
+    for name in creation_order {
+        if !seen.insert(name.as_str()) {
+            continue;
+        }
+        let array_index = name
+            .parse::<u32>()
+            .ok()
+            .filter(|index| *index != u32::MAX && index.to_string() == name.as_str());
+        if let Some(index) = array_index {
+            indices.push((index, name.clone()));
+        } else {
+            strings.push(name.clone());
+        }
+    }
+    indices.sort_unstable_by_key(|(index, _)| *index);
+    indices
+        .into_iter()
+        .map(|(_, name)| name)
+        .chain(strings)
+        .collect()
 }
 
 #[derive(Debug, Clone)]

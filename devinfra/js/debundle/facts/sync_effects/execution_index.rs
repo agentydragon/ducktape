@@ -6,8 +6,9 @@ mod prototype_properties;
 use super::receiver_identity::ReceiverIdentityFacts;
 use super::value_model::{
     ArrayElement, ArrayIteration, ArrayIterationMethod, CallSite, ClassSurface, ClassValueFacts,
-    FromEntriesMappedProof, NamespaceValueFacts, OwnPropertyDescriptorSyntax, ValueExpr,
-    infer_namespace_aliases, object_data_property_name, static_prop, static_property_name,
+    FromEntriesMappedProof, NamespaceValueFacts, OwnPropertyDescriptorSyntax, OwnPropertyShape,
+    ValueExpr, infer_namespace_aliases, object_data_property_name, static_prop,
+    static_property_name,
 };
 use crate::analysis_inputs::{
     AnalysisInputs, NativeIntegrity, NativeIntrinsic as IntrinsicRoot, ResolvedBindingValueInput,
@@ -2607,7 +2608,7 @@ struct ExecutionIndex {
     other_class_uses: BTreeSet<Id>,
     safe_class_target: Option<Id>,
     plain_data_objects: BTreeSet<u32>,
-    own_descriptor_shapes: BTreeMap<u32, BTreeMap<String, OwnPropertyDescriptorSyntax>>,
+    own_descriptor_shapes: BTreeMap<u32, OwnPropertyShape>,
     null_proto_data_objects: BTreeSet<u32>,
     exact_object_spread_copies: BTreeSet<u32>,
     map_entry_arrays: BTreeSet<u32>,
@@ -5266,30 +5267,45 @@ impl Visit for ExecutionIndex {
             self.exact_object_spread_copies.insert(object.span.lo.0);
         }
         let mut descriptor_shape = BTreeMap::new();
+        let mut descriptor_creation_order = Vec::new();
         let descriptorable = object.props.iter().all(|property| {
             let PropOrSpread::Prop(property) = property else {
                 return false;
             };
             match property.as_ref() {
-                Prop::KeyValue(pair) => static_property_name(&pair.key).is_some_and(|name| {
-                    name != "__proto__"
-                        && descriptor_shape
-                            .insert(name, OwnPropertyDescriptorSyntax::Data)
-                            .is_none()
-                }),
-                Prop::Shorthand(ident) if ident.sym != "__proto__" => descriptor_shape
-                    .insert(ident.sym.to_string(), OwnPropertyDescriptorSyntax::Data)
-                    .is_none(),
+                Prop::KeyValue(pair) => {
+                    let Some(name) = static_property_name(&pair.key) else {
+                        return false;
+                    };
+                    if name == "__proto__" || descriptor_shape.contains_key(&name) {
+                        return false;
+                    }
+                    descriptor_creation_order.push(name.clone());
+                    descriptor_shape.insert(name, OwnPropertyDescriptorSyntax::Data);
+                    true
+                }
+                Prop::Shorthand(ident) if ident.sym != "__proto__" => {
+                    let name = ident.sym.to_string();
+                    if descriptor_shape.contains_key(&name) {
+                        return false;
+                    }
+                    descriptor_creation_order.push(name.clone());
+                    descriptor_shape.insert(name, OwnPropertyDescriptorSyntax::Data);
+                    true
+                }
                 Prop::Method(method)
                     if method.function.decorators.is_empty()
                         && !matches!(method.key, PropName::Computed(_)) =>
                 {
-                    static_property_name(&method.key).is_some_and(|name| {
-                        name != "__proto__"
-                            && descriptor_shape
-                                .insert(name, OwnPropertyDescriptorSyntax::Data)
-                                .is_none()
-                    })
+                    let Some(name) = static_property_name(&method.key) else {
+                        return false;
+                    };
+                    if name == "__proto__" || descriptor_shape.contains_key(&name) {
+                        return false;
+                    }
+                    descriptor_creation_order.push(name.clone());
+                    descriptor_shape.insert(name, OwnPropertyDescriptorSyntax::Data);
+                    true
                 }
                 Prop::Getter(getter)
                     if getter.function.decorators.is_empty()
@@ -5310,6 +5326,7 @@ impl Visit for ExecutionIndex {
                         }
                         Some(_) => false,
                         None => {
+                            descriptor_creation_order.push(name.clone());
                             descriptor_shape.insert(
                                 name,
                                 OwnPropertyDescriptorSyntax::Accessor {
@@ -5340,6 +5357,7 @@ impl Visit for ExecutionIndex {
                         }
                         Some(_) => false,
                         None => {
+                            descriptor_creation_order.push(name.clone());
                             descriptor_shape.insert(
                                 name,
                                 OwnPropertyDescriptorSyntax::Accessor {
@@ -5355,8 +5373,13 @@ impl Visit for ExecutionIndex {
             }
         });
         if descriptorable {
-            self.own_descriptor_shapes
-                .insert(object.span.lo.0, descriptor_shape);
+            self.own_descriptor_shapes.insert(
+                object.span.lo.0,
+                OwnPropertyShape {
+                    properties: descriptor_shape,
+                    creation_order: descriptor_creation_order,
+                },
+            );
         }
         let mut null_prototype = 0;
         let static_data = object.props.iter().all(|property| match property {

@@ -180,7 +180,7 @@ and does not certify descendants or global-slot descriptors. Discharged census
 sites retain their initializer and producer provenance in
 `native_receiver_certificates`.
 
-## Ordinary own descriptor capture and application
+## Ordinary own-property inspection and descriptor application
 
 The canonical index recognizes exact ordinary object-literal shapes with
 statically known string or number keys (including literal-computed data keys),
@@ -190,8 +190,20 @@ requires an exact object identity, no prior taint, and equality between the
 literal's own-key set and the current identity-store key set. This admits a
 local binding or alias to that object; a known added key, an unknown key or an
 escaped/mutated source falls back. Tracked writes that only replace values keep
-their value-set overapproximation. The Object binding, native integrity and
-ordinary Object prototype guards must remain intact.
+their value-set overapproximation. The Object binding and native integrity
+must remain intact. Applying a captured descriptor map still requires the
+separate ordinary Object prototype guard on its `Object.defineProperties`
+target.
+
+`Object.getOwnPropertyNames` shares this exact-origin, static-shape and current
+prefix-state proof. It emits a dense array of exact string values in
+ECMAScript own-key order: canonical array indices in numeric order, followed
+by other strings in literal creation order. It does not read property values
+or invoke getters. Callee and argument evaluation still happen eagerly, and
+possible throws remain represented. This return/timing projection does not
+admit the call as pure or exception-free. Each call derives its prefix fact in
+a fresh short-lived context, so later mutations cannot reuse an earlier
+projection.
 
 `Object.getOwnPropertyDescriptors` captures the current data-value identities
 and getter/setter callbacks without invoking accessors. Its carrier has no
@@ -1040,10 +1052,8 @@ Out of scope (not admitted; flagged for follow-up review):
   Skipped to keep the rule tight; the `assign` path needs its own
   argument-count + result-shape analysis.
 
-- `Object.getOwnPropertyNames(O)` / `getPrototypeOf(O)` /
-  `getOwnPropertyDescriptor(O, k)` — same shape as `keys` but produces
-  a richer return value. Could ride on the same gate in a follow-up;
-  out for v1 to minimize the audit surface.
+- `Object.getPrototypeOf(O)` / `getOwnPropertyDescriptor(O, k)` — richer
+  results and argument-specific behavior remain outside the current gate.
 
 - `Array.from(I[, mapFn])` — sound only when `mapFn` is absent (a
   `mapFn` invokes user code per element). Skipped to avoid the

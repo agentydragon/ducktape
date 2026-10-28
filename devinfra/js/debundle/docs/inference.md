@@ -10,10 +10,20 @@ The current rules compose as follows:
 flowchart LR
     census[Completed native census] --> native[Native integrity]
     native --> identity[Native call identity]
+    shape[Canonical source shapes] --> origin[Own-property source origin]
+    origin --> ownshape[Own-property static shape]
+    ownshape --> prefix[Own-property prefix state]
+    identity --> projection[Own-property projection]
+    prefix --> projection
+    projection --> names[Own-name and descriptor results]
     identity --> empty[Empty collection construction]
     identity --> calls[Guarded native call summaries]
     empty --> class[Local class construction]
     native --> set[Primitive Set iteration]
+    ownshape[Canonical own-property shapes] --> prefix[Own-property prefix state]
+    identity --> projection[Own-property projection]
+    prefix --> projection
+    projection --> names[Own-name and descriptor results]
     shape[Canonical source shapes] --> function[Stable function identity]
     function --> callback[Callback factory]
     function --> record[Returned record construction]
@@ -45,6 +55,15 @@ body. Returned-record conclusions additionally require an unchanged hoisted
 function and a fresh empty collection constructor; their summaries retain the
 member and capture provenance. These are timing and retained-capability facts,
 not purity or no-throw claims.
+Own-property inspection uses a separate call-local inference store. The shared
+semantic context supplies completed native identity and integrity judgments;
+the local rules derive an exact object origin, its canonical source shape, and
+the current prefix state before projecting names or descriptors. Each query
+copies only the selected object's current property state, and that inference
+context is discarded after the call. It cannot reuse a prefix-derived fact
+after a later mutation. Name projection follows ECMAScript own-string-key
+ordering, while descriptor projection retains current data identities and
+accessor closures without invoking them.
 
 ## Context and results
 
@@ -100,9 +119,11 @@ bitmap representation or cross-module preparation caches.
 
 `synchronous_execution.inference_uses` expands the rule names and captured-input
 references for certificates actually consumed by timing analysis, including
-native call identity and callable conclusions. Purity and heap reports keep
-their existing dependency fields. Saved dependency graphs are diagnostic
-artifacts, not reusable internal inference contexts.
+native call identity, callable conclusions and call-local own-property
+projections. These projections establish return shape only; they do not
+establish purity or exception freedom. Purity and heap reports keep their
+existing dependency fields. Saved dependency graphs are diagnostic artifacts,
+not reusable internal inference contexts.
 
 Tests cover queue order, dependency unions, shared prerequisites, unrelated
 rules, cycles, separate contexts and incomplete producers. Real CLI fixtures

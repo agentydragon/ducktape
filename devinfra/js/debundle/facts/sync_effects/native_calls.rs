@@ -17,6 +17,8 @@ pub(super) enum CallReturn {
     /// A capability for descriptor entries captured from one exact ordinary
     /// source object. It remains opaque except for the paired application.
     OwnDescriptorMap,
+    /// Exact dense own string names from one ordinary source object.
+    OwnPropertyNames,
     /// `Object.defineProperties` returns its target when the call completes;
     /// application effects have a separate input guard.
     DefinedPropertiesTarget,
@@ -27,6 +29,7 @@ pub(super) enum CallInputs {
     Primitives { min: usize, max: usize },
     FreshDataRecord,
     OwnDescriptorRecord,
+    OwnPropertyNamesRecord,
     FreshDescriptorMapTarget,
     OrdinaryCallable,
 }
@@ -83,6 +86,12 @@ pub(super) fn native_call_model(
             intrinsic: IntrinsicRoot::Object,
             inputs: CallInputs::OwnDescriptorRecord,
             returns: CallReturn::OwnDescriptorMap,
+            heap_effect: NativeHeapEffect::Opaque,
+        }),
+        ("Object", Some("getOwnPropertyNames"), CallKind::Call) => Some(NativeCallModel {
+            intrinsic: IntrinsicRoot::Object,
+            inputs: CallInputs::OwnPropertyNamesRecord,
+            returns: CallReturn::OwnPropertyNames,
             heap_effect: NativeHeapEffect::Opaque,
         }),
         ("Object", Some("defineProperties"), CallKind::Call) => Some(NativeCallModel {

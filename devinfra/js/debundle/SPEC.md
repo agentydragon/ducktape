@@ -943,11 +943,12 @@ carries no value-input use. The source digest
 binds the input to parsed bytes, but it does not establish the external runtime
 audit, code outside the analyzed prefix, or host behavior.
 
-## Ordinary own descriptor inspection
+## Ordinary own-property inspection
 
-A guarded `Object.getOwnPropertyDescriptors` call can capture exact ordinary
-object-literal descriptors through the object's canonical identity, including
-a local binding or alias. The source must be untainted, and its current own-key
+A guarded `Object.getOwnPropertyNames` or `Object.getOwnPropertyDescriptors`
+call can inspect an exact ordinary object-literal shape through the object's
+canonical identity, including a local binding or alias. The source must be
+untainted, and its current own-key
 set must still equal the indexed static shape. Statically known string and
 number keys are supported, including literal-computed data keys; computed
 method/accessor keys, spreads, decorators, `__proto__`, unknown/added keys,
@@ -955,6 +956,15 @@ escaped or unsupported mutations, and native replacement remain conservative.
 Callee/argument effects and throws remain represented; inspection captures
 data-value identities and getter, setter and method callbacks without invoking
 accessors.
+
+`Object.getOwnPropertyNames` returns a dense array of exact string primitives.
+Canonical array-index names are numerically ordered first; other string names
+retain literal creation order. The index never uses `BTreeMap` order as source
+property order. Inspection does not read property values or invoke getters.
+Argument evaluation and effects still occur eagerly, and the call's possible
+throw remains represented. Its return/timing certificate does not establish
+purity or exception freedom. Proxy objects, shadowed bindings, native
+replacement, escaped sources and unsupported mutations remain conservative.
 
 The descriptor-map carrier has no general readable shape. The only modeled
 composition is a direct, guarded `Object.defineProperties` call using that live

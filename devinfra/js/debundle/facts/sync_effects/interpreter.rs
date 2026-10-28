@@ -2,7 +2,7 @@
 
 use super::super::value_model::{
     AbstractValue, ArrayIteration, ArrayIterationMethod, CallSite, Captured, CapturedContext,
-    Context, DenseArray, FrozenNamespaceProof, OwnPropertyDescriptorSyntax, ValueExpr, Values,
+    Context, DenseArray, FrozenNamespaceProof, ValueExpr, Values,
 };
 use super::native_calls::{CallInputs, CallReturn, NativeCallModel};
 use super::{
@@ -20,6 +20,10 @@ use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
 use crate::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryUseFact,
     ReturnedRecordUseFact, StatementFacts, StatementKind, SynchronousCalls,
+};
+use crate::facts::sync_effects::property_inference::{
+    CapturedPropertyDescriptor, OwnPropertyProjection, OwnPropertyProjectionKind, OwnPropertyProof,
+    infer_own_property_projection,
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin, Values as FlowValues};
 use crate::facts::{
@@ -149,18 +153,19 @@ const MAX_SYNCHRONOUS_INVOCATIONS: usize = 256;
 // manufacturing capture snapshots that retain that cross product.
 const MAX_SYNCHRONOUS_CALLBACK_POOL: usize = 64;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum CapturedPropertyDescriptor {
-    Data(Values),
-    Accessor { getter: Values, setter: Values },
-}
-
 #[derive(Debug, Clone)]
 struct OwnDescriptorMapState {
     source_object: u32,
     valid: bool,
+    property_order: Vec<String>,
     properties: BTreeMap<String, CapturedPropertyDescriptor>,
     retained_values: Values,
+}
+
+#[derive(Debug, Clone)]
+struct NativeCallResolution {
+    returns: CallReturn,
+    own_property_projection: Option<OwnPropertyProof>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -500,8 +505,8 @@ impl Executor<'_> {
         self.inference_uses.borrow_mut().insert(proof);
     }
 
-    /// Descriptor records need the whole ordinary prototype premise; private
-    /// constructors keep their separate property-specific absence checks.
+    /// Descriptor application targets need the ordinary prototype premise;
+    /// private constructors keep their separate property-specific checks.
     fn ordinary_object_prototype_intact(&self) -> bool {
         self.index.dynamic_scope_owners.is_empty()
             && self.native_guard_intact(
@@ -510,98 +515,50 @@ impl Executor<'_> {
             )
     }
 
-    fn descriptor_source_object(&self, values: &Values) -> Option<u32> {
+    fn own_property_projection(
+        &self,
+        values: &Values,
+        native_call_identity: &SemanticKey,
+        projection: OwnPropertyProjectionKind,
+    ) -> Option<OwnPropertyProof> {
         let [AbstractValue::Origin(ValueOrigin::Object(object))] =
             values.iter().collect::<Vec<_>>().as_slice()
         else {
             return None;
         };
-        if self.tainted_objects.contains(object) {
-            return None;
-        }
         let shape = self.index.own_descriptor_shapes.get(object)?;
         let properties = self.prefix_object_properties.get(object)?;
-        let current_keys: BTreeSet<_> = properties.keys().cloned().collect();
-        let expected_keys: BTreeSet<_> = shape.keys().cloned().map(Some).collect();
-        (current_keys == expected_keys && properties.values().all(|values| !values.is_empty()))
-            .then_some(*object)
+        let semantic_facts = self.index.semantic_facts.as_deref()?;
+        infer_own_property_projection(
+            *object,
+            values,
+            shape,
+            properties,
+            self.tainted_objects.contains(object),
+            semantic_facts,
+            native_call_identity.clone(),
+            projection,
+        )
     }
 
     fn capture_own_descriptor_map(
         &mut self,
         site: CallSite,
-        args: &[Values],
+        proof: Option<OwnPropertyProof>,
     ) -> Option<AbstractValue> {
-        let [source_values] = args else {
+        let OwnPropertyProjection::Descriptors(projection) = proof?.projection else {
             return None;
         };
-        let source_object = self.descriptor_source_object(source_values)?;
-        let shape = self
-            .index
-            .own_descriptor_shapes
-            .get(&source_object)?
-            .clone();
-        let source_properties = self.prefix_object_properties.get(&source_object)?.clone();
-        let mut properties = BTreeMap::new();
-        for (name, syntax) in shape {
-            let descriptor = match syntax {
-                OwnPropertyDescriptorSyntax::Data => CapturedPropertyDescriptor::Data(
-                    source_properties.get(&Some(name.clone()))?.clone(),
-                ),
-                OwnPropertyDescriptorSyntax::Accessor { getter, setter } => {
-                    let stored = source_properties.get(&Some(name.clone()))?;
-                    let expected: BTreeSet<_> = getter.into_iter().chain(setter).collect();
-                    let mut callbacks = Values::new();
-                    for value in stored {
-                        let AbstractValue::Closure(key, _) = value else {
-                            return None;
-                        };
-                        if !expected.contains(key) {
-                            return None;
-                        }
-                        callbacks.insert(value.clone());
-                    }
-                    let callbacks_for = |key: Option<u32>| {
-                        key.map_or_else(Values::new, |key| {
-                            callbacks
-                                .iter()
-                                .filter(|value| {
-                                    matches!(value, AbstractValue::Closure(found, _) if *found == key)
-                                })
-                                .cloned()
-                                .collect()
-                        })
-                    };
-                    let getter_values = callbacks_for(getter);
-                    let setter_values = callbacks_for(setter);
-                    if (getter.is_some() && getter_values.is_empty())
-                        || (setter.is_some() && setter_values.is_empty())
-                    {
-                        return None;
-                    }
-                    CapturedPropertyDescriptor::Accessor {
-                        getter: getter_values,
-                        setter: setter_values,
-                    }
-                }
-            };
-            properties.insert(name, descriptor);
-        }
-        let mut retained_values = Values::new();
-        for descriptor in properties.values() {
-            match descriptor {
-                CapturedPropertyDescriptor::Data(values) => {
-                    retained_values.extend(values.iter().cloned());
-                }
-                CapturedPropertyDescriptor::Accessor { getter, setter } => {
-                    retained_values.extend(getter.iter().cloned());
-                    retained_values.extend(setter.iter().cloned());
-                }
-            }
-        }
+        let source_object = projection.source_object;
+        let property_order = projection.ordered_names;
+        let properties = projection.properties;
+        let retained_values = projection.retained_values;
         match self.own_descriptor_maps.get_mut(&site) {
             Some(existing) => {
-                if existing.source_object != source_object || existing.properties != properties {
+                if existing.source_object != source_object
+                    || existing.property_order != property_order
+                    || existing.properties != properties
+                {
                     existing.valid = false;
                     existing.retained_values.extend(retained_values);
                 }
@@ -612,6 +569,7 @@ impl Executor<'_> {
                     OwnDescriptorMapState {
                         source_object,
                         valid: true,
+                        property_order,
                         properties,
                         retained_values,
                     },
@@ -619,6 +577,24 @@ impl Executor<'_> {
             }
         }
         Some(AbstractValue::OwnDescriptorMap(site))
+    }
+
+    fn own_property_names_array(
+        &mut self,
+        site: CallSite,
+        proof: Option<OwnPropertyProof>,
+    ) -> Option<AbstractValue> {
+        let OwnPropertyProjection::Names(projection) = proof?.projection else {
+            return None;
+        };
+        let object = site.allocation_id();
+        let slots = projection
+            .names
+            .into_iter()
+            .map(|name| BTreeSet::from([AbstractValue::StringPrimitive(name)]))
+            .collect();
+        self.retain_dense_array(object, slots);
+        Some(AbstractValue::Origin(ValueOrigin::Object(object)))
     }
 
     fn invalidate_own_descriptor_map(&mut self, site: CallSite) {
@@ -682,7 +658,10 @@ impl Executor<'_> {
         let mut applied_accessors = BTreeMap::new();
         let properties = self.prefix_object_properties.entry(*target).or_default();
         let before = properties.clone();
-        for (name, descriptor) in map.properties {
+        for name in map.property_order {
+            let Some(descriptor) = map.properties.get(&name).cloned() else {
+                continue;
+            };
             match descriptor {
                 CapturedPropertyDescriptor::Data(values) => {
                     properties.insert(Some(name), values);
@@ -714,11 +693,11 @@ impl Executor<'_> {
         &self,
         kind: CallKind,
         callee: &ValueExpr,
-    ) -> Option<NativeCallModel> {
+    ) -> Option<(NativeCallModel, SemanticKey)> {
         let (model, key) = super::native_call_identity_key(kind, callee)?;
         let proof = self.index.semantic_facts.as_ref()?.inference_use(&key)?;
         self.record_inference_use(NativeIntegrityGuard::NativeCallIdentity, proof);
-        Some(model)
+        Some((model, key))
     }
 
     /// A successful model lookup certifies the operation after its inputs
@@ -729,20 +708,15 @@ impl Executor<'_> {
         callee: &ValueExpr,
         expressions: &[ValueExpr],
         args: &[Values],
-    ) -> Option<CallReturn> {
-        let model = self.exact_native_call_model(kind, callee)?;
+    ) -> Option<NativeCallResolution> {
+        let (model, native_call_identity) = self.exact_native_call_model(kind, callee)?;
+        let mut own_property_projection = None;
 
         let admitted = match model.inputs {
             CallInputs::Primitives { min, max } => {
                 (min..=max).contains(&args.len())
                     && args.iter().all(|values| {
-                        !values.is_empty()
-                            && values.iter().all(|value| {
-                                matches!(
-                                    value,
-                                    AbstractValue::NonCallable | AbstractValue::Undefined
-                                )
-                            })
+                        !values.is_empty() && values.iter().all(AbstractValue::is_primitive)
                     })
             }
             CallInputs::FreshDataRecord => {
@@ -750,9 +724,26 @@ impl Executor<'_> {
                     if self.index.plain_data_objects.contains(object))
             }
             CallInputs::OwnDescriptorRecord => {
-                matches!(args, [values]
-                    if self.descriptor_source_object(values).is_some()
-                        && self.ordinary_object_prototype_intact())
+                let [values] = args else {
+                    return None;
+                };
+                own_property_projection = Some(self.own_property_projection(
+                    values,
+                    &native_call_identity,
+                    OwnPropertyProjectionKind::Descriptors,
+                )?);
+                true
+            }
+            CallInputs::OwnPropertyNamesRecord => {
+                let [values] = args else {
+                    return None;
+                };
+                own_property_projection = Some(self.own_property_projection(
+                    values,
+                    &native_call_identity,
+                    OwnPropertyProjectionKind::Names,
+                )?);
+                true
             }
             CallInputs::FreshDescriptorMapTarget => {
                 matches!(args, [target_values, map_values]
@@ -779,7 +770,18 @@ impl Executor<'_> {
                     )))
             }
         };
-        admitted.then_some(model.returns)
+        if !admitted {
+            return None;
+        }
+        if let Some(proof) = &own_property_projection {
+            self.inference_uses
+                .borrow_mut()
+                .insert(proof.inference_use.clone());
+        }
+        Some(NativeCallResolution {
+            returns: model.returns,
+            own_property_projection,
+        })
     }
 
     /// Author-asserted timing for two exact operations in the pinned Bun host.
@@ -835,18 +837,26 @@ impl Executor<'_> {
 
     fn native_return_values(
         &mut self,
-        returns: CallReturn,
+        resolution: NativeCallResolution,
         args: &[Values],
         may_throw: bool,
         site: CallSite,
     ) -> Values {
+        let NativeCallResolution {
+            returns,
+            own_property_projection,
+        } = resolution;
         let mut values = match returns {
             CallReturn::Unknown => unknown(),
             CallReturn::Primitive => BTreeSet::from([AbstractValue::NonCallable]),
             CallReturn::Argument(index) => args.get(index).cloned().unwrap_or_else(unknown),
             CallReturn::OwnDescriptorMap => self
-                .capture_own_descriptor_map(site, args)
+                .capture_own_descriptor_map(site, own_property_projection)
                 .map(|map| BTreeSet::from([map]))
+                .unwrap_or_else(unknown),
+            CallReturn::OwnPropertyNames => self
+                .own_property_names_array(site, own_property_projection)
+                .map(|array| BTreeSet::from([array]))
                 .unwrap_or_else(unknown),
             CallReturn::DefinedPropertiesTarget => args.first().cloned().unwrap_or_else(unknown),
             CallReturn::DeferredArgument(index) => {
@@ -989,12 +999,9 @@ impl Executor<'_> {
         };
         if method != "push"
             || !matches!(receiver.as_ref(), ValueExpr::Binding(_))
-            || args.iter().any(|values| {
-                values.is_empty()
-                    || values.iter().any(|value| {
-                        !matches!(value, AbstractValue::NonCallable | AbstractValue::Undefined)
-                    })
-            })
+            || args
+                .iter()
+                .any(|values| values.is_empty() || values.iter().any(|value| !value.is_primitive()))
         {
             return false;
         }
@@ -1139,7 +1146,7 @@ impl Executor<'_> {
                     }
                     AbstractValue::Origin(ValueOrigin::Function(key))
                     | AbstractValue::Closure(key, _) => self.tainted_functions.contains(key),
-                    AbstractValue::NonCallable | AbstractValue::Undefined => false,
+                    value if value.is_primitive() => false,
                     _ => true,
                 })
             {
@@ -1358,11 +1365,7 @@ impl Executor<'_> {
                     .prefix_object_properties
                     .get(&entry)
                     .and_then(|properties| properties.get(&Some(proof.key.clone())))?;
-                if key_values.is_empty()
-                    || key_values.iter().any(|value| {
-                        !matches!(value, AbstractValue::NonCallable | AbstractValue::Undefined)
-                    })
-                {
+                if key_values.is_empty() || key_values.iter().any(|value| !value.is_primitive()) {
                     return None;
                 }
                 expected_entries.insert(AbstractValue::Origin(ValueOrigin::Object(entry)));
@@ -2598,6 +2601,7 @@ impl Executor<'_> {
             | AbstractValue::ObjectAssign
             | AbstractValue::ArrayIntrinsic
             | AbstractValue::GlobalObject
+            | AbstractValue::StringPrimitive(_)
             | AbstractValue::Undefined
             | AbstractValue::NonCallable
             | AbstractValue::Unavailable
@@ -2862,11 +2866,7 @@ impl Executor<'_> {
             }
             for expression in [&write.property_key, &write.value] {
                 let values = self.evaluate(expression, env, env);
-                if values.is_empty()
-                    || !values.iter().all(|value| {
-                        matches!(value, AbstractValue::NonCallable | AbstractValue::Undefined)
-                    })
-                {
+                if values.is_empty() || !values.iter().all(AbstractValue::is_primitive) {
                     return BTreeSet::new();
                 }
             }
@@ -3505,9 +3505,9 @@ impl Executor<'_> {
                 }
                 AbstractValue::Origin(ValueOrigin::Function(function)) => (function, None),
                 AbstractValue::Closure(function, captured) => (function, Some(captured)),
-                AbstractValue::Undefined
-                | AbstractValue::NonCallable
-                | AbstractValue::Unavailable => continue,
+                value if value.is_primitive() || matches!(value, AbstractValue::Unavailable) => {
+                    continue;
+                }
                 _ => {
                     has_unknown = true;
                     continue;
@@ -4226,7 +4226,7 @@ impl Executor<'_> {
                     && self.ordinary_object_prototype_intact()
                     && self
                         .exact_native_call_model(CallKind::Call, callee)
-                        .is_some_and(|model| {
+                        .is_some_and(|(model, _)| {
                             matches!(model.returns, CallReturn::DefinedPropertiesTarget)
                         })
                 {
@@ -5004,7 +5004,7 @@ impl Executor<'_> {
             && let Some(returns) =
                 self.resolve_native_call(call.kind, &call.callee, &call.args, &args)
         {
-            if matches!(returns, CallReturn::DefinedPropertiesTarget) {
+            if matches!(returns.returns, CallReturn::DefinedPropertiesTarget) {
                 self.apply_own_descriptor_map(&args);
             }
             return;
