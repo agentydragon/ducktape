@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -20,7 +21,7 @@ func lifecycleTestSession(t *testing.T) (*Runner, *Session) {
 	workspace := t.TempDir()
 	proxy := modelConfigServer(t)
 	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
-	if _, err := r.OpenSession(context.Background(), openLifecycleSession("session-1", workspace)); err != nil {
+	if _, err := r.OpenSession(context.Background(), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	return r, r.sessions["session-1"]
