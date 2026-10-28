@@ -1,4 +1,4 @@
-# Langfuse migration recovery record
+# Langfuse v4 migration recovery
 
 Migration issue [#6956](https://github.com/agentydragon/ducktape/issues/6956) closed on 2026-10-22. Its body records the deployment and validation evidence. Verified at cutover on 2026-10-22: chart `2.1.6`, web/worker `4.67.0`, effective `events_only` / `direct`, normal ClickHouse `8Gi` limits. All five migration steps completed; no temporary retry args or migration env overrides remain.
 
@@ -19,6 +19,6 @@ These were local hardlink snapshots, not off-host backups. Their deletion left l
 
 ## Related incident
 
-The separate LiteLLM liveness restart was traced to a public model-prefix collision and mitigated by renaming the prefix. See the [RCA and generation verification](../docs/lessons_learned/2026_10_22_litellm_chatgpt_alias_liveness.md).
+The separate LiteLLM liveness restart was traced to a public model-prefix collision and mitigated by renaming the prefix. See the [RCA and generation verification](2026_10_22_litellm_chatgpt_alias_liveness.md).
 
 The workstation artifacts and PostgreSQL backup were not deleted with the ClickHouse snapshots.

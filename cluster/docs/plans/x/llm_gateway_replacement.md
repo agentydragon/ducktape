@@ -47,8 +47,11 @@ The current proxy config selects `langfuse_otel` and `prometheus`, supplies Lang
 project keys and the OTEL host, and enables OTEL v2 message capture at `span_only`. With
 those keys present, the legacy callback also writes Langfuse observations. The June tracing
 note observed a `GENERATION` `litellm_request`, a `SPAN` `raw_gen_ai_request`, and related
-OTEL event rows for one Responses request. Langfuse v4 now uses `events_only` / `direct`
-ingestion. Langfuse currently stores traces in the cluster's central replicated ClickHouse;
+OTEL event rows for one Responses request. The 2026-10-22 Langfuse cutover record verified
+`events_only` / `direct` ingestion at that time. Current source pins chart `2.1.6` and
+web/worker image `4.67.0`, but does not declare the effective ingestion mode. Recheck the
+live setting before relying on it for a future migration. Langfuse currently stores traces
+in the cluster's central replicated ClickHouse;
 the owner accepts another backend if its in-cluster storage survives a node outage. The
 replacement should retain structured request traces in one trace store and avoid copying
 prompt/output content to pod logs or Loki. The current config comments that a console
@@ -58,7 +61,7 @@ has one shard, two data replicas on separate nodes, and a three-member Keeper qu
 replicas tolerate a node outage while the other replica and Keeper quorum remain available;
 permanent loss of a node's local disk still requires restore or rebuild. [proxy.py:160-182](../../../cdk8s/litellm/proxy.py#L160),
 [tracing note:15-24](../../../debug/2026-06-05-litellm-responses-langfuse-otel.md#L15),
-[Langfuse v4 migration:1-3](../../../debug/langfuse_v4_migration_20261022.md#L1),
+[Langfuse v4 migration recovery](../../lessons_learned/2026_10_22_langfuse_v4_migration.md#recovery-material),
 [central ClickHouse/Langfuse migration:9-13](../../runbooks/central_clickhouse_langfuse_migration.md#L9)
 
 | Field                        | Current source and path                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Coverage and gap                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
@@ -112,7 +115,11 @@ The generated manifests are excluded when a generator source is available.
 - **Provider prefix preprocessing can block health handlers.** A public `chatgpt/` alias invoked LiteLLM's synchronous interactive auth before router selection and caused an actual liveness restart. The deployed `chatgpt-sub/` prefix is the mitigation; stale callers can still trigger the old path. [liveness lesson:5-47](../../lessons_learned/2026_10_22_litellm_chatgpt_alias_liveness.md#L5)
 - **Crossplane provider changes are part of the gateway's operational surface.** The key ownership move required a patched provider for root-scoped Keys and write-only key state, plus ordered Tofu teardown, ESO exports, and a separate BuildBuddy sync. The recovery note records that the patched provider was installed and all 12 Keys and three Teams were Ready at its 16:07 UTC check; it also documents the Team deletion cascade and write-only-key reconciliation hazards. [crossplane debug:1-9,30-40](../../../debug/2026_10_22_litellm_crossplane.md#L1), [provider package pin](../../../cdk8s/crossplane.py#L28), [provider build workflow](../../../../.github/workflows/crossplane-provider-litellm.yml)
 - **Cost does not equal subscription billing.** LiteLLM and Langfuse estimates are useful for token/model attribution, but flat-rate ChatGPT/Claude subscription routes do not incur the displayed per-token bill. [props config.toml:47-61](../../../../props/deploy/config.toml#L47), [litellm-claude.nix:18-20](../../../../nix/home/claude_code/litellm-claude.nix#L18)
-- **Langfuse v4 changed its ingestion layout.** The migration is complete on `events_only` / `direct`; a candidate that keeps Langfuse must preserve trace and event ingestion under the current deployment, not assume the prior observation tables are the only query surface. The owner is open to a different backend. [migration note:1-3](../../../debug/langfuse_v4_migration_20261022.md#L1)
+- **Langfuse v4 changed its ingestion layout.** At the 2026-10-22 cutover, runtime used
+  `events_only` / `direct`. A candidate that keeps Langfuse must preserve trace and event
+  ingestion rather than assume prior observation tables are the only query surface. Check
+  the effective live mode before implementation because the checked-in chart values do
+  not declare it. The owner is open to a different backend. [migration recovery](../../lessons_learned/2026_10_22_langfuse_v4_migration.md#recovery-material)
 
 ## Explicit non-requirements from current use
 
