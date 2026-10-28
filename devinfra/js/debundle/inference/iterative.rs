@@ -18,8 +18,10 @@ pub(crate) trait IterativeRules: Sized {
     fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>);
 
     /// Join a contribution into a fact, returning whether its value changed.
-    /// The domain must have finite height; the join is associative, commutative
-    /// and idempotent. Proof dependencies are joined separately by the engine.
+    /// The semantic domain must have finite height and an associative,
+    /// commutative, idempotent join. A terminal diagnostic can retain its first
+    /// witness in deterministic producer order without changing that semantic
+    /// result. Proof dependencies are joined separately by the engine.
     fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool;
 }
 
@@ -249,5 +251,23 @@ mod tests {
         assert!(facts.get(&2).is_none());
         assert!(facts.get(&3).is_none());
         assert_eq!(facts.evaluations(), 2);
+    }
+
+    #[test]
+    fn dependency_growth_wakes_existing_consumers_without_value_growth() {
+        let mut inference = IterativeInference::new(Rules);
+        inference.seed(2, BTreeSet::from([20]));
+        // The consumer runs first. Producer 2 contributes the same value with
+        // a new author premise, which must propagate through the existing fact.
+        let facts = inference.solve([0, 2]);
+        let result = facts.get(&3).unwrap();
+        assert_eq!(result.value(), &BTreeSet::from([20]));
+        assert_eq!(
+            result.dependencies().value_inputs,
+            BTreeSet::from([ValueInputRef {
+                defining_chunk: "captured".into(),
+                input_index: 0,
+            }])
+        );
     }
 }
