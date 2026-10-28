@@ -541,3 +541,63 @@ fn prototype_absence_keeps_captured_census_provenance() {
         "{result}"
     );
 }
+
+#[test]
+fn primitive_set_split_keeps_the_same_input_in_purity_and_callback_timing() {
+    let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport const ready = true;\n";
+    let source = "import './opaque.js';\nimport { ready } from './peer.js';\nglobalThis.saved = () => later;\nconst unique = new Set(['a', 'b']);\nconst later = 42;\nconsole.log(ready, unique.size, globalThis.saved());\n";
+    let chunks = [("static/peer", provider)];
+    let modules = || {
+        vec![
+            logical_module_with_anon(
+                "collection",
+                &[Member::new("unique")],
+                &["globalThis.saved = () => later;"],
+            ),
+            logical_module("value", &[Member::new("later")]),
+        ]
+    };
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(source, modules())
+            .with_extra_chunks(&chunks)
+            .with_extra_files(OPAQUE_FILES),
+        &["collection", "value"],
+        &[],
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(source, modules())
+            .with_extra_chunks(&chunks)
+            .with_extra_files(OPAQUE_FILES)
+            .with_value_inputs("static/peer", vec![captured_input(provider)]),
+    );
+    assert_preserved_entry_output(&fixture, "true 2 42\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let unique = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|names| names.iter().any(|name| name["binding"] == "unique"))
+        })
+        .expect("Set construction node");
+    assert_eq!(unique["purity"]["kind"], "pure", "{unique}");
+    assert!(
+        input_refs(&unique["purity"]["dependencies"]["value_inputs"]),
+        "{unique}"
+    );
+    assert_eq!(
+        unique["synchronous_execution"]["complete"], true,
+        "{unique}"
+    );
+    assert!(
+        unique["synchronous_execution"]["native_integrity_uses"]
+            .as_array()
+            .is_some_and(|uses| uses
+                .iter()
+                .any(|usage| usage["guard"] == "set_iterable"
+                    && input_refs(&usage["value_input_refs"]))),
+        "{unique}"
+    );
+}
