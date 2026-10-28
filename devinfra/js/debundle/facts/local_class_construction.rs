@@ -164,10 +164,6 @@ pub(crate) struct LocalClassHeapProof {
 }
 
 impl LocalClassHeapProof {
-    pub(crate) fn contains_construction(&self, span: Span) -> bool {
-        self.dependencies_for_construction(span).is_some()
-    }
-
     pub(crate) fn dependencies_for_construction(&self, span: Span) -> Option<&ProofDependencies> {
         self.constructions.get(&span.lo.0)
     }
