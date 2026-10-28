@@ -2662,37 +2662,37 @@ impl ExecutionIndex {
                     .any(|value| value.may_publish_namespace(id, &aliases, &namespace_value_facts))
             });
             if top_call_argument {
-                let direct =
-                    index
-                        .top_calls
-                        .iter()
-                        .flatten()
-                        .filter(|call| {
-                            call.kind == CallKind::Call
-                                && call.caller.is_none()
-                                && !call.has_spread
-                                && index.ordinary_top_call_sites.contains(&call.span.into())
-                        })
-                        .flat_map(|call| {
-                            call.args.iter().enumerate().filter_map(
-                                move |(argument_index, value)| {
-                                    matches!(value, ValueExpr::Binding(binding) if binding == id)
-                                        .then(|| CallbackFactoryCallArgumentWitness {
-                                            statement_ordinal: call.owner,
-                                            call_span: call.span,
-                                            argument_index,
-                                            namespace_binding: id.0.to_string(),
-                                        })
-                                },
-                            )
-                        })
-                        .min_by_key(|witness| {
-                            (
-                                witness.statement_ordinal,
-                                witness.call_span.lo.0,
-                                witness.argument_index,
-                            )
-                        });
+                let direct = index
+                    .top_calls
+                    .iter()
+                    .flatten()
+                    .filter(|call| {
+                        call.kind == CallKind::Call
+                            && call.caller.is_none()
+                            && !call.has_spread
+                            && index.ordinary_top_call_sites.contains(&call.span.into())
+                    })
+                    .flat_map(|call| {
+                        call.args
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, value)| {
+                                    matches!(*value, ValueExpr::Binding(binding) if binding == id)
+                                })
+                                .map(move |(argument_index, _)| CallbackFactoryCallArgumentWitness {
+                                    statement_ordinal: call.owner,
+                                    call_span: call.span,
+                                    argument_index,
+                                    namespace_binding: id.0.to_string(),
+                                })
+                    })
+                    .min_by_key(|witness| {
+                        (
+                            witness.statement_ordinal,
+                            witness.call_span.lo.0,
+                            witness.argument_index,
+                        )
+                    });
                 if let Some(witness) = direct {
                     namespace_call_argument_witnesses
                         .borrow_mut()
