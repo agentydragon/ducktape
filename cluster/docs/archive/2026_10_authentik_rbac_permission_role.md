@@ -1,11 +1,12 @@
-# Historical: authentik_rbac_permission_role — Broken Upstream Since Inception
+# Archived: Authentik `authentik_rbac_permission_role` provider failure
 
-> This records the former Claude diagnostics service account workaround. The service account,
-> API token, Kubernetes Secrets, and active diagnostics role/group blueprint are retired; the
-> Authentik config now carries a blueprint tombstone for the role and group. The observations
-> below describe the investigation at the time and may be stale. Possible future agent access
-> through Agentplane credential substitution is tracked in
-> [the Agentplane egress TODO](../../../agentplane/egress/TODO.md).
+> Archived 2026-10-28 after the former Claude diagnostics service account was retired in
+> [PR #11887](https://github.com/agentydragon/ducktape/pull/11887). No current caller uses
+> this provider resource. The current Authentik blueprint preserves the retirement tombstone
+> in [`claude-diagnostics-retire.yaml`](../../k8s/authentik/app/blueprints/claude-diagnostics-retire.yaml).
+> The failure details below are historical context if the resource is considered again; they
+> may be stale. Possible future agent access through Agentplane credential substitution is
+> tracked in [the Agentplane egress TODO](../../../agentplane/egress/TODO.md).
 
 ## Symptom
 
@@ -135,7 +136,7 @@ mounted into the Authentik server via the `authentik-sso-blueprints` configMapGe
 
 ### State migration (completed before retirement)
 
-The previous version of <tf/gitops/sso-providers/service_account_claude.tf> had
+The previous version of `tf/gitops/sso-providers/service_account_claude.tf` had
 `authentik_rbac_role.claude_diagnostics` and `authentik_group.claude_diagnostics` as TF-owned
 resources. They were handed off to the blueprint without an API DELETE; the current retirement
 removes the blueprint-owned objects.
