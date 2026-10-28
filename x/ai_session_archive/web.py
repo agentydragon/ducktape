@@ -15,7 +15,15 @@ from util.bazel.runfiles import find_path
 from util.oidc_login import LoginConfig, install_login
 from x.ai_session_archive import queries
 from x.ai_session_archive.database import make_session_factory
-from x.ai_session_archive.models import EventPage, Harness, Machine, SessionPage, SessionSummary, SessionVersion
+from x.ai_session_archive.models import (
+    EventPage,
+    Harness,
+    Machine,
+    MachineImportProgress,
+    SessionPage,
+    SessionSummary,
+    SessionVersion,
+)
 from x.ai_session_archive.web_settings import WebSettings
 
 _FRONTEND_INDEX = "_main/devinfra/session_viewer/frontend/dist/index.html"
@@ -23,6 +31,10 @@ _FRONTEND_INDEX = "_main/devinfra/session_viewer/frontend/dist/index.html"
 
 class Machines(BaseModel):
     data: list[Machine]
+
+
+class ImportProgress(BaseModel):
+    data: list[MachineImportProgress]
 
 
 class Versions(BaseModel):
@@ -46,6 +58,11 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
     def machines() -> Machines:
         with factory() as db:
             return Machines(data=queries.list_machines(db))
+
+    @api.get("/import-progress")
+    def import_progress() -> ImportProgress:
+        with factory() as db:
+            return ImportProgress(data=queries.list_import_progress(db))
 
     @api.get("/sessions")
     def sessions(

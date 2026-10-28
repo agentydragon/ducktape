@@ -6,6 +6,22 @@ export type Machine = {
   display_name: string;
 };
 
+export type SnapshotImportState =
+  "inventory_pending" | "inventory_failed" | "processing_pending" | "processing_failed" | "complete";
+
+export type MachineImportProgress = {
+  machine_id: string;
+  display_name: string;
+  known_snapshot_count: number;
+  completed_snapshot_count: number;
+  failed_snapshot_count: number;
+  oldest_unfinished_snapshot_at: string | null;
+  oldest_unfinished_snapshot_state: SnapshotImportState | null;
+  processed_file_count: number;
+  pending_file_count: number;
+  failed_file_count: number;
+};
+
 export type SessionSummary = {
   id: string;
   machine_id: string;
