@@ -197,20 +197,28 @@ func assertActionStoragePlans(t *testing.T, f fixture) {
 		query string
 		args  []any
 	}{
-		{"request keyset", `EXPLAIN (COSTS OFF) SELECT id, action_group, action_name,
+		{
+			"request keyset", `EXPLAIN (COSTS OFF) SELECT id, action_group, action_name,
 			CASE WHEN action_group IS NULL OR action_name IS NULL THEN action::text END
 			FROM action_request ORDER BY id LIMIT $1 FOR UPDATE`,
-			[]any{actionStorageBackfillBatchSize}},
-		{"request cursor", `EXPLAIN (COSTS OFF) SELECT id, action_group, action_name,
+			[]any{actionStorageBackfillBatchSize},
+		},
+		{
+			"request cursor", `EXPLAIN (COSTS OFF) SELECT id, action_group, action_name,
 			CASE WHEN action_group IS NULL OR action_name IS NULL THEN action::text END
 			FROM action_request WHERE id > $1::uuid ORDER BY id LIMIT $2 FOR UPDATE`,
-			[]any{sequentialUUID(actionStorageBackfillBatchSize), actionStorageBackfillBatchSize}},
-		{"request unnest update", `EXPLAIN (COSTS OFF) UPDATE action_request AS request
+			[]any{sequentialUUID(actionStorageBackfillBatchSize), actionStorageBackfillBatchSize},
+		},
+		{
+			"request unnest update", `EXPLAIN (COSTS OFF) UPDATE action_request AS request
 			SET action_group = batch.action_group, action_name = batch.action_name
 			FROM unnest($1::uuid[], $2::text[], $3::text[]) AS batch(id, action_group, action_name)
 			WHERE request.id = batch.id AND (request.action_group IS NULL OR request.action_name IS NULL)`,
-			[]any{pq.Array([]string{sequentialUUID(1).String(), sequentialUUID(2).String()}),
-				pq.Array([]string{"legacy-group", "legacy-group"}), pq.Array([]string{"legacy-action", "legacy-action"})}},
+			[]any{
+				pq.Array([]string{sequentialUUID(1).String(), sequentialUUID(2).String()}),
+				pq.Array([]string{"legacy-group", "legacy-group"}), pq.Array([]string{"legacy-action", "legacy-action"}),
+			},
+		},
 	} {
 		rows, err := f.db.QueryContext(t.Context(), test.query, test.args...)
 		if err != nil {
