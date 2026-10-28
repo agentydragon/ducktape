@@ -14,8 +14,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/codex"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
-	"github.com/cosi-project/runtime/pkg/resource"
-	"github.com/cosi-project/runtime/pkg/state"
 )
 
 func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
@@ -275,6 +273,7 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 	// Configure every native host before lifecycle controllers or their goroutines exist.
 	r.executor = newCodexExecutor(r, executorConfig)
 	r.executor.startEffect = startEffect
+	r.executor.probeEffect = func(context.Context) error { return nil }
 	r.codex = newCodexServer(r, codexConfig)
 	lifecycle, err := newLifecycle(r)
 	if err != nil {
@@ -397,27 +396,8 @@ func updateLifecycleValueForTest[T comparable](t *testing.T, r *Runner, kind, id
 	t.Helper()
 	ctx, cancel := context.WithTimeout(r.ctx, lifecycleTestTimeout)
 	defer cancel()
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-	var lastErr error
-	for {
-		old, err := r.lifecycle.state.Get(ctx, resource.NewMetadata(lifecycleNamespace, kind, id, resource.VersionUndefined))
-		if err == nil {
-			value := lifecycleResourceFor(kind, id, spec)
-			value.metadata = old.Metadata().Copy()
-			if updateErr := r.lifecycle.state.Update(ctx, value, state.WithUpdateOwner(owner)); updateErr == nil {
-				return
-			} else {
-				lastErr = updateErr
-			}
-		} else {
-			lastErr = err
-		}
-		select {
-		case <-ticker.C:
-		case <-ctx.Done():
-			t.Fatalf("update lifecycle test value %s/%s: %v (last update error: %v)", kind, id, ctx.Err(), lastErr)
-		}
+	if err := modifyLifecycleForTest(ctx, r, kind, id, owner, func(current *T) { *current = spec }); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -68,32 +68,44 @@ func setRuntimeReady(t *testing.T, s *Session) {
 
 func setRuntimePhase(t *testing.T, s *Session, phase executionPhase) {
 	t.Helper()
-	l := s.runner.lifecycle
-	if l == nil {
-		t.Fatal("runner lifecycle is not initialized")
-	}
-	ctx := s.runner.ctx
-	current, found, err := lifecycleRead[sessionRuntimeSpec](ctx, l.state, sessionRuntimeType, s.id)
-	if err != nil {
+	if err := setSessionRuntimePhaseForTest(s.runner, s, phase); err != nil {
 		t.Fatal(err)
 	}
-	current.Phase = phase
-	s.mu.Lock()
-	current.ProcessID = s.processID
-	s.mu.Unlock()
-	if found {
-		old, err := l.state.Get(ctx, resource.NewMetadata(lifecycleNamespace, sessionRuntimeType, s.id, resource.VersionUndefined))
-		if err != nil {
-			t.Fatal(err)
+}
+
+func setSessionRuntimePhaseForTest(r *Runner, s *Session, phase executionPhase) error {
+	ctx, cancel := context.WithTimeout(r.ctx, lifecycleTestTimeout)
+	defer cancel()
+	return modifyLifecycleForTest(ctx, r, sessionRuntimeType, s.id, sessionControllerName, func(current *sessionRuntimeSpec) {
+		current.Phase = phase
+		s.mu.Lock()
+		current.ProcessID = s.processID
+		s.mu.Unlock()
+	})
+}
+
+// Only the controller creates its output. Wait for it and retry updates against
+// fresh metadata rather than racing creation or overwriting stale runtime fields.
+func modifyLifecycleForTest[T comparable](ctx context.Context, r *Runner, kind, id, owner string, modify func(*T)) error {
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	var lastErr error
+	for {
+		old, err := r.lifecycle.state.Get(ctx, resource.NewMetadata(lifecycleNamespace, kind, id, resource.VersionUndefined))
+		if err == nil {
+			value := lifecycleResourceFor(kind, id, old.(*lifecycleResource[T]).value)
+			modify(&value.value)
+			value.metadata = old.Metadata().Copy()
+			if err = r.lifecycle.state.Update(ctx, value, state.WithUpdateOwner(owner)); err == nil {
+				return nil
+			}
 		}
-		value := lifecycleResourceFor(sessionRuntimeType, s.id, current)
-		value.metadata = old.Metadata().Copy()
-		err = l.state.Update(ctx, value, state.WithUpdateOwner(sessionControllerName))
-	} else {
-		err = l.state.Create(ctx, lifecycleResourceFor(sessionRuntimeType, s.id, current), state.WithCreateOwner(sessionControllerName))
-	}
-	if err != nil {
-		t.Fatal(err)
+		lastErr = err
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return fmt.Errorf("update lifecycle test value %s/%s: %w (last update error: %v)", kind, id, ctx.Err(), lastErr)
+		}
 	}
 }
 
