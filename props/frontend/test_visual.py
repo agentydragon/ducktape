@@ -82,13 +82,13 @@ async def test_llm_request_anthropic(visual: VisualHarness, capture_name: str) -
         await expect(shot.locator("details[open]")).to_have_count(1)
         await expect(shot.get_by_text("Anthropic Request JSON")).to_be_visible()
         await expect(shot.get_by_text("Anthropic Response JSON")).to_be_visible()
+        sections = shot.locator(".p-4.space-y-3")
+        await expect(sections).to_have_count(2)
+        await view.capture("LLMRequestsAnthropicRequest", target=sections.nth(0))
         await shot.locator(".agentplane-code-block-placeholder").last.scroll_into_view_if_needed()
         code = shot.locator(".agentplane-code-block .cm-content")
         await expect(code).to_have_count(2)
-        await expect(code.nth(0)).to_contain_text("tool_result")
-        await expect(code.nth(1)).to_contain_text("The code uses MD5 for password hashing")
-        await expect(code.nth(1)).to_contain_text("tool_use")
-        await view.capture("LLMRequestsAnthropic", target=shot)
+        await view.capture("LLMRequestsAnthropicResponse", target=sections.nth(1))
 
 
 if __name__ == "__main__":

@@ -230,8 +230,7 @@ export const llmAnthropicRequests = [
     api_shape: "anthropic",
     request_body: {
       model: "claude-3-7-sonnet-20250219",
-      max_tokens: 2048,
-      system: "You are a security code reviewer. Use report_issue to record findings.",
+      max_tokens: 1024,
       messages: [
         {
           role: "user",
@@ -244,7 +243,7 @@ export const llmAnthropicRequests = [
               type: "tool_use",
               id: "toolu_01HfakeReportIssue",
               name: "report_issue",
-              input: { title: "MD5 password hashing", severity: "high" },
+              input: { title: "MD5 password hashing" },
             },
           ],
         },
@@ -262,14 +261,10 @@ export const llmAnthropicRequests = [
       tools: [
         {
           name: "report_issue",
-          description: "Record a security issue found in the code under review.",
           input_schema: {
             type: "object",
-            properties: {
-              title: { type: "string" },
-              severity: { type: "string", enum: ["low", "medium", "high", "critical"] },
-            },
-            required: ["title", "severity"],
+            properties: { title: { type: "string" } },
+            required: ["title"],
           },
         },
       ],
