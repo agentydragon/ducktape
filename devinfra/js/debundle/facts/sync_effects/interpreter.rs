@@ -30,6 +30,7 @@ use crate::facts::{
     LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableShapes,
     set_iterables::SetIterableProof,
 };
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     CallbackFactoryUseKind, ExecutionOperation, ExecutionPrecisionLoss,
@@ -5519,6 +5520,96 @@ pub(crate) fn prepare_synchronous_call_index(
     }
 }
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum PrefixNeededKey {
+    Binding(Id),
+    Object(ValueOrigin),
+}
+
+struct PrefixNeededRules<'a> {
+    dependencies: &'a BTreeMap<Id, BTreeSet<Id>>,
+    member_write_receivers: &'a BTreeMap<ValueOrigin, BTreeSet<Id>>,
+    flow: &'a ChunkValueFlow,
+}
+
+impl IterativeRules for PrefixNeededRules<'_> {
+    type Key = PrefixNeededKey;
+    type Fact = ();
+    type Rule = PrefixNeededKey;
+
+    fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
+        match rule {
+            PrefixNeededKey::Binding(binding) => {
+                if context.read(rule.clone()).is_none() {
+                    return;
+                }
+                if let Some(inputs) = self.dependencies.get(binding) {
+                    for input in inputs {
+                        context.propose(PrefixNeededKey::Binding(input.clone()), ());
+                    }
+                }
+                for origin in self.flow.values_of_binding(binding) {
+                    if matches!(origin, ValueOrigin::Object(_))
+                        && self.member_write_receivers.contains_key(&origin)
+                    {
+                        context.propose(PrefixNeededKey::Object(origin), ());
+                    }
+                }
+            }
+            PrefixNeededKey::Object(origin) => {
+                if context.read(rule.clone()).is_none() {
+                    return;
+                }
+                if let Some(receivers) = self.member_write_receivers.get(origin) {
+                    for receiver in receivers {
+                        context.propose(PrefixNeededKey::Binding(receiver.clone()), ());
+                    }
+                }
+            }
+        }
+    }
+
+    fn merge(_: &Self::Key, _: &mut Self::Fact, _: Self::Fact) -> bool {
+        false
+    }
+}
+
+fn close_prefix_needed_bindings(
+    seeds: &BTreeSet<Id>,
+    dependencies: &BTreeMap<Id, BTreeSet<Id>>,
+    member_write_receivers: &BTreeMap<ValueOrigin, BTreeSet<Id>>,
+    flow: &ChunkValueFlow,
+) -> BTreeSet<Id> {
+    let mut producers = BTreeSet::new();
+    for (binding, inputs) in dependencies {
+        producers.insert(PrefixNeededKey::Binding(binding.clone()));
+        producers.extend(inputs.iter().cloned().map(PrefixNeededKey::Binding));
+    }
+    for (origin, receivers) in member_write_receivers {
+        producers.insert(PrefixNeededKey::Object(*origin));
+        producers.extend(receivers.iter().cloned().map(PrefixNeededKey::Binding));
+    }
+    producers.extend(seeds.iter().cloned().map(PrefixNeededKey::Binding));
+
+    let mut inference = IterativeInference::new(PrefixNeededRules {
+        dependencies,
+        member_write_receivers,
+        flow,
+    });
+    for binding in seeds {
+        inference.seed(PrefixNeededKey::Binding(binding.clone()), ());
+    }
+    inference
+        .solve(producers)
+        .into_values()
+        .into_keys()
+        .filter_map(|key| match key {
+            PrefixNeededKey::Binding(binding) => Some(binding),
+            PrefixNeededKey::Object(_) => None,
+        })
+        .collect()
+}
+
 /// Finalize enum own-key candidates with the already collected binding-write
 /// facts. The recognized initializer may contain its own `X || (X = {})`
 pub(crate) fn annotate_synchronous_calls(
@@ -5677,29 +5768,8 @@ pub(crate) fn annotate_synchronous_calls(
             }
         }
     }
-    let mut pending: Vec<Id> = needed.iter().cloned().collect();
-    let mut visited_objects = BTreeSet::new();
-    while let Some(id) = pending.pop() {
-        if let Some(inputs) = dependencies.get(&id) {
-            for input in inputs {
-                if needed.insert(input.clone()) {
-                    pending.push(input.clone());
-                }
-            }
-        }
-        for origin in flow.values_of_binding(&id) {
-            if !matches!(origin, ValueOrigin::Object(_)) || !visited_objects.insert(origin) {
-                continue;
-            }
-            if let Some(receivers) = member_write_receivers.get(&origin) {
-                for receiver in receivers {
-                    if needed.insert(receiver.clone()) {
-                        pending.push(receiver.clone());
-                    }
-                }
-            }
-        }
-    }
+    let needed =
+        close_prefix_needed_bindings(&needed, &dependencies, &member_write_receivers, flow);
     let source_unit_read_closure = SourceUnitReadClosure::new(facts);
     let prefix_reads: Vec<_> = facts
         .iter()
