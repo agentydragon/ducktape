@@ -162,7 +162,10 @@ budget remains authoritative across all of its native services.
 - The runner dials the Runner Gateway's [runner control stream](../docs/runner_control.md) at
   `control.target` and keeps one `Connect` stream for as long as it runs, reconnecting on a fresh
   connection after any loss, and serves the `Runner` service to the gateway through it. It accepts
-  no network connections.
+  no network connections. After `Welcome`, it keeps the stream live with empty heartbeats while it
+  adopts that incarnation UID. Until adoption succeeds, it publishes no Runner facts and answers
+  tunneled calls with `UNAVAILABLE` without invoking Runner methods; afterward it publishes current
+  facts and relays calls normally.
 - `OpenSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
   `last_cursor`, and the active turn id as of that position. `GetStatus` returns one in-memory
   snapshot with a runner boot UUID, each harness process (its per-spawn UUID and the Sessions it

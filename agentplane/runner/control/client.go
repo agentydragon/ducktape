@@ -41,12 +41,14 @@ type Dependencies struct {
 
 // Client owns the Runner Gateway control stream and its reconnect lifecycle.
 type Client struct {
-	bootID           string
-	server           runnerservicepb.RunnerServer
-	adoptIncarnation func(context.Context, string) error
-	facts            func() (*controlpb.RunnerFacts, error)
-	changes          func() <-chan struct{}
-	stopRetry        func(error) bool
+	bootID            string
+	server            runnerservicepb.RunnerServer
+	adoptIncarnation  func(context.Context, string) error
+	facts             func() (*controlpb.RunnerFacts, error)
+	changes           func() <-chan struct{}
+	stopRetry         func(error) bool
+	heartbeatInterval time.Duration
+	streamLiveness    time.Duration
 }
 
 func New(dependencies Dependencies) (*Client, error) {
@@ -54,12 +56,14 @@ func New(dependencies Dependencies) (*Client, error) {
 		return nil, errors.New("invalid Runner control dependencies")
 	}
 	return &Client{
-		bootID:           dependencies.BootID,
-		server:           dependencies.Server,
-		adoptIncarnation: dependencies.AdoptIncarnation,
-		facts:            dependencies.Facts,
-		changes:          dependencies.Changes,
-		stopRetry:        dependencies.StopRetry,
+		bootID:            dependencies.BootID,
+		server:            dependencies.Server,
+		adoptIncarnation:  dependencies.AdoptIncarnation,
+		facts:             dependencies.Facts,
+		changes:           dependencies.Changes,
+		stopRetry:         dependencies.StopRetry,
+		heartbeatInterval: heartbeatInterval,
+		streamLiveness:    streamLiveness,
 	}, nil
 }
 
@@ -77,11 +81,12 @@ func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
 	}
 	defer conn.Close()
 	ctx, cancel := context.WithCancel(ctx)
-	var receiving, calls sync.WaitGroup
+	var receiving, calls, adoption sync.WaitGroup
 	defer func() {
 		cancel()
 		calls.Wait()
 		receiving.Wait()
+		adoption.Wait()
 	}()
 	controlStream, err := controlpb.NewRunnerControlClient(conn).Connect(stream.Authenticated(ctx, endpoint.Bearer))
 	if err != nil {
@@ -116,7 +121,7 @@ func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
 			}
 		}
 	}()
-	liveness := time.NewTimer(streamLiveness)
+	liveness := time.NewTimer(c.streamLiveness)
 	defer liveness.Stop()
 	var first incoming
 	select {
@@ -133,40 +138,66 @@ func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
 	if welcome == nil || welcome.IncarnationUid == "" {
 		return false, status.Error(codes.InvalidArgument, "expected Welcome naming the Sandbox incarnation")
 	}
-	if err := c.adoptIncarnation(ctx, welcome.IncarnationUid); err != nil {
-		return false, err
-	}
-	started := time.Now()
+	// Adoption may wait for the previous generation to flush. Keep the stream
+	// live, but do not publish its facts or invoke Runner methods until it ends.
+	adopted := make(chan error, 1)
+	adoption.Add(1)
+	go func() {
+		defer adoption.Done()
+		adopted <- c.adoptIncarnation(ctx, welcome.IncarnationUid)
+	}()
+	var started time.Time
+	streamStable := func() bool { return !started.IsZero() && time.Since(started) >= c.streamLiveness }
 	lastReceived := time.Now()
-	ticker := time.NewTicker(heartbeatInterval)
+	ticker := time.NewTicker(c.heartbeatInterval)
 	defer ticker.Stop()
 	answers := make(chan error, 16)
 	var published *controlpb.RunnerFacts
+	incarnationAdopted := false
 	for {
-		changed := c.changes()
-		facts, err := c.facts()
-		if err != nil {
-			return false, err
-		}
-		if !proto.Equal(facts, published) {
-			if err := send(&controlpb.RunnerFrame{Frame: &controlpb.RunnerFrame_Heartbeat{Heartbeat: &controlpb.RunnerHeartbeat{Facts: facts}}}); err != nil {
+		var changed <-chan struct{}
+		if incarnationAdopted {
+			changed = c.changes()
+			facts, err := c.facts()
+			if err != nil {
 				return false, err
 			}
-			published = facts
+			if !proto.Equal(facts, published) {
+				if err := send(&controlpb.RunnerFrame{Frame: &controlpb.RunnerFrame_Heartbeat{Heartbeat: &controlpb.RunnerHeartbeat{Facts: facts}}}); err != nil {
+					return streamStable(), err
+				}
+				published = facts
+			}
 		}
 		select {
 		case <-ctx.Done():
 			return false, ctx.Err()
+		case err := <-adopted:
+			if err != nil {
+				return false, err
+			}
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			incarnationAdopted = true
+			started = time.Now()
 		case err := <-answers:
 			if err != nil {
-				return time.Since(started) >= streamLiveness, err
+				return streamStable(), err
 			}
 		case message := <-received:
 			if message.err != nil {
-				return time.Since(started) >= streamLiveness, message.err
+				return streamStable(), message.err
 			}
 			lastReceived = time.Now()
 			if call := message.frame.GetCall(); call != nil {
+				if !incarnationAdopted {
+					reply := &tunnelpb.Reply{CallId: call.CallId, Code: int32(codes.Unavailable), Details: "runner is adopting the Sandbox incarnation"}
+					if err := send(&controlpb.RunnerFrame{Frame: &controlpb.RunnerFrame_Reply{Reply: reply}}); err != nil {
+						return false, err
+					}
+					continue
+				}
 				calls.Add(1)
 				go func() {
 					defer calls.Done()
@@ -181,8 +212,8 @@ func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
 				return false, status.Error(codes.InvalidArgument, "unexpected control frame")
 			}
 		case <-ticker.C:
-			if time.Since(lastReceived) > streamLiveness {
-				return time.Since(started) >= streamLiveness, errors.New("no frame from Runner Gateway")
+			if time.Since(lastReceived) > c.streamLiveness {
+				return streamStable(), errors.New("no frame from Runner Gateway")
 			}
 			if err := send(&controlpb.RunnerFrame{Frame: &controlpb.RunnerFrame_Heartbeat{Heartbeat: &controlpb.RunnerHeartbeat{}}}); err != nil {
 				return false, err

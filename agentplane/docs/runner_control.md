@@ -554,7 +554,9 @@ side ends the stream after 30 s without any frame from the peer. A runner reconn
 backoff and jitter, from 0.5 s up to 30 s, and
 retries indefinitely. A live connection is not readiness to act: it says nothing about harness
 state, an active turn or whether a command was carried out, and losing the connection proves none of
-those either.
+those either. After `Welcome`, the runner sends empty heartbeats while it adopts the named
+incarnation. Until adoption succeeds, it sends no Runner facts and answers tunneled calls with
+`UNAVAILABLE` without invoking Runner methods.
 
 ## Path through the egress proxy
 

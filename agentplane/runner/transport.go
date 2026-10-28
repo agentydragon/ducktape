@@ -19,13 +19,11 @@ func (r *Runner) Run(ctx context.Context, controlEndpoint, ingressEndpoint Endpo
 		return errors.Join(err, r.Close())
 	}
 	controlClient, err := control.New(control.Dependencies{
-		BootID: r.bootID,
-		Server: r,
-		AdoptIncarnation: func(_ context.Context, uid string) error {
-			return r.adoptIncarnation(r.ctx, uid)
-		},
-		Facts:   r.facts,
-		Changes: r.changesSince,
+		BootID:           r.bootID,
+		Server:           r,
+		AdoptIncarnation: r.adoptIncarnation,
+		Facts:            r.facts,
+		Changes:          r.changesSince,
 		StopRetry: func(err error) bool {
 			var storage *journal.StorageError
 			return errors.As(err, &storage)

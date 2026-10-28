@@ -222,8 +222,14 @@ func (r *Runner) Startup(ctx context.Context) error {
 }
 
 func (r *Runner) adoptIncarnation(ctx context.Context, uid string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	r.createMu.Lock()
 	defer r.createMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// A replacement incarnation can reconnect while the old one is still
 	// draining. Finish its native effects and seals before resetting demand;
 	// ingress acknowledgement belongs to the old incarnation and need not wait.
@@ -245,6 +251,10 @@ func (r *Runner) adoptIncarnation(ctx context.Context, uid string) error {
 			return err
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		r.mu.Unlock()
+		return err
+	}
 	if err := r.store.AdoptIncarnation(uid); err != nil {
 		r.mu.Unlock()
 		return err
@@ -259,7 +269,13 @@ func (r *Runner) adoptIncarnation(ctx context.Context, uid string) error {
 		return err
 	}
 	for _, s := range r.sessions.Inventory() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := r.sessions.Reopen(ctx, s); err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if err := r.sessions.ResumeRecovered(s); err != nil {
