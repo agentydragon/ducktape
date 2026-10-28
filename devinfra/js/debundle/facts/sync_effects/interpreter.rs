@@ -5116,7 +5116,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             call: call.clone(),
             environment: env.clone(),
             captures: captures.clone(),
-            outcome: Box::new(outcome.clone()),
+            outcome: Box::new(std::mem::take(outcome)),
         });
         let RuntimeValue::Outcome(result) = result else {
             unreachable!("call transfers produce outcomes");

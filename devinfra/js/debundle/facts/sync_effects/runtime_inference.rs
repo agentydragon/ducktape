@@ -232,33 +232,34 @@ impl RuntimeRules<'_, '_> {
             context: RefCell::new(context),
         };
         let mut executor = Executor::new(self.inputs, request.state, queries);
-        let value = match &request.operation {
+        let value = match request.operation {
             RuntimeOperation::Evaluate {
                 expression,
                 environment,
                 captures,
-            } => {
-                RuntimeValue::Values(executor.evaluate_transfer(expression, environment, captures))
-            }
+            } => RuntimeValue::Values(executor.evaluate_transfer(
+                &expression,
+                &environment,
+                &captures,
+            )),
             RuntimeOperation::Invoke {
                 callable,
                 arguments,
                 captured,
                 fresh_checked_constructor,
             } => RuntimeValue::Outcome(Box::new(executor.invoke_transfer(
-                *callable,
-                arguments.clone(),
-                captured.clone(),
-                *fresh_checked_constructor,
+                callable,
+                arguments,
+                captured,
+                fresh_checked_constructor,
             ))),
             RuntimeOperation::Call {
                 call,
                 environment,
                 captures,
-                outcome,
+                mut outcome,
             } => {
-                let mut outcome = outcome.clone();
-                executor.execute_call_transfer(call, environment, captures, &mut outcome);
+                executor.execute_call_transfer(&call, &environment, &captures, &mut outcome);
                 RuntimeValue::Outcome(outcome)
             }
         };
