@@ -75,6 +75,17 @@ pub struct DeferredRecordMember {
     pub captures: BTreeSet<String>,
 }
 
+/// Source-only wrapper proof: direct callback uses receive these ordinary
+/// allocated arguments without explicitly returning or publishing the callback.
+/// Consumer entry coverage additionally requires an anonymous inline callback
+/// unable to obtain its own identity. Callback-supplied values may still escape.
+/// Timing-only author assertions never supply this capability.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CallbackObjectArguments {
+    pub wrapper: CallbackFactoryEvidence,
+    pub object_arguments: BTreeSet<usize>,
+}
+
 /// Capabilities of one bare imported callable, keyed by the importer's local
 /// binding name. More than one proof can support the same capability.
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize)]
@@ -82,6 +93,8 @@ pub struct CallableSummary {
     callback_factory_evidence: BTreeSet<CallbackFactoryEvidence>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub returned_record: Option<ReturnedRecordSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callback_object_arguments: Option<CallbackObjectArguments>,
 }
 
 impl CallableSummary {
@@ -89,6 +102,7 @@ impl CallableSummary {
         Self {
             callback_factory_evidence: BTreeSet::from([evidence]),
             returned_record: None,
+            callback_object_arguments: None,
         }
     }
 
@@ -108,6 +122,14 @@ impl CallableSummary {
     }
 
     pub fn merge(&mut self, other: Self) {
+        if let Some(arguments) = other.callback_object_arguments {
+            assert!(
+                self.callback_object_arguments
+                    .as_ref()
+                    .is_none_or(|old| old == &arguments)
+            );
+            self.callback_object_arguments = Some(arguments);
+        }
         if let Some(record) = other.returned_record {
             assert!(
                 self.returned_record

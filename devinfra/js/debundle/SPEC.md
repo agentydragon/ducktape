@@ -155,6 +155,19 @@ standard `source_location` (`source_path`, `start_line`, `end_line`,
 `start_column`). This is a return-only callback capability, independent of
 call purity. The field is omitted when no bare imported callable was resolved.
 
+Source-certified immutable wrappers may also supply `callback_object_arguments`:
+ordinary allocated argument positions and checked direct callback uses. An
+anonymous inline consumer without self-identity access completes entry
+coverage. Author timing assertions do not grant this capability. The
+canonical native census uses it only for supported shallow conditional regions
+on stable parameters in an anonymous inline callback or its immediate anonymous
+IIFEs. Discharged member-write witnesses retain the original source site,
+empty `affected_roots`, and `unreachable_branch` evidence naming the defining
+wrapper, consuming import, wrapper call, callback and guard locations. Deferred
+nested bodies and unsupported contexts keep their conservative witnesses.
+This does not change purity, callback effects, exceptions or loader return
+property reads. See [the checked shapes and fallback boundaries](docs/purity_soundness.md#source-callback-arguments-and-unreachable-native-writes).
+
 Each `dependency_graph.json` written by `debundle run` carries input provenance:
 SHA-256 of the executable engine and the exact bytes read for the tree config,
 vendor marks, module YAMLs, optional binding patches, JS list, every listed JS

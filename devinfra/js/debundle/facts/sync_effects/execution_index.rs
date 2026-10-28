@@ -1,5 +1,7 @@
 //! AST collection for synchronous execution: callables, roots, writes, and source order.
 
+mod callback_arguments;
+
 use super::value_model::{
     ArrayElement, ArrayIteration, ArrayIterationMethod, CallSite, ClassSurface, ClassValueFacts,
     FromEntriesMappedProof, NamespaceValueFacts, ValueExpr, infer_namespace_aliases,
@@ -1555,6 +1557,11 @@ pub(crate) fn resolve_native_integrity<'a>(
         .collect();
     for write in censuses.iter().flat_map(|census| &census.conditional) {
         let mut witness = write.witness.clone();
+        if witness.unreachable_branch.is_some() {
+            witness.affected_roots.clear();
+            witnesses.push(witness);
+            continue;
+        }
         let invalid = mutated.contains(&IntrinsicRoot::GlobalObject)
             || !write.dependencies.is_disjoint(&mutated);
         witness.affected_roots = if invalid {
@@ -1589,6 +1596,9 @@ fn resolve_native_integrity_roots(censuses: &[&NativeWriteCensus]) -> IntrinsicR
     loop {
         let before = mutated.len();
         for write in censuses.iter().flat_map(|census| &census.conditional) {
+            if write.witness.unreachable_branch.is_some() {
+                continue;
+            }
             let invalid = mutated.contains(&IntrinsicRoot::GlobalObject)
                 || !write.dependencies.is_disjoint(&mutated);
             mutated.extend(if invalid {
@@ -2111,6 +2121,10 @@ struct ExecutionIndex {
     factory_member_value_depth: u32,
     factory_callback_depth: u32,
     callables: BTreeMap<u32, Callable>,
+    callable_spans: BTreeMap<u32, Span>,
+    immediate_anonymous_callers: BTreeMap<u32, Option<u32>>,
+    inline_callback_entries: BTreeMap<u32, callback_arguments::InlineCallbackEntry>,
+    native_guarded_regions: Vec<callback_arguments::GuardedRegion>,
     local_constructors: BTreeMap<u32, LocalConstructor>,
     local_class_construction_proof: LocalClassConstructionProof,
     class_values: BTreeMap<u32, ClassValueFacts>,
@@ -2226,6 +2240,10 @@ impl Default for ExecutionIndex {
             factory_member_value_depth: 0,
             factory_callback_depth: 0,
             callables: BTreeMap::new(),
+            callable_spans: BTreeMap::new(),
+            immediate_anonymous_callers: BTreeMap::new(),
+            inline_callback_entries: BTreeMap::new(),
+            native_guarded_regions: Vec::new(),
             local_constructors: BTreeMap::new(),
             local_class_construction_proof: LocalClassConstructionProof::default(),
             class_values: BTreeMap::new(),
@@ -2714,6 +2732,7 @@ impl ExecutionIndex {
                         through_local_alias: false,
                         affected_roots: BTreeSet::from([root]),
                         invalidated_key_dependencies: BTreeSet::new(),
+                        unreachable_branch: None,
                         span: body[owner.0].as_module_item().span(),
                     });
                 }
@@ -2750,6 +2769,7 @@ impl ExecutionIndex {
                 ),
                 affected_roots: native_mutation_roots(roots.clone()),
                 invalidated_key_dependencies: BTreeSet::new(),
+                unreachable_branch: None,
                 span: write.span,
             };
             let Some(key) = &write.key else {
@@ -2791,6 +2811,10 @@ impl ExecutionIndex {
                     fallback,
                     dependencies: evidence.dependencies,
                 });
+        }
+        let proofs = index.native_branch_proofs(&hints.imported_callables);
+        for (write, proof) in index.native_write_census.conditional.iter_mut().zip(proofs) {
+            write.witness.unreachable_branch = proof;
         }
         let mut censuses = vec![&index.native_write_census];
         let external = NativeWriteCensus {
@@ -3570,7 +3594,9 @@ impl ExecutionIndex {
         }
     }
 
-    fn with_callable(&mut self, key: u32, params: Vec<Parameter>, visit: impl FnOnce(&mut Self)) {
+    fn with_callable(&mut self, span: Span, params: Vec<Parameter>, visit: impl FnOnce(&mut Self)) {
+        let key = span.lo.0;
+        self.callable_spans.insert(key, span);
         let created_after_parent_await = self
             .current
             .and_then(|parent| self.callables.get(&parent))
@@ -3954,7 +3980,7 @@ impl Visit for ExecutionIndex {
                         },
                     })
                     .collect();
-                self.with_callable(ctor.span.lo.0, params, |index| {
+                self.with_callable(ctor.span, params, |index| {
                     for parameter in &ctor.params {
                         if let ParamOrTsParamProp::Param(parameter) = parameter {
                             index.invalidate_property_key_pattern(&parameter.pat);
@@ -3965,21 +3991,21 @@ impl Visit for ExecutionIndex {
             }
             ClassMember::ClassProp(prop) if !prop.is_static => {
                 if let Some(value) = &prop.value {
-                    self.with_callable(prop.span.lo.0, Vec::new(), |index| {
+                    self.with_callable(prop.span, Vec::new(), |index| {
                         value.visit_with(index);
                     });
                 }
             }
             ClassMember::PrivateProp(prop) if !prop.is_static => {
                 if let Some(value) = &prop.value {
-                    self.with_callable(prop.span.lo.0, Vec::new(), |index| {
+                    self.with_callable(prop.span, Vec::new(), |index| {
                         value.visit_with(index);
                     });
                 }
             }
             ClassMember::AutoAccessor(accessor) if !accessor.is_static => {
                 if let Some(value) = &accessor.value {
-                    self.with_callable(accessor.span.lo.0, Vec::new(), |index| {
+                    self.with_callable(accessor.span, Vec::new(), |index| {
                         value.visit_with(index);
                     });
                 }
@@ -3989,6 +4015,7 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_setter_prop(&mut self, setter: &SetterProp) {
+        self.callable_spans.insert(setter.span.lo.0, setter.span);
         // Object-literal setters are not represented by a `Function` node in
         // SWC, so their bodies lack a per-Callable prefix summary.
         self.unindexed_accessor_owners.insert(self.owner);
@@ -4000,6 +4027,7 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_getter_prop(&mut self, getter: &GetterProp) {
+        self.callable_spans.insert(getter.span.lo.0, getter.span);
         self.unindexed_accessor_owners.insert(self.owner);
         getter.visit_children_with(self);
     }
@@ -4226,6 +4254,8 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_cond_expr(&mut self, expression: &CondExpr) {
+        self.record_guard(&expression.test, expression.cons.span(), true);
+        self.record_guard(&expression.test, expression.alt.span(), false);
         expression.test.visit_with(self);
         let after_test = self.past_await;
         self.conditional_depth += 1;
@@ -4450,7 +4480,7 @@ impl Visit for ExecutionIndex {
             .iter()
             .map(|param| Parameter::from_pattern(&param.pat))
             .collect();
-        self.with_callable(function.span.lo.0, params, |index| {
+        self.with_callable(function.span, params, |index| {
             index
                 .callables
                 .get_mut(&function.span.lo.0)
@@ -4496,7 +4526,7 @@ impl Visit for ExecutionIndex {
                 .insert(arrow.span.lo.0, returned);
         }
         let params = arrow.params.iter().map(Parameter::from_pattern).collect();
-        self.with_callable(arrow.span.lo.0, params, |index| {
+        self.with_callable(arrow.span, params, |index| {
             for parameter in &arrow.params {
                 index.invalidate_property_key_pattern(parameter);
             }
@@ -5109,6 +5139,31 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_call_expr(&mut self, call: &CallExpr) {
+        if let Callee::Expr(callee) = &call.callee {
+            if let Expr::Fn(function) = callee.unwrap_parens()
+                && function.ident.is_none()
+                && !function.function.is_async
+                && !function.function.is_generator
+            {
+                self.immediate_anonymous_callers
+                    .insert(function.function.span.lo.0, self.current);
+            }
+            if let Expr::Ident(import) = callee.unwrap_parens()
+                && let [argument] = call.args.as_slice()
+                && argument.spread.is_none()
+                && let Expr::Fn(function) = argument.expr.unwrap_parens()
+                && function.ident.is_none()
+            {
+                self.inline_callback_entries.insert(
+                    function.function.span.lo.0,
+                    callback_arguments::InlineCallbackEntry {
+                        import: import.to_id(),
+                        function: function.function.span,
+                        call: call.span,
+                    },
+                );
+            }
+        }
         // The native model receives ValueExpr, which reduces assignments to
         // their RHS. Retain the exact literal-argument syntax here so an
         // intervening publication/effect cannot acquire this fresh-input proof.
@@ -5622,6 +5677,23 @@ impl PreparedCallableCapabilities {
                     start_column: Some(start_column),
                 })
             });
+            if let Some(proof) = &mut witness.unreachable_branch {
+                let locate_span = |span| {
+                    source.and_then(|(path, index)| {
+                        let (start_line, end_line, start_column) =
+                            index.line_range_and_start_column_for_span(span)?;
+                        Some(crate::reports::schema::SourceLocation {
+                            source_path: path.clone(),
+                            start_line,
+                            end_line,
+                            start_column: Some(start_column),
+                        })
+                    })
+                };
+                proof.guard_location = locate_span(proof.guard_span);
+                proof.wrapper_call_location = locate_span(proof.wrapper_call_span);
+                proof.callback_location = locate_span(proof.callback_span);
+            }
         };
         for witness in Arc::make_mut(&mut self.index.native_write_census.witnesses) {
             locate(witness);
@@ -5633,6 +5705,40 @@ impl PreparedCallableCapabilities {
 
     pub(crate) fn native_writes(&self) -> &NativeWriteCensus {
         &self.index.native_write_census
+    }
+
+    pub(crate) fn refine_native_branches(
+        &mut self,
+        summaries: &BTreeMap<String, crate::analysis_inputs::CallableSummary>,
+    ) {
+        self.index.refine_native_branches(summaries);
+    }
+
+    pub(crate) fn callback_object_arguments(
+        &self,
+        body: &[TopLevelItemView<'_>],
+    ) -> BTreeMap<String, (u32, BTreeSet<usize>)> {
+        let candidates: BTreeMap<_, _> = self
+            .index
+            .returned_factory_candidates
+            .keys()
+            .filter_map(|key| {
+                callback_arguments::ordinary_callback_arguments(&self.index, *key)
+                    .map(|objects| (*key, objects))
+            })
+            .collect();
+        if candidates.is_empty() {
+            return BTreeMap::new();
+        }
+        let flow = ChunkValueFlow::analyze(body);
+        infer_returned_callback_factories(&self.index, &flow, &self.exported_locals)
+            .into_iter()
+            .filter_map(|(local, key)| {
+                candidates
+                    .get(&key)
+                    .map(|arguments| (local, (key, arguments.clone())))
+            })
+            .collect()
     }
 }
 

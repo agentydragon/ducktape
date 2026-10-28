@@ -38,8 +38,8 @@ use swc_ecma_ast::ModuleItem;
 
 use crate::SourceLocation;
 use crate::analysis_inputs::{
-    CallableSummary, CallbackFactoryEvidence, DeferredRecordMember, NativeIntegrity,
-    ReturnedRecordSummary,
+    CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments, DeferredRecordMember,
+    NativeIntegrity, ReturnedRecordSummary,
 };
 use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
@@ -364,7 +364,7 @@ pub fn resolve_imported_callable_summaries(
             }
         }
     }
-    let prepared: BTreeMap<_, _> = modules
+    let mut prepared: BTreeMap<_, _> = modules
         .iter()
         .map(|(module, facts)| {
             let locals = facts
@@ -382,6 +382,44 @@ pub fn resolve_imported_callable_summaries(
             (module, prepared)
         })
         .collect();
+    // Argument/entry coverage is structural and independent of the native
+    // integrity that it can refine. Author timing assertions cannot supply it.
+    for (module, facts) in modules {
+        let views = top_level_item_views(facts.body);
+        let arguments = prepared[module].callback_object_arguments(&views);
+        for (export, local) in &facts.exports {
+            let Some((start, objects)) = arguments.get(local) else {
+                continue;
+            };
+            let evidence = CallbackFactoryEvidence::InferredImmutableWrapper {
+                defining_module: module.clone(),
+                export: export.clone(),
+                local: local.clone(),
+                source_location: facts.source.as_ref().and_then(|(path, index)| {
+                    let (line, column) = index.line_and_column_for_pos(BytePos(*start))?;
+                    Some(SourceLocation {
+                        source_path: path.clone(),
+                        start_line: line,
+                        end_line: line,
+                        start_column: Some(column),
+                    })
+                }),
+            };
+            let mut summary = CallableSummary::callback_factory(evidence.clone());
+            summary.callback_object_arguments = Some(CallbackObjectArguments {
+                wrapper: evidence,
+                object_arguments: objects.clone(),
+            });
+            factories
+                .entry((module.clone(), export.clone()))
+                .or_default()
+                .merge(summary);
+        }
+    }
+    for (module, facts) in &mut prepared {
+        facts.refine_native_branches(&project_callable_summaries(&modules[*module], &factories));
+        facts.locate_native_writes(module, modules[*module].source.as_ref());
+    }
     let native_integrity = crate::facts::sync_effects::execution_index::resolve_native_integrity(
         prepared.values().map(|facts| facts.native_writes()),
     );
@@ -489,15 +527,7 @@ pub fn resolve_imported_callable_summaries(
     let imported_callables = modules
         .iter()
         .map(|(module, facts)| {
-            let bindings = facts
-                .imports
-                .iter()
-                .filter_map(|(local, target)| {
-                    factories
-                        .get(&(target.module.clone(), target.export.clone()))
-                        .map(|summary| (local.clone(), summary.clone()))
-                })
-                .collect();
+            let bindings = project_callable_summaries(facts, &factories);
             (module.clone(), bindings)
         })
         .collect();
@@ -505,6 +535,21 @@ pub fn resolve_imported_callable_summaries(
         imported_callables,
         native_integrity: Some(native_integrity),
     }
+}
+
+fn project_callable_summaries(
+    facts: &ModulePurityFacts<'_>,
+    summaries: &BTreeMap<(ModuleKey, String), CallableSummary>,
+) -> BTreeMap<String, CallableSummary> {
+    facts
+        .imports
+        .iter()
+        .filter_map(|(local, target)| {
+            summaries
+                .get(&(target.module.clone(), target.export.clone()))
+                .map(|summary| (local.clone(), summary.clone()))
+        })
+        .collect()
 }
 
 /// Resolve author-asserted inline-only callback factories through the same

@@ -264,8 +264,27 @@ pub struct NativeMutationWitness {
     /// Native premises invalidating the property-key refinement, if any.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub invalidated_key_dependencies: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    /// The original write remains visible when source argument evidence proves
+    /// its containing branch unreachable in every covered activation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unreachable_branch: Option<NativeUnreachableBranch>,
     #[serde(skip)]
     pub(crate) span: swc_common::Span,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NativeUnreachableBranch {
+    pub arguments: crate::analysis_inputs::CallbackObjectArguments,
+    pub imported_local: String,
+    pub wrapper_call_location: Option<SourceLocation>,
+    pub callback_location: Option<SourceLocation>,
+    pub guard_location: Option<SourceLocation>,
+    #[serde(skip)]
+    pub(crate) guard_span: swc_common::Span,
+    #[serde(skip)]
+    pub(crate) wrapper_call_span: swc_common::Span,
+    #[serde(skip)]
+    pub(crate) callback_span: swc_common::Span,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]

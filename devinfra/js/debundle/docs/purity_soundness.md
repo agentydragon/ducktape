@@ -128,6 +128,43 @@ The census does not prove the absence of every hidden native-alias path:
 A11's author obligation still covers native integrity outside the recognized
 source facts.
 
+## Source callback arguments and unreachable native writes
+
+The immutable returned-callback-wrapper inference can additionally certify
+ordinary object arguments and the wrapper's direct callback uses. This stronger
+capability is source-derived before resolving native integrity. A timing-only
+author assertion supplies no argument or entry evidence.
+
+The initial supported wrapper has two identifier parameters, privately retains
+the callback in its returned zero-argument function, assigns its cache once to
+an ordinary literal with one own data field holding an empty ordinary literal,
+and passes that same field and cache to its sole callback invocation. It returns
+only that cache field. The existing wrapper checks exclude foreign calls,
+member writes and nested functions; the stronger check also excludes explicit
+callback return, storage, unknown arguments and throw/publication paths. The
+field name is arbitrary. Callback-supplied values can still escape through the
+cache field, whose later access may invoke an accessor. No native operation is
+admitted by this structural proof.
+
+For a single anonymous inline callback supplied to that source-certified bare
+import, absence of a self binding or arguments reflection completes entry
+coverage: the callback cannot obtain and publish its own identity. The canonical
+index may then prove a conditional-expression region unreachable. Predicates
+cover `typeof` of an unrebound certified parameter,
+string-literal equality or `<`, and conjunction. Only immediate anonymous
+IIFEs can carry these stable captures into another callable. Named callbacks,
+unknown imports, parameter rebinds, dynamic scope, arguments reflection and
+async descendants retain fallback. A nested deferred function keeps its own
+writes; lexical containment in a branch does not certify its activations.
+
+The census retains discharged member-write witnesses with `unreachable_branch`
+evidence and empty `affected_roots`. Evidence identifies the source wrapper and
+its ordinary argument positions plus the consumer guard location. Graph input
+provenance hashes the defining and consuming source bytes. Unconditional
+binding writes and unsupported operations remain conservative. This changes
+only the native write premise: ordinary effects, exceptions, loader return
+reads, accessor hazards and callback execution retain their existing analysis.
+
 ## Ordinary own descriptor inspection
 
 A direct `Object.getOwnPropertyDescriptors` call with one exact ordinary object
