@@ -179,14 +179,14 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
             |candidate| remove_one(candidate, &target),
             &mut probe_provenance,
         );
-        if let Some(provenance) = &probe_provenance {
-            if !same_inputs(&baseline_provenance, provenance) {
-                eprintln!(
-                    "audit-progress probe complete ordinal={ordinal}/{eligible} completed={} verdict=aborted target={target:?}",
-                    ordinal
-                );
-                bail!("audit inputs changed between baseline and probe");
-            }
+        if let Some(provenance) = &probe_provenance
+            && !same_inputs(&baseline_provenance, provenance)
+        {
+            eprintln!(
+                "audit-progress probe complete ordinal={ordinal}/{eligible} completed={} verdict=aborted target={target:?}",
+                ordinal
+            );
+            bail!("audit inputs changed between baseline and probe");
         }
         let (verdict, error) = match outcome {
             Ok(()) => (ProbeVerdict::RemovableUnderRemainingAssumptions, None),
