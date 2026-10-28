@@ -1,0 +1,35 @@
+load("@aspect_bazel_lib//lib:copy_file.bzl", "copy_file")
+
+package(default_visibility = ["//devinfra/x/schema_codegen/typescript:__pkg__"])
+
+# These targets deliberately turn source fixtures into generated, cross-package artifacts so the
+# production converters exercise Bazel file inputs rather than package-relative source paths.
+copy_file(
+    name = "external_model_artifact",
+    src = "external_model.json",
+    out = "generated/external_model.json",
+)
+
+copy_file(
+    name = "openapi_artifact",
+    src = "openapi.json",
+    out = "generated/openapi.json",
+)
+
+copy_file(
+    name = "standalone_artifact",
+    src = "standalone.json",
+    out = "generated/standalone.json",
+)
+
+copy_file(
+    name = "openapi_config_artifact",
+    src = "openapi-ts.config.mjs",
+    out = "generated/openapi-ts.config.mjs",
+)
+
+copy_file(
+    name = "openapi_config_helper_artifact",
+    src = "openapi-config-helper.mjs",
+    out = "generated/openapi-config-helper.mjs",
+)

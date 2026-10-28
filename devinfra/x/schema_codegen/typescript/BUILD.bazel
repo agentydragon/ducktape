@@ -1,9 +1,12 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("//devinfra/js:json_schema_typescript.bzl", "json_schema_typescript")
+load("//devinfra/js:openapi_typescript.bzl", "openapi_typescript")
+load("//devinfra/js:openapi_zod.bzl", "openapi_zod")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load(":schema_codegen.bzl", "json_schema_types_from_file", "literal_types_from_file", "openapi_types_from_file", "openapi_zod_from_file")
+load(":schema_codegen.bzl", "literal_types_from_file", "openapi_types_from_file")
 
 package(
     default_testonly = True,
@@ -67,7 +70,7 @@ genrule(
     tools = [":export_invoice_response_bin"],
 )
 
-openapi_types_from_file(
+openapi_typescript(
     name = "openapi_types_codegen",
     out = "openapi_types.d.ts",
     schema = ":openapi.json",
@@ -76,10 +79,49 @@ openapi_types_from_file(
 js_library(
     name = "openapi_types",
     srcs = [":openapi_types_codegen"],
-    tags = ["no-lint"],
 )
 
-openapi_types_from_file(
+openapi_typescript(
+    name = "external_openapi_types_codegen",
+    out = "external_openapi_types.d.ts",
+    schema = "//devinfra/x/schema_codegen/typescript/fixtures:openapi_artifact",
+    schema_files = ["//devinfra/x/schema_codegen/typescript/fixtures:external_model_artifact"],
+)
+
+js_library(
+    name = "external_openapi_types",
+    srcs = [":external_openapi_types_codegen"],
+)
+
+openapi_zod(
+    name = "external_openapi_zod_codegen",
+    out = "external_openapi_zod.ts",
+    config = "//devinfra/x/schema_codegen/typescript/fixtures:openapi_config_artifact",
+    config_files = ["//devinfra/x/schema_codegen/typescript/fixtures:openapi_config_helper_artifact"],
+    schema = "//devinfra/x/schema_codegen/typescript/fixtures:openapi_artifact",
+    schema_files = ["//devinfra/x/schema_codegen/typescript/fixtures:external_model_artifact"],
+)
+
+ts_library(
+    name = "external_openapi_zod",
+    srcs = [":external_openapi_zod_codegen"],
+    tsconfig = ":tsconfig",
+    deps = ["//:node_modules/zod"],
+)
+
+json_schema_typescript(
+    name = "external_json_schema_types_codegen",
+    out = "external_json_schema_types.d.ts",
+    schema = "//devinfra/x/schema_codegen/typescript/fixtures:standalone_artifact",
+    schema_files = ["//devinfra/x/schema_codegen/typescript/fixtures:external_model_artifact"],
+)
+
+js_library(
+    name = "external_json_schema_types",
+    srcs = [":external_json_schema_types_codegen"],
+)
+
+openapi_typescript(
     name = "openapi_types_naming_default_codegen",
     out = "openapi_types_naming_default.d.ts",
     schema = ":openapi_types_naming.schema.json",
@@ -88,7 +130,6 @@ openapi_types_from_file(
 js_library(
     name = "openapi_types_naming_default",
     srcs = [":openapi_types_naming_default_codegen"],
-    tags = ["no-lint"],
 )
 
 openapi_types_from_file(
@@ -101,16 +142,14 @@ openapi_types_from_file(
 js_library(
     name = "openapi_types_naming_keep_casing",
     srcs = [":openapi_types_naming_keep_casing_codegen"],
-    tags = ["no-lint"],
 )
 
 js_library(
     name = "invoice_response_fixture",
     srcs = [":invoice_response_json"],
-    tags = ["no-lint"],
 )
 
-openapi_zod_from_file(
+openapi_zod(
     name = "openapi_zod_codegen",
     out = "openapi_zod.ts",
     config = "openapi-ts.config.mjs",
@@ -155,6 +194,16 @@ js_test(
 )
 
 js_test(
+    name = "schema_remote_references_test",
+    data = [
+        "//devinfra/js:json_schema_typescript_codegen",
+        "//devinfra/js:openapi_typescript_codegen",
+        "//devinfra/js:openapi_zod_codegen",
+    ],
+    entry_point = "schema_remote_references.test.mjs",
+)
+
+js_test(
     name = "openapi_types_naming_edges_test",
     data = [
         ":openapi_types_naming_default",
@@ -173,6 +222,29 @@ vitest_test(
         ":openapi_consumer",
         ":openapi_types",
         ":typed_response_fixture",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "external_reference_consumer",
+    srcs = ["external_reference_consumer.ts"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":external_json_schema_types",
+        ":external_openapi_types",
+        ":external_openapi_zod",
+    ],
+)
+
+vitest_test(
+    name = "external_openapi_zod_test",
+    srcs = ["external_openapi_zod.test.ts"],
+    config = ":vitest_config",
+    tsconfig = ":tsconfig",
+    deps = [
+        ":external_openapi_zod",
+        ":external_reference_consumer",
         "//:node_modules/vitest",
     ],
 )
@@ -202,7 +274,7 @@ genrule(
     tools = [":export_standalone_bin"],
 )
 
-json_schema_types_from_file(
+json_schema_typescript(
     name = "standalone_types_codegen",
     out = "standalone_types.d.ts",
     schema = ":standalone.schema.json",
@@ -214,7 +286,6 @@ js_library(
         ":standalone_schema_json",
         ":standalone_types_codegen",
     ],
-    tags = ["no-lint"],
 )
 
 ts_library(

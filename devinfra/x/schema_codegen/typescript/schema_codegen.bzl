@@ -1,8 +1,6 @@
 """Schema-file-based TypeScript generators used only by this spike."""
 
 load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
-load("@npm_ducktape//:@hey-api/openapi-ts/package_json.bzl", openapi_ts_bin = "bin")
-load("@npm_ducktape//:json-schema-to-typescript/package_json.bzl", json_schema_ts_bin = "bin")
 load("@npm_ducktape//:openapi-typescript/package_json.bzl", openapi_typescript_bin = "bin")
 
 def _package_path(label):
@@ -29,39 +27,6 @@ def openapi_types_from_file(name, schema, out, keep_casing = False):
         srcs = [schema],
         outs = [out],
         args = args,
-        chdir = native.package_name(),
-        tool = ":_" + name + "_bin",
-    )
-
-def openapi_zod_from_file(name, schema, config, out):
-    """Emit a Zod module from an existing OpenAPI JSON artifact."""
-    schema_path = _package_path(schema)
-    generated = "_" + name + "_generated/zod.gen.ts"
-    openapi_ts_bin.openapi_ts_binary(name = "_" + name + "_bin")
-    js_run_binary(
-        name = "_" + name + "_generate",
-        srcs = [schema, config],
-        outs = [generated],
-        args = ["--input", schema_path, "--output", "_" + name + "_generated"],
-        chdir = native.package_name(),
-        tool = ":_" + name + "_bin",
-    )
-    native.genrule(
-        name = name,
-        srcs = [":" + "_" + name + "_generate"],
-        outs = [out],
-        cmd = "cp $< $@",
-    )
-
-def json_schema_types_from_file(name, schema, out):
-    """Emit declarations from an existing JSON Schema artifact."""
-    schema_path = _package_path(schema)
-    json_schema_ts_bin.json2ts_binary(name = "_" + name + "_bin")
-    js_run_binary(
-        name = name,
-        srcs = [schema],
-        outs = [out],
-        args = [schema_path, "-o", out, "--bannerComment", ""],
         chdir = native.package_name(),
         tool = ":_" + name + "_bin",
     )
