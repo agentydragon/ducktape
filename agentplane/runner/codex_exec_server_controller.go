@@ -2,12 +2,12 @@ package runner
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/siderolabs/gen/optional"
 	"go.uber.org/zap"
 )
@@ -18,11 +18,7 @@ const (
 	codexExecServerControllerName = "codex-exec-server-lifecycle"
 )
 
-type codexExecServerInputSpec struct {
-	Demand         uint64
-	ExitGeneration uint64
-	ExitError      string
-}
+type codexExecServerInputSpec struct{ Demand uint64 }
 
 type codexExecServerPhase uint8
 
@@ -36,6 +32,7 @@ const (
 )
 
 type codexExecServerRuntimeSpec struct {
+	ProcessID                string
 	Phase                    codexExecServerPhase
 	Generation               uint64
 	FencedGeneration         uint64
@@ -74,8 +71,13 @@ func (*codexExecServerLifecycleController) Settings() controller.QSettings {
 			{Namespace: lifecycleNamespace, Type: runnerRuntimeType, Kind: controller.InputQMapped},
 			{Namespace: lifecycleNamespace, Type: runnerInputType, Kind: controller.InputQMapped},
 			{Namespace: lifecycleNamespace, Type: operationResultType, Kind: controller.InputQMapped},
+			{Namespace: lifecycleNamespace, Type: processDesiredStateType, Kind: controller.InputQMapped},
+			{Namespace: lifecycleNamespace, Type: processStatusType, Kind: controller.InputQMapped},
 		},
-		Outputs:     []controller.Output{{Type: codexExecServerRuntimeType, Kind: controller.OutputExclusive}},
+		Outputs: []controller.Output{
+			{Type: codexExecServerRuntimeType, Kind: controller.OutputExclusive},
+			{Type: processDesiredStateType, Kind: controller.OutputShared},
+		},
 		Concurrency: optional.Some(uint(1)),
 	}
 }
@@ -84,6 +86,35 @@ func (c *codexExecServerLifecycleController) MapInput(ctx context.Context, _ *za
 	input := resource.NewMetadata(lifecycleNamespace, codexExecServerInputType, codexExecServerResourceID, resource.VersionUndefined)
 	switch ptr.Type() {
 	case codexExecServerInputType, runnerDesiredStateType, runnerRuntimeType, runnerInputType:
+		return []resource.Pointer{input}, nil
+	case processDesiredStateType, processStatusType:
+		var owner string
+		var found bool
+		var err error
+		if ptr.Type() == processDesiredStateType {
+			var desired processDesiredStateSpec
+			desired, found, err = lifecycleRead[processDesiredStateSpec](ctx, r, ptr.ID())
+			owner = desired.Owner
+		} else {
+			var status processStatusSpec
+			status, found, err = lifecycleRead[processStatusSpec](ctx, r, ptr.ID())
+			owner = status.Owner
+		}
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			current, _, err := lifecycleRead[codexExecServerRuntimeSpec](ctx, r, codexExecServerResourceID)
+			if err != nil {
+				return nil, err
+			}
+			if current.ProcessID == ptr.ID() {
+				owner = codexExecServerControllerName
+			}
+		}
+		if owner != codexExecServerControllerName {
+			return nil, nil
+		}
 		return []resource.Pointer{input}, nil
 	case operationResultType:
 		result, found, err := lifecycleRead[operationResultSpec](ctx, r, ptr.ID())
@@ -125,37 +156,61 @@ func (c *codexExecServerLifecycleController) Reconcile(ctx context.Context, _ *z
 		return err
 	}
 
-	startResult, startDone := c.l.takeHostOperation(&e.mu, &e.startOp)
 	probeResult, probeDone := c.l.takeHostOperation(&e.mu, &e.probeOp)
-	fenceResult, fenceDone := c.l.takeHostOperation(&e.mu, &e.fenceOp)
-	instance, instanceGeneration := e.currentInstance()
+	var process processStatusSpec
+	var processFound bool
+	if current.ProcessID != "" {
+		process, processFound, err = lifecycleRead[processStatusSpec](ctx, r, current.ProcessID)
+		if err != nil {
+			return err
+		}
+	}
 	now := time.Now()
 	shuttingDown := desiredState.Mode != runnerRunning && outer.Stage >= stageFencing
 
-	if startDone && current.Phase == codexExecServerStarting {
-		if startResult.err != nil {
-			var refusal codexExecServerRefusal
-			if errors.As(startResult.err, &refusal) {
-				if current.Refusal != refusal.reason {
-					zap.L().Error("Codex exec-server refused to start", zap.Error(refusal))
-				}
-				current.Refusal = refusal.reason
-			} else {
-				current.Refusal = ""
-			}
-			current.Error = startResult.err.Error()
-			current.RestartFailures++
-			if instance != nil && instanceGeneration == current.Generation {
-				current.Phase = codexExecServerStopping
-			} else {
-				current.Phase = codexExecServerRetrying
-				current.RetryAt = now.Add(codexExecServerRestartDelay(current.RestartFailures))
-			}
-		} else {
-			current.Refusal = ""
-			current.Error = ""
+	if process.StopError != "" {
+		c.cancelHostOperation(&e.probeOp)
+		fatal := fmt.Errorf("Codex exec-server fencing failed: %s", process.StopError)
+		current.Phase = codexExecServerStopped
+		current.Error, current.StopError = fatal.Error(), fatal.Error()
+		current.RetryAt = time.Time{}
+		if err := write(); err != nil {
+			return err
+		}
+		c.l.runner.fail(fatal)
+		return fatal
+	}
+	if current.Phase == codexExecServerStarting && processFound {
+		if process.Phase == processRunning {
+			current.Refusal, current.Error = "", ""
 			current.Phase = codexExecServerProbing
 			current.NextProbe = now
+		} else if process.Phase == processExited || process.Phase == processStopping {
+			current.Refusal = process.StartRefusal
+			current.Error = process.StartError
+			if current.Error == "" {
+				current.Error = process.ExitError
+			}
+			if current.Error == "" {
+				current.Error = "Codex exec-server exited during startup"
+			}
+			current.RestartFailures++
+			current.Phase = codexExecServerStopping
+		}
+		if err := write(); err != nil {
+			return err
+		}
+	}
+	if (current.Phase == codexExecServerProbing || current.Phase == codexExecServerReady) && processFound && process.Phase != processRunning {
+		current.Error = process.ExitError
+		if current.Error == "" {
+			current.Error = "Codex exec-server exited"
+		}
+		current.RestartFailures++
+		current.Phase = codexExecServerStopping
+		current.RetryAt = time.Time{}
+		if err := write(); err != nil {
+			return err
 		}
 	}
 
@@ -199,49 +254,10 @@ func (c *codexExecServerLifecycleController) Reconcile(ctx context.Context, _ *z
 		}
 	}
 
-	if fenceDone {
-		if fenceResult.err != nil {
-			fatal := fmt.Errorf("Codex exec-server fencing failed: %w", fenceResult.err)
-			current.Phase = codexExecServerStopped
-			current.Error = fatal.Error()
-			current.StopError = fatal.Error()
-			current.RetryAt = time.Time{}
-			if err := write(); err != nil {
-				return err
-			}
-			c.l.runner.fail(fatal)
-			return fatal
-		}
-		e.clearInstance(instance)
-		current.FencedGeneration = current.Generation
-		instance = nil
-		if shuttingDown || desiredState.Mode != runnerRunning {
-			current.Phase = codexExecServerStopped
-			current.Error = ""
-			current.Refusal = ""
-			current.RetryAt = time.Time{}
-		} else {
-			current.Phase = codexExecServerRetrying
-			current.RetryAt = now.Add(codexExecServerRestartDelay(current.RestartFailures))
-			zap.L().Warn("Codex exec-server lost; restarting without replay", zap.String("error", current.Error))
-		}
-	}
-	if startDone || probeDone || fenceDone {
+	if probeDone {
 		if err := write(); err != nil {
 			return err
 		}
-	}
-
-	// The exit observer publishes only a fact. Reconciliation decides whether to
-	// fence and whether the outer Runner state permits a successor.
-	if input.ExitGeneration == current.Generation && current.Generation != 0 && current.FencedGeneration != current.Generation && current.Phase != codexExecServerStopping && current.Phase != codexExecServerStopped {
-		current.Error = input.ExitError
-		if current.Error == "" {
-			current.Error = "Codex exec-server exited"
-		}
-		current.RestartFailures++
-		current.Phase = codexExecServerStopping
-		current.RetryAt = time.Time{}
 	}
 
 	if shuttingDown {
@@ -250,7 +266,7 @@ func (c *codexExecServerLifecycleController) Reconcile(ctx context.Context, _ *z
 			current.Error = ""
 		}
 		if current.Phase == codexExecServerStopping {
-			if err := c.reconcileStop(ctx, e, instance, instanceGeneration, &current, write); err != nil {
+			if err := c.reconcileStop(ctx, r, e, &current, write); err != nil {
 				return err
 			}
 		}
@@ -264,21 +280,21 @@ func (c *codexExecServerLifecycleController) Reconcile(ctx context.Context, _ *z
 
 	// Quiescing and closing suppress retries immediately, but a healthy executor
 	// remains available until the outer lifecycle reaches its fencing barrier.
-	if desiredState.Mode != runnerRunning && current.Phase == codexExecServerRetrying && instance == nil {
+	if desiredState.Mode != runnerRunning && current.Phase == codexExecServerRetrying && current.ProcessID == "" {
 		current.Phase = codexExecServerStopped
 		current.RetryAt = time.Time{}
 		return write()
 	}
 
 	if current.Phase == codexExecServerStopping {
-		if err := c.reconcileStop(ctx, e, instance, instanceGeneration, &current, write); err != nil {
+		if err := c.reconcileStop(ctx, r, e, &current, write); err != nil {
 			return err
 		}
 		return write()
 	}
 
 	if current.Phase == codexExecServerStarting {
-		return nil
+		return c.ensureProcessIntent(ctx, r, e, desiredState, current)
 	}
 	if current.Phase == codexExecServerProbing {
 		if !now.Before(current.ReadyDeadline) {
@@ -314,9 +330,6 @@ func (c *codexExecServerLifecycleController) Reconcile(ctx context.Context, _ *z
 	}
 
 	if current.Phase == codexExecServerReady {
-		if input.ExitGeneration == current.Generation {
-			return nil
-		}
 		if c.hostOperationPending(&e.probeOp) {
 			return nil
 		}
@@ -348,6 +361,7 @@ func (c *codexExecServerLifecycleController) Reconcile(ctx context.Context, _ *z
 		}
 		current.Phase = codexExecServerStarting
 		current.Generation++
+		current.ProcessID = fmt.Sprintf("%s-%d", codexExecServerResourceID, current.Generation)
 		current.ReadyDeadline = now.Add(codexExecServerReadyBudget)
 		current.NextProbe = time.Time{}
 		current.RetryAt = time.Time{}
@@ -356,63 +370,62 @@ func (c *codexExecServerLifecycleController) Reconcile(ctx context.Context, _ *z
 		if err := write(); err != nil {
 			return err
 		}
-		generation := current.Generation
-		c.l.runner.mu.Lock()
-		latest := c.l.desiredState()
-		if latest != desiredState || latest.Mode != runnerRunning {
-			c.l.runner.mu.Unlock()
-			current.Phase = codexExecServerStopped
-			current.ReadyDeadline = time.Time{}
-			current.NextProbe = time.Time{}
-			return write()
-		}
-		c.l.startHostOperation(&e.mu, &e.startOp, codexExecServerControllerName, func(ctx context.Context) error {
-			startCtx, cancel := context.WithDeadline(ctx, current.ReadyDeadline)
-			defer cancel()
-			instance, err := e.startProcess(startCtx)
-			if err != nil {
-				return err
-			}
-			if instance == nil {
-				return errors.New("executor start returned no process")
-			}
-			e.install(instance, generation)
-			return nil
-		})
-		c.l.runner.mu.Unlock()
-		return nil
+		return c.ensureProcessIntent(ctx, r, e, desiredState, current)
 	}
 
 	return write()
 }
 
-func (c *codexExecServerLifecycleController) reconcileStop(ctx context.Context, e *codexExecServer, instance *codexExecServerInstance, generation uint64, current *codexExecServerRuntimeSpec, write func() error) error {
-	c.cancelHostOperation(&e.startOp)
+func (c *codexExecServerLifecycleController) ensureProcessIntent(ctx context.Context, r controller.QRuntime, e *codexExecServer, desired runnerDesiredStateSpec, current codexExecServerRuntimeSpec) error {
+	c.l.runner.mu.Lock()
+	defer c.l.runner.mu.Unlock()
+	latest := c.l.desiredState()
+	if latest != desired || latest.Mode != runnerRunning {
+		return nil
+	}
+	return c.l.processes.request(ctx, r, current.ProcessID, processDesiredStateSpec{
+		Owner: codexExecServerControllerName, Generation: current.Generation,
+		StartDeadline: current.ReadyDeadline, StopTimeout: codexExecServerFenceDeadline,
+	}, e.startProcess)
+}
+
+func (c *codexExecServerLifecycleController) reconcileStop(ctx context.Context, r controller.QRuntime, e *codexExecServer, current *codexExecServerRuntimeSpec, write func() error) error {
 	c.cancelHostOperation(&e.probeOp)
-	if c.hostOperationPending(&e.startOp) || c.hostOperationPending(&e.probeOp) {
+	if c.hostOperationPending(&e.probeOp) {
 		return write()
 	}
-	if c.hostOperationPending(&e.fenceOp) {
-		return write()
-	}
-	if instance == nil {
-		if desiredState := c.l.desiredState(); desiredState.Mode != runnerRunning {
-			current.Phase = codexExecServerStopped
-			current.Error = ""
-			current.Refusal = ""
-			current.RetryAt = time.Time{}
-			return write()
+	if current.ProcessID != "" {
+		ptr := resource.NewMetadata(lifecycleNamespace, processDesiredStateType, current.ProcessID, resource.VersionUndefined)
+		ready, err := r.Teardown(ctx, ptr)
+		if err != nil && !state.IsNotFoundError(err) {
+			return err
 		}
+		if err == nil {
+			if !ready {
+				return write()
+			}
+			if err := r.Destroy(ctx, ptr); err != nil && !state.IsNotFoundError(err) {
+				return err
+			}
+		}
+		current.ProcessID = ""
+		current.FencedGeneration = current.Generation
+	}
+	if desired := c.l.desiredState(); desired.Mode != runnerRunning {
+		current.Phase = codexExecServerStopped
+		current.Error, current.Refusal = "", ""
+		current.RetryAt = time.Time{}
+	} else {
 		current.Phase = codexExecServerRetrying
 		current.RetryAt = time.Now().Add(codexExecServerRestartDelay(current.RestartFailures))
-		return write()
 	}
-	c.l.startHostOperation(&e.mu, &e.fenceOp, codexExecServerControllerName, func(ctx context.Context) error {
-		fenceCtx, cancel := context.WithTimeout(ctx, codexExecServerFenceDeadline)
-		defer cancel()
-		return instance.stop(fenceCtx)
-	})
-	return write()
+	if err := write(); err != nil {
+		return err
+	}
+	if current.Phase == codexExecServerRetrying {
+		return controller.NewRequeueError(nil, time.Until(current.RetryAt))
+	}
+	return nil
 }
 
 func (c *codexExecServerLifecycleController) hostOperationPending(slot **operation) bool {

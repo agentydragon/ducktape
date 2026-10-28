@@ -559,10 +559,14 @@ go_test(
         "//agentplane/runner/supervision",
         "//agentplane/runner_gateway:runner_control_go_proto",
         "@com_github_coder_websocket//:websocket",
+        "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/controller/runtime",
         "@com_github_cosi_project_runtime//pkg/resource",
         "@com_github_cosi_project_runtime//pkg/resource/typed",
         "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
+        "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_siderolabs_gen//optional",
         "@org_golang_google_grpc//:grpc",
@@ -572,6 +576,7 @@ go_test(
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_sys//unix",
+        "@org_uber_go_zap//:zap",
     ],
 )
 

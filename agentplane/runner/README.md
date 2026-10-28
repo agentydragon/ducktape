@@ -24,7 +24,9 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   typed resources, and host input publication ([ownership](docs/lifecycle.md)).
 - `runner_controller.go`, `session_controller.go`, `codex_exec_server_controller.go`, `codex_app_server_controller.go`,
   and `bootstrap_controller.go`: one lifecycle controller per file.
-- `operations.go`: owned asynchronous native operations and completion routing.
+- `process_controller.go` and `process_host.go`: COSI process intents, native lifetime observations
+  and finalizer-protected cleanup. Codex exec-server uses this shared controller for launch and stop.
+- `operations.go`: owned asynchronous protocol/setup operations and completion routing.
 - `bootstrap.go`: durable bootstrap selection and the one-shot script effect.
 - `runner.go`: Runner construction, durable inventory, incarnation adoption and lifetime.
 - `admission.go` and `status.go`: public admission and status/facts RPCs.

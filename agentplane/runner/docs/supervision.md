@@ -15,7 +15,12 @@ VMs prepare systemd supervision, including slice budgets and prior-owner cleanup
 subprocess supervisor with its inherited state-owner descriptor. Backend choice stays out of
 controllers and per-launch specifications. A manager failure never switches a VM to the Pod
 backend. The Pod exec-server container retains its separate control-socket ownership protocol.
-The shared API is imperative; there is no generic COSI process-intent resource.
+The imperative supervision API sits below Runner's COSI process controller. Codex exec-server
+uses `ProcessDesiredStates`, `ProcessStatuses` and a finalizer per attempt; its owning controller
+keeps readiness and restart policy. Other harness and script callers still use the imperative API.
+Process resources contain lifecycle values; launch callbacks and native handles stay in the host
+registry. Teardown cancellation joins an in-flight start and fences any instance it returns before
+releasing the finalizer. A completed attempt never relaunches during reconciliation.
 
 ## VM services
 

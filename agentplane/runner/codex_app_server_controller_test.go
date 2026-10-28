@@ -18,7 +18,7 @@ import (
 
 func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
 	var starts, stops atomic.Int32
-	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*codexExecServerInstance, error) {
+	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*processInstance, error) {
 		if starts.Add(1) == 1 {
 			return nil, errors.New("temporary executor startup failure")
 		}
@@ -90,7 +90,7 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		entered := make(chan struct{})
 		var enteredOnce sync.Once
-		r := newCodexSynctestRunner(t, stateDir, func(ctx context.Context) (*codexExecServerInstance, error) {
+		r := newCodexSynctestRunner(t, stateDir, func(ctx context.Context) (*processInstance, error) {
 			enteredOnce.Do(func() { close(entered) })
 			<-ctx.Done()
 			return nil, ctx.Err()
@@ -251,7 +251,7 @@ func newCodexOnlyRunner(t *testing.T) *Runner {
 	return r
 }
 
-func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(context.Context) (*codexExecServerInstance, error)) *Runner {
+func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(context.Context) (*processInstance, error)) *Runner {
 	t.Helper()
 	owner, err := OpenStateOwner(stateDir)
 	if err != nil {

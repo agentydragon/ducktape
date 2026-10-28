@@ -22,6 +22,7 @@ type lifecycle struct {
 	done      chan struct{}
 	publishMu sync.Mutex
 	workers   sync.WaitGroup
+	processes *processHost
 }
 
 func newLifecycle(r *Runner) (*lifecycle, error) {
@@ -34,6 +35,7 @@ func newLifecycle(r *Runner) (*lifecycle, error) {
 		return nil, err
 	}
 	l := &lifecycle{runner: r, state: store, engine: engine, done: make(chan struct{})}
+	l.processes = newProcessHost(l)
 	if err := engine.RegisterController(&runnerLifecycleController{l: l}); err != nil {
 		return nil, err
 	}
@@ -41,6 +43,7 @@ func newLifecycle(r *Runner) (*lifecycle, error) {
 		return nil, err
 	}
 	for _, c := range []controller.QController{
+		&processLifecycleController{l: l},
 		&codexExecServerLifecycleController{l: l, host: r.codexExecServer},
 		&codexAppServerLifecycleController{l: l, host: r.codexAppServer, codexExecServer: r.codexExecServer},
 		&bootstrapLifecycleController{l: l},

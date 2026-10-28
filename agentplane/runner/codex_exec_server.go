@@ -74,13 +74,9 @@ type codexExecServer struct {
 	config CodexExecServerConfig
 	mu     sync.Mutex
 
-	instance           *codexExecServerInstance
-	instanceGeneration uint64
-	startOp            *operation
-	probeOp            *operation
-	fenceOp            *operation
-	startEffect        func(context.Context) (*codexExecServerInstance, error)
-	probeEffect        func(context.Context) error
+	probeOp     *operation
+	startEffect func(context.Context) (*processInstance, error)
+	probeEffect func(context.Context) error
 }
 
 func newCodexExecServer(r *Runner, config CodexExecServerConfig) *codexExecServer {
@@ -119,73 +115,7 @@ func (e *codexExecServer) requestLocked() error {
 	return publishLifecycle(l, codexExecServerResourceID, input)
 }
 
-func (e *codexExecServer) publishExit(generation uint64, err error) {
-	l := e.runner.lifecycle
-	if l == nil {
-		e.runner.fail(errors.New("Codex exec-server exited before lifecycle initialization"))
-		return
-	}
-	l.publishMu.Lock()
-	defer l.publishMu.Unlock()
-	input, found, readErr := lifecycleRead[codexExecServerInputSpec](e.runner.ctx, l.state, codexExecServerResourceID)
-	if readErr != nil {
-		e.runner.fail(readErr)
-		return
-	}
-	if !found {
-		e.runner.fail(errors.New("Codex exec-server input disappeared"))
-		return
-	}
-	input.ExitGeneration = generation
-	if err != nil {
-		input.ExitError = err.Error()
-	}
-	e.runner.fail(publishLifecycle(l, codexExecServerResourceID, input))
-}
-
-func (e *codexExecServer) observe(instance *codexExecServerInstance, generation uint64) {
-	e.runner.lifecycle.workers.Add(1)
-	go func() {
-		defer e.runner.lifecycle.workers.Done()
-		err := <-instance.done
-		e.mu.Lock()
-		current := e.instance == instance && e.instanceGeneration == generation
-		e.mu.Unlock()
-		if current {
-			// The observer only publishes process-exit evidence. Reconciliation owns fencing
-			// and whether a successor is allowed.
-			e.publishExit(generation, err)
-		}
-	}()
-}
-
-func (e *codexExecServer) install(instance *codexExecServerInstance, generation uint64) {
-	e.mu.Lock()
-	e.instance, e.instanceGeneration = instance, generation
-	e.mu.Unlock()
-	e.observe(instance, generation)
-}
-
-func (e *codexExecServer) currentInstance() (*codexExecServerInstance, uint64) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.instance, e.instanceGeneration
-}
-
-func (e *codexExecServer) clearInstance(instance *codexExecServerInstance) {
-	e.mu.Lock()
-	if e.instance == instance {
-		e.instance, e.instanceGeneration = nil, 0
-	}
-	e.mu.Unlock()
-}
-
-type codexExecServerInstance struct {
-	done <-chan error
-	stop func(context.Context) error
-}
-
-func (e *codexExecServer) start(ctx context.Context) (*codexExecServerInstance, error) {
+func (e *codexExecServer) start(ctx context.Context) (*processInstance, error) {
 	env := maps.Clone(e.runner.config.HarnessEnvironment)
 	// The executor needs tool routing and identity, not model authentication.
 	for _, name := range []string{"OPENAI_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_BASE_URL", "CODEX_HOME"} {
@@ -223,14 +153,22 @@ func (e *codexExecServer) start(ctx context.Context) (*codexExecServerInstance, 
 		code, err := p.Wait(context.Background())
 		done <- errors.Join(fmt.Errorf("Codex exec-server exited: code=%d; %s", code, p.ExitDescription()), err)
 	}()
-	return &codexExecServerInstance{done: done, stop: func(ctx context.Context) error { return p.Stop(ctx, stopGrace) }}, nil
+	return &processInstance{pid: p.PID(), done: done, stop: func(ctx context.Context) error { return p.Stop(ctx, stopGrace) }}, nil
 }
 
-func (e *codexExecServer) startProcess(ctx context.Context) (*codexExecServerInstance, error) {
+func (e *codexExecServer) startProcess(ctx context.Context) (*processInstance, error) {
+	var instance *processInstance
+	var err error
 	if e.startEffect != nil {
-		return e.startEffect(ctx)
+		instance, err = e.startEffect(ctx)
+	} else {
+		instance, err = e.start(ctx)
 	}
-	return e.start(ctx)
+	var refusal codexExecServerRefusal
+	if errors.As(err, &refusal) {
+		err = &processLaunchRefusal{reason: refusal.reason, cause: err}
+	}
+	return instance, err
 }
 
 func (e *codexExecServer) probe(ctx context.Context) error {
@@ -325,7 +263,7 @@ func fenceCodexExecServerContainer(ctx context.Context, socket, previous string)
 	})
 }
 
-func claimCodexExecServerContainer(ctx context.Context, socket string, env map[string]string) (*codexExecServerInstance, error) {
+func claimCodexExecServerContainer(ctx context.Context, socket string, env map[string]string) (*processInstance, error) {
 	c, status, err := executorcontrol.Connect(ctx, socket, executorcontrol.Request{Operation: "claim", Environment: env})
 	if err != nil {
 		return nil, err
@@ -342,7 +280,7 @@ func claimCodexExecServerContainer(ctx context.Context, socket string, env map[s
 		_, err := io.Copy(io.Discard, c)
 		done <- errors.Join(errors.New("executor container ownership connection lost"), err)
 	}()
-	return &codexExecServerInstance{done: done, stop: func(ctx context.Context) error {
+	return &processInstance{done: done, stop: func(ctx context.Context) error {
 		_ = c.Close()
 		return fenceCodexExecServerContainer(ctx, socket, status.Generation)
 	}}, nil
