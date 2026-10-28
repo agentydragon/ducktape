@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	databaseURLEnv                  = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
-	requiredEventIdentityWriterGate = "notification-event-identity-dual-write-v1"
+	databaseURLEnv                   = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
+	requiredEventIdentityWriterGate  = "notification-event-identity-dual-write-v1"
+	requiredMessageLegacyCleanupGate = "notification-message-text-only-v1"
 )
 
 func main() {
@@ -52,9 +53,27 @@ func main() {
 		run = func(ctx context.Context, db *sql.DB) error {
 			return store.BackfillEventIdentities(ctx, db, *batchSize)
 		}
+	case os.Args[1] == "cleanup-message-legacy-content":
+		flags := flag.NewFlagSet(os.Args[1], flag.ContinueOnError)
+		writerGate := flags.String("writer-gate", "", "required rollout gate: "+requiredMessageLegacyCleanupGate)
+		batchSize := flags.Int("batch-size", 512, "maximum entry keys per short transaction")
+		if err := flags.Parse(os.Args[2:]); err != nil {
+			os.Exit(2)
+		}
+		if flags.NArg() != 0 || *batchSize < 1 || *batchSize > 4096 {
+			fmt.Fprintln(os.Stderr, "cleanup-message-legacy-content accepts --writer-gate=... and --batch-size=N where N is between 1 and 4096")
+			os.Exit(2)
+		}
+		if *writerGate != requiredMessageLegacyCleanupGate {
+			fmt.Fprintf(os.Stderr, "run only after every Message reader uses canonical TEXT and every append, replay and expiry writer stores canonical TEXT and clears expired Message content; pass --writer-gate=%s\n", requiredMessageLegacyCleanupGate)
+			os.Exit(2)
+		}
+		run = func(ctx context.Context, db *sql.DB) error {
+			return store.CleanupMessageLegacyContent(ctx, db, *batchSize)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
-		fmt.Fprintln(os.Stderr, "commands: (default) migrate, backfill-event-identities")
+		fmt.Fprintln(os.Stderr, "commands: (default) migrate, backfill-event-identities, cleanup-message-legacy-content")
 		os.Exit(2)
 	}
 	if err := migrate.Run(ctx, databaseURL, run); err != nil {

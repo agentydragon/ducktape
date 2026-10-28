@@ -132,7 +132,16 @@ release; a pre-reader image cannot read rows whose legacy payload is NULL.
 Once every reader and Message append/replay/expiry writer uses canonical text, attest
 `notification-message-text-only-v1` before running the separate legacy-content cleanup. That offline, resumable
 command removes old Message JSON/protobuf while preserving retained text and clearing expired rows; its validated
-proofs gate the later metadata-only contract that retires the cleanup command and old storage constraints.
+proofs gate the later metadata-only contract that retires the cleanup command and old storage constraints. Deploy
+the cleanup-capable image and run or resume
+`bb run //agentplane/notification_service/migrations/cmd:notifications-migrate -- cleanup-message-legacy-content --writer-gate=notification-message-text-only-v1`
+against each database until its checkpoint reports `cleaned`. Migration `00020` adds `NOT VALID` checks that reject new Message JSON/protobuf writes
+and creates `notification_message_legacy_cleanup`; the offline command scans native `(inbox_id, cursor)` keys in
+bounded row/estimated-byte batches, clears legacy JSON/protobuf for retained Messages while preserving body and
+optional sender text, and clears all Message content inside the expired prefix. It validates both new proofs and
+the existing text-shape/body/sender constraints outside Pod init, then records `cleaned`. Do not drop the JSON or
+protobuf columns until every database reports `cleaned`. The next contract retires this command and its checkpoint;
+after cleanup, roll back only to a TEXT-only-compatible release and keep migration `00020` applied.
 
 Keep the typed-capable dual-write release as the minimum rollback version; an older reader that depends on
 non-GitHub `entry.payload` cannot read Action or mergeability entries written by this release. Before migration `00015`, rollback
