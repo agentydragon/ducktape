@@ -154,7 +154,9 @@ with `perf_wrapper.sh`: <docs/bazel_integration.md>.
   <docs/design.md> § Conditionally-correct optimizations):
   `chunk_analysis_options.<chunk_id>.dataflow_aware_s_chain` (+ author-trusted
   `trusted_dataflow_summaries`) orders impure statements by the cells they touch
-  (§ Emission modes); `chunk_analysis_options.<chunk_id>.local_property_effects`
+  (§ Emission modes); recognized array-content ordering, including pure reads,
+  applies in either graph mode (<SPEC.md> § Dependency-graph array ordering);
+  `chunk_analysis_options.<chunk_id>.local_property_effects`
   makes `X.prop = <pure-rhs>;` a local effect on `X` (A10);
   `deferred_global_publications` narrows callback reentry for audited inert
   browser-global data slots while retaining write ordering.

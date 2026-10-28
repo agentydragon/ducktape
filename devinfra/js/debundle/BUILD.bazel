@@ -478,6 +478,7 @@ rust_library(
         "atomic_groups.rs",
         "cross_module_purity.rs",
         "facts/analyze.rs",
+        "facts/array_content_effects.rs",
         "facts/at_init_fallback.rs",
         "facts/collector.rs",
         "facts/dynamic_scope.rs",

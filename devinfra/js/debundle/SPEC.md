@@ -97,6 +97,24 @@ rewritten HTML, and enumerates copied assets. Invalid loading topology rejects
 the plan before any accepted output is written, including during a dry run.
 The browser writer materializes those decisions without rediscovering entries.
 
+## Dependency-graph array ordering
+
+The dependency graph preserves source order for content observations on array
+literal identities that the chunk value-flow analysis can track, including
+aliases and reads promoted from directly invoked chunk functions. This ordering
+also applies to pure readers: call purity does not make an observed array's
+contents immutable. It is emitted in both strict and dataflow-aware S-chain
+modes.
+
+Array member writes, method calls such as `push`, escaped arrays, and calls
+whose callable body has no direct graph summary remain opaque heap barriers.
+They constrain the preceding array-content frontier and later array
+observations. These are scheduling dependencies only; they do not certify call
+purity, no-reentry, property-descriptor integrity, or prototype integrity.
+`trusted_dataflow_summaries` does not weaken these barriers. Unrecognized or
+ambiguous origins remain conservative rather than receiving a precise
+per-array ordering claim.
+
 ## Authoring reports
 
 Each per-chunk `modules.json` may include `imported_callables`, keyed by the

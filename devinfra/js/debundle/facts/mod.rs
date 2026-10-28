@@ -44,6 +44,7 @@ pub(crate) use crate::purity::{
 };
 
 mod analyze;
+mod array_content_effects;
 mod at_init_fallback;
 mod collector;
 mod dynamic_scope;
@@ -78,7 +79,7 @@ pub(crate) use local_effect_targets::*;
 pub(crate) use purity_classification::*;
 pub(crate) use set_iterables::{SetIterableProof, primitive_literal_property_keys};
 pub(crate) use source_unit_read_closure::SourceUnitReadClosure;
-pub(crate) use statement_facts::ConstructorFacts;
+pub(crate) use statement_facts::{ArrayContentEffects, ConstructorFacts};
 pub use statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection,
     CallbackFactoryCallArgumentWitness, CallbackFactoryUseFact, CallbackFactoryWriteWitness,

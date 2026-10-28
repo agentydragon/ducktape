@@ -130,9 +130,8 @@ pub fn build_dependency_graph_with(
         }
     }
     // Look-aside table for "what statement owns this SourceUnitId" — shared
-    // by the direct eager-read filter below and by
-    // `promote_at_init_calls` (which builds its own local copy; the
-    // duplicate cost is negligible).
+    // by the direct eager-read filter, at-init call promotion, and heap-content
+    // call propagation.
     let stmt_by_source_unit: std::collections::HashMap<SourceUnitId, &StatementFacts> = facts
         .iter()
         .map(|stmt| (SourceUnitId(stmt.ordinal.0), stmt))
@@ -265,7 +264,13 @@ pub fn build_dependency_graph_with(
     // resolve to chunk-declared bindings are followed; indirect
     // calls (`const g = f; g()`), method calls (`obj.method()`), and
     // dynamic dispatch are conservatively unmodelled.
-    promote_at_init_calls(facts, &binding_source_unit, &shared_vars, &mut raw_edges);
+    promote_at_init_calls(
+        facts,
+        &binding_source_unit,
+        &shared_vars,
+        &stmt_by_source_unit,
+        &mut raw_edges,
+    );
 
     // Initializers and eager observations of shared var cells must retain their
     // order even when the expressions are pure. Include promoted reads from
@@ -307,6 +312,13 @@ pub fn build_dependency_graph_with(
     }
 
     emit_s_chain(facts, options, &mut raw_edges);
+    emit_array_content_order(
+        facts,
+        &binding_source_unit,
+        &shared_vars,
+        &stmt_by_source_unit,
+        &mut raw_edges,
+    );
 
     // Sort + assign stable `DependencyEdgeId` indices, then build CSR
     // adjacency in one pass.
@@ -329,6 +341,198 @@ pub fn build_dependency_graph_with(
         })
         .collect();
     Ok(DependencyGraph::from_parts(nodes, edges))
+}
+
+/// Preserve source-order observations of mutable array contents. Binding-cell
+/// ordering cannot do this: an array initializer writes the object binding,
+/// while a later `push` or indexed write changes the object behind it.
+fn emit_array_content_order(
+    facts: &[StatementFacts],
+    binding_source_unit: &HashMap<Id, SourceUnitId>,
+    shared_vars: &BTreeSet<Id>,
+    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
+    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
+) {
+    let rebound: BTreeSet<_> = facts
+        .iter()
+        .flat_map(|stmt| stmt.rebinds.eager.iter().chain(&stmt.rebinds.lazy).cloned())
+        .collect();
+    let all_array_cells: BTreeSet<_> = facts
+        .iter()
+        .flat_map(|stmt| {
+            stmt.array_contents
+                .reads
+                .eager
+                .iter()
+                .chain(&stmt.array_contents.reads.lazy)
+                .chain(&stmt.array_contents.writes.eager)
+                .chain(&stmt.array_contents.writes.lazy)
+                .cloned()
+        })
+        .filter(|cell| matches!(cell, EffectCell::ArrayContents(_)))
+        .collect();
+
+    let resolved_callee = |binding: &swc_ecma_ast::Id| -> Option<SourceUnitId> {
+        resolve_direct_function_source_unit(
+            binding,
+            binding_source_unit,
+            shared_vars,
+            stmt_by_source_unit,
+            &rebound,
+        )
+    };
+
+    let has_array_contents = !all_array_cells.is_empty();
+    let mut lazy_effects: Vec<_> = facts
+        .iter()
+        .map(|stmt| ArrayContentSummary {
+            effects: array_content_cells(
+                &stmt.array_contents.reads.first_order_lazy,
+                &stmt.array_contents.writes.first_order_lazy,
+            ),
+            opaque: stmt.array_contents.opaque.first_order_lazy,
+        })
+        .collect();
+    // Calls in function bodies inherit their callee's first-order heap effects.
+    // The monotone closure handles recursion and mutually recursive helpers.
+    loop {
+        let mut changed = false;
+        for stmt in facts {
+            let source = stmt.ordinal.0;
+            for callee in &stmt.calls.first_order_lazy {
+                let Some(target) = resolved_callee(callee) else {
+                    if !lazy_effects[source].opaque {
+                        lazy_effects[source].opaque = true;
+                        changed = true;
+                    }
+                    continue;
+                };
+                let target_effects = lazy_effects[target.0].clone();
+                changed |=
+                    union_effects(&mut lazy_effects[source].effects, &target_effects.effects);
+                if target_effects.opaque && !lazy_effects[source].opaque {
+                    lazy_effects[source].opaque = true;
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    let mut events = Vec::new();
+    for stmt in facts {
+        let mut effects = array_content_cells(
+            &stmt.array_contents.reads.eager,
+            &stmt.array_contents.writes.eager,
+        );
+        let mut opaque = stmt.array_contents.opaque.eager
+            || (!stmt.dataflow_summarizable && !stmt.purity.is_pure());
+        // Function declarations are inert; only a recognized synchronous
+        // at-init call inherits their first-order effects.
+        for callee in &stmt.calls.eager {
+            if let Some(target) = resolved_callee(callee) {
+                union_effects(&mut effects, &lazy_effects[target.0].effects);
+                opaque |= lazy_effects[target.0].opaque;
+            } else {
+                opaque = true;
+            }
+        }
+        if has_array_contents && (!effects.reads.is_empty() || !effects.writes.is_empty() || opaque)
+        {
+            events.push((
+                SourceUnitId(stmt.ordinal.0),
+                stmt.ordinal,
+                effects,
+                if opaque {
+                    CellOrderBarrier::HeapFrontier
+                } else {
+                    CellOrderBarrier::None
+                },
+            ));
+        }
+    }
+    let mut sequence_pairs: BTreeSet<_> = raw_edges
+        .iter()
+        .filter(|(_, _, reason)| reason.kind == super::DepKind::Sequenced)
+        .map(|(from, to, _)| (*from, *to))
+        .collect();
+    emit_cell_order_events(events, raw_edges, &mut sequence_pairs);
+}
+
+fn array_content_cells(
+    reads: &BTreeSet<EffectCell>,
+    writes: &BTreeSet<EffectCell>,
+) -> crate::StatementEffectSummary {
+    crate::StatementEffectSummary {
+        reads: reads
+            .iter()
+            .filter(|cell| matches!(cell, EffectCell::ArrayContents(_)))
+            .cloned()
+            .collect(),
+        writes: writes
+            .iter()
+            .filter(|cell| matches!(cell, EffectCell::ArrayContents(_)))
+            .cloned()
+            .collect(),
+    }
+}
+
+/// Resolve only chunk bindings initialized directly to a function/class
+/// summary and never rebound or split by a shared `var` declaration.
+/// Both at-init promotion and heap-content propagation use this boundary so
+/// their call graph assumptions stay aligned.
+fn resolve_direct_function_source_unit(
+    binding: &Id,
+    binding_source_unit: &HashMap<Id, SourceUnitId>,
+    shared_vars: &BTreeSet<Id>,
+    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
+    rebound: &BTreeSet<Id>,
+) -> Option<SourceUnitId> {
+    let source_unit = *binding_source_unit.get(binding)?;
+    let stmt = stmt_by_source_unit.get(&source_unit)?;
+    (stmt.declares_direct_function || stmt.constructor.is_some())
+        .then_some(source_unit)
+        .filter(|_| !rebound.contains(binding) && !shared_vars.contains(binding))
+}
+
+fn union_effects(
+    into: &mut crate::StatementEffectSummary,
+    from: &crate::StatementEffectSummary,
+) -> bool {
+    let old_reads = into.reads.len();
+    let old_writes = into.writes.len();
+    into.reads.extend(from.reads.iter().cloned());
+    into.writes.extend(from.writes.iter().cloned());
+    old_reads != into.reads.len() || old_writes != into.writes.len()
+}
+
+#[derive(Clone, Default)]
+struct ArrayContentSummary {
+    effects: crate::StatementEffectSummary,
+    opaque: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CellOrderBarrier {
+    None,
+    /// Preserve the S-chain behavior: an unsummarized impure statement
+    /// depends on every preceding impure source unit.
+    AllPriorEvents,
+    /// Unknown heap effects depend on the current heap-cell frontier and
+    /// become the barrier for later heap observations.
+    HeapFrontier,
+}
+
+impl CellOrderBarrier {
+    fn from_summarizable(summarizable: bool) -> Self {
+        if summarizable {
+            Self::None
+        } else {
+            Self::AllPriorEvents
+        }
+    }
 }
 
 /// Side-effect ordering edges (`S` per docs/design.md "Module dep graphs").
@@ -389,16 +593,51 @@ fn emit_s_chain(
     // Statements with `dataflow_summarizable = false` are treated as
     // touching every cell — they get edges to every prior impure
     // source unit and become a barrier for subsequent statements.
+    let mut sequence_pairs: BTreeSet<(SourceUnitId, SourceUnitId)> = raw_edges
+        .iter()
+        .filter(|(_, _, reason)| reason.kind == super::DepKind::Sequenced)
+        .map(|(from, to, _)| (*from, *to))
+        .collect();
+    emit_cell_order_events(
+        facts
+            .iter()
+            .filter(|stmt| !stmt.purity.is_pure())
+            .map(|stmt| {
+                (
+                    SourceUnitId(stmt.ordinal.0),
+                    stmt.ordinal,
+                    stmt.effects(),
+                    CellOrderBarrier::from_summarizable(stmt.dataflow_summarizable),
+                )
+            }),
+        raw_edges,
+        &mut sequence_pairs,
+    );
+}
+
+/// Shared last-writer / reader-since-write timeline for binding, global, and
+/// heap-content cells. Write-after-read dependencies preserve the value that
+/// an earlier pure observer sees before a later mutation.
+fn emit_cell_order_events(
+    events: impl IntoIterator<
+        Item = (
+            SourceUnitId,
+            SourceUnitOrdinal,
+            crate::StatementEffectSummary,
+            CellOrderBarrier,
+        ),
+    >,
+    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
+    sequence_pairs: &mut BTreeSet<(SourceUnitId, SourceUnitId)>,
+) {
     let mut last_writer: BTreeMap<EffectCell, SourceUnitId> = BTreeMap::new();
     let mut readers_since_last_write: BTreeMap<EffectCell, BTreeSet<SourceUnitId>> =
         BTreeMap::new();
-    let mut prior_impure_source_units: Vec<SourceUnitId> = Vec::new();
+    let mut prior_source_units: Vec<SourceUnitId> = Vec::new();
     let mut opaque_barrier: Option<SourceUnitId> = None;
-    for stmt in facts.iter().filter(|s| !s.purity.is_pure()) {
-        let from = SourceUnitId(stmt.ordinal.0);
-        let effects = stmt.effects();
+    for (from, ordinal, effects, barrier_mode) in events {
         let mut targets: BTreeSet<SourceUnitId> = BTreeSet::new();
-        if stmt.dataflow_summarizable {
+        if barrier_mode != CellOrderBarrier::AllPriorEvents {
             for cell in effects.reads.iter().chain(effects.writes.iter()) {
                 if let Some(&to) = last_writer.get(cell) {
                     targets.insert(to);
@@ -409,26 +648,37 @@ fn emit_s_chain(
                     targets.extend(readers.iter().copied());
                 }
             }
-            // Non-summarizable prior statements are barriers: any later
-            // summarizable statement still depends on them, since we
-            // don't know what cells they touched.
+            // Unknown effects are barriers for subsequent summarized events.
             if let Some(barrier) = opaque_barrier {
                 targets.insert(barrier);
             }
-        } else {
-            // This statement can't be summarized: treat it as reading
-            // and writing every cell. Depend on every prior impure
-            // source unit, and become the new opaque barrier so later
-            // summarizable statements depend on us too.
-            targets.extend(prior_impure_source_units.iter().copied());
+        }
+        if barrier_mode == CellOrderBarrier::AllPriorEvents {
+            // The S-chain's historical fallback: depend on every prior event
+            // and become a barrier for later summarized events.
+            targets.extend(prior_source_units.iter().copied());
             opaque_barrier = Some(from);
+        } else if barrier_mode == CellOrderBarrier::HeapFrontier {
+            // An opaque heap operation only needs the live cell frontier.
+            // Every earlier read/write is either on that frontier or already
+            // constrained before a frontier event. Reset the per-cell state
+            // so later observations depend on the opaque operation itself.
+            targets.extend(last_writer.values().copied());
+            targets.extend(
+                readers_since_last_write
+                    .values()
+                    .flat_map(|readers| readers.iter().copied()),
+            );
+            opaque_barrier = Some(from);
+            last_writer.clear();
+            readers_since_last_write.clear();
         }
         for to in targets {
-            if from != to {
-                raw_edges.push((from, to, EdgeReason::sequenced(stmt.ordinal)));
+            if from != to && sequence_pairs.insert((from, to)) {
+                raw_edges.push((from, to, EdgeReason::sequenced(ordinal)));
             }
         }
-        if stmt.dataflow_summarizable {
+        if barrier_mode == CellOrderBarrier::None {
             for cell in effects.writes {
                 readers_since_last_write.remove(&cell);
                 last_writer.insert(cell, from);
@@ -440,7 +690,7 @@ fn emit_s_chain(
                     .insert(from);
             }
         }
-        prior_impure_source_units.push(from);
+        prior_source_units.push(from);
     }
 }
 
@@ -495,13 +745,9 @@ fn promote_at_init_calls(
     facts: &[StatementFacts],
     binding_source_unit: &HashMap<Id, SourceUnitId>,
     shared_vars: &BTreeSet<Id>,
+    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
     raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
 ) {
-    let mut stmt_by_source_unit: BTreeMap<SourceUnitId, &StatementFacts> = BTreeMap::new();
-    for stmt in facts {
-        stmt_by_source_unit.insert(SourceUnitId(stmt.ordinal.0), stmt);
-    }
-
     // Index statement source units that can change a chunk binding's value or
     // observable object state when they execute. A callback read must see the
     // source-prefix value, so the callback-read and writer source units form one
@@ -662,9 +908,9 @@ fn promote_at_init_calls(
     // Bindings rebound anywhere in the chunk: their value at call
     // time may not be the function lexically defined at their source unit,
     // so calls to them are not precisely resolvable.
-    let rebound: BTreeSet<&Id> = facts
+    let rebound: BTreeSet<Id> = facts
         .iter()
-        .flat_map(|s| s.rebinds.eager.iter().chain(s.rebinds.lazy.iter()))
+        .flat_map(|s| s.rebinds.eager.iter().chain(s.rebinds.lazy.iter()).cloned())
         .collect();
 
     // A callee binding is precisely resolvable iff (a) its declaring
@@ -673,13 +919,14 @@ fn promote_at_init_calls(
     // else — aliases (`const g = readB`), object-literal methods,
     // conditional initializers, rebound functions — takes the
     // conservative read-closure fallback below.
-    let resolvable_callee = |id: &Id| -> Option<SourceUnitId> {
-        let source_unit = binding_source_unit.get(id)?;
-        let stmt = stmt_by_source_unit.get(source_unit)?;
-        ((stmt.declares_direct_function || stmt.constructor.is_some())
-            && !rebound.contains(id)
-            && !shared_vars.contains(id))
-        .then_some(*source_unit)
+    let resolvable_callee = |id: &Id| {
+        resolve_direct_function_source_unit(
+            id,
+            binding_source_unit,
+            shared_vars,
+            stmt_by_source_unit,
+            &rebound,
+        )
     };
 
     // 1. Build the call graph: source unit → source unit edges for each
@@ -1124,5 +1371,76 @@ impl UnresolvedCallFallback {
 
     fn closures_for(&self, source_unit: SourceUnitOrdinal) -> (&BTreeSet<Id>, &BTreeSet<Id>) {
         self.closure.lazy_effects_for_source_unit(source_unit)
+    }
+}
+
+#[cfg(test)]
+mod array_heap_frontier_tests {
+    use super::*;
+
+    #[test]
+    fn repeated_opaque_heap_barriers_keep_edges_linear_in_the_live_frontier() {
+        const ARRAY_COUNT: usize = 1024;
+        const BARRIER_COUNT: usize = 16;
+
+        let mut events = Vec::new();
+        for array in 0..ARRAY_COUNT {
+            let mut effects = crate::StatementEffectSummary::default();
+            effects
+                .reads
+                .insert(EffectCell::ArrayContents(array as u32));
+            events.push((
+                SourceUnitId(array),
+                SourceUnitOrdinal(array),
+                effects,
+                CellOrderBarrier::None,
+            ));
+        }
+        for barrier in 0..BARRIER_COUNT {
+            let source_unit = ARRAY_COUNT + barrier;
+            events.push((
+                SourceUnitId(source_unit),
+                SourceUnitOrdinal(source_unit),
+                crate::StatementEffectSummary::default(),
+                CellOrderBarrier::HeapFrontier,
+            ));
+        }
+        let last_barrier = ARRAY_COUNT + BARRIER_COUNT - 1;
+        for array in 0..ARRAY_COUNT {
+            let source_unit = ARRAY_COUNT + BARRIER_COUNT + array;
+            let mut effects = crate::StatementEffectSummary::default();
+            effects
+                .reads
+                .insert(EffectCell::ArrayContents(array as u32));
+            events.push((
+                SourceUnitId(source_unit),
+                SourceUnitOrdinal(source_unit),
+                effects,
+                CellOrderBarrier::None,
+            ));
+        }
+
+        let mut edges = Vec::new();
+        let mut sequence_pairs = BTreeSet::new();
+        emit_cell_order_events(events, &mut edges, &mut sequence_pairs);
+
+        // First barrier follows the 1,024 live readers. The following 15
+        // barriers form a chain, and the final readers follow the last one.
+        // Retaining the old per-array reader frontier would add 15 * 1,024
+        // redundant edges between earlier readers and later barriers.
+        assert_eq!(edges.len(), 2 * ARRAY_COUNT + BARRIER_COUNT - 1);
+        for array in 0..ARRAY_COUNT {
+            assert!(sequence_pairs.contains(&(SourceUnitId(ARRAY_COUNT), SourceUnitId(array),)));
+            assert!(sequence_pairs.contains(&(
+                SourceUnitId(ARRAY_COUNT + BARRIER_COUNT + array),
+                SourceUnitId(last_barrier),
+            )));
+        }
+        for barrier in 1..BARRIER_COUNT {
+            assert!(sequence_pairs.contains(&(
+                SourceUnitId(ARRAY_COUNT + barrier),
+                SourceUnitId(ARRAY_COUNT + barrier - 1),
+            )));
+        }
     }
 }

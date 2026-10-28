@@ -350,6 +350,7 @@ where
         })
         .collect();
     value_flow.augment_calls(&body, &mut facts);
+    super::array_content_effects::annotate_array_content_effects(&body, &value_flow, &mut facts);
     if matches!(synchronous_calls, SynchronousCallAnalysis::Include) {
         super::sync_effects::execution_index::interpreter::annotate_synchronous_calls(
             &body,
@@ -601,6 +602,7 @@ fn assemble_statement_facts(
         global_reads,
         cell_writes_summarizable,
         dataflow_summarizable,
+        array_contents: super::ArrayContentEffects::default(),
         purity,
         kind,
     }

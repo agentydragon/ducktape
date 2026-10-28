@@ -581,6 +581,23 @@ globalThis`) marks the bindings it flows into (transitively,
     suspect bails — `g.tag` touches the same cells as
     `globalThis.tag` but the summary only sees `Binding(g)`.
 
+  The graph also keeps an identity-based `ArrayContents(origin)` timeline for
+  observed array literals. It follows aliases through the chunk value-flow
+  facts and promotes first-order reads from directly invoked chunk functions,
+  including pure readers that the S-chain intentionally omits. Per-array
+  last-writer and readers-since-write frontiers preserve read-after-write,
+  write-after-write, and write-after-read order in both graph modes. Array
+  member writes, method calls such as `push`, escaped arrays, unresolved
+  callees, and inline or constructor calls whose bodies lack the graph's direct
+  call summary remain opaque heap barriers. A barrier depends on the current
+  array-content frontier and later array observations depend on that barrier;
+  the frontier resets there, so unknown operations do not materialize edges
+  against every array cell. These facts constrain scheduling only: they do not
+  reclassify calls as pure or establish a no-reentry/descriptor-integrity
+  premise. In particular, `trusted_dataflow_summaries` does not make an array
+  member write safe to summarize; absent a separate array-specific proof, it
+  remains an opaque barrier.
+
   The bit is `dataflow_summarizable` in `facts/statement_facts.rs`. Only the
   bailing statements pay the conservative cost, so the mode is safe
   on chunks mixing audited and unaudited code, but call-heavy

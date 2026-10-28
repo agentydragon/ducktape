@@ -152,6 +152,10 @@ pub struct StatementFacts {
     /// "Conditionally-correct optimizations" for the soundness
     /// precondition.
     pub dataflow_summarizable: bool,
+    /// Heap-content effects on uniquely identified array allocations. These
+    /// are distinct from binding effects: mutating an array changes its
+    /// contents, not the binding that names it.
+    pub(crate) array_contents: ArrayContentEffects,
     pub purity: Purity,
     pub kind: StatementKind,
 }
@@ -260,6 +264,8 @@ impl StatementFacts {
         for key in &self.global_reads {
             reads.insert(EffectCell::GlobalProp(key.clone()));
         }
+        writes.extend(self.array_contents.writes.eager.iter().cloned());
+        reads.extend(self.array_contents.reads.eager.iter().cloned());
         StatementEffectSummary { writes, reads }
     }
 }
@@ -276,6 +282,9 @@ impl StatementFacts {
 pub enum EffectCell {
     Binding(Id),
     GlobalProp(String),
+    /// Heap contents of one array allocation, keyed by its canonical object
+    /// origin from chunk value flow.
+    ArrayContents(u32),
 }
 
 /// The (writes, reads) cell view of one statement, derived by
@@ -286,6 +295,17 @@ pub enum EffectCell {
 pub struct StatementEffectSummary {
     pub writes: BTreeSet<EffectCell>,
     pub reads: BTreeSet<EffectCell>,
+}
+
+/// Heap-content effects attributed to one source unit. First-order lazy
+/// effects are inherited by synchronous at-init calls; nested closures remain
+/// deferred. Opaque effects become heap-frontier barriers in the graph builder,
+/// rather than being copied onto every canonical array identity.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ArrayContentEffects {
+    pub reads: PositionBucketed<BTreeSet<EffectCell>>,
+    pub writes: PositionBucketed<BTreeSet<EffectCell>>,
+    pub opaque: PositionBucketed<bool>,
 }
 
 #[derive(Debug, Clone)]
