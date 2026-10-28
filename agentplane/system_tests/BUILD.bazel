@@ -3,6 +3,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # gazelle:exclude test_agent_messaging.py
 # gazelle:exclude test_dcr.py
+# gazelle:exclude test_cleanup_diagnostics.py
 # gazelle:exclude test_dispatcher.py
 # gazelle:exclude test_egress.py
 # gazelle:exclude test_launch_presets.py
@@ -492,6 +493,7 @@ system_test(
     k3s = "scripted",
     deps = [
         ":cluster",
+        ":cleanup_diagnostics",
         ":conftest",
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane:crd_group",
@@ -508,6 +510,23 @@ system_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "cleanup_diagnostics",
+    srcs = ["cleanup_diagnostics.py"],
+)
+
+py_test(
+    name = "test_cleanup_diagnostics",
+    srcs = ["test_cleanup_diagnostics.py"],
+    deps = [
+        ":cleanup_diagnostics",
+        ":conftest",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

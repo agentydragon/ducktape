@@ -3,7 +3,6 @@
 import asyncio
 import json
 import sys
-import traceback
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
@@ -20,6 +19,7 @@ from agentplane.grpc.calls import dial
 from agentplane.proto import runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
+from agentplane.system_tests.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 from agentplane.system_tests.cluster import api_client, kubectl
 from agentplane.system_tests.conftest import POD_TEMPLATE, namespace
 from util.net import pick_free_port
@@ -79,8 +79,14 @@ async def _delete(kind: str, name: str, uid: str) -> None:
     await kubectl("wait", f"{kind}/{name}", "--for=delete", "--timeout=120s")
 
 
-async def _capture_cleanup_diagnostics(name: str) -> None:
-    diagnostics: dict[str, object] = {}
+async def _capture_cleanup_diagnostics(name: str, session_ids: list[str], command_ids: list[str]) -> None:
+    capture_id = uuid4().hex
+    diagnostics: dict[str, object] = {
+        "sandbox": name,
+        "capture_id": capture_id,
+        "session_ids": session_ids,
+        "command_ids": command_ids,
+    }
     commands = {
         "sandbox": ("get", "sandbox", name, "-o", "json"),
         "runner_lease": ("get", "lease", f"{name}-runner", "-o", "json"),
@@ -107,38 +113,66 @@ async def _capture_cleanup_diagnostics(name: str) -> None:
         except TimeoutError:
             diagnostics[key] = f"TimeoutError: exceeded {CLEANUP_DIAGNOSTICS_SECONDS}s diagnostic deadline"
         except Exception as error:
-            diagnostics[key] = f"{type(error).__name__}: {error}"
+            diagnostics[key] = {"capture_error": type(error).__name__}
 
     await asyncio.gather(*(capture(key, args) for key, args in commands.items()))
-    (undeclared_outputs_dir() / "dispatcher-cleanup.json").write_text(json.dumps(diagnostics, indent=2) + "\n")
+    journal_snapshots: dict[str, object] = {}
+
+    async def capture_journal(session_id: str) -> None:
+        try:
+            arguments = [
+                "exec",
+                f"pod/{name}",
+                "-c",
+                "runner",
+                "--",
+                "/run/agentplane/runner/bin/agentplane-runner",
+                "--agentplane-runner-journal-snapshot",
+                "--session-id",
+                session_id,
+            ]
+            for command_id in command_ids:
+                arguments.extend(("--command-id", command_id))
+            async with asyncio.timeout(CLEANUP_DIAGNOSTICS_SECONDS):
+                value = await kubectl(*arguments)
+            journal_snapshots[session_id] = json.loads(value)
+        except TimeoutError:
+            journal_snapshots[session_id] = {"snapshot_error": "capture_timeout"}
+        except Exception as error:
+            journal_snapshots[session_id] = {"snapshot_error": type(error).__name__}
+
+    await asyncio.gather(*(capture_journal(session_id) for session_id in session_ids))
+    diagnostics["journal_snapshots"] = journal_snapshots
+    artifact = undeclared_outputs_dir() / f"dispatcher-cleanup-{name}-{capture_id}.json"
+    artifact.write_text(json.dumps(diagnostics, indent=2) + "\n")
 
 
-async def _cleanup_sandbox(name: str, uid: str) -> None:
-    await kubectl(
-        "patch",
-        "sandbox.agentplane.allegedly.works",
-        name,
-        "--type=merge",
-        "-p",
-        json.dumps({"metadata": {"uid": uid}, "spec": {"running": False}}),
-    )
-    await kubectl(
-        "wait",
-        f"sandbox.agentplane.allegedly.works/{name}",
-        "--for=jsonpath={.status.operatingMode}=Suspended",
-        "--timeout=300s",
-    )
+async def _cleanup_sandbox(name: str, uid: str, *, session_ids: list[str], command_ids: list[str]) -> None:
     try:
+        await kubectl(
+            "patch",
+            "sandbox.agentplane.allegedly.works",
+            name,
+            "--type=merge",
+            "-p",
+            json.dumps({"metadata": {"uid": uid}, "spec": {"running": False}}),
+        )
+        await kubectl(
+            "wait",
+            f"sandbox.agentplane.allegedly.works/{name}",
+            "--for=jsonpath={.status.operatingMode}=Suspended",
+            "--timeout=300s",
+        )
         await kubectl(
             "wait",
             f"sandbox.agentplane.allegedly.works/{name}",
             '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
             "--timeout=300s",
         )
-    except RuntimeError:
-        await _capture_cleanup_diagnostics(name)
+        await _delete("sandbox.agentplane.allegedly.works", name, uid)
+    except Exception as error:
+        await capture_without_masking(error, lambda: _capture_cleanup_diagnostics(name, session_ids, command_ids))
         raise
-    await _delete("sandbox.agentplane.allegedly.works", name, uid)
 
 
 @asynccontextmanager
@@ -311,9 +345,15 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
 
         async def cleanup() -> None:
             if not cleaned:
-                await _cleanup_sandbox(sandbox, uid)
+                await _cleanup_sandbox(sandbox, uid, session_ids=[session], command_ids=[command])
 
-        stack.push_async_callback(cleanup)
+        async def cleanup_on_exit(
+            _exception_type: type[BaseException] | None, error: BaseException | None, _traceback: object
+        ) -> bool:
+            await cleanup_without_masking(error, cleanup)
+            return False
+
+        stack.push_async_exit(cleanup_on_exit)
         await kubectl(
             "wait",
             f"sandbox.agentplane.allegedly.works/{sandbox}",
@@ -428,6 +468,8 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             )
             deletion_session = str(uuid4())
             deletion_command = str(uuid4())
+            cleanup_sessions = [session, deletion_session]
+            cleanup_commands = [command, deletion_command]
             await stub.ChangeReasoningEffort(
                 pb.ChangeReasoningEffortRequest(
                     sandbox=sandbox,
@@ -459,7 +501,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                 assert first.dispatch.command_id == deletion_command
                 assert first.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
                 streams.append(stream)
-            await cleanup()
+            await _cleanup_sandbox(sandbox, uid, session_ids=cleanup_sessions, command_ids=cleanup_commands)
             cleaned = True
             for stream in streams:
                 while True:
@@ -553,7 +595,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
     async def cleanup() -> None:
         nonlocal cleaned
         if not cleaned:
-            await _cleanup_sandbox(sandbox, uid)
+            await _cleanup_sandbox(sandbox, uid, session_ids=[session], command_ids=[command])
             cleaned = True
 
     try:
@@ -668,14 +710,7 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
                 await channel.close()
     finally:
         failure = sys.exception()
-        try:
-            await cleanup()
-        except Exception as cleanup_error:
-            if failure is None:
-                raise
-            failure.add_note(
-                "Sandbox cleanup also failed:\n" + "".join(traceback.format_exception(cleanup_error, chain=False))
-            )
+        await cleanup_without_masking(failure, cleanup)
     evidence["cleanup_complete"] = True
     path.write_text(json.dumps(evidence, indent=2) + "\n")
 
