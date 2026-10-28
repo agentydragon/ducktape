@@ -162,7 +162,7 @@ func TestDispatchKeepsUncertainNativeWritePendingAndDoesNotResend(t *testing.T) 
 	// This primitive test drives dispatch directly, so it has no Session input
 	// for the controller to reconcile. Seed only its readiness observation.
 	if err := s.runner.lifecycle.state.Create(ctx,
-		lifecycleResourceFor(sessionRuntimeType, s.id, sessionRuntimeSpec{Phase: executionReady}),
+		lifecycleResourceFor(s.id, sessionRuntimeSpec{Phase: executionReady}),
 		state.WithCreateOwner(sessionControllerName)); err != nil {
 		t.Fatal(err)
 	}

@@ -23,7 +23,7 @@ func (r *Runner) requestBootstrap() error {
 	defer r.mu.Unlock()
 	r.lifecycle.publishMu.Lock()
 	defer r.lifecycle.publishMu.Unlock()
-	input, _, err := lifecycleRead[bootstrapInputSpec](r.ctx, r.lifecycle.state, bootstrapInputType, "bootstrap")
+	input, _, err := lifecycleRead[bootstrapInputSpec](r.ctx, r.lifecycle.state, "bootstrap")
 	if err != nil {
 		return err
 	}
@@ -38,8 +38,7 @@ func (r *Runner) requestBootstrap() error {
 		return status.Error(codes.Aborted, "this Sandbox is quiesced")
 	}
 	input.Requested = true
-	input.Demand++
-	return publishLifecycle(r.lifecycle, bootstrapInputType, "bootstrap", input)
+	return publishLifecycle(r.lifecycle, "bootstrap", input)
 }
 
 func (r *Runner) bootstrap(ctx context.Context) error {
@@ -50,14 +49,9 @@ func (r *Runner) bootstrap(ctx context.Context) error {
 		return err
 	}
 	var outcome bootstrapRuntimeSpec
-	if err := r.lifecycle.waitFor(ctx, func() (bool, error) {
-		var found bool
-		var err error
-		outcome, found, err = lifecycleRead[bootstrapRuntimeSpec](r.ctx, r.lifecycle.state, bootstrapRuntimeType, "bootstrap")
-		if err != nil {
-			return true, err
-		}
-		return found && isTerminalBootstrapPhase(outcome.Phase), nil
+	if err := watchLifecycle(ctx, r.lifecycle.state, "bootstrap", func(current bootstrapRuntimeSpec) (bool, error) {
+		outcome = current
+		return isTerminalBootstrapPhase(current.Phase), nil
 	}); err != nil {
 		return err
 	}
@@ -86,7 +80,7 @@ func (r *Runner) bootstrapSettled() bool {
 	if r.config.Launch.Bootstrap == nil {
 		return true
 	}
-	input, found, err := lifecycleRead[bootstrapInputSpec](r.ctx, r.lifecycle.state, bootstrapInputType, "bootstrap")
+	input, found, err := lifecycleRead[bootstrapInputSpec](r.ctx, r.lifecycle.state, "bootstrap")
 	if err != nil {
 		r.fail(err)
 		return false
@@ -94,7 +88,7 @@ func (r *Runner) bootstrapSettled() bool {
 	if !found || !input.Requested {
 		return true
 	}
-	current, found, err := lifecycleRead[bootstrapRuntimeSpec](r.ctx, r.lifecycle.state, bootstrapRuntimeType, "bootstrap")
+	current, found, err := lifecycleRead[bootstrapRuntimeSpec](r.ctx, r.lifecycle.state, "bootstrap")
 	if err != nil {
 		r.fail(err)
 		return false

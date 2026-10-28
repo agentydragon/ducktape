@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -21,7 +20,6 @@ const (
 
 type executorInputSpec struct {
 	Demand         uint64
-	Revision       uint64
 	ExitGeneration uint64
 	ExitError      string
 }
@@ -85,8 +83,8 @@ func (c *executorLifecycleController) MapInput(ctx context.Context, _ *zap.Logge
 	case executorInputType, runnerGoalType, runnerRuntimeType, runnerInputType:
 		return []resource.Pointer{input}, nil
 	case operationResultType:
-		result, found, err := lifecycleRead[operationResultSpec](ctx, r, operationResultType, ptr.ID())
-		if err != nil || !found || !strings.HasPrefix(result.Kind, "executor-") {
+		result, found, err := lifecycleRead[operationResultSpec](ctx, r, ptr.ID())
+		if err != nil || !found || result.Controller != executorControllerName {
 			return nil, err
 		}
 		return []resource.Pointer{input}, nil
@@ -100,24 +98,24 @@ func (c *executorLifecycleController) Reconcile(ctx context.Context, _ *zap.Logg
 	if e == nil {
 		return nil
 	}
-	input, found, err := lifecycleRead[executorInputSpec](ctx, r, executorInputType, ptr.ID())
+	input, found, err := lifecycleRead[executorInputSpec](ctx, r, ptr.ID())
 	if err != nil || !found {
 		return err
 	}
-	current, _, err := lifecycleRead[executorRuntimeSpec](ctx, r, executorRuntimeType, ptr.ID())
+	current, _, err := lifecycleRead[executorRuntimeSpec](ctx, r, ptr.ID())
 	if err != nil {
 		return err
 	}
-	goal, _, err := lifecycleRead[runnerGoalSpec](ctx, r, runnerGoalType, "runner")
+	goal, _, err := lifecycleRead[runnerGoalSpec](ctx, r, "runner")
 	if err != nil {
 		return err
 	}
-	outer, _, err := lifecycleRead[runnerRuntimeSpec](ctx, r, runnerRuntimeType, "runner")
+	outer, _, err := lifecycleRead[runnerRuntimeSpec](ctx, r, "runner")
 	if err != nil {
 		return err
 	}
 	write := func() error {
-		changed, err := lifecycleWrite(ctx, r, executorRuntimeType, executorControllerInput, current)
+		changed, err := lifecycleWrite(ctx, r, executorControllerInput, current)
 		if changed {
 			c.l.runner.changed()
 		}
@@ -302,7 +300,7 @@ func (c *executorLifecycleController) Reconcile(ctx context.Context, _ *zap.Logg
 		if err := write(); err != nil {
 			return err
 		}
-		c.l.startHostOperation(&e.mu, &e.probeOp, "executor-readiness-probe", func(ctx context.Context) error {
+		c.l.startHostOperation(&e.mu, &e.probeOp, executorControllerName, func(ctx context.Context) error {
 			probeCtx, cancel := context.WithDeadline(ctx, current.ReadyDeadline)
 			defer cancel()
 			probeCtx, cancel = context.WithTimeout(probeCtx, executorReadinessProbe)
@@ -322,7 +320,7 @@ func (c *executorLifecycleController) Reconcile(ctx context.Context, _ *zap.Logg
 		if now.Before(current.NextProbe) {
 			return controller.NewRequeueError(nil, current.NextProbe.Sub(now))
 		}
-		c.l.startHostOperation(&e.mu, &e.probeOp, "executor-health-probe", func(ctx context.Context) error {
+		c.l.startHostOperation(&e.mu, &e.probeOp, executorControllerName, func(ctx context.Context) error {
 			probeCtx, cancel := context.WithTimeout(ctx, executorHealthDeadline)
 			defer cancel()
 			return e.probe(probeCtx)
@@ -365,7 +363,7 @@ func (c *executorLifecycleController) Reconcile(ctx context.Context, _ *zap.Logg
 			current.NextProbe = time.Time{}
 			return write()
 		}
-		c.l.startHostOperation(&e.mu, &e.startOp, "executor-start", func(ctx context.Context) error {
+		c.l.startHostOperation(&e.mu, &e.startOp, executorControllerName, func(ctx context.Context) error {
 			startCtx, cancel := context.WithDeadline(ctx, current.ReadyDeadline)
 			defer cancel()
 			instance, err := e.startProcess(startCtx)
@@ -406,7 +404,7 @@ func (c *executorLifecycleController) reconcileStop(ctx context.Context, e *code
 		current.RetryAt = time.Now().Add(executorRestartDelay(current.RestartFailures))
 		return write()
 	}
-	c.l.startHostOperation(&e.mu, &e.fenceOp, "executor-fence", func(ctx context.Context) error {
+	c.l.startHostOperation(&e.mu, &e.fenceOp, executorControllerName, func(ctx context.Context) error {
 		fenceCtx, cancel := context.WithTimeout(ctx, executorFenceDeadline)
 		defer cancel()
 		return instance.stop(fenceCtx)
@@ -414,14 +412,14 @@ func (c *executorLifecycleController) reconcileStop(ctx context.Context, e *code
 	return write()
 }
 
-func (c *executorLifecycleController) hostOperationPending(slot **sessionOperation) bool {
+func (c *executorLifecycleController) hostOperationPending(slot **operation) bool {
 	c.l.runner.executor.mu.Lock()
 	op := *slot
 	c.l.runner.executor.mu.Unlock()
 	return op != nil
 }
 
-func (c *executorLifecycleController) cancelHostOperation(slot **sessionOperation) {
+func (c *executorLifecycleController) cancelHostOperation(slot **operation) {
 	c.l.runner.executor.mu.Lock()
 	op := *slot
 	c.l.runner.executor.mu.Unlock()
@@ -443,3 +441,9 @@ func executorRestartDelay(failures uint32) time.Duration {
 	}
 	return time.Duration(seconds) * time.Second
 }
+
+func (executorInputSpec) resourceType() resource.Type       { return executorInputType }
+func (value executorInputSpec) DeepCopy() executorInputSpec { return value }
+
+func (executorRuntimeSpec) resourceType() resource.Type         { return executorRuntimeType }
+func (value executorRuntimeSpec) DeepCopy() executorRuntimeSpec { return value }

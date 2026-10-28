@@ -32,15 +32,15 @@ type Session struct {
 	processID                                              string
 	processState                                           runnerpb.ProcessState
 	nativeStop                                             stopReason
-	preparation, dispatching, inspection, halting, sealing *sessionOperation
-	controlDispatches                                      map[string]*sessionOperation
+	preparation, dispatching, inspection, halting, sealing *operation
+	controlDispatches                                      map[string]*operation
 	reconciliations                                        []*pendingReconciliation
 	activeTurn                                             string
 	setup                                                  runnerpb.SetupState
 	launch                                                 runnerpb.LaunchOutcome
 	failure                                                *uint64
 	setupScript                                            *string
-	setupJob, stopping                                     *sessionOperation
+	setupJob, stopping                                     *operation
 	readers                                                sync.WaitGroup
 	work                                                   sync.WaitGroup
 	pending                                                map[string]bool
@@ -54,7 +54,7 @@ type Session struct {
 }
 
 func newSession(r *Runner, id string, record *SessionRecord, journal *Journal) *Session {
-	s := &Session{runner: r, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, controlDispatches: map[string]*sessionOperation{}, interrupts: map[string]string{}, launch: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED}
+	s := &Session{runner: r, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, controlDispatches: map[string]*operation{}, interrupts: map[string]string{}, launch: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED}
 	if record.SetupScriptSHA256 != nil {
 		s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
 	}
@@ -242,7 +242,7 @@ func (s *Session) halt(ctx context.Context, reason stopReason) {
 		<-setupJob.done
 	}
 	s.mu.Lock()
-	controls := make([]*sessionOperation, 0, len(s.controlDispatches))
+	controls := make([]*operation, 0, len(s.controlDispatches))
 	for _, control := range s.controlDispatches {
 		controls = append(controls, control)
 	}

@@ -184,14 +184,14 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 	setBootstrapRuntime := func(phase bootstrapPhase) error {
 		ctx, cancel := context.WithTimeout(r.ctx, lifecycleTestTimeout)
 		defer cancel()
-		return modifyLifecycleForTest(ctx, r, bootstrapRuntimeType, "bootstrap", bootstrapControllerName, func(current *bootstrapRuntimeSpec) {
+		return modifyLifecycleForTest(ctx, r, "bootstrap", bootstrapControllerName, func(current *bootstrapRuntimeSpec) {
 			current.Phase = phase
 		})
 	}
 	if err := setBootstrapRuntime(bootstrapRunning); err != nil {
 		t.Fatal(err)
 	}
-	if err := publishLifecycle(r.lifecycle, bootstrapInputType, "bootstrap", bootstrapInputSpec{Requested: true, Demand: 1}); err != nil {
+	if err := publishLifecycle(r.lifecycle, "bootstrap", bootstrapInputSpec{Requested: true}); err != nil {
 		t.Fatal(err)
 	}
 	resetManualState := func() {
@@ -210,7 +210,7 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 		if err := setBootstrapRuntime(bootstrapSucceeded); err != nil {
 			t.Errorf("restore bootstrap runtime: %v", err)
 		}
-		if err := publishLifecycle(r.lifecycle, bootstrapInputType, "bootstrap", bootstrapInputSpec{}); err != nil {
+		if err := publishLifecycle(r.lifecycle, "bootstrap", bootstrapInputSpec{}); err != nil {
 			t.Errorf("restore bootstrap input: %v", err)
 		}
 	}

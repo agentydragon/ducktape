@@ -1,6 +1,8 @@
 package runner
 
 import (
+	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
@@ -11,30 +13,21 @@ func (l *lifecycle) publishSeal(s *Session) error {
 	if seal := s.journal.SealState(); seal != nil {
 		value = journalSealSpec{Present: true, IncarnationUID: seal.IncarnationUID, Cursor: seal.Cursor}
 	}
-	return publishLifecycle(l, journalSealType, s.id, value)
+	return publishLifecycle(l, s.id, value)
 }
 
 func (l *lifecycle) publishAck(id string, ack IngressAcknowledgement) error {
 	l.publishMu.Lock()
 	defer l.publishMu.Unlock()
-	return publishLifecycle(l, ingressAckType, id, ingressAckSpec{Cursor: ack.Cursor, Sealed: ack.Sealed})
+	return publishLifecycle(l, id, ingressAckSpec{Cursor: ack.Cursor, Sealed: ack.Sealed})
 }
 
-// Host publishers serialize read/modify/write; COSI controllers own different outputs.
-func publishLifecycle[T comparable](l *lifecycle, kind, id string, value T) error {
-	r := lifecycleResourceFor(kind, id, value)
-	old, err := l.state.Get(l.runner.ctx, r.Metadata())
-	if state.IsNotFoundError(err) {
-		return l.state.Create(l.runner.ctx, r, state.WithCreateOwner("runner-host"))
-	}
-	if err != nil {
-		return err
-	}
-	if old.(*lifecycleResource[T]).value == value {
+// Host publishers serialize compound snapshots; COSI handles conflicts and no-op updates.
+func publishLifecycle[T lifecycleSpec[T]](l *lifecycle, id string, value T) error {
+	return safe.StateModify(l.runner.ctx, l.state, lifecycleResourceFor(id, value), func(r *typed.Resource[T, lifecycleExtension[T]]) error {
+		*r.TypedSpec() = value
 		return nil
-	}
-	r.metadata = old.Metadata().Copy()
-	return l.state.Update(l.runner.ctx, r, state.WithUpdateOwner("runner-host"))
+	}, state.WithUpdateOwner("runner-host"))
 }
 
 func (l *lifecycle) touchRunner() {
@@ -43,20 +36,20 @@ func (l *lifecycle) touchRunner() {
 	l.runner.mu.Unlock()
 	l.publishMu.Lock()
 	defer l.publishMu.Unlock()
-	input, _, err := lifecycleRead[runnerInputSpec](l.runner.ctx, l.state, runnerInputType, "runner")
+	input, _, err := lifecycleRead[runnerInputSpec](l.runner.ctx, l.state, "runner")
 	if err != nil {
 		l.runner.fail(err)
 		return
 	}
 	input.Admissions = admissions
 	input.Revision++
-	l.runner.fail(publishLifecycle(l, runnerInputType, "runner", input))
+	l.runner.fail(publishLifecycle(l, "runner", input))
 }
 
 func (l *lifecycle) publishSession(s *Session, demand bool) {
 	l.publishMu.Lock()
 	defer l.publishMu.Unlock()
-	input, _, err := lifecycleRead[sessionInputSpec](l.runner.ctx, l.state, sessionInputType, s.id)
+	input, _, err := lifecycleRead[sessionInputSpec](l.runner.ctx, l.state, s.id)
 	if err != nil {
 		l.runner.fail(err)
 		return
@@ -73,12 +66,12 @@ func (l *lifecycle) publishSession(s *Session, demand bool) {
 	input.InspectionReady = len(s.reconciliations) > 0 && s.reconciliations[0].ready
 	s.mu.Unlock()
 	input.Cursor = s.journal.LastCursor()
-	l.runner.fail(publishLifecycle(l, sessionInputType, s.id, input))
+	l.runner.fail(publishLifecycle(l, s.id, input))
 }
 func (s *Session) wake()             { s.runner.lifecycle.publishSession(s, false) }
 func (s *Session) requestExecution() { s.runner.lifecycle.publishSession(s, true) }
 func (s *Session) runtimeState() sessionRuntimeSpec {
-	value, _, err := lifecycleRead[sessionRuntimeSpec](s.runner.ctx, s.runner.lifecycle.state, sessionRuntimeType, s.id)
+	value, _, err := lifecycleRead[sessionRuntimeSpec](s.runner.ctx, s.runner.lifecycle.state, s.id)
 	if err != nil {
 		s.runner.fail(err)
 	}

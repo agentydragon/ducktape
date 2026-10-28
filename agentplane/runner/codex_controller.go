@@ -67,8 +67,8 @@ func (*codexLifecycleController) Settings() controller.QSettings {
 
 func (*codexLifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
 	if ptr.Type() == operationResultType {
-		result, found, err := lifecycleRead[operationResultSpec](ctx, r, operationResultType, ptr.ID())
-		if err != nil || !found || result.Session != "" || result.Kind != "codex-start" && result.Kind != "codex-stop" {
+		result, found, err := lifecycleRead[operationResultSpec](ctx, r, ptr.ID())
+		if err != nil || !found || result.Session != "" || result.Controller != codexControllerName {
 			return nil, err
 		}
 	}
@@ -76,24 +76,24 @@ func (*codexLifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r 
 }
 
 func (c *codexLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, _ resource.Pointer) error {
-	input, found, err := lifecycleRead[codexInputSpec](ctx, r, codexInputType, "codex")
+	input, found, err := lifecycleRead[codexInputSpec](ctx, r, "codex")
 	if err != nil || !found {
 		return err
 	}
-	current, _, err := lifecycleRead[codexRuntimeSpec](ctx, r, codexRuntimeType, "codex")
+	current, _, err := lifecycleRead[codexRuntimeSpec](ctx, r, "codex")
 	if err != nil {
 		return err
 	}
-	goal, _, err := lifecycleRead[runnerGoalSpec](ctx, r, runnerGoalType, "runner")
+	goal, _, err := lifecycleRead[runnerGoalSpec](ctx, r, "runner")
 	if err != nil {
 		return err
 	}
-	outer, _, err := lifecycleRead[runnerRuntimeSpec](ctx, r, runnerRuntimeType, "runner")
+	outer, _, err := lifecycleRead[runnerRuntimeSpec](ctx, r, "runner")
 	if err != nil {
 		return err
 	}
 	write := func() error {
-		changed, err := lifecycleWrite(ctx, r, codexRuntimeType, "codex", current)
+		changed, err := lifecycleWrite(ctx, r, "codex", current)
 		if changed {
 			c.l.runner.changed()
 		}
@@ -149,7 +149,7 @@ func (c *codexLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger,
 			current.StopError = op.err.Error()
 		}
 	}
-	var starting, stopping *sessionOperation
+	var starting, stopping *operation
 	var p *codexProcess
 	server.mu.Lock()
 	starting = server.starting
@@ -235,7 +235,7 @@ func (c *codexLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger,
 		if err := write(); err != nil {
 			return err
 		}
-		c.l.startHostOperation(&server.mu, &server.stopping, "codex-stop", server.stopProcess)
+		c.l.startHostOperation(&server.mu, &server.stopping, codexControllerName, server.stopProcess)
 		return nil
 	}
 
@@ -273,7 +273,7 @@ func (c *codexLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger,
 	}
 
 	if c.l.runner.executor != nil {
-		executor, found, err := lifecycleRead[executorRuntimeSpec](ctx, r, executorRuntimeType, "executor")
+		executor, found, err := lifecycleRead[executorRuntimeSpec](ctx, r, "executor")
 		if err != nil {
 			return err
 		}
@@ -350,9 +350,15 @@ func (c *codexLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger,
 	server.startOwnerGeneration = 0
 	server.startGeneration = latest.Generation
 	server.mu.Unlock()
-	c.l.startHostOperation(&server.mu, &server.starting, "codex-start", func(ctx context.Context) error {
+	c.l.startHostOperation(&server.mu, &server.starting, codexControllerName, func(ctx context.Context) error {
 		return server.start(ctx, owner)
 	})
 	c.l.runner.mu.Unlock()
 	return nil
 }
+
+func (codexInputSpec) resourceType() resource.Type    { return codexInputType }
+func (value codexInputSpec) DeepCopy() codexInputSpec { return value }
+
+func (codexRuntimeSpec) resourceType() resource.Type      { return codexRuntimeType }
+func (value codexRuntimeSpec) DeepCopy() codexRuntimeSpec { return value }

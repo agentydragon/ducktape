@@ -391,8 +391,8 @@ func forceExecutorProbe(t *testing.T, r *Runner) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value := lifecycleResourceFor(executorRuntimeType, "executor", current)
-	value.metadata = old.Metadata().Copy()
+	value := lifecycleResourceFor("executor", current)
+	*value.Metadata() = old.Metadata().Copy()
 	if err := r.lifecycle.state.Update(r.ctx, value, state.WithUpdateOwner(executorControllerName)); err != nil {
 		t.Fatal(err)
 	}
@@ -412,8 +412,8 @@ func forceExecutorRetry(t *testing.T, r *Runner) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value := lifecycleResourceFor(executorRuntimeType, "executor", current)
-	value.metadata = old.Metadata().Copy()
+	value := lifecycleResourceFor("executor", current)
+	*value.Metadata() = old.Metadata().Copy()
 	if err := r.lifecycle.state.Update(r.ctx, value, state.WithUpdateOwner(executorControllerName)); err != nil {
 		t.Fatal(err)
 	}
@@ -490,4 +490,37 @@ func waitForSocket(t *testing.T, path string) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// ensure publishes requested demand and observes the controller-owned status.
+func (e *codexExecutor) ensure(ctx context.Context) error {
+	if err := e.request(); err != nil {
+		return err
+	}
+	return e.runner.lifecycle.waitFor(ctx, func() (bool, error) {
+		current := e.runtimeState()
+		if current.Phase == executorReady {
+			return true, nil
+		}
+		if current.Refusal != "" {
+			return true, executorRefusal{reason: current.Refusal}
+		}
+		if current.Phase == executorStopped {
+			if current.Error != "" {
+				return true, errors.New(current.Error)
+			}
+			if e.runner.lifecycle.goal().Mode != runnerRunning {
+				return true, errors.New("Codex executor is stopped")
+			}
+		}
+		return false, nil
+	})
+}
+
+func (e *codexExecutor) runtimeState() executorRuntimeSpec {
+	current, _, err := lifecycleRead[executorRuntimeSpec](e.runner.ctx, e.runner.lifecycle.state, "executor")
+	if err != nil {
+		e.runner.fail(err)
+	}
+	return current
 }

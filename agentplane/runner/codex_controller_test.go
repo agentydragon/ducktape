@@ -316,7 +316,7 @@ func forceStopTestRunner(t *testing.T, r *Runner) {
 
 func codexRuntime(t *testing.T, r *Runner) codexRuntimeSpec {
 	t.Helper()
-	current, _, err := lifecycleRead[codexRuntimeSpec](r.ctx, r.lifecycle.state, codexRuntimeType, "codex")
+	current, _, err := lifecycleRead[codexRuntimeSpec](r.ctx, r.lifecycle.state, "codex")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +343,7 @@ func waitCodex(t *testing.T, r *Runner, predicate func(codexRuntimeSpec) bool, w
 
 func codexDemand(t *testing.T, r *Runner) uint64 {
 	t.Helper()
-	input, found, err := lifecycleRead[codexInputSpec](r.ctx, r.lifecycle.state, codexInputType, "codex")
+	input, found, err := lifecycleRead[codexInputSpec](r.ctx, r.lifecycle.state, "codex")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +373,7 @@ func waitCodexDemand(t *testing.T, r *Runner, want uint64) uint64 {
 
 func setCodexRuntime(t *testing.T, r *Runner, current codexRuntimeSpec) {
 	t.Helper()
-	updateLifecycleValueForTest(t, r, codexRuntimeType, "codex", codexControllerName, current)
+	updateLifecycleValueForTest(t, r, "codex", codexControllerName, current)
 }
 
 func delayExecutorRetry(t *testing.T, r *Runner) {
@@ -383,7 +383,7 @@ func delayExecutorRetry(t *testing.T, r *Runner) {
 		t.Fatalf("delay executor retry while phase=%d", current.Phase)
 	}
 	current.RetryAt = time.Now().Add(time.Minute)
-	updateLifecycleValueForTest(t, r, executorRuntimeType, "executor", executorControllerName, current)
+	updateLifecycleValueForTest(t, r, "executor", executorControllerName, current)
 	if err := r.executor.request(); err != nil {
 		t.Fatal(err)
 	}
@@ -392,11 +392,11 @@ func delayExecutorRetry(t *testing.T, r *Runner) {
 	}, "delayed executor retry")
 }
 
-func updateLifecycleValueForTest[T comparable](t *testing.T, r *Runner, kind, id, owner string, spec T) {
+func updateLifecycleValueForTest[T lifecycleSpec[T]](t *testing.T, r *Runner, id, owner string, spec T) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(r.ctx, lifecycleTestTimeout)
 	defer cancel()
-	if err := modifyLifecycleForTest(ctx, r, kind, id, owner, func(current *T) { *current = spec }); err != nil {
+	if err := modifyLifecycleForTest(ctx, r, id, owner, func(current *T) { *current = spec }); err != nil {
 		t.Fatal(err)
 	}
 }

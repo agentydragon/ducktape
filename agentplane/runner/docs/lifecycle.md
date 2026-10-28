@@ -38,6 +38,42 @@ only after their controller consumes the result. No resources with outstanding w
 finalizers are unnecessary. `Close` stops controllers and joins their workers before the runtime and
 its in-memory state are discarded.
 
+## COSI conventions and package structure
+
+The package keeps runtime wiring, typed resources, host input publication, and asynchronous
+operation ownership in `lifecycle_runtime.go`, `lifecycle_resources.go`, `lifecycle_inputs.go`,
+and `operations.go`. Each of the five controllers has its own `*_controller.go` file, including
+its resource specs where specific to that controller. Native effects stay in the Runner,
+Session, executor, Codex server, and bootstrap hosts; admission and status have separate files.
+
+Resources use upstream [`typed.Resource`](https://github.com/cosi-project/runtime/blob/v1.16.2/pkg/resource/typed/typed_resource.go).
+Their Go spec determines their resource kind and namespace, so reads and writes cannot accidentally
+pair a spec with another kind. Specs contain only comparable values; `DeepCopy` is a value copy.
+The upstream [`safe` helpers](https://github.com/cosi-project/runtime/tree/v1.16.2/pkg/safe)
+provide typed reads, conflict-safe modification, and resource watches. Controller writes go through
+the controller runtime to enforce exclusive output ownership. Host input publication uses the
+explicit `runner-host` owner. Resource-only waits use COSI watches; predicates spanning native
+handles and journals retain the Runner observation notification.
+
+QControllers declare primary inputs, mapped dependencies, exclusive outputs, and concurrency.
+Deadlines use COSI requeue scheduling rather than sleeping inside reconciliation. Operation results
+name their consuming controller explicitly, rather than deriving routing from operation names.
+Native operation slots remain claimed through completion publication and until consumption;
+completion does not replay an effect or substitute for durable journal evidence.
+
+The upstream [`task.Runner`](https://github.com/cosi-project/runtime/tree/v1.16.2/pkg/task)
+restarts failed tasks. That suits restartable background services, but not native writes with
+uncertain outcomes, so native effects keep the owned one-shot operation bridge. `qtransform` is
+useful for direct resource transformations; these state machines instead coordinate several inputs
+and asynchronous effects. Resource finalizers are unnecessary here: inputs live for the runtime's
+lifetime, and Close joins native workers before discarding state.
+
+These in-memory resources need no schema code generation. Upstream protobuf resource specs and
+registration become useful if resources later need persistence or a remote COSI API; adding that
+serialization now would duplicate the existing durable journal contract. COSI's default expvar
+controller and queue counters are available for future diagnostics; this runner does not add an
+HTTP metrics endpoint.
+
 ## Lifecycle transitions
 
 Runner goals are `Running`, `Quiescing`, and `Closing`. The Runner controller advances progress

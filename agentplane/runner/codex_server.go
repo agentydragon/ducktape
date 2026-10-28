@@ -37,8 +37,8 @@ type codexServer struct {
 	current              *codexProcess
 	startOwner           *Session
 	startOwnerGeneration uint64
-	starting             *sessionOperation
-	stopping             *sessionOperation
+	starting             *operation
+	stopping             *operation
 	startGeneration      uint64
 	stopEffect           func(context.Context) error
 }
@@ -92,7 +92,7 @@ func (c *codexServer) host(ctx context.Context, s *Session) (*codexProcess, erro
 		if goal.Mode != runnerRunning {
 			return false, errors.New("runner is not accepting new Codex work")
 		}
-		runtime, _, err := lifecycleRead[codexRuntimeSpec](c.runner.ctx, c.runner.lifecycle.state, codexRuntimeType, "codex")
+		runtime, _, err := lifecycleRead[codexRuntimeSpec](c.runner.ctx, c.runner.lifecycle.state, "codex")
 		if err != nil {
 			return false, err
 		}
@@ -149,7 +149,7 @@ func (c *codexServer) request(s *Session) (uint64, error) {
 	c.mu.Unlock()
 	r.lifecycle.publishMu.Lock()
 	defer r.lifecycle.publishMu.Unlock()
-	input, found, err := lifecycleRead[codexInputSpec](r.ctx, r.lifecycle.state, codexInputType, "codex")
+	input, found, err := lifecycleRead[codexInputSpec](r.ctx, r.lifecycle.state, "codex")
 	if err != nil {
 		c.clearStartOwner(s)
 		return 0, err
@@ -159,7 +159,7 @@ func (c *codexServer) request(s *Session) (uint64, error) {
 		return 0, errors.New("Codex input is not initialized")
 	}
 	input.Demand++
-	if err := publishLifecycle(r.lifecycle, codexInputType, "codex", input); err != nil {
+	if err := publishLifecycle(r.lifecycle, "codex", input); err != nil {
 		c.clearStartOwner(s)
 		return 0, err
 	}
@@ -262,7 +262,7 @@ func (c *codexServer) publishExit(p *codexProcess) {
 	l := c.runner.lifecycle
 	l.publishMu.Lock()
 	defer l.publishMu.Unlock()
-	input, found, err := lifecycleRead[codexInputSpec](c.runner.ctx, l.state, codexInputType, "codex")
+	input, found, err := lifecycleRead[codexInputSpec](c.runner.ctx, l.state, "codex")
 	if err == nil && !found {
 		err = errors.New("Codex input disappeared before process exit was observed")
 	}
@@ -274,7 +274,7 @@ func (c *codexServer) publishExit(p *codexProcess) {
 		} else {
 			input.ExitError = ""
 		}
-		err = publishLifecycle(l, codexInputType, "codex", input)
+		err = publishLifecycle(l, "codex", input)
 	}
 	if err != nil {
 		c.runner.fail(err)
@@ -454,7 +454,7 @@ func (c *codexServer) status() *runnerpb.HarnessProcessStatus {
 	if c.runner.lifecycle == nil {
 		return nil
 	}
-	runtime, _, err := lifecycleRead[codexRuntimeSpec](c.runner.ctx, c.runner.lifecycle.state, codexRuntimeType, "codex")
+	runtime, _, err := lifecycleRead[codexRuntimeSpec](c.runner.ctx, c.runner.lifecycle.state, "codex")
 	if err != nil {
 		c.runner.fail(err)
 		return nil

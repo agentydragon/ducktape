@@ -42,17 +42,17 @@ func newLifecycle(r *Runner) (*lifecycle, error) {
 			return nil, err
 		}
 	}
-	if err := publishLifecycle(l, executorInputType, "executor", executorInputSpec{}); err != nil {
+	if err := publishLifecycle(l, "executor", executorInputSpec{}); err != nil {
 		return nil, err
 	}
-	if err := publishLifecycle(l, codexInputType, "codex", codexInputSpec{}); err != nil {
+	if err := publishLifecycle(l, "codex", codexInputSpec{}); err != nil {
 		return nil, err
 	}
-	if err := publishLifecycle(l, bootstrapInputType, "bootstrap", bootstrapInputSpec{}); err != nil {
+	if err := publishLifecycle(l, "bootstrap", bootstrapInputSpec{}); err != nil {
 		return nil, err
 	}
 
-	if err := publishLifecycle(l, runnerGoalType, "runner", runnerGoalSpec{}); err != nil {
+	if err := publishLifecycle(l, "runner", runnerGoalSpec{}); err != nil {
 		return nil, err
 	}
 	return l, nil
@@ -66,7 +66,7 @@ func (l *lifecycle) run() {
 }
 
 func (l *lifecycle) goal() runnerGoalSpec {
-	value, _, err := lifecycleRead[runnerGoalSpec](l.runner.ctx, l.state, runnerGoalType, "runner")
+	value, _, err := lifecycleRead[runnerGoalSpec](l.runner.ctx, l.state, "runner")
 	if err != nil {
 		l.runner.fail(err)
 		return runnerGoalSpec{Mode: runnerClosing}
@@ -89,22 +89,22 @@ func (l *lifecycle) setGoal(mode runnerMode, sealUID string) error {
 		// publishes fresh demand after eligible journals have reopened.
 		l.publishMu.Lock()
 		for id := range l.runner.sessions {
-			input, _, err := lifecycleRead[sessionInputSpec](l.runner.ctx, l.state, sessionInputType, id)
+			input, _, err := lifecycleRead[sessionInputSpec](l.runner.ctx, l.state, id)
 			if err != nil {
 				l.publishMu.Unlock()
 				return err
 			}
 			input.Demand = 0
-			if err := publishLifecycle(l, sessionInputType, id, input); err != nil {
+			if err := publishLifecycle(l, id, input); err != nil {
 				l.publishMu.Unlock()
 				return err
 			}
 		}
-		if err := publishLifecycle(l, codexInputType, "codex", codexInputSpec{}); err != nil {
+		if err := publishLifecycle(l, "codex", codexInputSpec{}); err != nil {
 			l.publishMu.Unlock()
 			return err
 		}
-		if err := publishLifecycle(l, executorInputType, "executor", executorInputSpec{}); err != nil {
+		if err := publishLifecycle(l, "executor", executorInputSpec{}); err != nil {
 			l.publishMu.Unlock()
 			return err
 		}
@@ -113,7 +113,7 @@ func (l *lifecycle) setGoal(mode runnerMode, sealUID string) error {
 	if goal.Mode != mode || goal.SealUID != sealUID || retry {
 		goal.Mode, goal.SealUID, goal.Generation = mode, sealUID, goal.Generation+1
 	}
-	return publishLifecycle(l, runnerGoalType, "runner", goal)
+	return publishLifecycle(l, "runner", goal)
 }
 
 func (l *lifecycle) accepting() bool {
@@ -121,7 +121,7 @@ func (l *lifecycle) accepting() bool {
 }
 
 func (l *lifecycle) status() runnerRuntimeSpec {
-	value, _, err := lifecycleRead[runnerRuntimeSpec](l.runner.ctx, l.state, runnerRuntimeType, "runner")
+	value, _, err := lifecycleRead[runnerRuntimeSpec](l.runner.ctx, l.state, "runner")
 	if err != nil {
 		l.runner.fail(err)
 	}
@@ -129,19 +129,10 @@ func (l *lifecycle) status() runnerRuntimeSpec {
 }
 
 func (l *lifecycle) wait(ctx context.Context, minimum runnerStage) error {
-	for {
-		changed := l.runner.changesSince()
-		current := l.status()
+	return watchLifecycle(ctx, l.state, "runner", func(current runnerRuntimeSpec) (bool, error) {
 		if current.Error != "" {
-			return errors.New(current.Error)
+			return false, errors.New(current.Error)
 		}
-		if current.Generation == l.goal().Generation && current.Stage >= minimum {
-			return nil
-		}
-		select {
-		case <-changed:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
+		return current.Generation == l.goal().Generation && current.Stage >= minimum, nil
+	})
 }

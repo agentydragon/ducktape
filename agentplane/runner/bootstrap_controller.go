@@ -22,7 +22,6 @@ var errBootstrapInterrupted = errors.New(bootstrapInterruptedError)
 
 type bootstrapInputSpec struct {
 	Requested bool
-	Demand    uint64
 }
 
 type bootstrapPhase uint8
@@ -68,8 +67,8 @@ func (c *bootstrapLifecycleController) MapInput(ctx context.Context, _ *zap.Logg
 	case runnerGoalType, runnerInputType:
 		return []resource.Pointer{resource.NewMetadata(lifecycleNamespace, bootstrapInputType, "bootstrap", resource.VersionUndefined)}, nil
 	case operationResultType:
-		result, found, err := lifecycleRead[operationResultSpec](ctx, r, operationResultType, ptr.ID())
-		if err != nil || !found || result.Kind != bootstrapControllerName {
+		result, found, err := lifecycleRead[operationResultSpec](ctx, r, ptr.ID())
+		if err != nil || !found || result.Controller != bootstrapControllerName {
 			return nil, err
 		}
 		return []resource.Pointer{resource.NewMetadata(lifecycleNamespace, bootstrapInputType, "bootstrap", resource.VersionUndefined)}, nil
@@ -79,16 +78,16 @@ func (c *bootstrapLifecycleController) MapInput(ctx context.Context, _ *zap.Logg
 }
 
 func (c *bootstrapLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr resource.Pointer) error {
-	input, found, err := lifecycleRead[bootstrapInputSpec](ctx, r, bootstrapInputType, ptr.ID())
+	input, found, err := lifecycleRead[bootstrapInputSpec](ctx, r, ptr.ID())
 	if err != nil || !found {
 		return err
 	}
-	current, _, err := lifecycleRead[bootstrapRuntimeSpec](ctx, r, bootstrapRuntimeType, ptr.ID())
+	current, _, err := lifecycleRead[bootstrapRuntimeSpec](ctx, r, ptr.ID())
 	if err != nil {
 		return err
 	}
 	write := func() error {
-		changed, err := lifecycleWrite(ctx, r, bootstrapRuntimeType, ptr.ID(), current)
+		changed, err := lifecycleWrite(ctx, r, ptr.ID(), current)
 		if changed {
 			c.l.runner.changed()
 		}
@@ -107,7 +106,7 @@ func (c *bootstrapLifecycleController) Reconcile(ctx context.Context, _ *zap.Log
 		}
 		return write()
 	}
-	if isTerminalBootstrapPhase(current.Phase) || !input.Requested || input.Demand == 0 {
+	if isTerminalBootstrapPhase(current.Phase) || !input.Requested {
 		return write()
 	}
 	if current.Phase == bootstrapDormant {
@@ -123,3 +122,9 @@ func (c *bootstrapLifecycleController) Reconcile(ctx context.Context, _ *zap.Log
 func isTerminalBootstrapPhase(phase bootstrapPhase) bool {
 	return phase == bootstrapSucceeded || phase == bootstrapFailed || phase == bootstrapInterrupted
 }
+
+func (bootstrapInputSpec) resourceType() resource.Type        { return bootstrapInputType }
+func (value bootstrapInputSpec) DeepCopy() bootstrapInputSpec { return value }
+
+func (bootstrapRuntimeSpec) resourceType() resource.Type          { return bootstrapRuntimeType }
+func (value bootstrapRuntimeSpec) DeepCopy() bootstrapRuntimeSpec { return value }

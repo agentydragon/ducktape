@@ -92,12 +92,12 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 	}
 	facts := &controlpb.RunnerFacts{SetupsRunning: setup}
 	if r.config.Launch.Bootstrap != nil {
-		input, requested, err := lifecycleRead[bootstrapInputSpec](r.ctx, r.lifecycle.state, bootstrapInputType, "bootstrap")
+		input, requested, err := lifecycleRead[bootstrapInputSpec](r.ctx, r.lifecycle.state, "bootstrap")
 		if err != nil {
 			return nil, err
 		}
 		if requested && input.Requested {
-			runtime, hasRuntime, err := lifecycleRead[bootstrapRuntimeSpec](r.ctx, r.lifecycle.state, bootstrapRuntimeType, "bootstrap")
+			runtime, hasRuntime, err := lifecycleRead[bootstrapRuntimeSpec](r.ctx, r.lifecycle.state, "bootstrap")
 			if err != nil {
 				return nil, err
 			}

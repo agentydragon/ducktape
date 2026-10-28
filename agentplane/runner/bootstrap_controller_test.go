@@ -134,7 +134,7 @@ func TestBootstrapRuntimeFailureDoesNotLeaveLogDerivedBusyFact(t *testing.T) {
 			t.Fatal("terminal bootstrap resource still blocks autosuspend")
 		}
 	}
-	runtime, found, err := lifecycleRead[bootstrapRuntimeSpec](r.ctx, r.lifecycle.state, bootstrapRuntimeType, "bootstrap")
+	runtime, found, err := lifecycleRead[bootstrapRuntimeSpec](r.ctx, r.lifecycle.state, "bootstrap")
 	if err != nil || !found || runtime.Phase != bootstrapFailed || !strings.Contains(runtime.Error, "initialization log is closed") {
 		t.Fatalf("bootstrap runtime after log write failure = (%+v, found=%t, err=%v), want concrete storage failure", runtime, found, err)
 	}

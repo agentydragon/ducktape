@@ -37,11 +37,11 @@ func (c *runnerLifecycleController) Run(ctx context.Context, r controller.Runtim
 }
 
 func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.Runtime) error {
-	goal, _, err := lifecycleRead[runnerGoalSpec](ctx, r, runnerGoalType, "runner")
+	goal, _, err := lifecycleRead[runnerGoalSpec](ctx, r, "runner")
 	if err != nil {
 		return err
 	}
-	current, _, err := lifecycleRead[runnerRuntimeSpec](ctx, r, runnerRuntimeType, "runner")
+	current, _, err := lifecycleRead[runnerRuntimeSpec](ctx, r, "runner")
 	if err != nil {
 		return err
 	}
@@ -49,7 +49,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		current = runnerRuntimeSpec{Generation: goal.Generation, Stage: stageDraining}
 	}
 	write := func() error {
-		changed, err := lifecycleWrite(ctx, r, runnerRuntimeType, "runner", current)
+		changed, err := lifecycleWrite(ctx, r, "runner", current)
 		if changed {
 			c.l.runner.changed()
 		}
@@ -81,7 +81,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 	}
 	sessions := c.l.runner.inventory()
 	for _, s := range sessions {
-		runtime, _, err := lifecycleRead[sessionRuntimeSpec](ctx, r, sessionRuntimeType, s.id)
+		runtime, _, err := lifecycleRead[sessionRuntimeSpec](ctx, r, s.id)
 		if err != nil {
 			return err
 		}
@@ -96,7 +96,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		}
 	}
 	for _, s := range sessions {
-		runtime, _, err := lifecycleRead[sessionRuntimeSpec](ctx, r, sessionRuntimeType, s.id)
+		runtime, _, err := lifecycleRead[sessionRuntimeSpec](ctx, r, s.id)
 		if err != nil {
 			return err
 		}
@@ -109,7 +109,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		}
 	}
 	if c.l.runner.codex != nil {
-		runtime, found, err := lifecycleRead[codexRuntimeSpec](ctx, r, codexRuntimeType, "codex")
+		runtime, found, err := lifecycleRead[codexRuntimeSpec](ctx, r, "codex")
 		if err != nil {
 			return err
 		}
@@ -126,7 +126,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		return write()
 	}
 	if c.l.runner.executor != nil {
-		runtime, found, err := lifecycleRead[executorRuntimeSpec](ctx, r, executorRuntimeType, "executor")
+		runtime, found, err := lifecycleRead[executorRuntimeSpec](ctx, r, "executor")
 		if err != nil {
 			return err
 		}
@@ -144,7 +144,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 	// Process exit can finish an outstanding inspection. Keep its journal and
 	// controller alive until the resulting observations have been committed.
 	for _, s := range sessions {
-		input, _, err := lifecycleRead[sessionInputSpec](ctx, r, sessionInputType, s.id)
+		input, _, err := lifecycleRead[sessionInputSpec](ctx, r, s.id)
 		if err != nil {
 			return err
 		}
@@ -158,7 +158,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			return write()
 		}
 		for _, s := range sessions {
-			seal, _, err := lifecycleRead[journalSealSpec](ctx, r, journalSealType, s.id)
+			seal, _, err := lifecycleRead[journalSealSpec](ctx, r, s.id)
 			if err != nil {
 				return err
 			}
@@ -181,7 +181,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			return nil
 		}
 		current.Stage = stageClosed
-		changed, err := lifecycleWrite(ctx, r, runnerRuntimeType, "runner", current)
+		changed, err := lifecycleWrite(ctx, r, "runner", current)
 		c.l.runner.mu.Unlock()
 		if changed {
 			c.l.runner.changed()
@@ -190,11 +190,11 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 	}
 	current.Stage = stageFlushing
 	for _, s := range sessions {
-		seal, _, err := lifecycleRead[journalSealSpec](ctx, r, journalSealType, s.id)
+		seal, _, err := lifecycleRead[journalSealSpec](ctx, r, s.id)
 		if err != nil {
 			return err
 		}
-		ack, found, err := lifecycleRead[ingressAckSpec](ctx, r, ingressAckType, s.id)
+		ack, found, err := lifecycleRead[ingressAckSpec](ctx, r, s.id)
 		if err != nil {
 			return err
 		}

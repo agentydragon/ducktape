@@ -12,6 +12,8 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
@@ -76,7 +78,7 @@ func setRuntimePhase(t *testing.T, s *Session, phase executionPhase) {
 func setSessionRuntimePhaseForTest(r *Runner, s *Session, phase executionPhase) error {
 	ctx, cancel := context.WithTimeout(r.ctx, lifecycleTestTimeout)
 	defer cancel()
-	return modifyLifecycleForTest(ctx, r, sessionRuntimeType, s.id, sessionControllerName, func(current *sessionRuntimeSpec) {
+	return modifyLifecycleForTest(ctx, r, s.id, sessionControllerName, func(current *sessionRuntimeSpec) {
 		current.Phase = phase
 		s.mu.Lock()
 		current.ProcessID = s.processID
@@ -84,29 +86,19 @@ func setSessionRuntimePhaseForTest(r *Runner, s *Session, phase executionPhase) 
 	})
 }
 
-// Only the controller creates its output. Wait for it and retry updates against
-// fresh metadata rather than racing creation or overwriting stale runtime fields.
-func modifyLifecycleForTest[T comparable](ctx context.Context, r *Runner, kind, id, owner string, modify func(*T)) error {
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-	var lastErr error
-	for {
-		old, err := r.lifecycle.state.Get(ctx, resource.NewMetadata(lifecycleNamespace, kind, id, resource.VersionUndefined))
-		if err == nil {
-			value := lifecycleResourceFor(kind, id, old.(*lifecycleResource[T]).value)
-			modify(&value.value)
-			value.metadata = old.Metadata().Copy()
-			if err = r.lifecycle.state.Update(ctx, value, state.WithUpdateOwner(owner)); err == nil {
-				return nil
-			}
-		}
-		lastErr = err
-		select {
-		case <-ticker.C:
-		case <-ctx.Done():
-			return fmt.Errorf("update lifecycle test value %s/%s: %w (last update error: %v)", kind, id, ctx.Err(), lastErr)
-		}
+// The controller creates its output; COSI watches creation and retries version conflicts.
+func modifyLifecycleForTest[T lifecycleSpec[T]](ctx context.Context, r *Runner, id, owner string, modify func(*T)) error {
+	var zero T
+	ptr := lifecycleResourceFor(id, zero).Metadata()
+	if _, err := safe.StateWatchFor[*typed.Resource[T, lifecycleExtension[T]]](ctx, r.lifecycle.state, ptr,
+		state.WithEventTypes(state.Created, state.Updated)); err != nil {
+		return err
 	}
+	_, err := safe.StateUpdateWithConflicts(ctx, r.lifecycle.state, ptr, func(value *typed.Resource[T, lifecycleExtension[T]]) error {
+		modify(value.TypedSpec())
+		return nil
+	}, state.WithUpdateOwner(owner))
+	return err
 }
 
 func registerTestSession(t *testing.T, s *Session) {
@@ -129,7 +121,7 @@ func registerTestSession(t *testing.T, s *Session) {
 	}
 	s.mu.Unlock()
 	input.Cursor = s.journal.LastCursor()
-	if err := publishLifecycle(r.lifecycle, sessionInputType, s.id, input); err != nil {
+	if err := publishLifecycle(r.lifecycle, s.id, input); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -140,7 +132,7 @@ func TestCloseAfterQuiescePreservesSealAndWaitsForSetup(t *testing.T) {
 	s.mu.Lock()
 	s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
 	s.mu.Unlock()
-	s.startOperation(&s.setupJob, "setup", func(ctx context.Context) error {
+	s.startOperation(&s.setupJob, func(ctx context.Context) error {
 		<-setupDone
 		return s.Emit(ctx, observation(&eventpb.SetupFinished{ExitCode: 0}), nil)
 	})
@@ -234,7 +226,7 @@ func TestPreparationCompletingAfterCloseCannotMakeSessionReady(t *testing.T) {
 	r, s := lifecycleTestSession(t)
 	setRuntimePhase(t, s, executionPreparing)
 	started, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	s.startOperation(&s.preparation, "prepare", func(ctx context.Context) error {
+	s.startOperation(&s.preparation, func(ctx context.Context) error {
 		close(started)
 		<-release
 		defer close(finished)
@@ -275,7 +267,7 @@ func TestPreparationCompletingAfterCloseCannotMakeSessionReady(t *testing.T) {
 	default:
 		t.Fatal("Close returned without joining the preparation operation")
 	}
-	finalRuntime, found, err := lifecycleRead[sessionRuntimeSpec](context.Background(), r.lifecycle.state, sessionRuntimeType, s.id)
+	finalRuntime, found, err := lifecycleRead[sessionRuntimeSpec](context.Background(), r.lifecycle.state, s.id)
 	if err != nil || !found || finalRuntime.Phase != executionHalted {
 		t.Fatalf("Session runtime after late preparation completion = %+v, found=%t err=%v; want halted", finalRuntime, found, err)
 	}
@@ -320,9 +312,9 @@ func TestNewIncarnationWaitsForTeardownBeforeResettingDemand(t *testing.T) {
 	// native effect. Adoption must discard it even when the host is dormant.
 	l := r.lifecycle
 	l.publishMu.Lock()
-	err := publishLifecycle(l, codexInputType, "codex", codexInputSpec{Demand: 3})
+	err := publishLifecycle(l, "codex", codexInputSpec{Demand: 3})
 	if err == nil {
-		err = publishLifecycle(l, executorInputType, "executor", executorInputSpec{Demand: 4})
+		err = publishLifecycle(l, "executor", executorInputSpec{Demand: 4})
 	}
 	l.publishMu.Unlock()
 	if err != nil {
@@ -339,7 +331,7 @@ func TestNewIncarnationWaitsForTeardownBeforeResettingDemand(t *testing.T) {
 	s.mu.Lock()
 	s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
 	s.mu.Unlock()
-	s.startOperation(&s.setupJob, "setup", func(ctx context.Context) error {
+	s.startOperation(&s.setupJob, func(ctx context.Context) error {
 		<-setupDone
 		return s.Emit(ctx, observation(&eventpb.SetupFinished{ExitCode: 0}), nil)
 	})
@@ -380,12 +372,12 @@ func TestNewIncarnationWaitsForTeardownBeforeResettingDemand(t *testing.T) {
 	for kind, id := range map[string]string{codexInputType: "codex", executorInputType: "executor"} {
 		switch kind {
 		case codexInputType:
-			input, _, err := lifecycleRead[codexInputSpec](r.ctx, r.lifecycle.state, kind, id)
+			input, _, err := lifecycleRead[codexInputSpec](r.ctx, r.lifecycle.state, id)
 			if err != nil || input.Demand != 0 {
 				t.Fatalf("Codex old demand survived adoption: %+v, %v", input, err)
 			}
 		case executorInputType:
-			input, _, err := lifecycleRead[executorInputSpec](r.ctx, r.lifecycle.state, kind, id)
+			input, _, err := lifecycleRead[executorInputSpec](r.ctx, r.lifecycle.state, id)
 			if err != nil || input.Demand != 0 {
 				t.Fatalf("executor old demand survived adoption: %+v, %v", input, err)
 			}
@@ -400,7 +392,7 @@ func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
 	s.mu.Unlock()
 	registerTestSession(t, s)
 	waitLifecycle(t, s.runner, func() bool {
-		_, found, _ := lifecycleRead[sessionRuntimeSpec](s.runner.ctx, s.runner.lifecycle.state, sessionRuntimeType, s.id)
+		_, found, _ := lifecycleRead[sessionRuntimeSpec](s.runner.ctx, s.runner.lifecycle.state, s.id)
 		return found
 	}, "initial Session runtime")
 	setRuntimeReady(t, s)

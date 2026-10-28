@@ -209,11 +209,11 @@ func (s *Session) dispatchControl(ctx context.Context) error {
 			s.mu.Unlock()
 			continue
 		}
-		op := &sessionOperation{id: command.CommandId, done: make(chan struct{})}
+		op := &operation{id: command.CommandId, done: make(chan struct{})}
 		s.controlDispatches[command.CommandId] = op
 		s.work.Add(1)
 		s.mu.Unlock()
-		go func(command *commandpb.Command, op *sessionOperation) {
+		go func(command *commandpb.Command, op *operation) {
 			defer s.work.Done()
 			// The reconciliation context may end as soon as this controller pass
 			// returns. Native control RPCs belong to the Session host lifetime.

@@ -45,7 +45,7 @@ type Runner struct {
 	closeOnce   sync.Once
 	closeErr    error
 	initLog     *InitializationLog
-	bootstrapOp *sessionOperation
+	bootstrapOp *operation
 }
 
 func New(config Config) (*Runner, error) {

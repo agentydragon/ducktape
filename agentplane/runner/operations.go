@@ -20,14 +20,14 @@ const (
 
 // done closes only after err is installed under the host mutex. Slots remain owned
 // until the controller consumes the result, preventing duplicate native effects.
-type sessionOperation struct {
+type operation struct {
 	id     string
 	cancel context.CancelFunc
 	done   chan struct{}
 	err    error
 }
 
-func operationDone(op *sessionOperation) bool {
+func operationDone(op *operation) bool {
 	if op == nil {
 		return false
 	}
@@ -39,17 +39,14 @@ func operationDone(op *sessionOperation) bool {
 	}
 }
 
-func (l *lifecycle) operationResult(session, kind string, op *sessionOperation, done bool) {
+func (l *lifecycle) operationResult(session, controller string, op *operation, done bool) {
 	l.publishMu.Lock()
 	defer l.publishMu.Unlock()
-	value := operationResultSpec{Session: session, Kind: kind, Done: done}
-	if done && op.err != nil {
-		value.Error = op.err.Error()
-	}
-	l.runner.fail(publishLifecycle(l, operationResultType, op.id, value))
+	value := operationResultSpec{Session: session, Controller: controller, Done: done}
+	l.runner.fail(publishLifecycle(l, op.id, value))
 }
 
-func (l *lifecycle) forgetOperation(op *sessionOperation) {
+func (l *lifecycle) forgetOperation(op *operation) {
 	if op == nil {
 		return
 	}
@@ -61,84 +58,88 @@ func (l *lifecycle) forgetOperation(op *sessionOperation) {
 	}
 }
 
-func (s *Session) startOperation(slot **sessionOperation, kind string, work func(context.Context) error) {
-	s.mu.Lock()
+// operationHost bridges bounded native effects into COSI without retrying them.
+// A claimed slot remains owned until its controller consumes the completion.
+type operationHost struct {
+	l          *lifecycle
+	mu         *sync.Mutex
+	workers    *sync.WaitGroup
+	session    string
+	controller string
+	refresh    func()
+}
+
+func (h operationHost) start(slot **operation, work func(context.Context) error) {
+	h.mu.Lock()
 	if *slot != nil {
-		s.mu.Unlock()
+		h.mu.Unlock()
 		return
 	}
-	ctx, cancel := context.WithCancel(s.runner.ctx)
-	op := &sessionOperation{id: uuid.NewString(), cancel: cancel, done: make(chan struct{})}
+	ctx, cancel := context.WithCancel(h.l.runner.ctx)
+	op := &operation{id: uuid.NewString(), cancel: cancel, done: make(chan struct{})}
 	*slot = op
-	s.work.Add(1)
-	s.mu.Unlock()
-	s.runner.lifecycle.operationResult(s.id, kind, op, false)
-	s.wake()
+	h.workers.Add(1)
+	h.mu.Unlock()
+	h.l.operationResult(h.session, h.controller, op, false)
+	if h.refresh != nil {
+		h.refresh()
+	}
 	go func() {
-		defer s.work.Done()
+		defer h.workers.Done()
 		defer cancel()
 		err := work(ctx)
-		s.mu.Lock()
+		h.mu.Lock()
 		op.err = err
+		h.mu.Unlock()
+		// Publish before making the slot consumable, so a late completion cannot
+		// recreate a result that its controller has already removed.
+		h.l.operationResult(h.session, h.controller, op, true)
+		h.mu.Lock()
 		close(op.done)
-		s.mu.Unlock()
-		s.runner.lifecycle.operationResult(s.id, kind, op, true)
+		h.mu.Unlock()
+		if h.refresh != nil {
+			h.refresh()
+		}
+		h.l.runner.changed()
+	}()
+}
+
+func takeOperation(mu *sync.Mutex, slot **operation) (*operation, bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	if !operationDone(*slot) {
+		return nil, false
+	}
+	op := *slot
+	*slot = nil
+	return op, true
+}
+
+func (s *Session) startOperation(slot **operation, work func(context.Context) error) {
+	operationHost{
+		l: s.runner.lifecycle, mu: &s.mu, workers: &s.work,
+		session: s.id, controller: sessionControllerName, refresh: s.wake,
+	}.start(slot, work)
+}
+
+func (s *Session) takeOperation(slot **operation) (*operation, bool) {
+	op, done := takeOperation(&s.mu, slot)
+	if done {
 		s.wake()
-		s.runner.changed()
-	}()
+	}
+	return op, done
 }
 
-func (s *Session) takeOperation(slot **sessionOperation) (*sessionOperation, bool) {
-	s.mu.Lock()
-	if !operationDone(*slot) {
-		s.mu.Unlock()
-		return nil, false
-	}
-	op := *slot
-	*slot = nil
-	s.mu.Unlock()
-	s.wake()
-	return op, true
+func (l *lifecycle) startHostOperation(mu *sync.Mutex, slot **operation, controller string, work func(context.Context) error) {
+	operationHost{l: l, mu: mu, workers: &l.workers, controller: controller}.start(slot, work)
 }
 
-// Controllers claim a slot before returning. Native effects outlive individual
-// reconciliation calls, and their completion is an input to the owning controller.
-func (l *lifecycle) startHostOperation(mu *sync.Mutex, slot **sessionOperation, kind string, work func(context.Context) error) {
-	mu.Lock()
-	if *slot != nil {
-		mu.Unlock()
-		return
+func (l *lifecycle) takeHostOperation(mu *sync.Mutex, slot **operation) (*operation, bool) {
+	op, done := takeOperation(mu, slot)
+	if done {
+		l.forgetOperation(op)
 	}
-	ctx, cancel := context.WithCancel(l.runner.ctx)
-	op := &sessionOperation{id: uuid.NewString(), cancel: cancel, done: make(chan struct{})}
-	*slot = op
-	l.workers.Add(1)
-	mu.Unlock()
-	l.operationResult("", kind, op, false)
-	go func() {
-		defer l.workers.Done()
-		defer cancel()
-		err := work(ctx)
-		mu.Lock()
-		op.err = err
-		close(op.done)
-		mu.Unlock()
-		l.operationResult("", kind, op, true)
-		l.runner.changed()
-	}()
-}
-
-func (l *lifecycle) takeHostOperation(mu *sync.Mutex, slot **sessionOperation) (*sessionOperation, bool) {
-	mu.Lock()
-	if !operationDone(*slot) {
-		mu.Unlock()
-		return nil, false
-	}
-	op := *slot
-	*slot = nil
-	mu.Unlock()
-	l.forgetOperation(op)
-	return op, true
+	return op, done
 }
 
 // Subscribe before checking so a completion cannot be lost between the state

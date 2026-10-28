@@ -75,9 +75,9 @@ type codexExecutor struct {
 
 	instance           *executorInstance
 	instanceGeneration uint64
-	startOp            *sessionOperation
-	probeOp            *sessionOperation
-	fenceOp            *sessionOperation
+	startOp            *operation
+	probeOp            *operation
+	fenceOp            *operation
 	startEffect        func(context.Context) (*executorInstance, error)
 	probeEffect        func(context.Context) error
 }
@@ -107,7 +107,7 @@ func (e *codexExecutor) requestLocked() error {
 	}
 	l.publishMu.Lock()
 	defer l.publishMu.Unlock()
-	input, found, err := lifecycleRead[executorInputSpec](e.runner.ctx, l.state, executorInputType, "executor")
+	input, found, err := lifecycleRead[executorInputSpec](e.runner.ctx, l.state, "executor")
 	if err != nil {
 		return err
 	}
@@ -115,8 +115,7 @@ func (e *codexExecutor) requestLocked() error {
 		return errors.New("Codex executor input is not initialized")
 	}
 	input.Demand++
-	input.Revision++
-	return publishLifecycle(l, executorInputType, "executor", input)
+	return publishLifecycle(l, "executor", input)
 }
 
 func (e *codexExecutor) publishExit(generation uint64, err error) {
@@ -127,7 +126,7 @@ func (e *codexExecutor) publishExit(generation uint64, err error) {
 	}
 	l.publishMu.Lock()
 	defer l.publishMu.Unlock()
-	input, found, readErr := lifecycleRead[executorInputSpec](e.runner.ctx, l.state, executorInputType, "executor")
+	input, found, readErr := lifecycleRead[executorInputSpec](e.runner.ctx, l.state, "executor")
 	if readErr != nil {
 		e.runner.fail(readErr)
 		return
@@ -140,8 +139,7 @@ func (e *codexExecutor) publishExit(generation uint64, err error) {
 	if err != nil {
 		input.ExitError = err.Error()
 	}
-	input.Revision++
-	e.runner.fail(publishLifecycle(l, executorInputType, "executor", input))
+	e.runner.fail(publishLifecycle(l, "executor", input))
 }
 
 func (e *codexExecutor) observe(instance *executorInstance, generation uint64) {
@@ -179,39 +177,6 @@ func (e *codexExecutor) clearInstance(instance *executorInstance) {
 		e.instance, e.instanceGeneration = nil, 0
 	}
 	e.mu.Unlock()
-}
-
-// ensure publishes requested demand and observes the controller-owned status.
-func (e *codexExecutor) ensure(ctx context.Context) error {
-	if err := e.request(); err != nil {
-		return err
-	}
-	return e.runner.lifecycle.waitFor(ctx, func() (bool, error) {
-		current := e.runtimeState()
-		if current.Phase == executorReady {
-			return true, nil
-		}
-		if current.Refusal != "" {
-			return true, executorRefusal{reason: current.Refusal}
-		}
-		if current.Phase == executorStopped {
-			if current.Error != "" {
-				return true, errors.New(current.Error)
-			}
-			if e.runner.lifecycle.goal().Mode != runnerRunning {
-				return true, errors.New("Codex executor is stopped")
-			}
-		}
-		return false, nil
-	})
-}
-
-func (e *codexExecutor) runtimeState() executorRuntimeSpec {
-	current, _, err := lifecycleRead[executorRuntimeSpec](e.runner.ctx, e.runner.lifecycle.state, executorRuntimeType, "executor")
-	if err != nil {
-		e.runner.fail(err)
-	}
-	return current
 }
 
 type executorInstance struct {
