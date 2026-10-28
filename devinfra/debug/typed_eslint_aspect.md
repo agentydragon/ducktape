@@ -1,9 +1,8 @@
 # Target-local typed ESLint aspect spike
 
 Date: 2026-10-27 (America/Los_Angeles). Implementation tested at
-`0a606a7dc4ce2275b926d3e2a54827cec3fd2061`, based on devel `1696fd6d3b`.
-Subsequent changes add this report and remove an inapplicable parameter docstring entry
-from the patch; they do not change the tested implementation.
+`e815e476b10d0dde3a0f92dcdfaadedd0153d043`, based on devel `1696fd6d3b`.
+Subsequent changes only update this report and the spike README.
 
 ## Finding
 
@@ -18,16 +17,20 @@ remove `typed_lint_srcs`, change `check_vitest_specs()`, or fix unrelated applic
 
 ## Integration
 
-Pinned rules_lint 2.9.0 already gathers the library's sources and dependency types through
-JsInfo. Its tsconfig handling only gathers JsInfo: rules_ts 3.10.1's generated
-`tsconfig_<target>.json` is a plain file target, so that file is missing. Its `extends`
-config is also missing from the ESLint action.
+Pinned rules_lint 2.9.0 already gathers the library's sources, dependency types, and tsconfig
+through JsInfo. Unmodified rules_ts 3.10.1 generates `tsconfig_<target>.json` as a plain file,
+which does not expose that provider.
 
-The opt-in patch in `patches/aspect_rules_lint_typed_tsconfig.patch`:
+`patches/aspect_rules_ts_generated_tsconfig.patch` wraps each generated per-target config
+in the existing `ts_config` rule, with its extended config in `deps`. That rule provides both
+JsInfo and TsConfigInfo. The generated JSON, including its exact `files` list, is unchanged.
+The compiler consumes the wrapper, and the lint aspect's existing JsInfo gather supplies the
+config closure. No additional input handling is needed in the lint aspect.
 
-1. Adds the generated config file and the `extends` target's JsInfo closure to the action inputs.
-2. Exposes that config's bin-relative path as `BAZEL_ESLINT_TSCONFIG` to both human and machine actions.
-3. Names experimental reports separately so default and experimental aspects can coexist.
+The opt-in patch in `patches/aspect_rules_lint_typed_tsconfig.patch` now only:
+
+1. Exposes the config's bin-relative path as `BAZEL_ESLINT_TSCONFIG` to both human and machine actions.
+2. Names experimental reports separately so default and experimental aspects can coexist.
 
 `devinfra/lint/x/typed_eslint` extends the ordinary ESLint configuration with
 `no-floating-promises`, `no-misused-promises`, and `await-thenable`. It sets
@@ -73,12 +76,12 @@ bbr build //util/frontend/x/typed_eslint:good //util/frontend/x/typed_eslint:wor
 ```
 
 RBE invocations:
-[baseline: pass](https://app.buildbuddy.io/invocation/b17b60be-d135-4717-8145-fb319d62aa36),
-[typed positive and negative proof](https://app.buildbuddy.io/invocation/3cd0ae0e-6889-4c2c-986c-6b3f1cb33e80).
+[baseline: pass](https://app.buildbuddy.io/invocation/2011fea4-0a5c-4d8f-8cd5-4e430fe92d50),
+[typed positive and negative proof](https://app.buildbuddy.io/invocation/fb7f97c4-a1a0-49d1-a6b2-f84d482236dd).
 
 ## Human and machine reporting
 
-A separate [report-capture run](https://app.buildbuddy.io/invocation/21db2a52-41ba-4f83-a2df-65b25a542579)
+A separate [report-capture run](https://app.buildbuddy.io/invocation/ab6c8bd7-4ec7-48cf-875d-da700749b59e)
 requested both `rules_lint_human` and `rules_lint_machine`. It used
 `--@aspect_rules_lint//lint:fail_on_violation=false` only to retain diagnostic files and exit codes;
 the enforcement run above used the default fail-on-violation setting.
@@ -91,7 +94,7 @@ Downloaded artifacts confirmed, for every fixture and both aspects:
 
 Reproduce with the five-target command above, adding
 `--output_groups=+rules_lint_human,+rules_lint_machine --@aspect_rules_lint//lint:fail_on_violation=false`.
-Inspect artifacts with `bbapi artifact list 21db2a52-41ba-4f83-a2df-65b25a542579 --kind build` and
+Inspect artifacts with `bbapi artifact list ab6c8bd7-4ec7-48cf-875d-da700749b59e --kind build` and
 `bbapi artifact cat <invocation> <report-path>`. Reports and exit-code artifacts have separate
 `AspectRulesLintESLint` and `AspectRulesLintESLintTyped` names.
 
@@ -122,12 +125,13 @@ bbr build //agentplane/app/frontend/threads:client \
   --aspects=//devinfra/lint/x/typed_eslint:aspect.bzl%eslint --keep_going
 ```
 
-[Real-target invocation: pass](https://app.buildbuddy.io/invocation/ee16fb58-dbf4-4e84-aa68-83f087f63dba).
+[Real-target invocation: pass](https://app.buildbuddy.io/invocation/623d5c9d-af4a-4934-81c8-8800b0cde1cf).
 These are representative libraries, not full-program coverage or a run of their application tests.
 
 ## Cost and adoption gates
 
-The real-target run executed ten typed human-report actions. BuildBuddy's RBE usage metadata
+The earlier prototype's [real-target run](https://app.buildbuddy.io/invocation/ee16fb58-dbf4-4e84-aa68-83f087f63dba)
+executed ten typed human-report actions. BuildBuddy's RBE usage metadata
 records 9.42–22.59 CPU seconds and 577–694 MiB peak memory per action. These are observations
 from one run, not a benchmark or a comparison against the existing whole-program tests.
 The build's elapsed time was 35.6 seconds with many unrelated compiler/generator cache hits.
@@ -140,10 +144,10 @@ aspect with the combined typed aspect, avoiding the duplicated normal pass used 
 
 Recommended next implementation:
 
-1. Add a supported rules_lint hook for target-specific config inputs and parser context, or
-   upstream the small extension demonstrated here. The prototype's `extends` JsInfo handling
-   is scoped to this repo's `ts_library`; a general rules_ts integration should handle its
-   full TsConfigInfo closure, including direct config labels and reference graphs.
+1. Upstream the rules_ts generated-config wrapper and a rules_lint hook for target-specific
+   parser context. This spike exercises the repo's `ts_config` dependency chains; a general
+   integration should also verify raw-file config dependencies and project reference graphs.
+   Wrapping generation applies to all dict-config ts_project targets; typed rules remain opt-in.
 2. Audit all authored files covered by the current typed tests against library `srcs`, all
    project-specific overrides and exclusions, and inline directive behavior. Exercise every
    affected library with all three rules before deleting the whole-program tests/filegroups.
