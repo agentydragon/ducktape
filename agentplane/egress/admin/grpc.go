@@ -4,6 +4,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -12,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
@@ -20,6 +22,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// watchWriteTimeout bounds how long a slow reader can hold an egress decision watch.
+const watchWriteTimeout = 5 * time.Second
 
 // Decisions reads a subject's retained decisions; a nil subject selects the refusals that never
 // authenticated.
@@ -166,17 +171,19 @@ func (s *Service) WatchDecisions(request *egressadminpb.WatchDecisionsRequest, s
 			return nil
 		}
 		last = response
-		sendFailure = stream.Send(response)
+		sendFailure = streaming.SendWithin(leased, watchWriteTimeout, stream.Send, response)
 		return sendFailure
 	})
 	switch {
-	case sendFailure != nil:
-		return sendFailure
 	case ctx.Err() != nil:
 		return status.FromContextError(ctx.Err()).Err()
 	case leased.Err() != nil:
 		// The lease ended, or the server is draining; the caller subscribes again.
 		return nil
+	case errors.Is(sendFailure, streaming.ErrSendTimeout):
+		return status.Error(codes.DeadlineExceeded, "decision watch write deadline expired")
+	case sendFailure != nil:
+		return sendFailure
 	default:
 		return historyFailure(err)
 	}

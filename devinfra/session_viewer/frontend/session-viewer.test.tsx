@@ -3,7 +3,7 @@
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import type { SessionBrowserApi } from "./api";
 import { SessionViewer } from "./session-viewer";
@@ -20,6 +20,7 @@ afterEach(async () => {
   container?.remove();
   root = null;
   container = null;
+  vi.useRealTimers();
 });
 
 async function renderViewer(api: SessionBrowserApi): Promise<HTMLDivElement> {
@@ -61,6 +62,19 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   const view = await renderViewer(sessionFixtureApi);
 
   expect(view.textContent).toContain("ThinkPad");
+  expect(view.textContent).toContain("Import progress by machine");
+  expect(view.textContent).toContain("3 of 5 registered complete");
+  expect(view.textContent).toContain("Oldest unfinished snapshot:");
+  expect(view.textContent).toContain("File processing pending");
+  expect(view.textContent).toContain("Codex metadata pending");
+  expect(view.textContent).toContain("Codex metadata failed");
+  expect(view.textContent).toContain("Codex metadata: 1 pending · 0 failed · 1 partial");
+  expect(view.textContent).toContain("completed snapshots can have partial metadata, shown separately");
+  expect(view.textContent).toContain("27 processed · 4 pending · 0 failed");
+  expect(view.textContent).toContain("11 processed · 0 pending · 1 failed");
+  expect(view.textContent).toContain("Snapshot counts include registered snapshots");
+  expect(view.textContent).toContain("can grow as more are discovered");
+  expect(view.textContent).toContain("File counts cover entries inventoried so far");
   expect(view.textContent).toContain("Compare two captured versions");
   expect(view.textContent).toContain("I found two snapshots for this session.");
   expect(view.textContent).toContain("Latest captured");
@@ -176,6 +190,70 @@ it("distinguishes inventory, failed and missing imports from an empty captured v
     await flush();
   });
   expect(view.textContent).toContain("This captured version contains no JSONL records.");
+});
+
+it("refreshes import progress on demand and polls automatically", async () => {
+  const fixtureProgress = await sessionFixtureApi.listImportProgress();
+  let requests = 0;
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    listImportProgress() {
+      requests += 1;
+      return Promise.resolve(
+        fixtureProgress.map((machine) => ({
+          ...machine,
+          processed_file_count: 26 + requests,
+        }))
+      );
+    },
+  };
+  vi.useFakeTimers();
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer api={api} />
+      </MantineProvider>
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(requests).toBe(1);
+  expect(container.textContent).toContain("27 processed");
+
+  await act(async () => {
+    findButton(container!, "Refresh").click();
+    await Promise.resolve();
+  });
+  expect(requests).toBe(2);
+  expect(container.textContent).toContain("28 processed");
+
+  await act(async () => vi.advanceTimersByTimeAsync(10_000));
+  expect(requests).toBe(3);
+  expect(container.textContent).toContain("29 processed");
+});
+
+it("lets the session list refresh separately from import progress", async () => {
+  let sessionListRequests = 0;
+  const api: SessionBrowserApi = {
+    ...sessionFixtureApi,
+    listSessions(query, signal) {
+      sessionListRequests += 1;
+      return sessionFixtureApi.listSessions(query, signal);
+    },
+  };
+  const view = await renderViewer(api);
+  const requestsBeforeRefresh = sessionListRequests;
+
+  await act(async () => {
+    findButton(view, "Refresh session list").click();
+    await flush();
+  });
+
+  expect(sessionListRequests).toBe(requestsBeforeRefresh + 1);
+  expect(view.textContent).toContain("Progress refreshes every 10 seconds; refresh sessions separately");
 });
 
 it("shows inferred subagent links and navigates to a placeholder parent", async () => {

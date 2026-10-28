@@ -10,8 +10,11 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -20,6 +23,8 @@ const (
 	snapshotChunk = 64
 	// recheckInterval is how often a watch with nothing to send checks its bearer again.
 	recheckInterval = 5 * time.Second
+	// watchWriteTimeout bounds waiting for a watch Send to clear transport backpressure.
+	watchWriteTimeout = 5 * time.Second
 )
 
 // inFlight are the states a request leaves to satisfy WATCH_UNTIL_TERMINAL.
@@ -70,7 +75,7 @@ func (f follower) changed(ctx context.Context) error {
 			return nil
 		case <-f.due:
 			return nil
-		case <-f.gate.draining.Done():
+		case <-f.gate.DrainingContext().Done():
 			return errDraining
 		case <-ctx.Done():
 			return ctx.Err()
@@ -83,15 +88,40 @@ func (f follower) changed(ctx context.Context) error {
 }
 
 // send checks the bearer again, then sends the frame.
-func send[Frame any](ctx context.Context, gate *Gate, stream grpc.ServerStreamingServer[Frame], frame *Frame) error {
+func send[Frame any](ctx, writeCtx context.Context, gate *Gate, stream grpc.ServerStreamingServer[Frame], frame *Frame) error {
 	if err := gate.Recheck(ctx); err != nil {
 		return err
 	}
-	return stream.Send(frame)
+	err := streaming.SendWithin(writeCtx, watchWriteTimeout, stream.Send, frame)
+	switch {
+	case errors.Is(err, streaming.ErrSendTimeout):
+		return status.Error(codes.DeadlineExceeded, "action watch write deadline expired")
+	case errors.Is(err, context.Canceled) && ctx.Err() != nil:
+		return status.FromContextError(ctx.Err()).Err()
+	case errors.Is(err, context.Canceled) && gate.DrainingContext().Err() != nil:
+		return errDraining
+	case errors.Is(err, context.Canceled):
+		return status.FromContextError(context.Canceled).Err()
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.FromContextError(context.DeadlineExceeded).Err()
+	default:
+		return err
+	}
+}
+
+func watchWriteContext(ctx context.Context, gate *Gate) (context.Context, func()) {
+	writeCtx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(gate.DrainingContext(), cancel)
+	return writeCtx, func() {
+		stop()
+		cancel()
+	}
 }
 
 func (s *Service) WatchActionRequest(request *action_servicepb.WatchActionRequestRequest, stream grpc.ServerStreamingServer[action_servicepb.WatchActionRequestResponse]) error {
 	ctx := stream.Context()
+	writeCtx, stopWrites := watchWriteContext(ctx, s.gate)
+	defer stopWrites()
 	id, err := parseRequestID(request.GetRequestId())
 	if err != nil {
 		return err
@@ -117,7 +147,7 @@ func (s *Service) WatchActionRequest(request *action_servicepb.WatchActionReques
 			if err != nil {
 				return err
 			}
-			if err := send(ctx, s.gate, stream, &action_servicepb.WatchActionRequestResponse{ActionRequest: view}); err != nil {
+			if err := send(ctx, writeCtx, s.gate, stream, &action_servicepb.WatchActionRequestResponse{ActionRequest: view}); err != nil {
 				return err
 			}
 			sent = found.Version
@@ -142,7 +172,9 @@ func (s *Service) WatchActionRequests(request *action_servicepb.WatchActionReque
 		return err
 	}
 	defer unsubscribe()
-	w := setWatch{service: s, ctx: ctx, stream: stream, principal: admitted(ctx).principal, states: states}
+	writeCtx, stopWrites := watchWriteContext(ctx, s.gate)
+	defer stopWrites()
+	w := setWatch{service: s, ctx: ctx, writeCtx: writeCtx, stream: stream, principal: admitted(ctx).principal, states: states}
 	if err := w.snapshot(); err != nil {
 		return err
 	}
@@ -150,7 +182,7 @@ func (s *Service) WatchActionRequests(request *action_servicepb.WatchActionReque
 		if err := f.changed(ctx); err != nil {
 			if errors.Is(err, errDraining) {
 				// A planned renewal: the client connects again, to a replica that is not going away.
-				return w.send(&action_servicepb.WatchActionRequestsResponse{
+				return w.sendReconnect(&action_servicepb.WatchActionRequestsResponse{
 					Frame: &action_servicepb.WatchActionRequestsResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}},
 				})
 			}
@@ -166,6 +198,7 @@ func (s *Service) WatchActionRequests(request *action_servicepb.WatchActionReque
 type setWatch struct {
 	service   *Service
 	ctx       context.Context
+	writeCtx  context.Context
 	stream    grpc.ServerStreamingServer[action_servicepb.WatchActionRequestsResponse]
 	principal store.ReadPrincipal
 	// states is the filter; empty selects every state.
@@ -175,7 +208,11 @@ type setWatch struct {
 }
 
 func (w *setWatch) send(frame *action_servicepb.WatchActionRequestsResponse) error {
-	return send(w.ctx, w.service.gate, w.stream, frame)
+	return send(w.ctx, w.writeCtx, w.service.gate, w.stream, frame)
+}
+
+func (w *setWatch) sendReconnect(frame *action_servicepb.WatchActionRequestsResponse) error {
+	return send(w.ctx, w.ctx, w.service.gate, w.stream, frame)
 }
 
 func (w *setWatch) selects(state action_servicepb.ActionState) bool {

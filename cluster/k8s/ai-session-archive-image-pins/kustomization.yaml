@@ -2,8 +2,8 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/ai-session-archive-importer
-    newTag: devel-20261028134858-755cf22 # {"$imagepolicy": "flux-system:ai-session-archive-importer:tag"}
+    newTag: devel-20261028152644-fdfb579 # {"$imagepolicy": "flux-system:ai-session-archive-importer:tag"}
   - name: git.allegedly.works/ducktape-ci/ai-session-archive-migrator
-    newTag: devel-20261028122557-e048297 # {"$imagepolicy": "flux-system:ai-session-archive-migrator:tag"}
+    newTag: devel-20261028151427-94c5f6f # {"$imagepolicy": "flux-system:ai-session-archive-migrator:tag"}
   - name: git.allegedly.works/ducktape-ci/ai-session-archive-web
-    newTag: devel-20261028142452-bd840be # {"$imagepolicy": "flux-system:ai-session-archive-web:tag"}
+    newTag: devel-20261028151443-94c5f6f # {"$imagepolicy": "flux-system:ai-session-archive-web:tag"}

@@ -56,6 +56,8 @@ class ResticSnapshotRow(Base):
     inventory_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     inventory_error: Mapped[str | None] = mapped_column(String)
     processing_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    codex_metadata_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    codex_metadata_error: Mapped[str | None] = mapped_column(String)
     # Restic snapshot metadata does not establish whether the workstation capture skipped unreadable files.
     capture_status: Mapped[str] = mapped_column(String(20), nullable=False, default="unknown")
     __table_args__ = (
@@ -64,6 +66,10 @@ class ResticSnapshotRow(Base):
         ),
         CheckConstraint(
             "processing_status IN ('pending', 'complete', 'failed')", name="ck_restic_snapshots_processing_status"
+        ),
+        CheckConstraint(
+            "codex_metadata_status IN ('pending', 'complete', 'partial', 'failed')",
+            name="ck_restic_snapshots_codex_metadata_status",
         ),
         CheckConstraint(
             "capture_status IN ('unknown', 'complete', 'incomplete')", name="ck_restic_snapshots_capture_status"
@@ -91,6 +97,7 @@ class SessionRow(Base):
     parent_link_kind: Mapped[str | None] = mapped_column(String(40))
     identity_inferred: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     title: Mapped[str | None] = mapped_column(String)
+    codex_title_from_metadata: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     cwd: Mapped[str | None] = mapped_column(String)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -100,6 +107,29 @@ class SessionRow(Base):
         Index("idx_sessions_machine_harness_activity", "machine_id", "harness", "last_activity_at", "id"),
         Index("idx_sessions_machine_harness_native", "machine_id", "harness", "native_session_id"),
         Index("idx_sessions_machine_harness_conflict", "machine_id", "harness", "native_session_id_conflict"),
+    )
+
+
+class CodexTitleObservationRow(Base):
+    """A snapshot's current Codex display title, retained independently of transcript versions."""
+
+    __tablename__ = "codex_title_observations"
+
+    machine_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    native_session_id: Mapped[str] = mapped_column(String, primary_key=True)
+    # Empty means only the id-bearing session index was available.
+    source_path: Mapped[str] = mapped_column(String, nullable=False, default="")
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    title_source: Mapped[str] = mapped_column(String(30), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["machine_id", "snapshot_id"],
+            ["restic_snapshots.machine_id", "restic_snapshots.snapshot_id"],
+            ondelete="RESTRICT",
+        ),
+        Index("idx_codex_title_machine_native", "machine_id", "native_session_id"),
     )
 
 

@@ -10,12 +10,12 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/lib/pq"
-	"github.com/moby/moby/client"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -64,10 +64,10 @@ func RunIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(
 
 // Start ensures the PostgreSQL and Ryuk image tags are available, starts PostgreSQL, and applies migrate.
 func Start(ctx context.Context, migrate func(context.Context, *sql.DB) error) (*Database, error) {
-	if err := loadImage(ctx, postgresImage, "ducktape/third_party/containers/postgres_18_load.sh"); err != nil {
+	if err := loadImage(ctx, postgresImage, "_main/third_party/containers/postgres_18_rloc.rloc"); err != nil {
 		return nil, err
 	}
-	if err := loadImage(ctx, ryukImage, "ducktape/third_party/containers/ryuk_014_load.sh"); err != nil {
+	if err := loadImage(ctx, ryukImage, "_main/third_party/containers/ryuk_rloc.rloc"); err != nil {
 		return nil, err
 	}
 
@@ -207,29 +207,31 @@ func openDatabase(ctx context.Context, container testcontainers.Container) (stri
 	return url, db, nil
 }
 
-func loadImage(ctx context.Context, image, loaderRlocation string) error {
-	dockerClient, err := client.New(client.FromEnv)
+func loadImage(ctx context.Context, image, imageRlocation string) error {
+	loader, err := runfiles.Rlocation("ducktape/util/oci_load_bin")
 	if err != nil {
-		return fmt.Errorf("create Docker client to inspect %s: %w", image, err)
+		return fmt.Errorf("locate shared OCI image loader for %s: %w", image, err)
 	}
-	_, inspectErr := dockerClient.ImageInspect(ctx, image)
-	closeErr := dockerClient.Close()
-	// TODO: Verify cached images against the Bazel pin; consider sharing
-	// the image-loading path with Python.
-	if inspectErr == nil {
-		return closeErr
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close Docker client after inspecting %s: %w", image, closeErr)
-	}
+	return runImageLoader(ctx, image, loader, imageRlocation, image)
+}
 
-	loader, err := runfiles.Rlocation(loaderRlocation)
-	if err != nil {
-		return fmt.Errorf("locate Bazel image loader for %s: %w", image, err)
+func runImageLoader(ctx context.Context, image, loader string, args ...string) error {
+	command := exec.CommandContext(ctx, loader, args...)
+	// The shared Python loader starts Docker as a child. Keep both in one group so cancelling this
+	// context cannot leave a detached `docker load` holding the daemon busy.
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.Cancel = func() error {
+		err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
 	}
-	command := exec.CommandContext(ctx, loader)
 	command.Stdout, command.Stderr = os.Stdout, os.Stderr
 	if err := command.Run(); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("load Bazel image %s: %w", image, ctx.Err())
+		}
 		return fmt.Errorf("load Bazel image %s: %w", image, err)
 	}
 	return nil

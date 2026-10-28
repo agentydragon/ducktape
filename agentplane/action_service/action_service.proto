@@ -88,7 +88,8 @@ service ActionService {
   // The wait ends at the client's deadline too, with the last frame received as the current receipt. A deadline is
   // not a failure and ending a watch never cancels the request. The bearer is checked again before every frame: a
   // watch whose bearer stops being accepted ends `UNAUTHENTICATED`. A dropped change-notification connection delays the
-  // next frame until it reconnects and does not end the watch.
+  // next frame until it reconnects and does not end the watch. The server bounds waiting for a stream write to clear
+  // transport backpressure at five seconds; this does not guarantee when a queued frame reaches the peer.
   rpc WatchActionRequest(WatchActionRequestRequest) returns (stream WatchActionRequestResponse) {
     option (google.api.http) = {get: "/v1/action-requests/{request_id}:watch"};
   }
@@ -96,7 +97,9 @@ service ActionService {
   // The requests the caller may read that are in `state`, then each one again whenever it changes. A request that
   // stops matching `state` arrives as an `upsert` of its new state, which a client holding it drops. With no `state`
   // the snapshot is every request ever recorded: the operator's browser passes `ACTION_STATE_DECISION_PENDING`, and
-  // `ListActionRequestHistory` pages the rest. No resume cursor: a reconnect reads the filtered set again.
+  // `ListActionRequestHistory` pages the rest. No resume cursor: a reconnect reads the filtered set again. The server
+  // bounds waiting for each stream write to clear transport backpressure at five seconds; an idle drain sends
+  // `reconnect_required`, but a drain during an outstanding write ends the stream without another frame.
   rpc WatchActionRequests(WatchActionRequestsRequest) returns (stream WatchActionRequestsResponse) {
     option (google.api.http) = {get: "/v1/action-requests:watch"};
   }
@@ -125,7 +128,10 @@ service ActionService {
   }
 
   // The MCP-backed groups as `ListActionGroups` shows them, then each one again whenever its health or catalog
-  // changes. Groups of other executor kinds are not streamed.
+  // changes. Groups of other executor kinds are not streamed. Each stream write is bounded to wait five seconds for
+  // transport backpressure to clear; this bounds waiting on the write, not when a queued frame reaches the peer.
+  // An idle drain keeps the reconnect protocol; a drain during an outstanding write ends the stream without another
+  // frame.
   rpc WatchActionGroups(WatchActionGroupsRequest) returns (stream WatchActionGroupsResponse) {
     option (google.api.http) = {get: "/v1/action-groups:watch"};
   }

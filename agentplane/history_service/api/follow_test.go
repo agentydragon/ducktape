@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -402,7 +405,7 @@ func TestFollowSessionBoundsAWriteTheCallerDoesNotRead(t *testing.T) {
 	t.Cleanup(func() { close(stream.release) })
 	failed := make(chan error, 1)
 	go func() {
-		failed <- sendWithin(stream, 10*time.Millisecond, &historypb.FollowSessionResponse{})
+		failed <- sendWithin(t.Context(), stream, 10*time.Millisecond, &historypb.FollowSessionResponse{})
 	}()
 	select {
 	case err := <-failed:
@@ -411,6 +414,83 @@ func TestFollowSessionBoundsAWriteTheCallerDoesNotRead(t *testing.T) {
 		}
 	case <-time.After(callDeadline):
 		t.Fatal("the FollowSession write was not given up on")
+	}
+}
+
+type leaseBlockedFollowStream struct {
+	grpc.ServerStream
+	ctx           context.Context
+	initialCaught chan struct{}
+	writeStarted  chan struct{}
+	writeFinished chan struct{}
+	release       chan struct{}
+	releaseOnce   sync.Once
+	sends         atomic.Int64
+}
+
+func (s *leaseBlockedFollowStream) Context() context.Context { return s.ctx }
+
+func (s *leaseBlockedFollowStream) Send(response *historypb.FollowSessionResponse) error {
+	s.sends.Add(1)
+	switch {
+	case response.GetCaughtUp() != nil:
+		select {
+		case <-s.initialCaught:
+		default:
+			close(s.initialCaught)
+		}
+	case response.GetEntries() != nil:
+		close(s.writeStarted)
+		<-s.release
+		close(s.writeFinished)
+	}
+	return nil
+}
+
+func (s *leaseBlockedFollowStream) releaseWrite() { s.releaseOnce.Do(func() { close(s.release) }) }
+
+func TestFollowSessionDoesNotReconnectAfterAWriteIsCanceledByItsLease(t *testing.T) {
+	server := newServer(t, 2*time.Second)
+	sessionID, _ := server.record(t)
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+readerToken))
+	stream := &leaseBlockedFollowStream{
+		ctx: ctx, initialCaught: make(chan struct{}), writeStarted: make(chan struct{}),
+		writeFinished: make(chan struct{}), release: make(chan struct{}),
+	}
+	t.Cleanup(stream.releaseWrite)
+	done := make(chan error, 1)
+	go func() {
+		done <- server.service.FollowSession(&historypb.FollowSessionRequest{
+			SessionId: sessionID.String(), Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: 0}, Follow: true,
+		}, stream)
+	}()
+	select {
+	case <-stream.initialCaught:
+	case <-time.After(5 * time.Second):
+		t.Fatal("FollowSession did not send its opening caught_up frame")
+	}
+	appendFollowEntries(t, server, sessionID, testEntry(1))
+	select {
+	case <-stream.writeStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("FollowSession did not start writing the entry frame")
+	}
+	select {
+	case err := <-done:
+		if got := status.Code(err); got != codes.DeadlineExceeded {
+			t.Fatalf("FollowSession error = %v, want DeadlineExceeded after its lease", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the lease did not return FollowSession while its Send was blocked")
+	}
+	if got := stream.sends.Load(); got != 2 {
+		t.Fatalf("Send calls = %d, want only opening caught_up and the blocked entry frame", got)
+	}
+	stream.releaseWrite()
+	select {
+	case <-stream.writeFinished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the fake blocked Send did not return after cleanup release")
 	}
 }
 

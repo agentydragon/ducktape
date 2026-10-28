@@ -11,6 +11,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/api",
     deps = [
+        "//agentplane/grpc/streaming",
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/history_service/projection",
         "//agentplane/history_service/reads",

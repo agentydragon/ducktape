@@ -62,7 +62,8 @@ var (
 type testGate struct {
 	mu       sync.Mutex
 	refused  map[string]bool
-	draining chan struct{}
+	draining context.Context
+	drain    context.CancelFunc
 }
 
 func subjectOf(ctx context.Context) string {
@@ -82,7 +83,7 @@ func (g *testGate) Recheck(ctx context.Context) error {
 	return nil
 }
 
-func (g *testGate) Draining() <-chan struct{} { return g.draining }
+func (g *testGate) DrainingContext() context.Context { return g.draining }
 
 // refuse stops accepting the operator's bearer, as the Gate does once a token expires.
 func (g *testGate) refuse(subject string) {
@@ -152,9 +153,11 @@ func serve(t *testing.T) *served {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { updates.Close() })
+	draining, drain := context.WithCancel(context.Background())
+	t.Cleanup(drain)
 	s := &served{
 		db:      db,
-		gate:    &testGate{refused: map[string]bool{}, draining: make(chan struct{})},
+		gate:    &testGate{refused: map[string]bool{}, draining: draining, drain: drain},
 		callers: &testCallers{accounts: []auth.Account{callerAccount, otherAccount}},
 	}
 	s.store = NewStore(db, s.callers)

@@ -207,6 +207,11 @@ pub struct CallbackFactoryWriteWitness {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SynchronousCalls {
     pub local_record_factory_uses: Vec<crate::reports::schema::LocalRecordFactoryUse>,
+    /// Internal call-site certificate produced only after the checked local
+    /// constructor-factory proof and ordinary synchronous execution both
+    /// succeed. It is deliberately separate from the serialized proof-use
+    /// report: report data is not an analysis input.
+    pub local_record_factory_purity: Option<LocalRecordFactoryPurityCertificate>,
     pub reads: BTreeSet<(Id, SourceUnitOrdinal)>,
     pub rebinds: BTreeSet<(Id, SourceUnitOrdinal)>,
     /// Bindings a synchronous callee can observe before their source-order
@@ -229,6 +234,19 @@ pub(crate) struct SynchronousCalls {
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<ReturnedRecordUseFact>,
     pub author_host_contract_uses: Vec<crate::reports::schema::HostNoReentryUse>,
+}
+
+/// Source- and execution-checked evidence that one exact factory call only
+/// allocates the validated local constructor graph. The call-site purity pass
+/// consumes this to discharge only the generic impure-callee reason at
+/// `call_span`; factory and class purity summaries remain unchanged. An
+/// author assertion may supply otherwise-unproved prototype premises, but
+/// native/source evidence can establish them without an assertion.
+#[derive(Debug, Clone)]
+pub(crate) struct LocalRecordFactoryPurityCertificate {
+    pub call_span: swc_common::Span,
+    pub checked_owners: BTreeSet<SourceUnitOrdinal>,
+    pub dependencies: crate::analysis_inputs::ProofDependencies,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

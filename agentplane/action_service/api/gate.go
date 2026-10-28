@@ -129,8 +129,8 @@ func (g *Gate) Operator(ctx context.Context) (issuer, subject string) {
 	return operator.Issuer, operator.Subject
 }
 
-// Draining is closed once the service drains.
-func (g *Gate) Draining() <-chan struct{} { return g.draining.Done() }
+// DrainingContext is cancelled once the service drains.
+func (g *Gate) DrainingContext() context.Context { return g.draining }
 
 // Recheck verifies the call's bearer again, as a watch does before every frame: it fails once the bearer is no
 // longer accepted as the principal the call was admitted as.

@@ -11,6 +11,7 @@ import {
   Paper,
   ScrollArea,
   Select,
+  SimpleGrid,
   Stack,
   Text,
   Title,
@@ -18,9 +19,49 @@ import {
 
 import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
 import { recordLabel, RecordContent, rawRecordText } from "./event-content";
-import type { EventRecord, Harness, Machine, SessionSummary, SessionVersion } from "./schema";
+import type {
+  EventRecord,
+  Harness,
+  Machine,
+  MachineImportProgress,
+  SessionSummary,
+  SessionVersion,
+  SnapshotImportState,
+} from "./schema";
 
 const SESSION_PAGE_SIZE = 50;
+const IMPORT_PROGRESS_POLL_INTERVAL_MS = 10_000;
+
+function snapshotStateLabel(state: SnapshotImportState | null): string {
+  switch (state) {
+    case "inventory_pending":
+      return "Inventory pending";
+    case "inventory_failed":
+      return "Inventory failed";
+    case "codex_metadata_pending":
+      return "Codex metadata pending";
+    case "codex_metadata_failed":
+      return "Codex metadata failed";
+    case "processing_pending":
+      return "File processing pending";
+    case "processing_failed":
+      return "File processing failed";
+    case "complete":
+      return "Complete";
+    case null:
+      return "No snapshots registered";
+  }
+}
+
+function snapshotStateColor(state: SnapshotImportState): "red" | "yellow" | "green" {
+  if (state === "inventory_failed" || state === "codex_metadata_failed" || state === "processing_failed") {
+    return "red";
+  }
+  if (state === "inventory_pending" || state === "codex_metadata_pending" || state === "processing_pending") {
+    return "yellow";
+  }
+  return "green";
+}
 
 function parentLinkLabel(kind: string | null): string | null {
   switch (kind) {
@@ -82,8 +123,13 @@ function noVersionExplanation(status: SessionSummary["transcript_status"]): stri
 
 export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): JSX.Element {
   const [machines, setMachines] = useState<Machine[]>([]);
+  const [importProgress, setImportProgress] = useState<MachineImportProgress[]>([]);
+  const [loadingImportProgress, setLoadingImportProgress] = useState(true);
+  const [importProgressError, setImportProgressError] = useState<string | null>(null);
+  const [importProgressRefreshRequest, setImportProgressRefreshRequest] = useState(0);
   const [selectedMachineId, setSelectedMachineId] = useState("");
   const [selectedHarness, setSelectedHarness] = useState("");
+  const [sessionListRefreshRequest, setSessionListRefreshRequest] = useState(0);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [sessionCursor, setSessionCursor] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -152,6 +198,40 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   }, [api]);
 
   useEffect(() => {
+    let disposed = false;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let activeRequest: AbortController | null = null;
+    const refresh = async (): Promise<void> => {
+      const controller = new AbortController();
+      activeRequest = controller;
+      setLoadingImportProgress(true);
+      try {
+        const progress = await api.listImportProgress(controller.signal);
+        if (!disposed && !controller.signal.aborted) {
+          setImportProgress(progress);
+          setImportProgressError(null);
+        }
+      } catch (reason) {
+        if (!disposed && !controller.signal.aborted) {
+          setImportProgressError(errorMessage(reason, "The archive service did not return import progress."));
+        }
+      } finally {
+        if (!disposed && activeRequest === controller) {
+          activeRequest = null;
+          setLoadingImportProgress(false);
+          timeout = setTimeout(() => void refresh(), IMPORT_PROGRESS_POLL_INTERVAL_MS);
+        }
+      }
+    };
+    void refresh();
+    return () => {
+      disposed = true;
+      activeRequest?.abort();
+      if (timeout !== null) clearTimeout(timeout);
+    };
+  }, [api, importProgressRefreshRequest]);
+
+  useEffect(() => {
     sessionPageRequest.current?.abort();
     sessionPageRequest.current = null;
     const controller = new AbortController();
@@ -186,7 +266,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
       sessionPageRequest.current?.abort();
       sessionPageRequest.current = null;
     };
-  }, [api, selectedMachineId, selectedHarness]);
+  }, [api, selectedMachineId, selectedHarness, sessionListRefreshRequest]);
 
   useEffect(() => {
     eventPageRequest.current?.abort();
@@ -424,6 +504,12 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
           {error}
         </Alert>
       )}
+      <MachineImportProgressPanel
+        progress={importProgress}
+        loading={loadingImportProgress}
+        error={importProgressError}
+        onRefresh={() => setImportProgressRefreshRequest((current) => current + 1)}
+      />
       <Box className="session-browser-layout">
         <Paper
           component="aside"
@@ -457,6 +543,14 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                 { value: "codex", label: "Codex CLI" },
               ]}
             />
+            <Button
+              size="xs"
+              variant="default"
+              loading={loadingSessions}
+              onClick={() => setSessionListRefreshRequest((current) => current + 1)}
+            >
+              Refresh session list
+            </Button>
             <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
               {loadingSessions ? (
                 <Center h={200}>
@@ -700,6 +794,102 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   );
 }
 
+function MachineImportProgressPanel({
+  progress,
+  loading,
+  error,
+  onRefresh,
+}: {
+  progress: MachineImportProgress[];
+  loading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+}): JSX.Element {
+  return (
+    <Paper component="section" aria-label="Import progress by machine" withBorder radius="sm" p="xs">
+      <Stack gap="xs">
+        <Group justify="space-between" align="center">
+          <Text size="sm" fw={600}>
+            Import progress by machine
+          </Text>
+          <Group gap="xs">
+            <Text size="xs" c="dimmed">
+              Progress refreshes every 10 seconds; refresh sessions separately
+            </Text>
+            <Button size="xs" variant="default" loading={loading} onClick={onRefresh}>
+              Refresh
+            </Button>
+          </Group>
+        </Group>
+        <Text size="xs" c="dimmed">
+          Snapshot counts include registered snapshots, even if Restic later prunes them, and can grow as more are
+          discovered. File counts cover entries inventoried so far and can grow as snapshots are inventoried; processed
+          means handled, not necessarily imported as a transcript. Codex metadata counts cover registered snapshots;
+          completed snapshots can have partial metadata, shown separately.
+        </Text>
+        {error !== null && (
+          <Text size="xs" c="red">
+            Could not refresh import progress: {error}
+          </Text>
+        )}
+        {progress.length === 0 ? (
+          loading ? (
+            <Center h={36}>
+              <Loader size="xs" aria-label="Loading import progress" />
+            </Center>
+          ) : (
+            <Text size="xs" c="dimmed">
+              No machines are registered yet.
+            </Text>
+          )
+        ) : (
+          <ScrollArea h={120} type="auto">
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="xs">
+              {progress.map((machine) => (
+                <Paper key={machine.machine_id} withBorder radius="xs" p="xs">
+                  <Stack gap={2}>
+                    <Group justify="space-between" gap="xs" wrap="wrap">
+                      <Text size="sm" fw={600}>
+                        {machine.display_name}
+                      </Text>
+                      {machine.oldest_unfinished_snapshot_state !== null && (
+                        <Badge color={snapshotStateColor(machine.oldest_unfinished_snapshot_state)} variant="light">
+                          {snapshotStateLabel(machine.oldest_unfinished_snapshot_state)}
+                        </Badge>
+                      )}
+                    </Group>
+                    <Text size="xs" c="dimmed">
+                      Snapshots: {machine.completed_snapshot_count} of {machine.known_snapshot_count} registered
+                      complete · {machine.failed_snapshot_count} failed
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      Codex metadata: {machine.codex_metadata_pending_snapshot_count} pending ·{" "}
+                      {machine.codex_metadata_failed_snapshot_count} failed ·{" "}
+                      {machine.codex_metadata_partial_snapshot_count} partial
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      Oldest unfinished snapshot:{" "}
+                      {machine.oldest_unfinished_snapshot_state === null
+                        ? machine.known_snapshot_count === 0
+                          ? "none registered"
+                          : "none; all registered snapshots complete"
+                        : formatDateTime(machine.oldest_unfinished_snapshot_at)}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      File entries: {machine.processed_file_count} processed · {machine.pending_file_count} pending ·{" "}
+                      {machine.failed_file_count} failed
+                    </Text>
+                  </Stack>
+                </Paper>
+              ))}
+            </SimpleGrid>
+          </ScrollArea>
+        )}
+      </Stack>
+    </Paper>
+  );
+}
+
 function SessionRow({
   session,
   machineName,
@@ -841,6 +1031,6 @@ function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
-function errorMessage(reason: unknown): string {
-  return reason instanceof Error ? reason.message : "Could not load local sessions.";
+function errorMessage(reason: unknown, fallback = "Could not load local sessions."): string {
+  return reason instanceof Error ? reason.message : fallback;
 }

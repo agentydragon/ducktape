@@ -1,9 +1,58 @@
 import type { SessionBrowserApi } from "../api";
-import type { EventRecord, Machine, SessionSummary, SessionVersion } from "../schema";
+import type { EventRecord, Machine, MachineImportProgress, SessionSummary, SessionVersion } from "../schema";
 
 const machines: Machine[] = [
   { id: "thinkpad", display_name: "ThinkPad" },
   { id: "atlas", display_name: "Atlas" },
+  { id: "rugged", display_name: "Rugged" },
+];
+
+const importProgress: MachineImportProgress[] = [
+  {
+    machine_id: "thinkpad",
+    display_name: "ThinkPad",
+    known_snapshot_count: 5,
+    completed_snapshot_count: 3,
+    failed_snapshot_count: 0,
+    codex_metadata_pending_snapshot_count: 1,
+    codex_metadata_failed_snapshot_count: 0,
+    codex_metadata_partial_snapshot_count: 1,
+    oldest_unfinished_snapshot_at: "2026-10-28T16:30:00Z",
+    oldest_unfinished_snapshot_state: "codex_metadata_pending",
+    processed_file_count: 27,
+    pending_file_count: 4,
+    failed_file_count: 0,
+  },
+  {
+    machine_id: "atlas",
+    display_name: "Atlas",
+    known_snapshot_count: 2,
+    completed_snapshot_count: 1,
+    failed_snapshot_count: 1,
+    codex_metadata_pending_snapshot_count: 0,
+    codex_metadata_failed_snapshot_count: 1,
+    codex_metadata_partial_snapshot_count: 1,
+    oldest_unfinished_snapshot_at: "2026-10-27T18:00:00Z",
+    oldest_unfinished_snapshot_state: "codex_metadata_failed",
+    processed_file_count: 11,
+    pending_file_count: 0,
+    failed_file_count: 1,
+  },
+  {
+    machine_id: "rugged",
+    display_name: "Rugged",
+    known_snapshot_count: 8,
+    completed_snapshot_count: 4,
+    failed_snapshot_count: 1,
+    codex_metadata_pending_snapshot_count: 3,
+    codex_metadata_failed_snapshot_count: 0,
+    codex_metadata_partial_snapshot_count: 1,
+    oldest_unfinished_snapshot_at: "2026-10-26T18:00:00Z",
+    oldest_unfinished_snapshot_state: "processing_pending",
+    processed_file_count: 42,
+    pending_file_count: 9,
+    failed_file_count: 2,
+  },
 ];
 
 const sessions: SessionSummary[] = [
@@ -169,6 +218,9 @@ const claudeEvents: EventRecord[] = [
 export const sessionFixtureApi: SessionBrowserApi = {
   async listMachines() {
     return machines;
+  },
+  async listImportProgress() {
+    return importProgress;
   },
   async listSessions(query) {
     const filtered = sessions.filter(

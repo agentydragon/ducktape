@@ -671,10 +671,15 @@ object/function aliases and computed or otherwise nonliteral initializers are
 not admitted. The ordinary
 source-checked return-only constructor proof and normal execution remain in
 force, including eager lexical reads, TDZ, argument evaluation, exposure checks,
-side effects and ordering. Only the exact checked constructor/property and
-input-object/missing-property pairs consume the assertion. Failed source proof
-or runtime admission restores conservative reachability and clears those pairs.
-Consumed author obligations appear in `synchronous_execution.local_record_factory_uses`,
+side effects and ordering. A typed call-site certificate may remove the generic
+impure-callee purity reason only after that full source proof and successful
+ordinary execution. It changes no factory or class summary and leaves callee,
+argument, lexical-read, TDZ, and other purity reasons intact. Native evidence
+used by the constructor proof remains attached as purity dependencies. Only the
+exact checked constructor/property and input-object/missing-property pairs
+consume the assertion. Failed source proof or runtime admission restores
+conservative reachability and issues no purity certificate. Consumed author
+obligations appear in `synchronous_execution.local_record_factory_uses`,
 separately from inferred native integrity.
 
 An implicit local class constructor can also receive a source-derived

@@ -75,8 +75,14 @@ follows it; code that differs converges on it.
 
 - Every unary call passes `timeout=` from the client's settings.
 - A long-lived stream carries no call deadline: it bounds its handshake and each write with
-  `asyncio.timeout` instead. A watch stream the server bounds by a lease ends with an explicit
-  reconnect message.
+  `asyncio.timeout` instead. A Go server bounds the time waiting for each stream `Send` to clear
+  transport backpressure; this does not guarantee when the peer receives a frame, because an HTTP
+  facade may queue the write before flushing it. If that wait times out or its lease/drain context
+  ends, the handler returns without another send. Facaded writes attach an abort callback to the
+  individual HTTP/2 stream so an outstanding response flush ends too.
+- A watch stream the server bounds by a lease ends with an explicit reconnect message when the lease
+  or a drain expires while it is idle. If either ends during an outstanding write, the handler
+  terminates that stream without sending a reconnect frame.
 - A servicer bounds its own backend work with `asyncio.timeout` from its settings.
 
 ## Clients

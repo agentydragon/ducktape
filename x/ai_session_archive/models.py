@@ -25,6 +25,32 @@ class Machine(BaseModel):
     display_name: str
 
 
+class SnapshotImportState(StrEnum):
+    INVENTORY_PENDING = "inventory_pending"
+    INVENTORY_FAILED = "inventory_failed"
+    CODEX_METADATA_PENDING = "codex_metadata_pending"
+    CODEX_METADATA_FAILED = "codex_metadata_failed"
+    PROCESSING_PENDING = "processing_pending"
+    PROCESSING_FAILED = "processing_failed"
+    COMPLETE = "complete"
+
+
+class MachineImportProgress(BaseModel):
+    machine_id: str
+    display_name: str
+    known_snapshot_count: int = 0
+    completed_snapshot_count: int = 0
+    failed_snapshot_count: int = 0
+    codex_metadata_pending_snapshot_count: int = 0
+    codex_metadata_failed_snapshot_count: int = 0
+    codex_metadata_partial_snapshot_count: int = 0
+    oldest_unfinished_snapshot_at: datetime | None = None
+    oldest_unfinished_snapshot_state: SnapshotImportState | None = None
+    processed_file_count: int = 0
+    pending_file_count: int = 0
+    failed_file_count: int = 0
+
+
 class SessionSummary(BaseModel):
     id: UUID
     machine_id: str

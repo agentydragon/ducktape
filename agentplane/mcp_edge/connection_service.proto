@@ -158,7 +158,8 @@ message WatchConnectionsResponse {
     ConnectionChunk snapshot = 1;
     google.protobuf.Empty snapshot_complete = 2;
     Connection upsert = 3;
-    // Planned renewal: reconnect with fresh authorization. A successful stream ends with it; bare EOF is a failure.
+    // Planned renewal while the stream is idle: reconnect with fresh authorization. A successful stream ends with it;
+    // bare EOF is a failure. If drain ends an outstanding write, the stream ends without this frame.
     // A stream whose bearer expired ends `UNAUTHENTICATED` instead.
     google.protobuf.Empty reconnect_required = 4;
   }

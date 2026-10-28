@@ -270,6 +270,14 @@ struct Executor<'a> {
     cache: BTreeMap<InvocationSignature, Outcome>,
 }
 
+/// The source proof selected for one exact factory call. Kept separate from
+/// report structs so downstream purity uses a typed proof result rather than
+/// reconstructing trust from serialized synchronous-execution output.
+struct CheckedLocalConstructorFactory {
+    call_span: Span,
+    checked_owners: BTreeSet<SourceUnitOrdinal>,
+}
+
 #[derive(Clone, Copy)]
 struct ValidatedMetadataDecoration {
     target_owner: SourceUnitOrdinal,
@@ -2004,7 +2012,7 @@ impl Executor<'_> {
     fn closed_local_constructor_factory_result(
         &self,
         fact: &StatementFacts,
-    ) -> Option<BTreeSet<SourceUnitOrdinal>> {
+    ) -> Option<CheckedLocalConstructorFactory> {
         if !matches!(fact.kind, StatementKind::VarDecl)
             || fact.declared.len() != 1
             || self.reachability.incomplete
@@ -2125,7 +2133,10 @@ impl Executor<'_> {
         for (class_key, _) in allocations.keys() {
             owners.insert(*self.index.class_owners.get(class_key)?);
         }
-        Some(owners)
+        Some(CheckedLocalConstructorFactory {
+            call_span: call.span,
+            checked_owners: owners,
+        })
     }
 
     fn closed_constructor_input(&self, value: &ValueExpr) -> bool {
@@ -2538,6 +2549,77 @@ impl Executor<'_> {
             })
     }
 
+    /// Enumerate one value's retained references without executing any
+    /// callable capability. Object properties can be skipped after the
+    /// callback walk has already expanded that object's property map; applied
+    /// accessor capabilities remain visible on every visit.
+    fn visit_stored_references(
+        &self,
+        value: &AbstractValue,
+        include_object_properties: bool,
+        mut visit: impl FnMut(&AbstractValue),
+    ) {
+        match value {
+            AbstractValue::Origin(ValueOrigin::Object(object)) => {
+                if include_object_properties
+                    && let Some(properties) = self.prefix_object_properties.get(object)
+                {
+                    for value in properties.values().flatten() {
+                        visit(value);
+                    }
+                }
+                if let Some(accessors) = self.applied_accessors.get(object) {
+                    for accessor in accessors.values() {
+                        for getter in &accessor.getter {
+                            visit(getter);
+                        }
+                        for setter in &accessor.setter {
+                            visit(setter);
+                        }
+                    }
+                }
+            }
+            AbstractValue::Closure(_, captured) => {
+                for value in captured.values.values().flatten() {
+                    visit(value);
+                }
+            }
+            AbstractValue::Instance(_, captured) => {
+                for value in captured.values.iter() {
+                    visit(value);
+                }
+            }
+            AbstractValue::DeferredCallbacks(captured) => {
+                for value in captured.values.iter() {
+                    visit(value);
+                }
+            }
+            AbstractValue::OwnDescriptorMap(site) => {
+                if let Some(map) = self.own_descriptor_maps.get(site) {
+                    for value in &map.retained_values {
+                        visit(value);
+                    }
+                }
+            }
+            // Keep the carrier inventory exhaustive: when AbstractValue gains
+            // another retained-reference shape, this visitor must classify it.
+            AbstractValue::Origin(
+                ValueOrigin::Function(_) | ValueOrigin::Class(_) | ValueOrigin::Unknown,
+            )
+            | AbstractValue::ClassMembers(_)
+            | AbstractValue::CallbackFactory
+            | AbstractValue::InlineCallbackFactory
+            | AbstractValue::ForeignDeferredRecord
+            | AbstractValue::ObjectAssign
+            | AbstractValue::ArrayIntrinsic
+            | AbstractValue::GlobalObject
+            | AbstractValue::Undefined
+            | AbstractValue::NonCallable
+            | AbstractValue::Unavailable
+            | AbstractValue::Unknown => {}
+        }
+    }
+
     fn callback_values(&self, values: &Values) -> Values {
         let mut callbacks = Values::new();
         let mut pending: Vec<_> = values.iter().cloned().collect();
@@ -2545,64 +2627,37 @@ impl Executor<'_> {
         let mut visited_descriptor_maps = BTreeSet::new();
         let mut expanded_escaped = false;
         while let Some(value) = pending.pop() {
+            let mut expand_stored_references = true;
+            let mut expand_object_properties = true;
             match &value {
-                AbstractValue::Origin(ValueOrigin::Function(_)) | AbstractValue::Closure(_, _) => {
+                AbstractValue::Origin(ValueOrigin::Function(_)) => {
+                    callbacks.insert(value.clone());
+                }
+                AbstractValue::Closure(_, _) => {
                     // Capture snapshots form a DAG: multiple bindings can
                     // contain the same closure. Expand each closure once,
                     // rather than revisit it along every path through captures.
-                    if callbacks.insert(value.clone())
-                        && let AbstractValue::Closure(_, captured) = &value
-                    {
-                        pending.extend(
-                            captured
-                                .values
-                                .values()
-                                .flat_map(|values| values.iter().cloned()),
-                        );
-                    }
+                    expand_stored_references = callbacks.insert(value.clone());
                 }
                 AbstractValue::Origin(ValueOrigin::Class(key))
                 | AbstractValue::ClassMembers(key) => {
                     callbacks.insert(AbstractValue::ClassMembers(*key));
                 }
-                AbstractValue::Instance(key, captured) => {
+                AbstractValue::Instance(key, _) => {
                     callbacks.insert(AbstractValue::ClassMembers(*key));
-                    if callbacks.insert(value.clone()) {
-                        pending.extend(captured.values.iter().cloned());
-                    }
+                    expand_stored_references = callbacks.insert(value.clone());
                 }
                 AbstractValue::ForeignDeferredRecord => {
                     callbacks.insert(value.clone());
                 }
-                AbstractValue::DeferredCallbacks(captured) => {
-                    if callbacks.insert(value.clone()) {
-                        pending.extend(captured.values.iter().cloned());
-                    }
+                AbstractValue::DeferredCallbacks(_) => {
+                    expand_stored_references = callbacks.insert(value.clone());
                 }
                 AbstractValue::OwnDescriptorMap(site) => {
-                    if visited_descriptor_maps.insert(*site) {
-                        pending.extend(self.descriptor_map_callbacks(*site));
-                    }
+                    expand_stored_references = visited_descriptor_maps.insert(*site);
                 }
                 AbstractValue::Origin(ValueOrigin::Object(object)) => {
-                    if visited_objects.insert(*object)
-                        && let Some(properties) = self.prefix_object_properties.get(object)
-                    {
-                        pending.extend(
-                            properties
-                                .values()
-                                .flat_map(|values| values.iter().cloned()),
-                        );
-                    }
-                    if let Some(accessors) = self.applied_accessors.get(object) {
-                        pending.extend(accessors.values().flat_map(|accessor| {
-                            accessor
-                                .getter
-                                .iter()
-                                .chain(accessor.setter.iter())
-                                .cloned()
-                        }));
-                    }
+                    expand_object_properties = visited_objects.insert(*object);
                 }
                 AbstractValue::GlobalObject | AbstractValue::Unknown if !expanded_escaped => {
                     // Unknown external data cannot expose an unescaped local
@@ -2618,6 +2673,11 @@ impl Executor<'_> {
                     );
                 }
                 _ => {}
+            }
+            if expand_stored_references {
+                self.visit_stored_references(&value, expand_object_properties, |reference| {
+                    pending.push(reference.clone());
+                });
             }
         }
         callbacks
@@ -3009,51 +3069,31 @@ impl Executor<'_> {
             if !visited.insert(value.clone()) {
                 continue;
             }
-            match value {
+            let mut expand_stored_references = true;
+            match &value {
                 AbstractValue::ArrayIntrinsic => {
                     self.array_intrinsic_mutated = true;
                 }
                 AbstractValue::Origin(ValueOrigin::Object(object))
-                    if self.tainted_objects.insert(object) =>
+                    if !self.tainted_objects.insert(*object) =>
                 {
-                    if let Some(properties) = self.prefix_object_properties.get(&object) {
-                        pending.extend(
-                            properties
-                                .values()
-                                .flat_map(|values| values.iter().cloned()),
-                        );
-                    }
-                    if let Some(accessors) = self.applied_accessors.get(&object) {
-                        pending.extend(accessors.values().flat_map(|accessor| {
-                            accessor
-                                .getter
-                                .iter()
-                                .chain(accessor.setter.iter())
-                                .cloned()
-                        }));
-                    }
+                    expand_stored_references = false;
                 }
                 AbstractValue::OwnDescriptorMap(site) => {
-                    self.invalidate_own_descriptor_map(site);
-                    pending.extend(self.descriptor_map_callbacks(site));
-                }
-                AbstractValue::Instance(_, captured)
-                | AbstractValue::DeferredCallbacks(captured) => {
-                    pending.extend(captured.values.iter().cloned());
+                    self.invalidate_own_descriptor_map(*site);
                 }
                 AbstractValue::Origin(ValueOrigin::Function(key)) => {
-                    self.tainted_functions.insert(key);
+                    self.tainted_functions.insert(*key);
                 }
-                AbstractValue::Closure(key, captured) => {
-                    self.tainted_functions.insert(key);
-                    pending.extend(
-                        captured
-                            .values
-                            .values()
-                            .flat_map(|values| values.iter().cloned()),
-                    );
+                AbstractValue::Closure(key, _) => {
+                    self.tainted_functions.insert(*key);
                 }
                 _ => {}
+            }
+            if expand_stored_references {
+                self.visit_stored_references(&value, true, |reference| {
+                    pending.push(reference.clone());
+                });
             }
         }
     }
@@ -3154,34 +3194,12 @@ impl Executor<'_> {
             if !visited.insert(value.clone()) {
                 continue;
             }
-            match value {
-                AbstractValue::Origin(ValueOrigin::Object(object)) => {
-                    objects.insert(object);
-                    if let Some(properties) = self.prefix_object_properties.get(&object) {
-                        pending.extend(properties.values().flatten().cloned());
-                    }
-                    if let Some(accessors) = self.applied_accessors.get(&object) {
-                        pending.extend(accessors.values().flat_map(|accessor| {
-                            accessor
-                                .getter
-                                .iter()
-                                .chain(accessor.setter.iter())
-                                .cloned()
-                        }));
-                    }
-                }
-                AbstractValue::OwnDescriptorMap(site) => {
-                    pending.extend(self.descriptor_map_callbacks(site));
-                }
-                AbstractValue::Instance(_, captured)
-                | AbstractValue::DeferredCallbacks(captured) => {
-                    pending.extend(captured.values.iter().cloned())
-                }
-                AbstractValue::Closure(_, captured) => {
-                    pending.extend(captured.values.values().flatten().cloned())
-                }
-                _ => {}
+            if let AbstractValue::Origin(ValueOrigin::Object(object)) = &value {
+                objects.insert(*object);
             }
+            self.visit_stored_references(&value, true, |reference| {
+                pending.push(reference.clone());
+            });
         }
         objects
     }
@@ -3193,40 +3211,15 @@ impl Executor<'_> {
             if !visited.insert(value.clone()) {
                 continue;
             }
-            match value {
-                AbstractValue::Origin(ValueOrigin::Class(key))
-                | AbstractValue::ClassMembers(key) => {
-                    self.escaped_class_capabilities.insert(key);
-                }
-                AbstractValue::Instance(key, captured) => {
-                    self.escaped_class_capabilities.insert(key);
-                    pending.extend(captured.values.iter().cloned());
-                }
-                AbstractValue::Origin(ValueOrigin::Object(object)) => {
-                    if let Some(properties) = self.prefix_object_properties.get(&object) {
-                        pending.extend(properties.values().flatten().cloned());
-                    }
-                    if let Some(accessors) = self.applied_accessors.get(&object) {
-                        pending.extend(accessors.values().flat_map(|accessor| {
-                            accessor
-                                .getter
-                                .iter()
-                                .chain(accessor.setter.iter())
-                                .cloned()
-                        }));
-                    }
-                }
-                AbstractValue::OwnDescriptorMap(site) => {
-                    pending.extend(self.descriptor_map_callbacks(site));
-                }
-                AbstractValue::DeferredCallbacks(captured) => {
-                    pending.extend(captured.values.iter().cloned())
-                }
-                AbstractValue::Closure(_, captured) => {
-                    pending.extend(captured.values.values().flatten().cloned())
-                }
-                _ => {}
+            if let AbstractValue::Origin(ValueOrigin::Class(key))
+            | AbstractValue::ClassMembers(key)
+            | AbstractValue::Instance(key, _) = &value
+            {
+                self.escaped_class_capabilities.insert(*key);
             }
+            self.visit_stored_references(&value, true, |reference| {
+                pending.push(reference.clone());
+            });
         }
     }
 
@@ -5860,9 +5853,11 @@ pub(crate) fn annotate_synchronous_calls(
         *executor.record_factory_prototype_premises.borrow_mut() = Default::default();
         let annotated_record_factory = executor.annotated_record_factory(fact);
         executor.checking_record_factory_contract = annotated_record_factory.is_some();
-        executor.private_constructor_result_owners = executor
-            .closed_local_constructor_factory_result(fact)
-            .unwrap_or_default();
+        let checked_local_constructor_factory =
+            executor.closed_local_constructor_factory_result(fact);
+        executor.private_constructor_result_owners = checked_local_constructor_factory
+            .as_ref()
+            .map_or_else(BTreeSet::new, |proof| proof.checked_owners.clone());
         executor.checking_record_factory_contract = false;
         if executor.private_constructor_result_owners.is_empty() {
             *executor.record_factory_prototype_premises.borrow_mut() = Default::default();
@@ -6132,6 +6127,10 @@ pub(crate) fn annotate_synchronous_calls(
                 },
             );
         }
+        // The certificate is minted from the source proof above only after
+        // the ordinary executor has completed this exact initializer without
+        // falling back. It is consumed by analyze.rs to remove only the
+        // generic impure-callee reason at this call site.
         outcome.effects.callback_factory_uses = std::mem::take(&mut executor.proof_uses);
         outcome.effects.returned_record_uses =
             std::mem::take(&mut executor.returned_record_proof_uses);
@@ -6153,6 +6152,26 @@ pub(crate) fn annotate_synchronous_calls(
         outcome.effects.inference_uses = std::mem::take(executor.inference_uses.get_mut())
             .into_iter()
             .collect();
+        if !executor.private_constructor_result_owners.is_empty()
+            && outcome.complete
+            && !outcome.unknown_call
+            && outcome.effects.precision_losses.is_empty()
+            && outcome.effects.uninitialized_reads.is_empty()
+            && let Some(proof) = checked_local_constructor_factory
+        {
+            let mut dependencies = crate::analysis_inputs::ProofDependencies::default();
+            for usage in &outcome.effects.native_integrity_uses {
+                dependencies
+                    .value_inputs
+                    .extend(usage.value_input_refs.iter().cloned());
+            }
+            outcome.effects.local_record_factory_purity =
+                Some(crate::facts::LocalRecordFactoryPurityCertificate {
+                    call_span: proof.call_span,
+                    checked_owners: proof.checked_owners,
+                    dependencies,
+                });
+        }
         outcome.effects.native_integrity_witnesses = index.native_integrity_witnesses.clone();
         outcome.effects.native_receiver_certificates = index.native_receiver_certificates.clone();
         effects.push(outcome.effects);

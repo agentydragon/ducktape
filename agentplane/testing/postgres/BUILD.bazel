@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "postgres",
@@ -8,16 +8,22 @@ go_library(
         "postgres.go",
     ],
     data = [
-        "//third_party/containers:postgres_18_load",
-        "//third_party/containers:ryuk_014_load",
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+        "//util:oci_load_bin",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/testing/postgres",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "@com_github_lib_pq//:pq",
-        "@com_github_moby_moby_client//:client",
         "@com_github_testcontainers_testcontainers_go//:testcontainers-go",
         "@com_github_testcontainers_testcontainers_go//wait",
         "@io_bazel_rules_go//go/runfiles",
     ],
+)
+
+go_test(
+    name = "postgres_test",
+    srcs = ["postgres_test.go"],
+    embed = [":postgres"],
 )

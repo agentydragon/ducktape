@@ -16,7 +16,11 @@ binding. The edge offers only ServiceAccounts both labeled as Action callers and
 requests a token for that account with the Action Service's `agentplane-egress` audience and a
 requested ten minute lifetime, and sends it to Actions over gRPC. Actions independently reviews the
 token and current caller label. A watch rechecks the grant, binding, label and UID on a five second
-ticker and before forwarding each frame. Tool arguments never name the caller identity.
+ticker and before forwarding each frame. The operator watch bounds waiting for each stream write to
+clear transport backpressure at five seconds; an exceeded bound ends `DEADLINE_EXCEEDED`. An idle
+drain sends `reconnect_required`; a drain during a write ends that stream without another frame. This
+bound does not guarantee when a queued frame reaches the peer. Tool arguments never name the caller
+identity.
 
 ## Deployment contract
 

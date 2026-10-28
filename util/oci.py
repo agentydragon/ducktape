@@ -7,6 +7,7 @@ resolving crane and Bazel-built images out of runfiles lives here instead.
 
 from __future__ import annotations
 
+import argparse
 import base64
 import contextlib
 import fcntl
@@ -265,3 +266,15 @@ def push_to_daemon(oci_layout: Path, tag: str) -> None:
         span.set_attribute("tarball_bytes", written)
     if loader.returncode != 0:
         raise RuntimeError(f"docker load failed: {stderr.decode()}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Load a Bazel OCI layout using the shared image cache guard.")
+    parser.add_argument("rloc_file", help="Bazel runfiles path to the image's .rloc file")
+    parser.add_argument("tag", help="Docker image tag to load")
+    args = parser.parse_args()
+    load_oci_image(OciImage(args.rloc_file, args.tag))
+
+
+if __name__ == "__main__":
+    main()

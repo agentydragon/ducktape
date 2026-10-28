@@ -2,6 +2,7 @@ import type {
   EventPage,
   EventRecord,
   Harness,
+  MachineImportProgress,
   Machine,
   SessionPage,
   SessionQuery,
@@ -11,6 +12,7 @@ import type {
 
 export type SessionBrowserApi = {
   listMachines(signal?: AbortSignal): Promise<Machine[]>;
+  listImportProgress(signal?: AbortSignal): Promise<MachineImportProgress[]>;
   listSessions(query: SessionQuery, signal?: AbortSignal): Promise<SessionPage<SessionSummary>>;
   getSession(sessionId: string, signal?: AbortSignal): Promise<SessionSummary>;
   listVersions(sessionId: string, signal?: AbortSignal): Promise<SessionVersion[]>;
@@ -56,6 +58,10 @@ function sessionQuery(query: SessionQuery): string {
 export const httpApi: SessionBrowserApi = {
   async listMachines(signal) {
     const page = await get<{ data: Machine[] }>("/api/machines", signal);
+    return page.data;
+  },
+  async listImportProgress(signal) {
+    const page = await get<{ data: MachineImportProgress[] }>("/api/import-progress", signal);
     return page.data;
   },
   listSessions(query, signal) {

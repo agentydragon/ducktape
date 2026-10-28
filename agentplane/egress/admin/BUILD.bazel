@@ -12,6 +12,7 @@ go_library(
         "//agentplane/egress:egress_admin_go_proto",
         "//agentplane/egress/decision",
         "//agentplane/egress/history",
+        "//agentplane/grpc/streaming",
         "//agentplane/policy/reader",
         "//agentplane/workload_auth/go/auth",
         "@org_golang_google_grpc//:grpc",

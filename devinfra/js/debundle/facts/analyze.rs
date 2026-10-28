@@ -381,6 +381,7 @@ where
             export_reentry_policy,
             &mut facts,
         );
+        discharge_checked_local_record_factory_calls(&mut facts);
     }
     if let Some(source_path) = source_path {
         let source_locations: Vec<_> = facts
@@ -451,6 +452,48 @@ where
         top_level_await,
         redundant_purity_hints,
         redundant_pure_member_hints,
+    }
+}
+
+/// Generic function-body purity cannot compose the already-checked private
+/// constructor graph at one call site. Consume only the typed certificate
+/// produced by successful ordinary synchronous execution, and remove only its
+/// matching `impure_function_call` reason. Argument, callee, read, and any
+/// other expression reasons remain classified normally; function-body purity
+/// caches are never changed.
+fn discharge_checked_local_record_factory_calls(facts: &mut [StatementFacts]) {
+    for fact in facts {
+        let Some(certificate) = fact
+            .synchronous_calls
+            .as_ref()
+            .and_then(|calls| calls.local_record_factory_purity.as_ref())
+        else {
+            continue;
+        };
+        if certificate.checked_owners.is_empty() {
+            continue;
+        }
+        let Purity::NotPure { reasons } = &mut fact.purity else {
+            continue;
+        };
+        let matching = reasons
+            .iter()
+            .filter(|reason| {
+                reason.rule == PurityRule::ImpureFunctionCall
+                    && reason.span == certificate.call_span
+            })
+            .count();
+        if matching != 1 {
+            continue;
+        }
+        reasons.retain(|reason| {
+            !(reason.rule == PurityRule::ImpureFunctionCall && reason.span == certificate.call_span)
+        });
+        if reasons.is_empty() {
+            fact.purity = Purity::Pure {
+                dependencies: certificate.dependencies.clone(),
+            };
+        }
     }
 }
 
