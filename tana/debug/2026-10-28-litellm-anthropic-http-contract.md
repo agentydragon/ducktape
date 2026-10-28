@@ -7,3 +7,23 @@ The normal-usage path succeeds end to end: `/v1/messages` streams a Tana `tool_u
 A separate strict expected failure covers a Tana continuation response without `usage`. It requires an Anthropic HTTP 500 whose body identifies the missing `ModelResponse.usage` attribute before reporting the known failure. The provider accepts this response (`TanaChatResult.usage` is optional) and builds a `ModelResponse` without a `usage` attribute. The RBE traceback points to line 1553 of the installed `translate_openai_response_to_anthropic` adapter. The public v1.103.0 tag has the failing `getattr(response, "usage")` at [`transformation.py:1429`](https://github.com/BerriAI/litellm/blob/v1.103.0/litellm/llms/anthropic/experimental_pass_through/adapters/transformation.py#L1428-L1430); its streaming adapter uses a default for missing usage at [line 1567](https://github.com/BerriAI/litellm/blob/v1.103.0/litellm/llms/anthropic/experimental_pass_through/adapters/transformation.py#L1567-L1576). The probe leaves this boundary unfixed and does not synthesize token counts. If the response adapter later supports absent usage, the current `pytest.raises` check fails and the diagnostic should be updated; the independent cache-marker case strict-XPASSes when that marker is preserved.
 
 The cache marker is lost somewhere in the pinned `/v1/messages` translation before the custom provider request. The probe does not add a compatibility rewrite because the observed request does not establish which representation LiteLLM intends the custom handler to receive.
+
+## Chat Completions comparison
+
+A follow-up local probe serves the same pinned app and uses the OpenAI SDK's
+`/v1/chat/completions` route, replacing only Firebase/Tana HTTP transport. All four
+streaming/non-streaming × reported/absent-usage cases pass on RBE:
+[invocation 48334d3f-d77b-4cea-9ae7-cf76d5447fe1](https://app.buildbuddy.io/invocation/48334d3f-d77b-4cea-9ae7-cf76d5447fe1).
+`test_chat_completions_preserves_cache_and_optional_usage` retains these four
+cases as HTTP regressions. `test_chat_completions_stream_tool_roundtrip_without_usage`
+also exercises streaming tool arguments, then sends an assistant tool call and tool
+result through the same HTTP endpoint with a usage-less Tana continuation response.
+
+In every case the system content block's `cache_control` reaches the mocked Tana
+endpoint as `providerOptions.anthropic.cacheControl`. Without upstream usage,
+non-streaming returns the answer with SDK `usage=None`. Streaming with
+`stream_options.include_usage=true` also returns the answer, but LiteLLM supplies
+counts (15 prompt, 1 completion tokens for this fixture) despite Tana reporting
+none. Those are locally generated counts, not upstream-reported measurements.
+When Tana supplies 7 input and 6 output tokens, both modes preserve those totals.
+These probes do not establish live Tana behavior.

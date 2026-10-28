@@ -14,8 +14,8 @@ model:
   OAuth session, on the Anthropic Messages wire (a different upstream session on the same
   pod as `chatgpt-sub/*`, distinct from the direct-API `anthropic-api/ant-messages/*` entries)
 - `anthropic-api/ant-messages/*` — direct Anthropic API on the Anthropic Messages wire
-- `tana/ant-messages/*` — Tana account via tana-litellm, an Anthropic Messages
-  passthrough
+- `tana/oai-chat/*` — Tana account via the in-process Chat Completions custom
+  provider, which maps requests to Tana core messages
 - `google/goog-generate/*` / `google/goog-embed/*` — Google AI key (Gemini), on Google's
   own `:generateContent` / `:embedContent` wire
 - `mistral/oai-chat/*` — Mistral API key
@@ -25,8 +25,10 @@ model:
   endpoints; the chat model segment carries the `num_ctx` variant (`gpt-oss-20b-512k`)
   that distinguishes chat entries
 
-The shape is the OUTBOUND wire — the request LiteLLM makes to the provider, never the
-request a client makes to LiteLLM. Nothing about the inbound side is pinned: LiteLLM routes
+The shape is the OUTBOUND provider interface, never the request a client makes
+to LiteLLM. For the in-process Tana provider this is the Chat Completions model
+interface; the adapter itself calls Tana's private core-message HTTP endpoint.
+Nothing about the inbound side is pinned: LiteLLM routes
 on `model_name` alone, takes the incoming shape from whichever endpoint the client called,
 and translates rather than rejecting a mismatch, so every entry is reachable from
 `/v1/messages`, `/v1/chat/completions` and `/v1/responses` alike — the laptop
@@ -132,9 +134,8 @@ _UPSTREAM_DEFINER: dict[str, str] = {
     # LiteLLM's native Ollama chat adapter has its own provider prefix. It speaks
     # the same Ollama wire shape, so public `olm-chat` route names remain unchanged.
     "ollama_chat": "olm",
-    # The in-process Tana adapter speaks Anthropic Messages on the wire while using its
-    # own LiteLLM provider prefix for dispatch.
-    "tana": "ant",
+    # The custom provider consumes Chat Completions messages and maps them to Tana core messages.
+    "tana": "oai",
 }
 
 
@@ -306,16 +307,12 @@ GPT_6_1_SOL = Model(id="gpt-6.1-sol", display_name="GPT-6.1 Sol", limits=_GPT_6_
 # "one model + effort knob" to map onto; we expose one model per family at its default
 # effort. Each entry: (exposed-name base, Tana provider model suffix). The provider
 # adds its dispatch prefix and preserves the suffix's slash for Tana.
-TANA_MESSAGES = Upstream(Provider.TANA, "tana", "messages", supports_function_calling=True)
+TANA_CHAT = Upstream(Provider.TANA, "tana", "chat", supports_function_calling=True)
 TANA_SONNET = Route(
-    Model("claude-sonnet-4-6", "Claude Sonnet 4.6"), TANA_MESSAGES, upstream_model="tana/claude-sonnet-4-6/medium"
+    Model("claude-sonnet-4-6", "Claude Sonnet 4.6"), TANA_CHAT, upstream_model="tana/claude-sonnet-4-6/medium"
 )
-TANA_OPUS = Route(
-    Model("claude-opus-4-6", "Claude Opus 4.6"), TANA_MESSAGES, upstream_model="tana/claude-opus-4-6/high"
-)
-TANA_HAIKU = Route(
-    Model("claude-haiku-4-5", "Haiku 4.5"), TANA_MESSAGES, upstream_model="tana/claude-haiku-4-5-20251001"
-)
+TANA_OPUS = Route(Model("claude-opus-4-6", "Claude Opus 4.6"), TANA_CHAT, upstream_model="tana/claude-opus-4-6/high")
+TANA_HAIKU = Route(Model("claude-haiku-4-5", "Haiku 4.5"), TANA_CHAT, upstream_model="tana/claude-haiku-4-5-20251001")
 
 # Direct-API identities retain their separately sourced declarations below. Do not
 # upgrade them or copy subscription gateway limits merely because vendor names match.

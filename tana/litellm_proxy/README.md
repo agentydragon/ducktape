@@ -4,6 +4,33 @@ This package is a small LiteLLM custom provider for Tana's internal
 `llmProxy` endpoint. It is intended as a development/demo integration, not as a
 stable public Tana API.
 
+## Client API
+
+Use the OpenAI-compatible **Chat Completions API** (`POST /v1/chat/completions`)
+when calling this provider through LiteLLM. The catalog declares these routes as
+`tana/oai-chat/*`. Their cluster exposure and Claude wrapper remain parked under
+#9574; changing the declaration does not enable either.
+
+The in-process provider consumes Chat Completions messages and maps them to Tana's
+private core-message endpoints. The demo below already uses that interface.
+
+LiteLLM's Anthropic Messages endpoint (`POST /v1/messages`) has two reproduced gaps
+with the pinned LiteLLM 1.103.0 adapter:
+
+- System-block `cache_control` markers disappear before reaching the Tana provider,
+  although the system text survives. Chat Completions preserves those markers.
+- A non-streaming Tana response without usage statistics produces HTTP 500 because
+  the Anthropic response adapter accesses a missing `ModelResponse.usage` attribute.
+  Chat Completions returns the answer with `usage=None`.
+
+An Anthropic-only client still uses this translation even if its model name contains
+`oai-chat`; the inbound endpoint determines the client protocol. The HTTP tests keep
+these known gaps as narrow expected failures. [Probe details](../debug/2026-10-28-litellm-anthropic-http-contract.md).
+
+For Chat Completions streaming with `stream_options.include_usage=true`, LiteLLM
+generates local token counts when Tana omits usage. Treat those as estimates rather
+than Tana-reported measurements.
+
 ## Usage
 
 ```bash
