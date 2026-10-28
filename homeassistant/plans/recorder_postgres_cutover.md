@@ -7,7 +7,8 @@ CNPG `uri` Secret through `RECORDER_DB_URL`.
 
 The cutover PR recorded that pgloader imported 29,806 rows without errors, schema version 53 was
 present, and counts matched SQLite across the 13 history tables checked. The original SQLite
-database remains on the Home Assistant config PVC.
+database was reported on the Home Assistant config PVC at cutover; its current retention has not
+been live-checked.
 
 ## Remaining acceptance checks
 
