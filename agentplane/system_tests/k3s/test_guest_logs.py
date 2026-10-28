@@ -10,10 +10,12 @@ from agentplane.system_tests.k3s.guest_logs import (
     CONSOLES_ENV,
     SHUTDOWN_COMPLETE,
     SUPERVISION_FAILED,
+    SUPERVISION_PASSED,
     GuestBootError,
     GuestShutdownError,
     capture,
     check_boot,
+    systemd_proof_passed,
 )
 
 MARKER = "2026-10-27T21:41:13.112914838Z stdout F " + SHUTDOWN_COMPLETE.decode() + "\n"
@@ -30,6 +32,19 @@ def test_boot_failure_requires_a_complete_console_payload(tmp_path: Path, monkey
         stream.write(b"\n")
     with pytest.raises(GuestBootError, match="test-launcher"):
         check_boot()
+
+
+def test_proof_success_requires_a_complete_console_receipt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(CONSOLES_ENV, str(tmp_path))
+    assert not systemd_proof_passed()
+    console = tmp_path / "test-launcher" / "console.cri.log"
+    console.parent.mkdir()
+    marker = b"2026-10-28T21:41:13Z stdout F " + SUPERVISION_PASSED
+    console.write_bytes(marker.replace(b"stdout F ", b"stdout F + printf ") + b"\n" + marker)
+    assert not systemd_proof_passed()
+    with console.open("ab") as stream:
+        stream.write(b"\n")
+    assert systemd_proof_passed()
 
 
 def test_retains_unlinked_logs_and_new_incarnations(tmp_path: Path) -> None:

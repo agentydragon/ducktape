@@ -17,9 +17,11 @@ marked `vm_sandboxes`. `system_test(vm_sandboxes = ...)` runs those cases, and o
 `test_vm_sandbox_vm` boots a VM Sandbox and runs a scripted turn on each harness through the
 launcher's egress relay, verifies real systemd PID 1, service containment and unprivileged
 manager access denial, and verifies Codex tool OOM containment and a successful follow-up
-command with the same Runner and app-server. Every VM boot first runs the native supervision
-proof against its real manager, covering lost launch replies, detached children, Runner death
-and startup fencing. The other `_vm` targets are `manual`; name one to run it.
+command with the same Runner and app-server. `test_runner_systemd_vm` boots one VM with
+`vm_systemd_proof = True` and gates all eleven native supervision subtests against its real manager,
+covering lost launch replies, detached children, Runner death and startup fencing. Ordinary VM
+guests omit that proof binary and startup override. The other `_vm` targets are `manual`; name one
+to run it.
 `system_test(real_model = True)` runs the `real_model` cases as `<scenario>_real_model`
 ([Real model on k3s](#real-model-on-k3s)). Two checks need what only a deployment has and run against
 staging by hand ([Running live](#running-live)).

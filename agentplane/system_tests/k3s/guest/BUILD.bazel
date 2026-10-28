@@ -208,7 +208,6 @@ pkg_tar(
         ":root_init",
         ":root_resource_limits",
         ":root_shared_systemd",
-        ":root_supervision_fixture",
         ":root_systemd",
         "//agentplane/system_tests/k3s:runner_claude_harness",
         "//agentplane/system_tests/k3s:runner_codex_harness",
@@ -252,5 +251,77 @@ oci_layout_rloc(
     name = "vm_guest_root_layout",
     testonly = True,
     image = ":root_image",
+    visibility = ["//agentplane/system_tests:__pkg__"],
+)
+
+# The real-manager proof has its own CI action. Ordinary VM guests carry neither its binary nor
+# its startup override, so edits to the proof do not invalidate their guest root disk.
+pkg_files(
+    name = "systemd_proof_start_file",
+    srcs = ["runner_systemd_proof"],
+    attributes = pkg_attributes(mode = "0755"),
+    renames = {"runner_systemd_proof": "agentplane-runner-systemd-proof"},
+)
+
+pkg_tar(
+    name = "systemd_proof_start",
+    srcs = [":systemd_proof_start_file"],
+    package_dir = "/usr/sbin",
+)
+
+pkg_tar(
+    name = "systemd_proof_unit",
+    srcs = ["runner-systemd-proof.conf"],
+    mode = "0644",
+    package_dir = "/etc/systemd/system/agentplane-runner.service.d",
+)
+
+pkg_tar(
+    name = "systemd_proof_root_tar",
+    deps = [
+        ":root_supervision_fixture",
+        ":root_tar",
+        ":systemd_proof_start",
+        ":systemd_proof_unit",
+    ],
+)
+
+erofs_image(
+    name = "systemd_proof_root_erofs",
+    out = "systemd-proof-root.img",
+    tar = ":systemd_proof_root_tar",
+    volume_label = "guest",
+)
+
+pkg_files(
+    name = "systemd_proof_root_file",
+    srcs = [":systemd_proof_root_erofs"],
+    attributes = pkg_attributes(
+        gid = 107,
+        mode = "0644",
+        uid = 107,
+    ),
+    renames = {":systemd_proof_root_erofs": "root.img"},
+)
+
+pkg_tar(
+    name = "systemd_proof_root_disk",
+    srcs = [":systemd_proof_root_file"],
+    package_dir = "/disk",
+)
+
+oci_image(
+    name = "systemd_proof_root_image",
+    architecture = "amd64",
+    os = "linux",
+    tars = [":systemd_proof_root_disk"],
+    user = "107:107",
+)
+
+# Keep the basename (and therefore the imported image tag) identical to the ordinary guest's.
+oci_layout_rloc(
+    name = "systemd_proof/vm_guest_root_layout",
+    testonly = True,
+    image = ":systemd_proof_root_image",
     visibility = ["//agentplane/system_tests:__pkg__"],
 )

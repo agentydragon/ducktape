@@ -14,6 +14,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # gazelle:exclude test_storage.py
 # gazelle:exclude test_suspend_resume.py
 # gazelle:exclude test_thread_stream.py
+# gazelle:exclude test_runner_systemd.py
 # gazelle:exclude test_vm_sandbox.py
 # gazelle:exclude test_vm_workspace_ownership.py
 
@@ -177,6 +178,22 @@ system_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+# All eleven kernel/systemd supervision subtests run once in a real VM, before Runner startup.
+system_test(
+    name = "test_runner_systemd",
+    srcs = ["test_runner_systemd.py"],
+    vm_sandboxes = "ci",
+    vm_systemd_proof = True,
+    deps = [
+        ":conftest",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
+        "//agentplane/system_tests/k3s:guest_logs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )
 

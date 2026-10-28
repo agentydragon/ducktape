@@ -32,7 +32,7 @@ _VM_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model-vm.json"
 _REAL_MODEL_FIXTURE = "//agentplane/system_tests/k3s:rendered/public-litellm.json"
 _REAL_MODEL_SECRET = "OPENAI_API_KEY"
 
-def system_test(name, srcs, deps, data = [], k3s = None, vm_sandboxes = None, real_model = False, mcp_fixtures = False):
+def system_test(name, srcs, deps, data = [], k3s = None, vm_sandboxes = None, real_model = False, mcp_fixtures = False, vm_systemd_proof = False):
     """Generates `name` when `k3s` names its scenarios' kind, `name + "_vm"` when `vm_sandboxes` says
     where it runs, and `name + "_real_model"` when `real_model` is True.
 
@@ -45,9 +45,14 @@ def system_test(name, srcs, deps, data = [], k3s = None, vm_sandboxes = None, re
     a k3s stack whose LLM ingress forwards to the public LiteLLM; it is tagged `live_openai_api`, so PR CI
     builds it and `--config=live-openai` runs it.
 
+    `vm_systemd_proof` adds the real-manager kernel proof to the guest startup for its dedicated
+    scenario; ordinary VM scenarios use a guest root without the proof binary or override.
+
     A hidden library owns the source, so all targets share one compiled copy. Gazelle does not
     manage macro rules: exclude the source in the BUILD file and keep `deps` by hand.
     """
+    if vm_systemd_proof and vm_sandboxes == None:
+        fail("vm_systemd_proof requires vm_sandboxes")
     py_library(
         name = name + "_lib",
         testonly = True,
@@ -70,14 +75,15 @@ def system_test(name, srcs, deps, data = [], k3s = None, vm_sandboxes = None, re
     if vm_sandboxes != None:
         if vm_sandboxes not in ("ci", "manual"):
             fail("vm_sandboxes is \"ci\" or \"manual\", not %r" % vm_sandboxes)
+        guest_root = "//agentplane/system_tests/k3s/guest:" + ("systemd_proof/" if vm_systemd_proof else "") + "vm_guest_root_layout"
         _k3s_test(
             name = name + "_vm",
             # The guest's runner comes from the runner disk; no Sandbox runs the Pod runner image.
             runner_layout = None,
             fixture = _VM_FIXTURE,
             layouts = [],
-            data = K3S_VM_DATA,
-            env = K3S_VM_ENV,
+            data = K3S_VM_DATA + [guest_root],
+            env = K3S_VM_ENV | {"K3S_VM_GUEST_ROOT_RLOCATION": "$(rlocationpath " + guest_root + ")"},
             # VM layers stay on disk; sharing pod runners would discard their tmpfs image store.
             exec_properties = {"test.runner-recycling-key": "k3s-vm"},
             tags = ["manual"] if vm_sandboxes == "manual" else [],

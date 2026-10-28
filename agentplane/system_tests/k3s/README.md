@@ -132,11 +132,15 @@ The runner comes from the production runner disk, as in a Pod; both harnesses, G
 are pinned in the root disk. Runner uses systemd's private manager connection; a real system bus
 also exercises denial of unprivileged management requests.
 
-The fixture's runner entrypoint runs `runner_systemd_fixture` against that manager before `exec`ing
-the production runner. Its isolated `/state/.supervision-proof` exercises native process streams,
-limits, descendant fencing, uncertain launch outcomes and parent death. A failed proof prevents
-runner startup; its output is retained in the guest console. The proof binary and entrypoint
-override exist only in the fixture image.
+The dedicated CI target `//agentplane/system_tests:test_runner_systemd_vm` selects a guest root
+with `runner_systemd_fixture` and an entrypoint override. Before `exec`ing the production runner,
+it runs all eleven subtests against the real manager. Its isolated `/state/.supervision-proof`
+exercises native process streams, limits, descendant fencing, uncertain launch outcomes and parent
+death. A failed proof prevents runner startup; its output is retained in the guest console. The
+outer test requires the completed success receipt as well as runner readiness. Ordinary VM targets
+use a root disk without the proof binary or override and start the runner directly. Both variants
+share the kernel, production runner disk, systemd units and guest preparation. The proof target
+still uses the full k3s application stack.
 
 The guest loads the ACPI button/evdev drivers and runs BusyBox `acpid`. On a power-button event,
 the listener requests `systemctl poweroff`. Systemd stops the runner and its execution services,

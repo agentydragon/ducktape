@@ -35,7 +35,6 @@ K3S_VM_DATA = [
     for name in K3S_VM_IMAGES
 ] + [
     "//agentplane/system_tests/k3s/guest:vm_guest_boot_layout",
-    "//agentplane/system_tests/k3s/guest:vm_guest_root_layout",
     "@kubevirt_operator_bundle//file",
     "@kyverno_install//file",
 ]

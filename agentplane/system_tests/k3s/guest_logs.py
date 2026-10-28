@@ -13,6 +13,7 @@ from typing import BinaryIO
 logger = logging.getLogger(__name__)
 SHUTDOWN_COMPLETE = b"AGENTPLANE_GUEST_SHUTDOWN_COMPLETE"
 SUPERVISION_FAILED = b"AGENTPLANE_GUEST_SUPERVISION_FAILED"
+SUPERVISION_PASSED = b'AGENTPLANE_GUEST_SUPERVISION_PASSED {"real_systemd_supervision":"passed"}'
 CONSOLES_ENV = "AGENTPLANE_TEST_GUEST_CONSOLES"
 
 
@@ -37,6 +38,11 @@ def check_boot() -> None:
     for path in Path(directory).glob("*/*.cri.log"):
         if _has_payload(path, SUPERVISION_FAILED):
             raise GuestBootError(f"Guest supervision proof failed; see retained console {path}")
+
+
+def systemd_proof_passed() -> bool:
+    """Whether a retained console contains the real-manager proof's completed success receipt."""
+    return any(_has_payload(path, SUPERVISION_PASSED) for path in Path(os.environ[CONSOLES_ENV]).glob("*/*.cri.log"))
 
 
 def _copy(log_root: Path, scopes: dict[str, Path], stop: threading.Event) -> None:

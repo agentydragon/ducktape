@@ -31,7 +31,6 @@ VM_SUPERVISION_PROBE = r"""set -eu
 printf 'VM_UID %s\n' "$(id -u)"
 printf 'VM_PID1 %s\n' "$(cat /proc/1/comm)"
 printf 'VM_CGROUP %s\n' "$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)"
-printf 'VM_SYSTEMD_PROOF %s\n' "$(cat /state/runner-systemd-proof.json)"
 if systemctl_output=$(/usr/bin/systemctl --no-ask-password restart agentplane-cgroup-observer.service 2>&1); then
     echo VM_SYSTEMCTL_UNEXPECTED_SUCCESS
     exit 23
@@ -180,7 +179,6 @@ async def test_a_vm_sandbox_runs_a_turn(
                 assert output.contains("VM_UID 107"), output.blocks
                 assert output.contains("VM_PID1 systemd"), output.blocks
                 output_text = "\n".join(output.blocks)
-                assert 'VM_SYSTEMD_PROOF {"real_systemd_supervision":"passed"}' in output_text, output.blocks
                 (cgroup_line,) = [line for line in output_text.splitlines() if line.startswith("VM_CGROUP ")]
                 cgroup = cgroup_line.removeprefix("VM_CGROUP ")
                 subtree = (

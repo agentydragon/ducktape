@@ -1,10 +1,3 @@
 #!/usr/bin/busybox sh
 set -eu
-if ! /usr/libexec/agentplane/runner-systemd-fixture -test.run='^TestSystemdKernelFixture$' -test.v -test.timeout=90s; then
-	# Keep the manager's native-service evidence before fixture teardown removes the guest.
-	journalctl --boot --no-pager --unit='agentplane-native-*.service' >/dev/ttyS0 || :
-	systemctl --no-pager list-jobs >/dev/ttyS0 || :
-	echo "AGENTPLANE_GUEST_SUPERVISION_FAILED" >/dev/ttyS0
-	exit 1
-fi
 exec /run/agentplane/runner/bin/agentplane-runner --config /run/agentplane/config/runner.json --launch-file /run/agentplane/sandbox/launch.json

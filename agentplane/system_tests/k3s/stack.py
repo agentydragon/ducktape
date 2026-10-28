@@ -491,7 +491,10 @@ def running_stack(
     fixture_images = {_ci_image(rloc): rloc for rloc in fixture_layouts}
     guest_images: dict[str, Path] = {}
     if fixture.vm_sandboxes:
-        guest_layouts = sorted(get_required_path("_main/agentplane/system_tests/k3s/guest").glob("*_layout.rloc"))
+        guest_layouts = [
+            get_required_path("_main/agentplane/system_tests/k3s/guest/vm_guest_boot_layout.rloc"),
+            get_required_path(os.environ["K3S_VM_GUEST_ROOT_RLOCATION"]),
+        ]
         guest_images = {_ci_image(rloc): rloc for rloc in guest_layouts}
 
     work = Path(tempfile.mkdtemp())
