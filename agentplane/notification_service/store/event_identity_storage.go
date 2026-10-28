@@ -190,11 +190,16 @@ func insertEntry(
 	if err != nil {
 		return fmt.Errorf("encode %T entry payload: %w", event, err)
 	}
+	var legacyPayloadParameter any = string(payload)
+	switch event.(type) {
+	case ActionsEvent, GitHubMergeabilityEvent, GitHubMergeabilitySnapshotEvent:
+		legacyPayloadParameter = nil
+	}
 	var typedPayloadParameter any
 	if typedPayload != nil {
 		typedPayloadParameter = typedPayload
 	}
-	args := append([]any{inboxID, cursor, string(identity), string(payload), createdAt}, columns.args()...)
+	args := append([]any{inboxID, cursor, string(identity), legacyPayloadParameter, createdAt}, columns.args()...)
 	args = append(args, typedPayloadParameter)
 	_, err = tx.ExecContext(ctx, `INSERT INTO entry (inbox_id, cursor, event, payload, created_at,
 		identity_provider, actions_request_id, actions_sequence,

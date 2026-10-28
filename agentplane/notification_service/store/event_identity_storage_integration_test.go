@@ -3,14 +3,47 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/entrystoragepb"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestEventIdentityProviderProofIsValidatedOfflineAndConstrainsNewWrites(t *testing.T) {
+	f := newIsolatedFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, body("event-identity-proof"))
+	event := ActionsEvent{RequestID: uuid.New(), Sequence: 1}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
+
+	var validated bool
+	if err := f.db.QueryRowContext(t.Context(), `SELECT convalidated FROM pg_constraint
+		WHERE conrelid = 'entry'::regclass AND conname = 'entry_identity_provider_required'`).Scan(&validated); err != nil {
+		t.Fatal(err)
+	}
+	if validated {
+		t.Fatal("migration validated the identity provider proof on the serving path")
+	}
+	_, err := f.db.ExecContext(t.Context(), `UPDATE entry SET identity_provider = NULL WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
+	var postgresError *pq.Error
+	if !errors.As(err, &postgresError) || postgresError.Constraint != "entry_identity_provider_required" {
+		t.Fatalf("writing an incomplete relational identity returned %v, want entry_identity_provider_required", err)
+	}
+	if err := ValidateEntryIdentityProviderConstraint(t.Context(), f.db); err != nil {
+		t.Fatalf("validate provider proof in the offline validator: %v", err)
+	}
+	if err := f.db.QueryRowContext(t.Context(), `SELECT convalidated FROM pg_constraint
+		WHERE conrelid = 'entry'::regclass AND conname = 'entry_identity_provider_required'`).Scan(&validated); err != nil {
+		t.Fatal(err)
+	}
+	if !validated {
+		t.Fatal("offline validation did not publish the provider proof")
+	}
+}
 
 func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
@@ -92,6 +125,19 @@ func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t
 		t.Errorf("message identity columns = %+v", got[6])
 	}
 	for i, wantNull := range []bool{false, true, true, true, false, false, false} {
+		var legacyPayloadNull bool
+		if err := f.db.QueryRowContext(t.Context(), `SELECT payload IS NULL
+			FROM entry WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1).Scan(&legacyPayloadNull); err != nil {
+			t.Fatal(err)
+		}
+		wantLegacyPayloadNull := false
+		switch events[i].(type) {
+		case ActionsEvent, GitHubMergeabilityEvent, GitHubMergeabilitySnapshotEvent:
+			wantLegacyPayloadNull = true
+		}
+		if legacyPayloadNull != wantLegacyPayloadNull {
+			t.Errorf("event %d legacy JSON payload is NULL = %t, want %t", i, legacyPayloadNull, wantLegacyPayloadNull)
+		}
 		var isNull bool
 		var encoded []byte
 		if err := f.db.QueryRowContext(t.Context(), `SELECT typed_payload IS NULL, typed_payload

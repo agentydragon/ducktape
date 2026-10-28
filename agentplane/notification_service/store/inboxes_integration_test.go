@@ -111,6 +111,8 @@ func TestReadRejectsMissingTypedContentInsteadOfFallingBackToJSON(t *testing.T) 
 	subscription := f.subscribe(t, body("missing-typed-content"))
 	event := ActionsEvent{RequestID: uuid.New(), Sequence: 1}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
+	// Simulate a retained dual-write row whose typed bytes were not converted.
+	f.exec(t, `UPDATE entry SET payload = $3::jsonb WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID, 1, payloadOf(event))
 	f.exec(t, `UPDATE entry SET typed_payload = NULL WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
 	_, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, 0, 128)
 	if err == nil || !strings.Contains(err.Error(), "typed content is missing") {

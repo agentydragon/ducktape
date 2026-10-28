@@ -89,6 +89,15 @@ func TestAMessageIsAnEntryOfItsSessionsInboxThatItsSenderFollows(t *testing.T) {
 		t.Fatalf("entry = %+v", entry)
 	}
 	sameJSON(t, entry.Payload, []byte(`{"body": "Please review the change.", "from_session": "test-from-session"}`))
+	var legacyPayloadNull, typedPayloadPresent bool
+	if err := f.db.QueryRowContext(t.Context(), `SELECT payload IS NULL, typed_payload IS NOT NULL
+		FROM entry WHERE message_id = $1`, sent.ID).Scan(&legacyPayloadNull, &typedPayloadPresent); err != nil {
+		t.Fatal(err)
+	}
+	if legacyPayloadNull || !typedPayloadPresent {
+		t.Fatalf("message storage has legacy-payload-null=%t typed-payload-present=%t; want both JSON and protobuf during the staged size-guard rollout",
+			legacyPayloadNull, typedPayloadPresent)
+	}
 
 	// The message made the inbox due, and a notice covers it.
 	claim := f.claim(t)
