@@ -102,20 +102,9 @@ Any trial of this 502 GB checkpoint needs fresh placement and capacity review ag
 Wyrm2's current Piraeus pools; do not assume the retired VM model disk is available.
 Keep every expert; caching changes placement, whereas dropping experts changes the model.
 
-## Superseded storage recommendation
-
-The September 24 expansion of the VM model disk to 1,024 GiB was an interim step,
-recorded in [PR #7893](https://github.com/agentydragon/ducktape/pull/7893). On
-2026-10-27, `virtio8` was destroyed during the Wyrm2 move to Piraeus. The current
-pool layout, model placement, and remaining storage work are tracked in the
-[Piraeus production plan](../plans/piraeus_production.md); use it to assess new
-model trials instead of the old `virtio8` capacity recommendation.
-
-The same September table proposed growing the Bazel cache disk (`virtio4`) from
-150 to 250 GiB. Current Terraform and NixOS sources now declare 300 GiB for that
-disk ([Terraform](../../terraform/main/proxmox-vms.tf),
-[NixOS](../../../nix/nixos/hosts/wyrm2/default.nix)); the old proposed size is
-superseded.
+Current Wyrm2 pool capacity and storage decisions are in the
+[Piraeus production plan](../plans/piraeus_production.md); Ollama's current PVC
+classes and sizes are declared in [its source](../../cdk8s/ollama/app.py).
 
 ## September 26 checkpoint and decision
 
