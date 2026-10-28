@@ -334,6 +334,20 @@ fn plain_array_const_mutating_method_is_not_tracked() {
 }
 
 #[test]
+fn plain_array_derived_candidates_keep_escape_and_mutation_vetoes() {
+    let src = r#"
+const source = [];
+const escaped = source.map((value) => value);
+consume(escaped);
+const mutated = source.slice();
+mutated.push(1);
+"#;
+    assert!(is_plain_array(src, "source"));
+    assert!(!is_plain_array(src, "escaped"));
+    assert!(!is_plain_array(src, "mutated"));
+}
+
+#[test]
 fn plain_data_let_object_literal_with_no_writes_is_tracked() {
     // `let TA = {…}` is admissible even though re-assignment
     // is syntactically allowed: the chunk-wide write scan

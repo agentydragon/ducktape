@@ -1349,6 +1349,19 @@ fn coercion_of_primitive_const_binding_is_pure() {
 }
 
 #[test]
+fn const_value_inference_does_not_resolve_aliases_from_later_declarations() {
+    assert!(classify_built("const value = 1; const alias = value;", "`${alias}`").is_pure());
+    assert!(!classify_built("const alias = value; const value = 1;", "`${alias}`").is_pure());
+    assert!(
+        !classify_built(
+            "const alias = brand; const brand = Symbol('brand');",
+            "class { [alias]() {} }"
+        )
+        .is_pure()
+    );
+}
+
+#[test]
 fn coercion_of_let_or_var_binding_stays_unknown() {
     // `let` / `var` can be rebound to an object later, so the binding is
     // not provably primitive and the coercion stays conservative.

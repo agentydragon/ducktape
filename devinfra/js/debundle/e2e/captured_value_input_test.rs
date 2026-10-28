@@ -227,6 +227,59 @@ fn captured_primitive_predicate_return_preserves_cli_runtime() {
 }
 
 #[test]
+fn captured_fluent_and_derived_array_values_share_cli_analysis() {
+    let provider = "const toolkit = { object(shape) { return { shape, extend(more) { return { shape: Object.assign({}, this.shape, more) }; } }; } };\nexport { toolkit as e4 };\nvar captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function isReady() { if (captured.ready) return false; return true; }\n";
+    let source = "import './opaque.js';\nimport { e4, isReady } from './peer.js';\nconst mapped = [1].map((value) => value + 1);\nconst copied = mapped.slice();\nconst base = e4.object({ value: copied[0] });\nconst schema = base.extend({ ready: true });\nconsole.log(schema.shape.value, schema.shape.ready, isReady(), globalThis.runtimeSettings.events.join(','));\nexport { schema };\n";
+    let chunks = [("static/peer", provider)];
+    let fluent = [ChunkExportPurityBuilder::new("static/peer")
+        .with_fluent_exports(&["e4"])
+        .build()];
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&chunks)
+            .with_extra_files(OPAQUE_FILES)
+            .with_chunk_export_purity(&fluent)
+            .with_value_inputs(
+                "static/peer",
+                vec![input_for(
+                    provider,
+                    "var captured = globalThis.runtimeSettings.state;",
+                )],
+            ),
+    );
+    assert_preserved_entry_output(&fixture, "2 true false capture\n");
+
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let schema = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|bindings| {
+                    bindings
+                        .iter()
+                        .any(|binding| binding["binding"] == "schema")
+                })
+        })
+        .expect("schema source-unit node");
+    assert_eq!(schema["purity"]["kind"], "pure", "{schema}");
+    assert!(
+        graph["native_integrity_witnesses"]
+            .as_array()
+            .is_some_and(|witnesses| {
+                witnesses.iter().any(|witness| {
+                    witness["chunk_id"] == "static/peer"
+                        && witness["operation"] == "mutation_call"
+                        && input_refs(&witness["value_input_refs"])
+                })
+            }),
+        "captured value input must retain provenance in native-call evidence: {graph}"
+    );
+}
+
+#[test]
 fn fresh_graph_does_not_hide_stale_source_pin_or_wrong_export() {
     let input = captured_input(PROVIDER);
     let mut stale = input.clone();

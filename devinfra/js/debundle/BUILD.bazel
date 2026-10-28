@@ -535,6 +535,7 @@ rust_library(
         "purity/redundant_hints.rs",
         "purity/redundant_hints_tests.rs",
         "purity/ts_enum_iife.rs",
+        "purity/value_inference.rs",
         "purity/whitelists.rs",
         "reports/mod.rs",
         "reports/schema.rs",

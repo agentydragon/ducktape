@@ -14,8 +14,10 @@
 //!   purity walk (`classify_function_body` / `BodyPurityCollector`).
 //! - `redundant_hints` — `RedundantPurity*` / `RedundantPureMember*`
 //!   types and the load-bearing-hint detectors.
-//! - `plain_data` — plain-data / plain-array / primitive-const /
-//!   fluent-const binding collection and the escape/write scanners.
+//! - `plain_data` — plain-data candidate collection and whole-chunk
+//!   escape/write scanners.
+//! - `value_inference` — finite positive closure for fluent, plain-array,
+//!   primitive, and Symbol const value classes.
 //! - `ts_enum_iife` — recognition of the TypeScript-emit enum IIFE
 //!   plain-object shape.
 //! - `purity_type` — the `Purity` / `PurityReason` / `PurityRule`
@@ -58,6 +60,7 @@ mod plain_data;
 mod purity_type;
 mod redundant_hints;
 mod ts_enum_iife;
+mod value_inference;
 
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.
@@ -68,6 +71,9 @@ pub(crate) use fresh_record::*;
 pub(crate) use plain_data::*;
 pub(crate) use redundant_hints::*;
 pub(crate) use ts_enum_iife::*;
+use value_inference::{
+    infer_const_value_classes, infer_fluent_const_bindings, infer_plain_array_candidates,
+};
 
 // Public API: importable at `purity::<item>` exactly as before the split.
 pub use code_graph::ChunkCodeGraph;

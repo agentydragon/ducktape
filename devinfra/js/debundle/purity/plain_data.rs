@@ -263,34 +263,12 @@ pub(crate) fn collect_ts_enum_named_data_candidates(
 }
 
 const SAFE_PLAIN_ARRAY_METHODS: &[&str] = &["filter", "flatMap", "forEach", "map", "slice"];
-const ARRAY_PRODUCING_METHODS: &[&str] = &["filter", "flatMap", "map", "slice"];
 
 pub(crate) fn collect_plain_array_bindings(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
 ) -> BTreeSet<String> {
-    let mut const_inits = Vec::new();
-    for item in body {
-        const_inits.extend(
-            plain_data_var_candidates(item.as_module_item())
-                .into_iter()
-                .filter_map(|(name, init, kind)| {
-                    (kind == VarDeclKind::Const).then_some((name, init))
-                }),
-        );
-    }
-    let mut candidates = BTreeSet::new();
-    loop {
-        let before = candidates.len();
-        for (name, init) in &const_inits {
-            if expr_returns_plain_array(init, &candidates) {
-                candidates.insert(name.clone());
-            }
-        }
-        if candidates.len() == before {
-            break;
-        }
-    }
+    let candidates = infer_plain_array_candidates(body);
     if candidates.is_empty() {
         return BTreeSet::new();
     }
@@ -326,35 +304,6 @@ pub(crate) fn collect_plain_array_bindings(
         .collect()
 }
 
-fn expr_returns_plain_array(expr: &Expr, known_plain_arrays: &BTreeSet<String>) -> bool {
-    match expr.unwrap_parens() {
-        Expr::Array(_) => true,
-        Expr::Ident(ident) => known_plain_arrays.contains(ident.sym.as_ref()),
-        Expr::Call(call) => {
-            let Callee::Expr(callee) = &call.callee else {
-                return false;
-            };
-            let Expr::Member(member) = callee.unwrap_parens() else {
-                return false;
-            };
-            matches!(
-                &member.prop,
-                MemberProp::Ident(prop) if ARRAY_PRODUCING_METHODS.contains(&prop.sym.as_ref())
-            ) && expr_is_plain_array_receiver(member.obj.as_ref(), known_plain_arrays)
-        }
-        _ => false,
-    }
-}
-
-fn expr_is_plain_array_receiver(expr: &Expr, known_plain_arrays: &BTreeSet<String>) -> bool {
-    match expr.unwrap_parens() {
-        Expr::Array(_) => true,
-        Expr::Ident(ident) => known_plain_arrays.contains(ident.sym.as_ref()),
-        Expr::Call(_) => expr_returns_plain_array(expr, known_plain_arrays),
-        _ => false,
-    }
-}
-
 /// Chunk-top `const` names whose init evaluates to either a
 /// ToString-safe primitive or a Symbol, resolving earlier const aliases.
 /// `const` guarantees the binding never rebinds, and a primitive
@@ -365,32 +314,19 @@ fn expr_is_plain_array_receiver(expr: &Expr, known_plain_arrays: &BTreeSet<Strin
 /// are excluded: a later non-primitive rebind would invalidate the
 /// claim.
 ///
-/// Forward pass in source order: a const resolves only references to
-/// consts declared before it — exactly the set visible without
-/// hitting the temporal dead zone. Function/arrow inits never reach
-/// here (`plain_data_var_candidates` filters them) and are not
-/// primitive anyway.
+/// Source-prefix inference: a const resolves only references to consts
+/// declared before it — exactly the set visible without hitting the
+/// temporal dead zone. Function/arrow inits never reach here
+/// (`plain_data_var_candidates` filters them) and are not primitive anyway.
 pub(crate) fn collect_const_value_classes(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
 ) -> (BTreeSet<String>, BTreeSet<String>) {
-    let mut primitives: BTreeSet<String> = BTreeSet::new();
-    let mut symbols: BTreeSet<String> = BTreeSet::new();
     let mut symbol_write = SymbolGlobalWriteFinder::default();
-    let no_local_shadow: BTreeSet<String> = BTreeSet::new();
     for item in body {
         item.as_module_item().visit_with(&mut symbol_write);
-        for (name, init, kind) in plain_data_var_candidates(item.as_module_item()) {
-            if kind != VarDeclKind::Const {
-                continue;
-            }
-            if is_result_primitive(init, &primitives, &no_local_shadow) {
-                primitives.insert(name);
-            } else if is_symbol_const_init(init, &symbols, shadowed) {
-                symbols.insert(name);
-            }
-        }
     }
+    let (primitives, mut symbols) = infer_const_value_classes(body, shadowed);
     if symbol_write.hit {
         // A visible replacement can make `Symbol(...)` return an object.
         // Discard even earlier candidates so later computed-key uses cannot
@@ -484,7 +420,7 @@ fn is_symbol_member(member: &MemberExpr) -> bool {
     }
 }
 
-fn is_symbol_const_init(
+pub(crate) fn is_symbol_const_init(
     init: &Expr,
     symbols: &BTreeSet<String>,
     shadowed: &BTreeSet<&'static str>,
@@ -525,36 +461,14 @@ fn is_symbol_const_init(
 /// `classify_fluent_chain`. This mirrors the
 /// `primitive_const_bindings` value-class/evaluation split.
 ///
-/// Fixpoint loop rather than a single forward pass so a chain rooted
-/// in a later-declared const (legal for lazily-evaluated references,
-/// and cheap to cover) still closes; bounded by one insertion per
+/// Positive closure rather than a single source pass so a chain rooted
+/// in a later-declared const still closes; bounded by one fact per
 /// chunk-top const.
 pub(crate) fn collect_fluent_const_bindings(
     body: &[TopLevelItemView<'_>],
     seed: &BTreeSet<String>,
 ) -> BTreeSet<String> {
-    let mut fluent = seed.clone();
-    if fluent.is_empty() {
-        return fluent;
-    }
-    loop {
-        let mut changed = false;
-        for item in body {
-            for (name, init, kind) in plain_data_var_candidates(item.as_module_item()) {
-                if kind == VarDeclKind::Const
-                    && !fluent.contains(&name)
-                    && fluent_chain_root(init).is_some_and(|root| fluent.contains(root))
-                {
-                    fluent.insert(name);
-                    changed = true;
-                }
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
-    fluent
+    infer_fluent_const_bindings(body, seed)
 }
 
 /// The root identifier of a fluent chain — a chain of static
@@ -611,7 +525,7 @@ pub(crate) fn fluent_chain_root(expr: &Expr) -> Option<&str> {
 ///   spec-mandated TypeError — sound for the read-purity claim ("no
 ///   user code fires") because the throw is engine-emitted, not a
 ///   user getter.
-fn plain_data_var_candidates(item: &ModuleItem) -> Vec<(String, &Expr, VarDeclKind)> {
+pub(super) fn plain_data_var_candidates(item: &ModuleItem) -> Vec<(String, &Expr, VarDeclKind)> {
     let var = match item {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
