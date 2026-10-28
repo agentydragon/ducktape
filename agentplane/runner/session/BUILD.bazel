@@ -55,6 +55,7 @@ go_test(
         "//agentplane/runner/harness",
         "//agentplane/runner/journal",
         "//agentplane/runner/lifecycle",
+        "//agentplane/runner/operation",
         "//agentplane/runner/retained",
         "//agentplane/runner/scripts",
         "//agentplane/runner/supervision",

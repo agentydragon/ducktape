@@ -11,6 +11,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
@@ -244,12 +245,16 @@ func TestPreparationCompletionRefreshesStaleSchedulingInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	done := make(chan struct{})
-	close(done)
-	op := &operation{id: "completed-preparation", done: done}
+	op := operation.New(m.ctx)
+	op.Register(&s.work)
 	s.mu.Lock()
 	s.preparation = op
 	s.mu.Unlock()
-	m.publishOperation(s.id, op, true)
+	if err := op.Start(
+		func(done bool) error { return m.publishOperation(s.id, op.ID(), done) },
+		m.fail, func(context.Context) error { return nil }, nil, nil,
+	); err != nil {
+		t.Fatal(err)
+	}
 	waitSession(t, s, func(current Runtime) bool { return current.Phase == Ready && current.ProcessID == p.ID() }, "preparation ready after stale input")
 }

@@ -50,7 +50,7 @@ func (s *Session) Observe() Observation {
 		activeTurn: checkpoint.ActiveTurnID, nativeActiveTurn: s.activeTurn != "", setup: s.setup, launch: s.launch,
 		nativeSession: copied(s.record.NativeSessionID), failure: copied(s.failure),
 		processID: s.processID, processState: s.processState, shared: s.codexAppServer != nil,
-		ready:     !operationDone(s.halting) && (current.Phase == Ready || current.Phase == Stopping) && current.ProcessID == s.processID && live,
+		ready:     !s.halting.Finished() && (current.Phase == Ready || current.Phase == Stopping) && current.ProcessID == s.processID && live,
 		preparing: current.Phase == Preparing, pending: len(s.pending) > 0,
 	}
 	if live {
