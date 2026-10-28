@@ -670,6 +670,78 @@ fn describe_filters_direction_and_typed_reasons_before_limit_counts() {
 }
 
 #[test]
+fn describe_census_normalizes_roles_and_counts_filtered_edges_before_the_limit() {
+    let fixture = GraphFixture::new(
+        "const selected = 0;\n\
+         const directReader = selected;\n\
+         function calledAtInit() { return selected; }\n\
+         calledAtInit();\n\
+         function later() { return selected; }\n\
+         const anotherDirectReader = selected;\n",
+        &[],
+    );
+
+    let report = fixture.json(&["describe", "selected"]);
+    let incoming = report["edge_census"]["incoming"].as_array().unwrap();
+    let census_count = |kind: &str, role: &str| {
+        incoming
+            .iter()
+            .find(|row| row["edge_kind"] == kind && row["role"] == role)
+            .unwrap_or_else(|| panic!("missing {kind}/{role} in {incoming:?}"))["count"]
+            .as_u64()
+            .unwrap()
+    };
+    assert_eq!(census_count("eager_use", "direct"), 2);
+    assert_eq!(census_count("eager_use", "promoted_at_init"), 1);
+    assert_eq!(census_count("lazy_use", "direct"), 2);
+
+    let raw_direct_eager_count = report["incoming_edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|edge| edge["edge_kind"] == "eager_use" && edge.get("role").is_none())
+        .count();
+    assert_eq!(
+        raw_direct_eager_count as u64,
+        census_count("eager_use", "direct")
+    );
+    assert!(
+        report["incoming_edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|edge| {
+                edge["edge_kind"] == "eager_use" && edge["role"]["kind"] == "promoted_at_init"
+            })
+    );
+
+    let limited = fixture.json(&[
+        "describe",
+        "selected",
+        "--direction",
+        "incoming",
+        "--reason",
+        "eager_use",
+        "--limit",
+        "1",
+    ]);
+    assert_eq!(limited["incoming_edges"].as_array().unwrap().len(), 1);
+    assert_eq!(limited["limits"]["sections"]["incoming_edges"]["total"], 3);
+    assert_eq!(
+        limited["edge_census"]["incoming"],
+        json!([
+            {"edge_kind": "eager_use", "role": "direct", "count": 2},
+            {"edge_kind": "eager_use", "role": "promoted_at_init", "count": 1}
+        ])
+    );
+    assert_eq!(limited["edge_census"]["outgoing"], json!([]));
+
+    let text = fixture.command(&["describe", "selected", "--format", "text"]);
+    assert!(text.status.success());
+    assert!(String::from_utf8_lossy(&text.stdout).contains("eager_use/promoted_at_init=1"));
+}
+
+#[test]
 fn describe_requires_all_instead_of_a_zero_limit_and_rejects_limit_with_all() {
     let fixture = fixture();
     let zero = fixture.command(&["describe", "ZZ", "--limit", "0"]);

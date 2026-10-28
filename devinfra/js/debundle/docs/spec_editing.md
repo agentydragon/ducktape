@@ -96,6 +96,17 @@ Use `debundle graph-summary --include-proposals` only when aggregate
 proposal and diagnostic counts matter; the default is a fast graph
 summary.
 
+For a bounded owner pass, choose `graph-summary --limit N` when looking for
+large residual atomic groups or `modules propose --limit N` when choosing among
+proposals. Put the owners to inspect in `owners.json`, then query their raw
+incoming edges with `debundle describe --batch owners.json --direction incoming
+--limit N`; add repeated `--reason KIND` filters when they narrow the question.
+The report's `edge_census` keeps the complete filtered counts by dependency kind
+and normalized role while detail rows are limited. Incoming and outgoing
+counts are separate incidences, and an internal edge can occur in both. Treat
+the census as navigation evidence; only the assignment gate evaluates whether
+an edit is valid.
+
 For a focused look at one proposal before applying:
 
 ```bash

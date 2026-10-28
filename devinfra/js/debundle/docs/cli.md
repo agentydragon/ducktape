@@ -1057,6 +1057,20 @@ wrong promoted callback.
 
 When a binding's role is unclear or a proposal is suspicious:
 
+For bounded owner discovery, choose the first page for the question: use
+`graph-summary --limit N` to inspect the largest residual atomic groups, or
+`modules propose --limit N` to inspect a bounded proposal page. Put the owners
+you want to investigate in a JSON array, then use
+`describe --batch owners.json --direction incoming --limit N` (repeat
+`--reason KIND` when useful). Each report's `edge_census` counts raw incoming
+and outgoing edges by dependency kind and role after direction/reason filters;
+an omitted raw role is reported as `direct`, and counts stay complete when edge
+detail rows are limited. The two directions are separate incidence counts, so
+an edge between two selected source units can appear once in each. Do not sum
+them as unique edges. Atomic-group and module-quotient edges have no census role:
+those aggregate projections do not retain the raw edge role. This filtered
+inspection helps choose what to read next; it is not a gate verdict.
+
 1. **`debundle describe <sym>`** — graph + spec context: the binding's
    source unit, home module, atom membership, and incoming/outgoing edges. Add
    `--include-proposals` only when proposer proposal/diagnostic

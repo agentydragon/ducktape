@@ -14,6 +14,18 @@ fn fixture() -> GraphFixture {
     )
 }
 
+fn census_fixture() -> GraphFixture {
+    GraphFixture::new(
+        "const selected = 0;\n\
+         const directReader = selected;\n\
+         function calledAtInit() { return selected; }\n\
+         calledAtInit();\n\
+         function later() { return selected; }\n\
+         const anotherDirectReader = selected;\n",
+        &[],
+    )
+}
+
 fn batch_file(fixture: &GraphFixture, ids: &[&str]) -> String {
     let path = fixture.root().join("describe-ids.json");
     fs::write(&path, serde_json::to_vec(ids).unwrap()).unwrap();
@@ -62,6 +74,59 @@ fn batch_preserves_order_duplicates_and_every_selection_kind() {
             "1",
         ],
     );
+}
+
+#[test]
+fn census_is_single_batch_equivalent_and_counts_internal_edge_incidence() {
+    let fixture = census_fixture();
+    let ids = ["selected", "unit:0"];
+    let options = [
+        "--direction",
+        "incoming",
+        "--reason",
+        "eager_use",
+        "--limit",
+        "1",
+    ];
+    assert_equivalent(&fixture, &ids, &options);
+
+    let limited = fixture.json(&[
+        "describe",
+        "selected",
+        "--direction",
+        "incoming",
+        "--reason",
+        "eager_use",
+        "--limit",
+        "1",
+    ]);
+    assert_eq!(limited["incoming_edges"].as_array().unwrap().len(), 1);
+    assert_eq!(limited["limits"]["sections"]["incoming_edges"]["total"], 3);
+    assert_eq!(
+        limited["edge_census"]["incoming"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(limited["edge_census"]["outgoing"], json!([]));
+
+    let internal = GraphFixture::new(
+        "const seed = 1;\nconst value = seed + 1;\n",
+        &[(
+            "owners.yaml",
+            "members: [{selector: {binding: {name: seed}}}, {selector: {binding: {name: value}}}]\n",
+        )],
+    );
+    let report = internal.json(&["describe", "owners"]);
+    assert_eq!(report["source_unit_ids"], json!(["unit:0", "unit:1"]));
+    let expected_incidence = json!([
+        {"edge_kind": "eager_use", "role": "direct", "count": 1}
+    ]);
+    assert_eq!(report["edge_census"]["incoming"], expected_incidence);
+    assert_eq!(report["edge_census"]["outgoing"], expected_incidence);
+    assert_eq!(report["limits"]["sections"]["incoming_edges"]["total"], 1);
+    assert_eq!(report["limits"]["sections"]["outgoing_edges"]["total"], 1);
+
+    let owned = ["owners"];
+    assert_equivalent(&internal, &owned, &["--limit", "1"]);
 }
 
 #[test]

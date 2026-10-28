@@ -275,6 +275,7 @@ pub struct ExplainReport {
     pub binding_homes: Vec<BindingHomeReport>,
     pub incoming_edges: Vec<DependencyEdgeReport>,
     pub outgoing_edges: Vec<DependencyEdgeReport>,
+    pub edge_census: EdgeCensus,
     pub atomic_groups: Vec<AtomicGroupReport>,
     pub incoming_atomic_edges: Vec<AtomicGroupEdgeReport>,
     pub outgoing_atomic_edges: Vec<AtomicGroupEdgeReport>,
@@ -289,6 +290,35 @@ pub struct ExplainReport {
     pub module_proposal_diagnostics: Option<Vec<ProposalDiagnostic>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limits: Option<LimitReport>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EdgeCensus {
+    pub incoming: Vec<EdgeCensusRow>,
+    pub outgoing: Vec<EdgeCensusRow>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EdgeCensusRow {
+    pub edge_kind: DepKind,
+    pub role: EdgeCensusRole,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum EdgeCensusRole {
+    Direct,
+    PromotedAtInit,
+}
+
+impl EdgeCensusRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::PromotedAtInit => "promoted_at_init",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -880,6 +910,11 @@ fn explain_from_graph(
         direction_matches && matches_reason(&edge.edge_kinds)
     });
 
+    let edge_census = EdgeCensus {
+        incoming: edge_census_rows(&incoming_edges),
+        outgoing: edge_census_rows(&outgoing_edges),
+    };
+
     let mut neighbor_ids = BTreeSet::new();
     for edge in &incoming_edges {
         if !source_unit_set.contains(&edge.source) {
@@ -999,6 +1034,7 @@ fn explain_from_graph(
         binding_homes,
         incoming_edges,
         outgoing_edges,
+        edge_census,
         atomic_groups,
         incoming_atomic_edges,
         outgoing_atomic_edges,
@@ -1012,6 +1048,25 @@ fn explain_from_graph(
             sections,
         }),
     })
+}
+
+fn edge_census_rows(edges: &[DependencyEdgeReport]) -> Vec<EdgeCensusRow> {
+    let mut counts = BTreeMap::new();
+    for edge in edges {
+        let role = match &edge.role {
+            Some(analysis::EdgeRoleReport::PromotedAtInit { .. }) => EdgeCensusRole::PromotedAtInit,
+            None => EdgeCensusRole::Direct,
+        };
+        *counts.entry((edge.edge_kind, role)).or_insert(0) += 1;
+    }
+    counts
+        .into_iter()
+        .map(|((edge_kind, role), count)| EdgeCensusRow {
+            edge_kind,
+            role,
+            count,
+        })
+        .collect()
 }
 
 pub fn run_source_selection_report(args: &SourceSelectionArgs) -> Result<SourceSelectionReport> {

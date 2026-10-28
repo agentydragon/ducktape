@@ -44,7 +44,7 @@ pub(super) struct DescribeArgs {
     #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
     pub size_cap_lines: usize,
 
-    /// Maximum number of rows per report section (default 20; use --all for exhaustive results).
+    /// Maximum number of rows per report section (default 20; edge census counts stay complete).
     #[arg(
         long,
         default_value = "20",
@@ -57,11 +57,11 @@ pub(super) struct DescribeArgs {
     #[arg(long)]
     pub all: bool,
 
-    /// Which dependency-graph edge directions to show.
+    /// Which dependency-graph edge directions to show and count.
     #[arg(long, value_enum, default_value = "both")]
     pub direction: ExplainDirection,
 
-    /// Keep edges with this dependency reason; repeat to include several reasons.
+    /// Keep edges with this dependency reason; repeat to filter details and census counts.
     #[arg(long = "reason", value_name = "REASON")]
     pub reasons: Vec<DepKind>,
 
@@ -853,6 +853,12 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
         report.incoming_edges.len(),
         report.outgoing_edges.len()
     ));
+    out.push_str("  edge census (directional incidences):\n");
+    out.push_str(&format!(
+        "    incoming: {}\n    outgoing: {}\n",
+        render_edge_census(&report.edge_census.incoming),
+        render_edge_census(&report.edge_census.outgoing),
+    ));
     if let Some(limits) = &report.limits {
         for (section, limit) in &limits.sections {
             if limit.truncated {
@@ -863,6 +869,16 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
             }
         }
     }
+}
+
+fn render_edge_census(rows: &[peel::plan::EdgeCensusRow]) -> String {
+    if rows.is_empty() {
+        return "none".to_string();
+    }
+    rows.iter()
+        .map(|row| format!("{}/{}={}", row.edge_kind, row.role.as_str(), row.count))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub(super) fn run_atoms(args: AtomicGroupsArgs) -> Result<()> {
