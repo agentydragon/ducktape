@@ -7,6 +7,7 @@ import (
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -18,10 +19,10 @@ const (
 )
 
 func (r *Runner) ListSessions(ctx context.Context, _ *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
-	if desiredState := r.lifecycle.desiredState(); desiredState.Mode != runnerRunning {
-		minimum := stageFlushing
-		if desiredState.Mode == runnerClosing {
-			minimum = stageClosed
+	if desiredState := r.lifecycle.desiredState(); desiredState.Mode != runnerlifecycle.Running {
+		minimum := runnerlifecycle.Flushing
+		if desiredState.Mode == runnerlifecycle.Closing {
+			minimum = runnerlifecycle.Closed
 		}
 		if err := r.lifecycle.wait(ctx, minimum); err != nil {
 			return nil, rpcError(err)
@@ -146,9 +147,9 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 	if r.store.Lameduck() {
 		facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_DRAINING
 		current, desiredState := r.lifecycle.status(), r.lifecycle.desiredState()
-		if current.Generation == desiredState.Generation && current.Stage >= stageFlushing {
+		if current.Generation == desiredState.Generation && current.Stage >= runnerlifecycle.Flushing {
 			facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_FLUSHING
-			if current.Stage == stageQuiesced {
+			if current.Stage == runnerlifecycle.Quiesced {
 				facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_QUIESCED
 			}
 		}

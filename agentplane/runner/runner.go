@@ -12,7 +12,9 @@ import (
 	"time"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
@@ -31,7 +33,6 @@ type Runner struct {
 	cancel              context.CancelFunc
 	owner               *retained.Owner
 	supervisor          *supervision.Supervisor
-	executorSupervisor  *supervision.Supervisor
 	workspaceSupervisor *supervision.Supervisor
 	store               *retained.Store
 	bootID              string
@@ -41,7 +42,7 @@ type Runner struct {
 	bootstrapMu         sync.Mutex
 	sessions            map[string]*Session
 	codexAppServer      *codexAppServer
-	codexExecServer     *codexExecServer
+	codexExecServer     *execserver.Host
 	changes             chan struct{}
 	fatal               chan error
 	idleSince           *timestamppb.Timestamp
@@ -54,6 +55,10 @@ type Runner struct {
 }
 
 func New(config Config) (*Runner, error) {
+	return newRunner(config, nil)
+}
+
+func newRunner(config Config, adapters *execserver.Adapters) (*Runner, error) {
 	if err := config.resolveSessionReconcileConcurrency(); err != nil {
 		return nil, err
 	}
@@ -61,9 +66,14 @@ func New(config Config) (*Runner, error) {
 		if config.Codex == nil {
 			return nil, errors.New("Codex exec-server requires a configured Codex harness")
 		}
-		if err := config.CodexExecServer.validate(config.VMProcessPolicy); err != nil {
+		if err := config.CodexExecServer.Validate(config.VMProcessPolicy); err != nil {
 			return nil, err
 		}
+		if adapters != nil && (adapters.Start == nil || adapters.Probe == nil) {
+			return nil, errors.New("Codex exec-server test adapters are incomplete")
+		}
+	} else if adapters != nil {
+		return nil, errors.New("Codex exec-server adapters require executor configuration")
 	}
 	if _, present := config.HarnessEnvironment["CODEX_EXEC_SERVER_URL"]; present {
 		return nil, errors.New("CODEX_EXEC_SERVER_URL is owned by Runner executor configuration")
@@ -89,9 +99,18 @@ func New(config Config) (*Runner, error) {
 			return nil, err
 		}
 	}
+	if config.CodexExecServer != nil && adapters == nil {
+		adapters = &execserver.Adapters{
+			Start: execserver.NativeStart(execserver.NativeConfig{
+				Config: *config.CodexExecServer, Binary: config.Codex.Binary, StateDir: config.StateDir,
+				Environment: config.HarnessEnvironment, Supervisor: executorSupervisor,
+			}),
+			Probe: execserver.ProbeAt(config.CodexExecServer.URL),
+		}
+	}
 	if config.CodexExecServer != nil && config.CodexExecServer.ContainerSocket != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		err := fenceCodexExecServerContainer(ctx, config.CodexExecServer.ContainerSocket, "")
+		err := execserver.FenceContainer(ctx, config.CodexExecServer.ContainerSocket, "")
 		cancel()
 		if err != nil {
 			_ = owner.Close()
@@ -104,14 +123,11 @@ func New(config Config) (*Runner, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &Runner{config: config, owner: owner, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, executorSupervisor: executorSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, sessions: map[string]*Session{}, changes: make(chan struct{}), fatal: make(chan error, 1)}
-	if config.CodexExecServer != nil {
-		r.codexExecServer = newCodexExecServer(r, *config.CodexExecServer)
-	}
+	r := &Runner{config: config, owner: owner, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, sessions: map[string]*Session{}, changes: make(chan struct{}), fatal: make(chan error, 1)}
 	if config.Codex != nil {
 		r.codexAppServer = newCodexAppServer(r, *config.Codex)
 	}
-	lifecycle, err := newLifecycle(r)
+	lifecycle, err := newLifecycle(r, adapters)
 	if err != nil {
 		cancel()
 		_ = owner.Close()
@@ -261,18 +277,18 @@ func (r *Runner) adoptIncarnation(ctx context.Context, uid string) error {
 	for {
 		r.mu.Lock()
 		desiredState := r.lifecycle.desiredState()
-		if desiredState.Mode == runnerClosing {
+		if desiredState.Mode == runnerlifecycle.Closing {
 			r.mu.Unlock()
 			return errors.New("runner is closing")
 		}
 		previous, known := r.store.IncarnationUID()
 		progress := r.lifecycle.status()
-		if desiredState.Mode != runnerQuiescing || !known || previous == uid ||
-			(progress.Generation == desiredState.Generation && progress.Stage >= stageFlushing && progress.Error == "") {
+		if desiredState.Mode != runnerlifecycle.Quiescing || !known || previous == uid ||
+			(progress.Generation == desiredState.Generation && progress.Stage >= runnerlifecycle.Flushing && progress.Error == "") {
 			break
 		}
 		r.mu.Unlock()
-		if err := r.lifecycle.wait(ctx, stageFlushing); err != nil {
+		if err := r.lifecycle.wait(ctx, runnerlifecycle.Flushing); err != nil {
 			return err
 		}
 	}
@@ -280,9 +296,9 @@ func (r *Runner) adoptIncarnation(ctx context.Context, uid string) error {
 		r.mu.Unlock()
 		return err
 	}
-	mode, sealUID := runnerRunning, ""
+	mode, sealUID := runnerlifecycle.Running, ""
 	if r.store.Lameduck() {
-		mode, sealUID = runnerQuiescing, uid
+		mode, sealUID = runnerlifecycle.Quiescing, uid
 	}
 	err := r.lifecycle.setDesiredState(mode, sealUID)
 	r.mu.Unlock()
@@ -395,7 +411,7 @@ func (r *Runner) Quiesce(_ context.Context, q *runnerpb.QuiesceRequest) (*runner
 	}
 	r.mu.Lock()
 	desiredState, progress := r.lifecycle.desiredState(), r.lifecycle.status()
-	if desiredState.Mode == runnerClosing && progress.Generation == desiredState.Generation && progress.Stage == stageClosed {
+	if desiredState.Mode == runnerlifecycle.Closing && progress.Generation == desiredState.Generation && progress.Stage == runnerlifecycle.Closed {
 		r.mu.Unlock()
 		return nil, status.Error(codes.Unavailable, "runner is closed")
 	}
@@ -409,9 +425,9 @@ func (r *Runner) Quiesce(_ context.Context, q *runnerpb.QuiesceRequest) (*runner
 	}
 	uid, err := r.store.RequireIncarnationUID()
 	if err == nil {
-		mode := runnerQuiescing
-		if r.lifecycle.desiredState().Mode == runnerClosing {
-			mode = runnerClosing
+		mode := runnerlifecycle.Quiescing
+		if r.lifecycle.desiredState().Mode == runnerlifecycle.Closing {
+			mode = runnerlifecycle.Closing
 		}
 		err = r.lifecycle.setDesiredState(mode, uid)
 	}
@@ -431,11 +447,11 @@ func (r *Runner) Quiesce(_ context.Context, q *runnerpb.QuiesceRequest) (*runner
 func (r *Runner) Close() error {
 	r.closeOnce.Do(func() {
 		r.mu.Lock()
-		err := r.lifecycle.setDesiredState(runnerClosing, "")
+		err := r.lifecycle.setDesiredState(runnerlifecycle.Closing, "")
 		r.mu.Unlock()
 		r.changed()
 		if err == nil {
-			err = r.lifecycle.wait(r.ctx, stageClosed)
+			err = r.lifecycle.wait(r.ctx, runnerlifecycle.Closed)
 		}
 		if err != nil {
 			r.closeErr = err

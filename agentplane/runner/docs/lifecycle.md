@@ -23,12 +23,12 @@ connections, or other native state.
 | Process input                            | `supervision.Host` (`supervision-host`)         | Revision-only wakeups for asynchronous launch, exit and stop observations.                              |
 | Codex app-server input and runtime       | App-server host and QController                 | Shared app-server demand, exec-server dependency deadline, process incarnation and stop outcome.        |
 | Bootstrap input and runtime              | Runner host and Bootstrap QController           | Accepted one-shot bootstrap demand and its running or terminal outcome.                                 |
-| Operation result                         | Runner/Session host                             | Wakes the owning controller when an asynchronous host operation completes.                              |
+| Operation result                         | Owning Runner, Session, or Codex host           | Wakes its controller after an asynchronous host operation completes.                                    |
 | Journal seal and ingress acknowledgement | Runner/transport host                           | In-memory mirrors of the durable journal seal and persisted ingress acknowledgement.                    |
 | Native process effects                   | `supervision.Controller` and `supervision.Host` | Start, observe and fence every Runner-managed native execution domain.                                  |
 | Protocol and journal effects             | Runner, Session, Codex app-server, and journal  | Handshake, frame routing, dispatch, interruption, inspection, sealing, and persistence.                 |
 
-Controller roles cover Runner, Session, native process lifetime, Codex exec-server, Codex app-server, and Sandbox bootstrap. The reusable process-lifetime controller is supplied by `supervision/` and registered in the Runner's lifecycle engine.
+Controller roles cover Runner, Session, native process lifetime, Codex exec-server, Codex app-server, and Sandbox bootstrap. The reusable process-lifetime controller is supplied by `supervision/` and registered in the Runner's lifecycle engine. The `lifecycle/` package defines only the Runner-wide desired-state and aggregate-status resources, with typed COSI readers and writers shared by these controllers.
 The renamed resource kinds are `RunnerDesiredStates.agentplane`,
 `CodexExecServerInputs.agentplane`, `CodexExecServerRuntimes.agentplane`,
 `CodexAppServerInputs.agentplane`, and `CodexAppServerRuntimes.agentplane`.
@@ -118,6 +118,15 @@ waiters only observe completion and cannot cancel the accepted work. Pending and
 dispatch; inspection runs away from stdout so it can wait for native history replies.
 
 ## Codex exec-server and app-server
+
+The `codex/execserver/` package owns the exec-server input/runtime resources, its COSI controller,
+the host's one-shot probe slot and result, and the native launch and container-fencing adapters. The
+Runner constructs this host after its shared process host exists and registers the controller in the
+same COSI runtime as the aggregate Runner controller. It receives the shared state, process host,
+configuration, launch/probe adapters, and a narrow admission guard explicitly; it does not depend on
+the Runner coordinator. The app-server host publishes accepted exec-server demand while holding the
+Runner admission barrier. Before creating native process intent, the component asks the guard to
+compare the complete expected desired state under that same barrier.
 
 The Codex exec-server controller creates one process intent on demand, probes readiness, and
 schedules health checks and bounded restart backoff with COSI requeues. The shared process

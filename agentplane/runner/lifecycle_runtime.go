@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
 
@@ -26,7 +28,7 @@ type lifecycle struct {
 	processes *supervision.Host
 }
 
-func newLifecycle(r *Runner) (*lifecycle, error) {
+func newLifecycle(r *Runner, adapters *execserver.Adapters) (*lifecycle, error) {
 	if err := r.config.resolveSessionReconcileConcurrency(); err != nil {
 		return nil, err
 	}
@@ -36,25 +38,42 @@ func newLifecycle(r *Runner) (*lifecycle, error) {
 		return nil, err
 	}
 	l := &lifecycle{runner: r, state: store, engine: engine, done: make(chan struct{})}
-	l.processes = supervision.NewHost(r.ctx, l.state, lifecycleNamespace, &l.workers, r.fail)
+	l.processes = supervision.NewHost(r.ctx, l.state, runnerlifecycle.Namespace, &l.workers, r.fail)
+	if r.config.CodexExecServer != nil {
+		if adapters == nil {
+			return nil, errors.New("Codex exec-server adapters are required")
+		}
+		executor, err := execserver.NewHost(*r.config.CodexExecServer, execserver.Dependencies{
+			Context: r.ctx, State: l.state, Workers: &l.workers, Processes: l.processes,
+			Admission: r.admitCodexExecServer, OnError: r.fail, OnRuntimeChange: r.changed,
+		}, *adapters)
+		if err != nil {
+			return nil, err
+		}
+		r.codexExecServer = executor
+		if err := executor.Initialize(r.ctx); err != nil {
+			return nil, err
+		}
+	}
 	if err := engine.RegisterController(&runnerLifecycleController{l: l}); err != nil {
 		return nil, err
 	}
 	if err := engine.RegisterQController(&sessionLifecycleController{l: l}); err != nil {
 		return nil, err
 	}
-	for _, c := range []controller.QController{
-		l.processes.Controller(),
-		&codexExecServerLifecycleController{l: l, host: r.codexExecServer},
+	controllers := []controller.QController{l.processes.Controller()}
+	if r.codexExecServer != nil {
+		controllers = append(controllers, r.codexExecServer.Controller())
+	}
+	controllers = append(
+		controllers,
 		&codexAppServerLifecycleController{l: l, host: r.codexAppServer, codexExecServer: r.codexExecServer},
 		&bootstrapLifecycleController{l: l},
-	} {
+	)
+	for _, c := range controllers {
 		if err := engine.RegisterQController(c); err != nil {
 			return nil, err
 		}
-	}
-	if err := publishLifecycle(l, codexExecServerResourceID, codexExecServerInputSpec{}); err != nil {
-		return nil, err
 	}
 	if err := publishLifecycle(l, codexAppServerResourceID, codexAppServerInputSpec{}); err != nil {
 		return nil, err
@@ -63,7 +82,7 @@ func newLifecycle(r *Runner) (*lifecycle, error) {
 		return nil, err
 	}
 
-	if err := publishLifecycle(l, "runner", runnerDesiredStateSpec{}); err != nil {
+	if err := runnerlifecycle.PublishDesired(l.runner.ctx, l.state, runnerlifecycle.Desired{}); err != nil {
 		return nil, err
 	}
 	return l, nil
@@ -84,26 +103,26 @@ func (l *lifecycle) run() {
 	}
 }
 
-func (l *lifecycle) desiredState() runnerDesiredStateSpec {
-	value, _, err := lifecycleRead[runnerDesiredStateSpec](l.runner.ctx, l.state, "runner")
+func (l *lifecycle) desiredState() runnerlifecycle.Desired {
+	value, _, err := runnerlifecycle.ReadDesired(l.runner.ctx, l.state)
 	if err != nil {
 		l.runner.fail(err)
-		return runnerDesiredStateSpec{Mode: runnerClosing}
+		return runnerlifecycle.Desired{Mode: runnerlifecycle.Closing}
 	}
 	return value
 }
 
 // Caller holds Runner.mu, the synchronous admission barrier.
-func (l *lifecycle) setDesiredState(mode runnerMode, sealUID string) error {
+func (l *lifecycle) setDesiredState(mode runnerlifecycle.Mode, sealUID string) error {
 	desiredState := l.desiredState()
-	if desiredState.Mode == runnerClosing && mode != runnerClosing {
+	if desiredState.Mode == runnerlifecycle.Closing && mode != runnerlifecycle.Closing {
 		return errors.New("runner is closing")
 	}
-	if mode == runnerClosing && sealUID == "" {
+	if mode == runnerlifecycle.Closing && sealUID == "" {
 		sealUID = desiredState.SealUID
 	}
 	retry := l.status().Error != ""
-	if mode == runnerRunning && desiredState.Mode != runnerRunning {
+	if mode == runnerlifecycle.Running && desiredState.Mode != runnerlifecycle.Running {
 		// Drop old execution requests while admission is still closed. Recovery
 		// publishes fresh demand after eligible journals have reopened.
 		l.publishMu.Lock()
@@ -123,32 +142,50 @@ func (l *lifecycle) setDesiredState(mode runnerMode, sealUID string) error {
 			l.publishMu.Unlock()
 			return err
 		}
-		if err := publishLifecycle(l, codexExecServerResourceID, codexExecServerInputSpec{}); err != nil {
-			l.publishMu.Unlock()
-			return err
-		}
 		l.publishMu.Unlock()
+		if l.runner.codexExecServer != nil {
+			if err := l.runner.codexExecServer.ResetDemand(l.runner.ctx); err != nil {
+				return err
+			}
+		}
 	}
 	if desiredState.Mode != mode || desiredState.SealUID != sealUID || retry {
 		desiredState.Mode, desiredState.SealUID, desiredState.Generation = mode, sealUID, desiredState.Generation+1
 	}
-	return publishLifecycle(l, "runner", desiredState)
+	return runnerlifecycle.PublishDesired(l.runner.ctx, l.state, desiredState)
+}
+
+func (r *Runner) admitCodexExecServer(ctx context.Context, expected runnerlifecycle.Desired, effect func(context.Context) error) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current, found, err := runnerlifecycle.ReadDesired(ctx, r.lifecycle.state)
+	if err != nil {
+		return err
+	}
+	if !found || current != expected || current.Mode != runnerlifecycle.Running {
+		return nil
+	}
+	return effect(ctx)
 }
 
 func (l *lifecycle) accepting() bool {
-	return l.desiredState().Mode == runnerRunning && !l.runner.store.Lameduck()
+	return l.desiredState().Mode == runnerlifecycle.Running && !l.runner.store.Lameduck()
 }
 
-func (l *lifecycle) status() runnerRuntimeSpec {
-	value, _, err := lifecycleRead[runnerRuntimeSpec](l.runner.ctx, l.state, "runner")
+func (l *lifecycle) status() runnerlifecycle.Status {
+	value, _, err := runnerlifecycle.ReadStatus(l.runner.ctx, l.state)
 	if err != nil {
 		l.runner.fail(err)
 	}
 	return value
 }
 
-func (l *lifecycle) wait(ctx context.Context, minimum runnerStage) error {
-	return watchLifecycle(ctx, l, "runner", func(current runnerRuntimeSpec) (bool, error) {
+func (l *lifecycle) wait(ctx context.Context, minimum runnerlifecycle.Stage) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := context.AfterFunc(l.runner.ctx, cancel)
+	defer stop()
+	return runnerlifecycle.WatchStatus(ctx, l.state, func(current runnerlifecycle.Status) (bool, error) {
 		if current.Error != "" {
 			return false, errors.New(current.Error)
 		}

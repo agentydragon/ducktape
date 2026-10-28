@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
@@ -14,17 +15,14 @@ import (
 )
 
 const (
-	lifecycleNamespace     = "runner"
-	runnerDesiredStateType = "RunnerDesiredStates.agentplane"
-	runnerInputType        = "RunnerInputs.agentplane"
-	runnerRuntimeType      = "RunnerRuntimes.agentplane"
-	sessionInputType       = "SessionInputs.agentplane"
-	sessionRuntimeType     = "SessionRuntimes.agentplane"
-	journalSealType        = "JournalSeals.agentplane"
-	ingressAckType         = "IngressAcks.agentplane"
-	operationResultType    = "NativeOperationResults.agentplane"
-	runnerControllerName   = "runner-lifecycle"
-	sessionControllerName  = "session-lifecycle"
+	runnerInputType       = "RunnerInputs.agentplane"
+	sessionInputType      = "SessionInputs.agentplane"
+	sessionRuntimeType    = "SessionRuntimes.agentplane"
+	journalSealType       = "JournalSeals.agentplane"
+	ingressAckType        = "IngressAcks.agentplane"
+	operationResultType   = "NativeOperationResults.agentplane"
+	runnerControllerName  = "runner-lifecycle"
+	sessionControllerName = "session-lifecycle"
 )
 
 // Specs contain scalar values and immutable time.Time values; no native handles or mutable references.
@@ -38,12 +36,12 @@ type lifecycleExtension[T lifecycleSpec[T]] struct{}
 
 func (lifecycleExtension[T]) ResourceDefinition() spec.ResourceDefinitionSpec {
 	var value T
-	return spec.ResourceDefinitionSpec{Type: value.resourceType(), DefaultNamespace: lifecycleNamespace}
+	return spec.ResourceDefinitionSpec{Type: value.resourceType(), DefaultNamespace: runnerlifecycle.Namespace}
 }
 
 func lifecycleResourceFor[T lifecycleSpec[T]](id string, value T) *typed.Resource[T, lifecycleExtension[T]] {
 	return typed.NewResource[T, lifecycleExtension[T]](
-		resource.NewMetadata(lifecycleNamespace, value.resourceType(), id, resource.VersionUndefined), value,
+		resource.NewMetadata(runnerlifecycle.Namespace, value.resourceType(), id, resource.VersionUndefined), value,
 	)
 }
 
@@ -71,41 +69,9 @@ func lifecycleWrite[T lifecycleSpec[T]](ctx context.Context, writer controller.R
 	return err == nil, err
 }
 
-type runnerMode uint8
-
-const (
-	runnerRunning runnerMode = iota
-	runnerQuiescing
-	runnerClosing
-)
-
-type runnerStage uint8
-
-const (
-	stageRunning runnerStage = iota
-	stageDraining
-	stageHalting
-	stageStopping
-	stageFencing
-	stageSealing
-	stageFlushing
-	stageQuiesced
-	stageClosed
-)
-
-type runnerDesiredStateSpec struct {
-	Mode       runnerMode
-	SealUID    string
-	Generation uint64
-}
 type runnerInputSpec struct {
 	Revision   uint64
 	Admissions int
-}
-type runnerRuntimeSpec struct {
-	Generation uint64
-	Stage      runnerStage
-	Error      string
 }
 type executionPhase uint8
 
@@ -155,14 +121,8 @@ type ingressAckSpec struct {
 	Sealed bool
 }
 
-func (runnerDesiredStateSpec) resourceType() resource.Type            { return runnerDesiredStateType }
-func (value runnerDesiredStateSpec) DeepCopy() runnerDesiredStateSpec { return value }
-
 func (runnerInputSpec) resourceType() resource.Type     { return runnerInputType }
 func (value runnerInputSpec) DeepCopy() runnerInputSpec { return value }
-
-func (runnerRuntimeSpec) resourceType() resource.Type       { return runnerRuntimeType }
-func (value runnerRuntimeSpec) DeepCopy() runnerRuntimeSpec { return value }
 
 func (sessionRuntimeSpec) resourceType() resource.Type        { return sessionRuntimeType }
 func (value sessionRuntimeSpec) DeepCopy() sessionRuntimeSpec { return value }

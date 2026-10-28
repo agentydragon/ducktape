@@ -33,7 +33,7 @@ func TestOperationCompletionPublicationPrecedesConsumption(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	r := &Runner{ctx: ctx, changes: make(chan struct{}), fatal: make(chan error, 1)}
-	l, err := newLifecycle(r)
+	l, err := newLifecycle(r, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

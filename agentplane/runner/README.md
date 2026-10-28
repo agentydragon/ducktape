@@ -23,7 +23,7 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 - `lifecycle_runtime.go`, `lifecycle_resources.go`, and `lifecycle_inputs.go`: Runner COSI runtime
   wiring, Runner-specific typed resources, host input publication, and the adapter that supplies
   admitted process owners and generations to `supervision.Host` ([ownership](docs/lifecycle.md)).
-- `runner_controller.go`, `session_controller.go`, `codex_exec_server_controller.go`, `codex_app_server_controller.go`,
+- `runner_controller.go`, `session_controller.go`, `codex_app_server_controller.go`,
   and `bootstrap_controller.go`: one lifecycle controller per file.
 - `operations.go`: owned asynchronous protocol/setup operations and completion routing.
 - `bootstrap.go`: durable bootstrap selection and the one-shot script effect.
@@ -32,8 +32,12 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 - `session.go`: Session host state, readiness and recovery; `session_events.go` owns journal-backed
   Event effects, and `session_native.go` owns harness preparation, dispatch and stream effects.
 - `session_setup.go`: the accepted one-shot Session setup effect.
-- `codex_exec_server.go`: isolated Codex execution operations, RPC probes and container ownership fencing
-  ([execution modes](docs/codex_executor.md)).
+- `codex/execserver/`: isolated executor configuration, COSI resources and controller, host-owned probe
+  operations, native launch adapter, RPC probes and container ownership fencing
+  ([execution modes](docs/codex_executor.md)). The package takes explicit process, state and admission
+  dependencies and owns no Runner lifecycle coordinator.
+- `lifecycle/`: the narrow shared COSI contract for Runner desired state and aggregate status. The root
+  Runner controller and independent component controllers use its typed readers and writers.
 - `executor/`: the PID-1 companion for Pod Codex execution, its Unix control protocol and reaper.
   `executor/cmd/` builds the standalone `agentplane-executor` binary.
 - `codex_app_server.go`: the Runner's one Codex app-server, its startup and exit, and the journaling of

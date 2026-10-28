@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/siderolabs/gen/optional"
@@ -50,7 +52,7 @@ const codexAppServerDependencyBudget = 30 * time.Second
 type codexAppServerLifecycleController struct {
 	l               *lifecycle
 	host            *codexAppServer
-	codexExecServer *codexExecServer
+	codexExecServer *execserver.Host
 }
 
 func (*codexAppServerLifecycleController) Name() string { return codexAppServerControllerName }
@@ -58,12 +60,12 @@ func (*codexAppServerLifecycleController) Name() string { return codexAppServerC
 func (*codexAppServerLifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
-			{Namespace: lifecycleNamespace, Type: codexAppServerInputType, Kind: controller.InputQPrimary},
-			{Namespace: lifecycleNamespace, Type: runnerDesiredStateType, Kind: controller.InputQMapped},
-			{Namespace: lifecycleNamespace, Type: runnerRuntimeType, Kind: controller.InputQMapped},
-			{Namespace: lifecycleNamespace, Type: runnerInputType, Kind: controller.InputQMapped},
-			{Namespace: lifecycleNamespace, Type: codexExecServerRuntimeType, Kind: controller.InputQMapped},
-			{Namespace: lifecycleNamespace, Type: operationResultType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: codexAppServerInputType, Kind: controller.InputQPrimary},
+			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.DesiredStateType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: runnerInputType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: execserver.RuntimeType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: operationResultType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: codexAppServerRuntimeType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
@@ -77,7 +79,7 @@ func (*codexAppServerLifecycleController) MapInput(ctx context.Context, _ *zap.L
 			return nil, err
 		}
 	}
-	return []resource.Pointer{resource.NewMetadata(lifecycleNamespace, codexAppServerInputType, codexAppServerResourceID, resource.VersionUndefined)}, nil
+	return []resource.Pointer{resource.NewMetadata(runnerlifecycle.Namespace, codexAppServerInputType, codexAppServerResourceID, resource.VersionUndefined)}, nil
 }
 
 func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, _ resource.Pointer) error {
@@ -89,11 +91,11 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 	if err != nil {
 		return err
 	}
-	desiredState, _, err := lifecycleRead[runnerDesiredStateSpec](ctx, r, "runner")
+	desiredState, _, err := runnerlifecycle.ReadDesired(ctx, r)
 	if err != nil {
 		return err
 	}
-	outer, _, err := lifecycleRead[runnerRuntimeSpec](ctx, r, "runner")
+	outer, _, err := runnerlifecycle.ReadStatus(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -126,7 +128,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 			server.initializingOwnerGeneration = 0
 			live := p != nil && p.process.Running()
 			server.mu.Unlock()
-			if live && desiredState.Mode == runnerRunning && generation == desiredState.Generation {
+			if live && desiredState.Mode == runnerlifecycle.Running && generation == desiredState.Generation {
 				current.Phase = codexAppServerReady
 				current.ProcessID = p.process.ID()
 				current.Attempt = input.Demand
@@ -168,12 +170,12 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 			current.Error = input.ExitError
 			if current.Error == "" {
 				current.Error = "Codex app-server exited"
-			} else if desiredState.Mode != runnerRunning {
+			} else if desiredState.Mode != runnerlifecycle.Running {
 				current.StopError = input.ExitError
 			}
 		}
 	}
-	if desiredState.Mode == runnerRunning && current.Generation != desiredState.Generation {
+	if desiredState.Mode == runnerlifecycle.Running && current.Generation != desiredState.Generation {
 		server.mu.Lock()
 		inactive := server.initializing == nil && server.draining == nil && server.current == nil
 		if inactive && server.initializingOwnerGeneration != desiredState.Generation {
@@ -195,10 +197,10 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 		}
 	}
 
-	if desiredState.Mode != runnerRunning {
-		// RunnerLifecycleController reaches stageStopping only after every Session has halted. Until
+	if desiredState.Mode != runnerlifecycle.Running {
+		// RunnerLifecycleController reaches runnerlifecycle.Stopping only after every Session has halted. Until
 		// then, the app-server remains available to finish those Sessions' native observations.
-		if outer.Stage < stageStopping {
+		if outer.Stage < runnerlifecycle.Stopping {
 			return write()
 		}
 		if current.StopError != "" {
@@ -278,7 +280,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 	}
 
 	if c.codexExecServer != nil {
-		executor, found, err := lifecycleRead[codexExecServerRuntimeSpec](ctx, r, codexExecServerResourceID)
+		executor, found, err := execserver.ReadRuntime(ctx, r)
 		if err != nil {
 			return err
 		}
@@ -306,7 +308,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 			current.ExecServerReadyDeadline = time.Time{}
 			return write()
 		}
-		if !found || executor.Phase != codexExecServerReady {
+		if !found || executor.Phase != execserver.Ready {
 			current.Generation = desiredState.Generation
 			current.Phase = codexAppServerInitializing
 			current.ProcessID = ""
@@ -337,7 +339,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 	// API honors cancellation when publishing process intent; this slot serializes the Codex initialization handshake.
 	c.l.runner.mu.Lock()
 	latest := c.l.desiredState()
-	if latest != desiredState || latest.Mode != runnerRunning {
+	if latest != desiredState || latest.Mode != runnerlifecycle.Running {
 		c.l.runner.mu.Unlock()
 		return nil
 	}

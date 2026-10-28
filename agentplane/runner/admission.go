@@ -12,6 +12,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"go.opentelemetry.io/otel/attribute"
@@ -129,7 +130,7 @@ func (r *Runner) admit(id string, c *commandpb.Command) (*eventlogpb.EventEntry,
 	}
 	r.mu.Lock()
 	desiredState, progress := r.lifecycle.desiredState(), r.lifecycle.status()
-	if desiredState.Mode == runnerClosing && progress.Generation == desiredState.Generation && progress.Stage == stageClosed {
+	if desiredState.Mode == runnerlifecycle.Closing && progress.Generation == desiredState.Generation && progress.Stage == runnerlifecycle.Closed {
 		r.mu.Unlock()
 		return nil, status.Error(codes.Unavailable, "runner is closed")
 	}

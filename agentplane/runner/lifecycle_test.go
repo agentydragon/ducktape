@@ -12,6 +12,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
@@ -102,7 +103,7 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 			if _, err := s.journal.GetCommand(ctx, "test-input"); err != nil {
 				t.Fatalf("quiesce cancellation poisoned the admitted journal: %v; runtime=%+v", err, r.lifecycle.status())
 			}
-			waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == stageFlushing }, "quiesce to seal the admitted journal")
+			waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Flushing }, "quiesce to seal the admitted journal")
 			command, err := s.journal.GetCommand(ctx, "test-input")
 			if err != nil || command == nil || command.TerminalCursor == nil {
 				t.Fatalf("undispatched admission was not settled: command=%+v err=%v", command, err)
@@ -111,7 +112,7 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 			if err := r.lifecycle.publishAck(s.id, retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
 				t.Fatal(err)
 			}
-			waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == stageQuiesced }, "quiesce completion")
+			waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Quiesced }, "quiesce completion")
 		})
 	}
 }
@@ -246,15 +247,15 @@ func TestCloseAfterQuiescePreservesSealAndWaitsForSetup(t *testing.T) {
 		t.Fatalf("accept quiesce: %v", err)
 	}
 	waitLifecycle(t, r, func() bool {
-		return r.lifecycle.status().Stage == stageHalting && s.runtimeState().Phase == executionStopping
+		return r.lifecycle.status().Stage == runnerlifecycle.Halting && s.runtimeState().Phase == executionStopping
 	}, "quiesce halt to wait at setup barrier")
 
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close() }()
 	waitLifecycle(t, r, func() bool {
 		desiredState := r.lifecycle.desiredState()
-		return desiredState.Mode == runnerClosing && desiredState.SealUID == "test-incarnation" &&
-			r.lifecycle.status().Stage == stageHalting && s.runtimeState().Phase == executionStopping
+		return desiredState.Mode == runnerlifecycle.Closing && desiredState.SealUID == "test-incarnation" &&
+			r.lifecycle.status().Stage == runnerlifecycle.Halting && s.runtimeState().Phase == executionStopping
 	}, "Close to preserve the accepted seal while setup is running")
 	select {
 	case err := <-closeDone:
@@ -287,7 +288,7 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	if _, err := r.Quiesce(context.Background(), &runnerpb.QuiesceRequest{}); err != nil {
 		t.Fatalf("accept quiesce: %v", err)
 	}
-	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == stageFlushing }, "quiesce to flush sealed journal")
+	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Flushing }, "quiesce to flush sealed journal")
 	seal := s.journal.SealState()
 	if seal == nil || seal.Cursor == 0 {
 		t.Fatalf("journal seal = %+v, want a nonzero cursor", seal)
@@ -302,14 +303,14 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	if facts.QuiesceStage != controlpb.RunnerFacts_QUIESCE_STAGE_FLUSHING {
 		t.Fatalf("facts after under-cursor acknowledgement = %s, want FLUSHING", facts.QuiesceStage)
 	}
-	if current := r.lifecycle.status(); current.Stage != stageFlushing {
+	if current := r.lifecycle.status(); current.Stage != runnerlifecycle.Flushing {
 		t.Fatalf("runtime after under-cursor acknowledgement = %v, want FLUSHING", current.Stage)
 	}
 
 	if err := r.lifecycle.publishAck(s.id, retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
 		t.Fatal(err)
 	}
-	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == stageQuiesced }, "exact sealed cursor acknowledgement")
+	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == runnerlifecycle.Quiesced }, "exact sealed cursor acknowledgement")
 	facts, err = r.facts()
 	if err != nil {
 		t.Fatal(err)
@@ -348,7 +349,7 @@ func TestPreparationCompletingAfterCloseCannotMakeSessionReady(t *testing.T) {
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close() }()
 	waitLifecycle(t, r, func() bool {
-		return r.lifecycle.desiredState().Mode == runnerClosing && r.lifecycle.status().Stage == stageHalting && s.runtimeState().Phase == executionStopping
+		return r.lifecycle.desiredState().Mode == runnerlifecycle.Closing && r.lifecycle.status().Stage == runnerlifecycle.Halting && s.runtimeState().Phase == executionStopping
 	}, "Close to cancel and join preparation")
 	select {
 	case err := <-closeDone:
@@ -406,14 +407,11 @@ func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testin
 
 func TestNewIncarnationWaitsForTeardownBeforeResettingDemand(t *testing.T) {
 	r, s := lifecycleTestSession(t)
-	// These hosts are unconfigured, so old demand can be seeded without a
-	// native effect. Adoption must discard it even when the host is dormant.
+	// The app-server host is unconfigured, so old demand can be seeded without
+	// a native effect. Adoption must discard it even while it is dormant.
 	l := r.lifecycle
 	l.publishMu.Lock()
 	err := publishLifecycle(l, codexAppServerResourceID, codexAppServerInputSpec{Demand: 3})
-	if err == nil {
-		err = publishLifecycle(l, codexExecServerResourceID, codexExecServerInputSpec{Demand: 4})
-	}
 	l.publishMu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -438,7 +436,7 @@ func TestNewIncarnationWaitsForTeardownBeforeResettingDemand(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitLifecycle(t, r, func() bool {
-		return r.lifecycle.status().Stage == stageHalting && s.runtimeState().Phase == executionStopping
+		return r.lifecycle.status().Stage == runnerlifecycle.Halting && s.runtimeState().Phase == executionStopping
 	}, "halt waiting for setup")
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
@@ -449,7 +447,7 @@ func TestNewIncarnationWaitsForTeardownBeforeResettingDemand(t *testing.T) {
 		t.Fatalf("adoption overtook accepted setup: %v", err)
 	default:
 	}
-	if r.lifecycle.desiredState().Mode != runnerQuiescing {
+	if r.lifecycle.desiredState().Mode != runnerlifecycle.Quiescing {
 		t.Fatal("new incarnation reopened execution during teardown")
 	}
 	close(setupDone)
@@ -467,19 +465,9 @@ func TestNewIncarnationWaitsForTeardownBeforeResettingDemand(t *testing.T) {
 	if !r.lifecycle.accepting() {
 		t.Fatal("new incarnation did not reopen admission")
 	}
-	for kind, id := range map[string]string{codexAppServerInputType: codexAppServerResourceID, codexExecServerInputType: codexExecServerResourceID} {
-		switch kind {
-		case codexAppServerInputType:
-			input, _, err := lifecycleRead[codexAppServerInputSpec](r.ctx, r.lifecycle.state, id)
-			if err != nil || input.Demand != 0 {
-				t.Fatalf("Codex old demand survived adoption: %+v, %v", input, err)
-			}
-		case codexExecServerInputType:
-			input, _, err := lifecycleRead[codexExecServerInputSpec](r.ctx, r.lifecycle.state, id)
-			if err != nil || input.Demand != 0 {
-				t.Fatalf("executor old demand survived adoption: %+v, %v", input, err)
-			}
-		}
+	input, _, err := lifecycleRead[codexAppServerInputSpec](r.ctx, r.lifecycle.state, codexAppServerResourceID)
+	if err != nil || input.Demand != 0 {
+		t.Fatalf("Codex old demand survived adoption: %+v, %v", input, err)
 	}
 }
 
@@ -517,7 +505,7 @@ func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
 func TestLifecycleWatchStopsWithRunner(t *testing.T) {
 	runnerCtx, cancelRunner := context.WithCancel(context.Background())
 	defer cancelRunner()
-	l, err := newLifecycle(&Runner{ctx: runnerCtx})
+	l, err := newLifecycle(&Runner{ctx: runnerCtx}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,7 +522,7 @@ func TestLifecycleWatchWaitsForResourceCreation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		l, err := newLifecycle(&Runner{ctx: ctx})
+		l, err := newLifecycle(&Runner{ctx: ctx}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -7,6 +7,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/siderolabs/gen/optional"
@@ -19,12 +20,12 @@ func (*sessionLifecycleController) Name() string { return sessionControllerName 
 func (c *sessionLifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
-			{Namespace: lifecycleNamespace, Type: sessionInputType, Kind: controller.InputQPrimary},
-			{Namespace: lifecycleNamespace, Type: runnerDesiredStateType, Kind: controller.InputQMapped},
-			{Namespace: lifecycleNamespace, Type: runnerRuntimeType, Kind: controller.InputQMapped},
-			{Namespace: lifecycleNamespace, Type: bootstrapRuntimeType, Kind: controller.InputQMapped},
-			{Namespace: lifecycleNamespace, Type: codexAppServerRuntimeType, Kind: controller.InputQMapped},
-			{Namespace: lifecycleNamespace, Type: operationResultType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: sessionInputType, Kind: controller.InputQPrimary},
+			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.DesiredStateType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: bootstrapRuntimeType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: codexAppServerRuntimeType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: operationResultType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: sessionRuntimeType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(c.l.runner.config.SessionReconcileConcurrency)),
@@ -37,9 +38,9 @@ func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger
 		if err != nil || !found || result.Controller != sessionControllerName || result.Session == "" {
 			return nil, err
 		}
-		return []resource.Pointer{resource.NewMetadata(lifecycleNamespace, sessionInputType, result.Session, resource.VersionUndefined)}, nil
+		return []resource.Pointer{resource.NewMetadata(runnerlifecycle.Namespace, sessionInputType, result.Session, resource.VersionUndefined)}, nil
 	}
-	rows, err := r.List(ctx, resource.NewMetadata(lifecycleNamespace, sessionInputType, "", resource.VersionUndefined))
+	rows, err := r.List(ctx, resource.NewMetadata(runnerlifecycle.Namespace, sessionInputType, "", resource.VersionUndefined))
 	if err != nil {
 		return nil, err
 	}
@@ -65,11 +66,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	if err != nil {
 		return err
 	}
-	desiredState, _, err := lifecycleRead[runnerDesiredStateSpec](ctx, r, "runner")
+	desiredState, _, err := runnerlifecycle.ReadDesired(ctx, r)
 	if err != nil {
 		return err
 	}
-	outer, _, err := lifecycleRead[runnerRuntimeSpec](ctx, r, "runner")
+	outer, _, err := runnerlifecycle.ReadStatus(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -80,7 +81,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		return err
 	}
-	if desiredState.Mode == runnerRunning && current.Generation != desiredState.Generation {
+	if desiredState.Mode == runnerlifecycle.Running && current.Generation != desiredState.Generation {
 		for _, slot := range []**operation{&s.halting, &s.sealing} {
 			if op, done := s.takeOperation(slot); done {
 				c.l.forgetOperation(op)
@@ -125,12 +126,12 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		processID := s.processID
 		live := s.process != nil && s.process.Running()
 		s.mu.Unlock()
-		if op.err == nil && live && desiredState.Mode == runnerRunning && current.Phase == executionPreparing {
+		if op.err == nil && live && desiredState.Mode == runnerlifecycle.Running && current.Phase == executionPreparing {
 			current.Phase, current.ProcessID = executionReady, processID
 			s.mu.Lock()
 			s.processState = runnerpb.ProcessState_PROCESS_STATE_RUNNING
 			s.mu.Unlock()
-		} else if desiredState.Mode == runnerRunning {
+		} else if desiredState.Mode == runnerlifecycle.Running {
 			current.Phase = executionDormant
 			s.mu.Lock()
 			pending := len(s.pending)
@@ -179,8 +180,8 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			return err
 		}
 	}
-	if desiredState.Mode != runnerRunning {
-		if outer.Generation != desiredState.Generation || outer.Stage < stageHalting {
+	if desiredState.Mode != runnerlifecycle.Running {
+		if outer.Generation != desiredState.Generation || outer.Stage < runnerlifecycle.Halting {
 			return write()
 		}
 		if current.Phase != executionHalted {
@@ -220,7 +221,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			}
 			current.ProcessStopped = true
 		}
-		if current.Phase == executionHalted && outer.Stage >= stageStopping && !current.ProcessStopped {
+		if current.Phase == executionHalted && outer.Stage >= runnerlifecycle.Stopping && !current.ProcessStopped {
 			s.mu.Lock()
 			shared := s.runner.codexAppServer != nil && s.record.Harness == runnerpb.Harness_HARNESS_CODEX
 			s.mu.Unlock()
@@ -245,7 +246,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		s.mu.Lock()
 		inspected := s.inspection == nil && len(s.reconciliations) == 0
 		s.mu.Unlock()
-		if current.Phase == executionHalted && current.ProcessStopped && inspected && outer.Stage >= stageSealing && desiredState.SealUID != "" && s.journal.SealState() == nil {
+		if current.Phase == executionHalted && current.ProcessStopped && inspected && outer.Stage >= runnerlifecycle.Sealing && desiredState.SealUID != "" && s.journal.SealState() == nil {
 			s.startOperation(&s.sealing, func(ctx context.Context) error {
 				if err := s.sealJournal(ctx); err != nil {
 					return err

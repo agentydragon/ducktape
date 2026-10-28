@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/siderolabs/gen/optional"
@@ -52,10 +53,10 @@ func (*bootstrapLifecycleController) Name() string { return bootstrapControllerN
 func (*bootstrapLifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
-			{Namespace: lifecycleNamespace, Type: bootstrapInputType, Kind: controller.InputQPrimary},
-			{Namespace: lifecycleNamespace, Type: runnerDesiredStateType, Kind: controller.InputQMapped},
-			{Namespace: lifecycleNamespace, Type: runnerInputType, Kind: controller.InputQMapped},
-			{Namespace: lifecycleNamespace, Type: operationResultType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: bootstrapInputType, Kind: controller.InputQPrimary},
+			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.DesiredStateType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: runnerInputType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: operationResultType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: bootstrapRuntimeType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
@@ -64,14 +65,14 @@ func (*bootstrapLifecycleController) Settings() controller.QSettings {
 
 func (c *bootstrapLifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
 	switch ptr.Type() {
-	case runnerDesiredStateType, runnerInputType:
-		return []resource.Pointer{resource.NewMetadata(lifecycleNamespace, bootstrapInputType, "bootstrap", resource.VersionUndefined)}, nil
+	case runnerlifecycle.DesiredStateType, runnerInputType:
+		return []resource.Pointer{resource.NewMetadata(runnerlifecycle.Namespace, bootstrapInputType, "bootstrap", resource.VersionUndefined)}, nil
 	case operationResultType:
 		result, found, err := lifecycleRead[operationResultSpec](ctx, r, ptr.ID())
 		if err != nil || !found || result.Controller != bootstrapControllerName {
 			return nil, err
 		}
-		return []resource.Pointer{resource.NewMetadata(lifecycleNamespace, bootstrapInputType, "bootstrap", resource.VersionUndefined)}, nil
+		return []resource.Pointer{resource.NewMetadata(runnerlifecycle.Namespace, bootstrapInputType, "bootstrap", resource.VersionUndefined)}, nil
 	default:
 		return nil, nil
 	}

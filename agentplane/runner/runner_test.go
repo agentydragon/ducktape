@@ -183,7 +183,7 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &Runner{ctx: ctx, store: store, fatal: make(chan error, 1)}
-	r.lifecycle, err = newLifecycle(r)
+	r.lifecycle, err = newLifecycle(r, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

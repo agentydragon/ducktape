@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/google/uuid"
@@ -49,7 +50,7 @@ func (l *lifecycle) forgetOperation(op *operation) {
 	if op == nil {
 		return
 	}
-	err := l.state.Destroy(l.runner.ctx, resource.NewMetadata(lifecycleNamespace, operationResultType, op.id, resource.VersionUndefined), state.WithDestroyOwner("runner-host"))
+	err := l.state.Destroy(l.runner.ctx, resource.NewMetadata(runnerlifecycle.Namespace, operationResultType, op.id, resource.VersionUndefined), state.WithDestroyOwner("runner-host"))
 	if !state.IsNotFoundError(err) {
 		l.runner.fail(err)
 	}

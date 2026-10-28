@@ -13,16 +13,26 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/codex"
+	execserver "github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 )
 
 func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
 	var starts, stops atomic.Int32
+	recoveryStarted := make(chan struct{})
+	releaseRecovery := make(chan struct{})
 	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*supervision.Instance, error) {
 		if starts.Add(1) == 1 {
 			return nil, errors.New("temporary executor startup failure")
+		}
+		close(recoveryStarted)
+		select {
+		case <-releaseRecovery:
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 		return newTestExecutorInstance(&stops), nil
 	}, func(context.Context) error { return nil })
@@ -38,10 +48,9 @@ func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
 	}
 	startHostWaiter()
 	waitCodexDemand(t, r, 1)
-	waitExecutor(t, r, func(current codexExecServerRuntimeSpec) bool {
-		return current.Phase == codexExecServerRetrying && strings.Contains(current.Error, "temporary executor startup failure")
+	waitExecutor(t, r, func(current execserver.Runtime) bool {
+		return current.Phase == execserver.Retrying && strings.Contains(current.Error, "temporary executor startup failure")
 	}, "transient executor startup failure")
-	delayExecutorRetry(t, r)
 	waitCodex(t, r, func(current codexAppServerRuntimeSpec) bool {
 		return current.Phase == codexAppServerInitializing && !current.ExecServerReadyDeadline.IsZero()
 	}, "Codex waiting for executor readiness")
@@ -56,10 +65,14 @@ func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
 	}
 	deadline := waiting.ExecServerReadyDeadline
 
-	// Make the retry immediately eligible. Both Codex callers have joined before the
-	// executor becomes ready, so the one shared Codex attempt must satisfy both.
-	forceExecutorRetry(t, r)
-	waitExecutor(t, r, func(current codexExecServerRuntimeSpec) bool { return current.Phase == codexExecServerReady }, "executor recovery")
+	// Hold the retry's native start until both Codex callers have joined.
+	select {
+	case <-recoveryStarted:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("executor recovery did not reach native start")
+	}
+	close(releaseRecovery)
+	waitExecutor(t, r, func(current execserver.Runtime) bool { return current.Phase == execserver.Ready }, "executor recovery")
 	failed := waitCodex(t, r, func(current codexAppServerRuntimeSpec) bool {
 		return current.Phase == codexAppServerStopped && current.Attempt >= 2 && current.Error != ""
 	}, "shared Codex startup attempt")
@@ -193,8 +206,8 @@ func TestCodexFailedDrainBlocksRunnerFencing(t *testing.T) {
 	case <-time.After(lifecycleTestTimeout):
 		t.Fatal("COSI did not start the Codex drain operation")
 	}
-	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage >= stageStopping }, "Runner stopping barrier")
-	if stage := r.lifecycle.status().Stage; stage >= stageFencing {
+	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage >= runnerlifecycle.Stopping }, "Runner stopping barrier")
+	if stage := r.lifecycle.status().Stage; stage >= runnerlifecycle.Fencing {
 		t.Fatalf("Runner crossed fencing while Codex drain was unresolved: stage=%d", stage)
 	}
 	select {
@@ -213,7 +226,7 @@ func TestCodexFailedDrainBlocksRunnerFencing(t *testing.T) {
 	if !strings.Contains(failed.StopError, stopFailure.Error()) {
 		t.Errorf("Codex StopError = %q, want %q", failed.StopError, stopFailure)
 	}
-	if stage := r.lifecycle.status().Stage; stage >= stageFencing {
+	if stage := r.lifecycle.status().Stage; stage >= runnerlifecycle.Fencing {
 		t.Errorf("Runner crossed fencing after failed Codex drain: stage=%d", stage)
 	}
 	if err := server.process.Stop(context.Background()); err != nil {
@@ -302,7 +315,7 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	codexExecServerConfig := CodexExecServerConfig{URL: "ws://127.0.0.1:4599"}
+	codexExecServerConfig := execserver.Config{URL: "ws://127.0.0.1:4599"}
 	codexConfig := harness.LaunchConfig{Binary: "/bin/false"}
 	config := Config{StateDir: stateDir, Codex: &codexConfig, CodexExecServer: &codexExecServerConfig}
 	r := &Runner{
@@ -310,11 +323,9 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 		sessions: map[string]*Session{}, changes: make(chan struct{}), fatal: make(chan error, 1),
 	}
 	// Configure every native host before lifecycle controllers or their goroutines exist.
-	r.codexExecServer = newCodexExecServer(r, codexExecServerConfig)
-	r.codexExecServer.startEffect = startEffect
-	r.codexExecServer.probeEffect = func(context.Context) error { return nil }
 	r.codexAppServer = newCodexAppServer(r, codexConfig)
-	lifecycle, err := newLifecycle(r)
+	adapters := execserver.Adapters{Start: startEffect, Probe: func(context.Context) error { return nil }}
+	lifecycle, err := newLifecycle(r, &adapters)
 	if err != nil {
 		cancel()
 		_ = owner.Close()
@@ -408,22 +419,6 @@ func waitCodexDemand(t *testing.T, r *Runner, want uint64) uint64 {
 			t.Fatalf("timed out waiting for Codex demand %d", want)
 		}
 	}
-}
-
-func delayExecutorRetry(t *testing.T, r *Runner) {
-	t.Helper()
-	current := r.codexExecServer.runtimeState()
-	if current.Phase != codexExecServerRetrying {
-		t.Fatalf("delay executor retry while phase=%d", current.Phase)
-	}
-	current.RetryAt = time.Now().Add(time.Minute)
-	updateLifecycleValueForTest(t, r, codexExecServerResourceID, codexExecServerControllerName, current)
-	if err := r.codexExecServer.request(); err != nil {
-		t.Fatal(err)
-	}
-	waitExecutor(t, r, func(latest codexExecServerRuntimeSpec) bool {
-		return latest.Phase == codexExecServerRetrying && latest.RetryAt == current.RetryAt
-	}, "delayed executor retry")
 }
 
 func updateLifecycleValueForTest[T lifecycleSpec[T]](t *testing.T, r *Runner, id, owner string, spec T) {

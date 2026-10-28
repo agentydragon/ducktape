@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 
@@ -64,7 +65,7 @@ type Config struct {
 	HarnessEnvironment               map[string]string
 	Claude, Codex                    *harness.LaunchConfig
 	VMProcessPolicy                  *supervision.SystemdPolicy
-	CodexExecServer                  *CodexExecServerConfig
+	CodexExecServer                  *execserver.Config
 	WorkspaceRoot, InitializationCwd string
 	DebugCheckpoint                  *DebugCheckpointConfig
 	HTTPClient                       *http.Client

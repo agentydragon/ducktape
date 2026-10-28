@@ -19,6 +19,7 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"go.uber.org/zap"
 )
 
@@ -88,7 +89,7 @@ func (c *codexAppServer) host(ctx context.Context, s *Session) (*codexAppServerP
 	var ready *codexAppServerProcess
 	err = c.runner.lifecycle.waitFor(ctx, func() (bool, error) {
 		desiredState := c.runner.lifecycle.desiredState()
-		if desiredState.Mode != runnerRunning {
+		if desiredState.Mode != runnerlifecycle.Running {
 			return false, errors.New("runner is not accepting new Codex work")
 		}
 		runtime, _, err := lifecycleRead[codexAppServerRuntimeSpec](c.runner.ctx, c.runner.lifecycle.state, codexAppServerResourceID)
@@ -134,7 +135,7 @@ func (c *codexAppServer) request(s *Session) (uint64, error) {
 	}
 	desiredState := r.lifecycle.desiredState()
 	if r.codexExecServer != nil {
-		if err := r.codexExecServer.requestLocked(); err != nil {
+		if err := r.codexExecServer.RequestLocked(r.ctx); err != nil {
 			return 0, fmt.Errorf("Codex exec-server request: %w", err)
 		}
 	}
@@ -190,7 +191,7 @@ func (c *codexAppServer) initialize(ctx context.Context, owner *Session) error {
 	}
 	maps.Copy(env, codex.ServerEnvironment(c.launch, c.store))
 	if c.runner.codexExecServer != nil {
-		env["CODEX_EXEC_SERVER_URL"] = c.runner.codexExecServer.config.URL
+		env["CODEX_EXEC_SERVER_URL"] = c.runner.codexExecServer.URL()
 	}
 	initialize, initialized, err := codex.InitializeFrames()
 	if err != nil {

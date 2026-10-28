@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = [
+    "//agentplane/runner:__pkg__",
+    "//agentplane/runner:__subpackages__",
+])
+
+go_library(
+    name = "lifecycle",
+    srcs = ["contracts.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/lifecycle",
+    deps = [
+        "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/resource/meta/spec",
+        "@com_github_cosi_project_runtime//pkg/resource/typed",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
+    ],
+)

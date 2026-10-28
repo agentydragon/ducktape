@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 )
 
@@ -32,8 +33,8 @@ func (r *Runner) requestBootstrap() error {
 		return nil
 	}
 	desiredState := r.lifecycle.desiredState()
-	if desiredState.Mode != runnerRunning {
-		if desiredState.Mode == runnerClosing {
+	if desiredState.Mode != runnerlifecycle.Running {
+		if desiredState.Mode == runnerlifecycle.Closing {
 			return status.Error(codes.Unavailable, "runner is closing")
 		}
 		return status.Error(codes.Aborted, "this Sandbox is quiesced")
