@@ -429,6 +429,7 @@ fn unpublished_local_factory_result_stays_deferred() {
   async function guarded() { return read(); }
   return { read, write, guarded, preview: async () => read() };
 }
+
 const prefix = new globalThis.Error();
 const holder = retain(() => later, () => 0);
 const dynamic = ((object) => {
@@ -474,6 +475,119 @@ console.log(holder.read());
         &[],
     );
     assert_preserved_entry_output(&fixture, "1\n1\n");
+}
+
+#[test]
+fn fresh_local_record_field_assignment_retains_callback_until_use() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function wrap(callback) {
+  const result = { run: null };
+  result.run = callback;
+  return result;
+}
+const prefix = new globalThis.Error();
+const holder = wrap(() => later);
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+console.log(later, holder.run());
+"#,
+        vec![
+            logical_module(
+                "values/dynamic",
+                &[Member::new("dynamic"), Member::new("prefix")],
+            ),
+            logical_module(
+                "values/later",
+                &[
+                    Member::new("later"),
+                    Member::new("holder"),
+                    Member::new("wrap"),
+                ],
+            ),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "1 1\n");
+}
+
+#[test]
+fn distinct_own_field_writes_use_the_same_record_proof() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function wrap(callback, tag) {
+  const result = { run: null, tag: 0 };
+  result.run = callback;
+  result.tag = tag;
+  return result;
+}
+const prefix = new globalThis.Error();
+const holder = wrap(() => later, 2);
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+console.log(later, holder.run(), holder.tag);
+"#,
+        vec![
+            logical_module(
+                "values/dynamic",
+                &[Member::new("dynamic"), Member::new("prefix")],
+            ),
+            logical_module(
+                "values/later",
+                &[
+                    Member::new("later"),
+                    Member::new("holder"),
+                    Member::new("wrap"),
+                ],
+            ),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "1 1 2\n");
+}
+
+#[test]
+fn record_writes_without_closed_own_field_ownership_keep_the_cycle() {
+    for body in [
+        "const result = { get run() { return callback(); } }; result.run = callback; return result;",
+        "const result = {}; result.run = callback; return result;",
+        "const result = { run: null }; globalThis.saved = result; result.run = callback; return result;",
+        "const result = { run: null }; const alias = result; alias.run = callback; return result;",
+        "const result = { run: null }; callback(); result.run = callback; return result;",
+        "const result = { run: null }; result.run = callback; result.run = callback; return result;",
+        "const result = { run: null }; result['run'] = callback; return result;",
+    ] {
+        let source = format!(
+            "function wrap(callback) {{ {body} }}\n\
+const prefix = new globalThis.Error();\n\
+const holder = wrap(() => later);\n\
+const dynamic = ((object) => {{ object[(object.key = 0)] = 'value'; return 1; }})({{}});\n\
+const later = dynamic;\n"
+        );
+        expect_atomic_conflict_rejection(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module(
+                        "values/dynamic",
+                        &[Member::new("dynamic"), Member::new("prefix")],
+                    ),
+                    logical_module(
+                        "values/later",
+                        &[
+                            Member::new("later"),
+                            Member::new("holder"),
+                            Member::new("wrap"),
+                        ],
+                    ),
+                ],
+            ),
+            &["values/dynamic", "values/later"],
+            &[],
+        );
+    }
 }
 
 #[test]

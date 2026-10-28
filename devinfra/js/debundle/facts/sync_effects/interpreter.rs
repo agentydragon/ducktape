@@ -98,6 +98,7 @@ const MAX_SYNCHRONOUS_CALLBACK_POOL: usize = 64;
 
 struct Executor<'a> {
     index: &'a ExecutionIndex,
+    graph: &'a ChunkCodeGraph,
     facts: &'a [StatementFacts],
     flow: &'a ChunkValueFlow,
     set_iterable_proof: &'a SetIterableProof,
@@ -1135,6 +1136,9 @@ impl Executor<'_> {
         let Some(callable) = self.index.callables.get(&key) else {
             return false;
         };
+        if self.fresh_local_record_receiver(key, callable).is_some() {
+            return true;
+        }
         if callable.opaque
             || callable.generator
             || self.index.async_callables.contains(&key)
@@ -1168,6 +1172,55 @@ impl Executor<'_> {
             .collect();
         callable.reads.is_subset(&allowed)
             && self.closed_local_record_value(&callable.returns[0], &allowed)
+    }
+
+    /// Check that the shared ordered record certificate is fully represented
+    /// by the execution index before treating its writes as private own-data
+    /// writes. Incomplete index coverage retains ordinary promotion.
+    fn fresh_local_record_receiver(&self, key: u32, callable: &Callable) -> Option<u32> {
+        let proof = self.graph.fresh_record_proof(key)?;
+        let allowed: BTreeSet<_> = callable
+            .params
+            .iter()
+            .filter_map(|param| param.binding.clone())
+            .chain(std::iter::once(proof.local.clone()))
+            .collect();
+        if callable.opaque
+            || callable.generator
+            || self.index.async_callables.contains(&key)
+            || callable.may_fall_through
+            || !callable.calls.is_empty()
+            || !callable.rebinds.is_empty()
+            || callable.dynamic_property_effect
+            || !callable.reads.is_subset(&allowed)
+            || callable.local_assignments.len() != 1
+            || !matches!(&callable.local_assignments[0], (id, ValueExpr::ObjectLiteral(object, _))
+                if id == &proof.local && object == &proof.object)
+            || callable.returns.len() != 1
+            || !matches!(&callable.returns[0], ValueExpr::Binding(id) if id == &proof.local)
+            || callable.escaped_bindings != BTreeSet::from([proof.local.clone()])
+            || !self.index.plain_data_objects.contains(&proof.object)
+            || callable.callback_result_writes.len() != proof.write_spans.len()
+            || callable.member_value_writes.len() != proof.write_spans.len()
+            || callable.member_writes.len() != proof.write_spans.len()
+            || callable.callback_result_writes.iter().any(|write| {
+                !write.simple_assignment
+                    || !write.data_read_operands
+                    || !matches!(&write.receiver, ValueExpr::Binding(id) if id == &proof.local)
+                    || write.property.is_none()
+            })
+            || callable
+                .member_value_writes
+                .iter()
+                .any(|(id, property, _)| id != &proof.local || property.is_none())
+            || callable
+                .member_writes
+                .iter()
+                .any(|(id, _)| id != &proof.local)
+        {
+            return None;
+        }
+        Some(proof.object)
     }
 
     fn closed_local_record_value(&self, value: &ValueExpr, allowed: &BTreeSet<Id>) -> bool {
@@ -3589,6 +3642,10 @@ impl Executor<'_> {
         // opaque calls; if source order put a write afterward, this only adds
         // a conservative callback possibility.
         let mut certified_data_receivers = self.fresh_primitive_write_receivers(callable, &env);
+        let fresh_record_receiver = self.fresh_local_record_receiver(key, callable);
+        if let Some(object) = fresh_record_receiver {
+            certified_data_receivers.insert(object);
+        }
         self.apply_member_value_writes(
             &callable.member_value_writes,
             &env,
@@ -4459,6 +4516,7 @@ pub(crate) fn annotate_synchronous_calls(
     let enum_data_members = super::stable_ts_enum_named_data_members(proofs.graph, facts);
     let mut executor = Executor {
         index: &index,
+        graph: proofs.graph,
         facts,
         flow,
         set_iterable_proof: proofs.set_iterable,

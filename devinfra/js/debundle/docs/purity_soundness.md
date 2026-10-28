@@ -416,6 +416,23 @@ behavior is audited. No library name is implicitly trusted. The independent
 lookup, namespace identity, publication,
 and mutation checks still apply, and the return value remains opaque.
 
+## Fresh local record field writes
+
+The local wrapper proof admits a narrow mutation while keeping ordinary
+top-level assignments impure. A single shared certificate verifies that a
+function allocates an ordinary object with static own data fields, writes
+distinct pre-existing fields from simple parameter or literal values, then
+returns that local. The source statements are ordered: allocation precedes
+every write, and return follows every write. Ordinary object-literal data
+checks reject getters, setters, computed keys, spread, and `__proto__`;
+the extra field check rejects missing or duplicate keys. Own writable fields
+make each assignment independent of inherited setters and prototype lookup.
+The exact body excludes aliases, unknown calls, callback invocation, and
+external publication. The synchronous interpreter also requires complete
+agreement with its indexed allocation, writes, and return before omitting a
+speculative callback root. Failed proofs retain the regular purity and
+callback-effect paths.
+
 ## Audited callback-factory exports
 
 `chunk_export_purity.<defining chunk>.callback_factory_exports` and

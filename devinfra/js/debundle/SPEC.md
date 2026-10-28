@@ -531,6 +531,20 @@ of the same shape. Arguments must be inline functions or primitives. The call
 and its eager dependencies still run normally; any later export, write, or
 invocation of the result restores its callback reachability.
 
+A second source-proven record form permits ordered assignments to distinct
+pre-existing own data fields of one fresh local object. The function body must
+contain exactly a `const` initialized by a plain object literal with static
+data keys and literal values, one or more simple static field assignments from
+simple parameters or literals, and a return of that same local. Every written
+field must exist in the initializer and be written once. This avoids inherited
+setters, accessors, proxies, aliases, reassignments, callback calls, external
+publication, and write-order uncertainty. A shared certificate is consumed by
+function-body purity and synchronous callback analysis; the latter also checks
+that the execution index fully represents the writes. If any check fails, the
+ordinary effect and reachability paths apply. Calls and eager dependencies are
+still evaluated; later use or publication of the result can promote its
+retained callbacks.
+
 A direct local wrapper call may also retain callbacks in a fresh checked class
 instance without publishing them. The wrapper must have one return containing
 only checked local `new` allocations, simple parameters, no other calls or

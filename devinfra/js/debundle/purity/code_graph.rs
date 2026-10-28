@@ -15,6 +15,7 @@ use std::sync::Arc;
 #[derive(Debug, Default, Clone)]
 pub struct ChunkCodeGraph {
     pub(crate) bindings: BTreeMap<String, ChunkBinding>,
+    fresh_record_proofs: BTreeMap<u32, FreshRecordProof>,
     pure_new_constructors: BTreeSet<String>,
     /// Per-binding declared-pure member-call set. Looked up by the
     /// classifier when it sees `<recv>.<prop>(args)` — if `recv` is a
@@ -90,6 +91,10 @@ pub(crate) enum ChunkBinding {
 }
 
 impl ChunkCodeGraph {
+    pub(crate) fn fresh_record_proof(&self, key: u32) -> Option<&FreshRecordProof> {
+        self.fresh_record_proofs.get(&key)
+    }
+
     /// Build the graph for `body`. Two phases:
     ///
     /// 1. **Call-graph construction.** For each chunk-top function,
@@ -200,6 +205,13 @@ impl ChunkCodeGraph {
         mut locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
         let functions = collect_chunk_functions(body);
+        let fresh_record_proofs = functions
+            .iter()
+            .filter_map(|function| {
+                let body = function.block_body?;
+                Some((function.key, fresh_record_proof(&function.params, body)?))
+            })
+            .collect();
         let name_to_idx: BTreeMap<&str, usize> = functions
             .iter()
             .enumerate()
@@ -262,6 +274,7 @@ impl ChunkCodeGraph {
                 .collect();
         let mut graph = ChunkCodeGraph {
             bindings,
+            fresh_record_proofs,
             pure_new_constructors: declared_pure_new.clone(),
             declared_pure_members: declared_pure_members.clone(),
             primitive_const_bindings,
@@ -443,6 +456,7 @@ impl Visit for CallCollector<'_> {
 
 #[derive(Debug, Clone)]
 struct ChunkFunction<'a> {
+    key: u32,
     name: String,
     /// Parameter patterns. Default-value expressions evaluate at call
     /// time and destructuring patterns fire getters / the iterator
@@ -548,6 +562,7 @@ fn collect_chunk_functions<'a, 'item>(
 fn push_fn_decl<'a>(fn_decl: &'a FnDecl, out: &mut Vec<ChunkFunction<'a>>) {
     let block_body = fn_decl.function.body.as_ref();
     out.push(ChunkFunction {
+        key: fn_decl.function.span.lo.0,
         name: fn_decl.ident.sym.to_string(),
         params: fn_decl.function.params.iter().map(|p| &p.pat).collect(),
         block_body,
@@ -581,6 +596,7 @@ fn push_var_functions<'a>(var: &'a VarDecl, out: &mut Vec<ChunkFunction<'a>>) {
             Expr::Fn(fn_expr) => {
                 let block_body = fn_expr.function.body.as_ref();
                 out.push(ChunkFunction {
+                    key: fn_expr.function.span.lo.0,
                     name,
                     params: fn_expr.function.params.iter().map(|p| &p.pat).collect(),
                     block_body,
@@ -595,6 +611,7 @@ fn push_var_functions<'a>(var: &'a VarDecl, out: &mut Vec<ChunkFunction<'a>>) {
             Expr::Arrow(arrow) => match arrow.body.as_ref() {
                 ArrowFunctionBody::FunctionBody(block) => {
                     out.push(ChunkFunction {
+                        key: arrow.span.lo.0,
                         name,
                         params: arrow.params.iter().collect(),
                         block_body: Some(block),
@@ -608,6 +625,7 @@ fn push_var_functions<'a>(var: &'a VarDecl, out: &mut Vec<ChunkFunction<'a>>) {
                 }
                 ArrowFunctionBody::Expr(expr) => {
                     out.push(ChunkFunction {
+                        key: arrow.span.lo.0,
                         name,
                         params: arrow.params.iter().collect(),
                         block_body: None,
@@ -661,6 +679,7 @@ fn classify_function_body(
         .fold(Purity::Pure, Purity::worst);
     let mut collector = BodyPurityCollector {
         purity: Purity::Pure,
+        fresh_record: graph.fresh_record_proof(function.key),
         shadowed,
         local_shadowed,
         declared_pure,
@@ -704,6 +723,7 @@ pub(crate) fn param_destructuring_purity(pat: &Pat) -> Option<Purity> {
 /// graph entry or from the caller's `Unknown` fallback).
 struct BodyPurityCollector<'a> {
     purity: Purity,
+    fresh_record: Option<&'a FreshRecordProof>,
     shadowed: &'a BTreeSet<&'static str>,
     /// Every name bound by the function whose body is being walked
     /// (its params / body declarations). References to such names
@@ -726,8 +746,19 @@ impl Visit for BodyPurityCollector<'_> {
         // Classify the entire expression in one shot —
         // `classify_expr_purity` already recurses through
         // nested subexpressions and returns the worst.
+        let classified = if let Expr::Assign(assign) = expr.unwrap_parens()
+            && self
+                .fresh_record
+                .is_some_and(|proof| proof.write_spans.contains(&assign.span.lo.0))
+        {
+            // The shared certificate proved this is a write to an own,
+            // writable data field on the newly allocated local record.
+            assign.right.as_ref()
+        } else {
+            expr
+        };
         let p = classify_expr_purity(
-            expr,
+            classified,
             self.shadowed,
             self.local_shadowed,
             self.declared_pure,

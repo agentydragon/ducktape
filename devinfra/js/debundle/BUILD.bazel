@@ -512,6 +512,7 @@ rust_library(
         "purity/classifier.rs",
         "purity/classifier_tests.rs",
         "purity/code_graph.rs",
+        "purity/fresh_record.rs",
         "purity/graph_purity_tests.rs",
         "purity/mod.rs",
         "purity/plain_data.rs",
