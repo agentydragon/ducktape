@@ -10,6 +10,7 @@ import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from pathlib import Path
 from typing import Literal
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
@@ -548,6 +549,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
     gateway_access: GatewayAccess,
+    tmp_path: Path,
 ) -> None:
     source = ReplicationSource()
     source.attached.active_turn_id = "test-projected-turn"
