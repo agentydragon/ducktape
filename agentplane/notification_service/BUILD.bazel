@@ -169,7 +169,10 @@ go_binary(
 
 pkg_tar(
     name = "service_binary_layer",
-    srcs = [":notification-service"],
+    srcs = [
+        ":notification-service",
+        "//agentplane/notification_service/migrations/cmd:notifications-migrate",
+    ],
     package_dir = "/usr/local/bin",
 )
 
