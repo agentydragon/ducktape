@@ -497,11 +497,8 @@ py_wheel(
 )
 
 py_library(
-    name = "protobuf_config",
-    srcs = ["protobuf_config.py"],
+    name = "protobuf",
+    srcs = ["protobuf.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//protobuf",
-        "@pypi//protovalidate",
-    ],
+    deps = ["@pypi//protobuf"],
 )
