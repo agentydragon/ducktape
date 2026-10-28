@@ -45359,5 +45359,520 @@
       },
       "combined_ci_effect": "not measured"
     }
+  },
+  "post_merge_ci_2026_10_28": {
+    "scope": "First two completed devel Bazel CI jobs containing Pod OTLP cleanup #12496, VM guest OTLP cleanup #12495, and image-order #12498, compared with two nearest completed predecessor devel jobs. The later all-three source also contains unrelated runner, debundle, image pin and artifact pin changes. Not a fleet cohort or controlled A/B.",
+    "observed_through_utc": "2026-10-28T06:33:00Z",
+    "clock_methods": {
+      "github_queue": "run.createdAt to Bazel job.startedAt",
+      "github_job": "Bazel job.startedAt to completedAt",
+      "github_step": "Test + Build + lint step start to completion",
+      "bazel_profile": "Complete build marker in command.profile.gz; seconds from command start",
+      "critical_path": "Bazel profile critical-path.txt",
+      "remote_execution": "executedActionMetadata executionStart/Completed; queue queued/workerStart; CPU usageStats.cpuNanos",
+      "vm_phases": "JSONL vm phase start/end UTC; scenario spans include nested Ready/turn, do not sum unlike phase types"
+    },
+    "rows": [
+      {
+        "source_class": "before_all_three",
+        "tested_source_sha": "b126a369d254ea4a7e9a7ecba729e2366c46131b",
+        "github_run_id": "40640692452",
+        "buildbuddy_invocation_id": "a4070d85-58b8-51b7-a0ab-3bb761d47575",
+        "created_utc": "2026-10-28T05:54:31Z",
+        "bazel_job": {
+          "status": "success",
+          "started_utc": "2026-10-28T05:54:34Z",
+          "completed_utc": "2026-10-28T06:05:35Z",
+          "queue_from_run_creation_s": 3.0,
+          "wall_s": 661.0
+        },
+        "test_build_lint_step_s": 646.0,
+        "bazel_profile_elapsed_s": 591.837,
+        "critical_path_s": 543.82,
+        "fresh_remote_execution_count": 74,
+        "fresh_remote_cpu_s": 6171.175,
+        "test_targets": {
+          "vm": {
+            "status": "PASSED",
+            "reported_duration_s": 450.873,
+            "cached_results": 0,
+            "total_run_count": 1
+          },
+          "mcp": {
+            "status": "PASSED",
+            "reported_duration_s": 511.481,
+            "cached_results": 0,
+            "total_run_count": 1
+          }
+        },
+        "originating_test_execution": {
+          "mcp": {
+            "execution_process_wall_s": 511.482,
+            "cpu_s": 886.722,
+            "remote_queue_s": 0.096,
+            "worker_completed_utc": "2026-10-28T06:05:04.265901Z",
+            "same_observed_worker_as_other_vm_runs": null
+          },
+          "vm": {
+            "execution_process_wall_s": 450.874,
+            "cpu_s": 783.151,
+            "remote_queue_s": 0.059,
+            "worker_completed_utc": "2026-10-28T06:04:07.622396Z",
+            "same_observed_worker_as_other_vm_runs": true
+          }
+        },
+        "vm_guest_phase_s": {
+          "vm.sandbox.create": {
+            "per_case": [0.024, 0.021, 0.019],
+            "sum": 0.064
+          },
+          "vm.sandbox.ready": {
+            "per_case": [38.538, 30.359, 28.308],
+            "sum": 97.205
+          },
+          "vm.session.open": {
+            "per_case": [1.834, 1.313, 1.3],
+            "sum": 4.447
+          },
+          "vm.turn": {
+            "per_case": [38.001, 33.777],
+            "sum": 71.778
+          },
+          "vm.scenario": {
+            "per_case": [78.402, 65.472, 91.354],
+            "sum": 235.228
+          },
+          "vm.sandbox.cleanup": {
+            "per_case": [16.697, 16.805, 16.044],
+            "sum": 49.546
+          },
+          "vm.diagnostics": {
+            "per_case": [0.078, 0.052, 0.069],
+            "sum": 0.199
+          },
+          "vm.case": {
+            "per_case": [95.405, 82.346, 107.482],
+            "sum": 285.233
+          },
+          "vm.command": {
+            "per_case": [27.914, 25.992, 7.688],
+            "sum": 61.594
+          }
+        },
+        "vm_fixture": {
+          "guest_root_import_s": 0.4,
+          "stack_ready_s": 113.7
+        },
+        "mcp_fixture": {
+          "stack_ready_s": 178.9
+        },
+        "mcp_junit": {
+          "case_count": 10,
+          "case_sum_s": 483.433
+        },
+        "raw_artifact_sha256": {
+          "command.profile.gz": "d52c33991b9679947665bf301c58cd51f28aa9302502ec9c0945a6e838411408",
+          "critical-path.txt": "e9c5443adc8fbb8b2ae6e6f755c1a28d287e50d8912dc49c6a0d9deffa2486db",
+          "executions.json": "62bbc596e78b022e508d00419d8a28c389e41d855d9be729be8e632c1f310adf",
+          "mcp-target.json": "303079acebfe8b0a1c1a8682b1136898a9c233f31fd0162c3fce745d83568375",
+          "vm-target.json": "82adce44bf7bcbb6296e4d3eb6440487ab4ff7cd00ee4803cbb9ad69e365f4fd",
+          "test_vm_sandbox_vm-k3s-timeline.jsonl": "ce97bd2bba0bb9f92a6a85e748dbddfca4270fbfb10401606750c3fe2584d67b",
+          "test_mcp-k3s-timeline.jsonl": "bd73b603d62681d735a0c2791e9fe7737f434364796b133756546c0e4dc986b2",
+          "vm-phases.jsonl": "0ffd8dd9ca682897dcdcb53fab4ac43667d04525990a9c9679775c2a290559e7",
+          "test_vm_sandbox_vm.xml": "092a6d5905fba2bd31af77a008f041b08bf160aa1cb3521a29fae74b196c8878",
+          "test_mcp.xml": "426a375cb072a04c4d18672434804f8c6889bc576d1a3dab72f5fe336cc371f6"
+        },
+        "retrieval": {
+          "profile": "bbapi tool-log download a4070d85-58b8-51b7-a0ab-3bb761d47575 command.profile.gz",
+          "critical_path": "bbapi tool-log cat a4070d85-58b8-51b7-a0ab-3bb761d47575 'critical path'",
+          "executions": "bbapi execution a4070d85-58b8-51b7-a0ab-3bb761d47575 --json",
+          "target_mcp": "bbapi target a4070d85-58b8-51b7-a0ab-3bb761d47575 --label //agentplane/system_tests:test_mcp --json",
+          "target_vm": "bbapi target a4070d85-58b8-51b7-a0ab-3bb761d47575 --label //agentplane/system_tests:test_vm_sandbox_vm --json",
+          "vm_fixture": "bbapi artifact cat a4070d85-58b8-51b7-a0ab-3bb761d47575 test_vm_sandbox_vm/test.outputs/k3s-timeline.jsonl",
+          "mcp_fixture": "bbapi artifact cat a4070d85-58b8-51b7-a0ab-3bb761d47575 test_mcp/test.outputs/k3s-timeline.jsonl",
+          "vm_phases": "bbapi artifact cat a4070d85-58b8-51b7-a0ab-3bb761d47575 test_vm_sandbox_vm/test.outputs/vm-phases.jsonl"
+        }
+      },
+      {
+        "source_class": "pod_cleanup_only",
+        "tested_source_sha": "db1895b3e0b9cadf4b63764db85b3a66c5f96d1b",
+        "github_run_id": "40641625603",
+        "buildbuddy_invocation_id": "15bab0ae-a3f3-5c5d-b1ab-b9b4aed40076",
+        "created_utc": "2026-10-28T06:04:13Z",
+        "bazel_job": {
+          "status": "success",
+          "started_utc": "2026-10-28T06:05:37Z",
+          "completed_utc": "2026-10-28T06:15:20Z",
+          "queue_from_run_creation_s": 84.0,
+          "wall_s": 583.0
+        },
+        "test_build_lint_step_s": 567.0,
+        "bazel_profile_elapsed_s": 509.213,
+        "critical_path_s": 498.42,
+        "fresh_remote_execution_count": 58,
+        "fresh_remote_cpu_s": 4968.899,
+        "test_targets": {
+          "vm": {
+            "status": "PASSED",
+            "reported_duration_s": 444.098,
+            "cached_results": 0,
+            "total_run_count": 1
+          },
+          "mcp": {
+            "status": "PASSED",
+            "reported_duration_s": 318.095,
+            "cached_results": 0,
+            "total_run_count": 1
+          }
+        },
+        "originating_test_execution": {
+          "mcp": {
+            "execution_process_wall_s": 318.096,
+            "cpu_s": 488.347,
+            "remote_queue_s": 0.062,
+            "worker_completed_utc": "2026-10-28T06:12:21.413112Z",
+            "same_observed_worker_as_other_vm_runs": null
+          },
+          "vm": {
+            "execution_process_wall_s": 444.098,
+            "cpu_s": 803.492,
+            "remote_queue_s": 0.06,
+            "worker_completed_utc": "2026-10-28T06:14:52.848067Z",
+            "same_observed_worker_as_other_vm_runs": true
+          }
+        },
+        "vm_guest_phase_s": {
+          "vm.sandbox.create": {
+            "per_case": [0.021, 0.019, 0.018],
+            "sum": 0.058
+          },
+          "vm.sandbox.ready": {
+            "per_case": [47.022, 30.334, 34.448],
+            "sum": 111.804
+          },
+          "vm.session.open": {
+            "per_case": [3.141, 1.093, 1.765],
+            "sum": 5.999
+          },
+          "vm.turn": {
+            "per_case": [33.114, 33.607],
+            "sum": 66.721
+          },
+          "vm.scenario": {
+            "per_case": [83.324, 65.056, 107.267],
+            "sum": 255.647
+          },
+          "vm.sandbox.cleanup": {
+            "per_case": [16.896, 16.432, 17.21],
+            "sum": 50.538
+          },
+          "vm.diagnostics": {
+            "per_case": [0.071, 0.054, 0.085],
+            "sum": 0.21
+          },
+          "vm.case": {
+            "per_case": [100.432, 81.568, 124.579],
+            "sum": 306.579
+          },
+          "vm.command": {
+            "per_case": [32.382, 30.732, 7.743],
+            "sum": 70.857
+          }
+        },
+        "vm_fixture": {
+          "guest_root_import_s": 0.3,
+          "stack_ready_s": 102.7
+        },
+        "mcp_fixture": {
+          "stack_ready_s": 47.9
+        },
+        "mcp_junit": {
+          "case_count": 10,
+          "case_sum_s": 295.301
+        },
+        "raw_artifact_sha256": {
+          "command.profile.gz": "32920049850b3c7bef9a9d67c666693d292de9af2a49c97c24e7e796c2f47eba",
+          "critical-path.txt": "ec791b18de3edf2ac104587e8c582d44430bfdaa14e8cc101fada06aee87cecc",
+          "executions.json": "1854deadb2d23835129658bde395c3f5a60e6494913f5f434b85ab25ce5b1bf8",
+          "mcp-target.json": "0f073f949c4fbf39dc66fcba937a2e033add6d4fc58153a3e1c3dc4abeb9386a",
+          "vm-target.json": "9c2c0b56c297c5b67761d9d1a4b4da90b459f0f53240218c2f04db521b05c952",
+          "test_vm_sandbox_vm-k3s-timeline.jsonl": "027cead9dfeb4d378bb56ade44b89b47432928173a7e20c0a4b679072c92b92e",
+          "test_mcp-k3s-timeline.jsonl": "b377bb8a214ee49e3ad040361af66e2fd23ade3449940f3c7e3c7bfe817d176f",
+          "vm-phases.jsonl": "63d9868aff2c20e4d2bc11658edb8dd81c9bd8d3ebc886548b768c8c8504e98b",
+          "test_vm_sandbox_vm.xml": "3ee57cc7b3464d196197e4b253fb7d19df25ea4f8336f3ede8f04834ba54cb09",
+          "test_mcp.xml": "3c485a7219bbea5461711bb66af108a978ddc13b65bc7b66feed369d4130d46b"
+        },
+        "retrieval": {
+          "profile": "bbapi tool-log download 15bab0ae-a3f3-5c5d-b1ab-b9b4aed40076 command.profile.gz",
+          "critical_path": "bbapi tool-log cat 15bab0ae-a3f3-5c5d-b1ab-b9b4aed40076 'critical path'",
+          "executions": "bbapi execution 15bab0ae-a3f3-5c5d-b1ab-b9b4aed40076 --json",
+          "target_mcp": "bbapi target 15bab0ae-a3f3-5c5d-b1ab-b9b4aed40076 --label //agentplane/system_tests:test_mcp --json",
+          "target_vm": "bbapi target 15bab0ae-a3f3-5c5d-b1ab-b9b4aed40076 --label //agentplane/system_tests:test_vm_sandbox_vm --json",
+          "vm_fixture": "bbapi artifact cat 15bab0ae-a3f3-5c5d-b1ab-b9b4aed40076 test_vm_sandbox_vm/test.outputs/k3s-timeline.jsonl",
+          "mcp_fixture": "bbapi artifact cat 15bab0ae-a3f3-5c5d-b1ab-b9b4aed40076 test_mcp/test.outputs/k3s-timeline.jsonl",
+          "vm_phases": "bbapi artifact cat 15bab0ae-a3f3-5c5d-b1ab-b9b4aed40076 test_vm_sandbox_vm/test.outputs/vm-phases.jsonl"
+        }
+      },
+      {
+        "source_class": "all_three_merged",
+        "tested_source_sha": "50bd44b472e321c7fb2d50ace0ded24afee7c8b4",
+        "github_run_id": "40642731109",
+        "buildbuddy_invocation_id": "79bbe88d-97c9-500b-ba37-e11dfb5395e7",
+        "created_utc": "2026-10-28T06:15:14Z",
+        "bazel_job": {
+          "status": "success",
+          "started_utc": "2026-10-28T06:15:22Z",
+          "completed_utc": "2026-10-28T06:23:36Z",
+          "queue_from_run_creation_s": 8.0,
+          "wall_s": 494.0
+        },
+        "test_build_lint_step_s": 480.0,
+        "bazel_profile_elapsed_s": 422.589,
+        "critical_path_s": 410.22,
+        "fresh_remote_execution_count": 1,
+        "fresh_remote_cpu_s": 814.045,
+        "test_targets": {
+          "vm": {
+            "status": "PASSED",
+            "reported_duration_s": 407.485,
+            "cached_results": 0,
+            "total_run_count": 1
+          },
+          "mcp": {
+            "status": "PASSED",
+            "reported_duration_s": 317.415,
+            "cached_results": 1,
+            "total_run_count": 1
+          }
+        },
+        "originating_test_execution": {
+          "vm": {
+            "execution_process_wall_s": 407.486,
+            "cpu_s": 814.045,
+            "remote_queue_s": 0.061,
+            "worker_completed_utc": "2026-10-28T06:23:08.952587Z",
+            "same_observed_worker_as_other_vm_runs": true
+          }
+        },
+        "vm_guest_phase_s": {
+          "vm.sandbox.create": {
+            "per_case": [0.034, 0.019, 0.02],
+            "sum": 0.073
+          },
+          "vm.sandbox.ready": {
+            "per_case": [36.401, 30.291, 30.296],
+            "sum": 96.988
+          },
+          "vm.session.open": {
+            "per_case": [2.024, 1.306, 1.316],
+            "sum": 4.646
+          },
+          "vm.turn": {
+            "per_case": [38.13, 27.518],
+            "sum": 65.648
+          },
+          "vm.scenario": {
+            "per_case": [76.593, 59.136, 90.877],
+            "sum": 226.606
+          },
+          "vm.sandbox.cleanup": {
+            "per_case": [11.487, 12.082, 12.48],
+            "sum": 36.049
+          },
+          "vm.diagnostics": {
+            "per_case": [0.066, 0.052, 0.076],
+            "sum": 0.194
+          },
+          "vm.case": {
+            "per_case": [88.331, 71.286, 103.449],
+            "sum": 263.066
+          },
+          "vm.command": {
+            "per_case": [29.908, 22.359, 6.834],
+            "sum": 59.101
+          }
+        },
+        "vm_fixture": {
+          "guest_root_import_s": 47.9,
+          "stack_ready_s": 111.5
+        },
+        "mcp_fixture": {
+          "stack_ready_s": 49.6
+        },
+        "mcp_junit": {
+          "case_count": 10,
+          "case_sum_s": 296.367
+        },
+        "raw_artifact_sha256": {
+          "command.profile.gz": "956307689155ad957cbb2f902407a66c63e725028620858f038a4d8b0a12f6aa",
+          "critical-path.txt": "c6ed4944c82a41c7c41270dd581f4d88257c921211db7768e66b80d85573b3fd",
+          "executions.json": "bde9dcc2dcb529735a3232fa1709e8202aee5ec9b3dda1f5fd9281d3d98a4a4d",
+          "mcp-target.json": "b744b64c3bab42f10977a4aac601132d0fdb714e88390debe02555b6dee848ae",
+          "vm-target.json": "13b73c090fad6228a0afe3f3e9fb016d784c866d6dd00a801ac90cd37be3fdb3",
+          "test_vm_sandbox_vm-k3s-timeline.jsonl": "ded87ed5561a733d2aa9c15e867210fdada11e91bf2fe865bedadcdd26e788ae",
+          "test_mcp-k3s-timeline.jsonl": "61d1fdef7e1009178293b8ef46bb7984068518ebbcb3428e06fa9dc415fce1df",
+          "vm-phases.jsonl": "5a3da4745c5f01d34e328759447c26d47bd9ec1e4e969a295b4217af414637aa",
+          "test_vm_sandbox_vm.xml": "9be7d1ce2fdeab262dd5027037090abe1d2c4ac53137f5867ce35ee0048b7bbc",
+          "test_mcp.xml": "7110f465ac720a363ba6b0ae73de8c17be6925c72dd3efe0bb67d57e809cb92e"
+        },
+        "retrieval": {
+          "profile": "bbapi tool-log download 79bbe88d-97c9-500b-ba37-e11dfb5395e7 command.profile.gz",
+          "critical_path": "bbapi tool-log cat 79bbe88d-97c9-500b-ba37-e11dfb5395e7 'critical path'",
+          "executions": "bbapi execution 79bbe88d-97c9-500b-ba37-e11dfb5395e7 --json",
+          "target_mcp": "bbapi target 79bbe88d-97c9-500b-ba37-e11dfb5395e7 --label //agentplane/system_tests:test_mcp --json",
+          "target_vm": "bbapi target 79bbe88d-97c9-500b-ba37-e11dfb5395e7 --label //agentplane/system_tests:test_vm_sandbox_vm --json",
+          "vm_fixture": "bbapi artifact cat 79bbe88d-97c9-500b-ba37-e11dfb5395e7 test_vm_sandbox_vm/test.outputs/k3s-timeline.jsonl",
+          "mcp_fixture": "bbapi artifact cat 79bbe88d-97c9-500b-ba37-e11dfb5395e7 test_mcp/test.outputs/k3s-timeline.jsonl",
+          "vm_phases": "bbapi artifact cat 79bbe88d-97c9-500b-ba37-e11dfb5395e7 test_vm_sandbox_vm/test.outputs/vm-phases.jsonl"
+        }
+      },
+      {
+        "source_class": "later_all_three_with_unrelated_source_changes",
+        "tested_source_sha": "feb464de80936d8d612007d60aeb425f7036e374",
+        "github_run_id": "40643511593",
+        "buildbuddy_invocation_id": "7b0af96d-279b-535a-8349-e239958a4a6e",
+        "created_utc": "2026-10-28T06:23:03Z",
+        "bazel_job": {
+          "status": "success",
+          "started_utc": "2026-10-28T06:24:04Z",
+          "completed_utc": "2026-10-28T06:32:33Z",
+          "queue_from_run_creation_s": 61.0,
+          "wall_s": 509.0
+        },
+        "test_build_lint_step_s": 496.0,
+        "bazel_profile_elapsed_s": 443.796,
+        "critical_path_s": 421.43,
+        "fresh_remote_execution_count": 17,
+        "fresh_remote_cpu_s": 3561.406,
+        "test_targets": {
+          "vm": {
+            "status": "PASSED",
+            "reported_duration_s": 412.684,
+            "cached_results": 0,
+            "total_run_count": 1
+          },
+          "mcp": {
+            "status": "PASSED",
+            "reported_duration_s": 335.665,
+            "cached_results": 0,
+            "total_run_count": 1
+          }
+        },
+        "originating_test_execution": {
+          "mcp": {
+            "execution_process_wall_s": 335.665,
+            "cpu_s": 514.423,
+            "remote_queue_s": 0.059,
+            "worker_completed_utc": "2026-10-28T06:30:43.663046Z",
+            "same_observed_worker_as_other_vm_runs": null
+          },
+          "vm": {
+            "execution_process_wall_s": 412.684,
+            "cpu_s": 768.246,
+            "remote_queue_s": 0.063,
+            "worker_completed_utc": "2026-10-28T06:32:04.048914Z",
+            "same_observed_worker_as_other_vm_runs": true
+          }
+        },
+        "vm_guest_phase_s": {
+          "vm.sandbox.create": {
+            "per_case": [0.023, 0.016, 0.025],
+            "sum": 0.064
+          },
+          "vm.sandbox.ready": {
+            "per_case": [34.347, 30.719, 32.495],
+            "sum": 97.561
+          },
+          "vm.session.open": {
+            "per_case": [2.197, 1.33, 1.349],
+            "sum": 4.876
+          },
+          "vm.turn": {
+            "per_case": [26.979, 31.776],
+            "sum": 58.755
+          },
+          "vm.scenario": {
+            "per_case": [63.548, 63.843, 111.233],
+            "sum": 238.624
+          },
+          "vm.sandbox.cleanup": {
+            "per_case": [10.861, 11.532, 12.542],
+            "sum": 34.935
+          },
+          "vm.diagnostics": {
+            "per_case": [0.065, 0.089, 0.11],
+            "sum": 0.264
+          },
+          "vm.case": {
+            "per_case": [74.621, 75.482, 123.904],
+            "sum": 274.007
+          },
+          "vm.command": {
+            "per_case": [35.749, 32.224, 9.127],
+            "sum": 77.1
+          }
+        },
+        "vm_fixture": {
+          "guest_root_import_s": 34.4,
+          "stack_ready_s": 101.1
+        },
+        "mcp_fixture": {
+          "stack_ready_s": 54.1
+        },
+        "mcp_junit": {
+          "case_count": 10,
+          "case_sum_s": 308.818
+        },
+        "raw_artifact_sha256": {
+          "command.profile.gz": "b67b5c734afc5376cd89f65a4f50ac367f25efb236a60aceac7106d764f3621f",
+          "critical-path.txt": "15ab74ffc41110ea0db6d0fc77f836d86673896099cb37275fc301ab6cda9ba6",
+          "executions.json": "225ce067cd920714f27c534d771a101f9aa9954cb8d0e06b153775b684784ac1",
+          "mcp-target.json": "8ab0b10112ba49f33334aabd3c8f5b8c816d1b154fade8f4b0ab5d968ebdb2d0",
+          "vm-target.json": "fbc4cf12f86f60747c54ee461b2fccf0501dcb3db3e9fd53c2ec5f423bcd0ede",
+          "test_vm_sandbox_vm-k3s-timeline.jsonl": "b7ddfe3c0aa856df11c82679ce58faf28b99d75d459b737995ce4d327d2a2c74",
+          "test_mcp-k3s-timeline.jsonl": "4b60ca7c1caf1c8f1a1ec965a27a88d29939a40aa15b0543353da7ddc25ec183",
+          "vm-phases.jsonl": "c6d0c85c40bc2466ee364ed2f0e509802e2a3c26f66bf758bc042d241d7041af",
+          "test_vm_sandbox_vm.xml": "51fa20a9d2cf3b1eb87c5d9d885a83c2b349efebe57f53410298d63d5133c0f3",
+          "test_mcp.xml": "40805b07dc80ec545fa4288200ff17eb2fa36975fe4150f20f56f71dd08df2c5"
+        },
+        "retrieval": {
+          "profile": "bbapi tool-log download 7b0af96d-279b-535a-8349-e239958a4a6e command.profile.gz",
+          "critical_path": "bbapi tool-log cat 7b0af96d-279b-535a-8349-e239958a4a6e 'critical path'",
+          "executions": "bbapi execution 7b0af96d-279b-535a-8349-e239958a4a6e --json",
+          "target_mcp": "bbapi target 7b0af96d-279b-535a-8349-e239958a4a6e --label //agentplane/system_tests:test_mcp --json",
+          "target_vm": "bbapi target 7b0af96d-279b-535a-8349-e239958a4a6e --label //agentplane/system_tests:test_vm_sandbox_vm --json",
+          "vm_fixture": "bbapi artifact cat 7b0af96d-279b-535a-8349-e239958a4a6e test_vm_sandbox_vm/test.outputs/k3s-timeline.jsonl",
+          "mcp_fixture": "bbapi artifact cat 7b0af96d-279b-535a-8349-e239958a4a6e test_mcp/test.outputs/k3s-timeline.jsonl",
+          "vm_phases": "bbapi artifact cat 7b0af96d-279b-535a-8349-e239958a4a6e test_vm_sandbox_vm/test.outputs/vm-phases.jsonl"
+        }
+      }
+    ],
+    "comparison": {
+      "before_to_all_three_job_wall_delta_s": -167,
+      "pod_only_to_all_three_job_wall_delta_s": -89,
+      "pod_only_to_all_three_vm_execution_wall_delta_s": -36.612,
+      "pod_only_to_all_three_vm_cleanup_sum_delta_s": -14.489,
+      "pod_only_to_all_three_vm_cpu_delta_s": 10.553,
+      "causal_status": "Unmatched source/cache/image state; no combined CI feedback or compute savings estimate. Controlled pre-merge phase experiments remain separate evidence."
+    },
+    "visibility_limits": [
+      "The first all-three 50bd MCP result is cached (totalNumCached=1), with no originating MCP execution in that invocation. The later feb source has fresh MCP and VM executions but unrelated source and cache changes. A cached target duration is historical metadata, not fresh runtime.",
+      "Fresh execution counts 74,58,1,17; cold/warm/cached/fresh MCP and unrelated source changes altered compute. VM was critical in both all-three runs.",
+      "VM guest-root import changed from 0.3s at db189 to 47.9s at 50bd. Same observed worker ID does not prove same snapshot/image state.",
+      "Canceled devel runs at 36fda509d0 and 9e1af526b7 were not completed feedback observations.",
+      "The whole GitHub workflow includes release/push-image jobs beyond the Bazel job; report figures are Bazel job and test step only."
+    ],
+    "report_validation": {
+      "exact_html_sha256": "7b337b57d0f29aec974c3815cfa04aded403d37f12444edc09c3736fc5bbadbf",
+      "browser_review_invocation": "2dd28c6f-e4ee-4895-8b81-1a228c3c8f88",
+      "browser_review": "passed two Playwright viewport cases on RBE, 1280x900 desktop and 390x844 mobile; visually inspected overview and post-merge table; no page horizontal overflow",
+      "temporary_bazel_target": "//devinfra/ci/reports:post_merge_report_review",
+      "screenshots_sha256": {
+        "desktop_overview": "db9a8299ec4e3a1019a8d6e55ac92c76f1b6b2c8a6d3b1cf5d2883661ae6d973",
+        "desktop_post_merge": "aeb4231af9fa6f34c5e84efb06efb3ea5424d9c11fa10cf2e9d345a89978c560",
+        "mobile_overview": "fe80c51bdeb34354f4fffab28ae9410a59ede9189622ed95dcfe37dac9aca1e4",
+        "mobile_post_merge": "1293d859193df62994acd2140718480e85a284d686e2274fff472cb95eb89fdf"
+      }
+    }
   }
 }

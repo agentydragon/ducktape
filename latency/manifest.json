@@ -1,7 +1,7 @@
 {
-  "source_devel_commit": "9ab44ab64b6e21c28c71352fbd98eef42b442b24",
+  "source_devel_commit": "feb464de80936d8d612007d60aeb425f7036e374",
   "window_start_utc": "2026-10-24T04:00:00Z",
-  "window_end_utc": "2026-10-28T05:59:00Z",
-  "published_at_utc": "2026-10-28T05:58:52.270203+00:00",
-  "attribution": "not collected"
+  "window_end_utc": "2026-10-28T06:33:00Z",
+  "published_at_utc": "2026-10-28T06:37:25.085312+00:00",
+  "attribution": "focused source-stratified post-merge Bazel CI audit; not a fleet cohort"
 }
