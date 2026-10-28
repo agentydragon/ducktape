@@ -43,6 +43,16 @@ fn assert_shell_command_round_trips(record: &Value) {
     assert_eq!(&command[4..], argv.as_slice());
 }
 
+fn replay_printed(record: &Value) -> Value {
+    let argv = record["argv"].as_array().unwrap();
+    let mut replay = Command::new(argv[0].as_str().unwrap());
+    replay
+        .args(argv[1..].iter().map(|value| value.as_str().unwrap()))
+        .arg("--print-invocation")
+        .current_dir(record["cwd"].as_str().unwrap());
+    run_json(&mut replay)
+}
+
 #[test]
 fn graph_environment_is_materialized_and_cli_flag_wins() {
     let fixture = GraphFixture::new("const a = 1; console.log(a);", &[]);
@@ -449,4 +459,74 @@ fn snapshot_print_only_materializes_global_roots_once_without_touching_inputs() 
     assert_eq!(verify_record["will_execute"], false);
     assert_eq!(verify_record["write_scope"].as_array().unwrap().len(), 0);
     assert!(!verify_directory.exists());
+}
+
+#[test]
+fn describe_default_limit_is_captured_and_replayable() {
+    let fixture = GraphFixture::new("const a = 1; console.log(a);", &[]);
+    let record = fixture.json(&["describe", "a", "--print-invocation"]);
+
+    let limit = record["arguments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|argument| argument["name"] == "limit")
+        .expect("default limit is captured");
+    assert_eq!(limit["source"], "default");
+    assert_eq!(limit["value"]["values"][0], "20");
+    let argv = record["argv"].as_array().unwrap();
+    assert!(
+        argv.windows(2)
+            .any(|pair| pair[0] == "--limit" && pair[1] == "20")
+    );
+
+    let replay = replay_printed(&record);
+    assert_eq!(replay["argv"], record["argv"]);
+    let explicit = fixture.json(&["describe", "a", "--limit", "20", "--print-invocation"]);
+    let explicit_limit = explicit["arguments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|argument| argument["name"] == "limit")
+        .expect("explicit limit is captured");
+    assert_eq!(explicit_limit["source"], "command_line");
+    assert_eq!(explicit_limit["value"]["values"][0], "20");
+    assert_eq!(replay_printed(&explicit)["argv"], explicit["argv"]);
+}
+
+#[test]
+fn describe_all_replays_without_a_conflicting_default_limit() {
+    let fixture = GraphFixture::new("const a = 1; console.log(a);", &[]);
+    let record = fixture.json(&["describe", "a", "--all", "--print-invocation"]);
+
+    assert!(
+        record["arguments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|argument| argument["name"] != "limit")
+    );
+    assert!(
+        record["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|argument| argument == "--all")
+    );
+    assert!(
+        !record["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|argument| argument == "--limit" || argument == "--limit=20")
+    );
+    let replay = replay_printed(&record);
+    assert_eq!(replay["argv"], record["argv"]);
+    assert!(
+        replay["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|argument| argument == "--all")
+    );
 }

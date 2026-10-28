@@ -691,7 +691,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     let include_proposal_sections = propose.is_some();
     let ResolvedSelection {
         source_unit_ids,
-        unknown_binding_ids,
+        mut unknown_binding_ids,
     } = resolve_source_unit_ids(
         selection,
         &graph,
@@ -728,7 +728,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .collect();
     let mut neighbor_source_units = source_units_for_ids(&graph, &neighbor_ids);
     let selected_atomic_group_ids = atomic_group_ids_for_source_unit_set(&graph, &source_unit_set);
-    let mut atomic_groups = graph
+    let mut atomic_groups: Vec<AtomicGroupReport> = graph
         .atomic_graph
         .nodes
         .iter()
@@ -766,7 +766,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .iter()
         .map(|source_unit| source_unit.destination.clone())
         .collect();
-    let mut quotient_edges = graph
+    let mut quotient_edges: Vec<QuotientEdgeReport> = graph
         .quotient
         .edges
         .iter()
@@ -777,7 +777,10 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .cloned()
         .collect();
 
-    let (mut module_proposals, mut module_proposal_diagnostics) = if let Some(propose) = propose {
+    let (mut module_proposals, mut module_proposal_diagnostics): (
+        Vec<ModuleProposal>,
+        Vec<ProposalDiagnostic>,
+    ) = if let Some(propose) = propose {
         (
             propose
                 .proposals

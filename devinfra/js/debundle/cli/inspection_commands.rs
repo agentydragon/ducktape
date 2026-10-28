@@ -37,7 +37,12 @@ pub(super) struct DescribeArgs {
     pub size_cap_lines: usize,
 
     /// Maximum number of rows per report section (default 20; use --all for exhaustive results).
-    #[arg(long, conflicts_with = "all")]
+    #[arg(
+        long,
+        default_value = "20",
+        default_value_if("all", "true", None),
+        conflicts_with = "all"
+    )]
     pub limit: Option<usize>,
 
     /// Emit every matching row. Conflicts with --limit.
