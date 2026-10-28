@@ -3,6 +3,42 @@
 Proposing, moving, merging, and renaming modules and bindings; peel heuristics;
 `comment:` fields. Operational base: `cli.md`.
 
+## Workflow: executing a delegated assignment
+
+Use the [snapshot-backed adapter contract](../skills/shared/workflow.md#adapter-contract)
+for required inputs and [the task chooser](../README.md#choose-a-task) for the
+operation-specific recipe.
+
+1. Confirm the worker checkout's expected base and verify its starting snapshot.
+   Use the copied engine, roots, and package map from the adapter contract for all
+   graph-backed commands. Keep the baseline verification's actual result.
+2. Check the assignment against source, callers, dependencies, and atomic coverage.
+   Apply project conventions and [module-shape guidance](../skills/shared/module_shape.md). Expand
+   within the assigned scope when needed to keep groups whole; skip or return
+   work whose destination or required scope remains unresolved.
+3. Follow the task chooser's recipe for the selected operation. It owns the
+   command's chunk/YAML scope, batch format, dry-run review, and gate semantics.
+   For fresh proposals, inspect `selector_reviews` against source and keep only
+   justified anchors; the [selector guide](selectors.md) owns portability
+   criteria. A current-source proof does not establish future stability.
+4. Apply the reviewed edit and retain its proposed-assignment gate result. Remove
+   now-owned entries from the project's non-emitting rename/annotation patch
+   stream when applicable. Never edit the upstream bundle or generated output.
+5. Regenerate through the worker's adapter command, then run its uniqueness,
+   runtime, and applicable CI checks. Record the results separately using
+   [execution evidence](../skills/shared/workflow.md#execution-evidence).
+6. Export the exact relative YAML additions, modifications, and deletions from the
+   snapshot into one reviewable branch. The commit transports the patch; the
+   snapshot run and its execution records prove what was validated.
+
+A successful edit makes the saved graph describe the pre-edit YAML. Regenerate
+before any subsequent graph-backed query or edit. Starting `snapshot verify`
+is expected to fail after edits; it is not a post-edit gate.
+
+If source discovery becomes broad, return it to intake. If the destination is
+architecturally unclear, return it to the architect. Use [failure routing](../skills/shared/workflow.md#failure-routing)
+for graph and gate failures.
+
 ## Workflow: reorganizing existing modules
 
 Use `modules decompose --atomic` to plan a complete assignment of existing

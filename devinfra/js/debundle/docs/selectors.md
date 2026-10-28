@@ -216,6 +216,32 @@ Before writing one, check that the selector language of this document — holes,
 references, pinning by use site, relational selectors — cannot already express
 the anchor; a note for a pattern it covers is stale.
 
+## Review one selector
+
+1. Read the binding with `inspect-source --id` and its surrounding emitted code.
+   Identify the behavior and stable anchors that distinguish its purpose.
+2. Inspect a `spec synthesize-selectors` dry-run for `--item <module>:<export>`.
+   Compare candidate shapes with the contract and ladder above. Use
+   `--candidates N` when the first candidate retains incidental syntax.
+3. Write the reviewed selector, grouping bindings from one declaration when
+   useful. Format YAML after `--apply` and inspect the semantic diff.
+4. Probe an independent template with `spec match-selector` and inspect over-pin
+   slack. For references to other entities, use source-only `spec validate` and
+   inspect the reported reference identities. Full validation uses the
+   [adapter's pipeline inputs](cli.md#running-the-pipeline).
+5. If no purpose-bearing anchor is expressible, keep the name pin and record
+   the missing capability as [selector debt](#selector-debt).
+
+Per-selector commands read source and module files directly; they do not need a
+dependency graph or pipeline build. Full validation still needs the adapter's
+package/source roots and gate. A current unique match, including zero over-pin
+slack, cannot establish forward stability.
+
+For a new upstream snapshot, use a reviewed draft spec against that new source.
+A prior spec is a manual starting point; the tools do not compare versions or
+infer cross-version edits. Review candidates, run full validation and the target
+gate, and report unresolved mismatches.
+
 ## Bulk conversion loop
 
 For broad selector-maintenance passes, use a single-source loop:

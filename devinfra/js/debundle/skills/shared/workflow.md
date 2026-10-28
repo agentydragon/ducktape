@@ -1,35 +1,37 @@
-# Debundle Agent Workflow
+# Plan and delegate Debundle work
 
-This reference describes the reusable multi-agent workflow for AI-assisted
-debundling. Project adapters supply concrete paths, commands, conventions, and
-verification gates.
+Use the [task chooser](../../README.md#choose-a-task) for individual authoring
+operations. This guide owns shared planning, worker, and integration procedures;
+project adapters supply concrete paths, commands, conventions, and gates.
 
-Use the [task chooser](README.md#choose-a-task) to select a CLI recipe before
-starting a lane. Read contract guidance only when source investigation requires
-an author assertion.
+| Task                               | Read                                                                                   | Result                                                        |
+| ---------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Plan an assignment without editing | [Plan an assignment](../../docs/planning.md#plan-an-assignment)                        | Source-backed proposal, decomposition, or selector worklist   |
+| Ground residual proposals          | [Prepare seeds](../../docs/planning.md#prepare-seeds)                                  | Named worker packets in `seeds.json`                          |
+| Apply one assigned edit            | [Execute a lane](../../docs/spec_editing.md#workflow-executing-a-delegated-assignment) | Reviewed YAML delta and completed validation evidence         |
+| Combine worker results             | [Integrate worker results](../../docs/integration.md)                                  | Validated combined spec and per-branch disposition            |
+| Coordinate a round                 | [Coordinate a round](#coordinate-a-round)                                              | Isolated assignments, current evidence, and routed follow-ups |
 
 ## Roles
 
-- Orchestrator: refreshes evidence, dispatches roles, tracks state, routes
-  failures, and owns adapter-specific commands.
-- Intake: converts planner output into named seed clusters for workers.
-- Lane worker: applies one scoped spec edit or reorg task in an isolated
-  worktree.
-- Architect: audits named modules and emitted tree shape, treats current names
-  and splits as fallible evidence, infers and maintains path/taxonomy
-  conventions from source behavior, and writes current-state architecture notes
-  and reorg recommendations.
-- Integrator: lands worker branches through a validated merge train.
-- Planner/namer skills: `debundle_plan_work` handles read-only
-  `debundle` graph/source queries (`describe`, `inspect-source --id`, `atoms`,
-  `coverage`, `modules propose`, `modules decompose`, `scc`, `cluster`, `graph-summary`);
-  `debundle_mint_names` handles naming-only edits.
+- `debundle_plan_work`: read-only source/graph planning.
+- `debundle_intake`: grounds residual proposals and names seed destinations.
+- `debundle_lane_worker`: implements one scoped assignment.
+- `debundle_integrator`: combines worker results in isolated integration state.
+- `debundle_orchestrator`: owns adapter inputs, dispatch, and progress tracking.
+- `debundle_architect`: [architecture review](../../docs/architecture_review.md)
+  and worker-ready reorganization recommendations; no spec edits.
+- `debundle_mint_names`: [binding naming](../../docs/naming.md) only.
+- `debundle_stabilize`: [selector review](../../docs/selectors.md#review-one-selector)
+  without renaming or moving modules.
+- `debundle_explain`: [trace behavior](../../docs/cli.md#explain-behavior-with-a-partial-spec)
+  and close only the coverage gaps needed for the question.
 
 ## Adapter Contract
 
 The CLI guide's ["Delegating with an input
-snapshot"](docs/cli.md#delegating-with-an-input-snapshot) and ["Resolved
-invocation records"](docs/cli.md#resolved-invocation-records) sections define
+snapshot"](../../docs/cli.md#delegating-with-an-input-snapshot) and ["Resolved
+invocation records"](../../docs/cli.md#resolved-invocation-records) sections define
 command semantics. This contract defines what the adapter and each role must
 exchange.
 
@@ -85,100 +87,66 @@ resolved `argv` and `cwd`, then separately save its actual exit status,
 
 Public skills must not encode private project names or fixed app taxonomies.
 
-## Selector Portability
+## Coordinate a round
 
-Selector authoring and bulk stabilization rounds follow
-`devinfra/js/debundle/docs/selectors.md` § "Authoring portable selectors" (the
-contract and ladder, the `selector-debt` / `synthesize-selectors` bulk loop).
-Route repeated skip reasons or over-verbose generated selectors to Ducktape
-tooling rather than hand-maintaining exact long bodies across many modules.
+1. Refresh pipeline outputs, graphs, root/chunk/directory reports, and cycle
+   evidence. Select work using [planning](../../docs/planning.md#plan-an-assignment).
+2. Route residual proposals through intake. Send reviewed existing-module maps
+   directly to workers; intake does not consume decomposition reports. Prefer
+   coherent synthesis buckets for selector cleanup.
+3. Establish each worker's isolated inputs and permitted scope using the
+   [adapter contract](#adapter-contract), then dispatch the relevant role.
+4. Collect completed patches and execution evidence; integrate green work using
+   [the integration procedure](../../docs/integration.md).
+5. Update inflight/landed/blocked assignments, architecture notes, and durable
+   project conventions. Track the graph/build command and input identity behind
+   metrics such as residual units, patch-stream members, named-module fraction,
+   selector debt, and largest generated files.
 
-## Round Loop
+Route substantial source discovery to intake, architecture decisions to the
+architect, naming-only work to the namer, and merge trains to the integrator.
+The orchestrator owns adapter details and broadcasts working commands; it should
+not absorb specialist work as that work becomes substantial.
 
-1. Refresh debundle outputs, root/chunk reports, directory reports, and
-   dependency graph.
-2. Use `graph-summary` for orientation. Choose `modules propose` for residual
-   extraction or `modules decompose --atomic` for existing-module layout work.
-   Use `graph-summary --include-proposals` when proposal counts are needed.
-3. For selector cleanup, run `selector-debt` with module grouping. Route
-   repeated synthesis gaps to Ducktape tooling rather than asking workers to
-   maintain exact generated bodies.
-4. Route proposal rows to intake for dispatchable seeds. `landable_today: true`
-   is graph readiness; workers still prove selectors and run the edit gate.
-   For decomposition, review the complete candidate, source-backed selector
-   anchors, semantic destinations, and any coarsening/rejoining results.
-   Hand a reviewed source-unit map directly to a lane worker for `modules refine`;
-   residual groups need the separate fresh-claim workflow. Planning remains
-   read-only; optional search limits retain the full candidate gate.
-5. Dispatch independent lane workers and any architect/naming/doc cleanup work.
-6. Integrate green worker branches in batches.
-7. Rerun gate, regen, and adapter smoke tests as required.
-8. Update queues, architecture notes, and durable project conventions.
+## Execution evidence
 
-Track source units by the current graph's unit IDs and binding claims by their
-chunk and name, with the source/spec revisions that produced the graph. These
-identities are scoped to that input program. Proposal IDs may renumber after
-each integration.
+Workers report the branch/commit, starting manifest and graph/input identity,
+reviewed relative YAML delta, destinations/bindings changed, skipped units and
+reasons, and architecture/intake/tooling follow-ups.
 
-Track inflight, landed, and blocked assignments; the graph/build command
-that produced the evidence; and progress metrics such as residual source units,
-patch-stream members, named module fraction, selector debt, and largest
-remaining generated files.
+For each executed command retain resolved `argv` and `cwd`, actual exit status,
+`stdout`, `stderr`, and result artifacts. State which proof it covers: baseline
+pipeline, proposed assignment, regeneration, selector uniqueness, runtime, or CI.
+Keep those outcomes distinct and explain inapplicable checks. A command plan or
+pre-dispatch invocation record does not prove execution or success; the
+[invocation-record contract](../../docs/cli.md#resolved-invocation-records) defines
+those fields.
 
 ## Isolation
 
-Writing agents should use isolated git worktrees and isolated build output
-bases. Read-only agents may inspect the main checkout. Integrators use a
-dedicated isolated integration state at the selected receiving revision.
-Do not modify the upstream bundle during reverse-engineering work. Project
-conventions take precedence over generic guidance.
+Writers use isolated Git worktrees and build output bases; read-only roles may
+inspect the main checkout. Snapshots also isolate external source/package roots.
+Project conventions take precedence over generic guidance.
 
-Before a Git-based remote gate, stage newly authored spec, source and fixture
-files, or verify that the runner explicitly includes them. Check that the logged
-input snapshot contains those files; a run with omitted inputs does not validate
-the change.
+Before a Git-based remote gate, stage new spec/source/fixture files or verify
+that the runner includes them. Check the logged input snapshot: omitted files
+were not validated.
 
-For snapshot-backed lanes, the worker runs the copied engine against the copied
-roots and package map. The initial `snapshot verify` checks the starting inputs;
-after an accepted YAML edit it is expected to fail because the snapshot has
-changed. The saved graph also describes the pre-edit YAML, so regenerate from
-the worker copy before any later graph-backed query or edit. Do not require the
-starting-state verification to pass again after editing.
+## Failure routing
 
-The worker returns its baseline manifest, relative YAML additions,
-modifications and deletions, and execution records with actual outcomes and
-the proof each result covers. Before applying those changes, the integrator
-checks that its receiving graph, source, spec and engine still match the
-worker's baseline. If they differ, reject the result and obtain fresh evidence
-from a new snapshot after rebasing or redispatching the worker. Apply changes
-in an isolated integration state, then regenerate and validate the combined
-spec; green worker checks do not prove the combined result.
+- Environment failure: find a working adapter command and broadcast it.
+- Stale graph: refresh matching evidence before diagnosing another cause.
+- Gate rejection: read the structured cycle/atom reports and the source-backed
+  [diagnostics](../../docs/cli.md#rejection-diagnostics). Establish initializer,
+  called-binding, provider, and runtime facts before choosing an assertion via
+  the [contract guide](initialization_contracts.md). A cycle alone supplies none
+  of those premises. Preserve conservative constraints when the audit is not
+  established, and rerun the same gate and runtime smoke after justified edits.
+- Split atomic group: expand the scoped lane to include the whole group or
+  redispatch coordinated work.
+- Unclear destination: route to the architect; broad source discovery: intake.
+- Repeated selector synthesis gaps: route to Ducktape tooling using
+  [selector debt](../../docs/selectors.md#selector-debt).
 
-## Failure Routing
-
-- Environment failure: find one working command and broadcast it.
-- Stale graph: refresh evidence before reassigning blame.
-- Gate failure: read structured cycle/report output before bisection.
-- For a side-effect cycle, start with the exact cycle edge and initializer
-  evidence: identify the source unit, source location, purity rule, and called
-  binding. Check whether the effect is in an eagerly evaluated initializer or
-  only in a lazily called function body, then inspect the called value's
-  definition and defining chunk. Unknown imported calls are conservatively
-  effectful; do not infer purity from a familiar name or annotate just to make
-  the cycle disappear.
-- Classify the actual blocker before choosing an author assertion: effect
-  purity, callback retention or synchronous reentry, runtime loading, metadata
-  mutation, and global publication have different contracts. Follow
-  `references/skills/shared/initialization_contracts.md` for the decision route
-  and bundled `references/SPEC.md` for callback, runtime, metadata, and publication audits.
-  A cycle alone establishes none of these premises.
-- After a justified annotation, rerun source validation, the same extraction
-  gate, and the adapter's runtime smoke. Inspect the remaining constraints;
-  an assertion may narrow callback availability while retaining eager reads,
-  mutation, and ordering. When the required audit cannot be established, keep
-  the conservative constraints and change the module boundary.
-- Split atomic group: expand one lane to cover the whole group or redispatch as
-  coordinated work.
-- Unclear destination: route to architect instead of creating a grab-bag.
-- Broad source understanding needed: route to intake instead of overloading a
-  lane worker.
+If Debundle tooling blocks the task, follow the [bug reproduction
+workflow](../../docs/bug_reproductions.md) before working around it.

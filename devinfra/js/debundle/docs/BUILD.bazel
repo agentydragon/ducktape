@@ -1,10 +1,14 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "architecture_review.md",
     "bazel_integration.md",
     "bug_reproductions.md",
     "cli.md",
+    "integration.md",
+    "naming.md",
     "peel_proposer.md",
+    "planning.md",
     "selectors.md",
     "spec_editing.md",
 ])

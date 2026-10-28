@@ -5,105 +5,18 @@ description: Turn `debundle modules propose` output into named, dispatchable see
 
 # Debundle Intake
 
-If debundle tooling blocks the task, follow
-`references/docs/bug_reproductions.md` before working around it.
+Turn residual planner proposals into named seed packets. Inputs are the
+proposal JSON, matching graph/modules/source, project conventions, and a scratch
+directory. Intake does not edit YAML, run gate/regeneration commands, or
+integrate branches.
 
-Use this role after `debundle_plan_work` has produced planner output. Intake
-translates certified structural proposals into work packets for lane workers.
+Read [prepare seeds](references/docs/planning.md#prepare-seeds) for readiness,
+dependency-closure handling, source-grounding scope, ordering, and the
+`seeds.json` format. Use the [task chooser](references/README.md#choose-a-task)
+for source inspection. A graph-ready proposal still needs the worker's selector
+proof and edit gate.
 
-Use the [task chooser](references/README.md#choose-a-task) for the proposal and
-inspection recipes; read their command and batch semantics as needed.
-
-Read other bundled references as needed:
-
-- `references/workflow.md` for handoffs and scratch-state conventions
-- `references/module_shape.md` for destination and cohesion heuristics
-
-## Inputs
-
-The orchestrator or project adapter provides:
-
-- `<proposals-json>` from `debundle modules propose`
-- `<graph>` and `<modules-dir>` for follow-up `describe` or `inspect-source --id`
-- `<source-root>` or emitted JS root for short body reads
-- `<conventions-docs>` and any current architecture notes
-- a scratch directory for `seeds.json`, `inflight.json`, `landed.json`, and
-  `notes.md`
-
-## Job
-
-For each `proposals[]` entry with `landable_today: true`:
-
-- classify it as `fresh`, `extend_active`, or `side_effect_cell`
-- read enough source to choose a tentative name and destination
-- keep whole source-unit sets together; do not split certified proposal sets
-- flag ambiguous or oversized proposals for the architect
-- skip `diagnostics[]` as dispatchable work
-
-Entries with `landable_today: false` are not dispatchable as-is. Seed
-`status: blocked_residual_dependency` rows only as a combined closure with
-the cells they reference (`references/docs/cli.md` § `--batch` JSON format), or
-flag them for the architect.
-Unaddressable-anonymous rows stay advisory until the selector question
-is resolved.
-
-Use `debundle_plan_work` for `describe` and `inspect-source --id` lookups. Do not
-reimplement graph parsing by grepping generated output unless the graph lacks
-the needed evidence.
-
-## Source Reading Budget
-
-Read small slices, usually 10-50 lines around the proposal or source unit. Look for
-visible strings, exported readable names, API names, component or class shapes,
-registry keys, schema names, command IDs, and source proximity.
-
-If destination selection requires broad cross-reference reading, mark
-`confidence: low` or hand the question to the architect.
-
-## Output
-
-Write `<scratch>/seeds.json`:
-
-```json
-[
-  {
-    "proposal_id": "auto_partition_0042",
-    "kind": "fresh",
-    "source_unit_ids": ["..."],
-    "binding_ids": ["..."],
-    "extends_module_id": null,
-    "proposed_destination": "path/to/module.yaml",
-    "proposed_names": {
-      "minifiedBinding": "readableName"
-    },
-    "notes": "Why this appears to be one module.",
-    "confidence": "high"
-  }
-]
-```
-
-For workers consuming fresh/extension seeds, carry `proposal_id`, `source_unit_ids`,
-reviewed module path, and readable names into `debundle modules apply --batch`.
-Workers inspect the dry-run `selector_reviews` before applying, and may add
-reviewed selector overrides or leave a proposal residual. The selector proof
-and post-edit gate can still reject a graph-ready row; workers report that
-friction. Existing YAML claims use `bindings assign`.
-
-Sort seeds by:
-
-1. planner proposal order
-2. larger coherent landings within nearby proposals
-3. high-confidence active-module extensions before fresh modules
-4. lower-risk side-effect cells after ordinary binding cells
-
-Track inflight and landed work by stable `binding_ids` / `source_unit_ids`, not only
-auto-generated proposal IDs, because proposal IDs may renumber after each
-integration.
-
-## Boundaries
-
-- Do not author spec edits.
-- Do not run gate or regen commands.
-- Do not integrate worker branches.
-- Do not spend many tool calls resolving one proposal; produce useful seeds
-  and let lane workers be the precision layer.
+Return named packets, blocked/ambiguous proposals, and architecture questions.
+Keep source reading focused; route destination decisions needing broad
+architectural discovery to the architect. If Debundle blocks the task, follow
+the [bug reproduction workflow](references/docs/bug_reproductions.md).

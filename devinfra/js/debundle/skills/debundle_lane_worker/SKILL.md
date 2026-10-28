@@ -5,145 +5,20 @@ description: Apply one scoped debundle extraction, source-unit assignment refine
 
 # Debundle Lane Worker
 
-If debundle tooling blocks the task, follow
-`references/docs/bug_reproductions.md` before working around it.
+Apply one scoped extraction, assignment refinement, or reorganization task in
+an isolated worker snapshot. The adapter supplies the permitted YAML subtree,
+expected base, copied inputs/engine, and checks. Preserve upstream source and
+regenerate emitted output through the adapter.
 
-Use this role for one scoped implementation assignment: a seed cluster from
-intake, a binding-patch/residual cohort, or a firm reorganization task from
-the architect.
+Read [execute a delegated assignment](references/docs/spec_editing.md#workflow-executing-a-delegated-assignment)
+and its linked [adapter contract](references/skills/shared/workflow.md#adapter-contract).
+Choose the operation-specific recipe from the [task chooser](references/README.md#choose-a-task).
+Those guides own input compatibility, atomic coverage, dry-run review, selector
+proof, graph refresh, and validation order.
 
-Choose the operation from the [task chooser](references/README.md#choose-a-task),
-then read its linked editing, CLI, or selector recipe.
-
-Read other bundled references as needed:
-
-- `references/workflow.md` for role boundaries and failure routing
-- `references/module_shape.md` for seam and layer-ownership heuristics
-
-## Inputs
-
-The orchestrator or project adapter provides:
-
-- worktree root and expected base SHA
-- this worker's unique snapshot directory, starting manifest, baseline graph
-  and input identity, and successful pre-edit `snapshot verify` result
-- assignment with source-unit IDs, binding IDs, proposed destination, and notes
-- copied engine, graph, spec/source roots, tree config, modules path and
-  relocated graph package-root map; exact regeneration `argv` and command
-  working directory
-- `<emitted-js-root>` and optional selector source root
-- exact operation-specific chunk/YAML scope and separate baseline pipeline,
-  proposed-assignment, regeneration, runtime and CI checks/results
-- project conventions/taxonomy docs
-- exact gate, regen, uniqueness-check, and commit expectations
-
-## Procedure
-
-1. Confirm the worktree is at the expected base and the worker snapshot passes
-   its starting-state `snapshot verify`. Keep the supplied manifest as the
-   baseline record. Use the copied engine and copied roots/package map for all
-   graph-backed commands, including `describe`, `inspect-source --id`,
-   `atoms`, `coverage`, and `cluster <sym>`; see the CLI guide's snapshot
-   section for relocation flags.
-2. Check the assignment against that graph and source evidence.
-3. Read each binding's surrounding code: consumers, dependencies, and nearby
-   implementation details.
-4. Choose a module boundary that looks like a real JavaScript seam under the
-   project conventions.
-5. Apply the assignment using the shared guide's CLI workflows. Use
-   `modules apply` for fresh residual binding proposals, `modules refine` for
-   reviewed source-unit assignments of existing non-residual claims, `bindings assign`
-   for focused binding moves, and `bindings rename` / `modules merge` for their
-   respective edits.
-   In an app-level multi-chunk spec, pass `--tree-config` to both `modules
-propose` and `modules apply` so each sees only the graph chunk's mapped
-   YAML roots.
-
-   For `modules refine`, review the `{unit_id, module}` batch against current
-   source and graph evidence. Run `--dry-run`, then apply the same reviewed
-   batch; both resolve the complete scoped spec and check the full requested
-   assignment. Preserve selector text and metadata through the CLI. Residual,
-   unclaimed, import, and export source units are not accepted. Use `--tree-config`
-   for a multi-chunk spec and include the selected chunk root in destinations.
-   See `references/docs/cli.md` § Applying reviewed source-unit assignments.
-
-   For `modules apply`, first run `--dry-run --format json` and inspect each
-   `selector_reviews` selector against the intended binding and source. Review
-   retained literals and property names as rebuild anchors, using
-   `references/docs/selectors.md` for stability guidance. Add a reviewed
-   `selectors` override when synthesis chooses a poor anchor; omit a proposal
-   from the batch when it is not ready to claim. Then apply the reviewed batch
-   and run the adapter's gate. A dry-run uniqueness proof covers the current
-   source snapshot, not future versions.
-
-   For selector-stabilization assignments, follow `references/docs/selectors.md`
-   (the ladder and § "Bulk conversion loop"): confirm the bucket with
-   `selector-debt`, draft with `synthesize-selectors` dry-run scoped to the
-   assignment, minimize before `--apply`, then run `git diff --check`, the
-   adapter's gate/regen command and `selector-debt` again to report the debt
-   delta. Never modify the upstream/source bundle. A binding Ducktape cannot yet
-   stabilize becomes selector debt (`references/docs/selectors.md` § Selector
-   debt), routed back to Ducktape tooling.
-
-6. Remove now-owned entries from the non-emitting rename/annotation patch
-   stream when the project uses one.
-7. Keep the edit command's proposed-assignment gate result. Regenerate before
-   any further graph-backed checking, then run the adapter's uniqueness and
-   runtime checks, plus CI when applicable. Record each result separately.
-8. Commit one reviewable branch and report the result.
-
-Export the exact YAML delta from the worker snapshot into the branch as the
-reviewable patch. The snapshot run is the validation source; the branch commit
-transports the patch and does not replace its execution records.
-
-An accepted YAML edit makes the saved graph describe the pre-edit spec. Before
-any later graph-backed query or edit, run the adapter's regeneration `argv`
-from the worker copy, then use the newly generated graph and copied roots.
-The starting `snapshot verify` is expected to fail after edits; do not use it
-as a post-edit gate.
-
-## Boundary Heuristics
-
-Use `references/module_shape.md` for seam, tiny-module, and layer-ownership
-decisions. Apply the target project's conventions to the source and graph
-before choosing a destination.
-
-You may expand the batch when the assigned peel would split an atomic group or
-create a worse module shape. You may also skip assigned items when their
-assigned source unit still belongs to a larger atomic group that should move together.
-
-## Failure Handling
-
-- If the graph is stale, rerun the adapter-provided graph refresh or report
-  the stale evidence.
-- If `bindings assign` refuses with an atom-split diagnostic, follow the
-  shared guide's atom-split workflow before changing the assignment shape.
-- If the gate rejects via `debundle run`, read the structured cycle/report
-  output (`cycles.json`, `atomic_group_conflicts.json`) first. Use the
-  cut/evidence if present. For an unknown-call side-effect cycle, follow the
-  shared workflow's initialization-contract guidance before changing the assignment;
-  keep the source evidence and the exact asserted contract in the review.
-- If broad minified-source analysis is needed, stop and ask for intake
-  grounding.
-- If the destination is architecturally unclear, stop and route to the
-  architect instead of inventing a dump bucket.
-
-## Report
-
-Keep the report short:
-
-- branch and commit hash
-- starting snapshot manifest and baseline graph/input identity
-- relative YAML additions, modifications and deletions (with the reviewed
-  patch or changed file contents)
-- exact executed command records (`argv`, `cwd`), with actual exit status,
-  `stdout`, `stderr`, result artifacts, and which proof each command covers;
-  separate baseline pipeline,
-  proposed assignment, regeneration, runtime and CI results
-- destinations changed and bindings moved
-- skipped proposals or units and why
-- architecture or intake follow-ups discovered
-
-The CLI guide's "Resolved invocation records" section describes recording an
-executed command. A `--print-invocation` plan or a pre-dispatch
-`--invocation-out` file does not prove the operation ran or passed.
+Return one reviewable relative YAML delta and the
+[execution evidence](references/skills/shared/workflow.md#execution-evidence),
+including actual check results and skipped work. The commit transports the edit;
+it does not replace snapshot validation. Route unclear architecture to the
+architect, broad source discovery to intake, and unsupported tooling through the
+[bug reproduction workflow](references/docs/bug_reproductions.md).

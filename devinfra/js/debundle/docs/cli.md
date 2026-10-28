@@ -947,6 +947,32 @@ When a binding's role is unclear or a proposal is suspicious:
    binding's source unit. Useful for "what does this module touch?" questions
    before deciding a destination.
 
+### Explain behavior with a partial spec
+
+Trace from the relevant entry point through branches, helpers, data, and callers.
+Use emitted modules for readability and the inspection workflow above for source
+and graph evidence. Coverage counts alone do not establish behavior.
+
+When answering requires missing coverage and spec edits are in scope, claim only
+the complete atomic groups needed for the question, using the
+[extraction recipes](spec_editing.md). Choose coherent module boundaries,
+[descriptive names](naming.md), and [purpose-bearing selectors](selectors.md).
+A current unique match cannot prove future rebuild stability. Record factual
+module/binding comments through `modules comment` / `bindings comment` when they
+clarify behavior; YAML `#` comments do not emit into the generated JS.
+
+Run the adapter's full pipeline/gate after edits and exercise emitted behavior
+with its applicable runtime checks. Regenerate through the adapter. Fix failures
+before relying on the changed tree, or state what remains unverified. If source
+or spec is unavailable, answer from available evidence without claiming that the
+debundled tree covers it.
+
+Explain the observed control/data flow and cite the generated paths/functions
+that demonstrate it. Report spec additions, actual gate/runtime results, and
+remaining uncertainty. Keep a focused question scoped to the code needed for its
+answer; [specialist roles](../skills/shared/workflow.md#roles) handle substantial
+source discovery, architecture, naming, or multi-lane extraction.
+
 ## Evidence files
 
 Typical debundle outputs:

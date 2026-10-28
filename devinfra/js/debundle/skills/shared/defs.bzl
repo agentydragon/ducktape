@@ -56,15 +56,18 @@ _CONTRACT_EXAMPLE_MAPPINGS = [
 
 DEBUNDLE_REFERENCES = [
     skill_mapping(
-        srcs = ["//devinfra/js/debundle/skills/shared:initialization_contracts.md"],
+        srcs = [
+            "//devinfra/js/debundle/skills/shared:initialization_contracts.md",
+            "//devinfra/js/debundle/skills/shared:module_shape.md",
+            "//devinfra/js/debundle/skills/shared:workflow.md",
+        ],
         prefix = "references/skills/shared",
     ),
     skill_mapping(
-        srcs = ["//devinfra/js/debundle/skills/shared/examples:isolated_edit.py"],
-        prefix = "references/examples",
-    ),
-    skill_mapping(
-        srcs = ["//devinfra/js/debundle/skills/shared/examples:contract_examples.py"],
+        srcs = [
+            "//devinfra/js/debundle/skills/shared/examples:isolated_edit.py",
+            "//devinfra/js/debundle/skills/shared/examples:contract_examples.py",
+        ],
         prefix = "references/skills/shared/examples",
     ),
 ] + _CONTRACT_EXAMPLE_MAPPINGS + [
@@ -72,16 +75,18 @@ DEBUNDLE_REFERENCES = [
         srcs = [
             "//devinfra/js/debundle:README.md",
             "//devinfra/js/debundle:SPEC.md",
-            "//devinfra/js/debundle/skills/shared:module_shape.md",
-            "//devinfra/js/debundle/skills/shared:workflow.md",
         ],
         prefix = "references",
     ),
     skill_mapping(
         srcs = [
+            "//devinfra/js/debundle/docs:architecture_review.md",
             "//devinfra/js/debundle/docs:bazel_integration.md",
             "//devinfra/js/debundle/docs:bug_reproductions.md",
             "//devinfra/js/debundle/docs:cli.md",
+            "//devinfra/js/debundle/docs:integration.md",
+            "//devinfra/js/debundle/docs:naming.md",
+            "//devinfra/js/debundle/docs:planning.md",
             "//devinfra/js/debundle/docs:selectors.md",
             "//devinfra/js/debundle/docs:spec_editing.md",
         ],
