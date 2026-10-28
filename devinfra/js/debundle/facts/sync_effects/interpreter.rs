@@ -37,6 +37,7 @@ use crate::reports::schema::{
     ExecutionPrecisionLossReason, NativeIntegrityCheck, NativeIntegrityGuard,
     NativePrototypePropertyCheck,
 };
+use imbl::OrdMap;
 use source_identity::SourceUnitOrdinal;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -55,7 +56,7 @@ fn from_flow(values: FlowValues) -> Values {
 }
 
 fn unknown() -> Values {
-    BTreeSet::from([AbstractValue::Unknown])
+    Values::from([AbstractValue::Unknown])
 }
 
 #[derive(Debug, Clone, Default)]
@@ -231,7 +232,7 @@ pub(super) struct ExecutionState {
     native_integrity_uses: RefCell<BTreeSet<crate::reports::schema::NativeIntegrityUse>>,
     inference_uses: RefCell<BTreeSet<crate::reports::schema::InferenceUse>>,
     class_member_effects: BTreeMap<SourceUnitOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
-    class_superclasses: BTreeMap<u32, Values>,
+    class_superclasses: OrdMap<u32, Values>,
     active_class_member_promotions: BTreeSet<u32>,
     prior_reachability_roots: Option<BTreeSet<SourceUnitOrdinal>>,
     current_top_owner: Option<SourceUnitOrdinal>,
@@ -253,10 +254,10 @@ pub(super) struct ExecutionState {
     global_escaped_callbacks: Values,
     top_env: Context,
     top_captures: Context,
-    prefix_object_properties: BTreeMap<u32, BTreeMap<Option<String>, Values>>,
-    own_descriptor_maps: BTreeMap<CallSite, OwnDescriptorMapState>,
-    applied_accessors: BTreeMap<u32, BTreeMap<String, AppliedAccessor>>,
-    dense_arrays: BTreeMap<u32, DenseArray>,
+    prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    own_descriptor_maps: OrdMap<CallSite, OwnDescriptorMapState>,
+    applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
+    dense_arrays: OrdMap<u32, DenseArray>,
     ordinary_spread_copies: BTreeSet<u32>,
     array_iteration_depth: usize,
     array_iteration_protected_objects: BTreeSet<u32>,
@@ -278,10 +279,10 @@ pub(super) struct ExecutionState {
     /// initialization prefix. Incomplete reachability requires a fresh raw
     /// closure even when the precise prefix was already summarized.
     returned_callback_owners: BTreeSet<(bool, SourceUnitOrdinal)>,
-    capture_contexts: BTreeMap<Arc<Context>, usize>,
-    callback_sets: BTreeMap<Arc<Values>, usize>,
+    capture_contexts: OrdMap<Arc<Context>, usize>,
+    callback_sets: OrdMap<Arc<Values>, usize>,
     active: BTreeSet<ActiveInvocation>,
-    cache: BTreeMap<InvocationSignature, Outcome>,
+    cache: OrdMap<InvocationSignature, Outcome>,
 }
 
 pub(super) struct Executor<'source, 'rule> {
@@ -634,7 +635,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let slots = projection
             .names
             .into_iter()
-            .map(|name| BTreeSet::from([AbstractValue::StringPrimitive(name)]))
+            .map(|name| Values::from([AbstractValue::StringPrimitive(name)]))
             .collect();
         self.retain_dense_array(object, slots);
         Some(AbstractValue::Origin(ValueOrigin::Object(object)))
@@ -719,7 +720,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     properties.insert(
                         Some(name.clone()),
                         if getter.is_empty() {
-                            BTreeSet::from([AbstractValue::Undefined])
+                            Values::from([AbstractValue::Undefined])
                         } else {
                             unknown()
                         },
@@ -911,15 +912,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         } = resolution;
         let mut values = match returns {
             CallReturn::Unknown => unknown(),
-            CallReturn::Primitive => BTreeSet::from([AbstractValue::NonCallable]),
+            CallReturn::Primitive => Values::from([AbstractValue::NonCallable]),
             CallReturn::Argument(index) => args.get(index).cloned().unwrap_or_else(unknown),
             CallReturn::OwnDescriptorMap => self
                 .capture_own_descriptor_map(site, own_property_projection)
-                .map(|map| BTreeSet::from([map]))
+                .map(|map| Values::from([map]))
                 .unwrap_or_else(unknown),
             CallReturn::OwnPropertyNames => self
                 .own_property_names_array(site, own_property_projection)
-                .map(|array| BTreeSet::from([array]))
+                .map(|array| Values::from([array]))
                 .unwrap_or_else(unknown),
             CallReturn::DefinedPropertiesTarget => args.first().cloned().unwrap_or_else(unknown),
             CallReturn::DeferredArgument(index) => {
@@ -933,7 +934,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 retained.extend(self.callback_values(argument));
                 // This retained graph establishes no recursive ordinary-data
                 // shape or stronger retained-factory input contract.
-                BTreeSet::from([self.deferred_callbacks(retained), AbstractValue::Unknown])
+                Values::from([self.deferred_callbacks(retained), AbstractValue::Unknown])
             }
         };
         if may_throw {
@@ -1100,7 +1101,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let length = dense.slots.len().max(slots.len());
         dense
             .slots
-            .resize_with(length, || BTreeSet::from([AbstractValue::Undefined]));
+            .resize_with(length, || Values::from([AbstractValue::Undefined]));
         for (index, current) in dense.slots.iter_mut().enumerate() {
             if let Some(values) = slots.get(index) {
                 current.extend(values.iter().cloned());
@@ -1168,7 +1169,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // Do not publish this array origin or its retained callbacks when
             // evaluation can only throw before the literal is constructed.
             return if may_throw {
-                BTreeSet::from([AbstractValue::Unavailable])
+                Values::from([AbstractValue::Unavailable])
             } else {
                 Values::new()
             };
@@ -1185,7 +1186,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         } else {
             self.state.tainted_objects.insert(object);
         }
-        let mut result = BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(object))]);
+        let mut result = Values::from([AbstractValue::Origin(ValueOrigin::Object(object))]);
         if may_throw {
             result.insert(AbstractValue::Unavailable);
         }
@@ -1269,7 +1270,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             return false;
         };
-        let source_values = BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(source))]);
+        let source_values = Values::from([AbstractValue::Origin(ValueOrigin::Object(source))]);
         let original_callbacks = self.callback_values(&source_values);
         self.state
             .array_iteration_protected_objects
@@ -1283,7 +1284,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 key,
                 vec![
                     values.clone(),
-                    BTreeSet::from([AbstractValue::NonCallable]),
+                    Values::from([AbstractValue::NonCallable]),
                     source_values.clone(),
                 ],
                 captured.clone(),
@@ -4225,7 +4226,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         match expr {
             ValueExpr::Binding(id) => {
                 if self.inputs.index.callback_factory_imports.contains(id) {
-                    return BTreeSet::from([AbstractValue::CallbackFactory]);
+                    return Values::from([AbstractValue::CallbackFactory]);
                 }
                 if self
                     .inputs
@@ -4233,7 +4234,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .inline_callback_factory_imports
                     .contains(id)
                 {
-                    return BTreeSet::from([AbstractValue::InlineCallbackFactory]);
+                    return Values::from([AbstractValue::InlineCallbackFactory]);
                 }
                 if self.inputs.top_bindings.contains(id) {
                     if let Some(prefix_values) = self.state.prefix_values.get(id) {
@@ -4247,11 +4248,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         }
                         values
                     } else if self.inputs.var_bindings.contains(id) {
-                        BTreeSet::from([AbstractValue::Undefined])
+                        Values::from([AbstractValue::Undefined])
                     } else {
                         // Whole-chunk flow includes future initializers. A
                         // missing prefix value for a local binding is TDZ.
-                        BTreeSet::from([AbstractValue::Unavailable])
+                        Values::from([AbstractValue::Unavailable])
                     }
                 } else if let Some(values) = env.get(id) {
                     values.clone()
@@ -4263,19 +4264,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     && !self.inputs.flow.is_declared(id)
                     && !self.inputs.shadowed.contains(id.0.as_ref())
                 {
-                    BTreeSet::from([AbstractValue::GlobalObject])
+                    Values::from([AbstractValue::GlobalObject])
                 } else {
                     let values = from_flow(self.inputs.flow.values_of_binding(id));
                     if values.is_empty() { unknown() } else { values }
                 }
             }
             ValueExpr::Origin(ValueOrigin::Function(key)) => {
-                BTreeSet::from([AbstractValue::Closure(
+                Values::from([AbstractValue::Closure(
                     *key,
                     self.closure_captures(*key, captures),
                 )])
             }
-            ValueExpr::Origin(origin) => BTreeSet::from([AbstractValue::Origin(*origin)]),
+            ValueExpr::Origin(origin) => Values::from([AbstractValue::Origin(*origin)]),
             ValueExpr::ObjectLiteral(key, properties) => {
                 if self.inputs.index.exact_object_spread_copies.contains(key)
                     && let [(None, source)] = properties.as_slice()
@@ -4306,7 +4307,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
                         }
                         self.state.ordinary_spread_copies.insert(*key);
-                        return BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(*key))]);
+                        return Values::from([AbstractValue::Origin(ValueOrigin::Object(*key))]);
                     }
                     self.state.tainted_objects.insert(*key);
                     if self.state.array_iteration_depth > 0 {
@@ -4352,8 +4353,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 result
             }
-            ValueExpr::Undefined => BTreeSet::from([AbstractValue::Undefined]),
-            ValueExpr::NonCallable => BTreeSet::from([AbstractValue::NonCallable]),
+            ValueExpr::Undefined => Values::from([AbstractValue::Undefined]),
+            ValueExpr::NonCallable => Values::from([AbstractValue::NonCallable]),
             ValueExpr::Member(object, property, is_static_identifier) => {
                 if let ValueExpr::Binding(id) = object.as_ref()
                     && *is_static_identifier
@@ -4365,13 +4366,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             .is_some_and(|members| members.contains(property))
                     })
                 {
-                    return BTreeSet::from([AbstractValue::CallbackFactory]);
+                    return Values::from([AbstractValue::CallbackFactory]);
                 }
                 if matches!(object.as_ref(), ValueExpr::Binding(id) if id.0.as_ref() == "Object" && !self.inputs.flow.is_declared(id))
                     && property.as_deref() == Some("assign")
                     && !self.inputs.shadowed.contains("Object")
                 {
-                    return BTreeSet::from([AbstractValue::ObjectAssign]);
+                    return Values::from([AbstractValue::ObjectAssign]);
                 }
                 let objects = self.evaluate(object, env, captures);
                 let mut values = Values::new();
@@ -4467,16 +4468,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 if let Some((proof, _, _, _, _)) = self.array_iteration_plan(*span, env, captures) {
                     return if proof.method == ArrayIterationMethod::ForEach {
-                        BTreeSet::from([AbstractValue::Undefined])
+                        Values::from([AbstractValue::Undefined])
                     } else {
-                        BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(
+                        Values::from([AbstractValue::Origin(ValueOrigin::Object(
                             proof.result.unwrap(),
                         ))])
                     };
                 }
                 let targets = self.evaluate(callee, env, captures);
                 if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
-                    return BTreeSet::from([AbstractValue::Unavailable]);
+                    return Values::from([AbstractValue::Unavailable]);
                 }
                 let inline_callback = matches!(
                     args.as_slice(),
@@ -4494,7 +4495,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .iter()
                     .any(|values| values.len() == 1 && values.contains(&AbstractValue::Unavailable))
                 {
-                    return BTreeSet::from([AbstractValue::Unavailable]);
+                    return Values::from([AbstractValue::Unavailable]);
                 }
                 for values in &mut args {
                     values.remove(&AbstractValue::Unavailable);
@@ -4508,7 +4509,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             call_span,
                         );
                     }
-                    return BTreeSet::from([AbstractValue::ForeignDeferredRecord]);
+                    return Values::from([AbstractValue::ForeignDeferredRecord]);
                 }
                 if let Some(source_object) = self.source_namespace_wrapper(callee, &args, *span) {
                     // A cached hit may return the same facade as an earlier
@@ -4516,12 +4517,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     // and every deferred callback for later property reads or
                     // publication, without running a getter at this call.
                     let mut retained =
-                        BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(source_object))]);
+                        Values::from([AbstractValue::Origin(ValueOrigin::Object(source_object))]);
                     retained.extend(self.callback_values(&retained));
                     // The provider's cache may still be in its temporal dead
                     // zone during an ESM cycle. No success-only return fact
                     // may erase that possible throw.
-                    return BTreeSet::from([
+                    return Values::from([
                         self.deferred_callbacks(retained),
                         AbstractValue::Unknown,
                         AbstractValue::Unavailable,
@@ -4551,13 +4552,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 {
                     let result = self.deferred_callbacks(callbacks);
                     return if args_may_throw {
-                        BTreeSet::from([result, AbstractValue::Unavailable])
+                        Values::from([result, AbstractValue::Unavailable])
                     } else {
-                        BTreeSet::from([result])
+                        Values::from([result])
                     };
                 }
                 if let Some(callbacks) = self.proven_from_entries_callbacks(*span, env, captures) {
-                    return BTreeSet::from([self.deferred_callbacks(callbacks)]);
+                    return Values::from([self.deferred_callbacks(callbacks)]);
                 }
                 let deferred_callback = matches!(args.as_slice(), [values] if !values.is_empty()
                     && values.iter().all(|value| matches!(value, AbstractValue::DeferredCallbacks(_))));
@@ -4622,7 +4623,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                 }
                 if returns.is_empty() && may_throw {
-                    return BTreeSet::from([AbstractValue::Unavailable]);
+                    return Values::from([AbstractValue::Unavailable]);
                 }
                 if may_throw {
                     returns.insert(AbstractValue::Unavailable);
@@ -4657,12 +4658,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .contains_key(span)
                 {
                     if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
-                        return BTreeSet::from([AbstractValue::Unavailable]);
+                        return Values::from([AbstractValue::Unavailable]);
                     }
                     if evaluated_args.iter().any(|values| {
                         values.len() == 1 && values.contains(&AbstractValue::Unavailable)
                     }) {
-                        return BTreeSet::from([AbstractValue::Unavailable]);
+                        return Values::from([AbstractValue::Unavailable]);
                     }
                     let mut successful_args = evaluated_args.clone();
                     let mut may_throw = false;
@@ -4674,9 +4675,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     {
                         let result = self.deferred_callbacks(callbacks);
                         return if may_throw {
-                            BTreeSet::from([result, AbstractValue::Unavailable])
+                            Values::from([result, AbstractValue::Unavailable])
                         } else {
-                            BTreeSet::from([result])
+                            Values::from([result])
                         };
                     }
                 }
@@ -4855,7 +4856,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let mut values = args
                 .get(index)
                 .cloned()
-                .unwrap_or_else(|| BTreeSet::from([AbstractValue::Undefined]));
+                .unwrap_or_else(|| Values::from([AbstractValue::Undefined]));
             if let Some(default) = &param.default
                 && values.contains(&AbstractValue::Undefined)
             {
@@ -6095,7 +6096,7 @@ pub(crate) fn annotate_synchronous_calls(
     for (binding, key) in &index.hoisted_bindings {
         initial_values.insert(
             binding.clone(),
-            BTreeSet::from([AbstractValue::Origin(ValueOrigin::Function(*key))]),
+            Values::from([AbstractValue::Origin(ValueOrigin::Function(*key))]),
         );
         initialized_bindings.insert(binding.clone());
     }
@@ -6157,7 +6158,7 @@ pub(crate) fn annotate_synchronous_calls(
         native_integrity_uses: RefCell::default(),
         inference_uses: RefCell::default(),
         class_member_effects: BTreeMap::new(),
-        class_superclasses: BTreeMap::new(),
+        class_superclasses: OrdMap::new(),
         active_class_member_promotions: BTreeSet::new(),
         prior_reachability_roots: Some(initial_export_roots),
         current_top_owner: None,
@@ -6175,10 +6176,10 @@ pub(crate) fn annotate_synchronous_calls(
         global_escaped_callbacks: Values::new(),
         top_env: Context::new(),
         top_captures: Context::new(),
-        prefix_object_properties: BTreeMap::new(),
-        own_descriptor_maps: BTreeMap::new(),
-        applied_accessors: BTreeMap::new(),
-        dense_arrays: BTreeMap::new(),
+        prefix_object_properties: OrdMap::new(),
+        own_descriptor_maps: OrdMap::new(),
+        applied_accessors: OrdMap::new(),
+        dense_arrays: OrdMap::new(),
         ordinary_spread_copies: BTreeSet::new(),
         array_iteration_depth: 0,
         array_iteration_protected_objects: BTreeSet::new(),
@@ -6202,10 +6203,10 @@ pub(crate) fn annotate_synchronous_calls(
         fallback_callback_sizes: None,
         fallback_local_owners: BTreeSet::new(),
         returned_callback_owners: BTreeSet::new(),
-        capture_contexts: BTreeMap::new(),
-        callback_sets: BTreeMap::new(),
+        capture_contexts: OrdMap::new(),
+        callback_sets: OrdMap::new(),
         active: BTreeSet::new(),
-        cache: BTreeMap::new(),
+        cache: OrdMap::new(),
     };
     let mut executor = Executor::new(&inputs, state);
     let mut effects = Vec::with_capacity(facts.len());

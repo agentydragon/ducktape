@@ -256,7 +256,8 @@ pub(super) fn infer_own_property_projection(
 #[cfg(test)]
 mod tests {
     use super::super::value_model::{
-        AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, ordered_own_property_names,
+        AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
+        ordered_own_property_names,
     };
     use super::{OwnPropertyProjection, OwnPropertyRequest, infer_own_property_projection};
     use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies, ValueInputRef};
@@ -287,14 +288,14 @@ mod tests {
     fn ordinary_projection_has_no_native_call_premise() {
         let source_object = 7;
         let source_values =
-            BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(source_object))]);
+            Values::from([AbstractValue::Origin(ValueOrigin::Object(source_object))]);
         let shape = OwnPropertyShape {
             properties: BTreeMap::from([("field".to_owned(), OwnPropertyDescriptorSyntax::Data)]),
             creation_order: vec!["field".to_owned()],
         };
         let prefix_properties = BTreeMap::from([(
             Some("field".to_owned()),
-            BTreeSet::from([AbstractValue::NonCallable]),
+            Values::from([AbstractValue::NonCallable]),
         )]);
         let proof = infer_own_property_projection(
             source_object,
@@ -330,14 +331,14 @@ mod tests {
     fn native_projection_imports_completed_judgment_provenance() {
         let source_object = 7;
         let source_values =
-            BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(source_object))]);
+            Values::from([AbstractValue::Origin(ValueOrigin::Object(source_object))]);
         let shape = OwnPropertyShape {
             properties: BTreeMap::from([("field".to_owned(), OwnPropertyDescriptorSyntax::Data)]),
             creation_order: vec!["field".to_owned()],
         };
         let prefix_properties = BTreeMap::from([(
             Some("field".to_owned()),
-            BTreeSet::from([AbstractValue::NonCallable]),
+            Values::from([AbstractValue::NonCallable]),
         )]);
         let native_call_identity = SemanticKey::NativeCallIdentity {
             binding: Id::from(("Object".into(), SyntaxContext::empty())),

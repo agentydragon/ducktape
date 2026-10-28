@@ -551,6 +551,7 @@ rust_library(
         ":source_identity",
         ":spec",
         "@crates//:anyhow",
+        "@crates//:imbl",
         "@crates//:petgraph",
         "@crates//:roaring",
         "@crates//:serde",

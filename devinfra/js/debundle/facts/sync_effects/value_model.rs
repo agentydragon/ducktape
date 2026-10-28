@@ -1,6 +1,7 @@
 //! Abstract value vocabulary and value relationships used by synchronous execution analysis.
 
 use crate::facts::value_flow::{ValueOrigin, static_prop as static_string_prop};
+use imbl::{OrdMap, OrdSet};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -23,8 +24,84 @@ pub(super) fn static_prop(property: &MemberProp) -> Option<String> {
     })
 }
 
-pub(super) type Values = BTreeSet<AbstractValue>;
-pub(super) type Context = BTreeMap<Id, Values>;
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct Values(OrdSet<AbstractValue>);
+
+impl Values {
+    pub(super) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(super) fn first(&self) -> Option<&AbstractValue> {
+        self.0.get_min()
+    }
+
+    pub(super) fn insert(&mut self, value: AbstractValue) -> bool {
+        self.0.insert(value).is_none()
+    }
+
+    pub(super) fn remove(&mut self, value: &AbstractValue) -> bool {
+        self.0.remove(value).is_some()
+    }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub(super) fn is_disjoint(&self, other: &Self) -> bool {
+        self.iter().all(|value| !other.contains(value))
+    }
+
+    pub(super) fn is_subset(&self, other: &Self) -> bool {
+        self.iter().all(|value| other.contains(value))
+    }
+}
+
+impl std::ops::Deref for Values {
+    type Target = OrdSet<AbstractValue>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Extend<AbstractValue> for Values {
+    fn extend<T: IntoIterator<Item = AbstractValue>>(&mut self, values: T) {
+        self.0.extend(values);
+    }
+}
+
+impl FromIterator<AbstractValue> for Values {
+    fn from_iter<T: IntoIterator<Item = AbstractValue>>(values: T) -> Self {
+        Self(values.into_iter().collect())
+    }
+}
+
+impl<const N: usize> From<[AbstractValue; N]> for Values {
+    fn from(values: [AbstractValue; N]) -> Self {
+        values.into_iter().collect()
+    }
+}
+
+impl IntoIterator for Values {
+    type Item = AbstractValue;
+    type IntoIter = <OrdSet<AbstractValue> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Values {
+    type Item = &'a AbstractValue;
+    type IntoIter = <&'a OrdSet<AbstractValue> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+pub(super) type Context = OrdMap<Id, Values>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct CallSite {
