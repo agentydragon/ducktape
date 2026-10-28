@@ -30,6 +30,26 @@ and reproducible optimized-build recipe live in the
   are evidence for review, not inferred semantic owners. Numeric names or small
   files alone do not justify merging code.
 
+## Newly observed diagnostic gap
+
+Expose native-integrity proof loss with its mutation witness and affected
+guard. The current adoption investigation traced unknown global-slot writes to
+`UnknownGlobalValue`, then `GlobalObject`, which withdraws array-intrinsic and
+ordinary-object-prototype guarantees. The resulting opaque-call fallback can
+add eager reads and atomic conflicts. Current reports expose unsupported
+construction/call targets and callback-pool limits, but connecting those losses
+to an unrelated global-property write required implementation inspection.
+
+A neutral CLI control building a registry with
+`Object.fromEntries(entries.map(...))` and a stored deferred callback passes on
+both engines. Adding `function publish() { globalThis.slot.flag = true; }`
+passes on `ecb4a734` and rejects on `2303f0d6`; assigning `globalThis.slot = {}`
+first does not restore acceptance. This is stricter unsupported reconstruction,
+not evidence that the new guard is unsound or that a purity contract is needed.
+An unknown slot can alias a native object. Recovering precision requires an
+identity proof with accessor, replacement and reentry guards; ignoring a property
+name would not supply it. Preserve this distinction in the diagnostic.
+
 The new commands retain conservative boundaries: independent audit removals do
 not establish joint removability; names-only edits still need source validation;
 filtered edge inspection is separate from the gate; unsupported or ambiguous
