@@ -442,6 +442,9 @@ diagnostics across several chunks.
 To find authored chunk-export contracts that this exact assignment does not
 currently need, run a bounded fresh audit:
 
+For standalone audits of large captured programs, first prepare the
+[optimized CLI and adapter inputs](bazel_integration.md#standalone-cli-on-captured-bundles).
+
 ```bash
 debundle spec audit-contracts --tree-config spec_config.yaml \
   --tree-modules modules --tree-vendor-marks vendor_marks.yaml \

@@ -51,6 +51,25 @@ should not import selector, graph, or lowering internals to duplicate part of
 `debundle run`; extend the CLI or pipeline rule when an integration needs a new
 capability. Diagnostic binaries can still be run directly as Bazel targets.
 
+## Standalone CLI on captured bundles
+
+Build the native CLI optimized for large captured programs and contract audits:
+
+```sh
+bbr build -c opt //devinfra/js/debundle:debundle
+```
+
+The Rust executable follows the requested Bazel compilation mode. The optimized
+solver subtree described below does not optimize the surrounding Rust pipeline;
+`fastbuild` runs can spend minutes inside a full audit baseline. Use the
+optimized executable when running the CLI outside a Bazel pipeline action.
+
+Stage the project's generated source/vendor targets and package-root mappings
+through its [adapter](../skills/shared/workflow.md#adapter-contract). Source-only
+validation checks selectors; full runs and audit baselines also resolve vendor
+and package inputs. For finer baseline phase markers, set
+`DUCKTAPE_DEBUNDLE_PROGRESS=1` on the standalone invocation.
+
 ## Solver build
 
 The debundler links OR-Tools' CP-SAT for selector assignment, so its binary is
