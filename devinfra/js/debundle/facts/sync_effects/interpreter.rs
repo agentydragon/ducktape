@@ -1598,6 +1598,11 @@ impl Executor<'_> {
                 && (call.kind == CallKind::Call
                     && (CallSite::from(call.span) == *freeze_site
                         || CallSite::from(call.span) == *define_site)
+                    || call.kind == CallKind::AccessorCalleeLookup
+                        && matches!(&call.callee,
+                            ValueExpr::Member(receiver, Some(property), true)
+                                if matches!(property.as_str(), "freeze" | "defineProperty")
+                                    && matches!(receiver.as_ref(), ValueExpr::Binding(id) if id == object_intrinsic))
                     || call.kind == CallKind::LocalMemberRead
                         && matches!(&call.callee,
                             ValueExpr::Member(receiver, Some(property), true)
