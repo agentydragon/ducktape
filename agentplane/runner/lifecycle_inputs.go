@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -16,7 +17,7 @@ func (l *lifecycle) publishSeal(s *Session) error {
 	return publishLifecycle(l, s.id, value)
 }
 
-func (l *lifecycle) publishAck(id string, ack IngressAcknowledgement) error {
+func (l *lifecycle) publishAck(id string, ack retained.Acknowledgement) error {
 	l.publishMu.Lock()
 	defer l.publishMu.Unlock()
 	return publishLifecycle(l, id, ingressAckSpec{Cursor: ack.Cursor, Sealed: ack.Sealed})

@@ -16,6 +16,7 @@ import (
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
+	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -493,7 +494,7 @@ func newPushSession(t *testing.T, count int) (*Runner, *Session) {
 	t.Helper()
 	runner := newBareRunner(t)
 	cwd := filepath.Join(t.TempDir(), "project")
-	record, err := NewSessionRecord(&runnerpb.SessionSpec{
+	record, err := retained.NewRecord(&runnerpb.SessionSpec{
 		Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: cwd, Model: "test-model",
 	}, "", nil)
 	if err != nil {

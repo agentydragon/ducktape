@@ -45,7 +45,8 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   neutral harness contract and protobuf types, with no dependency on `Runner`. Transactions use
   `database/sql` with the cgo-free SQLite driver. Outcomes and all coalesced command receipts commit
   together; publication and startup handshake replies follow commit.
-- `store.go`: durable session metadata, ingress acknowledgements, incarnation markers and ownership lock.
+- `retained/`: durable session metadata, ingress acknowledgements, incarnation markers, the ownership
+  lock, and filesystem durability helpers. SQLite remains the separate journal authority.
 - `supervision/`: the shared native-process API, COSI process resources and controller, host registry,
   and private systemd/subprocess backends. Runner wires its `Host` and controller into the same COSI
   engine as its lifecycle controllers; the package owns streams, exit observation and

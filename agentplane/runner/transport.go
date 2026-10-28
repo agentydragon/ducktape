@@ -14,6 +14,7 @@ import (
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
+	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/sethvargo/go-retry"
@@ -366,10 +367,10 @@ func (r *Runner) pushOnce(ctx context.Context, endpoint Endpoint, stub ingresspb
 		return false, status.Error(codes.FailedPrecondition, "ingress cursor exceeds the journal")
 	}
 	acknowledged, sent := first.ack.Cursor, first.ack.Cursor
-	if err := r.store.WriteAcknowledgement(s.id, IngressAcknowledgement{Cursor: acknowledged, Sealed: first.ack.Sealed}); err != nil {
+	if err := r.store.WriteAcknowledgement(s.id, retained.Acknowledgement{Cursor: acknowledged, Sealed: first.ack.Sealed}); err != nil {
 		return false, &localStreamError{err}
 	}
-	if err := r.lifecycle.publishAck(s.id, IngressAcknowledgement{Cursor: acknowledged, Sealed: first.ack.Sealed}); err != nil {
+	if err := r.lifecycle.publishAck(s.id, retained.Acknowledgement{Cursor: acknowledged, Sealed: first.ack.Sealed}); err != nil {
 		return false, &localStreamError{err}
 	}
 	r.changed()
@@ -435,10 +436,10 @@ func (r *Runner) pushOnce(ctx context.Context, endpoint Endpoint, stub ingresspb
 					return progressed, status.Error(codes.FailedPrecondition, "ingress acknowledged an unsent seal")
 				}
 			}
-			if err := r.store.WriteAcknowledgement(s.id, IngressAcknowledgement{Cursor: ack.Cursor, Sealed: ack.Sealed}); err != nil {
+			if err := r.store.WriteAcknowledgement(s.id, retained.Acknowledgement{Cursor: ack.Cursor, Sealed: ack.Sealed}); err != nil {
 				return progressed, &localStreamError{err}
 			}
-			if err := r.lifecycle.publishAck(s.id, IngressAcknowledgement{Cursor: ack.Cursor, Sealed: ack.Sealed}); err != nil {
+			if err := r.lifecycle.publishAck(s.id, retained.Acknowledgement{Cursor: ack.Cursor, Sealed: ack.Sealed}); err != nil {
 				return false, &localStreamError{err}
 			}
 			r.changed()

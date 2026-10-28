@@ -13,6 +13,7 @@ import (
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
+	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/google/uuid"
@@ -28,11 +29,11 @@ type Runner struct {
 	config              Config
 	ctx                 context.Context
 	cancel              context.CancelFunc
-	owner               *StateOwner
+	owner               *retained.Owner
 	supervisor          *supervision.Supervisor
 	executorSupervisor  *supervision.Supervisor
 	workspaceSupervisor *supervision.Supervisor
-	store               *SessionStore
+	store               *retained.Store
 	bootID              string
 	mu                  sync.Mutex
 	createMu            sync.Mutex
@@ -67,7 +68,7 @@ func New(config Config) (*Runner, error) {
 	if _, present := config.HarnessEnvironment["CODEX_EXEC_SERVER_URL"]; present {
 		return nil, errors.New("CODEX_EXEC_SERVER_URL is owned by Runner executor configuration")
 	}
-	owner, err := OpenStateOwner(config.StateDir)
+	owner, err := retained.OpenOwner(config.StateDir)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +98,7 @@ func New(config Config) (*Runner, error) {
 			return nil, err
 		}
 	}
-	store, err := NewSessionStore(filepath.Join(config.StateDir, "sessions"))
+	store, err := retained.NewStore(filepath.Join(config.StateDir, "sessions"))
 	if err != nil {
 		_ = owner.Close()
 		return nil, err
@@ -314,7 +315,7 @@ func (r *Runner) reopen(ctx context.Context, s *Session) error {
 		return err
 	}
 	if ack == nil {
-		ack = &IngressAcknowledgement{}
+		ack = &retained.Acknowledgement{}
 	}
 	ack.Sealed = false
 	if err := r.store.WriteAcknowledgement(s.id, *ack); err != nil {
@@ -385,23 +386,6 @@ func (r *Runner) runScript(ctx context.Context, owner, script, cwd string, outpu
 		waitErr = errors.Join(waitErr, process.Stop(context.WithoutCancel(ctx)))
 	}
 	return code, errors.Join(writeErr, closeErr, waitErr, readers.Wait())
-}
-
-func writeDurable(path string, data []byte) error {
-	file, err := os.OpenFile(path+".tmp", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
-	if err != nil {
-		return err
-	}
-	_, writeErr := file.Write(data)
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
-		return err
-	}
-	if err := os.Rename(path+".tmp", path); err != nil {
-		return err
-	}
-	return syncDirectory(filepath.Dir(path))
 }
 
 func (r *Runner) Quiesce(_ context.Context, q *runnerpb.QuiesceRequest) (*runnerpb.QuiesceResponse, error) {

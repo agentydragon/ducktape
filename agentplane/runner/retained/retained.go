@@ -1,4 +1,4 @@
-package runner
+package retained
 
 import (
 	"crypto/sha256"
@@ -20,41 +20,41 @@ import (
 
 var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
-// StateOwnershipError means another runner holds the retained state directory or the
+// ownershipError means another runner holds the retained state directory or the
 // filesystem could not establish the ownership fence.
-type StateOwnershipError struct{ Err error }
+type ownershipError struct{ Err error }
 
-func (e *StateOwnershipError) Error() string { return "runner state ownership: " + e.Err.Error() }
-func (e *StateOwnershipError) Unwrap() error { return e.Err }
+func (e *ownershipError) Error() string { return "runner state ownership: " + e.Err.Error() }
+func (e *ownershipError) Unwrap() error { return e.Err }
 
-// StateOwner holds the exclusive, lifetime writer lock for a runner state directory.
+// Owner holds the exclusive, lifetime writer lock for a runner state directory.
 // File is read-only so a native child may inherit the lock without gaining write access.
-type StateOwner struct {
+type Owner struct {
 	file *os.File
 }
 
-func OpenStateOwner(root string) (*StateOwner, error) {
-	if err := makeDirectory(root); err != nil {
+func OpenOwner(root string) (*Owner, error) {
+	if err := EnsureDirectory(root); err != nil {
 		return nil, err
 	}
 	file, err := os.OpenFile(filepath.Join(root, ".agentplane-runner-owner"), os.O_RDONLY|os.O_CREATE, 0o600)
 	if err != nil {
-		return nil, &StateOwnershipError{Err: fmt.Errorf("cannot fence runner state directory %s: %w", root, err)}
+		return nil, &ownershipError{Err: fmt.Errorf("cannot fence runner state directory %s: %w", root, err)}
 	}
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = file.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
-			return nil, &StateOwnershipError{Err: fmt.Errorf("runner state directory %s is already owned", root)}
+			return nil, &ownershipError{Err: fmt.Errorf("runner state directory %s is already owned", root)}
 		}
-		return nil, &StateOwnershipError{Err: fmt.Errorf("cannot fence runner state directory %s: %w", root, err)}
+		return nil, &ownershipError{Err: fmt.Errorf("cannot fence runner state directory %s: %w", root, err)}
 	}
-	return &StateOwner{file: file}, nil
+	return &Owner{file: file}, nil
 }
 
 // File returns the locked descriptor for inheritance by native child processes.
-func (o *StateOwner) File() *os.File { return o.file }
+func (o *Owner) File() *os.File { return o.file }
 
-func (o *StateOwner) Close() error {
+func (o *Owner) Close() error {
 	if o.file == nil {
 		return nil
 	}
@@ -65,9 +65,9 @@ func (o *StateOwner) Close() error {
 	return errors.Join(unlockErr, closeErr)
 }
 
-// makeDirectory durably creates each missing directory entry, syncing the parent after
+// EnsureDirectory durably creates each missing directory entry, syncing the parent after
 // each mkdir so a crash cannot leave a session record pointing into a lost directory.
-func makeDirectory(path string) error {
+func EnsureDirectory(path string) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return err
@@ -113,9 +113,27 @@ func syncDirectory(path string) error {
 	return file.Sync()
 }
 
-// SessionRecord is the durable session.json format. Its JSON names and string-valued
+// WriteDurable atomically replaces path with data, syncing the file and parent directory.
+func WriteDurable(path string, data []byte) error {
+	file, err := os.OpenFile(path+".tmp", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	_, writeErr := file.Write(data)
+	syncErr := file.Sync()
+	closeErr := file.Close()
+	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
+		return err
+	}
+	if err := os.Rename(path+".tmp", path); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(path))
+}
+
+// Record is the durable session.json format. Its JSON names and string-valued
 // harness enum match the Python runner's persisted records.
-type SessionRecord struct {
+type Record struct {
 	Harness                  runnerpb.Harness
 	CWD                      string
 	Model                    string
@@ -139,7 +157,7 @@ type sessionRecordJSON struct {
 	NativeSessionID          *string `json:"native_session_id"`
 }
 
-func (r SessionRecord) MarshalJSON() ([]byte, error) {
+func (r Record) MarshalJSON() ([]byte, error) {
 	name, ok := runnerpb.Harness_name[int32(r.Harness)]
 	if !ok || (r.Harness != runnerpb.Harness_HARNESS_CLAUDE && r.Harness != runnerpb.Harness_HARNESS_CODEX) {
 		return nil, fmt.Errorf("invalid persisted harness value %d", r.Harness)
@@ -151,7 +169,7 @@ func (r SessionRecord) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func (r *SessionRecord) UnmarshalJSON(data []byte) error {
+func (r *Record) UnmarshalJSON(data []byte) error {
 	var wire sessionRecordJSON
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
@@ -160,7 +178,7 @@ func (r *SessionRecord) UnmarshalJSON(data []byte) error {
 	if !ok || (harness != int32(runnerpb.Harness_HARNESS_CLAUDE) && harness != int32(runnerpb.Harness_HARNESS_CODEX)) {
 		return fmt.Errorf("invalid persisted harness %q", wire.Harness)
 	}
-	*r = SessionRecord{
+	*r = Record{
 		Harness: runnerpb.Harness(harness), CWD: wire.CWD, Model: wire.Model,
 		TotalContextBudgetTokens: wire.TotalContextBudgetTokens, ReasoningEffort: wire.ReasoningEffort,
 		Instructions: wire.Instructions, SetupScriptSHA256: wire.SetupScriptSHA256,
@@ -169,14 +187,14 @@ func (r *SessionRecord) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func NewSessionRecord(spec *runnerpb.SessionSpec, setupScript string, totalContextBudgetTokens *int) (SessionRecord, error) {
+func NewRecord(spec *runnerpb.SessionSpec, setupScript string, totalContextBudgetTokens *int) (Record, error) {
 	if spec == nil {
-		return SessionRecord{}, errors.New("session spec is required")
+		return Record{}, errors.New("session spec is required")
 	}
 	if totalContextBudgetTokens != nil && *totalContextBudgetTokens <= 0 {
-		return SessionRecord{}, errors.New("total context budget must be positive")
+		return Record{}, errors.New("total context budget must be positive")
 	}
-	record := SessionRecord{
+	record := Record{
 		Harness: spec.GetHarness(), CWD: spec.GetCwd(), Model: spec.GetModel(),
 		TotalContextBudgetTokens: totalContextBudgetTokens, ReasoningEffort: spec.GetReasoningEffort(),
 		Instructions: spec.GetInstructions(), EventSourceID: uuid.NewString(),
@@ -189,31 +207,31 @@ func NewSessionRecord(spec *runnerpb.SessionSpec, setupScript string, totalConte
 	return record, nil
 }
 
-func (r SessionRecord) Spec() *runnerpb.SessionSpec {
+func (r Record) Spec() *runnerpb.SessionSpec {
 	return &runnerpb.SessionSpec{
 		Harness: r.Harness, Cwd: r.CWD, Model: r.Model,
 		ReasoningEffort: r.ReasoningEffort, Instructions: r.Instructions,
 	}
 }
 
-type IngressAcknowledgement struct {
+type Acknowledgement struct {
 	Cursor uint64 `json:"cursor"`
 	Sealed bool   `json:"sealed"`
 }
 
-// SessionStore owns session JSON files and the runner-wide lameduck marker.
-type SessionStore struct {
+// Store owns session JSON files and the runner-wide lameduck marker.
+type Store struct {
 	mu             sync.Mutex
 	root           string
 	incarnationUID string
 	incarnationSet bool
 }
 
-func NewSessionStore(root string) (*SessionStore, error) {
-	if err := makeDirectory(root); err != nil {
+func NewStore(root string) (*Store, error) {
+	if err := EnsureDirectory(root); err != nil {
 		return nil, err
 	}
-	return &SessionStore{root: root}, nil
+	return &Store{root: root}, nil
 }
 
 func ValidateSessionID(sessionID string) (string, error) {
@@ -223,14 +241,14 @@ func ValidateSessionID(sessionID string) (string, error) {
 	return sessionID, nil
 }
 
-func (s *SessionStore) Directory(sessionID string) (string, error) {
+func (s *Store) Directory(sessionID string) (string, error) {
 	if _, err := ValidateSessionID(sessionID); err != nil {
 		return "", err
 	}
 	return filepath.Join(s.root, sessionID), nil
 }
 
-func (s *SessionStore) SessionIDs() ([]string, error) {
+func (s *Store) SessionIDs() ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	entries, err := os.ReadDir(s.root)
@@ -253,33 +271,33 @@ func (s *SessionStore) SessionIDs() ([]string, error) {
 	return ids, nil
 }
 
-func (s *SessionStore) Lameduck() bool {
+func (s *Store) Lameduck() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	info, err := os.Stat(filepath.Join(s.root, "sealed"))
 	return err == nil && info.Mode().IsRegular()
 }
 
-func (s *SessionStore) IncarnationUID() (string, bool) {
+func (s *Store) IncarnationUID() (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.incarnationUID, s.incarnationSet
 }
 
-func (s *SessionStore) RequireIncarnationUID() (string, error) {
+func (s *Store) RequireIncarnationUID() (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.requireIncarnationUIDLocked()
 }
 
-func (s *SessionStore) requireIncarnationUIDLocked() (string, error) {
+func (s *Store) requireIncarnationUIDLocked() (string, error) {
 	if !s.incarnationSet {
 		return "", errors.New("the runner cannot quiesce before the gateway names its incarnation UID")
 	}
 	return s.incarnationUID, nil
 }
 
-func (s *SessionStore) AdoptIncarnation(incarnationUID string) error {
+func (s *Store) AdoptIncarnation(incarnationUID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if incarnationUID == "" {
@@ -303,7 +321,7 @@ func (s *SessionStore) AdoptIncarnation(incarnationUID string) error {
 	return syncDirectory(s.root)
 }
 
-func (s *SessionStore) EnterLameduck() error {
+func (s *Store) EnterLameduck() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	incarnationUID, err := s.requireIncarnationUIDLocked()
@@ -335,7 +353,7 @@ func (s *SessionStore) EnterLameduck() error {
 	return syncDirectory(s.root)
 }
 
-func (s *SessionStore) Exists(sessionID string) (bool, error) {
+func (s *Store) Exists(sessionID string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	directory, err := s.Directory(sessionID)
@@ -352,34 +370,34 @@ func (s *SessionStore) Exists(sessionID string) (bool, error) {
 	return info.Mode().IsRegular(), nil
 }
 
-func (s *SessionStore) Read(sessionID string) (SessionRecord, error) {
+func (s *Store) Read(sessionID string) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	directory, err := s.Directory(sessionID)
 	if err != nil {
-		return SessionRecord{}, err
+		return Record{}, err
 	}
 	data, err := os.ReadFile(filepath.Join(directory, "session.json"))
 	if err != nil {
-		return SessionRecord{}, err
+		return Record{}, err
 	}
-	var record SessionRecord
+	var record Record
 	if err := json.Unmarshal(data, &record); err != nil {
-		return SessionRecord{}, err
+		return Record{}, err
 	}
 	if record.TotalContextBudgetTokens != nil && *record.TotalContextBudgetTokens <= 0 {
-		return SessionRecord{}, errors.New("total context budget must be positive")
+		return Record{}, errors.New("total context budget must be positive")
 	}
 	return record, nil
 }
 
-func (s *SessionStore) Write(sessionID string, record SessionRecord) error {
+func (s *Store) Write(sessionID string, record Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.replace(sessionID, "session.json", record)
 }
 
-func (s *SessionStore) ReadAcknowledgement(sessionID string) (*IngressAcknowledgement, error) {
+func (s *Store) ReadAcknowledgement(sessionID string) (*Acknowledgement, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	directory, err := s.Directory(sessionID)
@@ -393,25 +411,25 @@ func (s *SessionStore) ReadAcknowledgement(sessionID string) (*IngressAcknowledg
 	if err != nil {
 		return nil, err
 	}
-	var acknowledgement IngressAcknowledgement
+	var acknowledgement Acknowledgement
 	if err := json.Unmarshal(data, &acknowledgement); err != nil {
 		return nil, err
 	}
 	return &acknowledgement, nil
 }
 
-func (s *SessionStore) WriteAcknowledgement(sessionID string, acknowledgement IngressAcknowledgement) error {
+func (s *Store) WriteAcknowledgement(sessionID string, acknowledgement Acknowledgement) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.replace(sessionID, "acknowledgement.json", acknowledgement)
 }
 
-func (s *SessionStore) replace(sessionID, name string, value any) error {
+func (s *Store) replace(sessionID, name string, value any) error {
 	directory, err := s.Directory(sessionID)
 	if err != nil {
 		return err
 	}
-	if err := makeDirectory(directory); err != nil {
+	if err := EnsureDirectory(directory); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(value, "", "  ")

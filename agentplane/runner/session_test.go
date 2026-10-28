@@ -11,6 +11,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
+	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/state"
 
@@ -43,7 +44,7 @@ func frameTestSession(t *testing.T, command []string) (*Session, *supervision.Ma
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err := NewSessionRecord(&runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: t.TempDir(), Model: "test"}, "", nil)
+	record, err := retained.NewRecord(&runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: t.TempDir(), Model: "test"}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +291,7 @@ func TestConfirmationReplayKeepsTerminalReceipt(t *testing.T) {
 	ctx := context.Background()
 	journal := openTestJournal(t)
 	r := newLifecycleRunner(t, Config{StateDir: t.TempDir()})
-	record, err := NewSessionRecord(&runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: t.TempDir(), Model: "test-model"}, "", nil)
+	record, err := retained.NewRecord(&runnerpb.SessionSpec{Harness: runnerpb.Harness_HARNESS_CLAUDE, Cwd: t.TempDir(), Model: "test-model"}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

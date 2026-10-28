@@ -12,6 +12,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
+	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -32,7 +33,7 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	if request.Spec == nil {
 		return nil, status.Error(codes.InvalidArgument, "spec is required")
 	}
-	if _, err := ValidateSessionID(request.SessionId); err != nil {
+	if _, err := retained.ValidateSessionID(request.SessionId); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	if !r.lifecycle.accepting() {
@@ -85,7 +86,7 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
-	record, err := NewSessionRecord(spec, request.GetSetupScript(), budget)
+	record, err := retained.NewRecord(spec, request.GetSetupScript(), budget)
 	if err != nil {
 		return nil, rpcError(err)
 	}

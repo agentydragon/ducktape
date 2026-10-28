@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
@@ -177,7 +178,7 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 	// synthetic runtime values while the test switches from busy to idle.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	store, err := NewSessionStore(t.TempDir())
+	store, err := retained.NewStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

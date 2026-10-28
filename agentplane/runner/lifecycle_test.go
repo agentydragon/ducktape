@@ -12,6 +12,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -107,7 +108,7 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 				t.Fatalf("undispatched admission was not settled: command=%+v err=%v", command, err)
 			}
 			seal := s.journal.SealState()
-			if err := r.lifecycle.publishAck(s.id, IngressAcknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
+			if err := r.lifecycle.publishAck(s.id, retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
 				t.Fatal(err)
 			}
 			waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == stageQuiesced }, "quiesce completion")
@@ -291,7 +292,7 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	if seal == nil || seal.Cursor == 0 {
 		t.Fatalf("journal seal = %+v, want a nonzero cursor", seal)
 	}
-	if err := r.lifecycle.publishAck(s.id, IngressAcknowledgement{Cursor: seal.Cursor - 1, Sealed: true}); err != nil {
+	if err := r.lifecycle.publishAck(s.id, retained.Acknowledgement{Cursor: seal.Cursor - 1, Sealed: true}); err != nil {
 		t.Fatal(err)
 	}
 	facts, err := r.facts()
@@ -305,7 +306,7 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 		t.Fatalf("runtime after under-cursor acknowledgement = %v, want FLUSHING", current.Stage)
 	}
 
-	if err := r.lifecycle.publishAck(s.id, IngressAcknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
+	if err := r.lifecycle.publishAck(s.id, retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
 		t.Fatal(err)
 	}
 	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage == stageQuiesced }, "exact sealed cursor acknowledgement")

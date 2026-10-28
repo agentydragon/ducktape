@@ -58,8 +58,8 @@ service boundaries rather than a Dispatcher dependency:
 
 There are two different Session inventories:
 
-- Runner `ListSessions` asks the current runner's `SessionStore` for records it has retained and
-  reports its retained records and current harness, setup, launch and activity state. The current
+- Runner `ListSessions` asks the current runner's `retained.Store` for persisted records and reports
+  them with the current harness, setup, launch and activity state. The current
   production callers are the app and Notification, through the per-Sandbox proxy with expected
   Sandbox UID and owner. Dispatcher does not call the list RPC: an identical `OpenSession` retry
   returns the runner's existing attachment and a conflicting spec or setup returns `ALREADY_EXISTS`. Runner test drivers use the read for lifecycle assertions.
@@ -292,7 +292,7 @@ map, whose `shell_environment_policy.set` gives a thread's tools its Session's n
 destination. The Session record stores one Claude session ID or Codex thread ID, and a runner restart
 creates a new process and resumes the native conversation from that store. See
 [`session.go`](../runner/session.go), [`supervision/`](../runner/supervision/),
-[`store.go`](../runner/store.go), and the adapters ([Claude](../runner/claude/adapter.go),
+[`retained/`](../runner/retained/), and the adapters ([Claude](../runner/claude/adapter.go),
 [Codex](../runner/codex/adapter.go)).
 
 The shared app-server starts when a Codex Session first needs a harness and stays up until the

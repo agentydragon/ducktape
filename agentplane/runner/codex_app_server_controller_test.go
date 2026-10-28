@@ -14,6 +14,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/codex"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 )
 
@@ -291,11 +292,11 @@ func codexAppServerTestLaunch(t *testing.T) harness.LaunchConfig {
 
 func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(context.Context) (*supervision.Instance, error)) *Runner {
 	t.Helper()
-	owner, err := OpenStateOwner(stateDir)
+	owner, err := retained.OpenOwner(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := NewSessionStore(filepath.Join(stateDir, "sessions"))
+	store, err := retained.NewStore(filepath.Join(stateDir, "sessions"))
 	if err != nil {
 		_ = owner.Close()
 		t.Fatal(err)

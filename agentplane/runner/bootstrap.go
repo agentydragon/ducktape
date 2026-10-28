@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 )
 
 func (r *Runner) requestBootstrap() error {
@@ -105,7 +106,7 @@ func (r *Runner) runBootstrap(ctx context.Context) error {
 		return errors.New("bootstrap must contain 1..65536 UTF-8 bytes")
 	}
 	root := filepath.Join(r.config.StateDir, "initialization")
-	if err := makeDirectory(root); err != nil {
+	if err := retained.EnsureDirectory(root); err != nil {
 		return err
 	}
 	digest := sha256.Sum256([]byte(*script))
@@ -123,7 +124,7 @@ func (r *Runner) runBootstrap(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if err := writeDurable(requestPath, encoded); err != nil {
+		if err := retained.WriteDurable(requestPath, encoded); err != nil {
 			return err
 		}
 	} else {
