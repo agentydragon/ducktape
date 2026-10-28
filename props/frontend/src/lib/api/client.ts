@@ -15,7 +15,7 @@ import type {
   Split,
   ValidationRunRequest,
   paths,
-} from "./schema";
+} from "../schema";
 import { getToken, onAuthFailed } from "$lib/stores/token";
 
 // Create typed API client (types from Bazel: //props/frontend/src/lib:schema).
