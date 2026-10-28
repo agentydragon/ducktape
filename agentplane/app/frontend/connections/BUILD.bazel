@@ -52,12 +52,12 @@ ts_project(
         "//:node_modules/react",
         "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend:inline_name",
-        "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:schema",
+        "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend:watch_stream",
+        "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:policy",
         "//agentplane/app/frontend/bindings:table",
         "//agentplane/mcp_edge:connection_service_pb",
@@ -77,7 +77,6 @@ ts_project(
     tsconfig = ":tsconfig",
     deps = [
         ":connections",
-        "//agentplane/app/frontend/connections/testing:support",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -86,6 +85,7 @@ ts_project(
         "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/actions/testing:harness",
+        "//agentplane/app/frontend/connections/testing:support",
     ],
 )
 

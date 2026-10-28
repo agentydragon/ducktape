@@ -6,8 +6,8 @@ Stacked on the stock typed ESLint aspect experiment. Only
 ## Build graph
 
 - `:connections` compiles six production modules.
-- `:testing` compiles reusable helpers under `testing/`. The visual harness depends on
-  this target for its fixture, without compiling the specs.
+- `//agentplane/app/frontend/connections/testing:support` compiles reusable helpers.
+  The visual harness depends on this target for its fixture, without compiling the specs.
 - `:specs` compiles the three specs. Each has an explicit Vitest target with literal
   arguments and its own spec path.
 - Each target lists its authored inputs explicitly. The existing whole-program lint
@@ -41,7 +41,7 @@ bbr test //agentplane/app/frontend/connections:caller_grants_test \
   //agentplane/app/frontend/connections:management_test
 bbr build //agentplane/app/frontend:bundle //agentplane/app/frontend:visual_bundle
 bbr build //agentplane/app/frontend/connections:connections \
-  //agentplane/app/frontend/connections:testing \
+  //agentplane/app/frontend/connections/testing:support \
   //agentplane/app/frontend/connections:specs \
   --//devinfra/lint/x/typed_eslint:enabled
 ```
