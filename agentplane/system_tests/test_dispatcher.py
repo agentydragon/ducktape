@@ -227,14 +227,14 @@ async def _capture_cleanup_diagnostics(name: str, session_ids: list[str], comman
         "sandbox": ("get", "sandbox", name, "-o", "json"),
         "runner_lease": ("get", "lease", f"{name}-runner", "-o", "json"),
         "pod": ("get", "pod", name, "-o", "json"),
-        "runner_log": ("logs", f"pod/{name}", "-c", "runner", "--tail=200"),
-        "previous_runner_log": ("logs", f"pod/{name}", "-c", "runner", "--previous", "--tail=200"),
+        "runner_log": ("logs", f"pod/{name}", "-c", "runner", "--since=10m", "--timestamps"),
+        "previous_runner_log": ("logs", f"pod/{name}", "-c", "runner", "--previous", "--since=10m", "--timestamps"),
         "sandbox_controller_log": (
             "logs",
             "deployment/sandbox-controller",
             "--all-containers",
             "--since=10m",
-            "--tail=200",
+            "--timestamps",
         ),
     }
 

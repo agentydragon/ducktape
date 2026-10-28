@@ -44,5 +44,7 @@ go_test(
         "//agentplane/runner/harness",
         "@com_github_pressly_goose_v3//:goose",
         "@org_golang_google_protobuf//proto",
+        "@org_modernc_sqlite//:sqlite",
+        "@org_modernc_sqlite//lib",
     ],
 )

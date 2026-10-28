@@ -16,6 +16,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/pressly/goose/v3"
 	"google.golang.org/protobuf/proto"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 var legacyJournalSchema = []string{
@@ -562,6 +564,128 @@ func TestFailedJournalWriteDoesNotPublishCursor(t *testing.T) {
 		Observation: &eventpb.Event_HarnessLost{HarnessLost: &eventpb.HarnessLost{}},
 	}, AppendOptions{}); !errors.Is(err, ErrFailed) {
 		t.Fatalf("writer after storage failure error = %v", err)
+	}
+}
+
+func journalWithExternalReader(t *testing.T) (*Journal, *sql.DB, *sql.Tx) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "journal.sqlite")
+	journal, err := Open(t.Context(), path, "test-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = journal.Close() })
+	reader, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reader.Close() })
+	read, err := reader.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = read.Rollback() })
+	var count int
+	if err := read.QueryRowContext(t.Context(), "SELECT count(*) FROM event_entry").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return journal, reader, read
+}
+
+func TestJournalCommitWaitsForExternalReader(t *testing.T) {
+	journal, reader, read := journalWithExternalReader(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- journal.WithBatch(ctx, func(ctx context.Context) error {
+			_, err := journal.Append(ctx, &eventpb.Event{Observation: &eventpb.Event_HarnessLost{HarnessLost: &eventpb.HarnessLost{}}}, AppendOptions{})
+			return err
+		})
+	}()
+	// Once COMMIT holds a PENDING lock, SQLite refuses new readers while it
+	// waits for the original reader. Observe that boundary instead of sleeping.
+	for {
+		select {
+		case err := <-done:
+			t.Fatalf("commit returned while the external reader held its lock: %v", err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		default:
+		}
+		var count int
+		err := reader.QueryRowContext(ctx, "SELECT count(*) FROM event_entry").Scan(&count)
+		if err == nil {
+			continue
+		}
+		var sqliteErr *sqlite.Error
+		if !errors.As(err, &sqliteErr) || sqliteErr.Code() != sqlite3.SQLITE_BUSY {
+			t.Fatalf("probe reader = %v, want lock contention", err)
+		}
+		break
+	}
+	if journal.LastCursor() != 0 {
+		t.Fatal("blocked commit published its cursor")
+	}
+	if err := read.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("commit after reader released its lock: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if journal.LastCursor() != 1 || journal.RecoveryState().ThroughCursor != 1 {
+		t.Fatalf("committed state = %+v, want cursor 1", journal.RecoveryState())
+	}
+	if _, err := journal.Seal(ctx, "test-incarnation"); err != nil {
+		t.Fatalf("seal after transient reader: %v", err)
+	}
+}
+
+func TestFailedCommitReleasesSQLiteLocks(t *testing.T) {
+	for _, batch := range []bool{false, true} {
+		name := "append"
+		if batch {
+			name = "batch"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			journal, reader, read := journalWithExternalReader(t)
+			// Force the terminal contention path even when normal writes wait for readers.
+			if _, err := journal.conn.ExecContext(ctx, "PRAGMA busy_timeout=0"); err != nil {
+				t.Fatal(err)
+			}
+			var count int
+			write := func(ctx context.Context) error {
+				_, err := journal.Append(ctx, &eventpb.Event{Observation: &eventpb.Event_HarnessLost{HarnessLost: &eventpb.HarnessLost{}}}, AppendOptions{})
+				return err
+			}
+			var commitErr error
+			if batch {
+				commitErr = journal.WithBatch(ctx, write)
+			} else {
+				commitErr = write(ctx)
+			}
+			if !isStorageError(commitErr) {
+				t.Fatalf("commit while external reader holds a lock = %v, want storage error", commitErr)
+			}
+			if err := read.Rollback(); err != nil {
+				t.Fatal(err)
+			}
+			if err := reader.QueryRowContext(ctx, "SELECT count(*) FROM event_entry").Scan(&count); err != nil {
+				t.Fatalf("failed COMMIT retained SQLite locks: %v (commit error: %v)", err, commitErr)
+			}
+			if count != 0 || journal.LastCursor() != 0 || journal.RecoveryState().ThroughCursor != 0 {
+				t.Fatalf("failed commit exposed entries: stored=%d state=%+v", count, journal.RecoveryState())
+			}
+			if err := write(ctx); !errors.Is(err, ErrFailed) {
+				t.Fatalf("writer after failed COMMIT = %v, want failed journal", err)
+			}
+		})
 	}
 }
 

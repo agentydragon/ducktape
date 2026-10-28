@@ -91,6 +91,9 @@ func Open(ctx context.Context, path, sourceID string) (*Journal, error) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	for _, pragma := range []string{
+		// DELETE-mode commits need an exclusive lock. Online backup readers may
+		// briefly hold shared locks; wait before treating contention as a storage failure.
+		"PRAGMA busy_timeout=5000",
 		"PRAGMA journal_mode=DELETE",
 		"PRAGMA synchronous=EXTRA",
 		"PRAGMA foreign_keys=ON",
@@ -467,10 +470,7 @@ func (j *Journal) CommitBatch(ctx context.Context) error {
 		return nil
 	}
 	if _, err := j.conn.ExecContext(ctx, "COMMIT"); err != nil {
-		batch.active = false
-		j.failure = err
-		j.notifyLocked()
-		return &StorageError{Err: err}
+		return j.failBatchLocked(batch, err)
 	}
 	j.publishLocked(batch.appended, batch.sealChanged, batch.sealOverride)
 	batch.active = false
@@ -562,14 +562,14 @@ func (j *Journal) write(ctx context.Context, operation func(*journalBatch) error
 		return err
 	}
 	if _, err := j.conn.ExecContext(ctx, "COMMIT"); err != nil {
-		j.failure = err
-		j.notifyLocked()
-		return &StorageError{Err: err}
+		return j.failBatchLocked(batch, err)
 	}
 	j.publishLocked(batch.appended, batch.sealChanged, batch.sealOverride)
 	return nil
 }
 
+// A failed COMMIT can leave its transaction and locks active. Release them,
+// but keep the writer failed: only reopening may reconcile durable evidence.
 func (j *Journal) failBatchLocked(batch *journalBatch, err error) error {
 	_, rollbackErr := j.conn.ExecContext(context.Background(), "ROLLBACK")
 	batch.active = false

@@ -357,6 +357,9 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   through that writer. Followers see an error after their recorded prefix; recovery requires
   reopening the journal. The interrupted transaction may or may not survive, but cannot reuse a cursor
   already published for another Event. Harness output recording failures stop the harness.
+- Journal writes wait up to five seconds for SQLite locks held by external readers, including online
+  backups. A failed commit rolls back its transaction to release locks while keeping the writer failed;
+  this does not resume execution or publish any uncommitted Events.
 - A runner that finds a session it had running reports `HarnessLost`, then `TurnCompleted` with
   `PROCESS_LOST` if a turn was active. It replays committed Events unchanged and automatically
   starts the harness in the background to reconcile remaining admitted commands. A dispatched command
