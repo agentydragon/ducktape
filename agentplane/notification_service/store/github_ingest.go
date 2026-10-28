@@ -34,9 +34,10 @@ type GitHubIngest struct {
 	Subjects []GitHubSubjectKey
 	// Revisions are the commits Subjects are seen at.
 	Revisions []GitHubHeadRevision
-	// CI is the normalized state observation, if this raw delivery contains a complete check_run or status fact.
-	// Incomplete and non-state webhook actions leave it nil and remain ordinary raw deliveries.
-	CI []GitHubCIObservation
+	// CheckRun and CommitStatus are native facts extracted from complete webhook payloads. Incomplete payloads
+	// remain raw deliveries and do not claim normalized coverage.
+	CheckRun     *GitHubCheckRun
+	CommitStatus *GitHubCommitStatus
 }
 
 // IngestGitHub stores a delivery and wakes every inbox following the App, and reports whether the delivery was
@@ -108,19 +109,39 @@ func (s *Store) storeDelivery(ctx context.Context, tx *sql.Tx, ingest GitHubInge
 	if err := invalidateMergeability(ctx, tx, ingest); err != nil {
 		return err
 	}
-	for _, observation := range ingest.CI {
+	commitNormalized := false
+	if run := ingest.CheckRun; run != nil {
 		if ingest.Repository == nil {
-			return errors.New("a normalized CI delivery needs its repository")
+			return errors.New("a normalized check-run delivery needs its repository")
 		}
-		if observation.RepositoryID == 0 {
-			observation.RepositoryID = ingest.Repository.ID
+		if run.RepositoryID == 0 {
+			run.RepositoryID = ingest.Repository.ID
 		}
-		changed, err := observeGitHubCI(ctx, tx, ingest.AppID, ingest.InstallationID, observation, now())
+		changed, err := observeGitHubCheckRun(ctx, tx, ingest.AppID, ingest.InstallationID, *run, now())
 		if err != nil {
 			return err
 		}
+		commitNormalized = true
 		if changed {
-			if err := invalidateGitHubCIForRevision(ctx, tx, ingest.AppID, observation.RepositoryID, observation.HeadSHA); err != nil {
+			if err := invalidateGitHubCommitForRevision(ctx, tx, ingest.AppID, run.RepositoryID, run.HeadSHA, EventCheckRun); err != nil {
+				return err
+			}
+		}
+	}
+	if status := ingest.CommitStatus; status != nil {
+		if ingest.Repository == nil {
+			return errors.New("a normalized commit-status delivery needs its repository")
+		}
+		if status.RepositoryID == 0 {
+			status.RepositoryID = ingest.Repository.ID
+		}
+		changed, err := observeGitHubCommitStatus(ctx, tx, ingest.AppID, ingest.InstallationID, *status, now())
+		if err != nil {
+			return err
+		}
+		commitNormalized = true
+		if changed {
+			if err := invalidateGitHubCommitForRevision(ctx, tx, ingest.AppID, status.RepositoryID, status.SHA, EventStatus); err != nil {
 				return err
 			}
 		}
@@ -131,10 +152,10 @@ func (s *Store) storeDelivery(ctx context.Context, tx *sql.Tx, ingest GitHubInge
 	}
 	var position int64
 	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO github_delivery (app_id, delivery_id, installation_id, repository_id, event, action, head_sha, digest, payload, ci_normalized)
+		INSERT INTO github_delivery (app_id, delivery_id, installation_id, repository_id, event, action, head_sha, digest, payload, commit_normalized)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10) RETURNING position`,
 		ingest.AppID, ingest.DeliveryID, ingest.InstallationID, repositoryID, ingest.Event, ingest.Action, ingest.HeadSHA,
-		ingest.Digest, string(ingest.Payload), len(ingest.CI) > 0).Scan(&position); err != nil {
+		ingest.Digest, string(ingest.Payload), commitNormalized).Scan(&position); err != nil {
 		return err
 	}
 	for _, key := range ingest.Subjects {
@@ -169,7 +190,7 @@ func invalidateInstallation(ctx context.Context, tx *sql.Tx, appID, installation
 	if err != nil {
 		return err
 	}
-	return invalidateGitHubCIForInstallation(ctx, tx, appID, installationID)
+	return invalidateGitHubCommitForInstallation(ctx, tx, appID, installationID)
 }
 
 // wakeGitHubInboxes makes every inbox with a live subscription to the App due now, and its GitHub subscriptions
@@ -237,6 +258,14 @@ func (s *Store) CleanupGitHubDeliveries(ctx context.Context, cutoff time.Time) e
 		if err != nil {
 			return err
 		}
+		_, err = tx.ExecContext(ctx, `DELETE FROM github_commit_event WHERE sequence IN (
+			SELECT sequence FROM github_commit_event WHERE created_at < $1 ORDER BY created_at, sequence LIMIT 1000
+		)`, cutoff)
+		if err != nil {
+			return err
+		}
+		// Migration 00007 copy-forwards the aggregate CI tables so legacy payloads keep their original schema and
+		// rollback data remains available. Bound their retention by the same cutoff while both schemas coexist.
 		_, err = tx.ExecContext(ctx, `DELETE FROM github_ci_event WHERE sequence IN (
 			SELECT sequence FROM github_ci_event WHERE created_at < $1 ORDER BY created_at, sequence LIMIT 1000
 		)`, cutoff)
@@ -245,6 +274,23 @@ func (s *Store) CleanupGitHubDeliveries(ctx context.Context, cutoff time.Time) e
 		}
 		// Old heads cease to be current snapshots once no live PR subscription follows them.
 		// Keep the active head's deduplication facts even when its checks have not changed recently.
+		_, err = tx.ExecContext(ctx, `DELETE FROM github_commit_current WHERE
+			(app_id, installation_id, repository_id, head_sha, event, entity_key) IN (
+				SELECT c.app_id, c.installation_id, c.repository_id, c.head_sha, c.event, c.entity_key
+				FROM github_commit_current c WHERE (c.payload->>'observedAt')::timestamptz < $1
+				AND NOT EXISTS (
+					SELECT 1 FROM subscription s JOIN github_pull_request p
+						ON p.repository_id = s.github_repository_id AND p.number::text = s.github_subject_key
+					JOIN github_subject_revision r ON r.repository_id = p.repository_id
+						AND r.kind = 'pull_request' AND r.subject_key = p.number::text
+					WHERE s.github_app_id = c.app_id AND s.github_subject_kind = 'pull_request'
+						AND NOT s.cancelled AND s.expires_at > now() AND p.head_sha = c.head_sha
+						AND r.head_repository_id = c.repository_id AND r.sha = c.head_sha)
+				ORDER BY c.app_id, c.installation_id, c.repository_id, c.head_sha, c.event, c.entity_key LIMIT 1000
+			)`, cutoff)
+		if err != nil {
+			return err
+		}
 		_, err = tx.ExecContext(ctx, `DELETE FROM github_ci_current WHERE
 			(app_id, installation_id, repository_id, head_sha, event, entity_key) IN (
 				SELECT c.app_id, c.installation_id, c.repository_id, c.head_sha, c.event, c.entity_key

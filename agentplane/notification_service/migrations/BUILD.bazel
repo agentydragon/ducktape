@@ -30,3 +30,9 @@ go_library(
         "@com_github_pressly_goose_v3//lock",
     ],
 )
+
+filegroup(
+    name = "notification_migration_files",
+    srcs = glob(["notifications/*.sql"]),
+    visibility = ["//agentplane/notification_service:__subpackages__"],
+)

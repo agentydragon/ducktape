@@ -670,7 +670,7 @@ func TestInboxSummaryNamesGitHubObservations(t *testing.T) {
 }
 
 func TestSubscriptionSummarySerializesGitHubStatus(t *testing.T) {
-	line, err := subscriptionLine([]byte(`{"id":"subscription","source":{"github":{"repository":"owner/repo","subject":{"pullRequest":{"number":7}}}},"version":"1","github":{"ci":{"lastSuccessAt":"2026-10-27T10:00:00Z","errorKind":"SOURCE_FAILURE_KIND_RATE_LIMITED","error":"rate limited","retryAt":"2026-10-27T10:02:00Z"}}}`))
+	line, err := subscriptionLine([]byte(`{"id":"subscription","source":{"github":{"repository":"owner/repo","subject":{"pullRequest":{"number":7}}}},"version":"1","github":{"checkRuns":{"lastSuccessAt":"2026-10-27T10:00:00Z","errorKind":"SOURCE_FAILURE_KIND_RATE_LIMITED","error":"check runs rate limited","retryAt":"2026-10-27T10:02:00Z"},"commitStatuses":{"lastSuccessAt":"2026-10-27T11:00:00Z","errorKind":"SOURCE_FAILURE_KIND_ACCESS_DENIED","error":"statuses denied","retryAt":"2026-10-27T11:02:00Z"}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -682,7 +682,10 @@ func TestSubscriptionSummarySerializesGitHubStatus(t *testing.T) {
 	if err := protojson.Unmarshal([]byte(encoded), &status); err != nil {
 		t.Fatal(err)
 	}
-	if status.GetCi().GetError() != "rate limited" || status.GetCi().GetErrorKind() != notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_RATE_LIMITED || status.GetCi().GetRetryAt().AsTime().UTC().Format(time.RFC3339) != "2026-10-27T10:02:00Z" {
+	if status.GetCheckRuns().GetError() != "check runs rate limited" || status.GetCheckRuns().GetErrorKind() != notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_RATE_LIMITED || status.GetCheckRuns().GetRetryAt().AsTime().UTC().Format(time.RFC3339) != "2026-10-27T10:02:00Z" {
+		t.Fatalf("summary did not preserve check-run status: %v", &status)
+	}
+	if status.GetCommitStatuses().GetError() != "statuses denied" || status.GetCommitStatuses().GetErrorKind() != notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_ACCESS_DENIED || status.GetCommitStatuses().GetRetryAt().AsTime().UTC().Format(time.RFC3339) != "2026-10-27T11:02:00Z" {
 		t.Fatalf("summary did not preserve GitHub status: %v", &status)
 	}
 }

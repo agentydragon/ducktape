@@ -299,7 +299,10 @@ message GitHubSource {
   // `issues` and `issue_comment` events; for any other subject completed `check_run` events and `status`
   // events, plus a pull request's `pull_request`, `issue_comment`, `pull_request_review`,
   // `pull_request_review_comment` and Agentplane-observed `mergeability_changed` events, and a branch's
-  // `push`, `create` and `delete` events. Selecting events
+  // `push`, `create` and `delete` events. For pull requests, default repair includes completed check-run facts
+  // and all commit-status facts. An explicitly unfiltered `check_run` filter selects all observed check-run
+  // states. Explicit action selectors apply to raw webhook activity; repair does not synthesize actions.
+  // Selecting events
   // explicitly allows, for a pull request those and the CI events, for a branch the ref events and the CI
   // events, for a commit the CI events, and for an issue only its two defaults. The CI events are `check_run`,
   // `check_suite`, `status`, `workflow_run` and `workflow_job`; the last three are delivered only when
@@ -417,11 +420,12 @@ message GitHubStatus {
   // The App, installation and repository grants that cover the subscription.
   repeated GitHubAccessStatus access = 1;
   GitHubSubjectStatus subject = 2;
-  // The shared current-CI repair state for this subject and installation.
-  GitHubRefreshStatus ci = 3;
+  // Independent current check-run and commit-status refresh states for this subject and installation.
+  GitHubRefreshStatus check_runs = 3;
+  GitHubRefreshStatus commit_statuses = 4;
 }
 
-// The refresh state of GitHub's current check-run and commit-status observations.
+// The refresh state of one category of current GitHub observations.
 message GitHubRefreshStatus {
   google.protobuf.Timestamp last_success_at = 1;
   optional SourceFailureKind error_kind = 2;
@@ -535,8 +539,8 @@ message GitHubEvent {
   optional string action = 5;
 }
 
-// One Agentplane-generated observation of current GitHub state, never identified by
-// a webhook UUID. The payload carries the observed state and the sequence is durable within its event category.
+// One Agentplane-generated observation of current GitHub state, never identified by a webhook UUID. The payload
+// carries the observed state and the sequence is durable and ordered within its event category.
 message GitHubObservationEvent {
   int64 app_id = 1;
   int64 repository_id = 2;

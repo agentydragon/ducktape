@@ -164,17 +164,31 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 		}
 		repairAt = earlier(repairAt, validUntil)
 	}
-	if ciSelected(source) {
-		ciRepair, err := p.refreshCI(ctx, subject, fences)
+	for _, selection := range []struct {
+		event    store.EventName
+		selected bool
+	}{
+		{store.EventCheckRun, source.CheckRunObservationsSelected()},
+		{store.EventStatus, source.CommitStatusObservationsSelected()},
+	} {
+		if !selection.selected {
+			continue
+		}
+		key := store.GitHubCommitRefreshKey{
+			AppID: p.appID, InstallationID: base.Key.InstallationID, Subject: subject, Event: selection.event,
+		}
+		resourceRepair, err := p.refreshCommitResource(ctx, key, fences)
 		if err != nil {
 			return err
 		}
-		repairAt = earlier(repairAt, ciRepair)
+		repairAt = earlier(repairAt, resourceRepair)
 	}
 
 	deliveries, err := p.store.GitHubDeliveries(ctx, store.GitHubMatch{
 		SubscriptionID: due.ID, InboxID: claim.ID, AppID: binding.AppID, Subject: subject,
 		Filters: source.Filters(), Fences: fences,
+		ObserveCheckRuns:      source.CheckRunObservationsSelected(),
+		ObserveCommitStatuses: source.CommitStatusObservationsSelected(),
 	})
 	if err != nil {
 		return err
@@ -186,23 +200,9 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 	})
 }
 
-func ciSelected(source store.GitHubSource) bool {
-	if _, ok := source.Subject.(store.PullRequestSubject); !ok {
-		return false
-	}
-	for _, filter := range source.Filters() {
-		if filter.Event == store.EventCheckRun || filter.Event == store.EventStatus {
-			return true
-		}
-	}
-	return false
-}
-
-// CI has its own refresh deadline: pending mergeability must neither hold up CI observations nor
-// cause CI reads on every short mergeability retry. A classified CI failure is visible on its shared
-// status row while ordinary webhook and mergeability delivery continue.
-func (p *Provider) refreshCI(ctx context.Context, subject store.GitHubSubjectKey, fences []store.GitHubAccessFence) (time.Time, error) {
-	key := store.GitHubCIRefreshKey{AppID: p.appID, InstallationID: fences[0].Key.InstallationID, Subject: subject}
+// Each commit resource has its own deadline and error state. Pending mergeability retries do not accelerate
+// either read, and a classified failure in one resource does not stop the other's observations or raw activity.
+func (p *Provider) refreshCommitResource(ctx context.Context, key store.GitHubCommitRefreshKey, fences []store.GitHubAccessFence) (time.Time, error) {
 	lease, err := p.state.Acquire(ctx, key)
 	var deferred *store.RefreshDeferredError
 	if errors.As(err, &deferred) {
@@ -212,11 +212,19 @@ func (p *Provider) refreshCI(ctx context.Context, subject store.GitHubSubjectKey
 		return time.Time{}, err
 	}
 	if lease != nil {
-		observations, err := p.readCI(ctx, subject, fences)
+		success := store.GitHubSuccess{Fences: fences}
+		switch key.Event {
+		case store.EventCheckRun:
+			success.CheckRuns, err = p.readCheckRuns(ctx, key.Subject, fences)
+		case store.EventStatus:
+			success.CommitStatuses, err = p.readCommitStatuses(ctx, key.Subject, fences)
+		default:
+			return time.Time{}, fmt.Errorf("unsupported commit resource %q", key.Event)
+		}
 		if err != nil {
 			err = p.refreshFailed(ctx, *lease, err)
 		} else {
-			err = p.state.Succeed(ctx, *lease, store.GitHubSuccess{Fences: fences, CI: observations})
+			err = p.state.Succeed(ctx, *lease, success)
 		}
 		if errors.As(err, &deferred) {
 			return deferred.Until, nil
@@ -225,31 +233,67 @@ func (p *Provider) refreshCI(ctx context.Context, subject store.GitHubSubjectKey
 			return time.Time{}, err
 		}
 	}
-	state, err := p.state.CIState(ctx, key)
+	state, err := p.state.CommitState(ctx, key)
 	return state.RepairAt, err
 }
 
-func (p *Provider) readCI(ctx context.Context, subject store.GitHubSubjectKey, fences []store.GitHubAccessFence) ([]store.GitHubCIObservation, error) {
-	targets, err := p.state.CITargets(ctx, subject)
+type commitTarget struct {
+	repository     store.GitHubRepository
+	sha            string
+	installationID int64
+}
+
+func (p *Provider) commitTargets(ctx context.Context, subject store.GitHubSubjectKey, fences []store.GitHubAccessFence) ([]commitTarget, error) {
+	revisions, err := p.state.CommitTargets(ctx, subject)
 	if err != nil {
 		return nil, err
 	}
-	observations := make([]store.GitHubCIObservation, 0)
-	for _, target := range targets {
+	var targets []commitTarget
+	for _, revision := range revisions {
 		for _, fence := range fences {
-			if fence.Key.RepositoryID != target.Repository.ID {
-				continue
+			if fence.Key.RepositoryID == revision.Repository.ID {
+				targets = append(targets, commitTarget{repository: revision.Repository, sha: revision.SHA, installationID: fence.Key.InstallationID})
+				break
 			}
-			read, err := p.client.CommitCI(ctx, target.Repository.Name, target.SHA, fence.Key.InstallationID)
-			if err != nil {
-				return nil, err
-			}
-			for i := range read {
-				read[i].RepositoryID = target.Repository.ID
-			}
-			observations = append(observations, read...)
-			break
 		}
+	}
+	return targets, nil
+}
+
+func (p *Provider) readCheckRuns(ctx context.Context, subject store.GitHubSubjectKey, fences []store.GitHubAccessFence) ([]store.GitHubCheckRun, error) {
+	targets, err := p.commitTargets(ctx, subject, fences)
+	if err != nil {
+		return nil, err
+	}
+	observations := make([]store.GitHubCheckRun, 0)
+	for _, target := range targets {
+		runs, err := p.client.CheckRuns(ctx, target.repository.Name, target.sha, target.installationID)
+		if err != nil {
+			return nil, err
+		}
+		for i := range runs {
+			runs[i].RepositoryID = target.repository.ID
+		}
+		observations = append(observations, runs...)
+	}
+	return observations, nil
+}
+
+func (p *Provider) readCommitStatuses(ctx context.Context, subject store.GitHubSubjectKey, fences []store.GitHubAccessFence) ([]store.GitHubCommitStatus, error) {
+	targets, err := p.commitTargets(ctx, subject, fences)
+	if err != nil {
+		return nil, err
+	}
+	observations := make([]store.GitHubCommitStatus, 0)
+	for _, target := range targets {
+		statuses, err := p.client.CommitStatuses(ctx, target.repository.Name, target.sha, target.installationID)
+		if err != nil {
+			return nil, err
+		}
+		for i := range statuses {
+			statuses[i].RepositoryID = target.repository.ID
+		}
+		observations = append(observations, statuses...)
 	}
 	return observations, nil
 }

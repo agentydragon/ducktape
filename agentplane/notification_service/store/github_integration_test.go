@@ -298,7 +298,8 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 	}
 	matched, err := g.GitHubDeliveries(ctx, GitHubMatch{
 		SubscriptionID: sub.ID, InboxID: sub.InboxID, AppID: g.app, Subject: sub.Subject,
-		Filters: sub.Source.Filters(), Fences: fences,
+		Filters: sub.Source.Filters(), ObserveCheckRuns: sub.Source.CheckRunObservationsSelected(),
+		ObserveCommitStatuses: sub.Source.CommitStatusObservationsSelected(), Fences: fences,
 	})
 	if err != nil {
 		t.Fatal(err)

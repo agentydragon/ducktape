@@ -70,12 +70,21 @@ type Client struct {
 	installations map[installationKey]*installationAuth
 }
 
-// installationKey keeps the CI-only token separate from the token used by existing notification reads. An
-// installation may not have granted Checks or Commit statuses, and requesting those permissions must not make
-// its existing subscriptions fail.
+// installationPermissionProfile names the permissions needed by one class of reads. Check runs and commit
+// statuses are separate so a missing permission for one cannot prevent reads that need the other.
+type installationPermissionProfile uint8
+
+const (
+	coreReads installationPermissionProfile = iota
+	checkRunsRead
+	commitStatusesRead
+)
+
+// installationKey keeps each permission profile's token separate. An installation may not have granted Checks
+// or Commit statuses, and requesting those permissions must not make its existing subscriptions fail.
 type installationKey struct {
-	id int64
-	ci bool
+	id      int64
+	profile installationPermissionProfile
 }
 
 // installationAuth is an installation's signing transport, which caches and refreshes its token, and the client
@@ -141,10 +150,10 @@ func (h apiHeaders) RoundTrip(request *http.Request) (*http.Response, error) {
 
 // installationClient returns the auth cached for an installation; nothing is minted until its first request. Each
 // installation signs through its own AppsTransport, because ghinstallation writes to it while refreshing a token.
-func (c *Client) installationClient(id int64, ci bool) (*installationAuth, error) {
+func (c *Client) installationClient(id int64, profile installationPermissionProfile) (*installationAuth, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	key := installationKey{id: id, ci: ci}
+	key := installationKey{id: id, profile: profile}
 	if auth, ok := c.installations[key]; ok {
 		return auth, nil
 	}
@@ -154,9 +163,16 @@ func (c *Client) installationClient(id int64, ci bool) (*installationAuth, error
 	}
 	transport.BaseURL = c.baseURL
 	read := github.Ptr("read")
-	permissions := &github.InstallationPermissions{Metadata: read, Contents: read, PullRequests: read, Issues: read}
-	if ci {
-		permissions = &github.InstallationPermissions{Checks: read, Statuses: read}
+	var permissions *github.InstallationPermissions
+	switch profile {
+	case coreReads:
+		permissions = &github.InstallationPermissions{Metadata: read, Contents: read, PullRequests: read, Issues: read}
+	case checkRunsRead:
+		permissions = &github.InstallationPermissions{Checks: read}
+	case commitStatusesRead:
+		permissions = &github.InstallationPermissions{Statuses: read}
+	default:
+		return nil, errors.New("unknown installation permission profile")
 	}
 	transport.InstallationTokenOptions = &github.InstallationTokenOptions{
 		Permissions: permissions,
@@ -195,20 +211,25 @@ func callAsApp[T any](ctx context.Context, c *Client, missingOK bool, req reques
 
 // callAsInstallation runs req as an installation, signed with the installation token it first mints or reuses.
 func callAsInstallation[T any](ctx context.Context, c *Client, installationID int64, missingOK bool, req request[T]) (T, error) {
-	return callAsInstallationWithCI(ctx, c, installationID, false, missingOK, req)
+	return callAsInstallationWithProfile(ctx, c, installationID, coreReads, missingOK, req)
 }
 
-// callAsCIInstallation uses the installation token profile scoped to checks and commit statuses.
-func callAsCIInstallation[T any](ctx context.Context, c *Client, installationID int64, req request[T]) (T, error) {
-	return callAsInstallationWithCI(ctx, c, installationID, true, false, req)
+// callAsCheckRunsInstallation uses the token profile scoped to the Checks repository permission.
+func callAsCheckRunsInstallation[T any](ctx context.Context, c *Client, installationID int64, req request[T]) (T, error) {
+	return callAsInstallationWithProfile(ctx, c, installationID, checkRunsRead, false, req)
 }
 
-func callAsInstallationWithCI[T any](ctx context.Context, c *Client, installationID int64, ci, missingOK bool, req request[T]) (T, error) {
+// callAsCommitStatusesInstallation uses the token profile scoped to the Commit statuses repository permission.
+func callAsCommitStatusesInstallation[T any](ctx context.Context, c *Client, installationID int64, req request[T]) (T, error) {
+	return callAsInstallationWithProfile(ctx, c, installationID, commitStatusesRead, false, req)
+}
+
+func callAsInstallationWithProfile[T any](ctx context.Context, c *Client, installationID int64, profile installationPermissionProfile, missingOK bool, req request[T]) (T, error) {
 	authorize := func(ctx context.Context) (*github.Client, error) {
 		if installationID <= 0 {
 			return nil, errors.New("installation ID must be above 0")
 		}
-		auth, err := c.installationClient(installationID, ci)
+		auth, err := c.installationClient(installationID, profile)
 		if err != nil {
 			return nil, err
 		}

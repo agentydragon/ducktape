@@ -144,22 +144,51 @@ type GitHubObservationEvent struct {
 	Sequence     int64
 }
 
-// GitHubCIObservation is one normalized current check-run or commit-status state, whether first found by a
-// webhook or by subscription repair.
-type GitHubCIObservation struct {
-	RepositoryID int64      `json:"repositoryId"`
-	HeadSHA      string     `json:"headSha"`
-	Event        EventName  `json:"event"`
-	Action       *string    `json:"action,omitempty"`
-	CheckAppID   int64      `json:"checkAppId,omitempty"`
-	ID           int64      `json:"id"`
-	Name         string     `json:"name"`
-	Status       string     `json:"status"`
-	Conclusion   *string    `json:"conclusion,omitempty"`
-	DetailsURL   string     `json:"detailsUrl"`
-	StartedAt    *time.Time `json:"startedAt,omitempty"`
-	CompletedAt  *time.Time `json:"completedAt,omitempty"`
-	UpdatedAt    *time.Time `json:"updatedAt,omitempty"`
+// GitHubCheckRunStatus uses GitHub's CheckRunStatus vocabulary.
+type GitHubCheckRunStatus string
+
+const (
+	CheckRunQueued     GitHubCheckRunStatus = "queued"
+	CheckRunWaiting    GitHubCheckRunStatus = "waiting"
+	CheckRunPending    GitHubCheckRunStatus = "pending"
+	CheckRunRequested  GitHubCheckRunStatus = "requested"
+	CheckRunInProgress GitHubCheckRunStatus = "in_progress"
+	CheckRunCompleted  GitHubCheckRunStatus = "completed"
+)
+
+// GitHubCheckRun is one native check-run fact, whether first found by a webhook or by subscription repair.
+type GitHubCheckRun struct {
+	RepositoryID int64                `json:"repositoryId"`
+	HeadSHA      string               `json:"headSha"`
+	ID           int64                `json:"id"`
+	AppID        int64                `json:"appId,omitempty"`
+	Name         string               `json:"name"`
+	Status       GitHubCheckRunStatus `json:"status"`
+	Conclusion   *string              `json:"conclusion,omitempty"`
+	DetailsURL   string               `json:"detailsUrl"`
+	StartedAt    *time.Time           `json:"startedAt,omitempty"`
+	CompletedAt  *time.Time           `json:"completedAt,omitempty"`
+}
+
+// GitHubCommitStatusState uses GitHub's CommitStatusState vocabulary.
+type GitHubCommitStatusState string
+
+const (
+	CommitStatusError   GitHubCommitStatusState = "error"
+	CommitStatusFailure GitHubCommitStatusState = "failure"
+	CommitStatusPending GitHubCommitStatusState = "pending"
+	CommitStatusSuccess GitHubCommitStatusState = "success"
+)
+
+// GitHubCommitStatus is one native commit-status fact, whether first found by a webhook or by subscription repair.
+type GitHubCommitStatus struct {
+	RepositoryID int64                   `json:"repositoryId"`
+	SHA          string                  `json:"sha"`
+	ID           int64                   `json:"id"`
+	Context      string                  `json:"context"`
+	State        GitHubCommitStatusState `json:"state"`
+	TargetURL    string                  `json:"targetUrl"`
+	UpdatedAt    *time.Time              `json:"updatedAt,omitempty"`
 }
 
 // GitHubMergeabilityEvent is one Agentplane-generated observation of a pull request's mergeability.

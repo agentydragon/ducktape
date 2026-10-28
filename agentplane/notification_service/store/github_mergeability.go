@@ -146,7 +146,7 @@ func (s *Store) observePullRequest(ctx context.Context, tx *sql.Tx, subject GitH
 		return err
 	}
 	if previousHead.Valid && previousHead.String != observation.HeadSHA {
-		if err := invalidateGitHubCIForPullRequest(ctx, tx, subject.RepositoryID, subject.Key, nil); err != nil {
+		if err := invalidateGitHubCommitForPullRequest(ctx, tx, subject.RepositoryID, subject.Key, nil); err != nil {
 			return err
 		}
 	}
@@ -205,7 +205,7 @@ func invalidateMergeability(ctx context.Context, tx *sql.Tx, ingest GitHubIngest
 					return err
 				}
 				if currentHead.Valid && currentHead.String != *ingest.HeadSHA {
-					if err := invalidateGitHubCIForPullRequest(ctx, tx, subject.RepositoryID, subject.Key, &ingest.AppID); err != nil {
+					if err := invalidateGitHubCommitForPullRequest(ctx, tx, subject.RepositoryID, subject.Key, &ingest.AppID); err != nil {
 						return err
 					}
 				}

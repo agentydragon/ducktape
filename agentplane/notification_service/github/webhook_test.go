@@ -123,8 +123,9 @@ func TestDeliveriesPythonAcceptsAreStoredAsPythonStoresThem(t *testing.T) {
 
 			sameJSON(t, got.Payload, vector.Ingest.Payload)
 			got.Payload = nil
-			// These vectors pin raw receipt correlation. Current-state normalization has separate CI tests.
-			got.CI = nil
+			// These vectors pin raw receipt correlation. Complete current-state facts have separate tests.
+			got.CheckRun = nil
+			got.CommitStatus = nil
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("stored\n%+v\nwant\n%+v", got, want)
 			}
@@ -155,13 +156,93 @@ func TestDeliveriesPythonRefusesAreRefusedForTheSameReason(t *testing.T) {
 	}
 }
 
-func TestACheckCreatedCompletedPreservesItsRawCreationSelector(t *testing.T) {
-	raw := []byte(`{"action":"created","installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},"check_run":{"id":31,"head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"build","status":"completed","conclusion":"success"}}`)
-	ingest, err := ParseDelivery(testAppID, "check_run", uuid.New(), raw)
+func TestWebhookCheckRunObservationPreservesAppIDAndNativeStatus(t *testing.T) {
+	raw := []byte(`{"action":"created","installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},"check_run":{"id":42,"head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"build","status":"completed","conclusion":"success","app":{"id":812,"slug":"ci","name":"CI"}}}`)
+	ingest, err := ParseDelivery(testAppID, string(store.EventCheckRun), uuid.New(), raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ingest.Action == nil || *ingest.Action != "created" || len(ingest.CI) != 0 {
-		t.Fatalf("ingest = %+v, want raw creation activity", ingest)
+	if ingest.Action == nil || *ingest.Action != "created" || ingest.CheckRun == nil || ingest.CommitStatus != nil {
+		t.Fatalf("ingest = %+v, want raw creation activity and a native check-run fact", ingest)
+	}
+	if ingest.CheckRun.RepositoryID != 100 || ingest.CheckRun.HeadSHA != testSHA || ingest.CheckRun.ID != 42 ||
+		ingest.CheckRun.AppID != 812 || ingest.CheckRun.Status != store.CheckRunCompleted ||
+		ingest.CheckRun.Conclusion == nil || *ingest.CheckRun.Conclusion != "success" {
+		t.Errorf("check run = %+v, want repository 100, app 812 and completed success", ingest.CheckRun)
+	}
+}
+
+func TestWebhookCommitStatusObservationKeepsLegacyErrorState(t *testing.T) {
+	raw := []byte(`{"installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","id":77,"state":"error","context":"continuous-integration/legacy","target_url":"https://ci.test/legacy","updated_at":"2026-10-27T01:06:07Z"}`)
+	ingest, err := ParseDelivery(testAppID, string(store.EventStatus), uuid.New(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ingest.CheckRun != nil || ingest.CommitStatus == nil {
+		t.Fatalf("ingest = %+v, want a native commit-status fact", ingest)
+	}
+	if ingest.CommitStatus.RepositoryID != 100 || ingest.CommitStatus.SHA != testSHA || ingest.CommitStatus.ID != 77 ||
+		ingest.CommitStatus.State != store.CommitStatusError || ingest.CommitStatus.Context != "continuous-integration/legacy" ||
+		ingest.CommitStatus.TargetURL != "https://ci.test/legacy" || ingest.CommitStatus.UpdatedAt == nil {
+		t.Errorf("commit status = %+v, want preserved legacy error state and details", ingest.CommitStatus)
+	}
+}
+
+func TestMinimalCIWebhooksRemainRawWithoutClaimingCoverage(t *testing.T) {
+	tests := []struct {
+		name  string
+		event string
+		raw   []byte
+	}{
+		{
+			name:  "check run",
+			event: string(store.EventCheckRun),
+			raw:   []byte(`{"action":"created","installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},"check_run":{"head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}`),
+		},
+		{
+			name:  "commit status",
+			event: string(store.EventStatus),
+			raw:   []byte(`{"installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ingest, err := ParseDelivery(testAppID, test.event, uuid.New(), test.raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ingest.CheckRun != nil || ingest.CommitStatus != nil {
+				t.Errorf("ingest claims coverage from incomplete webhook: %+v", ingest)
+			}
+			sameJSON(t, ingest.Payload, test.raw)
+		})
+	}
+}
+
+func TestMalformedCompleteCIWebhookFactsAreRejected(t *testing.T) {
+	tests := []struct {
+		name  string
+		event string
+		raw   string
+	}{
+		{
+			name:  "check run has invalid status",
+			event: string(store.EventCheckRun),
+			raw: `{"action":"completed","installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},` +
+				`"check_run":{"id":42,"head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"build","status":"unknown"}}`,
+		},
+		{
+			name:  "status has invalid state",
+			event: string(store.EventStatus),
+			raw:   `{"installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","id":77,"state":"unknown","context":"ci"}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := ParseDelivery(testAppID, test.event, uuid.New(), []byte(test.raw))
+			if !errors.Is(err, ErrInvalidPayload) {
+				t.Errorf("ParseDelivery error = %v, want ErrInvalidPayload", err)
+			}
+		})
 	}
 }

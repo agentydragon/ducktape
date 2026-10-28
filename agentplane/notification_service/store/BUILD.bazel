@@ -7,7 +7,7 @@ go_library(
     srcs = [
         "actions.go",
         "claims.go",
-        "github_ci.go",
+        "github_commit_observations.go",
         "github_deliveries.go",
         "github_ingest.go",
         "github_mergeability.go",
@@ -57,7 +57,8 @@ go_test(
     srcs = [
         "actions_integration_test.go",
         "claims_integration_test.go",
-        "github_ci_integration_test.go",
+        "github_commit_integration_test.go",
+        "github_commit_migration_integration_test.go",
         "github_ingest_integration_test.go",
         "github_integration_test.go",
         "github_matching_integration_test.go",
@@ -80,6 +81,7 @@ go_test(
         "subscriptions_integration_test.go",
         "wakeups_integration_test.go",
     ],
+    data = ["//agentplane/notification_service/migrations:notification_migration_files"],
     embed = [":store"],
     embedsrcs = ["golden.json"],
     tags = ["requires_docker"],
@@ -93,6 +95,8 @@ go_test(
         "//agentplane/testing/postgres",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
+        "@com_github_pressly_goose_v3//:goose",
+        "@io_bazel_rules_go//go/runfiles",
         "@org_golang_google_protobuf//encoding/protojson",
     ],
 )

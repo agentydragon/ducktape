@@ -181,15 +181,26 @@ func githubStatusView(status *store.GitHubStatus) (*notificationspb.GitHubStatus
 		return nil, nil
 	}
 	view := &notificationspb.GitHubStatus{}
-	if status.CI != nil {
-		seen, err := refreshStatus(*status.CI)
+	if status.CheckRuns != nil {
+		seen, err := refreshStatus(*status.CheckRuns)
 		if err != nil {
 			return nil, err
 		}
-		view.Ci = &notificationspb.GitHubRefreshStatus{
+		view.CheckRuns = &notificationspb.GitHubRefreshStatus{
 			LastSuccessAt: seen.lastSuccessAt, ErrorKind: seen.errorKind, Error: seen.errorMessage,
 			ErrorSince: seen.errorSince, ErrorObservedAt: seen.errorObserved,
-			RetryAt: timestamp(status.CI.RetryAt), RefreshingUntil: timestamp(status.CI.RefreshingUntil),
+			RetryAt: timestamp(status.CheckRuns.RetryAt), RefreshingUntil: timestamp(status.CheckRuns.RefreshingUntil),
+		}
+	}
+	if status.CommitStatuses != nil {
+		seen, err := refreshStatus(*status.CommitStatuses)
+		if err != nil {
+			return nil, err
+		}
+		view.CommitStatuses = &notificationspb.GitHubRefreshStatus{
+			LastSuccessAt: seen.lastSuccessAt, ErrorKind: seen.errorKind, Error: seen.errorMessage,
+			ErrorSince: seen.errorSince, ErrorObservedAt: seen.errorObserved,
+			RetryAt: timestamp(status.CommitStatuses.RetryAt), RefreshingUntil: timestamp(status.CommitStatuses.RefreshingUntil),
 		}
 	}
 

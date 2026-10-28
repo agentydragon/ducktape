@@ -181,18 +181,56 @@ func TestAGitHubObservationIdentityIsReadBackWithoutAWebhookDeliveryID(t *testin
 	}
 }
 
-func TestGitHubCIObservationUsesCamelCasePayloadFields(t *testing.T) {
-	action, conclusion := "completed", "success"
+func TestGitHubCommitObservationsUseNativeCamelCasePayloadFields(t *testing.T) {
+	conclusion := "success"
 	startedAt := time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
-	observation := GitHubCIObservation{
-		RepositoryID: 22, HeadSHA: strings.Repeat("a", 40), Event: EventCheckRun, Action: &action,
-		CheckAppID: 1001, ID: 42, Name: "build", Status: "completed", Conclusion: &conclusion,
+	checkRun := GitHubCheckRun{
+		RepositoryID: 22, HeadSHA: strings.Repeat("a", 40), AppID: 1001, ID: 42, Name: "build",
+		Status: CheckRunCompleted, Conclusion: &conclusion,
 		DetailsURL: "https://example.test/checks/42", StartedAt: &startedAt,
 	}
-	encoded, err := json.Marshal(observation)
+	encoded, err := json.Marshal(checkRun)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"repositoryId":22,"headSha":"` + strings.Repeat("a", 40) + `","event":"check_run","action":"completed","checkAppId":1001,"id":42,"name":"build","status":"completed","conclusion":"success","detailsUrl":"https://example.test/checks/42","startedAt":"2026-10-27T10:00:00Z"}`
+	want := `{"repositoryId":22,"headSha":"` + strings.Repeat("a", 40) + `","id":42,"appId":1001,"name":"build","status":"completed","conclusion":"success","detailsUrl":"https://example.test/checks/42","startedAt":"2026-10-27T10:00:00Z"}`
 	requireEqual(t, string(encoded), want)
+
+	commitStatus := GitHubCommitStatus{
+		RepositoryID: 22, SHA: strings.Repeat("b", 40), ID: 52, Context: "ci/unit",
+		State: CommitStatusSuccess, TargetURL: "https://example.test/status/52",
+	}
+	encoded, err = json.Marshal(commitStatus)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = `{"repositoryId":22,"sha":"` + strings.Repeat("b", 40) + `","id":52,"context":"ci/unit","state":"success","targetUrl":"https://example.test/status/52"}`
+	requireEqual(t, string(encoded), want)
+}
+
+func TestGitHubCommitObservationSelectionIsPROnlyAndRespectsCheckRunPolicy(t *testing.T) {
+	for name, source := range map[string]GitHubSource{
+		"branch default": {Repository: "owner/repo", Subject: BranchSubject{Name: "main"}},
+		"commit with explicit selectors": {
+			Repository: "owner/repo", Subject: CommitSubject{SHA: strings.Repeat("a", 40)},
+			Events: []EventFilter{{Event: EventCheckRun}, {Event: EventStatus}},
+		},
+	} {
+		if source.CheckRunObservationsSelected() || source.CommitStatusObservationsSelected() {
+			t.Errorf("%s source selected generated PR commit facts", name)
+		}
+	}
+	defaultPR := GitHubSource{Repository: "owner/repo", Subject: PullRequestSubject{Number: 1}}
+	if !defaultPR.CheckRunObservationsSelected() || !commitObservationSelection(defaultPR).CompletedCheckRunsOnly ||
+		!defaultPR.CommitStatusObservationsSelected() {
+		t.Error("default PR source should select completed checks and commit statuses")
+	}
+	unfiltered := GitHubSource{Repository: "owner/repo", Subject: PullRequestSubject{Number: 1}, Events: []EventFilter{{Event: EventCheckRun}}}
+	if !unfiltered.CheckRunObservationsSelected() || commitObservationSelection(unfiltered).CompletedCheckRunsOnly {
+		t.Error("unfiltered check-run PR source should select all native check-run states")
+	}
+	actionOnly := GitHubSource{Repository: "owner/repo", Subject: PullRequestSubject{Number: 1}, Events: []EventFilter{{Event: EventCheckRun, Actions: []string{"created"}}}}
+	if actionOnly.CheckRunObservationsSelected() {
+		t.Error("action-filtered check-run PR source should select raw actions only")
+	}
 }

@@ -477,62 +477,72 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 		}
 	}
 	if common.repository != nil && found.sha != nil {
-		ci, err := webhookCI(body, event, common.action, *found.sha)
-		if err != nil {
-			return store.GitHubIngest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
-		}
-		if ci != nil {
-			ci.RepositoryID = common.repository.ID
-			ingest.CI = []store.GitHubCIObservation{*ci}
+		switch event {
+		case string(store.EventCheckRun):
+			checkRun, err := webhookCheckRun(body, common.action, *found.sha)
+			if err != nil {
+				return store.GitHubIngest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
+			}
+			if checkRun != nil {
+				checkRun.RepositoryID = common.repository.ID
+				ingest.CheckRun = checkRun
+			}
+		case string(store.EventStatus):
+			commitStatus, err := webhookCommitStatus(body, *found.sha)
+			if err != nil {
+				return store.GitHubIngest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
+			}
+			if commitStatus != nil {
+				commitStatus.RepositoryID = common.repository.ID
+				ingest.CommitStatus = commitStatus
+			}
 		}
 	}
 	return ingest, nil
 }
 
-// A webhook may carry only correlation fields. Preserve those as raw activity; complete state
+// A check webhook may carry only correlation fields. Preserve those as raw activity; complete state
 // observations share normalization with polling so the same change has one durable identity.
-func webhookCI(body object, event string, action *string, sha string) (*store.GitHubCIObservation, error) {
-	switch event {
-	case string(store.EventCheckRun):
-		if action == nil || (*action != "created" && *action != "in_progress" && *action != "completed") {
-			return nil, nil
-		}
-		check, err := body.object("check_run", "body")
-		if err != nil {
-			return nil, err
-		}
-		if check.present("id") == nil || check.present("name") == nil || check.present("status") == nil {
-			return nil, nil
-		}
-		var run github.CheckRun
-		if err := json.Unmarshal(body["check_run"], &run); err != nil {
-			return nil, err
-		}
-		observation, err := checkRunObservation(&run, sha)
-		if err != nil {
-			return nil, err
-		}
-		// A check may be created already completed. Preserve the actual activity selector;
-		// polling can independently observe its completed state for completed-only subscribers.
-		if observation.Action == nil || *observation.Action != *action {
-			return nil, nil
-		}
-		return &observation, nil
-	case string(store.EventStatus):
-		if body.present("id") == nil || body.present("context") == nil || body.present("state") == nil {
-			return nil, nil
-		}
-		raw, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		var status github.RepoStatus
-		if err := json.Unmarshal(raw, &status); err != nil {
-			return nil, err
-		}
-		observation, err := statusObservation(&status, sha)
-		return &observation, err
-	default:
+func webhookCheckRun(body object, action *string, sha string) (*store.GitHubCheckRun, error) {
+	if action == nil || (*action != "created" && *action != "in_progress" && *action != "completed") {
 		return nil, nil
 	}
+	check, err := body.optionalObject("check_run", "body")
+	if err != nil {
+		return nil, err
+	}
+	if check == nil || check.present("id") == nil || check.present("head_sha") == nil ||
+		check.present("name") == nil || check.present("status") == nil {
+		return nil, nil
+	}
+	var run github.CheckRun
+	if err := json.Unmarshal(body["check_run"], &run); err != nil {
+		return nil, err
+	}
+	observation, err := checkRunObservation(&run, sha)
+	if err != nil {
+		return nil, err
+	}
+	// A check may be created already completed. Keep its state independent from the raw webhook action.
+	return &observation, nil
+}
+
+// A status webhook may carry only correlation fields. Preserve those as raw activity.
+func webhookCommitStatus(body object, sha string) (*store.GitHubCommitStatus, error) {
+	if body.present("id") == nil || body.present("context") == nil || body.present("state") == nil {
+		return nil, nil
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	var status github.RepoStatus
+	if err := json.Unmarshal(raw, &status); err != nil {
+		return nil, err
+	}
+	observation, err := statusObservation(&status, sha)
+	if err != nil {
+		return nil, err
+	}
+	return &observation, nil
 }

@@ -255,21 +255,21 @@ func (g *GitHubState) Acquire(ctx context.Context, key GitHubRefreshKey) (*GitHu
 		if err := githubLock(ctx, tx); err != nil {
 			return err
 		}
-		var ciGeneration *int64
-		var ciHeadSHA string
-		if ci, ok := key.(GitHubCIRefreshKey); ok {
-			if err := ensureGitHubCIRefresh(ctx, tx, ci); err != nil {
+		var commitGeneration *int64
+		var commitHeadSHA string
+		if commit, ok := key.(GitHubCommitRefreshKey); ok {
+			if err := ensureGitHubCommitRefresh(ctx, tx, commit); err != nil {
 				return err
 			}
-			generation, headSHA, err := githubCIParent(ctx, tx, ci)
+			generation, headSHA, err := githubCommitParent(ctx, tx, commit)
 			if err != nil {
 				return err
 			}
 			if headSHA == "" {
 				return nil
 			}
-			ciGeneration = &generation
-			ciHeadSHA = headSHA
+			commitGeneration = &generation
+			commitHeadSHA = headSHA
 		}
 		row, err := loadRefresh(ctx, tx, key)
 		if err != nil {
@@ -312,7 +312,7 @@ func (g *GitHubState) Acquire(ctx context.Context, key GitHubRefreshKey) (*GitHu
 		}
 		lease = &GitHubRefreshLease{
 			Key: key, Claim: claim, Generation: row.generation, InstallationGeneration: installation,
-			SubjectGeneration: ciGeneration, HeadSHA: ciHeadSHA,
+			SubjectGeneration: commitGeneration, HeadSHA: commitHeadSHA,
 		}
 		return nil
 	})
@@ -354,8 +354,8 @@ func leased(ctx context.Context, tx *sql.Tx, lease GitHubRefreshLease) (refreshR
 		}
 		current = lease.InstallationGeneration != nil && generation == *lease.InstallationGeneration
 	}
-	if ci, ok := lease.Key.(GitHubCIRefreshKey); ok && current {
-		generation, headSHA, err := githubCIParent(ctx, tx, ci)
+	if commit, ok := lease.Key.(GitHubCommitRefreshKey); ok && current {
+		generation, headSHA, err := githubCommitParent(ctx, tx, commit)
 		if err != nil {
 			return refreshRow{}, err
 		}
@@ -377,8 +377,9 @@ type GitHubSuccess struct {
 	Revisions []GitHubHeadRevision
 	// RepositoryName is the repository's current name, for an access refresh that read it.
 	RepositoryName *string
-	// CI is nil when CI was not read and nonnil (including an empty slice) when the requested SHA checks were read.
-	CI []GitHubCIObservation
+	// These are nil when their endpoint was not read and nonnil (including empty) on a successful endpoint read.
+	CheckRuns      []GitHubCheckRun
+	CommitStatuses []GitHubCommitStatus
 }
 
 // Succeed records a refresh and releases the lease. It fails with *RefreshDeferredError, recording nothing,
@@ -398,25 +399,28 @@ func (g *GitHubState) Succeed(ctx context.Context, lease GitHubRefreshLease, suc
 		if !valid {
 			return &RefreshDeferredError{Until: now()}
 		}
-		if ci, ok := lease.Key.(GitHubCIRefreshKey); ok {
-			if success.CI == nil {
-				return errors.New("a CI refresh success must distinguish an empty observation from no CI read")
+		if commit, ok := lease.Key.(GitHubCommitRefreshKey); ok {
+			if commit.Event == EventCheckRun && (success.CheckRuns == nil || success.CommitStatuses != nil) {
+				return errors.New("a check-run refresh success must include only the check-run result")
+			}
+			if commit.Event == EventStatus && (success.CommitStatuses == nil || success.CheckRuns != nil) {
+				return errors.New("a status refresh success must include only the commit-status result")
 			}
 			baseFence := false
 			for _, fence := range success.Fences {
-				if fence.Key.AppID == ci.AppID && fence.Key.InstallationID == ci.InstallationID &&
-					fence.Key.RepositoryID == ci.Subject.RepositoryID {
+				if fence.Key.AppID == commit.AppID && fence.Key.InstallationID == commit.InstallationID &&
+					fence.Key.RepositoryID == commit.Subject.RepositoryID {
 					baseFence = true
 					break
 				}
 			}
 			if !baseFence {
-				return errors.New("a CI refresh requires its pull request repository access fence")
+				return errors.New("a commit observation refresh requires its pull request repository access fence")
 			}
 			if len(success.Revisions) != 0 || success.PullRequest != nil || success.RepositoryName != nil {
-				return errors.New("a CI refresh cannot record another GitHub refresh result")
+				return errors.New("a commit observation refresh cannot record another GitHub refresh result")
 			}
-			parentGeneration, headSHA, err := githubCIParent(ctx, tx, ci)
+			parentGeneration, headSHA, err := githubCommitParent(ctx, tx, commit)
 			if err != nil {
 				return err
 			}
@@ -434,21 +438,21 @@ func (g *GitHubState) Succeed(ctx context.Context, lease GitHubRefreshLease, suc
 				return err
 			}
 			changed := false
-			for _, observation := range success.CI {
-				if observation.HeadSHA != headSHA {
+			observe := func(repositoryID int64, sha string, record func(int64) (bool, error)) error {
+				if sha != headSHA {
 					return &RefreshDeferredError{Until: now()}
 				}
 				var installationID int64
 				for _, fence := range success.Fences {
-					if fence.Key.AppID == ci.AppID && fence.Key.RepositoryID == observation.RepositoryID {
+					if fence.Key.AppID == commit.AppID && fence.Key.RepositoryID == repositoryID {
 						installationID = fence.Key.InstallationID
-						if observation.RepositoryID == ci.Subject.RepositoryID && installationID == ci.InstallationID {
+						if repositoryID == commit.Subject.RepositoryID && installationID == commit.InstallationID {
 							break
 						}
 					}
 				}
 				if installationID == 0 {
-					return errors.New("CI observation repository has no matching access fence")
+					return errors.New("commit observation repository has no matching access fence")
 				}
 				var current bool
 				if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
@@ -456,20 +460,38 @@ func (g *GitHubState) Succeed(ctx context.Context, lease GitHubRefreshLease, suc
 						ON p.repository_id = r.repository_id AND p.number::text = r.subject_key
 					WHERE r.repository_id = $1 AND r.kind = 'pull_request' AND r.subject_key = $2
 						AND r.head_repository_id = $3 AND r.sha = $4 AND p.head_sha = $4)`,
-					ci.Subject.RepositoryID, ci.Subject.Key, observation.RepositoryID, observation.HeadSHA).Scan(&current); err != nil {
+					commit.Subject.RepositoryID, commit.Subject.Key, repositoryID, sha).Scan(&current); err != nil {
 					return err
 				}
 				if !current {
 					return &RefreshDeferredError{Until: now()}
 				}
-				didChange, err := observeGitHubCI(ctx, tx, ci.AppID, installationID, observation, at)
+				didChange, err := record(installationID)
 				if err != nil {
 					return err
 				}
 				changed = changed || didChange
+				return nil
+			}
+			if commit.Event == EventCheckRun {
+				for _, run := range success.CheckRuns {
+					if err := observe(run.RepositoryID, run.HeadSHA, func(installationID int64) (bool, error) {
+						return observeGitHubCheckRun(ctx, tx, commit.AppID, installationID, run, at)
+					}); err != nil {
+						return err
+					}
+				}
+			} else {
+				for _, status := range success.CommitStatuses {
+					if err := observe(status.RepositoryID, status.SHA, func(installationID int64) (bool, error) {
+						return observeGitHubCommitStatus(ctx, tx, commit.AppID, installationID, status, at)
+					}); err != nil {
+						return err
+					}
+				}
 			}
 			if changed {
-				if err := wakeGitHubInboxes(ctx, tx, ci.AppID); err != nil {
+				if err := wakeGitHubInboxes(ctx, tx, commit.AppID); err != nil {
 					return err
 				}
 				return notify(ctx, tx)

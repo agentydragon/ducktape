@@ -40,9 +40,10 @@ type GitHubSubjectStatus struct {
 // repository's and those of every repository holding a revision of its subject, and the subject.
 type GitHubStatus struct {
 	// Access is ordered by repository, then installation.
-	Access  []GitHubAccessStatus
-	Subject GitHubSubjectStatus
-	CI      *GitHubRefreshStatus
+	Access         []GitHubAccessStatus
+	Subject        GitHubSubjectStatus
+	CheckRuns      *GitHubRefreshStatus
+	CommitStatuses *GitHubRefreshStatus
 }
 
 func (row refreshRow) status() (GitHubRefreshStatus, error) {
@@ -138,18 +139,24 @@ func loadGitHubStatus(ctx context.Context, q querier, subscription *Subscription
 		return err
 	}
 	if subject.Kind == "pull_request" {
-		ciRow, err := loadRefresh(ctx, q, GitHubCIRefreshKey{
-			AppID: app, InstallationID: installation, Subject: subject,
-		})
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if err == nil {
-			ciStatus, err := ciRow.status()
-			if err != nil {
+		for _, event := range []EventName{EventCheckRun, EventStatus} {
+			row, err := loadRefresh(ctx, q, GitHubCommitRefreshKey{
+				AppID: app, InstallationID: installation, Subject: subject, Event: event,
+			})
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
-			status.CI = &ciStatus
+			if err == nil {
+				refresh, err := row.status()
+				if err != nil {
+					return err
+				}
+				if event == EventCheckRun {
+					status.CheckRuns = &refresh
+				} else {
+					status.CommitStatuses = &refresh
+				}
+			}
 		}
 	}
 	subscription.GitHub = &status

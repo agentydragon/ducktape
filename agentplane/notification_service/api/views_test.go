@@ -115,29 +115,47 @@ func TestGitHubObservationIdentityViewRoundTrips(t *testing.T) {
 	}
 }
 
-func TestGitHubCIRefreshStatusView(t *testing.T) {
+func TestGitHubRefreshStatusViewsSeparateCheckRunsAndCommitStatuses(t *testing.T) {
 	lastSuccess := time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
 	errorSince := lastSuccess.Add(time.Minute)
 	errorObserved := errorSince.Add(time.Second)
 	retryAt := errorObserved.Add(time.Minute)
 	refreshingUntil := retryAt.Add(time.Minute)
+	statusesLastSuccess := lastSuccess.Add(time.Hour)
+	statusesErrorSince := statusesLastSuccess.Add(time.Minute)
+	statusesErrorObserved := statusesErrorSince.Add(time.Second)
+	statusesRetryAt := statusesErrorObserved.Add(time.Minute)
+	statusesRefreshingUntil := statusesRetryAt.Add(time.Minute)
 	status, err := githubStatusView(&store.GitHubStatus{
 		Subject: store.GitHubSubjectStatus{Key: store.GitHubSubjectKey{RepositoryID: 22, Kind: "pull_request", Key: "7"}},
-		CI: &store.GitHubRefreshStatus{
+		CheckRuns: &store.GitHubRefreshStatus{
 			LastSuccessAt: &lastSuccess,
 			Failure: &store.SourceFailure{
 				Kind: store.FailureRateLimited, Message: "rate limited", Since: errorSince, ObservedAt: errorObserved,
 			},
 			RetryAt: &retryAt, RefreshingUntil: &refreshingUntil,
 		},
+		CommitStatuses: &store.GitHubRefreshStatus{
+			LastSuccessAt: &statusesLastSuccess,
+			Failure: &store.SourceFailure{
+				Kind: store.FailureAccessDenied, Message: "statuses denied", Since: statusesErrorSince, ObservedAt: statusesErrorObserved,
+			},
+			RetryAt: &statusesRetryAt, RefreshingUntil: &statusesRefreshingUntil,
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.GetCi() == nil || status.GetCi().GetErrorKind() != notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_RATE_LIMITED ||
-		status.GetCi().GetError() != "rate limited" || status.GetCi().GetLastSuccessAt().AsTime() != lastSuccess ||
-		status.GetCi().GetErrorSince().AsTime() != errorSince || status.GetCi().GetErrorObservedAt().AsTime() != errorObserved ||
-		status.GetCi().GetRetryAt().AsTime() != retryAt || status.GetCi().GetRefreshingUntil().AsTime() != refreshingUntil {
-		t.Errorf("CI refresh view = %v", status.GetCi())
+	if status.GetCheckRuns() == nil || status.GetCheckRuns().GetErrorKind() != notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_RATE_LIMITED ||
+		status.GetCheckRuns().GetError() != "rate limited" || status.GetCheckRuns().GetLastSuccessAt().AsTime() != lastSuccess ||
+		status.GetCheckRuns().GetErrorSince().AsTime() != errorSince || status.GetCheckRuns().GetErrorObservedAt().AsTime() != errorObserved ||
+		status.GetCheckRuns().GetRetryAt().AsTime() != retryAt || status.GetCheckRuns().GetRefreshingUntil().AsTime() != refreshingUntil {
+		t.Errorf("check-run refresh view = %v", status.GetCheckRuns())
+	}
+	if status.GetCommitStatuses() == nil || status.GetCommitStatuses().GetErrorKind() != notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_ACCESS_DENIED ||
+		status.GetCommitStatuses().GetError() != "statuses denied" || status.GetCommitStatuses().GetLastSuccessAt().AsTime() != statusesLastSuccess ||
+		status.GetCommitStatuses().GetErrorSince().AsTime() != statusesErrorSince || status.GetCommitStatuses().GetErrorObservedAt().AsTime() != statusesErrorObserved ||
+		status.GetCommitStatuses().GetRetryAt().AsTime() != statusesRetryAt || status.GetCommitStatuses().GetRefreshingUntil().AsTime() != statusesRefreshingUntil {
+		t.Errorf("commit-status refresh view = %v", status.GetCommitStatuses())
 	}
 }

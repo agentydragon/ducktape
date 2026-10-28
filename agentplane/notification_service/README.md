@@ -126,13 +126,22 @@ pull-request mergeability transitions and 1000 generated CI transitions per pass
 current pull-request snapshots remain. Old CI heads without active PR followers are pruned in bounded batches;
 current facts for an actively followed head and copied inbox payloads retain their independent lifetimes. Changing this setting does not enable the GitHub provider.
 
-Current CI/check-state repair follows `github.freshness_seconds` (default 600 seconds, configurable from 60 to
-3600 seconds via `AGENTPLANE_NOTIFICATIONS_GITHUB__FRESHNESS_SECONDS`). Worker scheduling, GitHub API or access
-failures, and rate-limit backoff can extend the interval; GitHub state propagation has no guaranteed settling
-time. It observes current state for followed PR heads and does not reconstruct full event history; the existing
-pull-request subscription command and default filters are unchanged. Branch and fixed-commit CI notifications
-continue to use raw webhook events. See the [agent GitHub guide](docs/agents/github.md#follow-github-activity) for
-the inbox identity and payload shape.
+Current check-run and commit-status repair follows `github.freshness_seconds` (default 600 seconds, configurable
+from 60 to 3600 seconds via `AGENTPLANE_NOTIFICATIONS_GITHUB__FRESHNESS_SECONDS`). Worker scheduling, GitHub API
+or access failures, and rate-limit backoff can extend the interval; GitHub state propagation has no guaranteed
+settling time. It observes current facts for followed PR heads, not full event or action history. PR defaults
+continue to report completed check-run facts and all commit statuses; an explicitly unfiltered `check_run` filter
+reports all observed check-run states. Explicit action filters select actual webhook actions only; repair does not
+invent `created`, `in_progress` or `completed` actions. The existing pull-request subscription command and default
+filters are unchanged. Branch and fixed-commit CI notifications continue to use raw webhook events. See the
+[agent GitHub guide](docs/agents/github.md#follow-github-activity) for identity, payload and filter details.
+
+Migration 00007 copies the landed aggregate recovery tables into native-resource storage, preserving observation
+sequences, payloads, subscription boundaries and pending snapshots. It retains the legacy tables and columns;
+both event logs use GitHub retention. Stop legacy GitHub workers before applying this copy and starting the new
+writers, so writes cannot continue in the old tables after the copy. Keep the reader-capable image available for
+rollback with its GitHub provider disabled, and preserve the migrated database. Existing notifications retain
+their original payload shape; only new facts use the native resource fields.
 
 The migration gives existing deliveries its own timestamp because their actual ingestion times
 were not recorded. They first become eligible after the configured retention interval from migration.
@@ -181,9 +190,10 @@ installation tokens request it alongside Metadata, Contents and Pull requests re
 are opt-in; ordinary issue subscriptions default to lifecycle events and comments. See the
 [ingestion and matching contract](docs/api.md#github-webhook-ingestion-and-matching).
 
-Current PR CI/check-state repair uses a separate installation-token profile requesting only Checks and Commit
-statuses read. These permissions are not added to the ordinary notification-read token profile. If an installation
-cannot grant the CI profile, its CI refresh reports the access error without blocking ordinary webhook processing.
+Current PR check-run and commit-status repair use independent installation-token profiles requesting Checks read
+and Commit statuses read respectively. These permissions are not added to the ordinary notification-read token
+profile. If an installation cannot grant one repair profile, that refresh reports the access error while the other
+resource and ordinary webhook processing continue.
 
 ### GitHub API transport overrides
 

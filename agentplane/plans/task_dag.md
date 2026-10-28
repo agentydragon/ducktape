@@ -248,8 +248,8 @@ freshness problem is independent of the broader missed-event recovery decision.
 ```mermaid
 flowchart LR
     GITHUB_MERGEABILITY_FRESHNESS[Ready: obtain fresh results after base-only changes]
-    GITHUB_CI_RECOVERY[In flight: current CI and check state recovery]
-    GITHUB_REVIEW_LIFECYCLE_RECOVERY[Next: review and PR lifecycle recovery]
+    GITHUB_CI_RECOVERY[In flight: native check-run and commit-status follow-up]
+    GITHUB_REVIEW_LIFECYCLE_RECOVERY[In review: review and PR lifecycle recovery]
     GITHUB_NOTIFICATION_RECOVERY[Capstone: eventual current PR state awareness]
     GITHUB_CI_RECOVERY --> GITHUB_NOTIFICATION_RECOVERY
     GITHUB_REVIEW_LIFECYCLE_RECOVERY --> GITHUB_NOTIFICATION_RECOVERY
@@ -308,10 +308,14 @@ new scheduler is required.
 
 ### `GITHUB_CI_RECOVERY` — repair current check runs and commit statuses
 
-**In flight; Codex, 2026-10-27 PDT.** Reconcile paginated check runs and latest commit-status contexts
-for the observed PR head in its authorized repositories. Reuse the `check_run` and `status` selectors;
-normalize webhook and polling facts to shared durable identities. Give CI its own refresh deadline
-and coverage/error status so pending mergeability neither blocks recovery nor accelerates CI reads.
+**Baseline merged: [#12414](https://github.com/agentydragon/ducktape/pull/12414); native-resource follow-up in flight;
+Codex, 2026-10-27 PDT.**
+Reconcile paginated check runs and latest commit-status contexts as separate native records for the
+observed PR head in its authorized repositories. Give each resource independent refresh/error state
+so a failure in one does not block the other and pending mergeability does not accelerate either read.
+Normalize webhook and polling facts to shared durable identities. Preserve native status values;
+webhook actions describe actual activities. Default observations select completed check runs, explicit
+unfiltered check-run selection follows all observed states, and explicit action filters stay activity-only.
 Keep existing raw branch/commit activity and unsupported webhook categories unchanged.
 
 Exit: suppressed CI webhooks recover after a durable deadline/restart; webhook/poll races deduplicate;
@@ -321,7 +325,8 @@ copies keep their independent lifetimes. Include the schema rollout and rollback
 
 ### `GITHUB_REVIEW_LIFECYCLE_RECOVERY` — repair review and PR lifecycle state
 
-**Next; Codex, 2026-10-27 PDT.** Add submitted/dismissed review observations and OPEN/CLOSED/MERGED
+**Under review: [#12420](https://github.com/agentydragon/ducktape/pull/12420); Codex, 2026-10-27 PDT.**
+Add submitted/dismissed review observations and OPEN/CLOSED/MERGED
 PR lifecycle observations in a separate PR, using the CI slice's generated identity and durable
 fan-out boundaries. Keep review IDs, reviewer identity and evaluated commit explicit; do not equate
 one approval with satisfaction of repository review rules. Respect the existing review/lifecycle

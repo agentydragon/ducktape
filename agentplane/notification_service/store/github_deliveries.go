@@ -51,6 +51,10 @@ type GitHubMatch struct {
 	// Subject is the subject followed, in the repository the subscription is bound to.
 	Subject GitHubSubjectKey
 	Filters []EventFilter
+	// Observation selection controls raw suppression for native commit events. Explicit check-run action filters
+	// keep matching raw webhook actions and do not select generated check-run facts.
+	ObserveCheckRuns      bool
+	ObserveCommitStatuses bool
 	// Fences are the grants the subscription may read under: a delivery of a repository outside them is not
 	// owed, however it matches.
 	Fences []GitHubAccessFence
@@ -113,9 +117,18 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 				AND ds.subject_key = ` + key + `) OR ` + about
 	}
 	subscription, inbox := args.add(match.SubscriptionID), args.add(match.InboxID)
-	excludeNormalizedCI := ""
+	excludeNormalizedCommit := ""
 	if match.Subject.Kind == "pull_request" {
-		excludeNormalizedCI = `AND NOT (d.ci_normalized AND d.event IN ('check_run', 'status'))`
+		var excluded []string
+		if match.ObserveCheckRuns {
+			excluded = append(excluded, `(d.commit_normalized AND d.event = 'check_run')`)
+		}
+		if match.ObserveCommitStatuses {
+			excluded = append(excluded, `(d.commit_normalized AND d.event = 'status')`)
+		}
+		if len(excluded) > 0 {
+			excludeNormalizedCommit = "AND NOT (" + strings.Join(excluded, " OR ") + ")"
+		}
 	}
 	// The whole identity is compared, so the inbox/event unique index serves the lookup.
 	rows, err := s.db.QueryContext(ctx, `
@@ -125,7 +138,7 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 			AND (`+strings.Join(accessible, " OR ")+`)
 			AND (`+strings.Join(selected, " OR ")+`)
 			AND (`+about+`)
-			`+excludeNormalizedCI+`
+			`+excludeNormalizedCommit+`
 			AND d.position > (SELECT github_start_position FROM subscription WHERE id = `+subscription+`)
 			AND NOT EXISTS (
 				SELECT 1 FROM subscription_match m
@@ -230,13 +243,13 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 		if err != nil {
 			return err
 		}
-		ciCount, ciMore, err := s.recordGitHubCI(ctx, tx, claim.ID, recording)
+		commitCount, commitMore, err := s.recordGitHubCommitObservations(ctx, tx, claim.ID, recording)
 		if err != nil {
 			return err
 		}
 		// Ingress that committed since the subscription was read must not be overwritten by an idle schedule.
 		next := recording.RepairAt
-		if recording.More || mergeabilityMore || ciMore || generation != recording.Generation {
+		if recording.More || mergeabilityMore || commitMore || generation != recording.Generation {
 			next = now()
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -245,7 +258,7 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 			WHERE id = $1`, recording.SubscriptionID, next, now()); err != nil {
 			return err
 		}
-		if len(recording.Matched) > 0 || mergeabilityCount > 0 || ciCount > 0 {
+		if len(recording.Matched) > 0 || mergeabilityCount > 0 || commitCount > 0 {
 			if _, err := tx.ExecContext(ctx, `UPDATE inbox SET updated_at = $2 WHERE id = $1`, claim.ID, now()); err != nil {
 				return err
 			}

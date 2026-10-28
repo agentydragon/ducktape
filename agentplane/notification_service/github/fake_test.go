@@ -55,7 +55,7 @@ type fakeResponse struct {
 
 // fakeGitHub serves the endpoints the client reads, and fails the test on any request that does not carry the
 // headers and credentials GitHub requires: a valid App JWT on the installation and token endpoints, the
-// installation token on everything else, and an all-read permission set when minting.
+// installation token on everything else, and the exact read permissions for the selected profile when minting.
 type fakeGitHub struct {
 	t          *testing.T
 	apiVersion string
@@ -183,9 +183,11 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request, path string, 
 			f.t.Errorf("token request body: %v", err)
 		}
 		corePermissions := map[string]string{"metadata": "read", "contents": "read", "pull_requests": "read", "issues": "read"}
-		ciPermissions := map[string]string{"checks": "read", "statuses": "read"}
-		if !samePermissions(body.Permissions, corePermissions) && !samePermissions(body.Permissions, ciPermissions) {
-			f.t.Errorf("token permissions = %v, want the existing read set or the CI-only read set", body.Permissions)
+		checkRunsPermissions := map[string]string{"checks": "read"}
+		commitStatusesPermissions := map[string]string{"statuses": "read"}
+		if !samePermissions(body.Permissions, corePermissions) && !samePermissions(body.Permissions, checkRunsPermissions) &&
+			!samePermissions(body.Permissions, commitStatusesPermissions) {
+			f.t.Errorf("token permissions = %v, want the core, Checks-only, or Commit-statuses-only read set", body.Permissions)
 		}
 		reply(http.StatusCreated, fmt.Sprintf(`{"token": %q, "expires_at": %q}`,
 			installationToken, time.Now().Add(time.Hour).UTC().Format(time.RFC3339)))
