@@ -45,6 +45,22 @@ Read other bundled references as needed:
 - Use `debundle_integrator` for merge trains of worker commits.
 - Use `debundle_mint_names` for naming-only passes.
 
+## Snapshot Handoffs
+
+For each lane, follow the snapshot-backed adapter contract in
+`references/workflow.md`. Run and record the baseline pipeline, create a
+separate worker snapshot, and verify it before dispatch. Give the worker its
+baseline manifest, copied engine and relocated graph/spec/source/package
+roots, exact regeneration `argv` and command working directory, permitted YAML
+scope, and distinct proposed-assignment, post-edit, runtime and CI checks.
+State unsupported relocation explicitly.
+
+Collect the worker's baseline manifest, relative YAML patch and execution
+records, including actual outcomes and the proof each check covers. The CLI
+guide's "Resolved invocation records" section explains the record fields:
+`--print-invocation` does not dispatch the command, and `--invocation-out`
+records it before execution, so neither alone proves a check passed.
+
 Do not absorb specialist work when it becomes substantial. If you are reading
 many source bodies, dispatch intake. If you are redesigning module shape,
 dispatch the architect. If you are hand-landing worker commits one by one,

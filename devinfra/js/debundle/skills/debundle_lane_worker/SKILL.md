@@ -30,17 +30,27 @@ Read other bundled references as needed:
 The orchestrator or project adapter provides:
 
 - worktree root and expected base SHA
+- this worker's unique snapshot directory, starting manifest, baseline graph
+  and input identity, and successful pre-edit `snapshot verify` result
 - assignment with source-unit IDs, binding IDs, proposed destination, and notes
-- `<graph>`, `<modules-dir>`, `<emitted-js-root>`, and optional source root
+- copied engine, graph, spec/source roots, tree config, modules path and
+  relocated graph package-root map; exact regeneration `argv` and command
+  working directory
+- `<emitted-js-root>` and optional selector source root
+- exact operation-specific chunk/YAML scope and separate baseline pipeline,
+  proposed-assignment, regeneration, runtime and CI checks/results
 - project conventions/taxonomy docs
 - exact gate, regen, uniqueness-check, and commit expectations
 
 ## Procedure
 
-1. Confirm the worktree is at the expected base before editing.
-2. Check the assignment against the current graph with `debundle describe`
-   and `debundle inspect-source --id`; if needed, scan with `debundle atoms`,
-   `coverage`, or `cluster <sym>` (see the shared CLI guide above).
+1. Confirm the worktree is at the expected base and the worker snapshot passes
+   its starting-state `snapshot verify`. Keep the supplied manifest as the
+   baseline record. Use the copied engine and copied roots/package map for all
+   graph-backed commands, including `describe`, `inspect-source --id`,
+   `atoms`, `coverage`, and `cluster <sym>`; see the CLI guide's snapshot
+   section for relocation flags.
+2. Check the assignment against that graph and source evidence.
 3. Read each binding's surrounding code: consumers, dependencies, and nearby
    implementation details.
 4. Choose a module boundary that looks like a real JavaScript seam under the
@@ -82,8 +92,20 @@ propose` and `modules apply` so each sees only the graph chunk's mapped
 
 6. Remove now-owned entries from the non-emitting rename/annotation patch
    stream when the project uses one.
-7. Run the adapter-provided uniqueness check, gate, and regen commands.
+7. Run the proposed-assignment gate, then the adapter's regeneration,
+   uniqueness and runtime checks, plus CI when applicable. Record each result
+   separately.
 8. Commit one reviewable branch and report the result.
+
+Export the exact YAML delta from the worker snapshot into the branch as the
+reviewable patch. The snapshot run is the validation source; the branch commit
+transports the patch and does not replace its execution records.
+
+An accepted YAML edit makes the saved graph describe the pre-edit spec. Before
+any later graph-backed query or edit, run the adapter's regeneration `argv`
+from the worker copy, then use the newly generated graph and copied roots.
+The starting `snapshot verify` is expected to fail after edits; do not use it
+as a post-edit gate.
 
 ## Boundary Heuristics
 
@@ -116,7 +138,17 @@ assigned source unit still belongs to a larger atomic group that should move tog
 Keep the report short:
 
 - branch and commit hash
-- gate and regen result
+- starting snapshot manifest and baseline graph/input identity
+- relative YAML additions, modifications and deletions (with the reviewed
+  patch or changed file contents)
+- exact executed command records (`argv`, `cwd`), with actual exit status,
+  `stdout`, `stderr`, result artifacts, and which proof each command covers;
+  separate baseline pipeline,
+  proposed assignment, regeneration, runtime and CI results
 - destinations changed and bindings moved
 - skipped proposals or units and why
 - architecture or intake follow-ups discovered
+
+The CLI guide's "Resolved invocation records" section describes recording an
+executed command. A `--print-invocation` plan or a pre-dispatch
+`--invocation-out` file does not prove the operation ran or passed.

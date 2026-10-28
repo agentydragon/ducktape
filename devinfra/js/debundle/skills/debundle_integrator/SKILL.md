@@ -25,8 +25,10 @@ Read other bundled references as needed:
 
 The orchestrator provides:
 
-- base branch and starting SHA
-- ordered worker commits or branches
+- isolated integration state, receiving SHA, and its graph/source/spec/engine
+  identity
+- each worker's starting snapshot manifest and pre-edit verification result,
+  relative YAML patch, and exact validation records/results
 - exact gate and regen commands
 - expected conflict policy for module YAML, patch streams, and generated JS
 - whether pushing is allowed
@@ -35,11 +37,19 @@ The orchestrator provides:
 
 When workers reported green gates and assignments are mostly disjoint:
 
-1. Apply all worker commits in order onto the base branch.
-2. Resolve routine conflicts by preserving the union of independent spec
+1. Before applying any patch, verify that the receiving graph, source, spec
+   inputs and engine match every worker's starting snapshot identity. If any
+   differ, reject that worker result, rebase or redispatch the assignment on a
+   new snapshot, and require the worker to rerun its checks.
+2. Apply the reviewed YAML patches in order to the isolated integration state.
+   A worker commit may transport the patch, but is not evidence that these
+   receiving inputs passed its checks.
+3. Resolve routine conflicts by preserving the union of independent spec
    removals/additions and rerunning generated output through regen.
-3. Run the gate once on the combined result.
-4. If green, run regen, commit the integrated result if needed, and stop.
+4. Run the combined pipeline, gate, and applicable runtime checks, recording
+   each result separately. Individual worker checks do not prove the combined
+   result.
+5. If green, commit the integrated result if needed, and stop.
 
 Push only when the orchestrator explicitly requested it.
 
@@ -47,11 +57,17 @@ Push only when the orchestrator explicitly requested it.
 
 If the combined gate fails:
 
-- restore the pre-train base
-- apply worker commits individually or by halves
-- run the gate to isolate failing commits or incompatible pairs
-- keep green commits, reject red commits, and save the exact diagnostic for
+- restore the pre-train integration state
+- apply worker patches individually or by halves
+- rerun the same combined pipeline, gate, and applicable runtime checks to
+  isolate incompatible patches
+- keep accepted patches, reject red patches, and save the exact diagnostic for
   the responsible worker
+
+Do not use `snapshot verify` on an edited worker snapshot as an acceptance
+check; it is the starting-baseline check and is expected to fail after edits.
+For actual command proof, retain the resolved invocation and its completed
+result, as described in the CLI guide's "Resolved invocation records" section.
 
 Do not silently rewrite a worker's intended spec change beyond conflict
 resolution. If the design is wrong, report it.

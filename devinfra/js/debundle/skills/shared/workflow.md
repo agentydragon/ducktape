@@ -23,6 +23,12 @@ verification gates.
 
 ## Adapter Contract
 
+The CLI guide's ["Delegating with an input
+snapshot"](docs/cli.md#delegating-with-an-input-snapshot) and ["Resolved
+invocation records"](docs/cli.md#resolved-invocation-records) sections define
+command semantics. This contract defines what the adapter and each role must
+exchange.
+
 Before starting a round, the project adapter should identify:
 
 - debundle target and graph-refresh command
@@ -33,6 +39,41 @@ Before starting a round, the project adapter should identify:
 - project convention docs and taxonomy docs
 - architecture notes and module reorg paths
 - worktree policy, base branch, commit/push policy, and scratch paths
+
+For each snapshot-backed lane worker, also supply:
+
+- a unique snapshot destination and the starting `snapshot.json`, with a
+  successful `snapshot verify` and the baseline pipeline result;
+- the exact starting graph and input identity: graph digest, provenance for
+  captured source, YAML and package inputs, engine digest verified against that
+  provenance, and the spec tree/version they describe;
+- the copied engine path, copied graph and spec/source roots, tree config,
+  modules path, relocated graph package-root map, and the exact regeneration
+  `argv`; record the working directory used for every command;
+- the worker's permitted YAML subtree and exact commands for the proposed
+  assignment, regeneration and runtime checks, plus CI when applicable. Keep
+  baseline pipeline, proposed-assignment, post-edit, runtime and CI results
+  distinct; mark an inapplicable check with its reason.
+
+The adapter supplies the exact operation-specific chunk and YAML scope. Do
+not infer a module subtree from a chunk ID; follow the CLI guide for the flags
+each verb accepts.
+
+For a runnable composition of one reviewed `modules merge`, starting after
+`snapshot create` and `snapshot verify`, see
+[`examples/isolated_edit.py`](examples/isolated_edit.py). It prints the plan,
+runs the dry-run, applies with invocation capture, and regenerates explicitly;
+it is an example of that edit flow, not a generic adapter framework.
+
+Use one writable snapshot per worker. A Git worktree does not isolate external
+source or package roots. A snapshot carries the graph inputs and engine, not
+the full runtime closure: adapter commands must point runtime checks at the
+specific worker or integration copies being tested, and include any required
+runtime inputs they copy. State unsupported relocation when a required input
+cannot be copied safely. A command plan or pre-dispatch invocation record is
+not proof that a command ran or passed; retain each executed command's
+resolved `argv` and `cwd`, then separately save its actual exit status,
+`stdout`, `stderr` and result artifacts.
 
 Public skills must not encode private project names or fixed app taxonomies.
 
@@ -79,8 +120,8 @@ remaining generated files.
 ## Isolation
 
 Writing agents should use isolated git worktrees and isolated build output
-bases. Read-only agents may inspect the main checkout. Integrators are the
-exception: they operate deliberately on the shared integration branch.
+bases. Read-only agents may inspect the main checkout. Integrators use a
+dedicated isolated integration state at the selected receiving revision.
 Do not modify the upstream bundle during reverse-engineering work. Project
 conventions take precedence over generic guidance.
 
@@ -88,6 +129,22 @@ Before a Git-based remote gate, stage newly authored spec, source and fixture
 files, or verify that the runner explicitly includes them. Check that the logged
 input snapshot contains those files; a run with omitted inputs does not validate
 the change.
+
+For snapshot-backed lanes, the worker runs the copied engine against the copied
+roots and package map. The initial `snapshot verify` checks the starting inputs;
+after an accepted YAML edit it is expected to fail because the snapshot has
+changed. The saved graph also describes the pre-edit YAML, so regenerate from
+the worker copy before any later graph-backed query or edit. Do not require the
+starting-state verification to pass again after editing.
+
+The worker returns its baseline manifest, relative YAML additions,
+modifications and deletions, and execution records with actual outcomes and
+the proof each result covers. Before applying those changes, the integrator
+checks that its receiving graph, source, spec and engine still match the
+worker's baseline. If they differ, reject the result and obtain fresh evidence
+from a new snapshot after rebasing or redispatching the worker. Apply changes
+in an isolated integration state, then regenerate and validate the combined
+spec; green worker checks do not prove the combined result.
 
 ## Failure Routing
 
