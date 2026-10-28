@@ -488,7 +488,6 @@ system_test(
     # every activation there fails in the executor companion instead of on the runner path.
     k3s = "scripted",
     deps = [
-        ":cleanup",
         ":cluster",
         ":conftest",
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
@@ -602,22 +601,5 @@ py_library(
         "//agentplane/app/testing:client",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "cleanup",
-    srcs = ["cleanup.py"],
-)
-
-py_test(
-    name = "test_cleanup",
-    srcs = ["test_cleanup.py"],
-    deps = [
-        ":cleanup",
-        ":conftest",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

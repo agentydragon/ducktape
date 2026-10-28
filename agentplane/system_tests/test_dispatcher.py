@@ -3,6 +3,7 @@
 import asyncio
 import json
 import sys
+import traceback
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
@@ -19,7 +20,6 @@ from agentplane.grpc.calls import dial
 from agentplane.proto import runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
-from agentplane.system_tests.cleanup import cleanup_preserving_failure
 from agentplane.system_tests.cluster import api_client, kubectl
 from agentplane.system_tests.conftest import POD_TEMPLATE, namespace
 from util.net import pick_free_port
@@ -628,7 +628,15 @@ async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notif
             finally:
                 await channel.close()
     finally:
-        await cleanup_preserving_failure(cleanup, sys.exception())
+        failure = sys.exception()
+        try:
+            await cleanup()
+        except Exception as cleanup_error:
+            if failure is None:
+                raise
+            failure.add_note(
+                "Sandbox cleanup also failed:\n" + "".join(traceback.format_exception(cleanup_error, chain=False))
+            )
     evidence["cleanup_complete"] = True
     path.write_text(json.dumps(evidence, indent=2) + "\n")
 
