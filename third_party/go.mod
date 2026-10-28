@@ -36,6 +36,13 @@ require kubevirt.io/api v1.8.2
 // Direct dependencies for agentplane/runner_gateway
 require github.com/go-logr/logr v1.4.4
 
+// Direct dependencies for agentplane/runner lifecycle orchestration
+require (
+	github.com/cosi-project/runtime v1.16.2
+	github.com/siderolabs/gen v0.8.6
+	go.uber.org/zap v1.28.0
+)
+
 // Direct dependencies for Agentplane integration-test fixtures
 require (
 	github.com/moby/moby/client v0.5.1
@@ -144,7 +151,7 @@ require (
 
 require (
 	dario.cat/mergo v1.0.2 // indirect
-	github.com/ProtonMail/go-crypto v1.3.0 // indirect
+	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/TcM1911/r2g2 v0.3.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blacktop/go-dwarf v1.0.14 // indirect
@@ -157,6 +164,7 @@ require (
 	github.com/elliotchance/orderedmap v1.4.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
+	github.com/gertd/go-pluralize v0.2.1 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.8.0 // indirect
 	github.com/go-git/go-git/v5 v5.17.0 // indirect
@@ -211,13 +219,13 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/common v0.71.0
 	github.com/prometheus/procfs v0.22.0
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.70.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.44.0
 	go.opentelemetry.io/otel/metric v1.46.0
 	go.opentelemetry.io/otel/sdk v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.68.0
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	golang.org/x/sync v0.24.0
 	golang.org/x/text v0.43.0
@@ -260,8 +268,9 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/pressly/goose/v3 v3.28.0
 	github.com/sethvargo/go-retry v0.4.0
+	github.com/siderolabs/go-pointer v1.0.1 // indirect
+	github.com/siderolabs/protoenc v0.2.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/time v0.15.0 // indirect

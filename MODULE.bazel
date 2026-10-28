@@ -1870,13 +1870,35 @@ go_sdk.nogo(nogo = "//devinfra/lint:nogo")
 
 # ─ Go dependencies ───────────────────────────────────────────────────────
 # Primary source: //third_party:go.mod (first-party Go code).
-# Extra manual go_deps.module() entries below cover BUILD-file-only Go tools.
+# Extra manual go_deps.module() entries cover modules referenced directly by generated BUILD files.
 go_deps = use_extension(
     "@bazel_gazelle//:extensions.bzl",
     "go_deps",
     dev_dependency = True,
 )
 go_deps.from_file(go_mod = "//third_party:go.mod")
+
+# COSI Runtime's generated BUILD files import this transitive module directly.
+go_deps.module(
+    path = "github.com/gertd/go-pluralize",
+    sum = "h1:M3uASbVjMnTsPb0PNqg+E/24Vwigyo/tvyMTtAlLgiA=",
+    version = "v0.2.1",
+)
+go_deps.module(
+    path = "github.com/siderolabs/gen",
+    sum = "h1:pE6shuqov3L+5rEcAUJ/kY6iJofimljQw5G95P8a5c4=",
+    version = "v0.8.6",
+)
+go_deps.module(
+    path = "github.com/siderolabs/go-pointer",
+    sum = "h1:f7Yi4IK1jptS8yrT9GEbwhmGcVxvPQgBUG/weH3V3DM=",
+    version = "v1.0.1",
+)
+go_deps.module(
+    path = "github.com/siderolabs/protoenc",
+    sum = "h1:D3Fpn2nQSQOhl8ZlAxijZAf7K6F8CM1uZq0afIGsr8Q=",
+    version = "v0.2.4",
+)
 
 # grpc-gateway ships BUILD files that load @googleapis, which the isolated go_deps
 # repository cannot see; regenerate them from the checked-in .pb.go files.
@@ -2248,12 +2270,14 @@ use_repo(
     "com_github_cheynewallace_tabby",
     "com_github_coder_websocket",
     "com_github_containerd_cgroups_v3",
+    "com_github_cosi_project_runtime",
     "com_github_coreos_go_oidc_v3",
     "com_github_docker_docker",
     "com_github_dustin_go_humanize",
     "com_github_elliotchance_orderedmap",
     "com_github_fatih_color",
     "com_github_firebase_genkit_go",
+    "com_github_gertd_go_pluralize",
     "com_github_fsouza_go_dockerclient",
     "com_github_go_git_go_git_v5",
     "com_github_go_jose_go_jose_v4",
@@ -2290,6 +2314,9 @@ use_repo(
     "com_github_schlunsen_claude_agent_sdk_go",
     "com_github_sethvargo_go_retry",
     "com_github_sherclockholmes_webpush_go",
+    "com_github_siderolabs_gen",
+    "com_github_siderolabs_go_pointer",
+    "com_github_siderolabs_protoenc",
     "com_github_spf13_cast",
     "com_github_spf13_cobra",
     "com_github_spf13_viper",
@@ -2334,6 +2361,7 @@ use_repo(
     "org_golang_x_time",
     "org_golang_x_tools",
     "org_modernc_sqlite",
+    "org_uber_go_zap",
 )
 
 # ─ BuildBuddy proto definitions (for bbapi CLI) ──────────────────────────────
