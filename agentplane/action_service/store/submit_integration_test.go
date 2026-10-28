@@ -197,9 +197,9 @@ func TestSubmissionsOfOneKeyHaveOneWinner(t *testing.T) {
 			defer other.Rollback()
 			// The competing insert is in flight and uncommitted: the submission queues behind its key.
 			if _, err := other.ExecContext(t.Context(), `
-				INSERT INTO action_request (id, idempotency_key, action, arguments, title, caller_namespace, caller_name,
+				INSERT INTO action_request (id, idempotency_key, action, action_group, action_name, arguments, title, caller_namespace, caller_name,
 					state, version, created_at, updated_at)
-				VALUES ($1, 'contended', '{"group": "test-group", "name": "test-action"}', '{}', 'test title', $2, $3,
+				VALUES ($1, 'contended', '{"group": "test-group", "name": "test-action"}', 'test-group', 'test-action', '{}', 'test title', $2, $3,
 					'decision_pending', 1, now(), now())`,
 				uuid.New(), caller.Account.Namespace, caller.Account.Name); err != nil {
 				t.Fatal(err)

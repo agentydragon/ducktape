@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -31,14 +30,9 @@ type decisionRecord struct {
 // recordDecision decides a pending request in the caller's transaction and reports whether it now awaits
 // dispatch: an allow adds the one Execution and wakes the dispatchers.
 func recordDecision(ctx context.Context, tx *sql.Tx, row *requestRow, at time.Time, decision decisionRecord) (bool, error) {
-	var evidence, evidenceProto, issuer, subject any
+	var evidenceProto, issuer, subject any
 	if decision.PolicyEvidence != nil {
-		encoded, err := json.Marshal(decision.PolicyEvidence)
-		if err != nil {
-			return false, err
-		}
-		evidence = string(encoded)
-		encoded, err = encodePolicyEvidence(decision.PolicyEvidence)
+		encoded, err := encodePolicyEvidence(decision.PolicyEvidence)
 		if err != nil {
 			return false, err
 		}
@@ -51,10 +45,10 @@ func recordDecision(ctx context.Context, tx *sql.Tx, row *requestRow, at time.Ti
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO action_decision (id, request_id, verdict, provider, operator_issuer, operator_subject,
-			decision_note, reason_code, reason_description, policy_evidence, policy_evidence_proto, idempotency_key, decided_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13)`,
+			decision_note, reason_code, reason_description, policy_evidence_proto, idempotency_key, decided_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 		uuid.New(), row.ID, decision.Verdict, decision.Provider, issuer, subject, decision.DecisionNote,
-		decision.ReasonCode, decision.ReasonDescription, evidence, evidenceProto, decision.IdempotencyKey, at); err != nil {
+		decision.ReasonCode, decision.ReasonDescription, evidenceProto, decision.IdempotencyKey, at); err != nil {
 		return false, err
 	}
 	state := action_servicepb.ActionState_ACTION_STATE_DENIED

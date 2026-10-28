@@ -65,5 +65,37 @@ def test_storage_backfill_requires_writer_rollout_confirmation(
         assert "--confirm-all-writers-dual-write" in runner.stderr
 
 
+def test_storage_validation_requires_typed_only_writer_confirmation(
+    postgres_admin_url: str, database_names: DatabaseNames
+) -> None:
+    with create_temporary_database(postgres_admin_url, database_names()) as url, _engine(url) as engine:
+        env = {"AGENTPLANE_ACTIONS_DATABASE_URL": _wire_url(url)}
+        runner = subprocess.run(
+            [str(_MIGRATOR), "validate-storage"], env=env, capture_output=True, text=True, check=False
+        )
+        assert runner.returncode == 2, (runner.stdout, runner.stderr)
+        assert "--confirm-all-writers-typed-only" in runner.stderr
+
+        runner = subprocess.run(
+            [str(_MIGRATOR), "validate-storage", "--confirm-all-writers-typed-only"],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert runner.returncode == 0, (runner.stdout, runner.stderr)
+        with engine.connect() as conn:
+            assert (
+                conn.scalar(
+                    text(
+                        "SELECT count(*) FROM pg_constraint WHERE conname IN "
+                        "('action_request_typed_identity_present', 'action_event_actor_proto_present', "
+                        "'action_decision_policy_evidence_proto_present') AND convalidated"
+                    )
+                )
+                == 3
+            )
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

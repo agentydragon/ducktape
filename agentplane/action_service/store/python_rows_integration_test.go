@@ -19,6 +19,7 @@ import (
 // insertRequest writes a pending request and the Event Python's insert listener records for it.
 func (f fixture) insertRequest(t *testing.T, id uuid.UUID, owner ServiceAccount, key string, stored storedRequest) {
 	t.Helper()
+	f.dropActionStorageProofConstraints(t)
 	f.exec(t, `
 		INSERT INTO action_request (id, idempotency_key, action, arguments, title, description, caller_namespace, caller_name,
 			state, version, created_at, updated_at)
@@ -83,7 +84,17 @@ func TestRequestsPythonStoredAreReadAndWrittenBack(t *testing.T) {
 			}
 
 			written := f.submitInput(t, caller, sent, Admission{RequestID: uuid.New()})
-			sameJSON(t, f.document(t, `SELECT action FROM action_request WHERE id = $1`, written.ID), vector.Stored.Action)
+			if legacy := f.document(t, `SELECT action FROM action_request WHERE id = $1`, written.ID); legacy != nil {
+				t.Errorf("typed-only writer stored legacy action JSON %s", legacy)
+			}
+			var group, name string
+			if err := f.db.QueryRowContext(t.Context(), `SELECT action_group, action_name FROM action_request WHERE id = $1`,
+				written.ID).Scan(&group, &name); err != nil {
+				t.Fatal(err)
+			}
+			if group != sent.Action.Group || name != sent.Action.Name {
+				t.Errorf("typed action identity = %q/%q, want %q/%q", group, name, sent.Action.Group, sent.Action.Name)
+			}
 			sameJSON(t, f.document(t, `SELECT arguments FROM action_request WHERE id = $1`, written.ID), vector.Stored.Arguments)
 			if f.count(t, `SELECT count(*) FROM action_request WHERE id = $1 AND title = $2 AND description IS NOT DISTINCT FROM $3`,
 				written.ID, vector.Stored.Title, vector.Stored.Description) != 1 {
@@ -126,7 +137,14 @@ func TestPolicyEvidencePythonStoredIsReadAndWrittenBack(t *testing.T) {
 			written := f.submitInput(t, caller, input("go-decided"), Admission{RequestID: uuid.New(), Vote: &ProviderVote{
 				Provider: "test-provider", Verdict: VerdictDeny, ReasonCode: "test_reason", Evidence: &evidence,
 			}})
-			sameJSON(t, f.document(t, `SELECT policy_evidence FROM action_decision WHERE request_id = $1`, written.ID), vector.Stored)
+			if legacy := f.document(t, `SELECT policy_evidence FROM action_decision WHERE request_id = $1`, written.ID); legacy != nil {
+				t.Errorf("typed-only writer stored legacy policy evidence JSON %s", legacy)
+			}
+			encoded := f.document(t, `SELECT policy_evidence_proto FROM action_decision WHERE request_id = $1`, written.ID)
+			got, err := decodeStoredPolicyEvidenceProto(encoded)
+			if err != nil || !reflect.DeepEqual(got, &evidence) {
+				t.Errorf("typed policy evidence = %+v, %v; want %+v", got, err, evidence)
+			}
 		})
 	}
 }
@@ -162,7 +180,22 @@ func TestActorsPythonStoredAreReadAndWrittenBack(t *testing.T) {
 			if _, err := f.Cancel(t.Context(), written.ID, owner); err != nil {
 				t.Fatal(err)
 			}
-			sameJSON(t, f.document(t, `SELECT actor FROM action_event WHERE request_id = $1 AND sequence = 2`, written.ID), vector.Stored)
+			if legacy := f.document(t, `SELECT actor FROM action_event WHERE request_id = $1 AND sequence = 2`, written.ID); legacy != nil {
+				t.Errorf("typed-only writer stored legacy actor JSON %s", legacy)
+			}
+			var encoded []byte
+			if err := f.db.QueryRowContext(t.Context(), `SELECT actor_proto FROM action_event WHERE request_id = $1 AND sequence = 2`,
+				written.ID).Scan(&encoded); err != nil {
+				t.Fatal(err)
+			}
+			var got action_servicepb.Principal
+			if err := proto.Unmarshal(encoded, &got); err != nil {
+				t.Fatal(err)
+			}
+			want := &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: owner.Account.Proto()}}
+			if !proto.Equal(&got, want) {
+				t.Errorf("typed actor = %v, want %v", &got, want)
+			}
 		})
 	}
 }

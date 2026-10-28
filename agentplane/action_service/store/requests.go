@@ -241,18 +241,12 @@ func advance(ctx context.Context, tx *sql.Tx, row *requestRow, state action_serv
 
 // appendEvent records the request's current version and state, and wakes whoever follows the request.
 func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principal) error {
-	var document any
 	var actorProto any
 	if actor != nil {
 		recorded, err := recordedActor(actor)
 		if err != nil {
 			return err
 		}
-		encoded, err := encodeStoredActor(recorded)
-		if err != nil {
-			return err
-		}
-		document = string(encoded)
 		principalBytes, err := encodeRecordedPrincipal(recorded)
 		if err != nil {
 			return err
@@ -262,9 +256,9 @@ func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principa
 		}
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO action_event (request_id, sequence, state, at, actor, actor_proto)
-			VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
-		row.ID, row.Version, storedState(row.State), row.UpdatedAt, document, actorProto); err != nil {
+		`INSERT INTO action_event (request_id, sequence, state, at, actor_proto)
+			VALUES ($1, $2, $3, $4, $5)`,
+		row.ID, row.Version, storedState(row.State), row.UpdatedAt, actorProto); err != nil {
 		return err
 	}
 	return notify(ctx, tx, UpdatesChannel, row.ID.String())
@@ -295,21 +289,17 @@ func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input Action
 			return ActionRequest{}, err
 		}
 	}
-	action, err := json.Marshal(input.Action)
-	if err != nil {
-		return ActionRequest{}, err
-	}
 	var view ActionRequest
-	err = s.transaction(ctx, func(tx *sql.Tx) error {
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		at := now()
 		row, err := scanRequest(tx.QueryRowContext(ctx, `
-			INSERT INTO action_request (id, idempotency_key, action, action_group, action_name, arguments, title,
+			INSERT INTO action_request (id, idempotency_key, action_group, action_name, arguments, title,
 				description, caller_namespace, caller_name, state, version, created_at, updated_at)
-			VALUES ($1, $2, $3::jsonb, $4, $5, $6::jsonb, $7, $8, $9, $10, 'decision_pending', 1, $11, $11)
+			VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 'decision_pending', 1, $10, $10)
 			ON CONFLICT (caller_namespace, caller_name, idempotency_key) DO NOTHING
 			RETURNING `+requestColumns,
-			admission.RequestID, input.IdempotencyKey, string(action), input.Action.Group, input.Action.Name,
-			string(input.Arguments), input.Title, input.Description, caller.Account.Namespace, caller.Account.Name, at))
+			admission.RequestID, input.IdempotencyKey, input.Action.Group, input.Action.Name, string(input.Arguments),
+			input.Title, input.Description, caller.Account.Namespace, caller.Account.Name, at))
 		if errors.Is(err, sql.ErrNoRows) {
 			return &ConflictError{
 				Reason:  ConflictIdempotencyKeyUsed,
