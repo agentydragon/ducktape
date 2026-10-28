@@ -196,3 +196,60 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "web_settings",
+    srcs = ["web_settings.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "web",
+    srcs = ["web.py"],
+    deps = [
+        ":database",
+        ":models",
+        ":queries",
+        ":web_settings",
+        "//util:oidc_login",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "web_main",
+    srcs = ["web_main.py"],
+    deps = [
+        ":database",
+        ":web",
+        ":web_settings",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "web_bin",
+    main_module = "x.ai_session_archive.web_main",
+    deps = [":web_main"],
+)
+
+py_test(
+    name = "test_web",
+    srcs = ["test_web.py"],
+    deps = [
+        ":database",
+        ":web",
+        ":web_settings",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//itsdangerous",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
