@@ -2,7 +2,8 @@
 
 use super::super::value_model::{
     AbstractValue, ArrayIteration, ArrayIterationMethod, CallSite, Captured, CapturedContext,
-    Context, DenseArray, FrozenNamespaceProof, OwnPropertyDescriptorSyntax, ValueExpr, Values,
+    Context, DenseArray, FrozenNamespaceProof, OwnPropertyDescriptorSyntax, StoredReferenceKind,
+    ValueExpr, Values,
 };
 use super::native_calls::{CallInputs, CallReturn, NativeCallModel, native_call_model};
 use super::{
@@ -584,9 +585,15 @@ impl Executor<'_> {
     }
 
     fn descriptor_map_callbacks(&self, site: CallSite) -> Values {
-        self.own_descriptor_maps
-            .get(&site)
-            .map_or_else(Values::new, |map| map.retained_values.clone())
+        let mut callbacks = Values::new();
+        self.visit_stored_references(
+            &AbstractValue::OwnDescriptorMap(site),
+            true,
+            |_, reference| {
+                callbacks.insert(reference.clone());
+            },
+        );
+        callbacks
     }
 
     fn applied_getters(&self, receivers: &Values, property: Option<&str>) -> Values {
@@ -2517,6 +2524,62 @@ impl Executor<'_> {
             })
     }
 
+    /// Enumerate one value's retained references without executing any
+    /// callable capability. Object properties can be skipped after the
+    /// callback walk has already expanded that object's property map; applied
+    /// accessor capabilities remain visible on every visit.
+    fn visit_stored_references(
+        &self,
+        value: &AbstractValue,
+        include_object_properties: bool,
+        mut visit: impl FnMut(StoredReferenceKind, &AbstractValue),
+    ) {
+        match value {
+            AbstractValue::Origin(ValueOrigin::Object(object)) => {
+                if include_object_properties
+                    && let Some(properties) = self.prefix_object_properties.get(object)
+                {
+                    for value in properties.values().flatten() {
+                        visit(StoredReferenceKind::ObjectProperty, value);
+                    }
+                }
+                if let Some(accessors) = self.applied_accessors.get(object) {
+                    for accessor in accessors.values() {
+                        for getter in &accessor.getter {
+                            visit(StoredReferenceKind::AppliedGetter, getter);
+                        }
+                        for setter in &accessor.setter {
+                            visit(StoredReferenceKind::AppliedSetter, setter);
+                        }
+                    }
+                }
+            }
+            AbstractValue::Closure(_, captured) => {
+                for value in captured.values.values().flatten() {
+                    visit(StoredReferenceKind::ClosureCapture, value);
+                }
+            }
+            AbstractValue::Instance(_, captured) => {
+                for value in captured.values.iter() {
+                    visit(StoredReferenceKind::InstanceCapture, value);
+                }
+            }
+            AbstractValue::DeferredCallbacks(captured) => {
+                for value in captured.values.iter() {
+                    visit(StoredReferenceKind::DeferredCallbackCapture, value);
+                }
+            }
+            AbstractValue::OwnDescriptorMap(site) => {
+                if let Some(map) = self.own_descriptor_maps.get(site) {
+                    for value in &map.retained_values {
+                        visit(StoredReferenceKind::DescriptorMapCapture, value);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn callback_values(&self, values: &Values) -> Values {
         let mut callbacks = Values::new();
         let mut pending: Vec<_> = values.iter().cloned().collect();
@@ -2524,64 +2587,38 @@ impl Executor<'_> {
         let mut visited_descriptor_maps = BTreeSet::new();
         let mut expanded_escaped = false;
         while let Some(value) = pending.pop() {
+            let mut expand_stored_references = false;
+            let mut expand_object_properties = true;
             match &value {
-                AbstractValue::Origin(ValueOrigin::Function(_)) | AbstractValue::Closure(_, _) => {
+                AbstractValue::Origin(ValueOrigin::Function(_)) => {
+                    callbacks.insert(value.clone());
+                }
+                AbstractValue::Closure(_, _) => {
                     // Capture snapshots form a DAG: multiple bindings can
                     // contain the same closure. Expand each closure once,
                     // rather than revisit it along every path through captures.
-                    if callbacks.insert(value.clone())
-                        && let AbstractValue::Closure(_, captured) = &value
-                    {
-                        pending.extend(
-                            captured
-                                .values
-                                .values()
-                                .flat_map(|values| values.iter().cloned()),
-                        );
-                    }
+                    expand_stored_references = callbacks.insert(value.clone());
                 }
                 AbstractValue::Origin(ValueOrigin::Class(key))
                 | AbstractValue::ClassMembers(key) => {
                     callbacks.insert(AbstractValue::ClassMembers(*key));
                 }
-                AbstractValue::Instance(key, captured) => {
+                AbstractValue::Instance(key, _) => {
                     callbacks.insert(AbstractValue::ClassMembers(*key));
-                    if callbacks.insert(value.clone()) {
-                        pending.extend(captured.values.iter().cloned());
-                    }
+                    expand_stored_references = callbacks.insert(value.clone());
                 }
                 AbstractValue::ForeignDeferredRecord => {
                     callbacks.insert(value.clone());
                 }
-                AbstractValue::DeferredCallbacks(captured) => {
-                    if callbacks.insert(value.clone()) {
-                        pending.extend(captured.values.iter().cloned());
-                    }
+                AbstractValue::DeferredCallbacks(_) => {
+                    expand_stored_references = callbacks.insert(value.clone());
                 }
                 AbstractValue::OwnDescriptorMap(site) => {
-                    if visited_descriptor_maps.insert(*site) {
-                        pending.extend(self.descriptor_map_callbacks(*site));
-                    }
+                    expand_stored_references = visited_descriptor_maps.insert(*site);
                 }
                 AbstractValue::Origin(ValueOrigin::Object(object)) => {
-                    if visited_objects.insert(*object)
-                        && let Some(properties) = self.prefix_object_properties.get(object)
-                    {
-                        pending.extend(
-                            properties
-                                .values()
-                                .flat_map(|values| values.iter().cloned()),
-                        );
-                    }
-                    if let Some(accessors) = self.applied_accessors.get(object) {
-                        pending.extend(accessors.values().flat_map(|accessor| {
-                            accessor
-                                .getter
-                                .iter()
-                                .chain(accessor.setter.iter())
-                                .cloned()
-                        }));
-                    }
+                    expand_stored_references = true;
+                    expand_object_properties = visited_objects.insert(*object);
                 }
                 AbstractValue::GlobalObject | AbstractValue::Unknown if !expanded_escaped => {
                     // Unknown external data cannot expose an unescaped local
@@ -2597,6 +2634,11 @@ impl Executor<'_> {
                     );
                 }
                 _ => {}
+            }
+            if expand_stored_references {
+                self.visit_stored_references(&value, expand_object_properties, |_, reference| {
+                    pending.push(reference.clone());
+                });
             }
         }
         callbacks
@@ -2988,49 +3030,36 @@ impl Executor<'_> {
             if !visited.insert(value.clone()) {
                 continue;
             }
-            match value {
+            match &value {
                 AbstractValue::ArrayIntrinsic => {
                     self.array_intrinsic_mutated = true;
                 }
                 AbstractValue::Origin(ValueOrigin::Object(object))
-                    if self.tainted_objects.insert(object) =>
+                    if self.tainted_objects.insert(*object) =>
                 {
-                    if let Some(properties) = self.prefix_object_properties.get(&object) {
-                        pending.extend(
-                            properties
-                                .values()
-                                .flat_map(|values| values.iter().cloned()),
-                        );
-                    }
-                    if let Some(accessors) = self.applied_accessors.get(&object) {
-                        pending.extend(accessors.values().flat_map(|accessor| {
-                            accessor
-                                .getter
-                                .iter()
-                                .chain(accessor.setter.iter())
-                                .cloned()
-                        }));
-                    }
+                    self.visit_stored_references(&value, true, |_, reference| {
+                        pending.push(reference.clone());
+                    });
                 }
                 AbstractValue::OwnDescriptorMap(site) => {
-                    self.invalidate_own_descriptor_map(site);
-                    pending.extend(self.descriptor_map_callbacks(site));
+                    self.invalidate_own_descriptor_map(*site);
+                    self.visit_stored_references(&value, true, |_, reference| {
+                        pending.push(reference.clone());
+                    });
                 }
-                AbstractValue::Instance(_, captured)
-                | AbstractValue::DeferredCallbacks(captured) => {
-                    pending.extend(captured.values.iter().cloned());
+                AbstractValue::Instance(_, _) | AbstractValue::DeferredCallbacks(_) => {
+                    self.visit_stored_references(&value, true, |_, reference| {
+                        pending.push(reference.clone());
+                    });
                 }
                 AbstractValue::Origin(ValueOrigin::Function(key)) => {
-                    self.tainted_functions.insert(key);
+                    self.tainted_functions.insert(*key);
                 }
-                AbstractValue::Closure(key, captured) => {
-                    self.tainted_functions.insert(key);
-                    pending.extend(
-                        captured
-                            .values
-                            .values()
-                            .flat_map(|values| values.iter().cloned()),
-                    );
+                AbstractValue::Closure(key, _) => {
+                    self.tainted_functions.insert(*key);
+                    self.visit_stored_references(&value, true, |_, reference| {
+                        pending.push(reference.clone());
+                    });
                 }
                 _ => {}
             }
@@ -3136,31 +3165,20 @@ impl Executor<'_> {
             if !visited.insert(value.clone()) {
                 continue;
             }
-            match value {
+            match &value {
                 AbstractValue::Origin(ValueOrigin::Object(object)) => {
-                    objects.insert(object);
-                    if let Some(properties) = self.prefix_object_properties.get(&object) {
-                        pending.extend(properties.values().flatten().cloned());
-                    }
-                    if let Some(accessors) = self.applied_accessors.get(&object) {
-                        pending.extend(accessors.values().flat_map(|accessor| {
-                            accessor
-                                .getter
-                                .iter()
-                                .chain(accessor.setter.iter())
-                                .cloned()
-                        }));
-                    }
+                    objects.insert(*object);
+                    self.visit_stored_references(&value, true, |_, reference| {
+                        pending.push(reference.clone());
+                    });
                 }
-                AbstractValue::OwnDescriptorMap(site) => {
-                    pending.extend(self.descriptor_map_callbacks(site));
-                }
-                AbstractValue::Instance(_, captured)
-                | AbstractValue::DeferredCallbacks(captured) => {
-                    pending.extend(captured.values.iter().cloned())
-                }
-                AbstractValue::Closure(_, captured) => {
-                    pending.extend(captured.values.values().flatten().cloned())
+                AbstractValue::OwnDescriptorMap(_)
+                | AbstractValue::Instance(_, _)
+                | AbstractValue::DeferredCallbacks(_)
+                | AbstractValue::Closure(_, _) => {
+                    self.visit_stored_references(&value, true, |_, reference| {
+                        pending.push(reference.clone());
+                    });
                 }
                 _ => {}
             }
@@ -3175,37 +3193,24 @@ impl Executor<'_> {
             if !visited.insert(value.clone()) {
                 continue;
             }
-            match value {
+            match &value {
                 AbstractValue::Origin(ValueOrigin::Class(key))
                 | AbstractValue::ClassMembers(key) => {
-                    self.escaped_class_capabilities.insert(key);
+                    self.escaped_class_capabilities.insert(*key);
                 }
-                AbstractValue::Instance(key, captured) => {
-                    self.escaped_class_capabilities.insert(key);
-                    pending.extend(captured.values.iter().cloned());
+                AbstractValue::Instance(key, _) => {
+                    self.escaped_class_capabilities.insert(*key);
+                    self.visit_stored_references(&value, true, |_, reference| {
+                        pending.push(reference.clone());
+                    });
                 }
-                AbstractValue::Origin(ValueOrigin::Object(object)) => {
-                    if let Some(properties) = self.prefix_object_properties.get(&object) {
-                        pending.extend(properties.values().flatten().cloned());
-                    }
-                    if let Some(accessors) = self.applied_accessors.get(&object) {
-                        pending.extend(accessors.values().flat_map(|accessor| {
-                            accessor
-                                .getter
-                                .iter()
-                                .chain(accessor.setter.iter())
-                                .cloned()
-                        }));
-                    }
-                }
-                AbstractValue::OwnDescriptorMap(site) => {
-                    pending.extend(self.descriptor_map_callbacks(site));
-                }
-                AbstractValue::DeferredCallbacks(captured) => {
-                    pending.extend(captured.values.iter().cloned())
-                }
-                AbstractValue::Closure(_, captured) => {
-                    pending.extend(captured.values.values().flatten().cloned())
+                AbstractValue::Origin(ValueOrigin::Object(_))
+                | AbstractValue::OwnDescriptorMap(_)
+                | AbstractValue::DeferredCallbacks(_)
+                | AbstractValue::Closure(_, _) => {
+                    self.visit_stored_references(&value, true, |_, reference| {
+                        pending.push(reference.clone());
+                    });
                 }
                 _ => {}
             }
