@@ -11,6 +11,14 @@ use super::*;
 pub struct RedundantPurityHint {
     pub binding_name: String,
     pub reason: RedundantPurityReason,
+    pub proof_basis: RedundantPurityProofBasis,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RedundantPurityProofBasis {
+    WithoutPurityHints,
+    WithOtherPurityHints,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -49,60 +57,56 @@ pub enum RedundantPureMemberReason {
     WhitelistedStaticCall,
 }
 
-/// For each name in `declared_pure`, ask "would the analyzer infer
-/// this binding as Pure without the hint on itself?" by building a
-/// fresh `ChunkCodeGraph` with that one name removed from
-/// `declared_pure` (hints on other bindings still apply) and checking
-/// the binding's classification. Hints whose answer is Yes are
-/// reported as redundant.
-///
-/// **Semantics — per-hint independent removal, hints on other names
-/// kept in place.** Removing only the hint under test catches "the
-/// analyzer would have figured this out on its own given the rest
-/// of the current spec." When a chain `a → b → c → …` carries
-/// hints at multiple points, the per-hint check correctly reports
-/// the *transitively redundant* members at the head of the chain
-/// (their inference relies on hints further down) and keeps the
-/// *load-bearing* members (the ones whose own body is what's
-/// genuinely impure). Authors removing hints in successive
-/// `/followups` rounds will see previously-redundant hints become
-/// load-bearing as the supporting hints are pruned, and the loop
-/// terminates when only genuinely impure bodies retain hints.
-///
-/// **Soundness for the surrounding debundle reshuffle:** the check
-/// has no effect on classification of statements — it only emits
-/// a warning. Dropping a hint based on the warning is the spec
-/// author's decision and re-runs the full analysis next build.
-/// The per-hint check itself is a read-only side query.
-///
-/// Cost: O(|declared_pure| × graph_build_cost). For typical spec
-/// hint counts (single digits per chunk) this is negligible
-/// compared to the per-chunk analysis itself.
+/// Probe each hint with that hint disabled. A shared hint-free probe distinguishes
+/// independent inference from inference requiring other `purity: pure` hints.
+/// These diagnostic probes exclude imported verdicts and other author contracts;
+/// they do not change statement classification. Removing hints still requires
+/// validating the resulting spec; individually redundant hints need not be jointly
+/// removable.
 pub(crate) fn detect_redundant_purity_hints(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
     declared_pure: &BTreeSet<String>,
 ) -> Vec<RedundantPurityHint> {
     let mut out = Vec::new();
+    let mut hint_free = None;
     for name in declared_pure {
         let mut without = declared_pure.clone();
         without.remove(name);
         let probe = ChunkCodeGraph::build(body, shadowed, &without);
-        let reason = match probe.bindings.get(name) {
-            Some(ChunkBinding::Function { purity }) if purity.is_pure() => {
-                Some(RedundantPurityReason::InferredPureFunction)
-            }
-            Some(ChunkBinding::PlainData) => Some(RedundantPurityReason::InferredPlainDataBinding),
-            _ => None,
-        };
+        let reason = redundant_reason(&probe, name);
         if let Some(reason) = reason {
+            let proof_basis = if without.is_empty()
+                || redundant_reason(
+                    hint_free.get_or_insert_with(|| {
+                        ChunkCodeGraph::build(body, shadowed, &BTreeSet::new())
+                    }),
+                    name,
+                )
+                .is_some()
+            {
+                RedundantPurityProofBasis::WithoutPurityHints
+            } else {
+                RedundantPurityProofBasis::WithOtherPurityHints
+            };
             out.push(RedundantPurityHint {
                 binding_name: name.clone(),
                 reason,
+                proof_basis,
             });
         }
     }
     out
+}
+
+fn redundant_reason(graph: &ChunkCodeGraph, name: &str) -> Option<RedundantPurityReason> {
+    match graph.bindings.get(name) {
+        Some(ChunkBinding::Function { purity }) if purity.is_pure() => {
+            Some(RedundantPurityReason::InferredPureFunction)
+        }
+        Some(ChunkBinding::PlainData) => Some(RedundantPurityReason::InferredPlainDataBinding),
+        _ => None,
+    }
 }
 
 /// Walk `declared_pure_members` and flag entries the analyzer would
@@ -123,9 +127,13 @@ pub(crate) fn detect_redundant_purity_hints(
 /// verified every callsite uses a plain-data arg.
 pub(crate) fn detect_redundant_pure_member_hints(
     declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
+    shadowed: &BTreeSet<&'static str>,
 ) -> Vec<RedundantPureMemberHint> {
     let mut out = Vec::new();
     for (binding, props) in declared_pure_members {
+        if shadowed.contains(binding.as_str()) {
+            continue;
+        }
         // Only whitelist-receiver bindings can ride on
         // `PURE_STATIC_CALLS`. A user-named binding (e.g. a vendor
         // namespace `b`) doesn't reach the whitelist regardless of

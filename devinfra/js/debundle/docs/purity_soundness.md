@@ -7,6 +7,22 @@ have to scroll past 80 lines of `///` to read the next function. Read
 <design.md> § "Soundness over completeness" first — it is the contract
 every rule below serves.
 
+## Redundant purity hints
+
+`modules.json.redundant_purity_hints` probes each `purity: pure` hint with
+that hint disabled. `proof_basis: without_purity_hints` means the binding also
+admits with every chunk-local `purity: pure` hint disabled;
+`with_other_purity_hints` means this analyzer proof requires other hints.
+The probes exclude imported purity verdicts and other author contracts. They
+still assume the documented runtime and intrinsic-integrity conditions.
+Remove hints individually and validate the resulting spec: individual redundancy
+does not establish that a set of hints can be removed together. A missing entry
+means redundancy was not proved.
+
+Member hints are reported redundant against the builtin whitelist only for
+unshadowed global receivers. An import or local binding named `Array` does not
+inherit the global `Array.isArray` rule.
+
 ## Admission rule: `PURE_STATIC_CALLS`
 
 `PURE_STATIC_PROPS`, `PURE_STATIC_CALLS`, and `PURE_GLOBAL_CALLS` in

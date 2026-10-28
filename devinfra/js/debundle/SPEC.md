@@ -560,6 +560,15 @@ retained lazy closure are included as well, covering an accessor that returns
 another conversion callable. This is callback-effect analysis; it does not
 classify the enclosing operator as pure.
 
+## Purity hint diagnostics
+
+The per-chunk `modules.json.redundant_purity_hints` report disables each tested
+`purity: pure` hint before checking redundancy. Its `proof_basis` distinguishes
+`without_purity_hints` from `with_other_purity_hints`; the latter is conditional
+on retaining other chunk-local purity hints. These diagnostics do not change
+acceptance or edit the spec. Remove hints individually and revalidate. A missing
+entry is inconclusive. Probe scope: <docs/purity_soundness.md#redundant-purity-hints>.
+
 ## Source-anchored export policies
 
 `chunk_export_purity` normally keys contracts by the defining chunk ID.

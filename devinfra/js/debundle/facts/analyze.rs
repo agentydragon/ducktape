@@ -278,7 +278,7 @@ where
     let redundant_purity_hints =
         detect_redundant_purity_hints(&body, &shadowed, &hints.assumptions.declared_pure);
     let redundant_pure_member_hints =
-        detect_redundant_pure_member_hints(&hints.assumptions.declared_pure_members);
+        detect_redundant_pure_member_hints(&hints.assumptions.declared_pure_members, &shadowed);
     let mut seen_vars = BTreeSet::new();
     let mut shared_vars = BTreeSet::new();
     for stmt in &per_statement {

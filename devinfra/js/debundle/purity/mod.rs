@@ -70,7 +70,8 @@ pub(crate) use ts_enum_iife::*;
 pub use code_graph::ChunkCodeGraph;
 pub use purity_type::{Purity, PurityReason, PurityRule};
 pub use redundant_hints::{
-    RedundantPureMemberHint, RedundantPureMemberReason, RedundantPurityHint, RedundantPurityReason,
+    RedundantPureMemberHint, RedundantPureMemberReason, RedundantPurityHint,
+    RedundantPurityProofBasis, RedundantPurityReason,
 };
 
 #[cfg(test)]

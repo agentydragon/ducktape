@@ -52,6 +52,14 @@ rust_library(
 debundle_e2e_test(name = "chunk_admission_test")
 
 debundle_e2e_test(
+    name = "purity_hint_diagnostics_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde",
+    ],
+)
+
+debundle_e2e_test(
     name = "graph_provenance_test",
     deps = [
         "@crates//:serde_json",
