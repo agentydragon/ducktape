@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
 
-func TestBackfillEntryContentConvertsSourceVariantsAndClearsExpiredBytes(t *testing.T) {
+func TestBackfillEntryContentConvertsSourceVariantsAndClearsExpiredColumns(t *testing.T) {
 	f := newIsolatedFixture(t, defaultQuotas())
 	subscription := f.subscribe(t, body("entry-content-backfill"))
 	requestID := uuid.New()
@@ -49,7 +49,7 @@ func TestBackfillEntryContentConvertsSourceVariantsAndClearsExpiredBytes(t *test
 		clearNativeEntryContent(t, f.db, subscription.InboxID, int64(i+1))
 	}
 	// Model an older cleanup replica: its JSON is already expired, but it left native fields behind below the
-	// inbox's retained-prefix cursor. The backfill must clear the physical bytes before the typed-reader release.
+	// inbox's retained-prefix cursor. The backfill must clear native fields before the native reader release.
 	expired := model.ActionsEvent{RequestID: requestID, Sequence: 99}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, expired, actionContentPayload(t, expired.Sequence, operator))
 	expiredCursor := int64(len(events) + 1)

@@ -52,10 +52,6 @@ ALTER TABLE entry
         (action_actor_name IS NULL OR char_length(action_actor_name) BETWEEN 1 AND 253) AND
         (action_actor_issuer IS NULL OR char_length(action_actor_issuer) > 0) AND
         (action_actor_subject IS NULL OR char_length(action_actor_subject) > 0)
-    ) NOT VALID,
-    ADD CONSTRAINT entry_message_sender_length CHECK (
-        (message_sender_namespace IS NULL OR char_length(message_sender_namespace) BETWEEN 1 AND 63) AND
-        (message_sender_name IS NULL OR char_length(message_sender_name) BETWEEN 1 AND 253)
     ) NOT VALID;
 RESET lock_timeout;
 
@@ -71,7 +67,6 @@ ALTER TABLE entry
     DROP CONSTRAINT entry_message_body_bytes,
     DROP CONSTRAINT entry_message_from_session_length,
     DROP CONSTRAINT entry_action_actor_length,
-    DROP CONSTRAINT entry_message_sender_length,
     DROP COLUMN action_state,
     DROP COLUMN action_at,
     DROP COLUMN action_actor_kind,

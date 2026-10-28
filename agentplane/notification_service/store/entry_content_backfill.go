@@ -316,7 +316,7 @@ func updateEntryContentBackfillRows(ctx context.Context, tx *sql.Tx, rows []entr
 	if len(rows) == 0 {
 		return nil
 	}
-	columns := strings.Split(strings.ReplaceAll(entryContentWriteColumns, "\n", ""), ",")
+	columns := strings.Split(strings.ReplaceAll(entryContentReadColumns, "\n", ""), ",")
 	records := make([]map[string]any, len(rows))
 	for i, row := range rows {
 		record := map[string]any{"inbox_id": row.key.inboxID, "cursor": row.key.cursor}

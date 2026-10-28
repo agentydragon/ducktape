@@ -34,7 +34,6 @@ func TestNativeEntryContentRejectsIncompleteAndWrongSourceRows(t *testing.T) {
 		{"partial merge commit", `UPDATE entry SET merge_commit_sha = 'sha' WHERE inbox_id = $1 AND cursor = $2`, "entry_mergeability_content_shape", 2},
 		{"oversize message", `UPDATE entry SET message_body = repeat('x', 262145) WHERE inbox_id = $1 AND cursor = $2`, "entry_message_body_bytes", 3},
 		{"long source session", `UPDATE entry SET message_from_session = repeat('x', 201) WHERE inbox_id = $1 AND cursor = $2`, "entry_message_from_session_length", 3},
-		{"long sender namespace", `UPDATE entry SET message_sender_namespace = repeat('x', 64) WHERE inbox_id = $1 AND cursor = $2`, "entry_message_sender_length", 3},
 	}
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) {

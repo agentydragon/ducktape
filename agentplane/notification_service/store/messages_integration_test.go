@@ -203,7 +203,7 @@ func TestTheDatabaseHoldsNoBodyBeyondTheCeiling(t *testing.T) {
 	f.openInbox(t)
 	f.send(t, f.message(newOwner(), "at-ceiling", strings.Repeat("é", MessageBodyCeiling/2)))
 	_, err := f.Send(t.Context(), f.message(newOwner(), "beyond-ceiling", strings.Repeat("é", MessageBodyCeiling/2)+"x"))
-	if refused := (*pq.Error)(nil); !errors.As(err, &refused) || refused.Constraint != "entry_message_body_ceiling" {
-		t.Fatalf("error = %v, want the body ceiling's constraint", err)
+	if refused := (*pq.Error)(nil); !errors.As(err, &refused) || refused.Constraint != "entry_message_body_bytes" {
+		t.Fatalf("error = %v, want the native body ceiling's constraint", err)
 	}
 }

@@ -18,8 +18,6 @@ const entryContentReadColumns = `action_state, action_at,
 	mergeability_previous, mergeability_current, mergeability_observed_at, mergeability_observed_at_submicro_nanos,
 	merge_commit_sha, merge_commit_base_sha, merge_commit_head_sha, message_body, message_from_session`
 
-const entryContentWriteColumns = entryContentReadColumns
-
 type entryContentStorage struct {
 	actionState                         *int32
 	actionAt                            *time.Time

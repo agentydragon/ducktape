@@ -66,7 +66,7 @@ natural-key indexes. The runtime release has no JSONB fallback or per-append rea
 until every old writer has drained and every reader has moved to relational keys.
 
 Native entry content is a separate phase. `00014_entry_native_content_expand.sql` adds nullable relational columns for
-Actions events, generated mergeability observations and messages. New writers fill it while retaining the existing
+Actions events, generated mergeability observations and messages. New writers fill them while retaining the existing
 JSON payload for older readers; cleanup clears both physical representations in one transaction. GitHub webhook
 payloads remain native JSONB and do not use the native columns. After every writer and cleanup worker runs that
 dual-write release, run
@@ -81,7 +81,7 @@ databases. During rollout, an older cleanup replica can clear only the legacy JS
 must treat that SQL `NULL` as expired even if native columns remain, until the all-cleanup-writers gate and backfill
 have completed.
 
-To roll back before the content backfill runs, restore the previous service image and leave the additive column in
+To roll back before the content backfill runs, restore the previous service image and leave the additive columns in
 place; do not run a migration's `Down` section while dual writers remain. If the content command has started or
 completed, leave its checkpoint and native columns in place too; the previous image continues to use the retained
 JSON payload. If the event identity backfill/index command has completed, leave its columns, checkpoint and
