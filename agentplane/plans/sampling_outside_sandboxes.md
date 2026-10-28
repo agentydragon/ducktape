@@ -11,7 +11,8 @@ Codex evidence is read from [`openai/codex` at `rust-v0.162.1`][tag] (commit `09
 `agentplane_codex_cli_linux_x64` scripted-test pin. Claude evidence includes static inspection of
 the 2.1.252 test pin and this session's installed 2.1.296, plus existing scripted-test source
 ([versioned evidence](../debug/claude_execution_placement.md)). The runner image uses independently
-pinned nixpkgs harnesses. No new inference or execution-placement probe was run for this research.
+pinned nixpkgs harnesses. The initial research was source-only; subsequent scripted custom-Claude
+sampler evidence is linked below. No live inference was submitted for that experiment.
 
 ## Today
 
@@ -335,9 +336,81 @@ Alternatives to compare:
   through the tested driver MCP seam, and explicitly reproduce wanted behavior such as nested
   instructions and read-before-edit state. Existing MCP tests do not establish full parity.
 - **Custom sampler through CLIProxyAPI.** Send model API requests using its translation/cloaking or
-  a required CLI/SDK-shaped identity. The pinned proxy implements those mechanisms, but no live
-  compatibility was tested here. Agentplane owns the tool/context loop and persistence; presenting
+  a required CLI/SDK-shaped identity. A [subsequent runnable experiment](../debug/claude_custom_sampler.md)
+  completed a scripted Messages/tool/continuation loop through the pinned CLI fingerprint profile,
+  with a separate file executor and stable identity, cache prefix and opaque thinking/signature data.
+  The sampler is in-memory only; live provider and subscription compatibility remain untested.
+  Agentplane owns the tool/context loop and persistence; presenting
   a Claude identity does not supply Claude's built-in tool behavior.
+
+### Shared code-mode runtime across providers
+
+Operator direction, 2026-10-27: if the Codex-style central sampler proves useful, evaluate running
+Claude through the same code-mode runtime. Keep one execution/tool lifecycle and Postgres authority,
+with provider adapters for Responses custom-tool items and Messages tool-use/result blocks. A Claude
+adapter could expose JavaScript source through a tool input schema and supply code-mode instructions;
+the appropriate prompt and model behavior still need an experiment. Preserve each provider's opaque
+reasoning/signature state without translating it into the other provider's format.
+
+The desired common surface includes compaction, yielded-cell `wait`, process stdin and interrupts.
+Provider-specific compaction protocols remain adapter responsibilities. Instruction discovery and
+permission behavior need an explicit shared contract; a common JavaScript runtime does not inherit
+Claude Code's built-in behavior. Evaluate actual Claude tool selection, nested calls, wait/stdin,
+interruption and continuation before claiming that this works. The current custom-Claude experiment
+uses an ordinary `append_file` tool and does not establish code-mode model behavior.
+
+This is a future direction within the placement decision, independent of the gated native remote-tools
+investigation. It does not add a prerequisite to the current Codex implementation or authorize a cutover.
+
+### Coexistence with wrapped harnesses
+
+Operator constraint, 2026-10-27: preserve the ability to wrap harnesses we do not own while custom
+sampling loops develop, at least through a transition period. Official-client requirements were one
+reason for the original architecture; retain an official binary path where it is needed. This is
+a compatibility requirement, not a conclusion about any provider's current terms or account eligibility.
+
+Treat custom sampling and wrapped native harnesses as alternative backends behind Agentplane's
+Session admission, control and retained-event interfaces. A custom loop can own its conversation
+directly in Postgres, while a wrapped harness can retain native persistence and expose it through its
+adapter. Do not make every backend emulate the custom loop's internal storage or remove the harness
+adapter merely because the custom loop has fewer persistence layers. Define each mode's state owner,
+interrupt/recovery behavior and supported capabilities explicitly; preserve identities and history
+when selecting or changing a mode.
+
+Wrapping an external harness remains useful beyond migration, much as the MCP edge accommodates
+MCP clients and externally hosted agents. Keep that boundary viable without requiring external
+harnesses to adopt Agentplane's sampler, code-mode host or provider adapter. Any later retirement of
+the wrapped mode needs a separate decision; these experiments do not select one.
+
+### History across providers and harnesses
+
+Operator clarification, 2026-10-27: shared hosting or execution does not imply equivalent history.
+OpenAI Responses and Anthropic Messages have different item/block, tool-result, reasoning and
+compaction contracts. Native harness JSON interfaces expose different subsets again. The existing
+`CODEX_CODE_MODE_CELLS` investigation in the task DAG records the concrete gap: the app-server's
+public items expose nested command execution without the enclosing JavaScript cell and its emissions.
+Do not infer that script from the commands it happened to invoke.
+
+The placement decision must also design the history boundary. Inventory what each backend actually
+exposes, its source authority, native IDs/order, live-versus-recovered detail and explicit gaps before
+selecting a common projection. A custom sampler can capture raw model exchanges, cell source/output
+and nested tool events directly; a wrapper may have only public harness events, or require a separate
+versioned integration to obtain richer evidence. Missing evidence means unknown, not that an operation
+did not happen. Preserve provider-specific opaque continuation state without treating it as display text.
+
+Operator clarification: a common representation is necessary for one frontend. The existing
+[Thread form](../docs/thread_layering.md#authorities-and-representations) is already a deliberately
+lossy fold of Session history for that purpose. Design and extend that common contract rather than
+requiring every frontend to interpret each provider or harness independently. Specify which user-visible
+items, statuses and controls it guarantees, which details it can preserve, and how it represents
+unavailable information. Some source gaps cannot be bridged; that does not eliminate the common fold.
+
+Evaluate richer source evidence with provenance beneath that projection. Correlate turns, cells,
+nested calls and tool results where the source supports those relationships. Keep replayable provider
+context, human-visible conversation history and execution-effect evidence distinct: compaction can
+replace the first without deleting the others. The Thread is one purpose-specific projection, not a
+claim that every source detail is equivalent or present. This is design work; these experiments do
+not select a new History schema or replace its current authority.
 
 ## Next
 

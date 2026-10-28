@@ -590,7 +590,7 @@ flowchart LR
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_CODEX_SPIKE[In progress: experimental central Codex process fixture]
     CENTRAL_CODEX_SPIKE --> HARNESS_PLACEMENT_DESIGN[Decision, unscheduled: sampler placement and state authority]
-    CLAUDE_REMOTE_EXECUTION_SPIKE[Unscheduled: Claude remote tools and custom sampler compatibility]
+    CLAUDE_REMOTE_EXECUTION_SPIKE[Partial evidence: Claude remote tools and custom sampler compatibility]
     CLAUDE_REMOTE_EXECUTION_SPIKE -. optional Claude branch evidence .-> HARNESS_PLACEMENT_DESIGN
 ```
 
@@ -641,7 +641,13 @@ research plan. Changes no deployed mode.
 
 ### `CLAUDE_REMOTE_EXECUTION_SPIKE` — Claude remote tools and custom sampler compatibility
 
-**Unscheduled investigation/spike; operator, 2026-10-27 PDT.** Independent of both Codex spikes.
+**Partial experimental evidence; operator, 2026-10-27 PDT.** Independent of both Codex spikes.
+Worker `/root/central_codex_spike`, 2026-10-27 08:15 PDT: a separate-process custom Messages sampler
+completed a scripted tool/continuation round trip through the pinned CLIProxyAPI CLI fingerprint profile;
+12 RBE cases passed ([evidence and limits](../debug/claude_custom_sampler.md)). Identity/system prefix,
+tool alias and thinking/signature continuation were captured. Persistence is volatile; native serving,
+Claude built-in semantics, durable recovery and live provider/subscription acceptance remain open.
+
 Start from [versioned evidence](../debug/claude_execution_placement.md): the 2.1.252 test pin's gate is compiled
 off; installed 2.1.296 has a local forwarding switch, account flags and native tool serving. Establish which
 gates are locally settable, which require account support, and whether a scripted Agentplane peer can implement
@@ -670,6 +676,28 @@ preservation of existing identities/history/native state. This owns the central-
 `RUNNER_STATE_BOUNDARY_RETHINK`; it does not authorize a cutover. Review Codex-only support versus a Claude native
 remote-tool or custom-sampler branch; CLI subscription assumptions do not settle that choice. Implementation and
 data-preserving migration nodes follow the chosen design.
+
+Operator direction, 2026-10-27: also evaluate a shared Codex-style code-mode runtime for Claude, with
+provider-specific wire, opaque reasoning and compaction adapters. The execution lifecycle and Postgres
+authority could be common; Claude's tool schema/prompt and actual code-mode behavior need a bounded
+experiment. The required common surface includes compaction, wait, stdin and interrupts. This future
+direction is part of this decision, not a gate for the current Codex extension; the existing Messages
+`append_file` experiment does not establish it. See [shared runtime scope](sampling_outside_sandboxes.md#shared-code-mode-runtime-across-providers).
+
+Operator constraint, 2026-10-27: preserve wrapped official/external harness support alongside any custom
+sampler, at least during transition. Keep the Session/control/history adapter boundary viable for a
+harness whose protocol and persistence we do not own, analogous to the MCP edge for external clients
+and hosted agents. The design names each backend's state owner and capabilities; adopting direct
+Postgres sampling must not implicitly retire the native-harness path. See [coexistence scope](sampling_outside_sandboxes.md#coexistence-with-wrapped-harnesses).
+
+Operator clarification, 2026-10-27: design history fidelity explicitly across provider APIs and wrapped
+harness JSON APIs. Inventory available evidence and gaps, source authority, IDs/order and recovery detail;
+extend the common Thread contract needed for one frontend, backed by evidence with provenance. The
+Thread form is a purpose-specific lossy fold; define its guarantees and explicit gaps rather than
+assuming equivalent source detail. `CODEX_CODE_MODE_CELLS` is a concrete missing-detail case, independent of placement. Separate
+provider replay context from conversation history and effect evidence, and preserve opaque native blocks.
+See [history scope](sampling_outside_sandboxes.md#history-across-providers-and-harnesses). This does not
+select a new History schema or add frontend tracing to the current spike's acceptance.
 
 ### `SANDBOX_FORM_TERMINOLOGY` — distinguish launch presets from runtime templates
 

@@ -1,0 +1,64 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_binary(
+    name = "executor_bin",
+    main_module = "agentplane.native.claude.x.custom_sampler.executor",
+    deps = [":executor"],
+)
+
+py_binary(
+    name = "sampler_bin",
+    main_module = "agentplane.native.claude.x.custom_sampler.sampler",
+    deps = [":sampler"],
+)
+
+py_library(
+    name = "executor",
+    srcs = ["executor.py"],
+    deps = [
+        "@pypi//aiohttp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "sampler",
+    srcs = ["sampler.py"],
+    deps = ["@pypi//aiohttp"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//agentplane/native/testing:model_endpoint",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//aiohttp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_sampler",
+    srcs = ["test_sampler.py"],
+    data = [
+        ":executor_bin",  # keep: separate executor process
+        "@ducktape_cli_proxy_api//:server",  # keep: real pinned proxy
+    ],
+    env = {"PROXY_BINARY": "$(rlocationpath @ducktape_cli_proxy_api//:server)"},
+    deps = [
+        ":conftest",
+        ":sampler",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/claude:conftest",
+        "//agentplane/native/claude/testing:anthropic_sse",
+        "//agentplane/native/testing:model_endpoint",
+        "@pypi//aiohttp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
