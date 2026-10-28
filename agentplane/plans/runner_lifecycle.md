@@ -13,10 +13,36 @@ Review the design's ownership, Close/Quiesce interaction, setup/execution split 
 reconciliation boundary. Preserve the existing public protocol and journal semantics. Merge of
 this documentation does not authorize an unbounded runner rewrite.
 
+Try COSI before selecting controller infrastructure; the state/ownership design and
+runtime-independent shutdown changes can proceed while that comparison is open. The trial is
+planned, not implemented, and does not select a production dependency.
+
 The three implementation slices below share the reviewed design as a prerequisite. Recommended
-starting point: shutdown. This is a review/iteration preference, not a technical dependency:
+first runtime slice: shutdown. This is a review/iteration preference, not a technical dependency:
 Session preparation and reconciliation scheduling can be developed independently against the
 reviewed transition boundaries. Rebase overlapping edits rather than invent sequencing holds.
+
+### `RUNNER_COSI_TRIAL` — evaluate COSI on a bounded shutdown path
+
+Prototype one runner quiesce path with [COSI Runtime](https://github.com/cosi-project/runtime),
+using in-memory resources for intent/progress and existing journal/store facts for durable truth.
+Keep process handles and native effects behind owned operations. Compare the prototype with
+extending the current loops against the same lifecycle contract; do not start a general migration.
+
+Deliver a scoped spike with a runnable Bazel check, its exact results and a short adopt/reject
+comparison. Demonstrate with deterministic operation barriers that:
+
+- quiesce racing admission preserves durable ownership/deduplication and closes new ordinary work;
+- teardown stops shared processes once, seals after final writes and stays unquiesced until the
+  exact seal is acknowledged;
+- asynchronous completions/native replies keep progressing, and a late completion cannot revive
+  stopped execution or cause a native effect to be repeated by controller retry.
+
+Record the resource/controller ownership graph, finalizer behavior, restart reconstruction,
+dependency/logger integration cost and custom bookkeeping retained or removed. Conclude whether
+to adopt COSI, use it narrowly, or retain the existing loops. Put the supported recommendation in
+the design for review before framework-specific implementation. The trial does not substitute for
+the later implementation matrix's Claude/Codex checks and needs no manual staging UI run.
 
 ### `RUNNER_SHUTDOWN_OWNER` — outer lifecycle and shutdown transitions
 

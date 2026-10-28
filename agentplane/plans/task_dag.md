@@ -976,12 +976,14 @@ egress proxy as a header substitution, as the staging `claude-ai` Sandboxes' `BU
 ```mermaid
 flowchart LR
     RUNNER_LIFECYCLE_DESIGN[In review: lifecycle state and ownership design]
+    RUNNER_COSI_TRIAL[Candidate: evaluate COSI on a bounded shutdown path]
     RUNNER_SHUTDOWN_OWNER[Blocked: outer lifecycle and shutdown transitions]
     RUNNER_SESSION_LIFECYCLE[Blocked: owned Session preparation and execution]
     RUNNER_RECONCILIATION_OWNER[Blocked: queued and in-flight native inspection]
     RUNNER_LIFECYCLE_DESIGN --> RUNNER_SHUTDOWN_OWNER
     RUNNER_LIFECYCLE_DESIGN --> RUNNER_SESSION_LIFECYCLE
     RUNNER_LIFECYCLE_DESIGN --> RUNNER_RECONCILIATION_OWNER
+    RUNNER_COSI_TRIAL -. informs runtime choice .-> RUNNER_LIFECYCLE_DESIGN
 ```
 
 ### `RUNNER_LIFECYCLE_DESIGN` — runner lifecycle state and ownership
@@ -993,6 +995,16 @@ reconciliation owners in the [design](runner_lifecycle_design.md). The
 Keep admission-before-readiness, exact-turn interruption, both native harnesses and Session data.
 Exit: reviewed transition/effect ownership and shutdown/recovery ordering. No runtime implementation
 or manual staging verification is included in the documentation change.
+
+### `RUNNER_COSI_TRIAL` — evaluate COSI on a bounded shutdown path
+
+**Candidate; operator-selected experiment, 2026-10-27.** Try COSI Runtime against the existing
+Go loops on one quiesce path before selecting controller infrastructure. Produce a bounded spike,
+deterministic Bazel evidence and an adopt/reject recommendation covering resource ownership,
+asynchronous effects, durable admission/sealing, restart and integration cost. Scope and exit:
+[trial plan](runner_lifecycle.md#runner_cosi_trial--evaluate-cosi-on-a-bounded-shutdown-path).
+Adoption is not selected. This does not block state-model review or runtime-independent shutdown
+work; review the trial's recommendation before framework-specific implementation.
 
 ### `RUNNER_SHUTDOWN_OWNER` — outer lifecycle and shutdown transitions
 

@@ -172,10 +172,38 @@ blind replay. Journal sealing waits for all required resulting observations to b
 | Session work owner           | Reconciliation queue/in-flight operation and dispatch eligibility | Committed turn/command observations, native inspection result, execution changes         |
 | Journal/SessionStore/ingress | Existing durable records and acknowledgements                     | Serialized journal/store operations and authenticated ingress replies                    |
 
-Ownership is logical; it does not require a new actor framework. Extend the existing Session work
-loop and Runner drain coordination, using explicit transition methods as the incremental boundary.
+Ownership is logical. Evaluate COSI against extending the existing Session work loop and Runner
+drain coordination before selecting controller infrastructure. Explicit transition methods remain
+the incremental boundary for runtime-independent changes.
 Callbacks deliver observations to those owners rather than directly assigning lifecycle flags.
 Journal commits remain authoritative and are not deferred through a lossy notification channel.
+
+### Controller runtime candidate: COSI
+
+**Planned trial; operator, 2026-10-27.** Try
+[COSI Runtime](https://github.com/cosi-project/runtime) on one bounded shutdown path and compare it
+with the existing Go loops before building custom controller infrastructure. Adoption is open.
+COSI declares controller inputs/outputs, enforces output ownership and supports resource-change
+notifications and finalizers. Its
+[in-memory state](https://pkg.go.dev/github.com/cosi-project/runtime/pkg/state/impl/inmem)
+can host the trial inside the runner without Kubernetes or another state service.
+
+Prototype runner intent and Session shutdown progress as resources with distinct controller-owned
+outputs. Keep process/adapter handles outside resource specs and report their completions back as
+observed state. Evaluate finalizers for cleanup dependencies. Reconstruct ephemeral resources from
+existing journal/store facts after restart; the journal remains authoritative for commands, seals
+and uncertain native effects. Resource ownership/finalizers do not replace the atomic admission,
+exact-turn write or exact seal-acknowledgement boundaries.
+
+Compare whether COSI reduces custom scheduling/ownership bookkeeping while preserving asynchronous
+native I/O, shutdown ordering and recovery. Controller retries must reread durable operation
+evidence rather than repeat a possibly completed native effect. Record integration cost, including
+Bazel dependencies and the runtime's logger interface, alongside the behavioral results. The
+[trial plan](runner_lifecycle.md#runner_cosi_trial--evaluate-cosi-on-a-bounded-shutdown-path)
+defines the artifact and checks. It informs the implementation mechanism, not the public lifecycle
+contract or permission to replace the whole runner.
+
+### Effect scheduling
 
 Each loop reads and claims the next operation under its state lock, runs blocking effects outside
 that lock, then applies completion through the owner after checking operation/attachment identity.
