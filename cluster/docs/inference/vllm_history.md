@@ -134,8 +134,8 @@ When porting to `cluster/k8s/vllm/`:
 ## See also
 
 - <qwen3_coder_vram_analysis.md> — full memory math and debug logs
-- <vllm_container_plan.md> — the home-manager systemd user-service plan
-  that ran this on wyrm2
+- <vllm_container_plan.md> — unimplemented proposal for a Home Manager
+  systemd-user service; it is not a record of the host run
 - <kv_cache_quantization.md> — KV cache dtype comparison
 - <model_download_history.md> — experiment log
 - <../../../x/local_llm/start-vllm-awq.sh> — live host script (262K context AWQ config)

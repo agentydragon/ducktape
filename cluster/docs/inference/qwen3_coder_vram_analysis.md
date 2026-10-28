@@ -137,13 +137,16 @@ KV cache per token = 2 × num_layers × num_kv_heads × head_dim × bytes_per_el
 
 ```text
 Model: cyankiwi/Qwen3-Coder-30B-A3B-Instruct-AWQ-4bit
-Weights: ~7.6 GB per GPU (vs 28.5 GB bf16)
-KV cache: ~23 GB available per GPU
-Max context: 131K+ tokens
+Weights: 8.56 GiB per GPU loaded (vs 28.51 GiB bf16)
+KV cache: ~23 GiB available per GPU
+Max context: 262K configured and effective in the E1 run
 ```
 
-AWQ 4-bit quantization reduces weights by ~4x while maintaining quality.
-This is the **only way to run full context on 2x 5090 with vLLM**.
+The earlier 131K estimate was superseded by the measured
+[E1 Kubernetes run](runs/2026-07-17_e1_qwen3coder_awq/README.md): FP8 KV,
+`--max-num-seqs 32`, and a completed 255,669-token request. E1 did not measure
+coding-task quality, so the configuration result does not establish that AWQ
+maintains model quality.
 
 **⚠️ No Thinking Mode**: Qwen3-Coder does not support thinking mode. This is a base model
 property — Qwen3-Coder was post-trained with Agent RL only, without thinking mode fusion.
@@ -152,7 +155,7 @@ use the original Qwen3-30B-A3B instead.
 
 ```bash
 # Start vLLM with AWQ model
-~/code/ducktape/experimental/local-llm/start-vllm-awq.sh
+~/code/ducktape/x/local_llm/start-vllm-awq.sh
 ```
 
 ### For Ollama: Q4_K_M with FP8 KV Cache
@@ -435,9 +438,9 @@ Tested with `cyankiwi/Qwen3-Coder-30B-A3B-Instruct-AWQ-4bit` on vLLM:
 
 ### Test Command
 
-```bash
-./experimental/local-llm/test_long_context.py 2150  # ~130K tokens
-```
+The original `experimental/local-llm/test_long_context.py` helper is no longer in
+the repository. The reproducible 262K vLLM capacity and tool checks are in the
+[E1 run record](runs/2026-07-17_e1_qwen3coder_awq/README.md).
 
 ## Ollama Quick Start
 
@@ -617,13 +620,13 @@ Add to `~/.config/opencode/opencode.json`:
 Use the provided script which includes all fixes:
 
 ```bash
-~/code/ducktape/experimental/local-llm/start-vllm-awq.sh
+~/code/ducktape/x/local_llm/start-vllm-awq.sh
 ```
 
 Environment variables for customization:
 
 - `MAX_MODEL_LEN=131072` - Lower context if needed
-- `MAX_NUM_SEQS=64` - Increase concurrent sequences
+- `MAX_NUM_SEQS=32` - Measured safe setting at 262K; validate warmup before raising
 - `KV_CACHE_DTYPE=fp16` - Use FP16 KV (halves max context)
 - `GPU_MEM_UTIL=0.95` - Increase memory utilization (risky)
 

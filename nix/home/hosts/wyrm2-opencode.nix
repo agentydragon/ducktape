@@ -2,8 +2,9 @@
 #
 # Hardware: 2x RTX 5090 (64GB total VRAM)
 #
-# RECOMMENDED: vLLM with AWQ quantization
-#   Start: ~/code/ducktape/experimental/local-llm/start-vllm-awq.sh
+# OpenCode provider declarations only; these settings do not start a server.
+# vLLM AWQ profile (manual launch; no Home Manager service is implemented):
+#   Start: ~/code/ducktape/x/local_llm/start-vllm-awq.sh
 #   Model: qwen3-coder-awq (262K context, 8.5 GiB/GPU, FP8 KV cache)
 #
 # Critical vLLM fixes (see cluster/docs/inference/qwen3_coder_vram_analysis.md):
@@ -11,8 +12,8 @@
 #   - --kv-cache-dtype fp8 (doubles context capacity)
 #   - Don't use --quantization awq (model auto-detects compressed-tensors)
 #
-# Two inference backends:
-#   - vLLM (port 8000): Tensor parallelism, 262K context, recommended
+# Provider entries:
+#   - vLLM (port 8000): tensor parallelism; 262K AWQ profile, manually launched
 #   - Ollama (port 11434): Easy setup, GGUF quantization
 #
 # Capability matrix:
@@ -34,7 +35,7 @@
 {
   ducktape.opencode.providers = {
     # === vLLM: Tensor parallelism for better throughput ===
-    # Start server: ~/code/ducktape/experimental/local-llm/start-vllm-awq.sh
+    # Start server: ~/code/ducktape/x/local_llm/start-vllm-awq.sh
     vllm = {
       npm = "@ai-sdk/openai-compatible";
       name = "vLLM (local, tensor parallel)";
@@ -57,7 +58,7 @@
 
         # DeepSeek R1 Distill Qwen 32B - reasoning + tools preserved
         # Distilled from DeepSeek-R1, maintains thinking capability
-        # Start: ~/code/ducktape/experimental/local-llm/start-vllm-deepseek-r1.sh
+        # Start: ~/code/ducktape/x/local_llm/start-vllm-deepseek-r1.sh
         "deepseek-r1-32b" = {
           name = "DeepSeek R1 Distill Qwen 32B (vLLM)";
           reasoning = true;
@@ -73,7 +74,7 @@
 
         # DeepSeek R1 Distill Llama 70B - best quality distillation
         # Requires TP=2 (both GPUs), ~38 GB total
-        # Start: ~/code/ducktape/experimental/local-llm/start-vllm-deepseek-r1-70b.sh
+        # Start: ~/code/ducktape/x/local_llm/start-vllm-deepseek-r1-70b.sh
         "deepseek-r1-70b" = {
           name = "DeepSeek R1 Distill Llama 70B (vLLM)";
           reasoning = true;
@@ -89,7 +90,7 @@
 
         # Qwen3 32B AWQ - general model with thinking + tools
         # Good all-around model, not code-specialized
-        # Start: ~/code/ducktape/experimental/local-llm/start-vllm-qwen3-32b.sh
+        # Start: ~/code/ducktape/x/local_llm/start-vllm-qwen3-32b.sh
         "qwen3-32b" = {
           name = "Qwen3 32B AWQ (vLLM)";
           reasoning = true;
@@ -148,7 +149,7 @@
         # Q4_K_M (19GB) + FP16 KV cache supports ~218k context on 2x5090
         # See: cluster/docs/inference/qwen3_coder_vram_analysis.md
         # Create variant:
-        #   cd ~/code/ducktape/experimental/local-llm
+        #   cd ~/code/ducktape/x/local_llm
         #   ollama create qwen3-coder-long -f Modelfile.qwen3-coder-long
         "qwen3-coder-long" = {
           name = "Qwen3-Coder 30B 131k (local)";
