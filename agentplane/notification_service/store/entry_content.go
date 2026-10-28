@@ -244,3 +244,17 @@ func (c entryContentStorage) mergeabilityPayload(number int64) (json.RawMessage,
 		Mergeability:         model.GitHubMergeableState(*c.mergeabilityCurrent), ObservedAt: at, MergeCommit: commit,
 	})
 }
+
+// entryPayloadFromRead reconstructs the public payload from the provider's canonical storage.
+// Webhook and observation payloads are native JSONB; owned sources use native columns.
+func entryPayloadFromRead(event model.EventIdentity, githubPayload []byte, content entryContentStorage) (json.RawMessage, error) {
+	switch event.(type) {
+	case model.GitHubEvent, model.GitHubObservationEvent:
+		if githubPayload == nil {
+			return nil, errors.New("GitHub payload expired before the inbox's expired prefix")
+		}
+		return json.RawMessage(githubPayload), nil
+	default:
+		return content.payload(event)
+	}
+}

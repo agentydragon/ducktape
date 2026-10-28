@@ -196,6 +196,28 @@ func summarize(cursor int64, event model.EventIdentity, payload []byte, createdA
 	return summary, nil
 }
 
+func summarizeStored(cursor int64, event model.EventIdentity, githubPayload []byte, content entryContentStorage, createdAt time.Time) (EntrySummary, error) {
+	if message, ok := event.(model.MessageEvent); ok {
+		return EntrySummary{
+			Cursor: cursor, CreatedAt: createdAt.UTC(), Provider: EntryFromMessage,
+			Summary: fmt.Sprintf("Message from %s/%s", message.Sender.Namespace, message.Sender.Name),
+		}, nil
+	}
+	payload, err := entryPayloadFromRead(event, githubPayload, content)
+	if err != nil {
+		return EntrySummary{}, fmt.Errorf("entry %d content: %w", cursor, err)
+	}
+	return summarize(cursor, event, payload, createdAt)
+}
+
+// Status needs only Action and mergeability lifecycle fields. Message summaries use the authenticated sender in
+// the identity, so the SQL projection never fetches or decodes a Message body.
+const entryContentSummaryReadColumns = `action_state, action_at,
+	action_actor_kind, action_actor_namespace, action_actor_name, action_actor_issuer, action_actor_subject,
+	mergeability_repository, mergeability_base_ref, mergeability_head_sha, mergeability_base_sha,
+	mergeability_previous, mergeability_current, mergeability_observed_at, mergeability_observed_at_submicro_nanos,
+	merge_commit_sha, merge_commit_base_sha, merge_commit_head_sha, NULL::text, NULL::text`
+
 func truncate(s string) string {
 	if characters := []rune(s); len(characters) > maxSummaryField {
 		return string(characters[:maxSummaryField])
@@ -324,7 +346,8 @@ func subscriptionStatuses(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, ob
 
 func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, after int64) ([]EntrySummary, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT cursor, `+eventIdentityReadColumns+`, payload, created_at FROM entry
+		`SELECT cursor, `+eventIdentityReadColumns+`,
+			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, `+entryContentSummaryReadColumns+`, created_at FROM entry
 			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inboxID, after, maxPendingEntrySummaries)
 	if err != nil {
@@ -336,9 +359,12 @@ func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, a
 		var cursor int64
 		var identityRead eventIdentityRead
 		var payload []byte
+		var content entryContentStorage
 		var createdAt time.Time
 		destinations := append([]any{&cursor}, identityRead.destinations()...)
-		destinations = append(destinations, &payload, &createdAt)
+		destinations = append(destinations, &payload)
+		destinations = append(destinations, content.destinations()...)
+		destinations = append(destinations, &createdAt)
 		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
@@ -346,7 +372,7 @@ func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, a
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inboxID, cursor, err)
 		}
-		summary, err := summarize(cursor, identity, payload, createdAt)
+		summary, err := summarizeStored(cursor, identity, payload, content, createdAt)
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s: %w", inboxID, err)
 		}
