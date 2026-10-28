@@ -17,7 +17,13 @@ from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.central_sampler import MODEL, PROVIDER, SERVICE, CentralStack, central_stack
 from agentplane.system_tests.cluster import kubectl
-from agentplane.system_tests.conftest import FORWARD_POD_TEMPLATE, POD_TEMPLATE, VM_TEMPLATE, VM_WORKING_DIRECTORY
+from agentplane.system_tests.conftest import (
+    FORWARD_POD_TEMPLATE,
+    FORWARD_VM_TEMPLATE,
+    POD_TEMPLATE,
+    VM_TEMPLATE,
+    VM_WORKING_DIRECTORY,
+)
 from agentplane.system_tests.k3s.stack import node_ip
 from agentplane.x.central_sampler import sampler_pb2
 from agentplane.x.central_sampler.testing import Endpoint
@@ -96,7 +102,7 @@ async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) 
     prompt = "Read the setup marker and report the result."
     reasoning = "I will read the marker created during setup."
     answer = "The executor returned prepared-on-executor."
-    is_vm = template == VM_TEMPLATE
+    is_vm = template in (VM_TEMPLATE, FORWARD_VM_TEMPLATE)
     vm_execution: dict[str, str | int] | None = None
     async with (
         Endpoint(bind_host=node_ip()) as endpoint,
@@ -330,9 +336,12 @@ async def test_dispatcher_central_setup_tool_and_retained_answer(
 @pytest.mark.vm_sandboxes
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
-async def test_dispatcher_central_setup_tool_and_retained_answer_vm(k3s_deployment: None, tmp_path: Path) -> None:
+@pytest.mark.parametrize("template", [VM_TEMPLATE, FORWARD_VM_TEMPLATE], ids=["reverse", "forward"])
+async def test_dispatcher_central_setup_tool_and_retained_answer_vm(
+    k3s_deployment: None, tmp_path: Path, template: str
+) -> None:
     del k3s_deployment  # This scenario is only valid on its own disposable stack, never against staging.
-    await _central_sampler_scenario(tmp_path, template=VM_TEMPLATE, cwd=VM_WORKING_DIRECTORY)
+    await _central_sampler_scenario(tmp_path, template=template, cwd=VM_WORKING_DIRECTORY)
 
 
 if __name__ == "__main__":

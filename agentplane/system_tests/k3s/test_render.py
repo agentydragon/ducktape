@@ -1,5 +1,6 @@
 """The direct cdk8s fixture keeps the Go listeners and their authentication wired."""
 
+import json
 import os
 from pathlib import PurePosixPath
 from typing import Any
@@ -375,6 +376,17 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     assert workspace["layout"] == {"type": "BlockFilesystem", "filesystem": "ext4"}
     assert workspace["claim"]["storageClassName"] == STORAGE_CLASS
     assert workspace["claim"]["volumeMode"] == "Block"
+
+    forward = _resource(fixture.objects, "SandboxTemplate", fixture_chart.FORWARD_VM_TEMPLATE)["spec"]
+    assert forward["runnerTransport"] == "forward"
+    vm_spec = forward["vm"]["template"]["spec"]
+    interface = next(item for item in vm_spec["domain"]["devices"]["interfaces"] if item["name"] == "default")
+    assert {"port": 9090} in interface["ports"]
+    config_name = next(volume["configMap"]["name"] for volume in vm_spec["volumes"] if "configMap" in volume)
+    config_map = _resource(fixture.objects, "ConfigMap", config_name)
+    config = json.loads(config_map["data"]["runner.json"])
+    assert config["control"]["mode"] == "forward"
+    assert config["control"]["listen_address"] == "0.0.0.0:9090"
 
 
 if __name__ == "__main__":

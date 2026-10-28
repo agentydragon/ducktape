@@ -4667,7 +4667,7 @@ spec:
                 - key: "{{ element.command[0] || '' }}"
                   operator: Equals
                   value: /usr/libexec/virtiofsd
-                - key: "{{ contains(vmi.spec.volumes[?persistentVolumeClaim].join('', ['virtiofs-', name]), element.name) }}"
+                - key: "{{ contains(vmi.spec.volumes[?persistentVolumeClaim || secret || configMap].join('', ['virtiofs-', name]), element.name) }}"
                   operator: Equals
                   value: true
       name: keep-virtiofs-through-guest-shutdown

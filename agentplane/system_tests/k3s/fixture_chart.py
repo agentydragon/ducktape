@@ -11,6 +11,8 @@ and standalone edge use loopback HTTP origins for OAuth callbacks, served by por
 
 from __future__ import annotations
 
+import copy
+import json
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -101,6 +103,7 @@ SESSION_DISPATCHER = "session-dispatcher"
 # or preset does -- so unlike staging's it is the fixture's own to rename.
 POD_TEMPLATE = "runner"
 FORWARD_POD_TEMPLATE = "runner-forward"
+FORWARD_VM_TEMPLATE = "runner-vm-forward"
 # The image it runs: //agentplane/system_tests/k3s:runner_image, or its harnesses variant, which
 # stack.py imports into containerd under this reference. The runner binary itself still comes from the
 # runner disk image, as in staging.
@@ -301,6 +304,7 @@ def objects(
     synthesized = list(Testing.synth(fixture.chart))
     if vm_sandboxes:
         _boot_test_guest(synthesized)
+        _add_forward_vm_template(synthesized)
     return synthesized
 
 
@@ -717,6 +721,40 @@ def _boot_test_guest(objects: list[dict[str, Any]]) -> None:
     root["serial"] = _VM_GUEST_ROOT_SERIAL
     volume = one(volume for volume in spec["volumes"] if volume["name"] == root["name"])
     volume["containerDisk"]["image"] = _VM_GUEST_ROOT_IMAGE
+
+
+def _add_forward_vm_template(objects: list[dict[str, Any]]) -> None:
+    """Clone the reverse VM fixture with a forward listener and its own runner config."""
+    reverse_template = one(
+        doc for doc in objects if doc["kind"] == "SandboxTemplate" and doc["metadata"]["name"] == runner_vm.NAME
+    )
+    forward_template = copy.deepcopy(reverse_template)
+    forward_template["metadata"]["name"] = FORWARD_VM_TEMPLATE
+    forward_template["spec"]["runnerTransport"] = "forward"
+
+    vm_spec = forward_template["spec"]["vm"]["template"]["spec"]
+    config_volume = one(volume for volume in vm_spec["volumes"] if volume["name"] == "config")
+    source_config_name = config_volume["configMap"]["name"]
+    forward_config_name = f"{source_config_name}-forward"
+    config_volume["configMap"]["name"] = forward_config_name
+
+    source_config = one(
+        doc for doc in objects if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == source_config_name
+    )
+    forward_config = copy.deepcopy(source_config)
+    forward_config["metadata"]["name"] = forward_config_name
+    runner_config = json.loads(forward_config["data"]["runner.json"])
+    control = runner_config["control"]
+    assert control["mode"] == "reverse", control
+    control.pop("target")
+    control["mode"] = "forward"
+    control["listen_address"] = f"0.0.0.0:{runner_sandbox.RUNNER_SERVICE_PORT}"
+    forward_config["data"]["runner.json"] = json.dumps(runner_config, separators=(",", ":"))
+
+    interfaces = vm_spec["domain"]["devices"]["interfaces"]
+    interface = one(item for item in interfaces if item["name"] == "default")
+    interface.setdefault("ports", []).append({"port": runner_sandbox.RUNNER_SERVICE_PORT})
+    objects.extend((forward_template, forward_config))
 
 
 def _litellm_url(models: Models) -> str:

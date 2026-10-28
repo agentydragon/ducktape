@@ -173,7 +173,7 @@ def test_keeps_filesystem_daemons_until_compute_exits(tmp_path: Path, policy: di
             "resources": {"requests": {"memory": "1M"}, "limits": {"memory": "80M"}},
             "securityContext": {"runAsUser": 107, "runAsNonRoot": True, "capabilities": {"drop": ["ALL"]}},
         }
-        for volume in ["state", "workspace"]
+        for volume in ["state", "workspace", "runner-tls", "runner-trust"]
     ]
     unrelated = {"name": "virtiofs-unrelated", "image": "other:test", "command": ["/bin/other"]}
     container_path = {
@@ -192,11 +192,14 @@ def test_keeps_filesystem_daemons_until_compute_exits(tmp_path: Path, policy: di
         if with_existing_init
         else []
     )
-    resource["spec"]["containers"].extend([daemons[0], unrelated, container_path, daemons[1]])
+    resource["spec"]["containers"].extend([*daemons[:2], unrelated, container_path, *daemons[2:]])
     if with_existing_init:
         resource["spec"]["initContainers"] = existing_init
     volumes = (
-        *({"name": volume, "persistentVolumeClaim": {"claimName": volume}} for volume in ["state", "workspace"]),
+        {"name": "state", "persistentVolumeClaim": {"claimName": "state"}},
+        {"name": "workspace", "persistentVolumeClaim": {"claimName": "workspace"}},
+        {"name": "runner-tls", "secret": {"secretName": "runner-tls"}},
+        {"name": "runner-trust", "configMap": {"name": "runner-trust"}},
         {"name": "config", "containerPath": {"path": "/config"}},
     )
 

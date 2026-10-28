@@ -14,9 +14,10 @@ PolicyBinding grants. The policy admits a launcher only when KubeVirt's controll
 VMI of a live VirtualMachine controlled by one of our Sandboxes, and that same Sandbox controls the
 ServiceAccount.
 
-PVC-backed virtiofs daemons run as native sidecars, after KubeVirt's existing initializers. They stay
-alive until compute exits, allowing the guest to close journals and unmount state during shutdown.
-ContainerPath daemons remain ordinary containers because KubeVirt reconciles them there.
+PVC-, Secret- and ConfigMap-backed virtiofs daemons run as native sidecars, after KubeVirt's existing
+initializers. They stay alive until compute exits, allowing the guest to close journals and unmount
+state and credential volumes during shutdown. ContainerPath daemons remain ordinary containers
+because KubeVirt reconciles them there.
 
 Failure scope: the policy registers its own webhook, narrowed by match conditions to this namespace's
 launcher creates and updates of Pods carrying the token volume. With Kyverno down, only VM Sandboxes
@@ -269,7 +270,7 @@ class LauncherRelayPolicy(ClusterPolicy):
                                         ),
                                         ClusterPolicySpecRulesMutateForeachPreconditionsAll(
                                             key=(
-                                                "{{ contains(vmi.spec.volumes[?persistentVolumeClaim]."
+                                                "{{ contains(vmi.spec.volumes[?persistentVolumeClaim || secret || configMap]."
                                                 "join('', ['virtiofs-', name]), element.name) }}"
                                             ),
                                             operator=ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator.EQUALS,
