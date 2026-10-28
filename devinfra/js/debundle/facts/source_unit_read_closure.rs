@@ -44,14 +44,11 @@ impl IterativeRules for SccLazyEffectRules {
     }
 
     fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
-        let mut changed = false;
-        for index in contribution.reads.iter() {
-            changed |= current.reads.insert(index);
-        }
-        for index in contribution.rebinds.iter() {
-            changed |= current.rebinds.insert(index);
-        }
-        changed
+        let previous_reads = current.reads.len();
+        let previous_rebinds = current.rebinds.len();
+        current.reads |= &contribution.reads;
+        current.rebinds |= &contribution.rebinds;
+        current.reads.len() != previous_reads || current.rebinds.len() != previous_rebinds
     }
 }
 
