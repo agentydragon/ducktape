@@ -2885,23 +2885,12 @@ impl ExecutionIndex {
         callables: CallableInferenceInputs,
     ) -> Arc<SemanticFacts> {
         let mut collection_bindings = BTreeMap::new();
-        let constructors = classes
-            .classes
-            .values()
-            .flatten()
-            .cloned()
-            .chain(
-                callables
-                    .records
-                    .values()
-                    .map(|candidate| candidate.constructor.clone()),
-            )
-            .chain(
-                callables
-                    .namespace_wrappers
-                    .values()
-                    .map(|candidate| candidate.weak_map.clone()),
-            );
+        let constructors = classes.classes.values().flatten().cloned().chain(
+            callables
+                .records
+                .values()
+                .map(|candidate| candidate.constructor.clone()),
+        );
         for binding in constructors {
             let Some(model) =
                 native_calls::native_call_model(binding.0.as_ref(), None, CallKind::New)
@@ -2932,13 +2921,6 @@ impl ExecutionIndex {
                 SemanticKey::NativeCallIdentity {
                     binding: binding.clone(),
                     intrinsic: *intrinsic,
-                    global_this_qualified: false,
-                }
-            }))
-            .chain(callables.namespace_wrappers.values().map(|candidate| {
-                SemanticKey::NativeCallIdentity {
-                    binding: candidate.object.clone(),
-                    intrinsic: IntrinsicRoot::Object,
                     global_this_qualified: false,
                 }
             }))
@@ -7132,16 +7114,10 @@ pub(crate) struct InferredReturnedRecord {
     pub inference: crate::reports::schema::InferenceUse,
 }
 
-pub(crate) struct InferredNamespaceWrapper {
-    pub function_start: u32,
-    pub inference: crate::reports::schema::InferenceUse,
-}
-
 pub(crate) struct InferredCallableCapabilities {
     pub map_integrity: bool,
     pub callback_factories: BTreeMap<String, u32>,
     pub returned_records: BTreeMap<String, InferredReturnedRecord>,
-    pub namespace_wrappers: BTreeMap<String, InferredNamespaceWrapper>,
 }
 
 /// Prepared once for callable inference and the whole-program native census.
@@ -7330,7 +7306,6 @@ pub(crate) fn infer_callable_capabilities(
         map_integrity: false,
         callback_factories: BTreeMap::new(),
         returned_records: BTreeMap::new(),
-        namespace_wrappers: BTreeMap::new(),
     };
     let callback_candidate = |id: &Id, key: u32| {
         exported_locals.contains(id.0.as_ref()) && returned_callback_factory(&index, key)
@@ -7359,7 +7334,6 @@ pub(crate) fn infer_callable_capabilities(
             index.semantic_facts.as_deref().unwrap(),
         );
         result.returned_records = infer_returned_records(&index, &exported_locals);
-        result.namespace_wrappers = infer_namespace_wrappers(&index, &exported_locals);
     } else {
         index.semantic_facts = Some(Arc::new(SemanticFacts::solve(
             index.completed_native_rules(),
@@ -7549,35 +7523,6 @@ fn infer_returned_callback_factories(
         .collect()
 }
 
-fn infer_namespace_wrappers(
-    index: &ExecutionIndex,
-    exported_locals: &BTreeSet<String>,
-) -> BTreeMap<String, InferredNamespaceWrapper> {
-    index
-        .hoisted_bindings
-        .iter()
-        .filter_map(|(binding, &function)| {
-            if !exported_locals.contains(binding.0.as_ref()) {
-                return None;
-            }
-            let semantic_facts = index.semantic_facts.as_ref()?;
-            let key = SemanticKey::NamespaceWrapper {
-                binding: binding.clone(),
-                function,
-            };
-            let SemanticFact::NamespaceWrapper(function) = semantic_facts.fact(&key)? else {
-                return None;
-            };
-            Some((
-                binding.0.to_string(),
-                InferredNamespaceWrapper {
-                    function_start: *function,
-                    inference: semantic_facts.inference_use(&key)?,
-                },
-            ))
-        })
-        .collect()
-}
 pub(crate) fn stable_ts_enum_named_data_members(
     graph: &ChunkCodeGraph,
     facts: &[StatementFacts],

@@ -14,11 +14,17 @@ flowchart LR
     identity --> calls[Guarded native call summaries]
     empty --> class[Local class construction]
     native --> set[Primitive Set iteration]
-    shape[Canonical source shapes] --> empty
+    shape[Canonical source shapes] --> function[Stable function identity]
+    function --> callback[Callback factory]
+    function --> record[Returned record construction]
+    empty --> record
+    shape --> empty
     shape --> class
     shape --> set
     class --> consumers[Purity, synchronous execution, heap ordering]
     set --> consumers
+    callback --> consumers
+    record --> consumers
 ```
 
 Native integrity checks the completed census, including dynamic scope and
@@ -33,14 +39,21 @@ requires both Set and Array integrity and a checked source shape. The original
 restrictions on class identity, construction sites, arguments, primitive
 elements, mutation and escape remain in their structural analyses.
 
+Stable function identity requires one exact function value for the binding.
+Callback-factory conclusions compose that identity with an admitted source
+body. Returned-record conclusions additionally require an unchanged hoisted
+function and a fresh empty collection constructor; their summaries retain the
+member and capture provenance. These are timing and retained-capability facts,
+not purity or no-throw claims.
+
 ## Context and results
 
 The rule context owns compact source facts and the resolved native census from
 the same preparation. It does not parse or walk source again. A changed program,
 author input, import summary or analysis policy requires a new context; no cache
-is shared by path or module name. Prepared native-call, Set and class proofs
-share one `Arc<SemanticFacts>`, including the heap projection of the class
-proof.
+is shared by path or module name. Prepared native-call, Set, class, and callable
+proofs share one `Arc<SemanticFacts>`, including the heap projection of the
+class proof.
 
 A `Judgment` has private construction. It contains a fact, direct premise keys,
 and the union of captured-input dependencies used to establish it. Reading a

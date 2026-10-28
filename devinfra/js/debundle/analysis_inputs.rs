@@ -80,17 +80,6 @@ pub struct DeferredRecordMember {
     pub captures: BTreeSet<String>,
 }
 
-/// Source-checked wrapping of one ordinary input. The returned capability
-/// retains the input graph; no purity, fresh identity or no-throw claim follows.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct NamespaceWrapperSummary {
-    pub defining_module: String,
-    pub export: String,
-    pub local: String,
-    pub source_location: Option<SourceLocation>,
-    pub inference: crate::reports::schema::InferenceUse,
-}
-
 /// Source-only wrapper proof: direct callback uses receive these ordinary
 /// allocated arguments without explicitly returning or publishing the callback.
 /// Consumer entry coverage additionally requires an anonymous inline callback
@@ -110,8 +99,6 @@ pub struct CallableSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub returned_record: Option<ReturnedRecordSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub namespace_wrapper: Option<NamespaceWrapperSummary>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub callback_object_arguments: Option<CallbackObjectArguments>,
 }
 
@@ -120,7 +107,6 @@ impl CallableSummary {
         Self {
             callback_factory_evidence: BTreeSet::from([evidence]),
             returned_record: None,
-            namespace_wrapper: None,
             callback_object_arguments: None,
         }
     }
@@ -128,13 +114,6 @@ impl CallableSummary {
     pub fn returned_record(summary: ReturnedRecordSummary) -> Self {
         Self {
             returned_record: Some(summary),
-            ..Self::default()
-        }
-    }
-
-    pub fn namespace_wrapper(summary: NamespaceWrapperSummary) -> Self {
-        Self {
-            namespace_wrapper: Some(summary),
             ..Self::default()
         }
     }
@@ -148,14 +127,6 @@ impl CallableSummary {
     }
 
     pub fn merge(&mut self, other: Self) {
-        if let Some(wrapper) = other.namespace_wrapper {
-            assert!(
-                self.namespace_wrapper
-                    .as_ref()
-                    .is_none_or(|previous| previous == &wrapper)
-            );
-            self.namespace_wrapper = Some(wrapper);
-        }
         if let Some(arguments) = other.callback_object_arguments {
             assert!(
                 self.callback_object_arguments

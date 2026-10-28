@@ -138,7 +138,10 @@ debundle_e2e_test(name = "math_round_timing_test")
 
 debundle_e2e_test(
     name = "native_call_summary_test",
-    deps = ["@crates//:serde_json"],
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
 )
 
 debundle_e2e_test(
