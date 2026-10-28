@@ -197,18 +197,9 @@ in
   # Podman
   virtualisation.podman.enable = true;
 
-  # Display manager: GDM (inherited from gui.nix; no host override needed).
-  #
-  # SINGLE-SEAT0 + REMOTE model (2026-07-17, supersedes the old multi-seat design).
-  # The physical monitor and a remote console are never needed at the same time, so
-  # we do NOT run a second logind seat. The display 5090 (01:00.0) is seat0's sole
-  # graphical output — a normal, fully-supported GDM seat0 login, so the physical
-  # seat "just works" — and remote access is a *session, not a seat*
-  # (gnome-remote-desktop, below; reach it over an SSH-key tunnel on nebula). This
-  # retires the whole multi-seat-DM problem: GDM cannot complete a *non*-seat0 user
-  # login (gdm!291 unmerged, blocked on systemd#42247), which is exactly the wall
-  # the old `seatphysical` seat hit. Full analysis + the retracted multi-seat
-  # decision: nix/docs/wyrm2_display.md (full multiseat saga archived under archive/).
+  # The display 5090 (01:00.0) is the sole local graphical output on seat0.
+  # Remote-access candidates and historical multiseat constraints are documented
+  # in nix/docs/wyrm2_display.md; no remote desktop is currently accepted.
 
   # seat0 defaults to GNOME. mutter is what honours `mutter-device-ignore` (see the
   # udev rules below), so the single-display isolation only works under
@@ -298,13 +289,9 @@ in
   # sway seat0 session above; harmless for the default GNOME/mutter session.
   environment.sessionVariables.WLR_NO_HARDWARE_CURSORS = "1";
 
-  # Steam — games run on the RTX 5090s (direct display via seatphysical, or
-  # streamed to atlas via Sunshine/Moonlight).
-  # Games run directly in the sway session on seatphysical (the display GPU is
-  # 01:00.0 = the same GPU DXVK renders on, so no gamescope GPU-pinning is
-  # needed — see nix/docs/wyrm2_display.md). No gamescope kiosk
-  # session: on this 2-identical-5090 box gamescope can't disambiguate the
-  # GPUs and its greeter session crashed opening the wrong (seat0-owned) card.
+  # Steam uses the local seat0 display GPU; Sunshine requires an existing session.
+  # Keep the monitor on 01:00.0: gamescope's vendor:device selector did not
+  # distinguish the identical 5090s during bring-up. See nix/docs/wyrm2_display.md.
   programs.steam.enable = true;
   # Attempt at the native Steam Linux Runtime `libselinux.so.1` failure (Stellaris
   # dies: "mkdir: libselinux.so.1: cannot open shared object file"). Adds it to
