@@ -270,6 +270,8 @@ pub struct PlanWorkReport {
 pub struct ExplainReport {
     pub native_integrity_witnesses: Vec<analysis::reports::schema::NativeMutationWitness>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_prototype_mutations: Vec<analysis::reports::schema::NativePrototypeMutation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_receiver_certificates: Vec<analysis::reports::schema::NativeReceiverCertificate>,
     pub query: QueryReport,
     pub source_unit_ids: Vec<String>,
@@ -1084,11 +1086,36 @@ fn explain_from_graph(
         })
         .cloned()
         .collect();
+    let checked_properties: BTreeSet<_> = source_units
+        .iter()
+        .chain(&neighbor_source_units)
+        .filter_map(|unit| unit.synchronous_execution.as_ref())
+        .flat_map(|execution| {
+            execution
+                .native_prototype_property_checks
+                .iter()
+                .map(|check| &check.property)
+        })
+        .collect();
+    let mut native_prototype_mutations: Vec<_> = graph
+        .native_prototype_mutations
+        .iter()
+        .filter(|mutation| {
+            !checked_properties.is_empty()
+                && mutation.properties.as_ref().is_none_or(|properties| {
+                    properties
+                        .iter()
+                        .any(|property| checked_properties.contains(property))
+                })
+        })
+        .cloned()
+        .collect();
     let mut sections = BTreeMap::new();
     apply_limits!(
         args.limit,
         sections,
         (native_integrity_witnesses, "native_integrity_witnesses"),
+        (native_prototype_mutations, "native_prototype_mutations"),
         (native_receiver_certificates, "native_receiver_certificates"),
         (limited_source_unit_ids, "source_unit_ids"),
         (source_units, "source_units"),
@@ -1108,6 +1135,7 @@ fn explain_from_graph(
 
     Ok(ExplainReport {
         native_integrity_witnesses,
+        native_prototype_mutations,
         native_receiver_certificates,
         query,
         source_unit_ids: limited_source_unit_ids,

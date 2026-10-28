@@ -159,11 +159,11 @@ fn wide_acyclic_execution_reports_the_actual_expansion_bound() {
 }
 
 #[test]
-fn native_integrity_failure_reports_the_cross_chunk_write() {
+fn property_absence_failure_reports_the_cross_chunk_write() {
     let fixture = run_fixture(FixtureOpts::new(
         "import './mutation.js';\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });\nconsole.log(result.value);",
         vec![],
-    ).with_extra_chunks(&[("static/mutation", "export function mutate() { const alias = globalThis.slot; alias.flag = 1; }")]));
+    ).with_extra_chunks(&[("static/mutation", "export function mutate() { const alias = globalThis.slot; alias.value = 1; }")]));
     assert_entry_output(&fixture, "3\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let witnesses = graph["native_integrity_witnesses"]
@@ -188,12 +188,13 @@ fn native_integrity_failure_reports_the_cross_chunk_write() {
     );
     let result = execution(&fixture, "result");
     assert!(
-        result["native_integrity_checks"]
+        result["native_prototype_property_checks"]
             .as_array()
-            .expect("evaluated guards")
+            .expect("evaluated property guards")
             .iter()
-            .any(|check| check["guard"] == "ordinary_object_prototype"
-                && check["affected_roots"] == serde_json::json!(["global_object"])),
+            .any(|check| check["property"] == "value"
+                && check["intact"] == false
+                && check["blocking_mutation_count"] == 1),
         "{result}"
     );
 }
@@ -246,35 +247,35 @@ fn array_guard_references_a_direct_native_write_without_unknown_alias_widening()
 }
 
 #[test]
-fn describe_bounds_cross_chunk_native_mutation_witnesses() {
+fn describe_bounds_cross_chunk_prototype_mutations() {
     let fixture = GraphFixture::with_dependency(
         "import './dependency.js';\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });\nconsole.log(result.value);",
-        "export function mutate() { globalThis.slot.flag = 1; globalThis.other.flag = 2; }",
+        "export function mutate() { globalThis.slot.value = 1; globalThis.other.value = 2; }",
         &[],
     );
     let bounded = fixture.json(&["describe", "result", "--limit", "1"]);
     assert_eq!(
-        bounded["native_integrity_witnesses"]
+        bounded["native_prototype_mutations"]
             .as_array()
             .unwrap()
             .len(),
         1
     );
     assert_eq!(
-        bounded["native_integrity_witnesses"][0]["chunk_id"],
+        bounded["native_prototype_mutations"][0]["chunk_id"],
         "dependency"
     );
     assert_eq!(
-        bounded["limits"]["sections"]["native_integrity_witnesses"],
+        bounded["limits"]["sections"]["native_prototype_mutations"],
         serde_json::json!({"total": 2, "emitted": 1, "truncated": true})
     );
     let all = fixture.json(&["describe", "result", "--all"]);
     assert_eq!(
-        all["native_integrity_witnesses"].as_array().unwrap().len(),
+        all["native_prototype_mutations"].as_array().unwrap().len(),
         2
     );
     assert_eq!(
-        all["limits"]["sections"]["native_integrity_witnesses"],
+        all["limits"]["sections"]["native_prototype_mutations"],
         serde_json::json!({"total": 2, "emitted": 2, "truncated": false})
     );
 }

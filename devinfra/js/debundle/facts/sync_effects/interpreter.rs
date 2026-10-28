@@ -25,6 +25,7 @@ use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     CallbackFactoryUseKind, ExecutionOperation, ExecutionPrecisionLoss,
     ExecutionPrecisionLossReason, NativeIntegrityCheck, NativeIntegrityGuard,
+    NativePrototypePropertyCheck,
 };
 use source_identity::SourceUnitOrdinal;
 use std::cell::RefCell;
@@ -145,6 +146,7 @@ const MAX_SYNCHRONOUS_CALLBACK_POOL: usize = 64;
 
 struct Executor<'a> {
     native_integrity_checks: RefCell<BTreeSet<NativeIntegrityCheck>>,
+    native_prototype_property_checks: RefCell<BTreeMap<String, NativePrototypePropertyCheck>>,
     host_runtime: Option<&'a spec::HostNoReentryRuntime>,
     author_host_contract_uses: Vec<crate::reports::schema::HostNoReentryUse>,
     index: &'a ExecutionIndex,
@@ -309,12 +311,32 @@ impl Executor<'_> {
         false
     }
 
-    fn ordinary_object_prototype_intact(&self) -> bool {
-        self.index.dynamic_scope_owners.is_empty()
-            && self.native_guard_intact(
-                NativeIntegrityGuard::OrdinaryObjectPrototype,
-                &[IntrinsicRoot::GlobalObject, IntrinsicRoot::Object],
-            )
+    /// Absence is stronger than getter-freedom: an inherited data value may
+    /// contain callbacks missing from an argument-only instance graph.
+    fn object_prototype_property_absent(&self, property: &str) -> bool {
+        if Self::standard_object_prototype_property(property) {
+            return false;
+        }
+        let mut checks = self.native_prototype_property_checks.borrow_mut();
+        let check = checks.entry(property.to_owned()).or_insert_with(|| {
+            let blocking_mutation_count = self
+                .index
+                .native_prototype_mutations
+                .iter()
+                .filter(|mutation| {
+                    mutation
+                        .properties
+                        .as_ref()
+                        .is_none_or(|properties| properties.contains(property))
+                })
+                .count();
+            NativePrototypePropertyCheck {
+                property: property.to_owned(),
+                intact: blocking_mutation_count == 0 && self.index.dynamic_scope_owners.is_empty(),
+                blocking_mutation_count,
+            }
+        });
+        check.intact
     }
 
     /// A successful model lookup certifies the operation after its inputs
@@ -505,7 +527,7 @@ impl Executor<'_> {
             || Self::standard_object_prototype_property(property)
             || !self.index.plain_data_objects.contains(&object)
             || self.tainted_objects.contains(&object)
-            || !self.ordinary_object_prototype_intact()
+            || !self.object_prototype_property_absent(property)
         {
             return false;
         }
@@ -1577,7 +1599,6 @@ impl Executor<'_> {
             || fact.declared.len() != 1
             || self.reachability.incomplete
             || self.exported_owners.contains(&fact.ordinal)
-            || !self.ordinary_object_prototype_intact()
             || self.index.opaque_top.contains(&fact.ordinal)
             || !self.index.top_property_writes[fact.ordinal.0].is_empty()
             || !self.index.top_member_value_writes[fact.ordinal.0].is_empty()
@@ -1801,7 +1822,7 @@ impl Executor<'_> {
                 || (!properties
                     .iter()
                     .any(|(name, _)| name.as_deref() == Some(property))
-                    && Self::standard_object_prototype_property(property))
+                    && !self.object_prototype_property_absent(property))
             {
                 return false;
             }
@@ -2601,7 +2622,10 @@ impl Executor<'_> {
             && (self.index.other_class_uses.contains(binding)
                 || (self.export_reentry_enabled && self.index.exported_bindings.contains(binding))
                 || self.tainted_classes.contains(&key)
-                || !self.ordinary_object_prototype_intact()
+                || !constructor
+                    .own_fields
+                    .iter()
+                    .all(|property| self.object_prototype_property_absent(property))
                 || self
                     .global_escaped_callbacks
                     .contains(&AbstractValue::ClassMembers(key)))
@@ -5131,6 +5155,7 @@ pub(crate) fn annotate_synchronous_calls(
     let enum_data_members = super::stable_ts_enum_named_data_members(proofs.graph, facts);
     let mut executor = Executor {
         native_integrity_checks: RefCell::default(),
+        native_prototype_property_checks: RefCell::default(),
         host_runtime: hints
             .assumptions
             .host_no_reentry
@@ -5232,6 +5257,10 @@ pub(crate) fn annotate_synchronous_calls(
         .zip(index.top_calls.iter().zip(&index.top_assignments))
     {
         executor.native_integrity_checks.borrow_mut().clear();
+        executor
+            .native_prototype_property_checks
+            .borrow_mut()
+            .clear();
         executor.current_top_owner = Some(fact.ordinal);
         executor.proof_uses.clear();
         // Cache keys include this owner; previous statement snapshots cannot
@@ -5498,6 +5527,11 @@ pub(crate) fn annotate_synchronous_calls(
             std::mem::take(executor.native_integrity_checks.get_mut())
                 .into_iter()
                 .collect();
+        outcome.effects.native_prototype_property_checks =
+            std::mem::take(executor.native_prototype_property_checks.get_mut())
+                .into_values()
+                .collect();
+        outcome.effects.native_prototype_mutations = index.native_prototype_mutations.clone();
         outcome.effects.native_integrity_witnesses = index.native_integrity_witnesses.clone();
         outcome.effects.native_receiver_certificates = index.native_receiver_certificates.clone();
         effects.push(outcome.effects);

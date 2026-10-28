@@ -842,6 +842,12 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
         .chain(&report.neighbor_source_units)
     {
         if let Some(execution) = &source_unit.synchronous_execution {
+            for check in &execution.native_prototype_property_checks {
+                out.push_str(&format!(
+                    "  {} Object.prototype.{:?} absent={} blockers={}\n",
+                    source_unit.id, check.property, check.intact, check.blocking_mutation_count
+                ));
+            }
             for check in &execution.native_integrity_checks {
                 out.push_str(&format!(
                     "  {} failed native premise {:?}: {:?}\n",
@@ -849,6 +855,16 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
                 ));
             }
         }
+    }
+    for mutation in &report.native_prototype_mutations {
+        out.push_str(&format!(
+            "  prototype mutation {}:unit:{} {:?} properties={:?} location={:?}\n",
+            mutation.chunk_id,
+            mutation.statement_ordinal.0,
+            mutation.kind,
+            mutation.properties,
+            mutation.source_location
+        ));
     }
     for witness in &report.native_integrity_witnesses {
         out.push_str(&format!(

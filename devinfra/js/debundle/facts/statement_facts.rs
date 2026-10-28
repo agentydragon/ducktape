@@ -213,6 +213,9 @@ pub(crate) struct SynchronousCalls {
     pub complete: bool,
     pub precision_losses: Vec<crate::reports::schema::ExecutionPrecisionLoss>,
     pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
+    pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
+    pub native_prototype_mutations:
+        std::sync::Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,
     pub native_integrity_witnesses:
         std::sync::Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
     pub native_receiver_certificates:

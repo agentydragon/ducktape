@@ -499,6 +499,7 @@ rust_library(
         "facts/sync_effects.rs",
         "facts/sync_effects/execution_index.rs",
         "facts/sync_effects/execution_index/callback_arguments.rs",
+        "facts/sync_effects/execution_index/prototype_properties.rs",
         "facts/sync_effects/interpreter.rs",
         "facts/sync_effects/native_calls.rs",
         "facts/sync_effects/receiver_identity.rs",

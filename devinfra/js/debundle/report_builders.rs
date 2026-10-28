@@ -123,7 +123,20 @@ pub(crate) fn build_dependency_graph_report(
             certificate.chunk_id = assignment_analysis.inputs().chunk_id().to_string();
         }
     }
+    let mut native_prototype_mutations = assignment_analysis
+        .inputs()
+        .dependency_graph()
+        .iter_nodes()
+        .next()
+        .map(|source_unit| source_unit.native_prototype_mutations.as_ref().clone())
+        .unwrap_or_default();
+    for mutation in &mut native_prototype_mutations {
+        if mutation.chunk_id.is_empty() {
+            mutation.chunk_id = assignment_analysis.inputs().chunk_id().to_string();
+        }
+    }
     DependencyGraphReport {
+        native_prototype_mutations,
         native_integrity_witnesses,
         native_receiver_certificates,
         provenance: None,

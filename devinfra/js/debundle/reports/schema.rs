@@ -98,6 +98,8 @@ pub struct DependencyGraphReport {
     /// Whole-program census sites, shared by failed native premise checks.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_integrity_witnesses: Vec<NativeMutationWitness>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_prototype_mutations: Vec<NativePrototypeMutation>,
     /// Whole-program receiver identity certificates that explain local receiver provenance.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_receiver_certificates: Vec<NativeReceiverCertificate>,
@@ -361,12 +363,47 @@ pub struct NativeIntegrityCheck {
     pub affected_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
 }
 
+/// A source operation that can affect properties of the intrinsic Object prototype.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NativePrototypeMutation {
+    pub chunk_id: String,
+    pub statement_ordinal: SourceUnitOrdinal,
+    pub source_location: Option<SourceLocation>,
+    pub kind: NativePrototypeMutationKind,
+    /// None denotes any property; an empty set denotes only Symbol keys.
+    pub properties: Option<BTreeSet<String>>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub key_dependencies: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    #[serde(skip)]
+    pub(crate) span: swc_common::Span,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativePrototypeMutationKind {
+    Write,
+    Delete,
+    Reflective,
+    Escape,
+    DynamicScope,
+}
+
+/// An evaluated property-specific absence obligation, including its source blockers.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NativePrototypePropertyCheck {
+    pub property: String,
+    pub intact: bool,
+    pub blocking_mutation_count: usize,
+}
+
 /// Completeness of the existing synchronous-effect inference, independent of purity.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SynchronousExecutionReport {
     /// Evaluated premises which failed; other eligibility conditions may also fail.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_integrity_checks: Vec<NativeIntegrityCheck>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_prototype_property_checks: Vec<NativePrototypePropertyCheck>,
     pub complete: bool,
     pub precision_losses: Vec<ExecutionPrecisionLoss>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
