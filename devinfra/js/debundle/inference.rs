@@ -15,7 +15,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::analysis_inputs::ProofDependencies;
 
 mod iterative;
-pub(crate) use iterative::{FactContext, IterativeInference, IterativeRules};
+pub(crate) use iterative::{
+    CertificateContext, FactContext, GuardedContext, IterativeFacts, IterativeInference,
+    IterativeRules,
+};
 
 /// Evaluates one keyed family of positive inference rules.
 ///
@@ -80,6 +83,7 @@ pub(crate) struct Inference<R: RuleSet> {
 }
 
 /// The state of a key after the most recent worklist closure.
+#[cfg(test)]
 #[derive(Debug)]
 pub(crate) enum InferenceStatus<'a, Key, Fact> {
     /// The key has a positive immutable judgment.
@@ -134,6 +138,7 @@ impl<R: RuleSet> Inference<R> {
     /// it neither implies queued work nor proves semantic absence.
     /// `Unsupported` means the key was evaluated to closure without a missing
     /// premise that could wake it.
+    #[cfg(test)]
     pub fn status(&self, key: &R::Key) -> Option<InferenceStatus<'_, R::Key, R::Fact>> {
         if let Some(judgment) = self.judgments.get(key) {
             return Some(InferenceStatus::Proven(judgment));
@@ -677,6 +682,9 @@ mod tests {
         let complete = rules_with_chain(None);
         let mut first = Inference::new(complete);
         assert!(first.query(&Key::A).is_some());
+        assert!(
+            matches!(first.status(&Key::A), Some(InferenceStatus::Proven(fact)) if *fact.value() == 1)
+        );
 
         let incomplete = rules_with_chain(Some(Key::C));
         let mut second = Inference::new(incomplete);

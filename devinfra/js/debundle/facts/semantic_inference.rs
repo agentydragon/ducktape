@@ -8,7 +8,10 @@ use super::callable_inference::{CallableInferenceInputs, ReturnedRecordFacts};
 use super::local_class_construction::LocalClassConstructionShapes;
 use super::set_iterables::SetIterableShapes;
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
-use crate::inference::{Inference, InferenceStatus, Judgment, RuleContext, RuleSet};
+use crate::inference::{
+    CertificateContext, FactContext, GuardedContext, IterativeFacts, IterativeInference,
+    IterativeRules, Judgment,
+};
 use crate::reports::schema::{InferenceRule, InferenceUse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -98,14 +101,11 @@ pub(crate) struct SemanticRules {
     pub(crate) callables: CallableInferenceInputs,
 }
 
-impl RuleSet for SemanticRules {
-    type Key = SemanticKey;
-    type Fact = SemanticFact;
-
-    fn evaluate(
+impl SemanticRules {
+    fn derive(
         &self,
         key: &SemanticKey,
-        context: &mut RuleContext<'_, SemanticKey, SemanticFact>,
+        context: &mut impl CertificateContext<SemanticKey, SemanticFact>,
     ) -> Option<SemanticFact> {
         match key {
             SemanticKey::NativeIntegrity(root) => {
@@ -180,10 +180,30 @@ impl RuleSet for SemanticRules {
     }
 }
 
+impl IterativeRules for SemanticRules {
+    type Key = SemanticKey;
+    type Fact = SemanticFact;
+    type Rule = SemanticKey;
+
+    fn evaluate(&self, key: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
+        let mut guarded = GuardedContext::new(context);
+        let result = self.derive(key, &mut guarded);
+        if let Some(fact) = guarded.finish(result) {
+            context.propose(key.clone(), fact);
+        }
+    }
+
+    fn merge(_: &Self::Key, _: &mut Self::Fact, _: Self::Fact) -> bool {
+        // These are immutable certificates over one source/native context;
+        // only their consumed proof dependencies can grow.
+        false
+    }
+}
+
 /// Immutable facts from a single completed semantic context.
 #[derive(Debug)]
 pub(crate) struct SemanticFacts {
-    inference: Inference<SemanticRules>,
+    inference: IterativeFacts<SemanticKey, SemanticFact>,
     constructions: BTreeMap<u32, u32>,
 }
 
@@ -225,6 +245,13 @@ impl SemanticFacts {
             .chain(rules.callables.keys())
             .chain(
                 rules
+                    .collection_bindings
+                    .keys()
+                    .cloned()
+                    .map(SemanticKey::EmptyCollection),
+            )
+            .chain(
+                rules
                     .classes
                     .classes
                     .keys()
@@ -240,10 +267,7 @@ impl SemanticFacts {
                     .map(SemanticKey::PrimitiveSetIteration),
             )
             .collect();
-        let mut inference = Inference::new(rules);
-        for root in roots {
-            inference.query(&root);
-        }
+        let inference = IterativeInference::new(rules).solve(roots);
         Self {
             inference,
             constructions,
@@ -266,14 +290,7 @@ impl SemanticFacts {
     }
 
     pub(crate) fn dependencies(&self, key: &SemanticKey) -> Option<&ProofDependencies> {
-        match self.inference.status(key)? {
-            InferenceStatus::Proven(judgment) => Some(judgment.dependencies()),
-            InferenceStatus::Waiting(premises) => {
-                debug_assert!(!premises.is_empty());
-                None
-            }
-            InferenceStatus::Unsupported => None,
-        }
+        self.inference.get(key).map(Judgment::dependencies)
     }
 
     /// Expand shared premise IDs only for a consumed diagnostic. The analysis

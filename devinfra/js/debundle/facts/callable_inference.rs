@@ -3,7 +3,7 @@
 use crate::analysis_inputs::NativeIntrinsic;
 use crate::facts::semantic_inference::{SemanticFact, SemanticKey};
 use crate::facts::value_flow::{ValueOrigin, Values};
-use crate::inference::RuleContext;
+use crate::inference::CertificateContext;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_ecma_ast::Id;
@@ -50,6 +50,10 @@ impl CallableInferenceInputs {
                 let ValueOrigin::Function(function) = value else {
                     continue;
                 };
+                keys.push(SemanticKey::StableFunction {
+                    binding: binding.clone(),
+                    function,
+                });
                 if self.callback_factories.contains(&function) {
                     keys.push(SemanticKey::CallbackFactory {
                         binding: binding.clone(),
@@ -78,7 +82,7 @@ impl CallableInferenceInputs {
     pub(crate) fn evaluate(
         &self,
         key: &SemanticKey,
-        context: &mut RuleContext<'_, SemanticKey, SemanticFact>,
+        context: &mut impl CertificateContext<SemanticKey, SemanticFact>,
     ) -> Option<SemanticFact> {
         match key {
             SemanticKey::StableFunction { binding, function } => self

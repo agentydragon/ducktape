@@ -19,6 +19,45 @@ pub(crate) trait FactContext<Key, Fact> {
     fn assume(&mut self, dependencies: &ProofDependencies);
 }
 
+/// Positive requirements over the same store used by growing facts.
+/// Requiring an absent fact must never allow a certificate to escape.
+pub(crate) trait CertificateContext<Key, Fact> {
+    fn require(&mut self, key: Key) -> Option<&Fact>;
+    fn assume(&mut self, dependencies: &ProofDependencies);
+}
+
+pub(crate) struct GuardedContext<'a, Context> {
+    inner: &'a mut Context,
+    missing: bool,
+}
+
+impl<'a, Context> GuardedContext<'a, Context> {
+    pub(crate) fn new(inner: &'a mut Context) -> Self {
+        Self {
+            inner,
+            missing: false,
+        }
+    }
+
+    pub(crate) fn finish<Fact>(self, contribution: Option<Fact>) -> Option<Fact> {
+        contribution.filter(|_| !self.missing)
+    }
+}
+
+impl<Key, Fact, Context: FactContext<Key, Fact>> CertificateContext<Key, Fact>
+    for GuardedContext<'_, Context>
+{
+    fn require(&mut self, key: Key) -> Option<&Fact> {
+        let fact = self.inner.read(key);
+        self.missing |= fact.is_none();
+        fact
+    }
+
+    fn assume(&mut self, dependencies: &ProofDependencies) {
+        self.inner.assume(dependencies);
+    }
+}
+
 pub(crate) trait IterativeRules: Sized {
     type Key: Clone + Ord;
     type Fact;
@@ -171,6 +210,7 @@ impl<R: IterativeRules> FactContext<R::Key, R::Fact> for IterativeContext<'_, R>
 }
 
 /// Immutable results after every supplied producer and its dependents settle.
+#[derive(Debug)]
 pub(crate) struct IterativeFacts<Key, Fact> {
     facts: BTreeMap<Key, Judgment<Key, Fact>>,
     #[cfg(test)]
@@ -237,6 +277,43 @@ mod tests {
             current.extend(contribution);
             current.len() != before
         }
+    }
+
+    #[test]
+    fn positive_certificates_wait_for_all_required_growing_facts() {
+        struct Certificates;
+        impl IterativeRules for Certificates {
+            type Key = usize;
+            type Fact = BTreeSet<usize>;
+            type Rule = usize;
+            fn evaluate(&self, rule: &usize, context: &mut impl FactContext<usize, Self::Fact>) {
+                match rule {
+                    0 => {
+                        let mut guarded = GuardedContext::new(context);
+                        // Even a producer that neglects `?` cannot publish a
+                        // positive certificate with an absent requirement.
+                        guarded.require(1);
+                        if let Some(fact) = guarded.finish(Some(BTreeSet::from([10]))) {
+                            context.propose(2, fact);
+                        }
+                    }
+                    1 => {
+                        context.propose(1, BTreeSet::from([20]));
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            fn merge(_: &usize, into: &mut Self::Fact, from: Self::Fact) -> bool {
+                let before = into.len();
+                into.extend(from);
+                into.len() != before
+            }
+        }
+        let waiting = IterativeInference::new(Certificates).solve([0]);
+        assert!(waiting.get(&2).is_none());
+        let complete = IterativeInference::new(Certificates).solve([0, 1]);
+        assert_eq!(complete.get(&2).unwrap().value(), &BTreeSet::from([10]));
+        assert!(complete.get(&2).unwrap().premises().contains(&1));
     }
 
     #[test]
