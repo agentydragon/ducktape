@@ -239,7 +239,8 @@ fn build_source_unit_nodes_and_edges(
                         source_location: proof_use.source_location.clone(),
                         native_integrity_value_inputs: proof_use
                             .evidence
-                            .native_integrity_value_inputs
+                            .inference
+                            .value_input_refs
                             .clone(),
                     }
                 }).collect();

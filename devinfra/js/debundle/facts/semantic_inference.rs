@@ -38,6 +38,10 @@ pub(crate) enum SemanticKey {
         binding: Id,
         function: u32,
     },
+    NamespaceWrapper {
+        binding: Id,
+        function: u32,
+    },
 }
 
 impl SemanticKey {
@@ -51,6 +55,7 @@ impl SemanticKey {
             Self::StableFunction { .. } => InferenceRule::StableFunction,
             Self::CallbackFactory { .. } => InferenceRule::CallbackFactory,
             Self::ReturnedRecord { .. } => InferenceRule::ReturnedRecord,
+            Self::NamespaceWrapper { .. } => InferenceRule::NamespaceWrapper,
         }
     }
 }
@@ -63,6 +68,7 @@ pub(crate) enum SemanticFact {
     Function(u32),
     CallbackFactory(u32),
     ReturnedRecord(Arc<ReturnedRecordFacts>),
+    NamespaceWrapper(u32),
 }
 
 /// Binding-resolution facts captured alongside the canonical source analysis.
@@ -119,7 +125,8 @@ impl RuleSet for SemanticRules {
                 intrinsic,
                 global_this_qualified,
             } => {
-                if self.binding_context.declared_bindings.contains(binding)
+                if !self.native_call_identity_candidates.contains(key)
+                    || self.binding_context.declared_bindings.contains(binding)
                     || self
                         .binding_context
                         .shadowed_globals
@@ -158,7 +165,8 @@ impl RuleSet for SemanticRules {
             }
             SemanticKey::StableFunction { .. }
             | SemanticKey::CallbackFactory { .. }
-            | SemanticKey::ReturnedRecord { .. } => {
+            | SemanticKey::ReturnedRecord { .. }
+            | SemanticKey::NamespaceWrapper { .. } => {
                 if self.dynamic_scope {
                     return None;
                 }

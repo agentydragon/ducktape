@@ -1018,6 +1018,10 @@ Used certificates also appear in the dependency graph's
 `synchronous_execution.returned_record_uses` separately records `call_timing`
 and `return_capability` consumption with the call-site location and a summary
 reference. Callback-input factory evidence and uses retain their own fields.
+The summary's `inference` records the composing source-identity, empty-collection
+and native-integrity rules and their captured-input dependencies. Actual use
+also appears in `synchronous_execution.inference_uses`; the dependency set is
+propagated from required premises rather than reconstructed by each consumer.
 
 ## Audited callback factories
 

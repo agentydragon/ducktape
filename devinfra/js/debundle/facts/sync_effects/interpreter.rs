@@ -342,6 +342,9 @@ impl Executor<'_> {
         let Some(evidence) = self.index.returned_record_summaries.get(imported_local) else {
             return;
         };
+        self.inference_uses
+            .borrow_mut()
+            .insert(evidence.inference.clone());
         let proof_use = ReturnedRecordUseFact {
             imported_local: imported_local.0.to_string(),
             evidence: evidence.clone(),

@@ -429,6 +429,7 @@ pub enum InferenceRule {
     StableFunction,
     CallbackFactory,
     ReturnedRecord,
+    NamespaceWrapper,
 }
 
 /// A purpose-specific certificate actually used by synchronous execution.
