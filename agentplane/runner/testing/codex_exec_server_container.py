@@ -40,12 +40,6 @@ class CodexExecServerContainerStatus:
     owned: bool
 
 
-def _free_port() -> int:
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        return int(listener.getsockname()[1])
-
-
 def inspect_codex_exec_server_container(path: Path) -> CodexExecServerContainerStatus:
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
         connection.settimeout(2)
@@ -67,8 +61,11 @@ def codex_exec_server_container(tmp_path: Path) -> Iterator[CodexExecServerConta
     runner_binary = get_required_path(launches.RUNNER_BINARY).resolve()
     codex_binary = get_required_path(launches.CODEX_BINARY).resolve()
     socket_path = tmp_path / "executor.sock"
-    url = f"ws://127.0.0.1:{_free_port()}"
-    health_port = _free_port()
+    with socket.socket() as executor_listener, socket.socket() as health_listener:
+        executor_listener.bind(("127.0.0.1", 0))
+        health_listener.bind(("127.0.0.1", 0))
+        url = f"ws://127.0.0.1:{executor_listener.getsockname()[1]}"
+        health_port = int(health_listener.getsockname()[1])
     container = (
         LoggedContainer(debian_slim.IMAGE.tag, test_name="runner-executor-companion")
         .with_kwargs(network_mode="host", mem_limit="512m", pids_limit=64, user=f"{os.getuid()}:{os.getgid()}")
