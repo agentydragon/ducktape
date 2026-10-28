@@ -34,7 +34,7 @@ case checks the bisection's known boundary, and four synthetic windows check
 withdrawal monotonicity across stock, mixed, and bond allocations with a real
 survival-to-exhaustion transition.
 
-The manual suite now runs 33 full-population cells across two Bazel shards:
+The manual suite now runs 30 full-population cells across two Bazel shards:
 the 4% headline, full Table 3 neighbourhood, and all-bond direction still use
 all 474 historical starts and the 360-month horizon. Both shards fetch the
 named public evidence separately, so this remains an opt-in network test.

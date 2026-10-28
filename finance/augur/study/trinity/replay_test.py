@@ -85,22 +85,12 @@ def test_the_input_returns_resemble_the_papers(replay: Replay) -> None:
         assert replay.compound_return_percent[symbol] == pytest.approx(paper, abs=3.0), symbol
 
 
-def test_the_four_percent_failure_rate_matches_the_published_one(replay: Replay) -> None:
-    """The 4% rule's headline claim is that it fails under a tenth of the time. Trinity's own
-    published rate is 2-5%, which is tighter, so that is what is checked."""
-
-    published_index = PUBLISHED_RATES.index(0.04)
-    for equity_share in EQUITY_LED_SHARES:
-        published = TABLE_3_SUCCESS_PERCENT[equity_share][published_index]
-        reproduced = 100.0 * replay.success_rate(equity_share=equity_share, withdrawal_rate=0.04)
-        assert reproduced == pytest.approx(published, abs=EQUITY_LED_4_PERCENT_TOLERANCE_POINTS), (
-            f"{equity_share:.0%} equity: augur {reproduced:.0f}%, Table 3 {published}%"
-        )
-
-
 def test_the_whole_table_lands_in_the_published_neighbourhood(replay: Replay) -> None:
-    """Every allocation that holds equity. The all-bond row sits outside any tolerance this
-    could set and gets its own directional test below — see the module docstring."""
+    """Every equity-holding cell, with the tighter 4% headline and SAFEMAX bracket.
+
+    The all-bond row sits outside any symmetric tolerance and gets its own
+    directional test below — see the module docstring.
+    """
 
     for equity_share, published in TABLE_3_SUCCESS_PERCENT.items():
         if equity_share == 0.0:
@@ -118,6 +108,10 @@ def test_the_whole_table_lands_in_the_published_neighbourhood(replay: Replay) ->
                 assert reproduced == 100.0, f"{equity_share:.0%} equity failed at 3%"
             elif rate == 0.04:
                 assert reproduced < 100.0, f"{equity_share:.0%} equity survived every 4% window"
+                if equity_share in EQUITY_LED_SHARES:
+                    assert reproduced == pytest.approx(paper, abs=EQUITY_LED_4_PERCENT_TOLERANCE_POINTS), (
+                        f"{equity_share:.0%} equity: augur {reproduced:.0f}%, Table 3 {paper}%"
+                    )
 
 
 def test_the_all_bond_row_stays_under_the_published_one(replay: Replay) -> None:
