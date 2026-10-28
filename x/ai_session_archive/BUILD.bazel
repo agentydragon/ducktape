@@ -188,6 +188,23 @@ py_test(
 )
 
 py_test(
+    name = "test_fresh_ingest",
+    srcs = ["test_fresh_ingest.py"],
+    requires_docker = True,
+    deps = [
+        ":database",
+        ":ingest",
+        ":models",
+        ":restic",
+        ":testing",
+        "//:conftest",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_cli",
     srcs = ["test_cli.py"],
     deps = [

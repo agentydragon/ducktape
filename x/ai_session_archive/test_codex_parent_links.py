@@ -63,7 +63,12 @@ def test_codex_parent_links_resolve_late_and_mark_conflicting_identity_ambiguous
         ): b'{"type":"session_meta","payload":{"id":"child","parent_thread_id":"other-parent"}}\n',
     }
     files_by_snapshot = {
-        snapshots[0].id: [ResticFile(child_path, "file", len(contents[(snapshots[0].id, child_path)]), base_time)]
+        snapshot.id: [
+            ResticFile(path, "file", len(content), snapshot.captured_at)
+            for (snapshot_id, path), content in contents.items()
+            if snapshot_id == snapshot.id
+        ]
+        for snapshot in snapshots
     }
     changes_by_pair = {
         (snapshots[0].id, snapshots[1].id): [ResticChange(parent_path, "+")],
@@ -82,12 +87,9 @@ def test_codex_parent_links_resolve_late_and_mark_conflicting_identity_ambiguous
             roots=(HarnessRoot(Harness.CODEX, codex_root),),
         ),
     )
+    available = snapshots[:1]
     with (
-        patch.object(
-            repository,
-            "list_snapshots",
-            side_effect=[snapshots[:1], snapshots[:2], snapshots[:3], snapshots[:4], snapshots],
-        ),
+        patch.object(repository, "list_snapshots", side_effect=lambda: available),
         patch.object(
             repository, "list_files", side_effect=lambda snapshot_id, path=None: files_by_snapshot[snapshot_id]
         ),
@@ -108,6 +110,7 @@ def test_codex_parent_links_resolve_late_and_mark_conflicting_identity_ambiguous
             assert child.parent_session_id is None
             assert child.parent_link_kind == "codex_parent_thread_id_unresolved"
 
+        available = snapshots[:2]
         second_report = ingestor.ingest()
         assert second_report.files_failed == 0
         with factory() as db:
@@ -118,6 +121,7 @@ def test_codex_parent_links_resolve_late_and_mark_conflicting_identity_ambiguous
             assert child.parent_session_id == parent.id
             assert child.parent_link_kind == "codex_parent_thread_id"
 
+        available = snapshots[:3]
         third_report = ingestor.ingest()
         assert third_report.files_failed == 0
         with factory() as db:
@@ -131,6 +135,7 @@ def test_codex_parent_links_resolve_late_and_mark_conflicting_identity_ambiguous
             assert child.parent_session_id is None
             assert child.parent_link_kind == "codex_parent_thread_id_inconsistent"
 
+        available = snapshots[:4]
         fourth_report = ingestor.ingest()
         assert fourth_report.files_failed == 0
         with factory() as db:
@@ -143,6 +148,7 @@ def test_codex_parent_links_resolve_late_and_mark_conflicting_identity_ambiguous
             assert child.parent_session_id is None
             assert child.parent_link_kind == "codex_parent_thread_id_inconsistent"
 
+        available = snapshots
         fifth_report = ingestor.ingest()
         assert fifth_report.files_failed == 0
         with factory() as db:

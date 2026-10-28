@@ -8,7 +8,7 @@ import math
 import tempfile
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import PurePosixPath
 from typing import Any, BinaryIO, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -32,6 +32,10 @@ from x.ai_session_archive.restic import ResticChange, ResticFile, ResticReposito
 PARSER_VERSION = "jsonl-v1"
 CHECKPOINT_INTERVAL = 64
 RECORD_BATCH_MAX_BYTES = 4 * 1024 * 1024
+FRESH_FILE_BATCH = 32
+BACKFILL_FILE_BATCH = 128
+FRESH_PARENTLESS_CANDIDATES = 64
+FRESH_SEED_GAP = timedelta(hours=1)
 _KNOWN_DIFF_MODIFIERS = frozenset(("+", "-", "M", "T", "?", "U"))
 
 
@@ -98,6 +102,9 @@ class _ParsedRecord:
     kind: str | None
 
 
+_SnapshotEntry = tuple[str, str, str, int, datetime | None, str, str | None, _Location | None]
+
+
 class SnapshotIngestor:
     """Imports all retained snapshots for one Restic repository into Postgres."""
 
@@ -107,12 +114,118 @@ class SnapshotIngestor:
         self._roots = tuple(sorted(source.roots, key=lambda root: len(root.path.parts), reverse=True))
 
     def ingest(self) -> IngestReport:
-        snapshots = self._source.restic.list_snapshots()
         self._ensure_source()
-        for snapshot in snapshots:
-            self._prepare_snapshot(snapshot)
-            self._process_snapshot(snapshot)
-        return self._report(len(snapshots))
+        attempted_inventory: set[str] = set()
+        attempted_fresh: set[str] = set()
+        attempted_files: dict[str, set[str]] = {}
+        finalized: set[str] = set()
+        while True:
+            # A long backfill must notice snapshots created after this invocation began.
+            snapshots = self._source.restic.list_snapshots()
+            if not snapshots:
+                return self._report(0)
+            latest = max(snapshots, key=lambda row: (row.captured_at, row.id))
+            available_snapshot_ids = {snapshot.id for snapshot in snapshots}
+            worked = False
+            if self._has_fresh_work(latest, attempted_fresh, attempted_files):
+                self._work_batch(
+                    latest,
+                    FRESH_FILE_BATCH,
+                    recent_first=True,
+                    available_snapshot_ids=available_snapshot_ids,
+                    attempted_inventory=attempted_inventory,
+                    attempted_fresh=attempted_fresh,
+                    attempted_files=attempted_files,
+                    finalized=finalized,
+                )
+                worked = True
+            # Advance the earliest unfinished snapshot every round, including one left
+            # unfinished by a previous importer run. The two lanes may select the same
+            # snapshot; each batch still processes distinct files.
+            for snapshot in snapshots:
+                if self._has_work(snapshot, attempted_inventory, attempted_files, finalized):
+                    self._work_batch(
+                        snapshot,
+                        BACKFILL_FILE_BATCH,
+                        recent_first=False,
+                        available_snapshot_ids=available_snapshot_ids,
+                        attempted_inventory=attempted_inventory,
+                        attempted_fresh=attempted_fresh,
+                        attempted_files=attempted_files,
+                        finalized=finalized,
+                    )
+                    worked = True
+                    break
+            if not worked:
+                return self._report(len(snapshots))
+
+    def _has_fresh_work(
+        self, snapshot: ResticSnapshot, attempted_fresh: set[str], attempted_files: dict[str, set[str]]
+    ) -> bool:
+        if snapshot.id not in attempted_fresh:
+            return True
+        with self._session_factory() as db:
+            return (
+                db.scalar(self._unattempted_file_query(snapshot, attempted_files.get(snapshot.id, set())).limit(1))
+                is not None
+            )
+
+    def _unattempted_file_query(self, snapshot: ResticSnapshot, attempted: set[str]):
+        query = select(SnapshotFileRow.path).where(
+            SnapshotFileRow.machine_id == self._source.machine_id,
+            SnapshotFileRow.snapshot_id == snapshot.id,
+            SnapshotFileRow.status.in_(("pending", "failed")),
+        )
+        if attempted:
+            query = query.where(SnapshotFileRow.path.not_in(attempted))
+        return query
+
+    def _has_work(
+        self,
+        snapshot: ResticSnapshot,
+        attempted_inventory: set[str],
+        attempted_files: dict[str, set[str]],
+        finalized: set[str],
+    ) -> bool:
+        with self._session_factory() as db:
+            row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id))
+            if row is None:
+                return True
+            if row.inventory_status != "complete":
+                return snapshot.id not in attempted_inventory
+            if row.processing_status == "complete":
+                return False
+            if (
+                db.scalar(self._unattempted_file_query(snapshot, attempted_files.get(snapshot.id, set())).limit(1))
+                is not None
+            ):
+                return True
+            # A prior job may have committed the last file but stopped before
+            # marking its snapshot complete. Reconcile that state once per run.
+            return snapshot.id not in finalized
+
+    def _work_batch(
+        self,
+        snapshot: ResticSnapshot,
+        limit: int,
+        *,
+        recent_first: bool,
+        available_snapshot_ids: set[str],
+        attempted_inventory: set[str],
+        attempted_fresh: set[str],
+        attempted_files: dict[str, set[str]],
+        finalized: set[str],
+    ) -> None:
+        if recent_first:
+            if snapshot.id not in attempted_fresh:
+                self._prepare_fresh_snapshot(snapshot, available_snapshot_ids)
+                attempted_fresh.add(snapshot.id)
+        else:
+            self._prepare_snapshot(snapshot, available_snapshot_ids)
+            attempted_inventory.add(snapshot.id)
+        attempted = attempted_files.setdefault(snapshot.id, set())
+        self._process_snapshot(snapshot, limit=limit, recent_first=recent_first, attempted=attempted)
+        finalized.add(snapshot.id)
 
     def _ensure_source(self) -> None:
         with self._session_factory() as db, db.begin():
@@ -132,7 +245,7 @@ class SnapshotIngestor:
                 if key not in configured:
                     db.add(SessionRootRow(machine_id=self._source.machine_id, harness=key[0], root_path=key[1]))
 
-    def _prepare_snapshot(self, snapshot: ResticSnapshot) -> None:
+    def _prepare_snapshot(self, snapshot: ResticSnapshot, available_snapshot_ids: set[str]) -> None:
         try:
             with self._session_factory() as db, db.begin():
                 row = db.scalar(
@@ -161,7 +274,7 @@ class SnapshotIngestor:
                 if row.inventory_status == "complete":
                     return
 
-                comparison_snapshot_id = self._usable_parent(db, snapshot)
+                comparison_snapshot_id = self._usable_parent(db, snapshot, available_snapshot_ids)
                 if comparison_snapshot_id is None:
                     files = self._source.restic.list_files(snapshot.id)
                     entries = self._initial_entries(files)
@@ -171,36 +284,106 @@ class SnapshotIngestor:
 
                 row.comparison_snapshot_id = comparison_snapshot_id
                 row.inventory_error = None
-                for path, modifier, file_type, size, modified_at, status, error, location in entries:
-                    existing = db.get(SnapshotFileRow, (self._source.machine_id, snapshot.id, path))
-                    if existing is not None:
-                        continue
-                    session_id = None
-                    if location is not None:
-                        session_row = self._ensure_session(db, location)
-                        session_id = session_row.id
-                    db.add(
-                        SnapshotFileRow(
-                            machine_id=self._source.machine_id,
-                            snapshot_id=snapshot.id,
-                            path=path,
-                            session_id=session_id,
-                            change_kind=modifier,
-                            file_type=file_type,
-                            byte_size=size,
-                            modified_at=modified_at,
-                            status=status,
-                            error=error,
-                        )
-                    )
+                self._record_entries(db, snapshot, entries)
                 row.inventory_status = "complete"
                 row.processing_status = "pending"
         except Exception as exc:
             self._mark_inventory_failed(snapshot, exc)
 
-    def _usable_parent(self, db: DbSession, snapshot: ResticSnapshot) -> str | None:
+    def _prepare_fresh_snapshot(self, snapshot: ResticSnapshot, available_snapshot_ids: set[str]) -> None:
+        """Stage only changed files for prompt display; do not certify a full inventory."""
+        try:
+            with self._session_factory() as db, db.begin():
+                row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id))
+                if row is None:
+                    row = ResticSnapshotRow(
+                        machine_id=self._source.machine_id,
+                        snapshot_id=snapshot.id,
+                        captured_at=snapshot.captured_at,
+                        parent_snapshot_id=snapshot.parent_id,
+                        tree_id=snapshot.tree_id,
+                        paths=list(snapshot.paths),
+                        comparison_snapshot_id=None,
+                        inventory_status="pending",
+                        processing_status="pending",
+                        capture_status="unknown",
+                    )
+                    db.add(row)
+                    db.flush()
+                if row.inventory_status == "complete":
+                    return
+                seed_recent = self._needs_fresh_seed(db, snapshot)
+                if snapshot.parent_id is not None and snapshot.parent_id in available_snapshot_ids:
+                    # A Restic diff identifies changed files even when its parent has
+                    # not been imported. Do not use it as a complete inherited ledger.
+                    changes = self._source.restic.diff_snapshots(snapshot.parent_id, snapshot.id)
+                    changed_paths = {change.path for change in changes if change.path.endswith(".jsonl")}
+                    # Every changed path fits one batch when there are at most 32;
+                    # only larger sets need a tree walk to sort by modification time.
+                    files = (
+                        self._source.restic.list_files(snapshot.id)
+                        if seed_recent or len(changed_paths) > FRESH_FILE_BATCH
+                        else []
+                    )
+                    metadata = {file.path: file for file in files if file.path in changed_paths}
+                    entries = self._changed_entries(changes, metadata)
+                    if seed_recent:
+                        seeded = self._recent_candidates(files)
+                        changed = {entry[0] for entry in entries}
+                        entries.extend(entry for entry in seeded if entry[0] not in changed)
+                else:
+                    # A parentless/pruned snapshot has no safe diff base. Stage only
+                    # the newest candidates; historical work inventories all files.
+                    entries = self._recent_candidates(self._source.restic.list_files(snapshot.id))
+                self._record_entries(db, snapshot, entries)
+        except Exception as exc:
+            self._mark_inventory_failed(snapshot, exc)
+
+    def _needs_fresh_seed(self, db: DbSession, snapshot: ResticSnapshot) -> bool:
+        newest_imported = db.scalar(
+            select(ResticSnapshotRow.captured_at)
+            .join(
+                SnapshotFileRow,
+                (ResticSnapshotRow.machine_id == SnapshotFileRow.machine_id)
+                & (ResticSnapshotRow.snapshot_id == SnapshotFileRow.snapshot_id),
+            )
+            .where(
+                ResticSnapshotRow.machine_id == self._source.machine_id,
+                SnapshotFileRow.status.in_(("complete", "partial")),
+            )
+            .order_by(ResticSnapshotRow.captured_at.desc())
+            .limit(1)
+        )
+        return newest_imported is None or snapshot.captured_at - newest_imported >= FRESH_SEED_GAP
+
+    def _recent_candidates(self, files: Iterable[ResticFile]) -> list[_SnapshotEntry]:
+        entries = [entry for entry in self._initial_entries(files) if entry[5] == "pending"]
+        entries.sort(key=lambda entry: (entry[4] or datetime.min.replace(tzinfo=UTC), entry[0]), reverse=True)
+        return entries[:FRESH_PARENTLESS_CANDIDATES]
+
+    def _record_entries(self, db: DbSession, snapshot: ResticSnapshot, entries: Iterable[_SnapshotEntry]) -> None:
+        for path, modifier, file_type, size, modified_at, status, error, location in entries:
+            if db.get(SnapshotFileRow, (self._source.machine_id, snapshot.id, path)) is not None:
+                continue
+            session_id = self._ensure_session(db, location).id if location is not None else None
+            db.add(
+                SnapshotFileRow(
+                    machine_id=self._source.machine_id,
+                    snapshot_id=snapshot.id,
+                    path=path,
+                    session_id=session_id,
+                    change_kind=modifier,
+                    file_type=file_type,
+                    byte_size=size,
+                    modified_at=modified_at,
+                    status=status,
+                    error=error,
+                )
+            )
+
+    def _usable_parent(self, db: DbSession, snapshot: ResticSnapshot, available_snapshot_ids: set[str]) -> str | None:
         parent_id = snapshot.parent_id
-        if parent_id is None:
+        if parent_id is None or parent_id not in available_snapshot_ids:
             return None
         parent = db.get(ResticSnapshotRow, (self._source.machine_id, parent_id))
         if parent is None:
@@ -211,10 +394,8 @@ class SnapshotIngestor:
             return None
         return parent_id
 
-    def _initial_entries(
-        self, files: Iterable[ResticFile]
-    ) -> list[tuple[str, str, str, int, datetime | None, str, str | None, _Location | None]]:
-        entries: list[tuple[str, str, str, int, datetime | None, str, str | None, _Location | None]] = []
+    def _initial_entries(self, files: Iterable[ResticFile]) -> list[_SnapshotEntry]:
+        entries: list[_SnapshotEntry] = []
         for file in files:
             if not file.path.endswith(".jsonl"):
                 continue
@@ -231,13 +412,13 @@ class SnapshotIngestor:
         return entries
 
     def _changed_entries(
-        self, changes: Iterable[ResticChange]
-    ) -> list[tuple[str, str, str, int, datetime | None, str, str | None, _Location | None]]:
+        self, changes: Iterable[ResticChange], metadata: Mapping[str, ResticFile] | None = None
+    ) -> list[_SnapshotEntry]:
         combined: dict[str, list[str]] = {}
         for change in changes:
             if change.path.endswith(".jsonl"):
                 combined.setdefault(change.path, []).append(change.modifier)
-        entries: list[tuple[str, str, str, int, datetime | None, str, str | None, _Location | None]] = []
+        entries: list[_SnapshotEntry] = []
         for path, modifiers in sorted(combined.items()):
             modifier = ",".join(dict.fromkeys(modifiers))
             location = self._classify(path)
@@ -249,7 +430,19 @@ class SnapshotIngestor:
                 status, error = "failed", f"unrecognized Restic diff modifier: {modifier}"
             else:
                 status, error = "pending", None
-            entries.append((path, modifier, "file", 0, None, status, error, location))
+            file = metadata.get(path) if metadata is not None else None
+            entries.append(
+                (
+                    path,
+                    modifier,
+                    file.file_type if file else "file",
+                    file.byte_size if file else 0,
+                    file.modified_at if file else None,
+                    status,
+                    error,
+                    location,
+                )
+            )
         return entries
 
     def _classify(self, path: str) -> _Location | None:
@@ -333,22 +526,25 @@ class SnapshotIngestor:
         db.flush()
         return row
 
-    def _process_snapshot(self, snapshot: ResticSnapshot) -> None:
+    def _process_snapshot(
+        self, snapshot: ResticSnapshot, *, limit: int, recent_first: bool, attempted: set[str]
+    ) -> None:
         with self._session_factory() as db:
-            files = list(
-                db.scalars(
-                    select(SnapshotFileRow)
-                    .where(
-                        SnapshotFileRow.machine_id == self._source.machine_id,
-                        SnapshotFileRow.snapshot_id == snapshot.id,
-                    )
-                    .order_by(SnapshotFileRow.path)
-                )
+            query = select(SnapshotFileRow.path).where(
+                SnapshotFileRow.machine_id == self._source.machine_id,
+                SnapshotFileRow.snapshot_id == snapshot.id,
+                SnapshotFileRow.status.in_(("pending", "failed")),
             )
-        for file_row in files:
-            if file_row.status not in ("pending", "failed"):
-                continue
-            self._process_file(snapshot, file_row.path)
+            if attempted:
+                query = query.where(SnapshotFileRow.path.not_in(attempted))
+            if recent_first:
+                query = query.order_by(SnapshotFileRow.modified_at.desc().nulls_last(), SnapshotFileRow.path)
+            else:
+                query = query.order_by(SnapshotFileRow.path)
+            paths = list(db.scalars(query.limit(limit)))
+        for path in paths:
+            if not self._process_file(snapshot, path):
+                attempted.add(path)
         with self._session_factory() as db, db.begin():
             snapshot_row = db.scalar(
                 select(ResticSnapshotRow)
@@ -361,7 +557,7 @@ class SnapshotIngestor:
             if snapshot_row is None:
                 return
             if snapshot_row.inventory_status != "complete":
-                snapshot_row.processing_status = "failed"
+                snapshot_row.processing_status = "failed" if snapshot_row.inventory_status == "failed" else "pending"
                 return
             statuses = list(
                 db.scalars(
@@ -371,10 +567,11 @@ class SnapshotIngestor:
                     )
                 )
             )
-            failed = any(status in ("pending", "failed") for status in statuses)
-            snapshot_row.processing_status = "failed" if failed else "complete"
+            snapshot_row.processing_status = (
+                "failed" if "failed" in statuses else "pending" if "pending" in statuses else "complete"
+            )
 
-    def _process_file(self, snapshot: ResticSnapshot, path: str) -> None:
+    def _process_file(self, snapshot: ResticSnapshot, path: str) -> bool:
         try:
             with self._session_factory() as db, db.begin():
                 row = db.scalar(
@@ -387,14 +584,14 @@ class SnapshotIngestor:
                     .with_for_update()
                 )
                 if row is None or row.status not in ("pending", "failed"):
-                    return
+                    return True
                 location = self._classify(path)
                 if location is None:
                     row.status = "unclassified"
-                    return
+                    return True
                 if row.change_kind == "-":
                     row.status = "deleted"
-                    return
+                    return True
                 if any(
                     part not in _KNOWN_DIFF_MODIFIERS and part != "inventory" for part in row.change_kind.split(",")
                 ):
@@ -429,6 +626,8 @@ class SnapshotIngestor:
                     self._update_session_metadata(db, session_row, metadata)
         except Exception as exc:
             self._mark_file_failed(snapshot.id, path, exc)
+            return False
+        return True
 
     def _store_version(
         self,
@@ -449,6 +648,9 @@ class SnapshotIngestor:
         if existing is not None:
             if existing.byte_size != byte_size or existing.parser_version != PARSER_VERSION:
                 raise RuntimeError("file content hash collides with an incompatible stored version")
+            if (snapshot.captured_at, snapshot.id) < (existing.first_seen_at, existing.first_snapshot_id):
+                existing.first_seen_at = snapshot.captured_at
+                existing.first_snapshot_id = snapshot.id
             existing.last_seen_at = max(existing.last_seen_at, snapshot.captured_at)
             return existing, {}
 
