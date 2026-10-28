@@ -212,7 +212,10 @@ func (s *Store) Read(ctx context.Context, owner Owner, inboxID uuid.UUID, after 
 func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, limit int) ([]Entry, error) {
 	rows, err := tx.QueryContext(ctx,
 		`SELECT cursor, `+eventIdentityReadColumns+`,
-			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, payload IS NOT NULL, typed_payload FROM entry
+			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, payload IS NOT NULL,
+			CASE WHEN identity_provider IN ('actions', 'github_mergeability') THEN typed_payload END,
+			CASE WHEN identity_provider = 'message' THEN message_body END,
+			CASE WHEN identity_provider = 'message' THEN message_from_session END FROM entry
 			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inbox.ID, after, limit)
 	if err != nil {
@@ -225,16 +228,27 @@ func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, lim
 		var identity eventIdentityRead
 		var payload, typedPayload []byte
 		var payloadPresent bool
+		var messageBody, messageFromSession sql.NullString
 		destinations := append([]any{&entry.Cursor}, identity.destinations()...)
-		destinations = append(destinations, &payload, &payloadPresent)
-		destinations = append(destinations, &typedPayload)
+		destinations = append(destinations, &payload, &payloadPresent, &typedPayload, &messageBody, &messageFromSession)
 		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
 		if entry.Event, err = identity.event(); err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inbox.ID, entry.Cursor, err)
 		}
-		entry.Payload, err = entryPayloadFromStoredContent(entry.Event, payload, typedPayload, payloadPresent)
+		if _, isMessage := entry.Event.(model.MessageEvent); isMessage {
+			var body, fromSession *string
+			if messageBody.Valid {
+				body = &messageBody.String
+			}
+			if messageFromSession.Valid {
+				fromSession = &messageFromSession.String
+			}
+			entry.Payload, err = entryPayloadFromMessageText(body, fromSession)
+		} else {
+			entry.Payload, err = entryPayloadFromStoredContent(entry.Event, payload, typedPayload, payloadPresent)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d: %w", inbox.ID, entry.Cursor, err)
 		}

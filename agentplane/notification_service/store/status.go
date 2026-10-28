@@ -151,6 +151,9 @@ type EntrySummary struct {
 // summarize describes an entry from its event identity and the few lifecycle fields of its payload that are
 // safe to show: never the content a source delivered.
 func summarize(cursor int64, event model.EventIdentity, payload []byte, createdAt time.Time) (EntrySummary, error) {
+	if message, ok := event.(model.MessageEvent); ok {
+		return summarizeMessage(cursor, message, createdAt), nil
+	}
 	var fields map[string]any
 	if err := json.Unmarshal(payload, &fields); err != nil {
 		return EntrySummary{}, fmt.Errorf("entry %d payload: %w", cursor, err)
@@ -186,10 +189,6 @@ func summarize(cursor int64, event model.EventIdentity, payload []byte, createdA
 	case model.GitHubMergeabilitySnapshotEvent:
 		summary.Provider = EntryFromGitHub
 		summary.Summary = fmt.Sprintf("GitHub PR #%d mergeability snapshot · version %d", event.PullRequestNumber, event.Version)
-	case model.MessageEvent:
-		// Who sent it is what the service authenticated; the body is never shown.
-		summary.Provider = EntryFromMessage
-		summary.Summary = fmt.Sprintf("Message from %s/%s", event.Sender.Namespace, event.Sender.Name)
 	default:
 		return EntrySummary{}, fmt.Errorf("entry %d: unknown event identity %T", cursor, event)
 	}
@@ -197,11 +196,22 @@ func summarize(cursor int64, event model.EventIdentity, payload []byte, createdA
 }
 
 func summarizeStored(cursor int64, event model.EventIdentity, legacyPayload, typedPayload []byte, legacyPayloadPresent bool, createdAt time.Time) (EntrySummary, error) {
+	if message, ok := event.(model.MessageEvent); ok {
+		return summarizeMessage(cursor, message, createdAt), nil
+	}
 	payload, err := entryPayloadFromStoredContent(event, legacyPayload, typedPayload, legacyPayloadPresent)
 	if err != nil {
 		return EntrySummary{}, fmt.Errorf("entry %d content: %w", cursor, err)
 	}
 	return summarize(cursor, event, payload, createdAt)
+}
+
+func summarizeMessage(cursor int64, event model.MessageEvent, createdAt time.Time) EntrySummary {
+	// Who sent it is what the service authenticated; the body is never loaded or shown.
+	return EntrySummary{
+		Cursor: cursor, CreatedAt: createdAt.UTC(), Provider: EntryFromMessage,
+		Summary: fmt.Sprintf("Message from %s/%s", event.Sender.Namespace, event.Sender.Name),
+	}
 }
 
 func truncate(s string) string {
@@ -333,7 +343,8 @@ func subscriptionStatuses(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, ob
 func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, after int64) ([]EntrySummary, error) {
 	rows, err := tx.QueryContext(ctx,
 		`SELECT cursor, `+eventIdentityReadColumns+`,
-			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, payload IS NOT NULL, typed_payload, created_at FROM entry
+			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, payload IS NOT NULL,
+			CASE WHEN identity_provider IN ('actions', 'github_mergeability') THEN typed_payload END, created_at FROM entry
 			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inboxID, after, maxPendingEntrySummaries)
 	if err != nil {

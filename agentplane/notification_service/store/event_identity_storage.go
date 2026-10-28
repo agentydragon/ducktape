@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// eventIdentityStorage is an entry's relational source identity. Writers also retain its legacy JSON form for
-// compatibility with older readers during rollout; this release uses the indexed relational key for deduplication.
+// eventIdentityStorage is an entry's relational source identity. The legacy JSON form remains only as a rollback
+// copy until the identity contract drops it; current readers and writers use the relational key.
 type eventIdentityStorage struct {
 	provider                   string
 	actionsRequestID           *uuid.UUID
@@ -38,8 +38,8 @@ const eventIdentityReadColumns = `identity_provider, actions_request_id::text, a
 	github_pull_request_number, github_mergeability_sequence, github_snapshot_version, github_observation_sequence,
 	message_id::text, message_sender_namespace, message_sender_name`
 
-// eventIdentityRead is one relational source key read from entry. The JSONB identity stays dual-written for old
-// readers during rollout, but new readers and deduplication no longer depend on its serialization.
+// eventIdentityRead is one relational source key read from entry. Readers and deduplication no longer depend on
+// the legacy JSONB identity's serialization.
 type eventIdentityRead struct {
 	provider                   sql.NullString
 	actionsRequestID           sql.NullString
@@ -202,10 +202,6 @@ func insertEntry(
 	payload json.RawMessage,
 	createdAt time.Time,
 ) error {
-	identity, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
 	columns, err := eventIdentityStorageFor(event)
 	if err != nil {
 		return err
@@ -223,14 +219,14 @@ func insertEntry(
 	if storedContent.typedPayload != nil {
 		typedPayloadParameter = storedContent.typedPayload
 	}
-	args := append([]any{inboxID, cursor, string(identity), legacyPayloadParameter, createdAt}, columns.args()...)
+	args := append([]any{inboxID, cursor, legacyPayloadParameter, createdAt}, columns.args()...)
 	args = append(args, typedPayloadParameter, storedContent.messageBody, storedContent.messageFromSession)
-	_, err = tx.ExecContext(ctx, `INSERT INTO entry (inbox_id, cursor, event, payload, created_at,
+	_, err = tx.ExecContext(ctx, `INSERT INTO entry (inbox_id, cursor, payload, created_at,
 		identity_provider, actions_request_id, actions_sequence,
 		github_app_id, github_delivery_id, github_repository_id, github_event, github_action,
 		github_pull_request_number, github_mergeability_sequence, github_snapshot_version, github_observation_sequence,
 		message_id, message_sender_namespace, message_sender_name, typed_payload, message_body, message_from_session)
-		VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`, args...)
+		VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`, args...)
 	return err
 }
 

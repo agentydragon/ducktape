@@ -85,13 +85,16 @@ func marshalEntryStorageContent(event model.EventIdentity, payload json.RawMessa
 	return stored, nil
 }
 
-// entryPayloadFromStoredContent recreates the public JSON payload from typed storage. GitHub webhook payloads are
-// already native JSON; the other providers have no legacy JSON fallback after their backfill gate completes.
+// entryPayloadFromStoredContent recreates public JSON from typed storage. GitHub webhook payloads remain native JSON;
+// Message payloads use their canonical text columns instead.
 func entryPayloadFromStoredContent(event model.EventIdentity, legacyPayload, typedPayload []byte, legacyPayloadPresent bool) (json.RawMessage, error) {
+	if _, ok := event.(model.MessageEvent); ok {
+		return nil, errors.New("Message payload must be read from canonical text columns")
+	}
 	switch event.(type) {
 	case model.GitHubEvent, model.GitHubObservationEvent:
 		if typedPayload != nil {
-			return nil, errors.New("GitHub webhook has an unexpected typed payload")
+			return nil, errors.New("native GitHub entry has an unexpected typed payload")
 		}
 		if !legacyPayloadPresent || legacyPayload == nil {
 			return nil, errors.New("payload expired before the inbox's expired prefix")
@@ -129,22 +132,23 @@ func entryPayloadFromStoredContent(event model.EventIdentity, legacyPayload, typ
 		return mergeabilityPayloadFromStoredContent(content.GetMergeability(), event.PullRequestNumber)
 	case model.GitHubMergeabilitySnapshotEvent:
 		return mergeabilityPayloadFromStoredContent(content.GetMergeability(), event.PullRequestNumber)
-	case model.MessageEvent:
-		message := content.GetMessage()
-		if message == nil {
-			return nil, errors.New("typed message content is incomplete")
-		}
-		encoded, err := json.Marshal(struct {
-			Body        string  `json:"body"`
-			FromSession *string `json:"from_session,omitempty"`
-		}{Body: message.GetBody(), FromSession: message.FromSession})
-		if err != nil {
-			return nil, fmt.Errorf("encode message JSON payload: %w", err)
-		}
-		return encoded, nil
 	default:
 		return nil, fmt.Errorf("unsupported event identity type %T", event)
 	}
+}
+
+// entryPayloadFromMessageText rebuilds the public Message payload from its canonical text columns. A missing body
+// on a retained row means the offline text backfill was not completed before this reader was deployed; legacy JSON
+// and protobuf are deliberately not consulted here.
+func entryPayloadFromMessageText(body, fromSession *string) (json.RawMessage, error) {
+	if body == nil {
+		return nil, errors.New("canonical Message text is missing; complete the Message text backfill before deploying this reader")
+	}
+	encoded, err := encodeMessagePayload(*body, fromSession)
+	if err != nil {
+		return nil, fmt.Errorf("encode Message JSON payload: %w", err)
+	}
+	return encoded, nil
 }
 
 func mergeabilityPayloadFromStoredContent(content *entrystoragepb.MergeabilityContent, pullRequestNumber int64) (json.RawMessage, error) {

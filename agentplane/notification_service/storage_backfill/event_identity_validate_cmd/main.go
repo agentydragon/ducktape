@@ -16,7 +16,7 @@ import (
 
 const (
 	databaseURLEnv  = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
-	writerGateValue = "notification-event-identity-dual-write-v1"
+	writerGateValue = "notification-event-identity-writer-only-v1"
 )
 
 func main() {
@@ -27,7 +27,7 @@ func main() {
 		os.Exit(2)
 	}
 	if *writerGate != writerGateValue {
-		fmt.Fprintf(os.Stderr, "run only after every Notification Service writer is at the relational dual-write gate; pass --writer-gate=%s\n", writerGateValue)
+		fmt.Fprintf(os.Stderr, "run only after every Notification Service writer is at the event identity writer-only gate; pass --writer-gate=%s\n", writerGateValue)
 		os.Exit(2)
 	}
 	databaseURL := os.Getenv(databaseURLEnv)
@@ -38,7 +38,7 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := migrate.Run(ctx, databaseURL, store.ValidateEntryIdentityProviderConstraint); err != nil {
+	if err := migrate.Run(ctx, databaseURL, store.ValidateEventIdentityWriterOnly); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

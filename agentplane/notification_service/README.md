@@ -103,28 +103,36 @@ order, loads only retained Message JSON that still needs text, and commits batch
 serialized JSON bytes (a single larger valid document is processed alone). It clears stale text for expired rows
 even below `expired_through`, verifies every retained Message JSON/text pair, and records progress in
 `notification_message_text_backfill`; it runs outside service startup and readiness. Do not move Message readers to
-typed-only storage until this command reports `backfilled` on every database. Keep the dual-write image as the
+canonical-text storage until this command reports `backfilled` on every database. Keep the dual-write image as the
 rollback version before the later Message text contract; that contract image will retire the backfill command and
 checkpoint.
 
-Migration `00019` also adds `entry_identity_provider_required` as a `NOT VALID` check. After the relational
-dual-write release is on every writer, run
-`bb run //agentplane/notification_service/storage_backfill/event_identity_validate_cmd:notification-event-identity-validate -- --writer-gate=notification-event-identity-dual-write-v1`
-to validate the proof outside Pod init. A later identity contract can use its validated catalog state before
-making `identity_provider` required and dropping the legacy identity JSON and JSONB deduplication index.
+Deploy the canonical Message text reader only after the `backfilled` checkpoint is complete on every database.
+It reconstructs Message JSON from `message_body` and `message_from_session` and refuses retained rows missing text;
+it never falls back to legacy JSON or protobuf. Sandbox status summaries use only the relational sender identity
+and do not read Message bodies. During this reader phase, rollback to the preceding dual-write reader/writer release
+remains safe because every Message write still fills JSON, protobuf and text.
 
-Keep the typed-capable dual-write release as the minimum rollback version; an older reader that depends on
-non-GitHub `entry.payload` cannot read Action or mergeability entries written by this release. Before migration `00019`, rollback
-to the previous dual-write image with the checkpoint and typed bytes retained. After `00019`, leave the migration
-applied and roll back only to a typed-capable release. The checkpoint has been dropped, so the old content-backfill
-command fails before touching entries; do not restore that table manually. In either case, after the rollback
-settles, verify the previous API's reads, writes, replay deduplication and readiness.
+Migration `00022_entry_identity_writer_only.sql` makes `event` nullable and adds the relational Message JSON body
+ceiling before the writer-only image stops writing identity JSON. It requires the earlier identity backfill and all
+six natural-key indexes to be complete on a populated database; on an empty database it creates all six indexes
+without scanning retained rows. Have every reader use relational identities before rolling this writer. After all
+Notification writers run the writer-only image and old writer pods are drained, run
+`bb run //agentplane/notification_service/storage_backfill/event_identity_validate_cmd:notification-event-identity-validate -- --writer-gate=notification-event-identity-writer-only-v1`
+outside Pod init. The command validates the retained identity shape/provider and relational Message JSON bound
+in one table statement, then records the durable `writer_only` phase. Only the following release may apply the
+identity contract: it checks that phase and the validated catalog proofs before making `identity_provider`
+required and dropping the legacy identity JSON, its JSONB deduplication constraint, and the backfill checkpoint.
+The relational key indexes remain authoritative; retained Message JSON and native GitHub webhook/observation JSON
+remain stored until their respective content phases retire them.
 
-Do not run a migration's `Down` section while dual writers remain. If the event identity backfill/index command has
-completed, leave its columns, checkpoint and natural-key indexes in place as well. Only after no reader depends on
-relational keys should a later cleanup drop the natural-key indexes concurrently, then run compatible migration
-Down sections in reverse order. Before a later forward rollout, drain old writers and check for any unconverted
-rows; the identity backfill command stops with their inbox/cursors instead of silently cutting over.
+The rollback floor after `00022` is the relational-identity reader release, which also supports the preceding
+Message text reader and typed-only content writer. Keep the migration applied; older readers need the identity JSON
+this writer no longer creates. Keep identity columns and natural-key indexes through the identity contract. After
+that contract, leave it applied and roll back only to the relational-reader release. The natural-key indexes remain
+part of the live schema because they enforce permanent event deduplication. Before a later forward rollout, drain
+old writers and check for any unconverted rows; the identity backfill command stops with their inbox/cursors instead
+of silently cutting over.
 
 `00009_inbox_destination_expand.sql` adds nullable relational destination columns while the service continues to
 dual-write them and reads legacy `destination_ref` JSON when needed. After every Notification Service writer runs
