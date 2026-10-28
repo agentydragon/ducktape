@@ -450,3 +450,44 @@ fn actual_native_mutation_in_another_chunk_still_blocks_map_capability() {
         "an actual Map prototype write must retain its global census barrier: {graph}"
     );
 }
+
+#[test]
+fn prototype_absence_keeps_captured_census_provenance() {
+    let provider = "var captured = globalThis.runtimeSettings.state;\ncaptured.marker = 1;\nexport const marker = 1;\n";
+    let source = "import './opaque.js';\nimport { marker } from './peer.js';\nclass Box { constructor(config) { this.value = config.value ?? 3; } }\nconst result = new Box({});\nconsole.log(result.value, marker);\n";
+    let chunks = [("static/peer", provider)];
+    let inputs = vec![captured_input(provider)];
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&chunks)
+            .with_extra_files(OPAQUE_FILES)
+            .with_value_inputs("static/peer", inputs),
+    );
+    assert_preserved_entry_output(&fixture, "3 1\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let result = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| {
+            node["declared"]
+                .as_array()
+                .is_some_and(|names| names.iter().any(|name| name == "result"))
+        })
+        .expect("result node");
+    assert!(
+        result["synchronous_execution"]["native_prototype_property_checks"]
+            .as_array()
+            .is_some_and(|checks| checks.iter().any(|check| check["intact"] == true)),
+        "{result}"
+    );
+    assert!(
+        result["synchronous_execution"]["native_integrity_uses"]
+            .as_array()
+            .is_some_and(|uses| uses
+                .iter()
+                .any(|usage| usage["guard"] == "ordinary_object_prototype"
+                    && input_refs(&usage["value_input_refs"]))),
+        "{result}"
+    );
+}

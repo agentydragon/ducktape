@@ -338,7 +338,13 @@ impl Executor<'_> {
                 blocking_mutation_count,
             }
         });
-        check.intact
+        let intact = check.intact;
+        if intact {
+            // Finite mutation keys may depend on Symbol/Object/Array identity,
+            // which can itself consume a captured-value census refinement.
+            self.record_native_integrity_use(NativeIntegrityGuard::OrdinaryObjectPrototype);
+        }
+        intact
     }
 
     fn record_native_integrity_use(&self, guard: NativeIntegrityGuard) {
