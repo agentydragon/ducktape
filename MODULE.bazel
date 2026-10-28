@@ -1038,6 +1038,24 @@ http_archive(
     urls = ["https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.292.tgz"],
 )
 
+# Experimental native remote-tools characterization; independent of runner and RemoteIO pins.
+http_archive(
+    name = "claude_remote_tools_cli_linux_x64",
+    build_file_content = 'exports_files(["claude"])',
+    integrity = "sha512-+m01urgelnI+VJxPaKPEK0wixgq42uZ8PeCaUk5tX/8YoDBvSmC/REVQG2jQfJAr8dxunpjJ600FvLrcj1WWTw==",
+    strip_prefix = "package",
+    urls = ["https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.296.tgz"],
+)
+
+# Test runtime for instrumenting the native remote-tools module's startup boundaries.
+http_archive(
+    name = "claude_remote_tools_bun",
+    build_file_content = 'exports_files(["bun"])',
+    sha256 = "951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f",
+    strip_prefix = "bun-linux-x64",
+    urls = ["https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-x64.zip"],
+)
+
 # Codex app-server driven by Agentplane's scripted harness tests (//agentplane/native).
 # Keep Haku's 0.144.1 distribution above isolated from this test-only pin.
 http_archive(

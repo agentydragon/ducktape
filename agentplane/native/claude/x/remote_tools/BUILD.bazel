@@ -1,0 +1,56 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_test")
+
+package(default_testonly = True)
+
+py_test(
+    name = "test_characterization",
+    srcs = ["test_characterization.py"],
+    data = ["@claude_remote_tools_cli_linux_x64//:claude"],  # keep: independent native experiment pin
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",  # keep: native CLI platform
+        "@platforms//os:linux",  # keep: native CLI platform
+    ],
+    deps = [
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/claude:conftest",
+        "//agentplane/native/claude:scenarios",
+        "//agentplane/native/claude/testing:anthropic_sse",
+        "//agentplane/native/claude/testing:async_run",
+        "//agentplane/native/claude/testing:messages",
+        "//agentplane/native/claude/testing:model",
+        "//agentplane/native/claude/testing:requests",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "probe",
+    srcs = ["probe.py"],
+    deps = [
+        "//devinfra/js:bun_standalone_extract",
+        "//util/bazel:runfiles",
+    ],
+)
+
+py_test(
+    name = "test_native_serving",
+    srcs = ["test_native_serving.py"],
+    data = [
+        "native_probe.mjs",
+        "@claude_remote_tools_bun//:bun",
+        "@claude_remote_tools_cli_linux_x64//:claude",
+    ],
+    deps = [
+        ":probe",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/claude:conftest",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest_bazel",
+    ],
+)

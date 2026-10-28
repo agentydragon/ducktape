@@ -81,6 +81,7 @@ py_binary(
 py_library(
     name = "bun_standalone_extract",
     srcs = ["bun_standalone_extract.py"],
+    visibility = ["//agentplane/native/claude/x/remote_tools:__pkg__"],
 )
 
 py_binary(
