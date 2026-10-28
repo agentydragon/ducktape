@@ -1,7 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("//devinfra/js:json_schema_typescript.bzl", "json_schema_typescript")
-load("//devinfra/js:openapi_typescript.bzl", "openapi_typescript")
+load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
+load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
 load("//devinfra/js:openapi_zod.bzl", "openapi_zod")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
@@ -70,13 +70,13 @@ genrule(
     tools = [":export_invoice_response_bin"],
 )
 
-openapi_typescript(
+openapi_js_library(
     name = "openapi_types",
     out = "openapi_types.d.ts",
     schema = ":openapi.json",
 )
 
-openapi_typescript(
+openapi_js_library(
     name = "external_openapi_types",
     out = "external_openapi_types.d.ts",
     schema = "//devinfra/x/schema_codegen/typescript/fixtures:openapi_artifact",
@@ -99,14 +99,14 @@ ts_library(
     deps = ["//:node_modules/zod"],
 )
 
-json_schema_typescript(
+json_schema_js_library(
     name = "external_json_schema_types",
     out = "external_json_schema_types.d.ts",
     schema = "//devinfra/x/schema_codegen/typescript/fixtures:standalone_artifact",
     schema_files = ["//devinfra/x/schema_codegen/typescript/fixtures:external_model_artifact"],
 )
 
-openapi_typescript(
+openapi_js_library(
     name = "openapi_types_naming_default",
     out = "openapi_types_naming_default.d.ts",
     schema = ":openapi_types_naming.schema.json",
@@ -254,8 +254,8 @@ genrule(
     tools = [":export_standalone_bin"],
 )
 
-json_schema_typescript(
-    name = "standalone_types_codegen",
+json_schema_js_library(
+    name = "standalone_types_declarations",
     out = "standalone_types.d.ts",
     schema = ":standalone.schema.json",
 )
@@ -263,7 +263,7 @@ json_schema_typescript(
 js_library(
     name = "standalone_types",
     srcs = [":standalone_schema_json"],
-    deps = [":standalone_types_codegen"],
+    deps = [":standalone_types_declarations"],
 )
 
 ts_library(

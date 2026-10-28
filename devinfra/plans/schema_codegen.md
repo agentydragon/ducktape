@@ -356,7 +356,7 @@ flowchart LR
   subgraph frontend["HTTP, model and tool schemas: generation and frontend consumption"]
     http_export["B: owner export target<br/>export_schema.py / app.openapi<br/>and owner CSV or WebSocket additions"]:::proposed
     http_json["Declared OpenAPI 3 JSON<br/>one shared artifact per HTTP owner"]:::proposed
-    api_typegen["B: openapi_typescript(name, schema, out)<br/>openapi-typescript + root-type flags"]:::proposed
+    api_typegen["B: openapi_js_library(name, schema, out)<br/>openapi-typescript + root-type flags"]:::proposed
     api_types["API .d.ts<br/>paths, operations, components<br/>named model exports; raw :out file label"]:::proposed
     api_types_library["Named js_library from the macro<br/>JsInfo.transitive_types"]:::proposed
     zod_gen["B: openapi_zod(name, schema, config, out)<br/>Hey API Zod 4 plugin"]:::proposed
@@ -370,7 +370,7 @@ flowchart LR
     model_json["Declared model JSON Schema<br/>mode and dialect are explicit"]:::proposed
     tool_export["B: owner tool-schema export target<br/>FastMCP reflection / catalog selection"]:::proposed
     tool_json["Declared tool JSON Schemas<br/>SSH input/output; Haku catalogs<br/>arguments and structured results"]:::proposed
-    json_typegen["B: json_schema_typescript(name, schema, out)<br/>json-schema-to-typescript"]:::proposed
+    json_typegen["B: json_schema_js_library(name, schema, out)<br/>json-schema-to-typescript"]:::proposed
     python_models --> model_export
     model_export --> model_json
     fastmcp_signatures --> tool_export
@@ -632,9 +632,9 @@ declared relative external references, and imported config helper inputs.
 
 | Conversion                             | Rule or mechanism                                                                                   | Output and next stage                                                                                                                      |
 | -------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| OpenAPI 3.0/3.1 → API declarations     | `openapi_typescript(name, schema, out)`, using pinned `openapi-typescript` with named root exports  | `.d.ts` remains addressable by `out`; `name` is the `js_library` exposing `JsInfo.transitive_types` to ordinary `ts_library` modules       |
+| OpenAPI 3.0/3.1 → API declarations     | `openapi_js_library(name, schema, out)`, using pinned `openapi-typescript` with named root exports  | `.d.ts` remains addressable by `out`; `name` is the `js_library` exposing `JsInfo.transitive_types` to ordinary `ts_library` modules       |
 | OpenAPI 3.0/3.1 → Zod implementation   | File-only `openapi_zod(name, schema, config, out)`, using pinned `@hey-api/openapi-ts` Zod 4 plugin | `.ts`; compile with an explicit `ts_library` for compiler settings and deps to JS plus declarations; JS-only consumers import emitted JS   |
-| JSON Schema → model declarations       | `json_schema_typescript(name, schema, out)`, using pinned `json-schema-to-typescript`               | `.d.ts` remains addressable by `out`; `name` is the `js_library` exposing `JsInfo.transitive_types`                                        |
+| JSON Schema → model declarations       | `json_schema_js_library(name, schema, out)`, using pinned `json-schema-to-typescript`               | `.d.ts` remains addressable by `out`; `name` is the `js_library` exposing `JsInfo.transitive_types`                                        |
 | JSON Schema → runtime Zod              | Retained JSON plus a normal TS adapter using pinned `z.fromJSONSchema`                              | Runtime validator; generated declarations supply static model types. Keep any assertion joining those two artifacts at one tested boundary |
 | Zod → JSON Schema                      | A component-owned JS exporter using `z.toJSONSchema`, invoked with `js_run_binary`                  | Explicitly targeted Draft 2020-12 JSON; choose input/output direction and fail on unrepresentable features                                 |
 | Protobuf → language bindings           | `proto_library`/`ProtoInfo` plus language-specific `protoc` rules/plugins                           | Protobuf-ES JS/declarations, Go, Python/stubs, Rust prost; retain native runtime descriptors and codecs                                    |
