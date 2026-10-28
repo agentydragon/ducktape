@@ -681,15 +681,17 @@ async def test_portfolio_reads_complete_snapshots_through_sqlalchemy(
 ) -> None:
     now = datetime.now(UTC)
     captured_at = now - timedelta(minutes=2)
+    previous_capture_at = captured_at - timedelta(hours=1)
     await add_link(connection, "portfolio-item", synced=captured_at)
     await add_account(connection, "portfolio-brokerage", "portfolio-item", type="investment")
     await connection.execute(
         """INSERT INTO public.balance_snapshots
            (account_id, item_id, captured_at, current, iso_currency_code)
-           VALUES ($1, $2, $3, 900, 'USD'), ($1, $2, $3, 1000, 'USD')""",
+           VALUES ($1, $2, $3, 900, 'USD'), ($1, $2, $4, 1100, 'USD')""",
         "portfolio-brokerage",
         "portfolio-item",
-        captured_at,
+        captured_at - timedelta(minutes=1),
+        captured_at + timedelta(minutes=1),
     )
     for security_id in ("portfolio-sold", "portfolio-held", "portfolio-zero"):
         await connection.execute(
@@ -699,20 +701,50 @@ async def test_portfolio_reads_complete_snapshots_through_sqlalchemy(
             security_id,
             captured_at,
         )
-    for security_id, holdings_time, value in (
-        ("portfolio-sold", captured_at - timedelta(hours=1), 500),
-        ("portfolio-held", captured_at, 1000),
-        ("portfolio-zero", captured_at, 0),
+
+    async def add_holding_capture(capture_time: datetime, current: int) -> int:
+        api_event_id = await connection.fetchval(
+            """INSERT INTO public.plaid_api_events
+               (endpoint, item_id, status, request_json, response_json, created_at)
+               VALUES ('investments/holdings/get', $1, 'ok', '{}'::jsonb, '{}'::jsonb, $2)
+               RETURNING id""",
+            "portfolio-item",
+            capture_time,
+        )
+        capture_id: int = await connection.fetchval(
+            """INSERT INTO public.holding_captures (item_id, captured_at, api_event_id)
+               VALUES ($1, $2, $3) RETURNING id""",
+            "portfolio-item",
+            capture_time,
+            api_event_id,
+        )
+        await connection.execute(
+            """INSERT INTO public.holding_capture_accounts
+               (capture_id, account_id, item_id, current, iso_currency_code)
+               VALUES ($1, 'portfolio-brokerage', 'portfolio-item', $2, 'USD')""",
+            capture_id,
+            current,
+        )
+        return capture_id
+
+    previous_capture_id = await add_holding_capture(previous_capture_at, 1500)
+    capture_id = await add_holding_capture(captured_at, 1000)
+    for security_id, holdings_time, value, row_capture_id in (
+        ("portfolio-sold", previous_capture_at, 500, previous_capture_id),
+        ("portfolio-held", captured_at, 1000, capture_id),
+        ("portfolio-zero", captured_at, 0, capture_id),
     ):
         await connection.execute(
             """INSERT INTO public.holding_snapshots
-               (account_id, security_id, item_id, captured_at, institution_value, iso_currency_code, raw_json)
-               VALUES ($1, $2, $3, $4, $5, 'USD', '{}'::json)""",
+               (account_id, security_id, item_id, captured_at, institution_value, iso_currency_code, raw_json,
+                capture_id)
+               VALUES ($1, $2, $3, $4, $5, 'USD', '{}'::json, $6)""",
             "portfolio-brokerage",
             security_id,
             "portfolio-item",
             holdings_time,
             value,
+            row_capture_id,
         )
 
     await add_link(connection, "revoked-portfolio-item", synced=captured_at)
