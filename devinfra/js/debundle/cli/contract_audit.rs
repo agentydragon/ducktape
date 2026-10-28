@@ -381,9 +381,8 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
             .and_then(|checkpoint| checkpoint.reusable(&target))
         {
             eprintln!(
-                "audit-progress probe reused ordinal={}/{} target={target:?}",
-                index + 1,
-                eligible
+                "audit-progress probe reused ordinal={ordinal}/{eligible} completed={ordinal} verdict={} target={target:?}",
+                saved.verdict.label()
             );
             results.push(saved.clone());
             continue;
