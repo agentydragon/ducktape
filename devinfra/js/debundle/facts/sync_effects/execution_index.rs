@@ -1199,6 +1199,7 @@ enum IntrinsicRoot {
     Array,
     Math,
     RegExp,
+    Symbol,
 }
 
 type IntrinsicRoots = BTreeSet<IntrinsicRoot>;
@@ -1221,6 +1222,9 @@ fn intrinsic_roots(
         ValueExpr::Binding(id) if id.0.as_ref() == "Math" => BTreeSet::from([IntrinsicRoot::Math]),
         ValueExpr::Binding(id) if id.0.as_ref() == "RegExp" => {
             BTreeSet::from([IntrinsicRoot::RegExp])
+        }
+        ValueExpr::Binding(id) if id.0.as_ref() == "Symbol" => {
+            BTreeSet::from([IntrinsicRoot::Symbol])
         }
         ValueExpr::Binding(id) if globals.contains(id.0.as_ref()) => {
             BTreeSet::from([IntrinsicRoot::GlobalObject])
@@ -1255,6 +1259,9 @@ fn intrinsic_roots(
                         Some("RegExp") => {
                             out.insert(IntrinsicRoot::RegExp);
                         }
+                        Some("Symbol") => {
+                            out.insert(IntrinsicRoot::Symbol);
+                        }
                         Some("globalThis" | "window" | "self" | "frames" | "top") | None => {
                             out.insert(IntrinsicRoot::GlobalObject);
                         }
@@ -1268,7 +1275,8 @@ fn intrinsic_roots(
                     | IntrinsicRoot::Object
                     | IntrinsicRoot::Array
                     | IntrinsicRoot::Math
-                    | IntrinsicRoot::RegExp => {
+                    | IntrinsicRoot::RegExp
+                    | IntrinsicRoot::Symbol => {
                         out.insert(root);
                     }
                 }
@@ -1819,7 +1827,6 @@ struct ExecutionIndex {
     mapped_array_map_calls: BTreeMap<CallSite, FromEntriesMappedProof>,
     plain_array_bindings: BTreeSet<String>,
     mutated_intrinsic_roots: IntrinsicRoots,
-    symbol_intrinsic_mutated: bool,
     reassigned_map: bool,
     namespace_privacy: NamespacePrivacy,
     fresh_error_claims: Vec<FreshErrorWriteClaim>,
@@ -1922,7 +1929,6 @@ impl Default for ExecutionIndex {
             mapped_array_map_calls: BTreeMap::new(),
             plain_array_bindings: BTreeSet::new(),
             mutated_intrinsic_roots: IntrinsicRoots::new(),
-            symbol_intrinsic_mutated: false,
             reassigned_map: false,
             namespace_privacy: NamespacePrivacy::default(),
             fresh_error_claims: Vec::new(),
@@ -2284,6 +2290,9 @@ impl ExecutionIndex {
                 "RegExp" => {
                     mutated_intrinsics.insert(IntrinsicRoot::RegExp);
                 }
+                "Symbol" => {
+                    mutated_intrinsics.insert(IntrinsicRoot::Symbol);
+                }
                 _ => {}
             }
         }
@@ -2295,41 +2304,6 @@ impl ExecutionIndex {
             ));
         }
         index.mutated_intrinsic_roots = mutated_intrinsics.clone();
-        // The frozen-facade proof also reads Symbol.toStringTag. Reuse the
-        // retained assignment and mutation receivers to reject a visible
-        // replacement through either the builtin or a simple local alias.
-        if !index.null_proto_data_objects.is_empty() && !index.const_call_owners.is_empty() {
-            let mut symbol_aliases = BTreeSet::<Id>::new();
-            let symbol_root = |value: &ValueExpr, aliases: &BTreeSet<Id>| match value {
-                ValueExpr::Binding(id) => id.0.as_ref() == "Symbol" || aliases.contains(id),
-                ValueExpr::Member(receiver, Some(property), _)
-                    if property == "Symbol"
-                        && matches!(receiver.as_ref(), ValueExpr::Binding(id)
-                            if index.global_object_names.contains(id.0.as_ref())) =>
-                {
-                    true
-                }
-                _ => false,
-            };
-            loop {
-                let before = symbol_aliases.len();
-                for (id, value) in &namespace_assignments {
-                    if symbol_root(value, &symbol_aliases) {
-                        symbol_aliases.insert(id.clone());
-                    }
-                }
-                if symbol_aliases.len() == before {
-                    break;
-                }
-            }
-            index.symbol_intrinsic_mutated = namespace_assignments
-                .iter()
-                .any(|(id, _)| id.0.as_ref() == "Symbol")
-                || index
-                    .intrinsic_mutation_receivers
-                    .iter()
-                    .any(|receiver| symbol_root(receiver, &symbol_aliases));
-        }
         let mut claim_counts = BTreeMap::<FreshErrorWriteSite, usize>::new();
         if !index.fresh_error_claims.is_empty()
             && !index.audited_factory_members.is_empty()

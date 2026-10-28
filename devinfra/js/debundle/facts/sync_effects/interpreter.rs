@@ -999,12 +999,12 @@ impl Executor<'_> {
             || !self.index.top_exported_values[fact.ordinal.0].is_empty()
             || self.shadowed.contains("Object")
             || self.shadowed.contains("Symbol")
-            || self.index.symbol_intrinsic_mutated
-            || self
-                .index
-                .mutated_intrinsic_roots
-                .iter()
-                .any(|root| matches!(root, IntrinsicRoot::GlobalObject | IntrinsicRoot::Object))
+            || self.index.mutated_intrinsic_roots.iter().any(|root| {
+                matches!(
+                    root,
+                    IntrinsicRoot::GlobalObject | IntrinsicRoot::Object | IntrinsicRoot::Symbol
+                )
+            })
         {
             return None;
         }

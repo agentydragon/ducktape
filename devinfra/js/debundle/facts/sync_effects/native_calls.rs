@@ -50,6 +50,11 @@ pub(super) fn native_call_model(
             inputs: CallInputs::Primitives { min: 0, max: 2 },
             returns: CallReturn::Unknown,
         }),
+        ("Symbol", None | Some("for"), CallKind::Call) => Some(NativeCallModel {
+            intrinsic: IntrinsicRoot::Symbol,
+            inputs: CallInputs::Primitives { min: 0, max: 1 },
+            returns: CallReturn::Primitive,
+        }),
         _ => None,
     }
 }

@@ -129,3 +129,79 @@ console.log(failure);
     let fixture = run_fixture(FixtureOpts::new(source, vec![]));
     assert_preserved_entry_output(&fixture, "SyntaxError\n");
 }
+
+#[test]
+fn symbol_primitives_do_not_reenter_published_callbacks() {
+    for expression in ["Symbol()", "Symbol('marker')", "Symbol.for('marker')"] {
+        let source = format!(
+            r#"globalThis.saved = () => later;
+const marker = {expression};
+const later = 42;
+console.log(typeof marker, later);
+"#
+        );
+        let fixture = run_fixture(split_opts(
+            &source,
+            &[Member::new("marker")],
+            &["globalThis.saved = () => later;"],
+        ));
+        assert_preserved_entry_output(&fixture, "symbol 42\n");
+    }
+}
+
+#[test]
+fn symbol_object_coercion_keeps_real_reentry() {
+    let source = r#"globalThis.saved = () => later;
+const argument = { toString() {
+  try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; }
+  return "marker";
+} };
+const marker = Symbol(argument);
+const later = 42;
+console.log(globalThis.observed, typeof marker);
+"#;
+    expect_atomic_conflict_rejection(
+        split_opts(
+            source,
+            &[Member::new("argument"), Member::new("marker")],
+            &["globalThis.saved = () => later;"],
+        ),
+        &["native/value", "native/later"],
+        &[],
+    );
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "ReferenceError symbol\n");
+}
+
+#[test]
+fn symbol_member_alias_mutation_keeps_real_reentry() {
+    let source = r#"globalThis.saved = () => later;
+const original = Symbol;
+const symbols = Symbol;
+symbols.for = () => {
+  try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; }
+  return original("marker");
+};
+const marker = Symbol.for("marker");
+const later = 42;
+console.log(globalThis.observed, typeof marker);
+"#;
+    expect_atomic_conflict_rejection(
+        split_opts(
+            source,
+            &[
+                Member::new("original"),
+                Member::new("symbols"),
+                Member::new("marker"),
+            ],
+            &[
+                "globalThis.saved = () => later;",
+                "symbols.for = () => { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return original('marker'); };",
+            ],
+        ),
+        &["native/value", "native/later"],
+        &[],
+    );
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "ReferenceError symbol\n");
+}

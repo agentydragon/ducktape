@@ -603,6 +603,8 @@ Native call models share one checked projection for call timing and successful
 return values. A direct `Math.round`, `floor`, `ceil`, `trunc`, `abs`, or `sign`
 call with one proven primitive argument has no synchronous callback effect and
 returns a primitive. That return fact composes with subsequent conversions.
+Direct `Symbol` and `Symbol.for` calls with zero or one primitive argument also
+have no synchronous callback effect and return a primitive.
 Direct `RegExp` calls and construction admit zero to two primitive arguments
 for timing only; their results remain opaque and compilation may still throw.
 Fresh-record `Object.freeze` uses the same projection and returns its original

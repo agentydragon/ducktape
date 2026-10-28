@@ -99,6 +99,14 @@ results are primitive too, so subsequent conversions can use the same fact.
 Object and unknown arguments retain opaque-call analysis. Argument evaluation
 may still reenter, including a sequence whose final value is primitive.
 
+Direct [Symbol](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-symbol-description)
+and [Symbol.for](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-symbol.for)
+calls allow zero or one primitive-valued argument. Description/key conversion
+cannot invoke a user-defined hook for those values, and successful results are
+primitive Symbols. Registry effects and conversion errors keep their ordinary
+ordering. Symbol mutation uses the shared intrinsic census, including for the
+existing frozen-namespace proof; it has no separate alias analysis.
+
 Direct `RegExp` calls and construction allow zero to two primitive arguments.
 [RegExp construction](https://tc39.es/ecma262/multipage/text-processing.html#sec-regexp-pattern-flags)
 cannot take its object-pattern/property-inspection branch for a primitive input;
@@ -109,7 +117,7 @@ zero without losing its object identity or callbacks.
 
 `native_call_summary_test` covers all six numeric methods followed by another
 conversion, both RegExp call forms, object coercion, global-constructor
-replacement, and syntax errors. `math_round_timing_test` retains effectful
+replacement, Symbol calls/coercion, and syntax errors. `math_round_timing_test` retains effectful
 argument, shadowing, aliased method mutation, and getter controls;
 `fresh_freeze_callback_timing_test` retains its identity/publication controls.
 
