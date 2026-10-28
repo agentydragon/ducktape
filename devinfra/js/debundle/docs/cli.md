@@ -1055,10 +1055,17 @@ The SCC query commands (`gate list`, `gate describe`, and `gate cut`) accept
 `--graph`). A missing `cycles.json` is the clean state: zero blocking SCCs,
 exit 0.
 
+For a sequencing edge, `gate describe` retains the impure initializer source
+unit and its purity reasons. Supply `--modules` and `--source-root` together to
+get `sequenced_source_inspections`, a runnable `inspect-source` command keyed by
+each stored source unit. The text view prints the same commands. The graph and
+source snapshot must still match.
+
 `gate diagnose <binding>` traces constraining promoted-at-initialization edges
 to a matched callback-factory contract rejected by a supported static member
-write or direct computed-key write through the imported namespace or a
-recognized alias. Other receiver shapes and guard families remain
+write, direct computed-key write through the imported namespace or a
+recognized alias, or the exact namespace binding passed as a non-spread
+argument of an ordinary top-level call. Other receiver shapes and guard families remain
 inconclusive. It requires explicit graph, module-spec, and
 source-root paths:
 
@@ -1072,8 +1079,10 @@ debundle gate diagnose later \
 
 The JSON report connects the binding's current module ownership, promoted
 dependency and callback source unit, matched contract signature, typed guard
-code, and a write witness selected by source-unit order (deterministic within
-one source unit). A supported row requires the edge's callee source unit to
+code, and a source witness. Call-argument witnesses carry the exact call span,
+argument index, and namespace binding. `opaque_call` is true only when an
+`UnknownCallTarget` precision loss has the same source unit and call span; it
+does not assert that mutation occurred. A supported row requires the edge's callee source unit to
 match a statically resolved callback argument root for that call; otherwise it
 reports an inconclusive source mismatch or unresolved callback source. Only
 overloads whose arity and callback positions apply to the actual call are

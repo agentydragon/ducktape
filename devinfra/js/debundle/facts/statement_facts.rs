@@ -176,7 +176,18 @@ pub enum CallbackFactoryBarrierRejection {
     NamespaceDynamicPropertyWrite {
         witness: CallbackFactoryWriteWitness,
     },
+    NamespaceCallArgument {
+        witness: CallbackFactoryCallArgumentWitness,
+    },
     UnsupportedGuard,
+}
+
+#[derive(Debug, Clone)]
+pub struct CallbackFactoryCallArgumentWitness {
+    pub statement_ordinal: SourceUnitOrdinal,
+    pub call_span: swc_common::Span,
+    pub argument_index: usize,
+    pub namespace_binding: String,
 }
 
 #[derive(Debug, Clone)]

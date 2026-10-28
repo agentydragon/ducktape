@@ -17,6 +17,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 use debundle_e2e_support::*;
 
@@ -127,6 +128,32 @@ fn sequenced_initializer_rejection_names_source_unit_location_rule_and_escape_ha
         "{}",
         rejected.stderr
     );
+
+    let described = gate_json(&[
+        "gate",
+        "describe",
+        "0",
+        "--graph",
+        graph_path(&rejected).to_str().unwrap(),
+        "--modules",
+        rejected.modules_root.to_str().unwrap(),
+        "--source-root",
+        rejected.source_root.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    let command = described["sequenced_source_inspections"]
+        [cause["source_unit_id"].as_str().unwrap()]
+    .as_str()
+    .expect("sequenced cause has runnable source inspection");
+    let inspected = Command::new("sh").arg("-c").arg(command).output().unwrap();
+    assert!(
+        inspected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&inspected.stderr)
+    );
+    let source: serde_json::Value = serde_json::from_slice(&inspected.stdout).unwrap();
+    assert_eq!(source["selected_source_unit_count"], 1, "{source}");
 }
 
 #[test]

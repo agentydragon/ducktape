@@ -219,6 +219,12 @@ write and `"namespace_dynamic_property_write"` for a computed-key write
 through the namespace binding or a recognized alias. Their `witness` identifies
 the receiver, optional static property, graph `source_unit` ref,
 `statement_ordinal`, and optional `source_location`. The
+`"namespace_call_argument"` rejection records a direct namespace binding
+passed as a non-spread ordinary top-level call argument. Its witness carries
+the exact source unit, SWC call span, argument index, and namespace binding.
+`opaque_call` is true only if a recorded `UnknownCallTarget` precision loss
+matches that same source unit and call span. It does not claim an actual
+mutation. The
 `rejection.code = "unsupported_guard"` value preserves a rejected match whose
 cause is outside this write-witness family. This diagnostic field does not
 alter promotion or acceptance decisions. A computed-key write through a more
@@ -251,6 +257,11 @@ match a recorded callback root, `gate diagnose` marks the link inconclusive
 instead of cross-pairing a contract with a promoted callback edge. A write
 witness is selected by source-unit order and is deterministic within its source
 unit; it does not establish token order among writes in that unit.
+
+`gate describe` can also emit `sequenced_source_inspections` when given both
+`--modules` and `--source-root`. Each command is keyed by the already stored
+impure source unit on a sequencing edge and uses `inspect-source` to navigate
+its purity reason.
 
 ## Module identity everywhere else: `ModulePath` / `ModuleRef`
 

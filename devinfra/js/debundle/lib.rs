@@ -63,9 +63,10 @@ pub use purity::{
 };
 pub use reports::schema::{
     AtomicGraphReport, AtomicGroupConflictReport, AtomicGroupEdgeReport, AtomicGroupReport,
-    BindingReport, CallbackFactoryBarrierReport, CallbackFactoryContractReport,
-    CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, ConflictingClaimReport,
-    DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind,
-    ModuleEntry, ModuleKey, ModuleQuotientReport, PurityCauseReport, QuotientEdgeReport,
-    QuotientSccReport, SequencedSourceUnitCause, SourceLocation, SourceUnitReport,
+    BindingReport, CallbackFactoryBarrierReport, CallbackFactoryCallArgumentWitnessReport,
+    CallbackFactoryContractReport, CallbackFactoryRejectionReport,
+    CallbackFactoryWriteWitnessReport, ConflictingClaimReport, DependencyEdgeReport,
+    DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind, ModuleEntry,
+    ModuleKey, ModuleQuotientReport, PurityCauseReport, QuotientEdgeReport, QuotientSccReport,
+    SequencedSourceUnitCause, SourceLocation, SourceUnitReport,
 };

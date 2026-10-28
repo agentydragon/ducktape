@@ -818,10 +818,12 @@ one ownership target through constraining promoted callback dependencies. Its
 supported rejection family is a matched imported namespace-member
 callback-factory signature rejected by a top-level static write to that member
 or a recognized alias, or by a computed-key write whose receiver is the
-namespace binding or a recognized alias. The report names the matched signature
-and a write witness selected by source-unit order, with deterministic selection
-within a unit, including receiver, optional static property, source span, and
-graph source-unit reference. A
+namespace binding or a recognized alias, or by the exact namespace binding
+passed as a non-spread ordinary top-level call argument. The report names the
+matched signature and exact source witness: write receiver/property or call
+span/argument index, with a graph source-unit reference. An opaque-call label
+requires a matching `UnknownCallTarget` loss at the same owner and span; the
+guard alone does not prove a mutation occurred. A
 supported row also requires the promoted edge's callee source unit to match a
 statically resolved callback argument root from that exact signature.
 Unresolved callback arguments and source-unit mismatches are inconclusive. The

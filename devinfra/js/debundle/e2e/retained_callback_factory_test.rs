@@ -729,7 +729,7 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
     assert_eq!(bounded["query_status"], "local_supported_witness_found");
     assert_eq!(
         bounded["coverage_scope"],
-        "callback_factory_namespace_writes_only"
+        "callback_factory_namespace_writes_and_call_arguments"
     );
     let limited = gate_diagnose_json(&rejected, "later", &["--limit", "1"]);
     assert_eq!(limited["total_count"], bounded["total_count"]);
@@ -978,7 +978,7 @@ fn dynamic_namespace_write_reports_analyzer_witness_without_changing_gate() {
     assert_eq!(report["query_status"], "local_supported_witness_found");
     assert_eq!(
         report["coverage_scope"],
-        "callback_factory_namespace_writes_only"
+        "callback_factory_namespace_writes_and_call_arguments"
     );
     assert_eq!(
         report["traces"][0]["coverage"],
@@ -1074,6 +1074,223 @@ fn computed_write_through_aggregate_receiver_remains_inconclusive() {
         report["traces"][0]["first_rejected_guard"]["code"],
         "unsupported_guard"
     );
+}
+
+#[test]
+fn direct_namespace_call_argument_has_exact_callback_barrier_witness() {
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             let later = 0;\n\
+             const callback = () => later;\n\
+             sink(api);\n\
+             const wrapped = api.make(callback);\n\
+             later = 42;\n",
+            vec![
+                logical_module_with_anon(
+                    "callbacks/wrapped",
+                    &[Member::new("callback"), Member::new("wrapped")],
+                    &["sink(api);"],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: callback }; } };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_retained_callback_factory_member("api", "make", 1, &[0])
+            .with_namespace_independent_members("api", &["make"])
+            .build()]),
+    );
+    let report = gate_diagnose_json(&rejected, "later", &[]);
+    assert_eq!(
+        report["query_status"], "local_supported_witness_found",
+        "{report}"
+    );
+    let trace = &report["traces"][0];
+    assert_eq!(
+        trace["coverage"], "supported_namespace_call_argument",
+        "{report}"
+    );
+    assert_eq!(trace["matched_contract"]["member"], "make");
+    assert_eq!(
+        trace["first_rejected_guard"]["code"],
+        "namespace_call_argument"
+    );
+    assert_eq!(
+        trace["first_rejected_guard"]["witness"]["argument_index"],
+        0
+    );
+    assert_eq!(
+        trace["first_rejected_guard"]["witness"]["namespace_binding"],
+        "api"
+    );
+    assert_eq!(
+        trace["first_rejected_guard"]["witness"]["opaque_call"],
+        true
+    );
+    let witness = &trace["first_rejected_guard"]["witness"];
+    assert!(
+        witness["call_span_start"].as_u64().unwrap() < witness["call_span_end"].as_u64().unwrap()
+    );
+    let command = witness["inspection_command"].as_str().unwrap();
+    let inspected = std::process::Command::new("/bin/sh")
+        .arg("-c")
+        .arg(command)
+        .output()
+        .unwrap();
+    assert!(
+        inspected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&inspected.stderr)
+    );
+    assert!(
+        parse_stdout_json(&inspected)["files"][0]["statements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|statement| {
+                statement["source_unit_ids"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&witness["source_unit"])
+                    && statement["source"].as_str().unwrap().contains("sink(api)")
+            })
+    );
+}
+
+fn rejected_namespace_argument_variant(
+    call_source: &str,
+    factory_call: &str,
+    extra_members: &[&'static str],
+    anonymous_statements: &[&str],
+) -> RejectedFixture {
+    let source = format!(
+        "import {{ api, other }} from './peer.js';\n\
+         let later = 0;\n\
+         const callback = () => later;\n\
+         function sink(value) {{ return 0; }}\n\
+         {call_source}\n\
+         const wrapped = {factory_call};\n\
+         later = 42;\n"
+    );
+    let mut members = vec![
+        Member::new("sink"),
+        Member::new("callback"),
+        Member::new("wrapped"),
+    ];
+    members.extend(extra_members.iter().copied().map(Member::new));
+    run_rejection_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon("callbacks/wrapped", &members, anonymous_statements),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: callback }; } };\nexport const other = {};\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_retained_callback_factory_member("api", "make", 1, &[0])
+            .with_namespace_independent_members("api", &["make"])
+            .build()]),
+    )
+}
+
+#[test]
+fn known_namespace_call_argument_is_not_labeled_opaque_by_unrelated_loss() {
+    for (call_source, anonymous) in [
+        ("sink(api);", "sink(api);"),
+        (
+            "(sink(api), unknown(other));",
+            "(sink(api), unknown(other));",
+        ),
+    ] {
+        let rejected = rejected_namespace_argument_variant(
+            call_source,
+            "api.make(callback)",
+            &[],
+            &[anonymous],
+        );
+        let report = gate_diagnose_json(&rejected, "later", &[]);
+        assert_eq!(
+            report["query_status"], "local_supported_witness_found",
+            "{report}"
+        );
+        let witness = &report["traces"][0]["first_rejected_guard"]["witness"];
+        assert_eq!(
+            report["traces"][0]["coverage"], "supported_namespace_call_argument",
+            "{report}"
+        );
+        assert_eq!(witness["opaque_call"], false, "{report}");
+        assert_eq!(witness["argument_index"], 0);
+    }
+}
+
+#[test]
+fn alias_aggregate_signature_and_ambiguous_calls_stay_inconclusive() {
+    for (call_source, factory_call, extra_members, anonymous) in [
+        (
+            "const alias = api; sink(alias);",
+            "api.make(callback)",
+            vec!["alias"],
+            vec!["sink(alias);"],
+        ),
+        (
+            "sink({ api });",
+            "api.make(callback)",
+            vec![],
+            vec!["sink({ api });"],
+        ),
+        (
+            "sink?.(api);",
+            "api.make(callback)",
+            vec![],
+            vec!["sink?.(api);"],
+        ),
+        (
+            "sink(...[api]);",
+            "api.make(callback)",
+            vec![],
+            vec!["sink(...[api]);"],
+        ),
+        (
+            "sink(api);",
+            "api.make(callback, 0)",
+            vec![],
+            vec!["sink(api);"],
+        ),
+        (
+            "sink(api);",
+            "(api.make(callback), api.make(callback))",
+            vec![],
+            vec!["sink(api);"],
+        ),
+    ] {
+        let rejected = rejected_namespace_argument_variant(
+            call_source,
+            factory_call,
+            &extra_members,
+            &anonymous,
+        );
+        let report = gate_diagnose_json(&rejected, "later", &[]);
+        assert_ne!(
+            report["query_status"], "local_supported_witness_found",
+            "{report}"
+        );
+        assert!(
+            report["traces"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|trace| trace["coverage"] != "supported_namespace_call_argument"),
+            "{report}"
+        );
+    }
 }
 
 #[test]

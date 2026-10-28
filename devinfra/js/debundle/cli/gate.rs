@@ -129,6 +129,14 @@ pub struct GateDescribeArgs {
     #[command(flatten)]
     pub common: GateCommonArgs,
 
+    /// Module spec root for runnable sequenced-source inspection commands.
+    #[arg(long, requires = "source_root")]
+    pub modules: Option<PathBuf>,
+
+    /// Source snapshot root for runnable sequenced-source inspection commands.
+    #[arg(long = "source-root", requires = "modules")]
+    pub source_root: Option<PathBuf>,
+
     /// Restrict the recomputed evidence to edges that touch this
     /// binding (either source or target). Useful for narrowing a
     /// 1000-module SCC down to one symbol's contribution.
@@ -217,6 +225,9 @@ pub struct GateDescribeReport {
     /// recomputed from `dependency_graph.json` + `modules` (the wire
     /// entry carries only `modules` + `cut`).
     pub evidence: Vec<CycleEdge>,
+    /// Commands keyed by the exact impure source unit stored on sequencing edges.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sequenced_source_inspections: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -262,7 +273,7 @@ impl GateDiagnoseStatus {
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GateDiagnoseCoverageScope {
-    CallbackFactoryNamespaceWritesOnly,
+    CallbackFactoryNamespaceWritesAndCallArguments,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -314,6 +325,7 @@ pub enum GateDiagnoseEdgeRole {
 pub enum GateDiagnoseCoverage {
     SupportedNamespaceMemberWrite,
     SupportedNamespaceDynamicPropertyWrite,
+    SupportedNamespaceCallArgument,
     InconclusiveUnsupportedGuard,
     InconclusiveNoSupportedCallbackFactoryBarrier,
     InconclusiveAmbiguousCallbackFactoryBarrierLink,
@@ -330,6 +342,7 @@ pub enum GateDiagnoseGuardCode {
     CallbackArgumentSourceMismatch,
     NamespaceMemberWrite,
     NamespaceDynamicPropertyWrite,
+    NamespaceCallArgument,
     UnsupportedGuard,
 }
 
@@ -342,6 +355,7 @@ impl GateDiagnoseGuardCode {
             Self::CallbackArgumentSourceMismatch => "callback_argument_source_mismatch",
             Self::NamespaceMemberWrite => "namespace_member_write",
             Self::NamespaceDynamicPropertyWrite => "namespace_dynamic_property_write",
+            Self::NamespaceCallArgument => "namespace_call_argument",
             Self::UnsupportedGuard => "unsupported_guard",
         }
     }
@@ -361,7 +375,14 @@ pub struct GateDiagnoseGuard {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct GateDiagnoseWitness {
+#[serde(untagged)]
+pub enum GateDiagnoseWitness {
+    Write(GateDiagnoseWriteWitness),
+    CallArgument(GateDiagnoseCallArgumentWitness),
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GateDiagnoseWriteWitness {
     pub source_unit: String,
     pub statement_ordinal: SourceUnitOrdinal,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -373,10 +394,24 @@ pub struct GateDiagnoseWitness {
     pub inspection_command: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct GateDiagnoseCallArgumentWitness {
+    pub source_unit: String,
+    pub statement_ordinal: SourceUnitOrdinal,
+    pub source_location: Option<analysis::SourceLocation>,
+    pub namespace_binding: Atom,
+    pub call_span_start: u32,
+    pub call_span_end: u32,
+    pub argument_index: usize,
+    pub opaque_call: bool,
+    pub witness_selection: GateDiagnoseWitnessSelection,
+    pub inspection_command: String,
+}
+
 pub fn run_gate_cli(args: GateArgs, inspection_roots: InspectionRoots) -> Result<()> {
     match args.command {
         GateCommand::List(a) => run_list(a),
-        GateCommand::Describe(a) => run_describe(a),
+        GateCommand::Describe(a) => run_describe(a, inspection_roots),
         GateCommand::Cut(a) => run_cut(a),
         GateCommand::Diagnose(a) => run_diagnose(a, inspection_roots),
     }
@@ -388,7 +423,7 @@ fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: InspectionRoots) -> Re
     if limit == 0 && !args.all {
         anyhow::bail!("--limit must be greater than zero; use --all for exhaustive output");
     }
-    let (returned, total_count, has_supported_write) = diagnose_binding(
+    let (returned, total_count, has_supported_witness) = diagnose_binding(
         &graph,
         &args,
         &inspection_roots,
@@ -406,12 +441,12 @@ fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: InspectionRoots) -> Re
         },
         query_status: if total_count == 0 {
             GateDiagnoseStatus::InconclusiveNoSupportedPromotedDependency
-        } else if has_supported_write {
+        } else if has_supported_witness {
             GateDiagnoseStatus::LocalSupportedWitnessFound
         } else {
             GateDiagnoseStatus::InconclusiveForSupportedGuardFamily
         },
-        coverage_scope: GateDiagnoseCoverageScope::CallbackFactoryNamespaceWritesOnly,
+        coverage_scope: GateDiagnoseCoverageScope::CallbackFactoryNamespaceWritesAndCallArguments,
         traces: returned,
     };
     let format = peel::OutputFormat::resolve(args.format);
@@ -463,7 +498,7 @@ fn diagnose_binding(
 
     let mut traces = Vec::new();
     let mut total_count = 0;
-    let mut has_supported_write = false;
+    let mut has_supported_witness = false;
     for edge in promoted {
         let target = node_by_id
             .get(edge.target.as_str())
@@ -545,11 +580,12 @@ fn diagnose_binding(
                         .iter()
                         .any(|source| source.source_unit == *callee_source_unit)
                 });
-        has_supported_write |= callback_link == Some(true)
+        has_supported_witness |= callback_link == Some(true)
             && matches!(
                 &barrier.rejection,
                 CallbackFactoryRejectionReport::NamespaceMemberWrite { .. }
                     | CallbackFactoryRejectionReport::NamespaceDynamicPropertyWrite { .. }
+                    | CallbackFactoryRejectionReport::NamespaceCallArgument { .. }
             );
 
         // Summary status describes all matching promoted edges, including rows
@@ -608,7 +644,7 @@ fn diagnose_binding(
             first_rejected_guard: GateDiagnoseGuard { code, witness },
         });
     }
-    Ok((traces, total_count, has_supported_write))
+    Ok((traces, total_count, has_supported_witness))
 }
 
 fn dependency_report(
@@ -637,6 +673,33 @@ fn diagnose_barrier_witness(
     GateDiagnoseGuardCode,
     Option<GateDiagnoseWitness>,
 )> {
+    if let CallbackFactoryRejectionReport::NamespaceCallArgument { witness } = &barrier.rejection {
+        return Ok((
+            GateDiagnoseCoverage::SupportedNamespaceCallArgument,
+            GateDiagnoseGuardCode::NamespaceCallArgument,
+            Some(GateDiagnoseWitness::CallArgument(
+                GateDiagnoseCallArgumentWitness {
+                    source_unit: witness.source_unit.clone(),
+                    statement_ordinal: witness.statement_ordinal,
+                    source_location: witness.source_location.clone(),
+                    namespace_binding: witness.namespace_binding.clone(),
+                    call_span_start: witness.call_span_start,
+                    call_span_end: witness.call_span_end,
+                    argument_index: witness.argument_index,
+                    opaque_call: witness.opaque_call,
+                    witness_selection:
+                        GateDiagnoseWitnessSelection::FirstSourceUnitOrderDeterministicWithinUnit,
+                    inspection_command: inspection_command(
+                        &witness.source_unit,
+                        &args.graph,
+                        &args.modules,
+                        &args.source_root,
+                        inspection_roots,
+                    )?,
+                },
+            )),
+        ));
+    }
     let (coverage, code, witness) = match &barrier.rejection {
         CallbackFactoryRejectionReport::NamespaceMemberWrite { witness } => (
             GateDiagnoseCoverage::SupportedNamespaceMemberWrite,
@@ -655,11 +718,14 @@ fn diagnose_barrier_witness(
                 None,
             ));
         }
+        CallbackFactoryRejectionReport::NamespaceCallArgument { .. } => {
+            unreachable!("handled above")
+        }
     };
     Ok((
         coverage,
         code,
-        Some(GateDiagnoseWitness {
+        Some(GateDiagnoseWitness::Write(GateDiagnoseWriteWitness {
             source_unit: witness.source_unit.clone(),
             statement_ordinal: witness.statement_ordinal,
             source_location: witness.source_location.clone(),
@@ -674,7 +740,7 @@ fn diagnose_barrier_witness(
                 &args.source_root,
                 inspection_roots,
             )?,
-        }),
+        })),
     ))
 }
 
@@ -791,13 +857,28 @@ fn render_diagnose_text(report: &GateDiagnoseReport, out: &mut String) {
             ));
         }
         if let Some(witness) = &trace.first_rejected_guard.witness {
-            out.push_str(&format!(
-                "    write {}.{} at {:?}; inspect: {}\n",
-                witness.receiver_binding,
-                witness.property.as_deref().unwrap_or("<unknown>"),
-                witness.source_location,
-                witness.inspection_command,
-            ));
+            match witness {
+                GateDiagnoseWitness::Write(witness) => out.push_str(&format!(
+                    "    write {}.{} at {:?}; inspect: {}\n",
+                    witness.receiver_binding,
+                    witness.property.as_deref().unwrap_or("<unknown>"),
+                    witness.source_location,
+                    witness.inspection_command,
+                )),
+                GateDiagnoseWitness::CallArgument(witness) => out.push_str(&format!(
+                    "    namespace {} passed at argument {} of call span {}..{}{}; inspect: {}\n",
+                    witness.namespace_binding,
+                    witness.argument_index,
+                    witness.call_span_start,
+                    witness.call_span_end,
+                    if witness.opaque_call {
+                        " (opaque call target)"
+                    } else {
+                        ""
+                    },
+                    witness.inspection_command,
+                )),
+            }
         }
     }
 }
@@ -858,7 +939,7 @@ fn find_entry(entries: &[BlockingSccEntry], id: usize) -> Result<&BlockingSccEnt
     })
 }
 
-fn run_describe(args: GateDescribeArgs) -> Result<()> {
+fn run_describe(args: GateDescribeArgs, inspection_roots: InspectionRoots) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let entry = find_entry(&entries, args.id)?;
     let graph = crate::load_dependency_graph_report(
@@ -873,11 +954,33 @@ fn run_describe(args: GateDescribeArgs) -> Result<()> {
         evidence.retain(|e| edge_touches_binding(e, binding));
     }
 
+    let mut sequenced_source_inspections = BTreeMap::new();
+    if let (Some(modules), Some(source_root)) = (&args.modules, &args.source_root) {
+        let graph_path = args
+            .common
+            .dependency_graph_path
+            .as_deref()
+            .expect("describe requires graph");
+        for edge in entry.cut.iter().chain(evidence.iter()) {
+            if let Some(cause) = &edge.sequenced_source_unit {
+                sequenced_source_inspections
+                    .entry(cause.source_unit_id.clone())
+                    .or_insert(inspection_command(
+                        &cause.source_unit_id,
+                        graph_path,
+                        modules,
+                        source_root,
+                        &inspection_roots,
+                    )?);
+            }
+        }
+    }
     let report = GateDescribeReport {
         id: entry.id,
         modules: entry.modules.clone(),
         cut: entry.cut.clone(),
         evidence,
+        sequenced_source_inspections,
     };
     let format = peel::OutputFormat::resolve(args.format);
     peel::print_report(&report, format, render_describe_text)
@@ -905,6 +1008,12 @@ fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
         for edge in &report.cut {
             render_edge(edge, out);
         }
+    }
+
+    for (source_unit, command) in &report.sequenced_source_inspections {
+        out.push_str(&format!(
+            "  inspect impure initializer {source_unit}: {command}\n"
+        ));
     }
 
     if !report.evidence.is_empty() {

@@ -14,7 +14,9 @@ use crate::facts::global_object::unshadowed_global_object_aliases;
 use crate::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
 use crate::facts::lazy_boundary::visit_eager_member_parts;
 use crate::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
-use crate::facts::statement_facts::{CallbackFactoryWriteWitness, StatementFacts};
+use crate::facts::statement_facts::{
+    CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness, StatementFacts,
+};
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin};
 use crate::purity::ChunkCodeGraph;
 use source_identity::SourceUnitOrdinal;
@@ -1867,6 +1869,9 @@ struct ExecutionIndex {
     owner_callable_prefix_reads: Vec<Option<BTreeSet<Id>>>,
     unindexed_accessor_owners: BTreeSet<SourceUnitOrdinal>,
     top_calls: Vec<Vec<Call>>,
+    /// Ordinary CallExpr syntax at lexical top level; optional calls use a
+    /// conservative Call record too, but do not satisfy this witness shape.
+    ordinary_top_call_sites: BTreeSet<CallSite>,
     top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
     fresh_instance_field_writes: BTreeSet<SourceUnitOrdinal>,
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
@@ -1907,6 +1912,7 @@ struct ExecutionIndex {
     audited_factory_members: BTreeMap<Id, BTreeSet<String>>,
     rejected_namespace_member_writes: BTreeMap<(Id, String), CallbackFactoryWriteWitness>,
     rejected_namespace_dynamic_property_writes: BTreeMap<(Id, String), CallbackFactoryWriteWitness>,
+    rejected_namespace_call_arguments: BTreeMap<Id, CallbackFactoryCallArgumentWitness>,
     retained_callback_factory_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     retained_callback_constructor_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     no_reentry_callback_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
@@ -1971,6 +1977,7 @@ impl Default for ExecutionIndex {
             owner_callable_prefix_reads: Vec::new(),
             unindexed_accessor_owners: BTreeSet::new(),
             top_calls: Vec::new(),
+            ordinary_top_call_sites: BTreeSet::new(),
             top_property_writes: Vec::new(),
             fresh_instance_field_writes: BTreeSet::new(),
             top_dynamic_property_receivers: Vec::new(),
@@ -2009,6 +2016,7 @@ impl Default for ExecutionIndex {
             audited_factory_members: BTreeMap::new(),
             rejected_namespace_member_writes: BTreeMap::new(),
             rejected_namespace_dynamic_property_writes: BTreeMap::new(),
+            rejected_namespace_call_arguments: BTreeMap::new(),
             retained_callback_factory_imports: BTreeMap::new(),
             retained_callback_constructor_imports: BTreeMap::new(),
             no_reentry_callback_imports: BTreeMap::new(),
@@ -2459,6 +2467,8 @@ impl ExecutionIndex {
             RefCell::new(BTreeMap::<(Id, String), CallbackFactoryWriteWitness>::new());
         let namespace_dynamic_property_write_witnesses =
             RefCell::new(BTreeMap::<(Id, String), CallbackFactoryWriteWitness>::new());
+        let namespace_call_argument_witnesses =
+            RefCell::new(BTreeMap::<Id, CallbackFactoryCallArgumentWitness>::new());
         let keep_namespace = |id: &Id, members: &BTreeSet<String>, writes: &BTreeSet<_>| {
             if private_namespace_family {
                 return true;
@@ -2651,6 +2661,44 @@ impl ExecutionIndex {
                     .iter()
                     .any(|value| value.may_publish_namespace(id, &aliases, &namespace_value_facts))
             });
+            if top_call_argument {
+                let direct =
+                    index
+                        .top_calls
+                        .iter()
+                        .flatten()
+                        .filter(|call| {
+                            call.kind == CallKind::Call
+                                && call.caller.is_none()
+                                && !call.has_spread
+                                && index.ordinary_top_call_sites.contains(&call.span.into())
+                        })
+                        .flat_map(|call| {
+                            call.args.iter().enumerate().filter_map(
+                                move |(argument_index, value)| {
+                                    matches!(value, ValueExpr::Binding(binding) if binding == id)
+                                        .then(|| CallbackFactoryCallArgumentWitness {
+                                            statement_ordinal: call.owner,
+                                            call_span: call.span,
+                                            argument_index,
+                                            namespace_binding: id.0.to_string(),
+                                        })
+                                },
+                            )
+                        })
+                        .min_by_key(|witness| {
+                            (
+                                witness.statement_ordinal,
+                                witness.call_span.lo.0,
+                                witness.argument_index,
+                            )
+                        });
+                if let Some(witness) = direct {
+                    namespace_call_argument_witnesses
+                        .borrow_mut()
+                        .insert(id.clone(), witness);
+                }
+            }
             let exported_value = index
                 .top_exported_values
                 .iter()
@@ -2745,6 +2793,7 @@ impl ExecutionIndex {
         index.rejected_namespace_member_writes = namespace_member_write_witnesses.into_inner();
         index.rejected_namespace_dynamic_property_writes =
             namespace_dynamic_property_write_witnesses.into_inner();
+        index.rejected_namespace_call_arguments = namespace_call_argument_witnesses.into_inner();
         if index.deferred_global_requested {
             let first_publication = index
                 .deferred_global_candidates
@@ -4423,6 +4472,9 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_call_expr(&mut self, call: &CallExpr) {
+        if self.current.is_none() {
+            self.ordinary_top_call_sites.insert(call.span.into());
+        }
         if let Callee::Expr(callee) = &call.callee
             && let Expr::Member(member) = callee.unwrap_parens()
         {

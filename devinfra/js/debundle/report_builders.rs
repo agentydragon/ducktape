@@ -17,11 +17,11 @@ use analysis::reports::{atomic_group_key, module_id_from_key, module_key, source
 use analysis::{
     AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingId,
     BindingReport, CallbackFactoryBarrierRejection, CallbackFactoryBarrierReport,
-    CallbackFactoryContractReport, CallbackFactoryRejectionReport,
-    CallbackFactoryWriteWitnessReport, DepKind, DependencyEdgeReport, DependencyGraphReport,
-    EdgeRoleReport, ModuleDestinationKind, ModuleEntry, ModuleId, ModuleKey, ModuleQuotientReport,
-    ModuleRole, Purity, PurityCauseReport, QuotientEdgeReport, QuotientSccReport, SourceUnitClass,
-    SourceUnitReport,
+    CallbackFactoryCallArgumentWitnessReport, CallbackFactoryContractReport,
+    CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, DepKind,
+    DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, ModuleDestinationKind,
+    ModuleEntry, ModuleId, ModuleKey, ModuleQuotientReport, ModuleRole, Purity, PurityCauseReport,
+    QuotientEdgeReport, QuotientSccReport, SourceUnitClass, SourceUnitReport,
 };
 use source_identity::SourceUnitOrdinal;
 use swc_atoms::Atom;
@@ -204,6 +204,27 @@ fn build_source_unit_nodes_and_edges(
                         } => CallbackFactoryRejectionReport::NamespaceDynamicPropertyWrite {
                             witness: witness_report(witness),
                         },
+                        CallbackFactoryBarrierRejection::NamespaceCallArgument { witness } => {
+                            let witness_source = source_units_by_ordinal
+                                .get(&witness.statement_ordinal)
+                                .expect("call argument witness must identify a graph source unit");
+                            let opaque_call = witness_source.synchronous_execution.as_ref()
+                                .is_some_and(|execution| execution.precision_losses.iter().any(|loss| {
+                                    loss.is_unknown_call_target_at(witness.statement_ordinal, witness.call_span)
+                                }));
+                            CallbackFactoryRejectionReport::NamespaceCallArgument {
+                                witness: CallbackFactoryCallArgumentWitnessReport {
+                                    source_unit: source_unit_key(witness_source.id),
+                                    statement_ordinal: witness.statement_ordinal,
+                                    source_location: witness_source.source_location.clone(),
+                                    namespace_binding: Atom::from(witness.namespace_binding.as_str()),
+                                    call_span_start: witness.call_span.lo.0,
+                                    call_span_end: witness.call_span.hi.0,
+                                    argument_index: witness.argument_index,
+                                    opaque_call,
+                                },
+                            }
+                        }
                         CallbackFactoryBarrierRejection::UnsupportedGuard => {
                             CallbackFactoryRejectionReport::UnsupportedGuard
                         }

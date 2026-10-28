@@ -172,7 +172,26 @@ pub enum CallbackFactoryRejectionReport {
     NamespaceDynamicPropertyWrite {
         witness: CallbackFactoryWriteWitnessReport,
     },
+    NamespaceCallArgument {
+        witness: CallbackFactoryCallArgumentWitnessReport,
+    },
     UnsupportedGuard,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CallbackFactoryCallArgumentWitnessReport {
+    /// Exact graph source unit containing this ordinary top-level call.
+    pub source_unit: String,
+    pub statement_ordinal: SourceUnitOrdinal,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+    pub namespace_binding: Atom,
+    /// SWC callsite byte positions in the analyzed source program.
+    pub call_span_start: u32,
+    pub call_span_end: u32,
+    pub argument_index: usize,
+    /// True only for an UnknownCallTarget loss at this exact owner and span.
+    pub opaque_call: bool,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -228,6 +247,18 @@ pub struct ExecutionPrecisionLoss {
     pub source_location: Option<SourceLocation>,
     #[serde(skip)]
     pub(crate) span: swc_common::Span,
+}
+
+impl ExecutionPrecisionLoss {
+    pub fn is_unknown_call_target_at(
+        &self,
+        statement_ordinal: SourceUnitOrdinal,
+        span: swc_common::Span,
+    ) -> bool {
+        self.reason == ExecutionPrecisionLossReason::UnknownCallTarget
+            && self.statement_ordinal == statement_ordinal
+            && self.span == span
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
