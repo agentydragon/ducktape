@@ -345,6 +345,12 @@ impl Executor<'_> {
                 matches!(expressions, [ValueExpr::ObjectLiteral(object, _)]
                     if self.index.plain_data_objects.contains(object))
             }
+            CallInputs::OwnDescriptorLiteral => {
+                matches!((expressions, args), ([ValueExpr::ObjectLiteral(object, _)], [values])
+                    if self.index.own_descriptor_literal_inputs.contains(object)
+                        && !self.tainted_objects.contains(object)
+                        && values == &BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(*object))]))
+            }
         };
         admitted.then_some(model.returns)
     }
@@ -383,11 +389,29 @@ impl Executor<'_> {
         }
     }
 
-    fn native_return_values(returns: CallReturn, args: &[Values], may_throw: bool) -> Values {
+    fn native_return_values(
+        &mut self,
+        returns: CallReturn,
+        args: &[Values],
+        may_throw: bool,
+    ) -> Values {
         let mut values = match returns {
             CallReturn::Unknown => unknown(),
             CallReturn::Primitive => BTreeSet::from([AbstractValue::NonCallable]),
             CallReturn::Argument(index) => args.get(index).cloned().unwrap_or_else(unknown),
+            CallReturn::DeferredArgument(index) => {
+                let Some(argument) = args.get(index) else {
+                    return unknown();
+                };
+                // Data descriptors retain object identities, whose fields can
+                // acquire callbacks later. Also snapshot current callbacks so
+                // replacing a source property cannot erase copied closures.
+                let mut retained = argument.clone();
+                retained.extend(self.callback_values(argument));
+                // This retained graph establishes no recursive ordinary-data
+                // shape or stronger retained-factory input contract.
+                BTreeSet::from([self.deferred_callbacks(retained), AbstractValue::Unknown])
+            }
         };
         if may_throw {
             values.insert(AbstractValue::Unavailable);
@@ -3608,7 +3632,7 @@ impl Executor<'_> {
                 if let Some(returns) =
                     self.resolve_native_call(CallKind::Call, callee, expressions, &args)
                 {
-                    return Self::native_return_values(returns, &args, args_may_throw);
+                    return self.native_return_values(returns, &args, args_may_throw);
                 }
                 if let Some(callbacks) = self.retained_factory_callbacks(*span, expressions, &args)
                 {
@@ -3705,7 +3729,7 @@ impl Executor<'_> {
                 if let Some(returns) =
                     self.resolve_native_call(CallKind::New, callee, args, &successful_args)
                 {
-                    return Self::native_return_values(returns, &successful_args, args_may_throw);
+                    return self.native_return_values(returns, &successful_args, args_may_throw);
                 }
                 if self.index.retained_constructor_calls.contains_key(span) {
                     if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {

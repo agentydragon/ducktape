@@ -12,12 +12,15 @@ pub(super) enum CallReturn {
     Unknown,
     Primitive,
     Argument(usize),
+    /// An opaque successful return retaining an input graph and its callbacks.
+    DeferredArgument(usize),
 }
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum CallInputs {
     Primitives { min: usize, max: usize },
     FreshDataRecord,
+    OwnDescriptorLiteral,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -40,6 +43,11 @@ pub(super) fn native_call_model(
                 returns: CallReturn::Primitive,
             })
         }
+        ("Object", Some("getOwnPropertyDescriptors"), CallKind::Call) => Some(NativeCallModel {
+            intrinsic: IntrinsicRoot::Object,
+            inputs: CallInputs::OwnDescriptorLiteral,
+            returns: CallReturn::DeferredArgument(0),
+        }),
         ("Object", Some("freeze"), CallKind::Call) => Some(NativeCallModel {
             intrinsic: IntrinsicRoot::Object,
             inputs: CallInputs::FreshDataRecord,

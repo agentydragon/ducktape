@@ -162,6 +162,8 @@ debundle_e2e_test(
     ],
 )
 
+debundle_e2e_test(name = "own_descriptor_inspection_test")
+
 debundle_e2e_test(name = "class_callback_reachability_test")
 
 # Keep the full scale workloads: unoptimized RBE runs approach a minute even

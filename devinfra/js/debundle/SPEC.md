@@ -719,6 +719,20 @@ through aliases and descendants; only proved global-object receivers receive
 key disjointness. A11 remains an author obligation for hidden native-alias
 paths. Key precision grants no call, purity, throw or return summary.
 
+## Ordinary own descriptor inspection
+
+A guarded direct `Object.getOwnPropertyDescriptors` call on an exact ordinary
+literal can defer its stored getter, setter and method bodies during inspection.
+The inferred Object identity/integrity premise and ordinary input shape are
+shared by call timing and successful-return analysis. Callee/argument effects
+and throws remain represented. The result retains the input object graph,
+current callback capabilities and an unknown value shape, without
+descriptor-value precision or a stronger retained-factory input contract. Later
+access, invocation, publication and writes use conservative fallback.
+This first primitive excludes aliases, computed/spread/prototype forms and
+native replacement. Descriptor application and imported-body specialization
+remain outside its contract.
+
 ## Inferred returned-record construction timing
 
 For a stable directly exported hoisted zero-argument function declaration that allocates one fresh

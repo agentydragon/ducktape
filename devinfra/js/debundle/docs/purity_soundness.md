@@ -128,6 +128,30 @@ The census does not prove the absence of every hidden native-alias path:
 A11's author obligation still covers native integrity outside the recognized
 source facts.
 
+## Ordinary own descriptor inspection
+
+A direct `Object.getOwnPropertyDescriptors` call with one exact ordinary object
+literal argument has a shared native timing/return model. The canonical index
+requires static data, method, getter or setter properties with distinct names,
+without computed keys, spreads, decorators or `__proto__`. The Object binding
+must be undeclared and unshadowed, its source-derived native integrity intact,
+and the fresh input untainted. Assignment-wrapped literals and aliases remain
+outside this initial proof.
+
+Ordinary own descriptor inspection obtains descriptors without reading accessor
+values, so it does not invoke the stored getters, setters or methods. Callee
+and argument evaluation, eager argument effects and unavailable/throw paths
+retain their ordinary analysis. The successful return is an opaque retained
+carrier retaining the input object identity and a snapshot of its interned
+getter/method/setter captures, paired with an unknown value shape. Data-valued
+nested objects remain live through later writes; the callback snapshot preserves
+copied closures even if source properties change. It does not acquire the
+stronger ordinary input-graph contract used by retained callback factories. Later
+member use, invocation, publication, writes and opaque consumption retain the
+existing conservative callback fallback. The proof neither certifies the
+carrier as inert data nor models descriptor application, `Object.assign`, or an
+imported wrapper's body. It supplies no purity or exception-free claim.
+
 ## Source-composed returned records
 
 A stable directly exported hoisted function declaration can supply a separate

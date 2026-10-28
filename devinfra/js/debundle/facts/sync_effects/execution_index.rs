@@ -2058,6 +2058,7 @@ struct ExecutionIndex {
     other_class_uses: BTreeSet<Id>,
     safe_class_target: Option<Id>,
     plain_data_objects: BTreeSet<u32>,
+    own_descriptor_literal_inputs: BTreeSet<u32>,
     null_proto_data_objects: BTreeSet<u32>,
     exact_object_spread_copies: BTreeSet<u32>,
     map_entry_arrays: BTreeSet<u32>,
@@ -2171,6 +2172,7 @@ impl Default for ExecutionIndex {
             other_class_uses: BTreeSet::new(),
             safe_class_target: None,
             plain_data_objects: BTreeSet::new(),
+            own_descriptor_literal_inputs: BTreeSet::new(),
             null_proto_data_objects: BTreeSet::new(),
             exact_object_spread_copies: BTreeSet::new(),
             map_entry_arrays: BTreeSet::new(),
@@ -4929,6 +4931,40 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_call_expr(&mut self, call: &CallExpr) {
+        // The native model receives ValueExpr, which reduces assignments to
+        // their RHS. Retain the exact literal-argument syntax here so an
+        // intervening publication/effect cannot acquire this fresh-input proof.
+        if let Callee::Expr(callee) = &call.callee
+            && let Expr::Member(member) = callee.unwrap_parens()
+            && matches!(member.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Object")
+            && matches!(&member.prop, MemberProp::Ident(id) if id.sym == "getOwnPropertyDescriptors")
+            && call.args.len() == 1
+            && call.args[0].spread.is_none()
+            && let Expr::Object(object) = call.args[0].expr.unwrap_parens()
+        {
+            let mut names = BTreeSet::new();
+            let ordinary = object.props.iter().all(|property| {
+                let PropOrSpread::Prop(property) = property else {
+                    return false;
+                };
+                let key = match property.as_ref() {
+                    Prop::Shorthand(id) => {
+                        return id.sym != "__proto__" && names.insert(id.sym.to_string());
+                    }
+                    Prop::KeyValue(pair) => &pair.key,
+                    Prop::Method(method) if method.function.decorators.is_empty() => &method.key,
+                    Prop::Getter(getter) if getter.function.decorators.is_empty() => &getter.key,
+                    Prop::Setter(setter) if setter.function.decorators.is_empty() => &setter.key,
+                    _ => return false,
+                };
+                !matches!(key, PropName::Computed(_))
+                    && static_property_name(key)
+                        .is_some_and(|name| name != "__proto__" && names.insert(name))
+            });
+            if ordinary {
+                self.own_descriptor_literal_inputs.insert(object.span.lo.0);
+            }
+        }
         if self.current.is_none() {
             self.ordinary_top_call_sites.insert(call.span.into());
         }
