@@ -336,15 +336,13 @@ async def test_executor_exit_does_not_join_escaped_output_readers(harness: runne
     with container:
         await asyncio.to_thread(_wait_for_executor_file, socket_path)
         connection, status = await asyncio.to_thread(_claim_executor, socket_path, {"PATH": "/usr/bin:/bin"})
-        try:
+        with connection:
             assert status["owned"] is True
             await asyncio.to_thread(_wait_for_executor_file, ready_path)
             pipe_holder_host_pid = await asyncio.to_thread(_wait_for_host_pid, companion, marker)
             exit_path.write_text("exit\n")
             await asyncio.to_thread(_wait_for_container_exit, companion)
             await asyncio.wait_for(wait_for_exit(pipe_holder_host_pid), timeout=10)
-        finally:
-            connection.close()
 
 
 if __name__ == "__main__":

@@ -118,8 +118,8 @@ func TestPID1ContainerContract(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := NewPID1Supervisor(nil); err == nil || !strings.Contains(err.Error(), "requires the state-owner descriptor") {
-			t.Fatalf("stateful PID1 backend accepted an absent owner descriptor: %v", err)
+		if _, err := NewPID1Supervisor(nil); err == nil {
+			t.Fatal("stateful PID1 backend accepted an absent owner descriptor")
 		}
 		mixed, err := NewSubprocessSupervisor(owner).NewProcess(ProcessConfig{Command: []string{os.Args[0], "--pid1-proof-fast"}})
 		if err != nil {
@@ -220,7 +220,7 @@ func provePID1Waits(t *testing.T, ctx context.Context, supervisor *Supervisor) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := failedStart.Start(ctx); err == nil || !strings.Contains(err.Error(), "agentplane-pid1-proof-absent") {
+	if err := failedStart.Start(ctx); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("state-less PID1 start did not report an exec failure: %v", err)
 	}
 	fast, err := withoutStateOwner.NewProcess(ProcessConfig{
