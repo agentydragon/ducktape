@@ -4,15 +4,36 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+type incarnationWaitContextKey struct{}
+
+type incarnationWaitState struct {
+	state.State
+	waiting chan struct{}
+	once    sync.Once
+}
+
+func (s *incarnationWaitState) WatchFor(ctx context.Context, pointer resource.Pointer, conditions ...state.WatchForConditionFunc) (resource.Resource, error) {
+	if ctx.Value(incarnationWaitContextKey{}) != nil && pointer.Type() == runnerlifecycle.AggregateStatusType {
+		// Only the marked adoption call can rendezvous here, after deciding teardown is incomplete.
+		s.once.Do(func() { close(s.waiting) })
+	}
+	return s.State.WatchFor(ctx, pointer, conditions...)
+}
 
 // Each trace starts with a real setup process and a journal-blocked admission.
 // Enumerate all orders of their release and a competing lifecycle operation;
@@ -36,7 +57,10 @@ func TestLifecycleBarrierInterleavings(t *testing.T) {
 
 func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 	t.Helper()
-	r, s, finishSetup := lifecycleTestBlockedSetup(t)
+	store := &incarnationWaitState{
+		State: state.WrapCore(namespaced.NewState(inmem.Build)), waiting: make(chan struct{}),
+	}
+	r, s, finishSetup := lifecycleTestBlockedSetupWithState(t, store)
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 	finishAdmission := holdJournalBatch(t, ctx, s)
@@ -87,7 +111,17 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 			}
 		case "replace":
 			completed = make(chan error, 1)
-			go func() { completed <- r.adoptIncarnation(ctx, "replacement-incarnation") }()
+			adoptionCtx := context.WithValue(ctx, incarnationWaitContextKey{}, true)
+			go func() { completed <- r.adoptIncarnation(adoptionCtx, "replacement-incarnation") }()
+			if !released["admission"] || !released["setup"] {
+				select {
+				case <-store.waiting:
+				case err := <-completed:
+					t.Fatalf("replacement skipped teardown wait while work remained: %v", err)
+				case <-ctx.Done():
+					t.Fatal("replacement did not reach its teardown wait")
+				}
+			}
 		case "acknowledge":
 			ack := retained.Acknowledgement{Cursor: staleCursor, Sealed: true}
 			if err := r.store.WriteAcknowledgement(s.ID(), ack); err != nil {

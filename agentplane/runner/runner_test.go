@@ -588,7 +588,12 @@ func modelConfigServer(t *testing.T) *httptest.Server {
 
 func newLifecycleRunner(t *testing.T, config Config) *Runner {
 	t.Helper()
-	r, err := New(config)
+	return newLifecycleRunnerWithState(t, config, nil)
+}
+
+func newLifecycleRunnerWithState(t *testing.T, config Config, store state.State) *Runner {
+	t.Helper()
+	r, err := newRunner(config, nil, store)
 	if err != nil {
 		t.Fatal(err)
 	}

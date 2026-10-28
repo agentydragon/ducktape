@@ -41,6 +41,11 @@ func lifecycleTestSession(t *testing.T) (*Runner, *session.Session) {
 
 func lifecycleTestBlockedSetup(t *testing.T) (*Runner, *session.Session, func()) {
 	t.Helper()
+	return lifecycleTestBlockedSetupWithState(t, nil)
+}
+
+func lifecycleTestBlockedSetupWithState(t *testing.T, store state.State) (*Runner, *session.Session, func()) {
+	t.Helper()
 	workspace := t.TempDir()
 	gate := filepath.Join(workspace, "setup-gate")
 	if err := syscall.Mkfifo(gate, 0o600); err != nil {
@@ -54,7 +59,7 @@ func lifecycleTestBlockedSetup(t *testing.T) (*Runner, *session.Session, func())
 	}
 	t.Cleanup(func() { _ = pipe.Close() })
 	proxy := modelConfigServer(t)
-	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newLifecycleRunnerWithState(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), store)
 	var once sync.Once
 	release := func() {
 		once.Do(func() {
