@@ -17,6 +17,19 @@ pub(crate) trait FactContext<Key, Fact> {
     fn read(&mut self, key: Key) -> Option<&Fact>;
     fn propose(&mut self, key: Key, contribution: Fact) -> bool;
     fn assume(&mut self, dependencies: &ProofDependencies);
+
+    /// Read a completed immutable fact that may have multiple consumers. Its
+    /// typed dependencies are retained, but no watcher or live premise key is
+    /// installed: the caller guarantees this version can never change.
+    /// Absence is still missing evidence, never a certificate of absence.
+    fn read_final(&mut self, key: Key) -> Option<&Fact>;
+
+    /// Consume a completed single-consumer transfer, retaining its typed proof
+    /// dependencies. Only acyclic, immutable transfers can use this operation:
+    /// the caller must guarantee no future producer or reader of this key.
+    /// Growing facts and certificates needed by later consumers stay in the
+    /// store. This bounds memory across one-way program-point transitions.
+    fn take_final(&mut self, key: Key) -> Option<Fact>;
 }
 
 /// Positive requirements over the same store used by growing facts.
@@ -233,6 +246,20 @@ impl<R: IterativeRules> FactContext<R::Key, R::Fact> for IterativeContext<'_, R>
     fn assume(&mut self, dependencies: &ProofDependencies) {
         self.dependencies.extend(dependencies);
     }
+
+    fn read_final(&mut self, key: R::Key) -> Option<&R::Fact> {
+        let fact = self.facts.get(&key)?;
+        self.dependencies.extend(fact.dependencies());
+        Some(fact.value())
+    }
+
+    fn take_final(&mut self, key: R::Key) -> Option<R::Fact> {
+        let fact = self.facts.remove(&key)?;
+        self.dependencies.extend(fact.dependencies());
+        self.reads.remove(&key);
+        self.changed.remove(&key);
+        Some(fact.value)
+    }
 }
 
 /// Immutable results after every supplied producer and its dependents settle.
@@ -265,6 +292,92 @@ impl<Key: Ord, Fact> IterativeFacts<Key, Fact> {
 mod tests {
     use super::*;
     use crate::analysis_inputs::ValueInputRef;
+
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+    enum TransferKey {
+        Input,
+        Intermediate,
+        Output,
+    }
+
+    struct TransferRules;
+
+    impl IterativeRules for TransferRules {
+        type Key = TransferKey;
+        type Fact = &'static str;
+        type Rule = ();
+
+        fn evaluate(&self, _: &(), context: &mut impl FactContext<Self::Key, Self::Fact>) {
+            let Some(value) = context.take_final(TransferKey::Input) else {
+                return;
+            };
+            context.assume(&ProofDependencies {
+                value_inputs: BTreeSet::from([ValueInputRef {
+                    defining_chunk: "captured".into(),
+                    input_index: 0,
+                }]),
+            });
+            context.propose(TransferKey::Intermediate, value);
+            let value = context.take_final(TransferKey::Intermediate).unwrap();
+            context.propose(TransferKey::Output, value);
+        }
+
+        fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+            assert_eq!(*current, contribution);
+            false
+        }
+    }
+
+    #[test]
+    fn completed_transfers_retire_payloads_and_preserve_typed_dependencies() {
+        let mut inference = IterativeInference::new(TransferRules);
+        inference.seed(TransferKey::Input, "settled input");
+        let facts = inference.solve([()]);
+        assert!(facts.get(&TransferKey::Input).is_none());
+        assert!(facts.get(&TransferKey::Intermediate).is_none());
+        let output = facts.get(&TransferKey::Output).unwrap();
+        assert_eq!(*output.value(), "settled input");
+        assert_eq!(output.dependencies().value_inputs.len(), 1);
+        assert!(output.dependencies().value_inputs.contains(&ValueInputRef {
+            defining_chunk: "captured".into(),
+            input_index: 0,
+        }));
+    }
+
+    #[test]
+    fn a_missing_transfer_input_cannot_produce_a_result() {
+        let facts = IterativeInference::new(TransferRules).solve([()]);
+        assert!(facts.get(&TransferKey::Output).is_none());
+    }
+
+    #[test]
+    fn completed_shared_reads_preserve_dependencies_without_live_premises() {
+        let dependencies = ProofDependencies {
+            value_inputs: BTreeSet::from([ValueInputRef {
+                defining_chunk: "captured".into(),
+                input_index: 0,
+            }]),
+        };
+        let mut facts = BTreeMap::new();
+        {
+            let mut context = IterativeContext::<TransferRules>::new(&mut facts);
+            context.assume(&dependencies);
+            context.propose(TransferKey::Input, "settled input");
+        }
+        for output in [TransferKey::Intermediate, TransferKey::Output] {
+            let mut context = IterativeContext::<TransferRules>::new(&mut facts);
+            let value = *context.read_final(TransferKey::Input).unwrap();
+            context.propose(output.clone(), value);
+            let result = facts.get(&output).unwrap();
+            assert_eq!(*result.value(), "settled input");
+            assert_eq!(result.dependencies(), &dependencies);
+            assert!(result.premises().is_empty());
+        }
+        assert!(facts.contains_key(&TransferKey::Input));
+        let mut context = IterativeContext::<TransferRules>::new(&mut facts);
+        context.take_final(TransferKey::Input);
+        assert!(context.read_final(TransferKey::Input).is_none());
+    }
 
     struct RequestedRules;
 
