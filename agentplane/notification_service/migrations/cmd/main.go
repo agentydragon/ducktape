@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	databaseURLEnv                  = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
-	requiredEventIdentityWriterGate = "notification-event-identity-dual-write-v1"
+	databaseURLEnv                 = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
+	requiredEntryLegacyCleanupGate = "notification-entry-native-content-writer-only-v1"
 )
 
 func main() {
@@ -34,27 +34,27 @@ func main() {
 	switch {
 	case len(os.Args) == 1:
 		run = migrations.Up
-	case os.Args[1] == "backfill-event-identities":
+	case os.Args[1] == "cleanup-entry-legacy-content":
 		flags := flag.NewFlagSet(os.Args[1], flag.ContinueOnError)
-		writerGate := flags.String("writer-gate", "", "required rollout gate: "+requiredEventIdentityWriterGate)
-		batchSize := flags.Int("batch-size", 512, "maximum entry identities per short transaction")
+		writerGate := flags.String("writer-gate", "", "required rollout gate: "+requiredEntryLegacyCleanupGate)
+		batchSize := flags.Int("batch-size", 512, "maximum entry keys per short transaction")
 		if err := flags.Parse(os.Args[2:]); err != nil {
 			os.Exit(2)
 		}
 		if flags.NArg() != 0 || *batchSize < 1 || *batchSize > 4096 {
-			fmt.Fprintln(os.Stderr, "backfill-event-identities accepts --writer-gate=... and --batch-size=N where N is between 1 and 4096")
+			fmt.Fprintln(os.Stderr, "cleanup-entry-legacy-content accepts --writer-gate=... and --batch-size=N where N is between 1 and 4096")
 			os.Exit(2)
 		}
-		if *writerGate != requiredEventIdentityWriterGate {
-			fmt.Fprintf(os.Stderr, "run only after every Notification Service writer is at the dual-write rollout gate; pass --writer-gate=%s\n", requiredEventIdentityWriterGate)
+		if *writerGate != requiredEntryLegacyCleanupGate {
+			fmt.Fprintf(os.Stderr, "run only after every Notification Service writer stores native owned content and clears expired native content; pass --writer-gate=%s\n", requiredEntryLegacyCleanupGate)
 			os.Exit(2)
 		}
 		run = func(ctx context.Context, db *sql.DB) error {
-			return store.BackfillEventIdentities(ctx, db, *batchSize)
+			return store.CleanupEntryLegacyContent(ctx, db, *batchSize)
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
-		fmt.Fprintln(os.Stderr, "commands: (default) migrate, backfill-event-identities")
+		fmt.Fprintln(os.Stderr, "commands: (default) migrate, cleanup-entry-legacy-content")
 		os.Exit(2)
 	}
 	if err := migrate.Run(ctx, databaseURL, run); err != nil {

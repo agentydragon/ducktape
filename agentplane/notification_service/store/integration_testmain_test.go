@@ -48,6 +48,18 @@ func newStorageIntegrationDatabase(t *testing.T) (*sql.DB, context.Context) {
 	return db, t.Context()
 }
 
+// newEventIdentityWriterOnlyFixture retains the compatibility schema used by tests that exercise legacy event
+// and payload JSON alongside the native relational fields before migrations 00021 and 00022 retire them.
+func newEventIdentityWriterOnlyFixture(t *testing.T) fixture {
+	t.Helper()
+	db, ctx := newStorageIntegrationDatabase(t)
+	resetNotificationSchema(t, db)
+	if err := migrations.UpTo(ctx, db, 20); err != nil {
+		t.Fatalf("build pre-contract schema through migration 00020: %v", err)
+	}
+	return fixtureForDatabase(t, db, defaultQuotas())
+}
+
 func explainLines(ctx context.Context, tx *sql.Tx, query string, args ...any) (string, error) {
 	rows, err := tx.QueryContext(ctx, "EXPLAIN (COSTS OFF) "+query, args...)
 	if err != nil {
@@ -115,7 +127,7 @@ func newOwner() model.ServiceAccount {
 // that the identity backfill has populated before the relational-reader release.
 func insertBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor int64, eventJSON []byte, payload string) {
 	t.Helper()
-	event, err := model.DecodeEventIdentity(eventJSON)
+	event, err := decodeHistoricalEventIdentity(eventJSON)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +150,7 @@ func insertBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor i
 // insertContentBackfilledEntry models a retained non-expired row after both identity and content backfills.
 func insertContentBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor int64, eventJSON []byte, payload string) {
 	t.Helper()
-	event, err := model.DecodeEventIdentity(eventJSON)
+	event, err := decodeHistoricalEventIdentity(eventJSON)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,6 +167,26 @@ func insertContentBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, c
 	query := `UPDATE entry SET (` + entryContentReadColumns + `) = (` + strings.Join(placeholders, ", ") + `)
 		WHERE inbox_id = $1 AND cursor = $2`
 	if _, err := db.ExecContext(t.Context(), query, append([]any{inboxID, cursor}, values...)...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// insertContractedHistoricalEntry decodes a Python identity fixture and stores its current relational form.
+func insertContractedHistoricalEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor int64, eventJSON []byte, payload string) {
+	t.Helper()
+	event, err := decodeHistoricalEventIdentity(eventJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if err := insertEntry(t.Context(), tx, inboxID, cursor, event, json.RawMessage(payload), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
 }

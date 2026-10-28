@@ -37,8 +37,8 @@ func (f fixture) insertInboxAs(t *testing.T, id uuid.UUID, key string, ref model
 // insertSubscription decodes a historical Python creation document and writes its current typed representation.
 func (f fixture) insertSubscription(t *testing.T, inboxID uuid.UUID, creation json.RawMessage) uuid.UUID {
 	t.Helper()
-	var sent model.Subscribe
-	if err := json.Unmarshal(creation, &sent); err != nil {
+	sent, err := decodeHistoricalSubscription(creation)
+	if err != nil {
 		t.Fatal(err)
 	}
 	creationProto, provider, err := encodeSubscriptionCreation(sent)
@@ -133,8 +133,8 @@ func TestSubscriptionsPythonCreatedAreReadAndFoundByTheirKey(t *testing.T) {
 	for _, vector := range loadGolden(t).Subscriptions {
 		t.Run(vector.Name, func(t *testing.T) {
 			f := newIsolatedFixture(t, defaultQuotas())
-			var sent model.Subscribe
-			if err := decode(vector.Input, &sent); err != nil {
+			sent, err := decodeHistoricalSubscription(vector.Input)
+			if err != nil {
 				t.Fatal(err)
 			}
 			inboxID := f.insertInbox(t, model.DestinationKey(sent.DestinationRef, sent.SessionID), sent.DestinationRef, sent.SessionID)
@@ -180,11 +180,11 @@ func TestEntriesPythonWroteAreReadAndNotAppendedAgain(t *testing.T) {
 	subscription := f.subscribe(t, body("first"))
 	vectors := loadGolden(t).Events
 	for i, vector := range vectors {
-		event, err := model.DecodeEventIdentity(vector.Event)
+		event, err := decodeHistoricalEventIdentity(vector.Event)
 		if err != nil {
 			t.Fatal(err)
 		}
-		insertContentBackfilledEntry(t, f.db, subscription.InboxID, int64(i+1), vector.Event, entryPayloadForTest(t, event))
+		insertContractedHistoricalEntry(t, f.db, subscription.InboxID, int64(i+1), vector.Event, entryPayloadForTest(t, event))
 	}
 	f.exec(t, `UPDATE inbox SET last_cursor = $2 WHERE id = $1`, subscription.InboxID, len(vectors))
 
@@ -193,7 +193,7 @@ func TestEntriesPythonWroteAreReadAndNotAppendedAgain(t *testing.T) {
 		t.Fatalf("%d entries, want %d", len(page.Entries), len(vectors))
 	}
 	for i, vector := range vectors {
-		event, err := model.DecodeEventIdentity(vector.Event)
+		event, err := decodeHistoricalEventIdentity(vector.Event)
 		if err != nil {
 			t.Fatal(err)
 		}

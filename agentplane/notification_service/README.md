@@ -111,7 +111,9 @@ checkpoints, and indexes. If stage 2's backfill has run, retain its checkpoint s
 writer cannot silently invalidate native content; verify reads, writes, expiry, deduplication and
 readiness after rollback. Once stage 4 retires that checkpoint, keep `00019` and `00020` applied and
 roll application code back only to a native-capable image that reads relational identity and native
-content. After stage 5's identity contract, an image that requires `event` JSON cannot run; after
+content. Once `00021` applies, roll back only to a native-only writer image: the owned-JSON-absent
+check rejects earlier dual writers. After stage 5's identity contract, an image that requires
+`event` JSON cannot run; after
 stage 6, do not run the retired cleanup command. Native-only service images remain compatible.
 Never run a Down migration that
 discards retained notifications or reintroduces an unsafe checkpoint.

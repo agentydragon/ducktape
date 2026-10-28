@@ -157,10 +157,10 @@ func TestInfiniteGitHubRetentionStillCleansUpInboxPayloads(t *testing.T) {
 	repositoryID := seedMergeabilityHistory(t, h)
 	sub := h.subscribe(t, "retention")
 	h.exec(t, `INSERT INTO entry (
-		inbox_id, cursor, event, payload, identity_provider, github_app_id, github_delivery_id,
+		inbox_id, cursor, payload, identity_provider, github_app_id, github_delivery_id,
 		github_repository_id, github_event, created_at
 	) VALUES (
-		$1, 1, '{"provider":"github"}', '{}', 'github', $2, $3, $4, 'issue_comment',
+		$1, 1, '{}', 'github', $2, $3, $4, 'issue_comment',
 		now() - interval '31 days'
 	)`, sub.InboxID, 43, "00000000-0000-0000-0000-000000000003", repositoryID)
 	h.exec(t, `UPDATE inbox SET last_cursor = 1, next_attempt = now() + interval '1 hour' WHERE id = $1`, sub.InboxID)

@@ -23,61 +23,12 @@ func TestDestinationKeysAreThosePythonComputes(t *testing.T) {
 	}
 }
 
-func TestCreationsAreReadAndWrittenAsPythonDoes(t *testing.T) {
-	for _, vector := range loadGolden(t).Subscriptions {
-		t.Run(vector.Name, func(t *testing.T) {
-			var sent, stored model.Subscribe
-			if err := decode(vector.Input, &sent); err != nil {
-				t.Fatalf("decoding the input: %v", err)
-			}
-			if err := sent.Validate(); err != nil {
-				t.Fatalf("Validate: %v", err)
-			}
-			written, err := json.Marshal(sent)
-			if err != nil {
-				t.Fatal(err)
-			}
-			sameJSON(t, written, vector.Stored)
-
-			// What Python stored reads back, without loss, as the creation that was sent.
-			if err := decode(vector.Stored, &stored); err != nil {
-				t.Fatalf("decoding the stored form: %v", err)
-			}
-			if !stored.Equal(sent) {
-				t.Errorf("stored form %+v is not the creation sent %+v", stored, sent)
-			}
-			rewritten, err := json.Marshal(stored)
-			if err != nil {
-				t.Fatal(err)
-			}
-			sameJSON(t, rewritten, vector.Stored)
-		})
-	}
-}
-
-func TestCreationsPythonRefusesAreRefused(t *testing.T) {
-	for _, vector := range loadGolden(t).InvalidSubscriptions {
-		t.Run(vector.Name, func(t *testing.T) {
-			var creation model.Subscribe
-			err := decode(vector.Input, &creation)
-			if err == nil {
-				err = creation.Validate()
-				if err != nil && !errors.Is(err, model.ErrInvalid) {
-					t.Errorf("Validate error %v is not model.ErrInvalid", err)
-				}
-			}
-			if err == nil {
-				t.Errorf("accepted %s", vector.Input)
-			}
-		})
-	}
-}
-
 func TestCreationsAreTheSameWhereThePythonCheckSaysSo(t *testing.T) {
 	for _, vector := range loadGolden(t).Comparisons {
 		t.Run(vector.Name, func(t *testing.T) {
-			var a, b model.Subscribe
-			if err := errors.Join(decode(vector.A, &a), decode(vector.B, &b)); err != nil {
+			a, errA := decodeHistoricalSubscription(vector.A)
+			b, errB := decodeHistoricalSubscription(vector.B)
+			if err := errors.Join(errA, errB); err != nil {
 				t.Fatal(err)
 			}
 			if got := a.Equal(b); got != vector.Same {
@@ -198,26 +149,10 @@ func TestRunnerEntriesSerializeAsPythonDoes(t *testing.T) {
 	}
 }
 
-func TestEventsAreReadAndWrittenAsPythonDoes(t *testing.T) {
-	for _, vector := range loadGolden(t).Events {
-		t.Run(vector.Name, func(t *testing.T) {
-			event, err := model.DecodeEventIdentity(vector.Event)
-			if err != nil {
-				t.Fatal(err)
-			}
-			written, err := json.Marshal(event)
-			if err != nil {
-				t.Fatal(err)
-			}
-			sameJSON(t, written, vector.Event)
-		})
-	}
-}
-
 func TestSubjectKeysAreThosePythonIndexes(t *testing.T) {
 	for _, vector := range loadGolden(t).SubjectKeys {
 		t.Run(vector.Kind, func(t *testing.T) {
-			subject, err := model.DecodeGitHubSubject(vector.Subject)
+			subject, err := decodeHistoricalSubject(vector.Subject)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -2,7 +2,6 @@ package store
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"testing"
 
@@ -13,7 +12,7 @@ import (
 )
 
 func TestNativeEntryContentRejectsIncompleteAndWrongSourceRows(t *testing.T) {
-	f := newFixture(t, defaultQuotas())
+	f := newEventIdentityWriterOnlyFixture(t)
 	subscription := f.subscribe(t, body("native-content-shape"))
 	action := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
 	mergeability := model.GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 1}
@@ -46,7 +45,7 @@ func TestNativeEntryContentRejectsIncompleteAndWrongSourceRows(t *testing.T) {
 	}
 }
 
-func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *testing.T) {
+func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	subscription := f.subscribe(t, body("identity-columns"))
 	requestID := uuid.New()
@@ -166,7 +165,7 @@ func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t
 }
 
 func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
-	f := newFixture(t, defaultQuotas())
+	f := newEventIdentityWriterOnlyFixture(t)
 	subscription := f.subscribe(t, body("identity-runtime"))
 	requestID := uuid.New()
 	deliveryID := uuid.New()
@@ -187,7 +186,7 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 	}
 	// Make one legacy copy disagree with the relational identity so this test proves that new reads and retries
 	// use the populated columns. Production writers still dual-write the correct JSON for old readers in rollout.
-	legacyEvent, err := json.Marshal(model.ActionsEvent{RequestID: requestID, Sequence: 999})
+	legacyEvent, err := marshalHistoricalEventIdentity(model.ActionsEvent{RequestID: requestID, Sequence: 999})
 	if err != nil {
 		t.Fatal(err)
 	}
