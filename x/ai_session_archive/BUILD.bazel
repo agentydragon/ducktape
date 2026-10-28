@@ -68,10 +68,7 @@ py_binary(
 py_test(
     name = "test_ingest",
     srcs = ["test_ingest.py"],
-    args = [
-        "--deselect=x.ai_session_archive.test_ingest::test_parentless_restic_snapshot_uses_full_inventory",
-        "--deselect=x.ai_session_archive.test_ingest::test_postgres_file_transaction_rolls_back_and_retries",
-    ],
+    args = ["-k=real_restic_import_retains_every_changed_and_deleted_version"],
     data = ["//third_party/restic"],
     requires_docker = True,
     deps = [
@@ -88,6 +85,28 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_ingest_unit",
+    srcs = ["test_ingest.py"],
+    args = ["-k=unit_"],
+    data = ["//third_party/restic"],
+    main = "test_ingest.py",
+    deps = [
+        ":database",
+        ":ingest",
+        ":models",
+        ":queries",
+        ":restic",
+        "//:conftest",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
 
 py_test(
     name = "test_parentless_snapshot",

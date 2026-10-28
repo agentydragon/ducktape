@@ -342,7 +342,7 @@ def test_parentless_restic_snapshot_uses_full_inventory(tmp_path: Path, postgres
         assert file_row.status == "complete"
 
 
-def test_restic_question_modifier_is_an_indexable_content_change() -> None:
+def test_unit_restic_question_modifier_is_an_indexable_content_change() -> None:
     repository = ResticRepository(binary="unused", environment={})
     path = "/home/archive/.claude/projects/project/session.jsonl"
     with patch.object(
@@ -366,7 +366,7 @@ def test_restic_question_modifier_is_an_indexable_content_change() -> None:
 
 
 @pytest.mark.parametrize("timestamp", ["2026-01-01T00:00:00", "not-a-timestamp"])
-def test_timezone_naive_or_invalid_record_timestamps_are_unknown(timestamp: str) -> None:
+def test_unit_timezone_naive_or_invalid_record_timestamps_are_unknown(timestamp: str) -> None:
     assert _record_timestamp({"timestamp": timestamp}) is None
 
 
