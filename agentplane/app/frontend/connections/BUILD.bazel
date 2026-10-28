@@ -70,10 +70,12 @@ ts_project(
     ],
 )
 
+TEST_SRCS = glob(["*.test.tsx"])
+
 ts_project(
     name = "testing",
     testonly = True,
-    srcs = glob(["*.test.tsx"]),
+    srcs = TEST_SRCS,
     declaration = True,
     resolve_json_module = True,
     source_map = True,
@@ -96,13 +98,18 @@ ts_project(
 
 [
     vitest_bin.vitest_test(
-        name = module + "_test",
-        args = ["run", "--config", "vitest_config.mjs", "connections/" + module + ".test.js"],
+        name = spec.removesuffix(".test.tsx") + "_test",
+        args = [
+            "run",
+            "--config",
+            "vitest_config.mjs",
+            "connections/" + spec.removesuffix(".tsx") + ".js",
+        ],
         chdir = "agentplane/app/frontend",
         data = [
             ":testing",
             "//agentplane/app/frontend:vitest_config",
         ],
     )
-    for module in ["caller_grants", "consent", "management"]
+    for spec in TEST_SRCS
 ]
