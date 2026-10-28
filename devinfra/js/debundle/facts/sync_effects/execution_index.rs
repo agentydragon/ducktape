@@ -1644,6 +1644,11 @@ pub(crate) fn resolve_native_integrity<'a>(
                             && mutated.contains(&IntrinsicRoot::GlobalObject))
                     {
                         mutation.properties = None;
+                        if mutated.contains(&IntrinsicRoot::GlobalObject) {
+                            mutation
+                                .key_dependencies
+                                .insert(IntrinsicRoot::GlobalObject);
+                        }
                     }
                     mutation
                 })
@@ -2231,6 +2236,7 @@ struct ExecutionIndex {
     fresh_error_claims: Vec<FreshErrorWriteClaim>,
     intrinsic_writes: Vec<IntrinsicWriteTarget>,
     prototype_calls: Vec<Call>,
+    prototype_field_writes: Vec<(SourceUnitOrdinal, Span, PropertyKeyExpr)>,
     prototype_callable_reads: BTreeMap<u32, BTreeSet<Id>>,
     property_key_assignments: BTreeMap<Id, Vec<PropertyKeyExpr>>,
     property_key_declarations: BTreeSet<Id>,
@@ -2355,6 +2361,7 @@ impl Default for ExecutionIndex {
             fresh_error_claims: Vec::new(),
             intrinsic_writes: Vec::new(),
             prototype_calls: Vec::new(),
+            prototype_field_writes: Vec::new(),
             prototype_callable_reads: BTreeMap::new(),
             property_key_assignments: BTreeMap::new(),
             property_key_declarations: BTreeSet::new(),
@@ -4119,6 +4126,24 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_class(&mut self, class: &Class) {
+        // A derived constructor can receive a native object returned by super.
+        // Its public fields therefore do not carry the fresh-this certificate.
+        if class.super_class.is_some() {
+            for member in &class.body {
+                if let ClassMember::ClassProp(prop) = member
+                    && !prop.is_static
+                {
+                    let key = match &prop.key {
+                        PropName::Computed(key) => PropertyKeyExpr::from_expr(&key.expr),
+                        key => static_property_name(key)
+                            .map(PropertyKeyExpr::String)
+                            .unwrap_or(PropertyKeyExpr::Unknown),
+                    };
+                    self.prototype_field_writes
+                        .push((self.owner, prop.span, key));
+                }
+            }
+        }
         self.class_owners.insert(class.span.lo.0, self.owner);
         self.class_values
             .insert(class.span.lo.0, collect_class_value_facts(class));

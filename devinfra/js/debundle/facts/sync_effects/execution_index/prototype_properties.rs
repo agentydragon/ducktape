@@ -182,6 +182,14 @@ impl ExecutionIndex {
                 .flatten();
             mutations.push(mutation(write.owner, write.span, kind, key));
         }
+        for (owner, span, key) in &self.prototype_field_writes {
+            mutations.push(mutation(
+                *owner,
+                *span,
+                NativePrototypeMutationKind::Write,
+                Some(key),
+            ));
+        }
         // A native descriptor capability can escape through an alias, bind/call,
         // an imported helper, or a legacy accessor method. Such paths are not
         // closed by the older native-family mutation census.

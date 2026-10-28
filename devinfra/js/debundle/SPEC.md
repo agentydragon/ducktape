@@ -1472,6 +1472,16 @@ recursive invocations, and depth, expansion, or callback-pool limits. Limit
 records include the configured bound. These records do not change gate acceptance
 or emitted JavaScript.
 
+Property-specific Object prototype premises appear in
+`synchronous_execution.native_prototype_property_checks`: each entry names the
+property, the absence verdict, and the number of blocking source operations.
+The graph shares those operations once under `native_prototype_mutations`, with
+chunk, source unit, source location, kind and possible property names. A null
+property set means any name; an empty set means Symbol keys only. These are
+conservative possible writers, not proof that a mutation executes. `describe`
+selects blockers for checked names and applies its ordinary section limits.
+Native-call identity checks and their witnesses remain separate.
+
 `dependency_graph.json` includes `imported_callable_summaries` for directly
 called bare imported callback-factory summaries used by synchronous analysis.
 Each shared entry names

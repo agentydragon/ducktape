@@ -269,6 +269,10 @@ fn describe_bounds_cross_chunk_prototype_mutations() {
         bounded["limits"]["sections"]["native_prototype_mutations"],
         serde_json::json!({"total": 2, "emitted": 1, "truncated": true})
     );
+    let mutation = &bounded["native_prototype_mutations"][0];
+    assert_eq!(mutation["properties"], serde_json::json!(["value"]));
+    assert_eq!(mutation["source_location"]["start_line"], 1);
+    assert!(mutation.get("span").is_none());
     let all = fixture.json(&["describe", "result", "--all"]);
     assert_eq!(
         all["native_prototype_mutations"].as_array().unwrap().len(),
@@ -370,10 +374,17 @@ fn describe_follows_key_premises_to_the_other_chunk_write() {
     let report = fixture.json(&["describe", "result", "--all"]);
     let witnesses = report["native_integrity_witnesses"].as_array().unwrap();
     assert!(
-        witnesses
+        report["native_prototype_mutations"]
+            .as_array()
+            .unwrap()
             .iter()
-            .any(|witness| witness["chunk_id"] == "dependency"
-                && witness["affected_roots"] == serde_json::json!(["global_object"]))
+            .any(|mutation| mutation["chunk_id"] == "dependency"
+                && mutation["properties"].is_null()
+                && mutation["key_dependencies"]
+                    .as_array()
+                    .is_some_and(
+                        |dependencies| dependencies.contains(&serde_json::json!("symbol"))
+                    ))
     );
     assert!(witnesses.iter().any(|witness| witness["chunk_id"] == "main"
         && witness["affected_roots"] == serde_json::json!(["symbol"])));

@@ -747,6 +747,32 @@ calls, or to other native models.
 Direct `eval` or `with` anywhere in the chunk disables the certificate, using
 the same dynamic-scope scan as the shared Set-iterable proof.
 
+## Property absence for checked private constructors
+
+Explicit private constructor models require each assigned field to be absent
+from the intrinsic Object prototype. Reading a missing literal input/result
+property uses the same property-specific premise. Absence is stronger than
+absence of getters: an inherited data value can retain callbacks that the
+current argument-only instance model does not represent. The proof does not
+admit inherited data values, accessors, or standard Object prototype properties.
+
+The canonical whole-program index retains property keys independently of
+native-call family integrity. A known write to another name does not block this
+premise; native call guards keep their existing family checks. Unproved member
+writers, including deferred and post-await bodies, block their possible keys.
+Canonical fresh-receiver certificates and eligible class constructor `this`
+writes are excluded. Derived public fields have no fresh-this guarantee because
+`super` can return a native object. Unknown keys, descriptor/prototype operations,
+dynamic scopes and escaped native capabilities block every property. Native
+capability containment includes records, callable captures and class fields;
+it is separate from receiver identity. Key evidence depending on replaced
+natives is widened before the property proof runs. A11 remains the external
+host-integrity premise; these checks do not prove arbitrary foreign code safe.
+
+The proof changes synchronous callback reachability only. It preserves ordinary
+writer effects, class/input privacy, prefix availability, exposure and alias
+checks. Failure retains the existing conservative execution path.
+
 ## Fresh local record field writes
 
 The local wrapper proof admits a narrow mutation while keeping ordinary

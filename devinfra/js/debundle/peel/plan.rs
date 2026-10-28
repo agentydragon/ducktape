@@ -1038,6 +1038,30 @@ fn explain_from_graph(
     limited_source_unit_ids.sort();
     limited_source_unit_ids.sort_by_key(|id| !preferred_source_unit_ids.contains(id));
 
+    let checked_properties: BTreeSet<_> = source_units
+        .iter()
+        .chain(&neighbor_source_units)
+        .filter_map(|unit| unit.synchronous_execution.as_ref())
+        .flat_map(|execution| {
+            execution
+                .native_prototype_property_checks
+                .iter()
+                .map(|check| &check.property)
+        })
+        .collect();
+    let mut native_prototype_mutations: Vec<_> = graph
+        .native_prototype_mutations
+        .iter()
+        .filter(|mutation| {
+            !checked_properties.is_empty()
+                && mutation.properties.as_ref().is_none_or(|properties| {
+                    properties
+                        .iter()
+                        .any(|property| checked_properties.contains(property))
+                })
+        })
+        .cloned()
+        .collect();
     let evaluated_failed_roots: BTreeSet<_> = source_units
         .iter()
         .chain(&neighbor_source_units)
@@ -1046,6 +1070,11 @@ fn explain_from_graph(
         .flat_map(|check| check.affected_roots.iter().copied())
         .collect();
     let mut affected_roots = evaluated_failed_roots.clone();
+    affected_roots.extend(
+        native_prototype_mutations
+            .iter()
+            .flat_map(|mutation| mutation.key_dependencies.iter().copied()),
+    );
     loop {
         let before = affected_roots.len();
         for witness in &graph.native_integrity_witnesses {
@@ -1083,30 +1112,6 @@ fn explain_from_graph(
                 || !certificate
                     .previously_affected_roots
                     .is_disjoint(&evaluated_failed_roots)
-        })
-        .cloned()
-        .collect();
-    let checked_properties: BTreeSet<_> = source_units
-        .iter()
-        .chain(&neighbor_source_units)
-        .filter_map(|unit| unit.synchronous_execution.as_ref())
-        .flat_map(|execution| {
-            execution
-                .native_prototype_property_checks
-                .iter()
-                .map(|check| &check.property)
-        })
-        .collect();
-    let mut native_prototype_mutations: Vec<_> = graph
-        .native_prototype_mutations
-        .iter()
-        .filter(|mutation| {
-            !checked_properties.is_empty()
-                && mutation.properties.as_ref().is_none_or(|properties| {
-                    properties
-                        .iter()
-                        .any(|property| checked_properties.contains(property))
-                })
         })
         .cloned()
         .collect();
