@@ -16,6 +16,7 @@ import (
 
 	bootstrapcomponent "github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -150,22 +151,41 @@ func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 
 type initialOperationFailureState struct {
 	state.State
-	once     sync.Once
-	failures atomic.Int32
-	failed   chan struct{}
-	err      error
+	initialFailure  error
+	teardownFailure error
+	failInitial     atomic.Bool
+	failTeardown    atomic.Bool
+	failed          chan struct{}
+	teardownFailed  chan struct{}
 }
 
 func (s *initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
-	if value.Metadata().Type() == session.OperationType && s.failures.Add(-1) >= 0 {
-		s.once.Do(func() { close(s.failed) })
-		return s.err
+	if value.Metadata().Type() == session.OperationType {
+		desired, found, err := runnerlifecycle.ReadDesired(ctx, s.State)
+		if err == nil && found {
+			var armed *atomic.Bool
+			var failure error
+			var failed chan struct{}
+			switch desired.Mode {
+			case runnerlifecycle.Running:
+				armed, failure, failed = &s.failInitial, s.initialFailure, s.failed
+			case runnerlifecycle.Closing:
+				armed, failure, failed = &s.failTeardown, s.teardownFailure, s.teardownFailed
+			}
+			if armed != nil {
+				_, getErr := s.State.Get(ctx, value.Metadata())
+				if state.IsNotFoundError(getErr) && armed.CompareAndSwap(true, false) {
+					close(failed)
+					return failure
+				}
+			}
+		}
 	}
 
 	return s.State.Modify(ctx, value, update, opts...)
 }
 
-func failedInitialOperationRunner(t *testing.T, operationFailures int32) (*Runner, *initialOperationFailureState, string) {
+func failedInitialOperationRunner(t *testing.T, failTeardown bool) (*Runner, *initialOperationFailureState, string) {
 	t.Helper()
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
@@ -175,13 +195,17 @@ func failedInitialOperationRunner(t *testing.T, operationFailures int32) (*Runne
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	failure := errors.New("injected initial operation publication failure")
+	initialFailure := errors.New("injected initial operation publication failure")
+	teardownFailure := errors.New("injected teardown operation publication failure")
 	store := &initialOperationFailureState{
-		State:  state.WrapCore(namespaced.NewState(inmem.Build)),
-		failed: make(chan struct{}),
-		err:    failure,
+		State:           state.WrapCore(namespaced.NewState(inmem.Build)),
+		initialFailure:  initialFailure,
+		teardownFailure: teardownFailure,
+		failed:          make(chan struct{}),
+		teardownFailed:  make(chan struct{}),
 	}
-	store.failures.Store(operationFailures)
+	store.failInitial.Store(true)
+	store.failTeardown.Store(failTeardown)
 	r, err := newRunner(lifecycleConfig(t, proxy.URL, workspace, nil, binary), nil, store)
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +241,7 @@ func failedInitialOperationRunner(t *testing.T, operationFailures int32) (*Runne
 	}
 	select {
 	case err := <-r.fatal:
-		if !strings.Contains(err.Error(), failure.Error()) {
+		if !strings.Contains(err.Error(), initialFailure.Error()) {
 			t.Fatalf("Runner failure = %v, want publication failure", err)
 		}
 	case <-ctx.Done():
@@ -227,7 +251,7 @@ func failedInitialOperationRunner(t *testing.T, operationFailures int32) (*Runne
 }
 
 func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
-	r, _, marker := failedInitialOperationRunner(t, 1)
+	r, _, marker := failedInitialOperationRunner(t, false)
 
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close() }()
@@ -253,7 +277,7 @@ func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
 }
 
 func TestCloseReportsTeardownOperationPublicationFailureAndRetainsOwner(t *testing.T) {
-	r, _, marker := failedInitialOperationRunner(t, 2)
+	r, store, marker := failedInitialOperationRunner(t, true)
 	closeCtx, cancelClose := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelClose()
 	closeDone := make(chan error, 1)
@@ -262,6 +286,11 @@ func TestCloseReportsTeardownOperationPublicationFailureAndRetainsOwner(t *testi
 	case err := <-closeDone:
 		if err == nil || !strings.Contains(err.Error(), "publish operation start") {
 			t.Fatalf("Close error after teardown publication failure = %v, want publication error", err)
+		}
+		select {
+		case <-store.teardownFailed:
+		default:
+			t.Fatal("Close returned before the teardown publication fault was injected")
 		}
 	case <-closeCtx.Done():
 		r.cancel()
