@@ -177,10 +177,7 @@ class _KnownLiteLLMContractGapError(RuntimeError):
     ],
 )
 async def test_anthropic_http_stream_tool_result_continuation_uses_tana_provider(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    include_usage: bool,
-    require_cache_control: bool,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, include_usage: bool, require_cache_control: bool
 ) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(get_required_path("_main/tana/litellm_proxy/testdata/custom_provider.yaml").read_text())
@@ -236,16 +233,16 @@ async def test_anthropic_http_stream_tool_result_continuation_uses_tana_provider
                 "_make_client",
                 lambda _self, _config: TanaProxyClient(
                     TanaProxyConfig(
-                        firebase_api_key="test-firebase-key",
-                        functions_base_url="https://tana.invalid/functions",
+                        firebase_api_key="test-firebase-key", functions_base_url="https://tana.invalid/functions"
                     ),
                     http_client=tana_http,
                 ),
             )
 
-            async with serve_app_in_loop(proxy_server.app) as origin, AsyncAnthropic(
-                api_key="sk-test", base_url=origin, max_retries=0
-            ) as client:
+            async with (
+                serve_app_in_loop(proxy_server.app) as origin,
+                AsyncAnthropic(api_key="sk-test", base_url=origin, max_retries=0) as client,
+            ):
                 system: list[TextBlockParam] = [
                     {"type": "text", "text": "You are a coding assistant."},
                     {
@@ -267,11 +264,7 @@ async def test_anthropic_http_stream_tool_result_continuation_uses_tana_provider
                 ]
                 user_message: MessageParam = {"role": "user", "content": "Find a fact about Tana."}
                 async with client.messages.stream(
-                    model="gpt-4o-mini",
-                    max_tokens=128,
-                    system=system,
-                    tools=tools,
-                    messages=[user_message],
+                    model="gpt-4o-mini", max_tokens=128, system=system, tools=tools, messages=[user_message]
                 ) as stream:
                     tool_message = await stream.get_final_message()
 
@@ -290,24 +283,12 @@ async def test_anthropic_http_stream_tool_result_continuation_uses_tana_provider
                 tool_result_message: MessageParam = {
                     "role": "user",
                     "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": tool_use.id,
-                            "content": "Tana is a knowledge workspace.",
-                        }
+                        {"type": "tool_result", "tool_use_id": tool_use.id, "content": "Tana is a knowledge workspace."}
                     ],
                 }
-                continuation_messages: list[MessageParam] = [
-                    user_message,
-                    assistant_message,
-                    tool_result_message,
-                ]
+                continuation_messages: list[MessageParam] = [user_message, assistant_message, tool_result_message]
                 continuation_request = client.messages.create(
-                    model="gpt-4o-mini",
-                    max_tokens=128,
-                    system=system,
-                    tools=tools,
-                    messages=continuation_messages,
+                    model="gpt-4o-mini", max_tokens=128, system=system, tools=tools, messages=continuation_messages
                 )
                 if include_usage:
                     continuation = await continuation_request
@@ -327,9 +308,7 @@ async def test_anthropic_http_stream_tool_result_continuation_uses_tana_provider
         assert [path for path, _body in requests] == ["/functions/llmProxyNext", "/functions/llmProxyNext"]
         streamed_body = requests[0][1]
         assert streamed_body["isStreaming"] is True
-        system_messages = [
-            message for message in streamed_body["args"]["messages"] if message["role"] == "system"
-        ]
+        system_messages = [message for message in streamed_body["args"]["messages"] if message["role"] == "system"]
         system_payload = json.dumps(system_messages)
         assert "Keep the workspace context intact." in system_payload
         assert streamed_body["dynamicTools"][0]["name"] == "lookup_fact"
