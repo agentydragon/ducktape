@@ -203,6 +203,8 @@ func (s *Store) Receipt(ctx context.Context, claim Claim, notice Notice, entry *
 		}
 		cursor := int64(entry.GetCursor())
 		if cursor == row.RunnerCursor && row.RunnerCursor != 0 {
+			// TODO: Compare decoded entries semantically with an explicit policy for unknown and newly
+			// added fields; deterministic protobuf bytes are not canonical across builds or languages.
 			if !bytes.Equal(row.runnerEntry, wire) {
 				return &InvalidHistoryError{"runner history changed at the committed boundary"}
 			}

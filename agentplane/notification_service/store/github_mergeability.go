@@ -242,14 +242,21 @@ func (s *Store) recordMergeability(ctx context.Context, tx *sql.Tx, inboxID uuid
 		return 0, false, nil
 	}
 	var creation []byte
+	var creationProto sql.Null[[]byte]
+	var sourceProvider sql.NullString
+	var idempotencyKey string
 	var after int64
 	var initialized bool
-	if err := tx.QueryRowContext(ctx, `SELECT creation, github_mergeability_after_sequence, github_mergeability_initialized
-		FROM subscription WHERE id = $1`, recording.SubscriptionID).Scan(&creation, &after, &initialized); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT
+		CASE WHEN creation_proto IS NULL AND source_provider IS NULL THEN creation END,
+		creation_proto, source_provider, idempotency_key,
+		github_mergeability_after_sequence, github_mergeability_initialized
+		FROM subscription WHERE id = $1`, recording.SubscriptionID).
+		Scan(&creation, &creationProto, &sourceProvider, &idempotencyKey, &after, &initialized); err != nil {
 		return 0, false, err
 	}
-	var body model.Subscribe
-	if err := decode(creation, &body); err != nil {
+	body, err := decodeStoredSubscriptionCreation(recording.SubscriptionID, creation, creationProto, sourceProvider, idempotencyKey)
+	if err != nil {
 		return 0, false, err
 	}
 	source, ok := body.Source.(model.GitHubSource)

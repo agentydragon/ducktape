@@ -1,6 +1,7 @@
 package store
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"io/fs"
@@ -23,26 +24,84 @@ func TestGitHubCommitMigrationCopiesLegacyFactsAndRefreshes(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	// This is an isolated clone. Rebuild only the historical migrations here so the fixture exercises the actual
+	// v6 -> v7 transition even when the package template has newer storage migrations applied.
+	if _, err := db.ExecContext(t.Context(), `DROP SCHEMA public CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `CREATE SCHEMA public`); err != nil {
+		t.Fatal(err)
+	}
+	provider := notificationMigrationProvider(t, db)
+	if _, err := provider.UpTo(t.Context(), 6); err != nil {
+		t.Fatalf("build historical v6 schema: %v", err)
+	}
 
 	base := 1<<41 + rand.Int64N(1<<40)
 	ref := model.DestinationRef{Namespace: "test-namespace", Name: "migration-sandbox", UID: testSandboxUID}
-	f := fixture{Store: New(db, defaultQuotas()), db: db, owner: newOwner(), sandboxUID: testSandboxUID}
+	owner := newOwner()
+	sessionID := "migration-session"
+	source := model.GitHubSource{Repository: testRepositoryName, Subject: model.PullRequestSubject{Number: 7}}
+	subject := GitHubSubjectKey{RepositoryID: base + 2, Kind: "pull_request", Key: "7"}
+	inboxID := insertHistoricalInbox(t, db, owner, ref, sessionID)
 	g := githubFixture{
-		fixture: f, app: base, installation: base + 1, repository: base + 2,
-		destination: ref,
-		inbox:       f.insertInbox(t, model.DestinationKey(ref, "migration-session"), ref, "migration-session"),
-		state:       NewGitHubState(f.Store, testFreshness),
+		fixture:      fixture{db: db},
+		app:          base,
+		installation: base + 1,
+		repository:   base + 2,
+		destination:  ref,
+		inbox:        inboxID,
 	}
-	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "migration-subscription")
-	g.observePullRequest(t, sub, model.GitHubPullRequestObservation{
-		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-		State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeabilityUnknown,
-	})
-	legacyDelivery := g.deliver(t, string(model.EventCheckRun), withAction("completed"), onPullRequest(7), atCommit(commitA))
-
-	provider := notificationMigrationProvider(t, db)
-	if _, err := provider.DownTo(t.Context(), 6); err != nil {
-		t.Fatalf("roll migration test database back to v6: %v", err)
+	now := time.Now().UTC()
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO github_installation (app_id, installation_id, generation)
+		VALUES ($1, $2, 5)`, g.app, g.installation); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO github_repository (repository_id, full_name) VALUES ($1, $2)`,
+		g.repository, testRepositoryName); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO github_repository_access
+		(app_id, installation_id, repository_id, generation, validated_installation_generation,
+		 checked_at, valid_until, last_success_at)
+		VALUES ($1, $2, $3, 4, 5, $4, $5, $4)`,
+		g.app, g.installation, g.repository, now, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO github_subject
+		(repository_id, kind, subject_key, generation, last_success_at)
+		VALUES ($1, 'pull_request', '7', 3, $2)`, g.repository, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO github_subject_revision
+		(repository_id, kind, subject_key, head_repository_id, sha)
+		VALUES ($1, 'pull_request', '7', $1, $2)`, g.repository, commitA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO github_pull_request
+		(repository_id, number, base_ref, head_sha, base_sha, state, mergeability, last_settled_mergeability,
+		 snapshot_version, observed_at)
+		VALUES ($1, 7, 'main', $2, $3, 'OPEN', 'UNKNOWN', 'UNKNOWN', 1, $4)`,
+		g.repository, commitA, commitB, now); err != nil {
+		t.Fatal(err)
+	}
+	subscriptionID := insertHistoricalSubscription(t, db, inboxID, ref, sessionID, "migration-subscription", source,
+		g.app, g.installation, g.repository, 0)
+	sub := githubSubscription{ID: subscriptionID, InboxID: inboxID, Source: source, Subject: subject}
+	deliveryID := uuid.New()
+	deliveryDigest := sha256.Sum256(deliveryID[:])
+	var deliveryPosition int64
+	if err := db.QueryRowContext(t.Context(), `INSERT INTO github_delivery
+		(app_id, delivery_id, installation_id, repository_id, event, action, head_sha, digest, payload)
+		VALUES ($1, $2, $3, $4, 'check_run', 'completed', $5, $6, $7::jsonb) RETURNING position`,
+		g.app, deliveryID, g.installation, g.repository, commitA, deliveryDigest[:],
+		`{"action":"completed","check_run":{"id":303}}`).Scan(&deliveryPosition); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO github_delivery_subject
+		(delivery_position, repository_id, kind, subject_key)
+		VALUES ($1, $2, 'pull_request', '7')`, deliveryPosition, g.repository); err != nil {
+		t.Fatal(err)
 	}
 
 	observedAt := time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
@@ -92,7 +151,7 @@ func TestGitHubCommitMigrationCopiesLegacyFactsAndRefreshes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(t.Context(), `UPDATE github_delivery SET ci_normalized = true WHERE app_id = $1 AND delivery_id = $2`,
-		g.app, legacyDelivery.DeliveryID); err != nil {
+		g.app, deliveryID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(t.Context(), `INSERT INTO github_ci_refresh
@@ -107,7 +166,7 @@ func TestGitHubCommitMigrationCopiesLegacyFactsAndRefreshes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := provider.Up(t.Context()); err != nil {
+	if _, err := provider.UpTo(t.Context(), 7); err != nil {
 		t.Fatalf("apply native observation migration: %v", err)
 	}
 
@@ -167,7 +226,7 @@ func TestGitHubCommitMigrationCopiesLegacyFactsAndRefreshes(t *testing.T) {
 			t.Errorf("migrated %s snapshot payload = %s, want unchanged legacy payload %s", identity.event, newSnapshot, oldSnapshot)
 		}
 	}
-	if got := queryInt64(t, db, `SELECT count(*) FROM github_delivery WHERE app_id = $1 AND delivery_id = $2 AND commit_normalized`, g.app, legacyDelivery.DeliveryID); got != 1 {
+	if got := queryInt64(t, db, `SELECT count(*) FROM github_delivery WHERE app_id = $1 AND delivery_id = $2 AND commit_normalized`, g.app, deliveryID); got != 1 {
 		t.Errorf("copied normalized-delivery marker = %d, want one", got)
 	}
 	var cursor int64
@@ -187,8 +246,21 @@ func TestGitHubCommitMigrationCopiesLegacyFactsAndRefreshes(t *testing.T) {
 
 	lateDestination := g.destination
 	lateDestination.Name = "migration-late"
-	late := g.followIn(t, lateDestination, sub.Source, "migration-late-subscription")
-	if got := queryInt64(t, db, `SELECT count(*) FROM github_commit_subscription_snapshot WHERE subscription_id = $1 AND event = 'check_run'`, late.ID); got != 2 {
+	lateInboxID := insertHistoricalInbox(t, db, owner, lateDestination, sessionID)
+	lateSubscriptionID := insertHistoricalSubscription(t, db, lateInboxID, lateDestination, sessionID,
+		"migration-late-subscription", sub.Source, g.app, g.installation, g.repository, deliveryPosition)
+	tx, err := db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := snapshotGitHubCommitObservations(t.Context(), tx, lateSubscriptionID, g.app, sub.Subject, sub.Source); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if got := queryInt64(t, db, `SELECT count(*) FROM github_commit_subscription_snapshot WHERE subscription_id = $1 AND event = 'check_run'`, lateSubscriptionID); got != 2 {
 		t.Errorf("legacy App-specific check-run snapshots = %d, want latest attempt from each of two Apps", got)
 	}
 
@@ -201,7 +273,7 @@ func TestGitHubCommitMigrationCopiesLegacyFactsAndRefreshes(t *testing.T) {
 
 	newRun := checkRunObservation(g, commitA, model.CheckRunQueued, "")
 	newRun.ID = 999
-	tx, err := db.BeginTx(t.Context(), nil)
+	tx, err = db.BeginTx(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,6 +291,81 @@ func TestGitHubCommitMigrationCopiesLegacyFactsAndRefreshes(t *testing.T) {
 	if newest != 61 {
 		t.Errorf("next transition sequence = %d, want 61 above retained/current/snapshot/old-sequence watermark 60", newest)
 	}
+}
+
+func insertHistoricalInbox(t *testing.T, db *sql.DB, owner model.ServiceAccount, ref model.DestinationRef, sessionID string) uuid.UUID {
+	t.Helper()
+	inboxID := uuid.New()
+	destination, err := json.Marshal(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO inbox
+		(id, owner_namespace, owner_name, destination_key, destination_ref, session_id, last_cursor, acknowledged,
+		 covered, expired_through, retired, updated_at, claim_until)
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6, 0, 0, 0, 0, false, $7, $7)`,
+		inboxID, owner.Namespace, owner.Name, model.DestinationKey(ref, sessionID), string(destination), sessionID, now); err != nil {
+		t.Fatal(err)
+	}
+	return inboxID
+}
+
+func insertHistoricalSubscription(t *testing.T, db *sql.DB, inboxID uuid.UUID, ref model.DestinationRef,
+	sessionID, idempotencyKey string, source model.GitHubSource, appID, installationID, repositoryID, startPosition int64,
+) uuid.UUID {
+	t.Helper()
+	creation, err := json.Marshal(struct {
+		DestinationRef model.DestinationRef `json:"destination_ref"`
+		SessionID      string               `json:"session_id"`
+		IdempotencyKey string               `json:"idempotency_key"`
+		LifetimeDays   int                  `json:"lifetime_days"`
+		Source         struct {
+			Provider   string `json:"provider"`
+			Repository string `json:"repository"`
+			Subject    struct {
+				Kind   string `json:"kind"`
+				Number int64  `json:"number"`
+			} `json:"subject"`
+			Events []string `json:"events"`
+		} `json:"source"`
+	}{
+		DestinationRef: ref,
+		SessionID:      sessionID,
+		IdempotencyKey: idempotencyKey,
+		LifetimeDays:   7,
+		Source: struct {
+			Provider   string `json:"provider"`
+			Repository string `json:"repository"`
+			Subject    struct {
+				Kind   string `json:"kind"`
+				Number int64  `json:"number"`
+			} `json:"subject"`
+			Events []string `json:"events"`
+		}{
+			Provider:   "github",
+			Repository: source.Repository,
+			Subject: struct {
+				Kind   string `json:"kind"`
+				Number int64  `json:"number"`
+			}{Kind: "pull_request", Number: 7},
+			Events: nil,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	subscriptionID := uuid.New()
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO subscription
+		(id, inbox_id, idempotency_key, creation, version, actions_after_sequence, cancelled, expires_at, generation,
+		 github_start_position, github_app_id, github_installation_id, github_repository_id,
+		 github_subject_kind, github_subject_key)
+		VALUES ($1, $2, $3, $4::jsonb, 1, NULL, false, now() + interval '7 days', 1, $5, $6, $7, $8,
+		 'pull_request', '7')`,
+		subscriptionID, inboxID, idempotencyKey, string(creation), startPosition, appID, installationID, repositoryID); err != nil {
+		t.Fatal(err)
+	}
+	return subscriptionID
 }
 
 func notificationMigrationProvider(t *testing.T, db *sql.DB) *goose.Provider {
