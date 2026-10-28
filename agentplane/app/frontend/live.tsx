@@ -12,7 +12,7 @@
  */
 import { useEffect, useState } from "react";
 
-import type { WatchHealth } from "./api/schema";
+import type { WatchHealth } from "./schema";
 import { ageAgo } from "./format_time";
 import { followStream, type StreamConnection } from "./live_stream";
 import { type StreamStatus, useStreamStatus } from "./stream_status";

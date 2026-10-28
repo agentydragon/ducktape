@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { BindingView } from "../api/schema";
+import type { BindingView } from "../schema";
 import { bindingState } from "./state";
 
 function binding(overrides: Partial<BindingView>): BindingView {

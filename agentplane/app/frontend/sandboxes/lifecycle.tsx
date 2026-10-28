@@ -5,7 +5,7 @@ import type { JSX } from "react";
  * restated here so the UI offers the action when it will be accepted, not so it enforces anything.
  */
 import { ActionIcon, Button, Group, Modal, Stack, Text, Tooltip } from "@mantine/core";
-import type { SandboxView } from "../api/schema";
+import type { SandboxView } from "../schema";
 import { IconPlayerPause, IconPlayerPlay } from "../icons";
 
 export const DELETE_NEEDS_SUSPENDED = "Suspend the sandbox before deleting it";

@@ -12,7 +12,7 @@
 
 import { createRoot } from "react-dom/client";
 
-import type { AllQuotasView } from "../api/schema";
+import type { AllQuotasView } from "../schema";
 import { App } from "../app";
 import { Dashboard } from "../dashboard";
 import scenes from "../fixtures/scenes.json";

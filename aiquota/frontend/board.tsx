@@ -17,7 +17,7 @@
 
 import { type JSX } from "react";
 
-import type { AllQuotasView, BurnStatus, ExtraSpend, PaidCredits, ProviderView, QuotaWindow } from "./api/schema";
+import type { AllQuotasView, BurnStatus, ExtraSpend, PaidCredits, ProviderView, QuotaWindow } from "./schema";
 import { displayUsedPercent, formatKnownExpiries, formatUsd, formatUsdWhole, formatWindowLabel } from "./format";
 import {
   bindingTint,

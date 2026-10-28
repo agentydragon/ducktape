@@ -1,4 +1,4 @@
-import type { CallerGrantView } from "../api/schema";
+import type { CallerGrantView } from "../schema";
 
 export interface CallerServiceAccount {
   namespace: string;

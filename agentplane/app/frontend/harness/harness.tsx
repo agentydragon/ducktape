@@ -26,7 +26,7 @@ import type {
   ThreadView,
   ThreadsSnapshot,
   WatchHealth,
-} from "../api/schema";
+} from "../schema";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import "@mantine/core/styles.css";
 

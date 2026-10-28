@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { SpendTransactionsView, SpendView } from "./api/schema";
+import type { SpendTransactionsView, SpendView } from "./schema";
 import { useSpendData } from "./use_spend_data";
 import type { SpendTab, TransactionPeriodId } from "./types";
 

@@ -7,7 +7,7 @@ import type {
   SandboxView,
   ThreadView,
   TraceSearchSettings,
-} from "../api/schema";
+} from "../schema";
 import { TEST_REASONING_EFFORTS, testModelCatalog } from "../testing/model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";

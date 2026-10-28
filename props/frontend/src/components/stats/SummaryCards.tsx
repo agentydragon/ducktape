@@ -1,5 +1,5 @@
 import { Card, SimpleGrid, Text } from "@mantine/core";
-import type { DefinitionRow, OverviewResponse, StatsWithCi } from "../../lib/api/schema";
+import type { DefinitionRow, OverviewResponse, StatsWithCi } from "../../lib/schema";
 import { formatStatsWithCI } from "../../lib/formatters";
 import DefinitionIdLink from "../../lib/DefinitionIdLink";
 

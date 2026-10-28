@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import type { NewSandboxDefaults, SandboxPresetView, SandboxView } from "../api/schema";
+import type { NewSandboxDefaults, SandboxPresetView, SandboxView } from "../schema";
 import { TEST_REASONING_EFFORTS, testModelCatalog } from "../testing/model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";

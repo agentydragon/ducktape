@@ -14,7 +14,7 @@ import {
   Title,
 } from "@mantine/core";
 
-import type { AllowanceView, CardView, SpendTransactionsView, SpendView } from "./api/schema";
+import type { AllowanceView, CardView, SpendTransactionsView, SpendView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
 import { Metric, Money, SignalLabel, time, periodLabels, type Signal } from "./spend_display";

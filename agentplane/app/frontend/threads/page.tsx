@@ -1,7 +1,7 @@
 import { Box, Group, Stack, Text } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import type { SandboxView, ThreadView } from "../api/schema";
+import type { SandboxView, ThreadView } from "../schema";
 import { displayableError } from "../client";
 import { getThread } from "./client";
 import { harnessLabel } from "../model_catalog";

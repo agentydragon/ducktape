@@ -3,7 +3,7 @@ import { type JSX, useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 
-import type { Harness, ModelCatalog, SessionDefaults } from "../api/schema";
+import type { Harness, ModelCatalog, SessionDefaults } from "../schema";
 import { api, displayableError } from "../client";
 import { harnessOptions, modelsForHarness } from "../model_catalog";
 import { Disclosure, DisclosureBody } from "../disclosure";

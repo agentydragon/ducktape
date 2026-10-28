@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { ComponentStatus } from "./api/schema";
+import type { ComponentStatus } from "./schema";
 import { api } from "./client";
 import { SystemStatus } from "./system";
 

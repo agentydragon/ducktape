@@ -1,6 +1,6 @@
 import { act } from "react";
 
-import type { ThreadView } from "../../api/schema";
+import type { ThreadView } from "../../schema";
 import type { PayloadRef, ThreadEntity, ThreadState, ThreadSync } from "../thread_sync";
 
 export const THREAD: ThreadView = {

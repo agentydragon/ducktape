@@ -1,6 +1,6 @@
 // Link component for examples.
 import { Link } from "react-router";
-import type { SingleFileSetExampleOutput, WholeSnapshotExampleOutput } from "./api/schema";
+import type { SingleFileSetExampleOutput, WholeSnapshotExampleOutput } from "./schema";
 
 type Example = WholeSnapshotExampleOutput | SingleFileSetExampleOutput;
 

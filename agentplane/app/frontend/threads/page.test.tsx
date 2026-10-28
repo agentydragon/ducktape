@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { create } from "@bufbuild/protobuf";
-import type { LangfuseSearchSettings, SandboxView, ThreadView, TraceSearchSettings } from "../api/schema";
+import type { LangfuseSearchSettings, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";

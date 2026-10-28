@@ -1,7 +1,7 @@
 import { Loader, Text } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import type { ConfigResponse } from "./api/schema";
+import type { ConfigResponse } from "./schema";
 import { displayableError, fetchConfig } from "./client";
 import { HakuUiEmbed } from "./haku_ui_embed";
 import { useConsoleView } from "./routing";

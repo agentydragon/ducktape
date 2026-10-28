@@ -17,7 +17,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 
-import type { SustainabilityDashboard, SustainabilityView } from "./api/schema";
+import type { SustainabilityDashboard, SustainabilityView } from "./schema";
 import { monthlySpendingMinorUnits, percentagePointDifference } from "./decimal_math";
 import { money, time } from "./spend_display";
 import { SustainabilityHistoryChart } from "./SustainabilityHistoryChart";

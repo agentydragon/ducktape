@@ -1,4 +1,4 @@
-import type { TraceSearchSettings } from "./api/schema";
+import type { TraceSearchSettings } from "./schema";
 
 type TraceTarget = { kind: "sandbox" | "session"; id: string };
 

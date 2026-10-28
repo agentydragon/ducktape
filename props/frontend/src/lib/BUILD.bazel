@@ -22,7 +22,6 @@ filegroup(
 
 openapi_js_library(
     name = "schema",
-    out = "api/schema.d.ts",
     schema = "//props/backend:openapi_schema",
 )
 

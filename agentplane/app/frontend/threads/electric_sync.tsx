@@ -29,7 +29,7 @@ import {
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { z } from "zod";
 
-import type { ThreadScopeResponse } from "../api/schema";
+import type { ThreadScopeResponse } from "../schema";
 import { displayableError, fetchWithLogin } from "../client";
 import { threadScope } from "./client";
 import { backoff, type StreamConnection } from "../live_stream";

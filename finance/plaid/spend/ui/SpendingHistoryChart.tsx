@@ -11,7 +11,7 @@ import {
   PointElement,
   Tooltip,
 } from "chart.js";
-import type { AllowanceView, SpendTransactionsView } from "./api/schema";
+import type { AllowanceView, SpendTransactionsView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import type { EstimatePeriodId } from "./types";
 

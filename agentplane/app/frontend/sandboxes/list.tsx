@@ -15,7 +15,7 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import type { NewSandbox, NewSandboxDefaults, SandboxPresetView, SandboxView, SandboxesSnapshot } from "../api/schema";
+import type { NewSandbox, NewSandboxDefaults, SandboxPresetView, SandboxView, SandboxesSnapshot } from "../schema";
 import { IconDotsVertical } from "../icons";
 import { type JSX, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";

@@ -8,7 +8,7 @@ import type {
   LaunchRoutineResult,
   OperatorResponse,
   paths,
-} from "./api/schema";
+} from "./schema";
 import { operatorLoginRedirectStarted, redirectToOperatorLogin } from "./operator_login";
 
 // Same-origin typed client (nginx serves this bundle and proxies /api). Types are generated from

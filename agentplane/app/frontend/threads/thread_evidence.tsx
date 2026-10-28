@@ -1,5 +1,5 @@
 import { ActionIcon, Button, Group, Stack, Text } from "@mantine/core";
-import type { EvidencePage, NativeFramePage } from "../api/schema";
+import type { EvidencePage, NativeFramePage } from "../schema";
 import { IconZoomCode } from "../icons";
 import { type CSSProperties, type JSX, type MouseEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 

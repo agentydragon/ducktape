@@ -1,4 +1,4 @@
-import type { LangfuseSearchSettings } from "./api/schema";
+import type { LangfuseSearchSettings } from "./schema";
 
 export type LangfuseSandbox = { namespace: string; serviceAccount: string };
 

@@ -3,7 +3,7 @@ import "@mantine/core/styles.css";
 import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
-import type { SessionEventPage, SessionListPage, SessionSummary, SyncStatus } from "../api/schema";
+import type { SessionEventPage, SessionListPage, SessionSummary, SyncStatus } from "../schema";
 import { App } from "../app";
 import {
   longCommandActivityDetail,

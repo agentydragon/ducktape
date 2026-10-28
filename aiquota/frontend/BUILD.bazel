@@ -56,7 +56,6 @@ ts_config(
 # quota window is the Pydantic model rather than a hand-kept copy. Not checked in.
 openapi_js_library(
     name = "schema",
-    out = "api/schema.d.ts",
     schema = "//aiquota:openapi_schema",
 )
 

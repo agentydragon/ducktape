@@ -1,5 +1,5 @@
 import { ActionIcon, Button, Group, Menu, Stack, Table, Text } from "@mantine/core";
-import type { SandboxView, ThreadView, TraceSearchSettings } from "../api/schema";
+import type { SandboxView, ThreadView, TraceSearchSettings } from "../schema";
 import { IconDotsVertical } from "../icons";
 import type { JSX } from "react";
 

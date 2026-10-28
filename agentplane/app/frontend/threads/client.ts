@@ -7,7 +7,7 @@ import type {
   ObservationPage,
   ThreadScopeResponse,
   ThreadView,
-} from "../api/schema";
+} from "../schema";
 import { api, displayableError, fetchWithLogin, ok } from "../client";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 

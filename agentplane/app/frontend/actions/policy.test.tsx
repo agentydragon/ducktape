@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it } from "vitest";
 
-import type { ActionPolicyUnavailable, ActionPolicyView } from "../api/schema";
+import type { ActionPolicyUnavailable, ActionPolicyView } from "../schema";
 import { ActionPolicySection } from "./policy";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

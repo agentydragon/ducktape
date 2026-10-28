@@ -2,7 +2,7 @@ import { Badge, Button, SegmentedControl, Stack, Table, Text, Title, Tooltip } f
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import type { Decision, DecisionsSnapshot } from "../api/schema";
+import type { Decision, DecisionsSnapshot } from "../schema";
 import { TimeAgo } from "../time_ago";
 import { type DecisionGroup, groupDecisions } from "./decision_groups";
 import { liveEgressDecisionsUrl } from "./live";

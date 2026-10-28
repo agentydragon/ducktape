@@ -18,7 +18,6 @@ genrule(
 openapi_js_library(
     name = "schema",
     schema = ":openapi_schema",
-    out = "api/schema.d.ts",
 )
 
 ts_library(
@@ -35,10 +34,10 @@ targets are supported. The generated declarations preserve `rootTypes: true` and
 `rootTypesNoSchemaPrefix: true` so component models keep their named imports.
 
 The requested `schema` target publishes the generated declaration through `JsInfo.transitive_types`
-without running a compiler action. The raw file remains available as `:api/schema.d.ts`. Both
-targets inherit the macro call's `visibility`, so packages allowed to consume the library can also
-address the output file directly. `ts_library` consumes the declaration for type checking and does
-not emit it as JavaScript source.
+without running a compiler action. The raw file defaults to `:<name>.d.ts` (`:schema.d.ts` here); set
+`out` to choose another path. Both targets inherit the macro call's `visibility`, so packages
+allowed to consume the library can also address the output file directly. `ts_library` consumes the
+declaration for type checking and does not emit it as JavaScript source.
 
 Remote references are disabled during generation. Schema exporters remain responsible for their
 source contract and serialization choices; this rule does not normalize schema dialects or merge

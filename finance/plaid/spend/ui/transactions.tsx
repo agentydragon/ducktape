@@ -19,7 +19,7 @@ import {
 import IconChevronDown from "@tabler/icons-react/dist/esm/icons/IconChevronDown.mjs";
 import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRight.mjs";
 
-import type { AllowanceView, SpendTransactionRow, SpendTransactionsView } from "./api/schema";
+import type { AllowanceView, SpendTransactionRow, SpendTransactionsView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { Metric, Money, money, periodLabels, time } from "./spend_display";
 import { ruleConditionText, ruleKindDisplay } from "./rule_display";

@@ -3,7 +3,7 @@ import { Checkbox, Group, Paper, Stack, Switch, Text, Title } from "@mantine/cor
 import { CategoryScale, Chart, LinearScale, LineController, LineElement, PointElement, Tooltip } from "chart.js";
 import Decimal from "decimal.js";
 
-import type { SustainabilityView } from "./api/schema";
+import type { SustainabilityView } from "./schema";
 import { annualFundingMinorUnits } from "./decimal_math";
 import { money } from "./spend_display";
 import type { SustainabilityHistory } from "./types";

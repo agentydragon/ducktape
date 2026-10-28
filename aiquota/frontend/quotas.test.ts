@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { ProviderView, QuotaWindow } from "./api/schema";
+import type { ProviderView, QuotaWindow } from "./schema";
 import { effectiveQuota, resetSeconds } from "./quotas";
 
 const FETCHED_AT = "2026-01-15T12:00:00Z";

@@ -1,5 +1,5 @@
 import { UnstyledButton } from "@mantine/core";
-import type { GradingEdgeInfo, LocationAnchor } from "../lib/api/schema";
+import type { GradingEdgeInfo, LocationAnchor } from "../lib/schema";
 import { CheckCircle, Link, XCircle } from "../lib/icons";
 import { issueColors } from "../lib/colors";
 import { formatLocationAnchor } from "../lib/formatters";

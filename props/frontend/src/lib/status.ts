@@ -1,4 +1,4 @@
-import type { AgentRunStatus } from "./api/schema";
+import type { AgentRunStatus } from "./schema";
 
 // Shared status utilities for agent runs
 

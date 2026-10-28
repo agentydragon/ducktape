@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { SandboxView, ThreadView, ThreadsSnapshot } from "./api/schema";
+import type { SandboxView, ThreadView, ThreadsSnapshot } from "./schema";
 import { RoutedThreadsLiveProvider } from "./threads/live";
 import { Sidebar } from "./sidebar";
 import { scrollCapture } from "./threads/scroll_diagnostics";

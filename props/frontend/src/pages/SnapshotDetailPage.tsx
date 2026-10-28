@@ -30,7 +30,7 @@ import type {
   FileTreeResponse,
   OccurrenceStatsRow,
   SnapshotDetailResponse,
-} from "$lib/api/schema";
+} from "$lib/schema";
 import {
   fetchOccurrenceStats,
   fetchSnapshotClusters,

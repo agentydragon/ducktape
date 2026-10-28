@@ -1,7 +1,7 @@
 import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import type { CallerGrantView } from "../api/schema";
+import type { CallerGrantView } from "../schema";
 import { ActionPolicySection } from "../actions/policy";
 import { BINDING_GRANT_HELP, BindingsTable } from "../bindings/table";
 import { type CallerServiceAccount, serviceAccountKey, type CallerGrantReader } from "./models";

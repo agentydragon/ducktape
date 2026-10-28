@@ -1,5 +1,5 @@
 import { ActionIcon, Anchor, Button, Group, Menu, Popover, Select, Stack, Text, UnstyledButton } from "@mantine/core";
-import type { LangfuseSearchSettings, ModelOption, SandboxView, ThreadView, TraceSearchSettings } from "../api/schema";
+import type { LangfuseSearchSettings, ModelOption, SandboxView, ThreadView, TraceSearchSettings } from "../schema";
 import { IconDotsVertical, IconHistory } from "../icons";
 import { intlFormatDistance } from "date-fns";
 import { type JSX, useCallback, useEffect, useState } from "react";

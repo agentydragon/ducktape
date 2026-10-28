@@ -11,7 +11,7 @@ import type {
   LlmRequestInfo,
   ReportedIssueInfo,
   SnapshotDetailResponse,
-} from "../lib/api/schema";
+} from "../lib/schema";
 import { toast } from "../lib/toast";
 import BackButton from "./BackButton";
 import Breadcrumb from "./Breadcrumb";

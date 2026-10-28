@@ -1,7 +1,7 @@
 import { NumberInput } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import type { SandboxView } from "../api/schema";
+import type { SandboxView } from "../schema";
 import { api, displayableError } from "../client";
 
 const SECONDS_PER_MINUTE = 60;

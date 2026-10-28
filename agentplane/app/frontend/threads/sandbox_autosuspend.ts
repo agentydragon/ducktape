@@ -1,4 +1,4 @@
-import type { SandboxView } from "../api/schema";
+import type { SandboxView } from "../schema";
 import { sandboxReady, sandboxStarting, sandboxSuspended } from "../sandbox_status";
 
 export interface AutosuspendHint {

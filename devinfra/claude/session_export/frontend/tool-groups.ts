@@ -1,4 +1,4 @@
-import type { Event } from "./api/schema";
+import type { Event } from "./schema";
 import type { TranscriptItem, TranscriptThinking, TranscriptToolRun } from "./transcript";
 
 export type ToolGroup = {

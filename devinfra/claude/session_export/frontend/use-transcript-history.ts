@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import type { Event } from "./api/schema";
+import type { Event } from "./schema";
 import { listSessionEvents } from "./api";
 import { errorMessage, retryTransient } from "./session-fetch";
 

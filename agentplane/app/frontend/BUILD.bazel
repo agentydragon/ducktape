@@ -115,7 +115,6 @@ ts_config(
 # proto-JSON bodies are plain objects there; the runner's shared protocol types them.
 openapi_js_library(
     name = "schema",
-    out = "api/schema.d.ts",
     schema = "//agentplane/app:openapi_schema",
 )
 

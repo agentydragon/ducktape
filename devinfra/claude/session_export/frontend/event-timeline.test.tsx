@@ -5,7 +5,7 @@ import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Event } from "./api/schema";
+import type { Event } from "./schema";
 import { buildEventTimeline, EventTimelineStrip, type EventStrip, type EventTimelineItem } from "./event-timeline";
 
 type FixtureItem = EventTimelineItem & { label: string };

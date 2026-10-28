@@ -1,4 +1,4 @@
-import type { Event, SessionSummary } from "../api/schema";
+import type { Event, SessionSummary } from "../schema";
 
 // Synthetic, shape-matched to a hook-heavy session: about half hooks, one fifth
 // assistant records, one eighth user/tool results, and the rest control traffic.

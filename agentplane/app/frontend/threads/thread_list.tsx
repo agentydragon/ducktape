@@ -3,7 +3,7 @@
  * Sandbox no longer exists: the sidebar's navigation and the landing page's whole content.
  */
 import { ActionIcon, Button, Switch, Text, TextInput, Tooltip } from "@mantine/core";
-import type { SandboxView, ThreadView } from "../api/schema";
+import type { SandboxView, ThreadView } from "../schema";
 import { IconArchive, IconArchiveOff, IconSearch } from "../icons";
 import { type JSX, useState } from "react";
 import { Link, useMatch, useNavigate } from "react-router";

@@ -1,7 +1,7 @@
 import { Alert, Anchor, Button, Group, Modal, NumberInput, Select, Stack, Tabs, Text } from "@mantine/core";
 import { useEffect, useRef, useState, type JSX } from "react";
 
-import type { DefinitionInfo, ExampleKind, Split } from "../lib/api/schema";
+import type { DefinitionInfo, ExampleKind, Split } from "../lib/schema";
 import { api, fetchDefinitions, fetchModelMetadata, triggerValidationRuns } from "../lib/api/client";
 import { formatDigest } from "../lib/formatters";
 import { Link } from "react-router";

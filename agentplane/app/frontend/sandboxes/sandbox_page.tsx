@@ -1,4 +1,4 @@
-import type { SandboxSnapshot, SandboxView, ThreadView } from "../api/schema";
+import type { SandboxSnapshot, SandboxView, ThreadView } from "../schema";
 import { NotificationStatus } from "../notification_status";
 import {
   ActionIcon,

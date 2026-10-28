@@ -1,4 +1,4 @@
-import type { SandboxView, ThreadView } from "../api/schema";
+import type { SandboxView, ThreadView } from "../schema";
 
 /**
  * A flat newest-first Thread list folded into Sandbox groups, including Sandboxes without

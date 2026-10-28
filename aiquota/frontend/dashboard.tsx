@@ -8,7 +8,7 @@
 
 import { type JSX } from "react";
 
-import type { AllQuotasView } from "./api/schema";
+import type { AllQuotasView } from "./schema";
 import { QuotaBoard } from "./board";
 
 export function Dashboard({

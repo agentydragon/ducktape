@@ -1,4 +1,4 @@
-import type { DeploymentInfo } from "../api/schema";
+import type { DeploymentInfo } from "../schema";
 
 // Stable deployment metadata for the screenshot harness settings scene.
 

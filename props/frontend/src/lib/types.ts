@@ -1,4 +1,4 @@
-import type { ExampleKind, GradingEdgeInfo, LocationAnchor, Split } from "./api/schema";
+import type { ExampleKind, GradingEdgeInfo, LocationAnchor, Split } from "./schema";
 
 // Composed types from backend schema for file viewers
 /**

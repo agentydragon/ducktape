@@ -1,7 +1,7 @@
 import { Accordion, Badge, Button, Group, Paper, Stack, Table, Text, Title } from "@mantine/core";
 import { type JSX, type ReactNode, useEffect, useState } from "react";
 
-import type { RunnerStatusView, SandboxView, ThreadView } from "../api/schema";
+import type { RunnerStatusView, SandboxView, ThreadView } from "../schema";
 import { displayableError } from "../client";
 import { getRunnerStatus } from "./client";
 import { harnessLabel } from "../model_catalog";

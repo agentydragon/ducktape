@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import type { SpendConfigurationView, SpendTransactionsView, SpendView } from "./api/schema";
+import type { SpendConfigurationView, SpendTransactionsView, SpendView } from "./schema";
 import type { EstimatePeriodId, SpendTab, TransactionPeriodId } from "./types";
 
 export function useSpendData({

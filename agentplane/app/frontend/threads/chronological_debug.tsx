@@ -1,6 +1,6 @@
 import { ActionIcon, Button, Drawer, Group, Stack, Text } from "@mantine/core";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
-import type { ArchivedObservationEntry, ObservationPage } from "../api/schema";
+import type { ArchivedObservationEntry, ObservationPage } from "../schema";
 import { IconHistory } from "../icons";
 
 import { threadObservationEntry, threadObservations } from "./client";

@@ -2,7 +2,7 @@ import { Badge, Box, Button, Group, Stack, Table, Text, Tooltip } from "@mantine
 import type { JSX } from "react";
 import { useSearchParams } from "react-router";
 
-import type { BindingView, EgressRuleView, PolicySetView } from "../api/schema";
+import type { BindingView, EgressRuleView, PolicySetView } from "../schema";
 import { bindingState } from "./state";
 import { CodeBlock } from "../../../../util/frontend/code_block";
 import { MarkGlyph } from "../mark_glyph";

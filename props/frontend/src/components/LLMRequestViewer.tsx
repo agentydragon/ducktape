@@ -1,4 +1,4 @@
-import type { LlmRequestInfo } from "../lib/api/schema";
+import type { LlmRequestInfo } from "../lib/schema";
 import { ChevronDown, ChevronRight } from "../lib/icons";
 import LLMRequestSection from "./LLMRequestSection";
 import LLMResponseSection from "./LLMResponseSection";

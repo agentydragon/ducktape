@@ -1,4 +1,4 @@
-import type { Decision } from "../api/schema";
+import type { Decision } from "../schema";
 
 /** The requests of one outcome to one destination by one method, decided the same way. */
 export interface DecisionGroup {

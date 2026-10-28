@@ -1,6 +1,6 @@
 import { createContext, type JSX, type ReactNode, useContext } from "react";
 
-import type { SandboxesSnapshot } from "../api/schema";
+import type { SandboxesSnapshot } from "../schema";
 import { useLive, type Live } from "../live";
 
 export function liveSandboxesUrl(): string {

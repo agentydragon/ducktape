@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import type { SandboxView, ThreadView, ThreadsSnapshot } from "../api/schema";
+import type { SandboxView, ThreadView, ThreadsSnapshot } from "../schema";
 import { Home } from "./home";
 import { RoutedThreadsLiveProvider } from "./live";
 import type { SessionNoticeStates } from "../notification_types";

@@ -1,4 +1,4 @@
-import type { ExtraSpend, FetchSuccess, PaidCredits, ProviderView, QuotaWindow } from "./api/schema";
+import type { ExtraSpend, FetchSuccess, PaidCredits, ProviderView, QuotaWindow } from "./schema";
 
 /**
  * The `/v1/quotas` payload and the one reading of it every surface performs.

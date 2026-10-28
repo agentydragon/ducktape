@@ -1,6 +1,6 @@
 import { Alert, Badge, Box, Card, Divider, Group, Paper, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 
-import type { SpendConfigurationView } from "./api/schema";
+import type { SpendConfigurationView } from "./schema";
 import { Metric, Money, periodLabels } from "./spend_display";
 import { ruleConditionText, ruleKindDisplay, rulesFootnote } from "./rule_display";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";

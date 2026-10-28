@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX } from "react";
 
-import type { AllQuotasView } from "./api/schema";
+import type { AllQuotasView } from "./schema";
 import { Dashboard } from "./dashboard";
 
 const TICK_MS = 1_000;

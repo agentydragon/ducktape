@@ -57,7 +57,6 @@ typed_eslint_test(
 # Generate browser wire types from the API's Pydantic response models.
 openapi_js_library(
     name = "schema",
-    out = "api/schema.d.ts",
     schema = "//finance/plaid/spend:openapi_schema",
 )
 

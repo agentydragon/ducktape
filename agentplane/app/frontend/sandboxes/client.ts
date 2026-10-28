@@ -1,6 +1,6 @@
 import { toJson, type JsonObject } from "@bufbuild/protobuf";
 
-import type { RunnerStatusView } from "../api/schema";
+import type { RunnerStatusView } from "../schema";
 import { api, ok } from "../client";
 import { SessionSpecSchema, type SessionSpec } from "../../../proto/runner_pb";
 

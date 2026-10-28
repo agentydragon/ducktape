@@ -10,7 +10,7 @@ import type {
   ReportedIssueInfo,
   ReportedIssueOccurrenceInfo,
   TpInfo,
-} from "../lib/api/schema";
+} from "../lib/schema";
 import IssueComment from "./IssueComment";
 import { CheckCircle, ChevronDown, ChevronRight, MessageSquare, XCircle } from "../lib/icons";
 import { detectLanguage } from "../lib/fileTypes";

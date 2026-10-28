@@ -4,7 +4,7 @@ import { Center, Loader, Text } from "@mantine/core";
 
 import ExampleDetail from "$components/ExampleDetail";
 import { useSearchParams } from "react-router";
-import type { ExampleDetailResponse, ExampleKind } from "$lib/api/schema";
+import type { ExampleDetailResponse, ExampleKind } from "$lib/schema";
 import { fetchExampleDetail } from "$lib/api/client";
 
 interface Props {

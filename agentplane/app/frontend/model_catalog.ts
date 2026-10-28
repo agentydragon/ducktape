@@ -1,4 +1,4 @@
-import type { Harness, ModelCatalog, ModelOption } from "./api/schema";
+import type { Harness, ModelCatalog, ModelOption } from "./schema";
 import { api, ok } from "./client";
 
 /** An empty model list disables new-session selection, not the native harness. */
