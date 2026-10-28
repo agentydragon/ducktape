@@ -662,6 +662,23 @@ func subscriptionLine(raw json.RawMessage) (string, error) {
 	if subscription.ErrorKind != nil {
 		line += "  error " + enumSuffix(subscription.ErrorKind.String(), failureKindPrefix)
 	}
+	if github := subscription.GetGithub(); github != nil {
+		if ci := github.GetCi(); ci != nil {
+			if ci.GetLastSuccessAt() != nil {
+				line += fields("CI last refresh", ci.GetLastSuccessAt().AsTime().UTC().Format(time.RFC3339))
+			}
+			if ci.ErrorKind != nil {
+				line += fields("CI error", enumSuffix(ci.GetErrorKind().String(), failureKindPrefix))
+			}
+			if ci.GetRetryAt() != nil {
+				line += fields("CI retry", ci.GetRetryAt().AsTime().UTC().Format(time.RFC3339))
+			}
+			if ci.GetRefreshingUntil() != nil {
+				line += fields("CI refreshing until", ci.GetRefreshingUntil().AsTime().UTC().Format(time.RFC3339))
+			}
+		}
+	}
+
 	return line, nil
 }
 

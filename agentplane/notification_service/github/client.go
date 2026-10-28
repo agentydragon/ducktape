@@ -67,7 +67,15 @@ type Client struct {
 
 	mu sync.Mutex
 	// installations are discarded together when any request is rejected as unauthenticated.
-	installations map[int64]*installationAuth
+	installations map[installationKey]*installationAuth
+}
+
+// installationKey keeps the CI-only token separate from the token used by existing notification reads. An
+// installation may not have granted Checks or Commit statuses, and requesting those permissions must not make
+// its existing subscriptions fail.
+type installationKey struct {
+	id int64
+	ci bool
 }
 
 // installationAuth is an installation's signing transport, which caches and refreshes its token, and the client
@@ -92,7 +100,7 @@ func New(settings Settings) (*Client, error) {
 			version: settings.APIVersion,
 		}),
 		now:           time.Now,
-		installations: map[int64]*installationAuth{},
+		installations: map[installationKey]*installationAuth{},
 	}
 	appTransport, err := ghinstallation.NewAppsTransport(c.transport, c.appID, c.privateKey)
 	if err != nil {
@@ -133,10 +141,11 @@ func (h apiHeaders) RoundTrip(request *http.Request) (*http.Response, error) {
 
 // installationClient returns the auth cached for an installation; nothing is minted until its first request. Each
 // installation signs through its own AppsTransport, because ghinstallation writes to it while refreshing a token.
-func (c *Client) installationClient(id int64) (*installationAuth, error) {
+func (c *Client) installationClient(id int64, ci bool) (*installationAuth, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if auth, ok := c.installations[id]; ok {
+	key := installationKey{id: id, ci: ci}
+	if auth, ok := c.installations[key]; ok {
 		return auth, nil
 	}
 	transport, err := ghinstallation.New(c.transport, c.appID, id, c.privateKey)
@@ -145,15 +154,19 @@ func (c *Client) installationClient(id int64) (*installationAuth, error) {
 	}
 	transport.BaseURL = c.baseURL
 	read := github.Ptr("read")
+	permissions := &github.InstallationPermissions{Metadata: read, Contents: read, PullRequests: read, Issues: read}
+	if ci {
+		permissions = &github.InstallationPermissions{Checks: read, Statuses: read}
+	}
 	transport.InstallationTokenOptions = &github.InstallationTokenOptions{
-		Permissions: &github.InstallationPermissions{Metadata: read, Contents: read, PullRequests: read, Issues: read},
+		Permissions: permissions,
 	}
 	client, err := c.newClient(transport)
 	if err != nil {
 		return nil, err
 	}
 	auth := &installationAuth{transport: transport, client: client}
-	c.installations[id] = auth
+	c.installations[key] = auth
 	return auth, nil
 }
 
@@ -182,11 +195,20 @@ func callAsApp[T any](ctx context.Context, c *Client, missingOK bool, req reques
 
 // callAsInstallation runs req as an installation, signed with the installation token it first mints or reuses.
 func callAsInstallation[T any](ctx context.Context, c *Client, installationID int64, missingOK bool, req request[T]) (T, error) {
+	return callAsInstallationWithCI(ctx, c, installationID, false, missingOK, req)
+}
+
+// callAsCIInstallation uses the installation token profile scoped to checks and commit statuses.
+func callAsCIInstallation[T any](ctx context.Context, c *Client, installationID int64, req request[T]) (T, error) {
+	return callAsInstallationWithCI(ctx, c, installationID, true, false, req)
+}
+
+func callAsInstallationWithCI[T any](ctx context.Context, c *Client, installationID int64, ci, missingOK bool, req request[T]) (T, error) {
 	authorize := func(ctx context.Context) (*github.Client, error) {
 		if installationID <= 0 {
 			return nil, errors.New("installation ID must be above 0")
 		}
-		auth, err := c.installationClient(installationID)
+		auth, err := c.installationClient(installationID, ci)
 		if err != nil {
 			return nil, err
 		}

@@ -34,6 +34,9 @@ type GitHubIngest struct {
 	Subjects []GitHubSubjectKey
 	// Revisions are the commits Subjects are seen at.
 	Revisions []GitHubHeadRevision
+	// CI is the normalized state observation, if this raw delivery contains a complete check_run or status fact.
+	// Incomplete and non-state webhook actions leave it nil and remain ordinary raw deliveries.
+	CI []GitHubCIObservation
 }
 
 // IngestGitHub stores a delivery and wakes every inbox following the App, and reports whether the delivery was
@@ -105,16 +108,33 @@ func (s *Store) storeDelivery(ctx context.Context, tx *sql.Tx, ingest GitHubInge
 	if err := invalidateMergeability(ctx, tx, ingest); err != nil {
 		return err
 	}
+	for _, observation := range ingest.CI {
+		if ingest.Repository == nil {
+			return errors.New("a normalized CI delivery needs its repository")
+		}
+		if observation.RepositoryID == 0 {
+			observation.RepositoryID = ingest.Repository.ID
+		}
+		changed, err := observeGitHubCI(ctx, tx, ingest.AppID, ingest.InstallationID, observation, now())
+		if err != nil {
+			return err
+		}
+		if changed {
+			if err := invalidateGitHubCIForRevision(ctx, tx, ingest.AppID, observation.RepositoryID, observation.HeadSHA); err != nil {
+				return err
+			}
+		}
+	}
 	var repositoryID sql.NullInt64
 	if ingest.Repository != nil {
 		repositoryID = sql.NullInt64{Int64: ingest.Repository.ID, Valid: true}
 	}
 	var position int64
 	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO github_delivery (app_id, delivery_id, installation_id, repository_id, event, action, head_sha, digest, payload)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb) RETURNING position`,
+		INSERT INTO github_delivery (app_id, delivery_id, installation_id, repository_id, event, action, head_sha, digest, payload, ci_normalized)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10) RETURNING position`,
 		ingest.AppID, ingest.DeliveryID, ingest.InstallationID, repositoryID, ingest.Event, ingest.Action, ingest.HeadSHA,
-		ingest.Digest, string(ingest.Payload)).Scan(&position); err != nil {
+		ingest.Digest, string(ingest.Payload), len(ingest.CI) > 0).Scan(&position); err != nil {
 		return err
 	}
 	for _, key := range ingest.Subjects {
@@ -146,7 +166,10 @@ func invalidateInstallation(ctx context.Context, tx *sql.Tx, appID, installation
 		UPDATE github_repository_access
 		SET generation = generation + 1, valid_until = NULL, claim = NULL, claim_until = NULL
 		WHERE app_id = $1 AND installation_id = $2`, appID, installationID)
-	return err
+	if err != nil {
+		return err
+	}
+	return invalidateGitHubCIForInstallation(ctx, tx, appID, installationID)
 }
 
 // wakeGitHubInboxes makes every inbox with a live subscription to the App due now, and its GitHub subscriptions
@@ -190,7 +213,8 @@ func wakeGitHubInboxes(ctx context.Context, tx *sql.Tx, appID int64) error {
 	return err
 }
 
-// CleanupGitHubDeliveries deletes up to 1000 raw receipts and 1000 mergeability transitions older than cutoff.
+// CleanupGitHubDeliveries deletes bounded batches of raw receipts, generated events and obsolete CI facts
+// older than cutoff.
 // Expired transition rows are removed even if no inbox consumed them. Inbox entries and current pull-request
 // snapshots have independent lifetimes. The GitHub lock serializes this with ingestion and recording.
 func (s *Store) CleanupGitHubDeliveries(ctx context.Context, cutoff time.Time) error {
@@ -209,6 +233,31 @@ func (s *Store) CleanupGitHubDeliveries(ctx context.Context, cutoff time.Time) e
 			DELETE FROM github_mergeability_event WHERE sequence IN (
 				SELECT sequence FROM github_mergeability_event WHERE created_at < $1
 				ORDER BY created_at, sequence LIMIT 1000
+			)`, cutoff)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `DELETE FROM github_ci_event WHERE sequence IN (
+			SELECT sequence FROM github_ci_event WHERE created_at < $1 ORDER BY created_at, sequence LIMIT 1000
+		)`, cutoff)
+		if err != nil {
+			return err
+		}
+		// Old heads cease to be current snapshots once no live PR subscription follows them.
+		// Keep the active head's deduplication facts even when its checks have not changed recently.
+		_, err = tx.ExecContext(ctx, `DELETE FROM github_ci_current WHERE
+			(app_id, installation_id, repository_id, head_sha, event, entity_key) IN (
+				SELECT c.app_id, c.installation_id, c.repository_id, c.head_sha, c.event, c.entity_key
+				FROM github_ci_current c WHERE (c.payload->>'observedAt')::timestamptz < $1
+				AND NOT EXISTS (
+					SELECT 1 FROM subscription s JOIN github_pull_request p
+						ON p.repository_id = s.github_repository_id AND p.number::text = s.github_subject_key
+					JOIN github_subject_revision r ON r.repository_id = p.repository_id
+						AND r.kind = 'pull_request' AND r.subject_key = p.number::text
+					WHERE s.github_app_id = c.app_id AND s.github_subject_kind = 'pull_request'
+						AND NOT s.cancelled AND s.expires_at > now() AND p.head_sha = c.head_sha
+						AND r.head_repository_id = c.repository_id AND r.sha = c.head_sha)
+				ORDER BY c.app_id, c.installation_id, c.repository_id, c.head_sha, c.event, c.entity_key LIMIT 1000
 			)`, cutoff)
 		return err
 	})

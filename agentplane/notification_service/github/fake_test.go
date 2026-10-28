@@ -182,13 +182,10 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request, path string, 
 		if err := json.Unmarshal(payload, &body); err != nil {
 			f.t.Errorf("token request body: %v", err)
 		}
-		if len(body.Permissions) != 4 {
-			f.t.Errorf("token permissions = %v, want metadata, contents, pull_requests and issues", body.Permissions)
-		}
-		for name, level := range body.Permissions {
-			if level != "read" {
-				f.t.Errorf("token permission %s = %q, want read", name, level)
-			}
+		corePermissions := map[string]string{"metadata": "read", "contents": "read", "pull_requests": "read", "issues": "read"}
+		ciPermissions := map[string]string{"checks": "read", "statuses": "read"}
+		if !samePermissions(body.Permissions, corePermissions) && !samePermissions(body.Permissions, ciPermissions) {
+			f.t.Errorf("token permissions = %v, want the existing read set or the CI-only read set", body.Permissions)
 		}
 		reply(http.StatusCreated, fmt.Sprintf(`{"token": %q, "expires_at": %q}`,
 			installationToken, time.Now().Add(time.Hour).UTC().Format(time.RFC3339)))
@@ -206,12 +203,28 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request, path string, 
 		reply(http.StatusNotFound, `{"message": "Not Found"}`)
 	case path == "/repos/owner/repo/git/commits/"+testMergeCommitSHA:
 		reply(http.StatusOK, fmt.Sprintf(`{"sha": %q, "parents": [{"sha": %q}, {"sha": %q}]}`, testMergeCommitSHA, testBaseSHA, testSHA))
+	case strings.HasSuffix(path, "/check-runs"):
+		reply(http.StatusOK, `{"total_count": 0, "check_runs": []}`)
+	case strings.HasSuffix(path, "/status"):
+		reply(http.StatusOK, fmt.Sprintf(`{"state": "pending", "sha": %q, "total_count": 0, "statuses": []}`, testSHA))
 	case strings.HasPrefix(path, "/repos/owner/repo/commits/"):
 		reply(http.StatusOK, fmt.Sprintf(`{"sha": %q}`, last))
 	default:
 		f.t.Errorf("unexpected request %s %s", r.Method, path)
 		reply(http.StatusInternalServerError, "")
 	}
+}
+
+func samePermissions(got, want map[string]string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for name, level := range want {
+		if got[name] != level {
+			return false
+		}
+	}
+	return true
 }
 
 // requireAppJWT checks the RS256 signature and the claims GitHub requires of an App JWT.

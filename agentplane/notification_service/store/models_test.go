@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -178,4 +179,20 @@ func TestAGitHubObservationIdentityIsReadBackWithoutAWebhookDeliveryID(t *testin
 			t.Errorf("%s: decoded", name)
 		}
 	}
+}
+
+func TestGitHubCIObservationUsesCamelCasePayloadFields(t *testing.T) {
+	action, conclusion := "completed", "success"
+	startedAt := time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
+	observation := GitHubCIObservation{
+		RepositoryID: 22, HeadSHA: strings.Repeat("a", 40), Event: EventCheckRun, Action: &action,
+		CheckAppID: 1001, ID: 42, Name: "build", Status: "completed", Conclusion: &conclusion,
+		DetailsURL: "https://example.test/checks/42", StartedAt: &startedAt,
+	}
+	encoded, err := json.Marshal(observation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"repositoryId":22,"headSha":"` + strings.Repeat("a", 40) + `","event":"check_run","action":"completed","checkAppId":1001,"id":42,"name":"build","status":"completed","conclusion":"success","detailsUrl":"https://example.test/checks/42","startedAt":"2026-10-27T10:00:00Z"}`
+	requireEqual(t, string(encoded), want)
 }

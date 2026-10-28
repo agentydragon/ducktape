@@ -87,17 +87,17 @@ func NewGitHubSubjectKey(repositoryID int64, subject GitHubSubject) (GitHubSubje
 
 // GitHubRefreshKey is a row that holds shared refresh state: a GitHubAccessKey or a GitHubSubjectKey.
 type GitHubRefreshKey interface {
-	// row is the key's table and its WHERE clause over $1 to $3.
-	row() (table, where string, args [3]any)
+	// row is the key's table, WHERE clause, and structured key arguments. The WHERE placeholders start at $1.
+	row() (table, where string, args []any)
 }
 
-func (k GitHubAccessKey) row() (string, string, [3]any) {
+func (k GitHubAccessKey) row() (string, string, []any) {
 	return "github_repository_access", "app_id = $1 AND installation_id = $2 AND repository_id = $3",
-		[3]any{k.AppID, k.InstallationID, k.RepositoryID}
+		[]any{k.AppID, k.InstallationID, k.RepositoryID}
 }
 
-func (k GitHubSubjectKey) row() (string, string, [3]any) {
-	return "github_subject", "repository_id = $1 AND kind = $2 AND subject_key = $3", [3]any{k.RepositoryID, k.Kind, k.Key}
+func (k GitHubSubjectKey) row() (string, string, []any) {
+	return "github_subject", "repository_id = $1 AND kind = $2 AND subject_key = $3", []any{k.RepositoryID, k.Kind, k.Key}
 }
 
 // GitHubRefreshLease is a claim on refreshing a shared row. Whoever holds it may call GitHub for the row and
@@ -110,6 +110,10 @@ type GitHubRefreshLease struct {
 	// InstallationGeneration is the installation's generation when claimed, for an access row, and nil for a
 	// subject.
 	InstallationGeneration *int64
+	// A CI refresh also holds the PR subject generation and head SHA it reads. PR webhook and poll changes
+	// invalidate this lease even though CI owns an independent freshness row.
+	SubjectGeneration *int64
+	HeadSHA           string
 }
 
 // GitHubAccessFence is the validated access a result was read under. It holds only while the grant is
@@ -163,7 +167,7 @@ func loadRefresh(ctx context.Context, q querier, key GitHubRefreshKey) (refreshR
 		columns += accessColumns
 		dests = append(dests, &row.validatedInstallationGeneration, &row.checkedAt, &row.validUntil)
 	}
-	if err := q.QueryRowContext(ctx, "SELECT "+columns+" FROM "+table+" WHERE "+where, args[:]...).Scan(dests...); err != nil {
+	if err := q.QueryRowContext(ctx, "SELECT "+columns+" FROM "+table+" WHERE "+where, args...).Scan(dests...); err != nil {
 		return refreshRow{}, fmt.Errorf("%s %+v: %w", table, key, err)
 	}
 	return row, nil
@@ -251,6 +255,22 @@ func (g *GitHubState) Acquire(ctx context.Context, key GitHubRefreshKey) (*GitHu
 		if err := githubLock(ctx, tx); err != nil {
 			return err
 		}
+		var ciGeneration *int64
+		var ciHeadSHA string
+		if ci, ok := key.(GitHubCIRefreshKey); ok {
+			if err := ensureGitHubCIRefresh(ctx, tx, ci); err != nil {
+				return err
+			}
+			generation, headSHA, err := githubCIParent(ctx, tx, ci)
+			if err != nil {
+				return err
+			}
+			if headSHA == "" {
+				return nil
+			}
+			ciGeneration = &generation
+			ciHeadSHA = headSHA
+		}
 		row, err := loadRefresh(ctx, tx, key)
 		if err != nil {
 			return err
@@ -282,11 +302,18 @@ func (g *GitHubState) Acquire(ctx context.Context, key GitHubRefreshKey) (*GitHu
 		}
 		claim := uuid.New()
 		table, where, args := key.row()
-		if _, err := tx.ExecContext(ctx, "UPDATE "+table+" SET claim = $4, claim_until = $5 WHERE "+where,
-			args[0], args[1], args[2], claim, at.Add(refreshLease)); err != nil {
+		claimPlaceholder := len(args) + 1
+		claimUntilPlaceholder := claimPlaceholder + 1
+		query := fmt.Sprintf("UPDATE %s SET claim = $%d, claim_until = $%d WHERE %s",
+			table, claimPlaceholder, claimUntilPlaceholder, where)
+		updateArgs := append(append([]any(nil), args...), claim, at.Add(refreshLease))
+		if _, err := tx.ExecContext(ctx, query, updateArgs...); err != nil {
 			return err
 		}
-		lease = &GitHubRefreshLease{Key: key, Claim: claim, Generation: row.generation, InstallationGeneration: installation}
+		lease = &GitHubRefreshLease{
+			Key: key, Claim: claim, Generation: row.generation, InstallationGeneration: installation,
+			SubjectGeneration: ciGeneration, HeadSHA: ciHeadSHA,
+		}
 		return nil
 	})
 	return lease, err
@@ -327,6 +354,13 @@ func leased(ctx context.Context, tx *sql.Tx, lease GitHubRefreshLease) (refreshR
 		}
 		current = lease.InstallationGeneration != nil && generation == *lease.InstallationGeneration
 	}
+	if ci, ok := lease.Key.(GitHubCIRefreshKey); ok && current {
+		generation, headSHA, err := githubCIParent(ctx, tx, ci)
+		if err != nil {
+			return refreshRow{}, err
+		}
+		current = lease.SubjectGeneration != nil && generation == *lease.SubjectGeneration && headSHA == lease.HeadSHA
+	}
 	if !current {
 		return refreshRow{}, &RefreshDeferredError{Until: at}
 	}
@@ -343,6 +377,8 @@ type GitHubSuccess struct {
 	Revisions []GitHubHeadRevision
 	// RepositoryName is the repository's current name, for an access refresh that read it.
 	RepositoryName *string
+	// CI is nil when CI was not read and nonnil (including an empty slice) when the requested SHA checks were read.
+	CI []GitHubCIObservation
 }
 
 // Succeed records a refresh and releases the lease. It fails with *RefreshDeferredError, recording nothing,
@@ -362,6 +398,84 @@ func (g *GitHubState) Succeed(ctx context.Context, lease GitHubRefreshLease, suc
 		if !valid {
 			return &RefreshDeferredError{Until: now()}
 		}
+		if ci, ok := lease.Key.(GitHubCIRefreshKey); ok {
+			if success.CI == nil {
+				return errors.New("a CI refresh success must distinguish an empty observation from no CI read")
+			}
+			baseFence := false
+			for _, fence := range success.Fences {
+				if fence.Key.AppID == ci.AppID && fence.Key.InstallationID == ci.InstallationID &&
+					fence.Key.RepositoryID == ci.Subject.RepositoryID {
+					baseFence = true
+					break
+				}
+			}
+			if !baseFence {
+				return errors.New("a CI refresh requires its pull request repository access fence")
+			}
+			if len(success.Revisions) != 0 || success.PullRequest != nil || success.RepositoryName != nil {
+				return errors.New("a CI refresh cannot record another GitHub refresh result")
+			}
+			parentGeneration, headSHA, err := githubCIParent(ctx, tx, ci)
+			if err != nil {
+				return err
+			}
+			if lease.SubjectGeneration == nil || parentGeneration != *lease.SubjectGeneration || headSHA != lease.HeadSHA {
+				return &RefreshDeferredError{Until: now()}
+			}
+			at := now()
+			table, where, args := lease.Key.row()
+			successPlaceholder := len(args) + 1
+			query := fmt.Sprintf("UPDATE %s SET last_success_at = $%d, error_kind = NULL, error = NULL, "+
+				"error_since = NULL, error_observed_at = NULL, claim = NULL, claim_until = NULL, next_attempt = NULL WHERE %s",
+				table, successPlaceholder, where)
+			updateArgs := append(append([]any(nil), args...), at)
+			if _, err := tx.ExecContext(ctx, query, updateArgs...); err != nil {
+				return err
+			}
+			changed := false
+			for _, observation := range success.CI {
+				if observation.HeadSHA != headSHA {
+					return &RefreshDeferredError{Until: now()}
+				}
+				var installationID int64
+				for _, fence := range success.Fences {
+					if fence.Key.AppID == ci.AppID && fence.Key.RepositoryID == observation.RepositoryID {
+						installationID = fence.Key.InstallationID
+						if observation.RepositoryID == ci.Subject.RepositoryID && installationID == ci.InstallationID {
+							break
+						}
+					}
+				}
+				if installationID == 0 {
+					return errors.New("CI observation repository has no matching access fence")
+				}
+				var current bool
+				if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+					SELECT 1 FROM github_subject_revision r JOIN github_pull_request p
+						ON p.repository_id = r.repository_id AND p.number::text = r.subject_key
+					WHERE r.repository_id = $1 AND r.kind = 'pull_request' AND r.subject_key = $2
+						AND r.head_repository_id = $3 AND r.sha = $4 AND p.head_sha = $4)`,
+					ci.Subject.RepositoryID, ci.Subject.Key, observation.RepositoryID, observation.HeadSHA).Scan(&current); err != nil {
+					return err
+				}
+				if !current {
+					return &RefreshDeferredError{Until: now()}
+				}
+				didChange, err := observeGitHubCI(ctx, tx, ci.AppID, installationID, observation, at)
+				if err != nil {
+					return err
+				}
+				changed = changed || didChange
+			}
+			if changed {
+				if err := wakeGitHubInboxes(ctx, tx, ci.AppID); err != nil {
+					return err
+				}
+				return notify(ctx, tx)
+			}
+			return nil
+		}
 		table, where, args := lease.Key.row()
 		if len(success.Revisions) > 0 {
 			subject, ok := lease.Key.(GitHubSubjectKey)
@@ -373,10 +487,12 @@ func (g *GitHubState) Succeed(ctx context.Context, lease GitHubRefreshLease, suc
 			}
 		}
 		at := now()
-		const settled = `last_success_at = $4, error_kind = NULL, error = NULL, error_since = NULL,
-			error_observed_at = NULL, claim = NULL, claim_until = NULL, next_attempt = NULL`
+		successPlaceholder := len(args) + 1
+		settled := fmt.Sprintf(`last_success_at = $%d, error_kind = NULL, error = NULL, error_since = NULL,
+			error_observed_at = NULL, claim = NULL, claim_until = NULL, next_attempt = NULL`, successPlaceholder)
+		settledArgs := append(append([]any(nil), args...), at)
 		if subject, ok := lease.Key.(GitHubSubjectKey); ok {
-			if _, err := tx.ExecContext(ctx, "UPDATE "+table+" SET "+settled+" WHERE "+where, args[0], args[1], args[2], at); err != nil {
+			if _, err := tx.ExecContext(ctx, "UPDATE "+table+" SET "+settled+" WHERE "+where, settledArgs...); err != nil {
 				return err
 			}
 			if success.PullRequest != nil {
@@ -397,9 +513,14 @@ func (g *GitHubState) Succeed(ctx context.Context, lease GitHubRefreshLease, suc
 				return fmt.Errorf("github_repository %v: %d rows renamed: %w", args[2], updated, err)
 			}
 		}
-		_, err = tx.ExecContext(ctx, "UPDATE "+table+" SET "+settled+`, checked_at = $4, valid_until = $5,
-			validated_installation_generation = $6 WHERE `+where,
-			args[0], args[1], args[2], at, at.Add(g.freshness), *lease.InstallationGeneration)
+		checkedPlaceholder := successPlaceholder + 1
+		validUntilPlaceholder := checkedPlaceholder + 1
+		installationGenerationPlaceholder := validUntilPlaceholder + 1
+		query := fmt.Sprintf("UPDATE %s SET %s, checked_at = $%d, valid_until = $%d, "+
+			"validated_installation_generation = $%d WHERE %s", table, settled, checkedPlaceholder,
+			validUntilPlaceholder, installationGenerationPlaceholder, where)
+		settledArgs = append(settledArgs, at, at.Add(g.freshness), *lease.InstallationGeneration)
+		_, err = tx.ExecContext(ctx, query, settledArgs...)
 		return err
 	})
 }
@@ -424,13 +545,16 @@ func (g *GitHubState) Fail(ctx context.Context, lease GitHubRefreshLease, kind S
 		}
 		next = at.Add(retry)
 		table, where, args := lease.Key.row()
-		set := `error_kind = $4, error = $5, error_since = $6, error_observed_at = $7, next_attempt = $8,
-			claim = NULL, claim_until = NULL`
+		kindPlaceholder := len(args) + 1
+		set := fmt.Sprintf(`error_kind = $%d, error = $%d, error_since = $%d, error_observed_at = $%d, next_attempt = $%d,
+			claim = NULL, claim_until = NULL`, kindPlaceholder, kindPlaceholder+1, kindPlaceholder+2,
+			kindPlaceholder+3, kindPlaceholder+4)
 		if _, ok := lease.Key.(GitHubAccessKey); ok {
-			set += `, valid_until = NULL, checked_at = $7`
+			set += fmt.Sprintf(`, valid_until = NULL, checked_at = $%d`, kindPlaceholder+3)
 		}
-		_, err = tx.ExecContext(ctx, "UPDATE "+table+" SET "+set+" WHERE "+where,
-			args[0], args[1], args[2], string(kind), message, since, at, next)
+		query := fmt.Sprintf("UPDATE %s SET %s WHERE %s", table, set, where)
+		updateArgs := append(append([]any(nil), args...), string(kind), message, since, at, next)
+		_, err = tx.ExecContext(ctx, query, updateArgs...)
 		return err
 	})
 	return next, err

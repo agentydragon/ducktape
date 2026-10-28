@@ -46,8 +46,10 @@ database that the retired Alembic history left at revision `0010_drop_write_only
 the migrator keeps the advisory lock key the Alembic runner took.
 
 The generic `github_observation` inbox identity is read-compatible here for the planned CI/check, review
-and PR lifecycle recovery writers. This release does not produce it. Deploy this reader release to all replicas
-before merging or deploying a writer; retain its image as the data-preserving rollback floor once writing begins.
+and PR lifecycle recovery writers. [Reader PR #12411](https://github.com/agentydragon/ducktape/pull/12411) must deploy to all replicas
+before deploying these writers; retain its image as the data-preserving rollback floor once writing begins.
+Do not overlap old GitHub workers with recovery writers during rollout. If rolling back to the reader-only image,
+disable the GitHub provider until a recovery-capable image is restored, while retaining inbox reads and delivery.
 Never roll back to an older decoder or run a down migration that discards retained notifications.
 
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
@@ -120,8 +122,17 @@ to disable cleanup of both raw deliveries and generated mergeability transitions
 including their IDs, digests and subject links. This bounds source replay, late association
 matching and delivery-ID deduplication, including for active subscriptions. Inbox payload copies
 keep their independent 30-day retention. The same setting also deletes up to 1000 expired generated
-pull-request mergeability transitions per pass, including transitions not consumed by an inbox;
-current pull-request snapshots remain. Changing this setting does not enable the GitHub provider.
+pull-request mergeability transitions and 1000 generated CI transitions per pass, including transitions not consumed by an inbox;
+current pull-request snapshots remain. Old CI heads without active PR followers are pruned in bounded batches;
+current facts for an actively followed head and copied inbox payloads retain their independent lifetimes. Changing this setting does not enable the GitHub provider.
+
+Current CI/check-state repair follows `github.freshness_seconds` (default 600 seconds, configurable from 60 to
+3600 seconds via `AGENTPLANE_NOTIFICATIONS_GITHUB__FRESHNESS_SECONDS`). Worker scheduling, GitHub API or access
+failures, and rate-limit backoff can extend the interval; GitHub state propagation has no guaranteed settling
+time. It observes current state for followed PR heads and does not reconstruct full event history; the existing
+pull-request subscription command and default filters are unchanged. Branch and fixed-commit CI notifications
+continue to use raw webhook events. See the [agent GitHub guide](docs/agents/github.md#follow-github-activity) for
+the inbox identity and payload shape.
 
 The migration gives existing deliveries its own timestamp because their actual ingestion times
 were not recorded. They first become eligible after the configured retention interval from migration.
@@ -169,6 +180,10 @@ installation tokens request it alongside Metadata, Contents and Pull requests re
 `issues` and `workflow_job` webhook events when configuring the App. Workflow-job notifications
 are opt-in; ordinary issue subscriptions default to lifecycle events and comments. See the
 [ingestion and matching contract](docs/api.md#github-webhook-ingestion-and-matching).
+
+Current PR CI/check-state repair uses a separate installation-token profile requesting only Checks and Commit
+statuses read. These permissions are not added to the ordinary notification-read token profile. If an installation
+cannot grant the CI profile, its CI refresh reports the access error without blocking ordinary webhook processing.
 
 ### GitHub API transport overrides
 

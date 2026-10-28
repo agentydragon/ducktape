@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/go-github/v88/github"
 	"github.com/google/uuid"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
@@ -475,5 +476,63 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 			ingest.Revisions = append(ingest.Revisions, store.GitHubHeadRevision{Repository: *found.head, SHA: *found.sha})
 		}
 	}
+	if common.repository != nil && found.sha != nil {
+		ci, err := webhookCI(body, event, common.action, *found.sha)
+		if err != nil {
+			return store.GitHubIngest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
+		}
+		if ci != nil {
+			ci.RepositoryID = common.repository.ID
+			ingest.CI = []store.GitHubCIObservation{*ci}
+		}
+	}
 	return ingest, nil
+}
+
+// A webhook may carry only correlation fields. Preserve those as raw activity; complete state
+// observations share normalization with polling so the same change has one durable identity.
+func webhookCI(body object, event string, action *string, sha string) (*store.GitHubCIObservation, error) {
+	switch event {
+	case string(store.EventCheckRun):
+		if action == nil || (*action != "created" && *action != "in_progress" && *action != "completed") {
+			return nil, nil
+		}
+		check, err := body.object("check_run", "body")
+		if err != nil {
+			return nil, err
+		}
+		if check.present("id") == nil || check.present("name") == nil || check.present("status") == nil {
+			return nil, nil
+		}
+		var run github.CheckRun
+		if err := json.Unmarshal(body["check_run"], &run); err != nil {
+			return nil, err
+		}
+		observation, err := checkRunObservation(&run, sha)
+		if err != nil {
+			return nil, err
+		}
+		// A check may be created already completed. Preserve the actual activity selector;
+		// polling can independently observe its completed state for completed-only subscribers.
+		if observation.Action == nil || *observation.Action != *action {
+			return nil, nil
+		}
+		return &observation, nil
+	case string(store.EventStatus):
+		if body.present("id") == nil || body.present("context") == nil || body.present("state") == nil {
+			return nil, nil
+		}
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		var status github.RepoStatus
+		if err := json.Unmarshal(raw, &status); err != nil {
+			return nil, err
+		}
+		observation, err := statusObservation(&status, sha)
+		return &observation, err
+	default:
+		return nil, nil
+	}
 }

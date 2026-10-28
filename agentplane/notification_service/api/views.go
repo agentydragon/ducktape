@@ -181,6 +181,18 @@ func githubStatusView(status *store.GitHubStatus) (*notificationspb.GitHubStatus
 		return nil, nil
 	}
 	view := &notificationspb.GitHubStatus{}
+	if status.CI != nil {
+		seen, err := refreshStatus(*status.CI)
+		if err != nil {
+			return nil, err
+		}
+		view.Ci = &notificationspb.GitHubRefreshStatus{
+			LastSuccessAt: seen.lastSuccessAt, ErrorKind: seen.errorKind, Error: seen.errorMessage,
+			ErrorSince: seen.errorSince, ErrorObservedAt: seen.errorObserved,
+			RetryAt: timestamp(status.CI.RetryAt), RefreshingUntil: timestamp(status.CI.RefreshingUntil),
+		}
+	}
+
 	for _, access := range status.Access {
 		seen, err := refreshStatus(access.GitHubRefreshStatus)
 		if err != nil {

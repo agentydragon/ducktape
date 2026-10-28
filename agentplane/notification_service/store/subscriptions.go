@@ -139,6 +139,7 @@ type sourceBinding struct {
 	actionsAfterSequence sql.NullInt64
 	// githubStartPosition is the newest delivery when a GitHub subscription was created: only later ones are owed.
 	githubStartPosition                             sql.NullInt64
+	githubCIAfterSequence                           sql.NullInt64
 	githubApp, githubInstallation, githubRepository sql.NullInt64
 	githubSubjectKind, githubSubjectKey             sql.NullString
 }
@@ -173,6 +174,10 @@ func bindSource(ctx context.Context, tx *sql.Tx, source Source, access *GitHubAc
 		if err := tx.QueryRowContext(ctx, `SELECT coalesce(max(position), 0) FROM github_delivery`).Scan(&start); err != nil {
 			return sourceBinding{}, err
 		}
+		var ciSequence int64
+		if err := tx.QueryRowContext(ctx, `SELECT coalesce(max(sequence), 0) FROM github_ci_event`).Scan(&ciSequence); err != nil {
+			return sourceBinding{}, err
+		}
 		if err := insertGrant(ctx, tx, *access, source.Repository); err != nil {
 			return sourceBinding{}, err
 		}
@@ -182,12 +187,13 @@ func bindSource(ctx context.Context, tx *sql.Tx, source Source, access *GitHubAc
 			return sourceBinding{}, err
 		}
 		return sourceBinding{
-			githubStartPosition: sql.NullInt64{Int64: start, Valid: true},
-			githubApp:           sql.NullInt64{Int64: access.AppID, Valid: true},
-			githubInstallation:  sql.NullInt64{Int64: access.InstallationID, Valid: true},
-			githubRepository:    sql.NullInt64{Int64: access.RepositoryID, Valid: true},
-			githubSubjectKind:   sql.NullString{String: subject.Kind, Valid: true},
-			githubSubjectKey:    sql.NullString{String: subject.Key, Valid: true},
+			githubStartPosition:   sql.NullInt64{Int64: start, Valid: true},
+			githubCIAfterSequence: sql.NullInt64{Int64: ciSequence, Valid: true},
+			githubApp:             sql.NullInt64{Int64: access.AppID, Valid: true},
+			githubInstallation:    sql.NullInt64{Int64: access.InstallationID, Valid: true},
+			githubRepository:      sql.NullInt64{Int64: access.RepositoryID, Valid: true},
+			githubSubjectKind:     sql.NullString{String: subject.Kind, Valid: true},
+			githubSubjectKey:      sql.NullString{String: subject.Key, Valid: true},
 		}, nil
 	default:
 		return sourceBinding{}, invalid("source must be an Action request or a GitHub subject")
@@ -253,11 +259,11 @@ func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscr
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO subscription (id, inbox_id, idempotency_key, creation, version, actions_after_sequence,
 				github_start_position, github_app_id, github_installation_id, github_repository_id, github_subject_kind,
-				github_subject_key, generation, cancelled, expires_at, next_attempt)
-			VALUES ($1, $2, $3, $4::jsonb, 1, $5, $6, $7, $8, $9, $10, $11, 0, false, $12, $13)`,
+				github_subject_key, github_ci_after_sequence, generation, cancelled, expires_at, next_attempt)
+			VALUES ($1, $2, $3, $4::jsonb, 1, $5, $6, $7, $8, $9, $10, $11, coalesce($12, 0), 0, false, $13, $14)`,
 			id, inbox.ID, body.IdempotencyKey, string(creation), binding.actionsAfterSequence,
 			binding.githubStartPosition, binding.githubApp, binding.githubInstallation, binding.githubRepository,
-			binding.githubSubjectKind, binding.githubSubjectKey, expiry(written, body.LifetimeDays), written); err != nil {
+			binding.githubSubjectKind, binding.githubSubjectKey, binding.githubCIAfterSequence, expiry(written, body.LifetimeDays), written); err != nil {
 			return err
 		}
 		if _, ok := body.Source.(GitHubSource); ok {
@@ -265,6 +271,15 @@ func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscr
 				SET github_mergeability_after_sequence = (SELECT coalesce(max(sequence), 0) FROM github_mergeability_event)
 				WHERE id = $1`, id); err != nil {
 				return err
+			}
+			if source, ok := body.Source.(GitHubSource); ok && binding.githubSubjectKind.String == "pull_request" {
+				subject, err := NewGitHubSubjectKey(access.RepositoryID, source.Subject)
+				if err != nil {
+					return err
+				}
+				if err := snapshotGitHubCI(ctx, tx, id, access.AppID, subject, ciFilters(source)); err != nil {
+					return err
+				}
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE inbox SET updated_at = $2, next_attempt = $2 WHERE id = $1`,

@@ -173,6 +173,7 @@ func TestAnEntrySaysWhichKindOfSourceItCameFrom(t *testing.T) {
 	for event, want := range map[EventIdentity]EntryProvider{
 		ActionsEvent{RequestID: uuid.New(), Sequence: 1}:                  EntryFromActions,
 		GitHubEvent{Event: EventPush}:                                     EntryFromGitHub,
+		GitHubObservationEvent{Event: EventCheckRun, Sequence: 1}:         EntryFromGitHub,
 		GitHubMergeabilityEvent{PullRequestNumber: 7, Sequence: 1}:        EntryFromGitHub,
 		GitHubMergeabilitySnapshotEvent{PullRequestNumber: 7, Version: 1}: EntryFromGitHub,
 		MessageEvent{MessageID: uuid.New()}:                               EntryFromMessage,

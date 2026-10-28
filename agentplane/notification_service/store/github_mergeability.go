@@ -100,6 +100,12 @@ func (s *Store) observePullRequest(ctx context.Context, tx *sql.Tx, subject GitH
 	} else if observation.State == GitHubPullRequestOpen && observation.Mergeability == GitHubMergeable {
 		return errors.New("an open mergeable observation requires matching test merge proof")
 	}
+	var previousHead sql.NullString
+	err = tx.QueryRowContext(ctx, `SELECT head_sha FROM github_pull_request WHERE repository_id = $1 AND number = $2`,
+		subject.RepositoryID, number).Scan(&previousHead)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
 	previous := GitHubMergeabilityUnknown
 	var attempt int
 	if err := tx.QueryRowContext(ctx, `SELECT last_settled_mergeability,
@@ -138,6 +144,11 @@ func (s *Store) observePullRequest(ctx context.Context, tx *sql.Tx, subject GitH
 		subject.RepositoryID, number, observation.BaseRef, observation.HeadSHA, observation.BaseSHA,
 		observation.State, observation.Mergeability, settled, at, mergeCommitSHA, attempt); err != nil {
 		return err
+	}
+	if previousHead.Valid && previousHead.String != observation.HeadSHA {
+		if err := invalidateGitHubCIForPullRequest(ctx, tx, subject.RepositoryID, subject.Key, nil); err != nil {
+			return err
+		}
 	}
 	if recheckAt != nil {
 		_, err := tx.ExecContext(ctx, `UPDATE github_subject SET next_attempt = $4
@@ -185,6 +196,19 @@ func invalidateMergeability(ctx context.Context, tx *sql.Tx, ingest GitHubIngest
 				WHERE repository_id = $1 AND kind = $2 AND subject_key = $3`,
 				subject.RepositoryID, subject.Kind, subject.Key); err != nil {
 				return err
+			}
+			if ingest.HeadSHA != nil {
+				var currentHead sql.NullString
+				err := tx.QueryRowContext(ctx, `SELECT head_sha FROM github_pull_request WHERE repository_id = $1 AND number::text = $2`,
+					subject.RepositoryID, subject.Key).Scan(&currentHead)
+				if err != nil && !errors.Is(err, sql.ErrNoRows) {
+					return err
+				}
+				if currentHead.Valid && currentHead.String != *ingest.HeadSHA {
+					if err := invalidateGitHubCIForPullRequest(ctx, tx, subject.RepositoryID, subject.Key, &ingest.AppID); err != nil {
+						return err
+					}
+				}
 			}
 		case subject.Kind == "branch" && (ingest.Event == string(EventPush) || ingest.Event == string(EventCreate) || ingest.Event == string(EventDelete)):
 			if _, err := tx.ExecContext(ctx, `UPDATE github_subject s

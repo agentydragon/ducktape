@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -141,6 +142,24 @@ type GitHubObservationEvent struct {
 	RepositoryID int64
 	Event        EventName
 	Sequence     int64
+}
+
+// GitHubCIObservation is one normalized current check-run or commit-status state, whether first found by a
+// webhook or by subscription repair.
+type GitHubCIObservation struct {
+	RepositoryID int64      `json:"repositoryId"`
+	HeadSHA      string     `json:"headSha"`
+	Event        EventName  `json:"event"`
+	Action       *string    `json:"action,omitempty"`
+	CheckAppID   int64      `json:"checkAppId,omitempty"`
+	ID           int64      `json:"id"`
+	Name         string     `json:"name"`
+	Status       string     `json:"status"`
+	Conclusion   *string    `json:"conclusion,omitempty"`
+	DetailsURL   string     `json:"detailsUrl"`
+	StartedAt    *time.Time `json:"startedAt,omitempty"`
+	CompletedAt  *time.Time `json:"completedAt,omitempty"`
+	UpdatedAt    *time.Time `json:"updatedAt,omitempty"`
 }
 
 // GitHubMergeabilityEvent is one Agentplane-generated observation of a pull request's mergeability.

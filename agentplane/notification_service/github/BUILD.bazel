@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "github",
     srcs = [
+        "ci.go",
         "client.go",
         "errors.go",
         "provider.go",
@@ -25,6 +26,7 @@ go_library(
 go_test(
     name = "github_test",
     srcs = [
+        "ci_test.go",
         "client_test.go",
         "fake_test.go",
         "provider_classify_test.go",
@@ -47,6 +49,7 @@ go_test(
     name = "provider_integration_test",
     size = "medium",
     srcs = [
+        "ci_provider_integration_test.go",
         "fake_test.go",
         "provider_harness_integration_test.go",
         "provider_integration_test.go",

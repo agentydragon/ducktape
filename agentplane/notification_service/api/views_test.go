@@ -2,6 +2,7 @@ package api
 
 import (
 	"testing"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
@@ -111,5 +112,32 @@ func TestGitHubObservationIdentityViewRoundTrips(t *testing.T) {
 		AppID: 11, RepositoryID: 22, Event: store.EventIssues, Sequence: 4,
 	}); err == nil {
 		t.Fatal("view accepted an unsupported observation event")
+	}
+}
+
+func TestGitHubCIRefreshStatusView(t *testing.T) {
+	lastSuccess := time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
+	errorSince := lastSuccess.Add(time.Minute)
+	errorObserved := errorSince.Add(time.Second)
+	retryAt := errorObserved.Add(time.Minute)
+	refreshingUntil := retryAt.Add(time.Minute)
+	status, err := githubStatusView(&store.GitHubStatus{
+		Subject: store.GitHubSubjectStatus{Key: store.GitHubSubjectKey{RepositoryID: 22, Kind: "pull_request", Key: "7"}},
+		CI: &store.GitHubRefreshStatus{
+			LastSuccessAt: &lastSuccess,
+			Failure: &store.SourceFailure{
+				Kind: store.FailureRateLimited, Message: "rate limited", Since: errorSince, ObservedAt: errorObserved,
+			},
+			RetryAt: &retryAt, RefreshingUntil: &refreshingUntil,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.GetCi() == nil || status.GetCi().GetErrorKind() != notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_RATE_LIMITED ||
+		status.GetCi().GetError() != "rate limited" || status.GetCi().GetLastSuccessAt().AsTime() != lastSuccess ||
+		status.GetCi().GetErrorSince().AsTime() != errorSince || status.GetCi().GetErrorObservedAt().AsTime() != errorObserved ||
+		status.GetCi().GetRetryAt().AsTime() != retryAt || status.GetCi().GetRefreshingUntil().AsTime() != refreshingUntil {
+		t.Errorf("CI refresh view = %v", status.GetCi())
 	}
 }

@@ -667,3 +667,15 @@ func TestInboxSummaryNamesGitHubObservations(t *testing.T) {
 		}
 	}
 }
+
+func TestSubscriptionSummaryIncludesGitHubCIRefreshCoverage(t *testing.T) {
+	line, err := subscriptionLine([]byte(`{"id":"subscription","source":{"github":{"repository":"owner/repo","subject":{"pullRequest":{"number":7}}}},"version":"1","github":{"ci":{"lastSuccessAt":"2026-10-27T10:00:00Z","errorKind":"SOURCE_FAILURE_KIND_RATE_LIMITED","error":"rate limited","retryAt":"2026-10-27T10:02:00Z"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"CI last refresh  2026-10-27T10:00:00Z", "CI error  rate_limited", "CI retry  2026-10-27T10:02:00Z"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("subscription summary %q does not contain %q", line, want)
+		}
+	}
+}

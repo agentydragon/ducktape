@@ -119,6 +119,10 @@ func (w *world) serve(rw http.ResponseWriter, r *http.Request, path string) bool
 		}
 	case path == "/repos/owner/repo/git/commits/"+testMergeCommitSHA:
 		reply(http.StatusOK, fmt.Sprintf(`{"sha": %q, "parents": [{"sha": %q}, {"sha": %q}]}`, testMergeCommitSHA, base, head))
+	case strings.HasSuffix(path, "/check-runs"):
+		reply(http.StatusOK, `{"total_count": 0, "check_runs": []}`)
+	case strings.HasSuffix(path, "/status"):
+		reply(http.StatusOK, fmt.Sprintf(`{"sha": %q, "state":"pending", "total_count": 0, "statuses": []}`, head))
 	case strings.Contains(path, "/commits/"):
 		reply(http.StatusOK, fmt.Sprintf(`{"sha": %q}`, last))
 	default:

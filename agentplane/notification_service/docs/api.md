@@ -215,6 +215,19 @@ Association evidence may predate the subscription, but delivered receipts must f
 boundary. This is not complete reconstruction of uncaptured heads or events from an uninstalled fork.
 Payload SHA, not inbox order, identifies the revision involved.
 
+The service also repairs missing current CI/check state on `github.freshness_seconds` (default 600 seconds).
+Recovered observations use the same `check_run` and `status` event categories and action filters as webhook
+events, so the existing PR defaults and subscription command are unchanged. Worker scheduling, GitHub API or
+access failures and rate-limit backoff can extend the interval; GitHub state propagation has no guaranteed
+settling time. Each generated `event.githubObservation` identifies the
+GitHub App, repository, event category and durable globally increasing sequence; it has no webhook delivery ID.
+The same normalized identity is used when a CI fact is first found while matching a webhook, so both paths
+deduplicate that fact. The flat payload carries `repositoryId`, `headSha`, `event`, `id`, `name`, `status`,
+`detailsUrl`, `observedAt`, and the applicable action, conclusion and timestamps. Check-run payloads also include
+`checkAppId` when GitHub provides the owning App. This repairs current
+state for the followed PR head; it is not full-history replay, and state no longer exposed by GitHub cannot be
+recovered. Branch and fixed-commit CI notifications continue to use raw webhook events.
+
 Event and action filters are unordered sets. Reordering or repeating identical selectors does not
 change subscription identity; responses use canonical ordering.
 An installation-lookup 404 leaves a PR fork uncovered until a subsequent subject repair discovers
@@ -289,3 +302,8 @@ retry and refresh-lease deadlines. `github.subject.retryAt` also gives the next 
 mergeability is pending or a negative result is being rechecked; this does not imply a failure or a pending inbox notice. Subject refreshes
 monitor both PR head and base changes and retry pending mergeability checks. They can produce
 mergeability observations but do not recover missing webhook activity.
+
+`github.ci` reports the shared refresh state for current check-run and commit-status observations for this App,
+installation and pull request: last success, any refresh error and its observation time, the next retry, and an
+in-flight refresh lease. It is separate from
+webhook-subscription processing status and does not promise complete event history or runner delivery.

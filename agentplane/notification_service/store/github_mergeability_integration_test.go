@@ -103,6 +103,7 @@ func (g githubFixture) tryCompletePullRequestRefresh(t *testing.T, sub githubSub
 	base := g.validate(t, g.access())
 	return g.state.Succeed(t.Context(), *lease, GitHubSuccess{
 		Fences: []GitHubAccessFence{base}, PullRequest: &observation,
+		Revisions: []GitHubHeadRevision{{Repository: GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: observation.HeadSHA}},
 	})
 }
 

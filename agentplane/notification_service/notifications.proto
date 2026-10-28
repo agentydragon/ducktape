@@ -417,6 +417,21 @@ message GitHubStatus {
   // The App, installation and repository grants that cover the subscription.
   repeated GitHubAccessStatus access = 1;
   GitHubSubjectStatus subject = 2;
+  // The shared current-CI repair state for this subject and installation.
+  GitHubRefreshStatus ci = 3;
+}
+
+// The refresh state of GitHub's current check-run and commit-status observations.
+message GitHubRefreshStatus {
+  google.protobuf.Timestamp last_success_at = 1;
+  optional SourceFailureKind error_kind = 2;
+  optional string error = 3;
+  google.protobuf.Timestamp error_since = 4;
+  google.protobuf.Timestamp error_observed_at = 5;
+  // When the state will next be refreshed after a failure or scheduling delay; not a delivery deadline.
+  google.protobuf.Timestamp retry_at = 6;
+  // While another worker performs the refresh, until when its lease holds.
+  google.protobuf.Timestamp refreshing_until = 7;
 }
 
 // One App, installation and repository grant.

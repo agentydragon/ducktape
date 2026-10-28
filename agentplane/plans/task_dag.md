@@ -248,11 +248,11 @@ freshness problem is independent of the broader missed-event recovery decision.
 ```mermaid
 flowchart LR
     GITHUB_MERGEABILITY_FRESHNESS[Ready: obtain fresh results after base-only changes]
-    GITHUB_NOTICE_RELIABILITY_DESIGN[Decision: mechanism and budget for eventual state awareness]
-    GITHUB_NOTIFICATION_RECOVERY[Blocked: selected reconciliation or reminder mechanism]
-    GITHUB_SHEPHERD_GUIDANCE[Blocked: after the reliability decision; fallback-check wording]
-    GITHUB_NOTICE_RELIABILITY_DESIGN --> GITHUB_NOTIFICATION_RECOVERY
-    GITHUB_NOTICE_RELIABILITY_DESIGN --> GITHUB_SHEPHERD_GUIDANCE
+    GITHUB_CI_RECOVERY[In flight: current CI and check state recovery]
+    GITHUB_REVIEW_LIFECYCLE_RECOVERY[Next: review and PR lifecycle recovery]
+    GITHUB_NOTIFICATION_RECOVERY[Capstone: eventual current PR state awareness]
+    GITHUB_CI_RECOVERY --> GITHUB_NOTIFICATION_RECOVERY
+    GITHUB_REVIEW_LIFECYCLE_RECOVERY --> GITHUB_NOTIFICATION_RECOVERY
 ```
 
 ### `GITHUB_MERGEABILITY_FRESHNESS` — obtain a current result after base-only changes
@@ -283,54 +283,54 @@ calculation, or reporting prolonged uncertainty before implementing an alternati
 shipped proof/fence/error policies. This does not reopen waived broad outage/restart drills or select
 a general CI/comment/review replay mechanism.
 
-### `GITHUB_NOTICE_RELIABILITY_DESIGN` — eventual state awareness and recovery mechanism
+### `GITHUB_NOTIFICATION_RECOVERY` — eventual current PR state awareness
 
-**Target selected by the operator, 2026-10-27 PDT; mechanism decision remains open.** Eligible active
-PR subscriptions should eventually learn current CI/check, review and merge state even when a
-webhook is missed. Associate CI/check observations with their PR head. Historical delivery of every
-event is not required; a state that changes and reverts between snapshots may be invisible.
+**Capstone; target and implementation direction approved by the operator, 2026-10-27 PDT.** Eligible
+active PR subscriptions should eventually learn current CI/check, review and merge state even when
+webhooks are missed. Use the existing PostgreSQL-backed Notification Service worker, shared durable
+refreshes and generated observations. COSI adoption and the GraphQL mergeability experiment are
+independent work. Historical delivery of every event is not required; a state that changes and
+reverts between snapshots may be invisible.
 
-Compare bounded service-side reconciliation using existing durable shared GitHub refresh state
-with explicit agent fallback checks, optionally scheduled reminders. Recommend the smallest reliable
-path with a stated staleness target and API budget, including access failures and rate-limit backoff.
-A webhook subscription is not proof no changes occurred when it stays silent.
-Snapshot polling cannot reconstruct all intermediate events, and a cron reminder alone is not
-recovery if no active agent checks state. Define timer ownership, termination, unavailable-harness
-behavior and active-subscription eligibility; a reminder to poll without a runnable timer is not
-an eventual-delivery mechanism. Review service reconciliation, agent fallback or a combination
-with the operator before implementation. Persist observation coverage and inbox emission atomically
-or replay-safely; share normalization and refresh across overlapping subscriptions.
-Preserve filters, creation boundaries and revocation, and expose observation freshness and
-rate-limit/backoff state. Recovery has no inherent archive dependency.
+Start with `github.freshness_seconds` (600 seconds by default), shared refresh leases and existing
+worker concurrency. Account for paginated API reads per subject and installation, retain rate-limit
+backoff and expose delayed/failed coverage; GitHub propagation and API/access failures can extend
+the interval. Observation writes and durable notification work commit atomically, with replay-safe
+inbox fan-out. Preserve subscription filters, creation boundaries, expiry/revocation and access
+fences. Cancelled/expired subscriptions and retired inboxes stop producing work; delivery to a
+suspended Sandbox retains the existing wake policy.
 
-### `GITHUB_NOTIFICATION_RECOVERY` — implement the reviewed recovery contract
+Agent guidance accompanies each implementation slice: ordinary PR subscriptions include the
+supported recovery, generated observations have their own identities, silence is not proof of no
+changes, and an old-head check is not evidence for the current head. A notice prompts the agent to
+inspect authoritative state before reporting success or merging. No agent-owned cron reminder or
+new scheduler is required.
 
-**Blocked on the recovery mechanism and budget in `GITHUB_NOTICE_RELIABILITY_DESIGN`; the eventual
-CI/check/review/merge awareness target is selected.** If service reconciliation is selected, periodically compare
-eligible shared subjects with authoritative GitHub state and durably emit deduplicated observations
-for uncovered relevant changes. Reuse refresh leases, backoff and access checks; bound API load.
-Distinguish observed state from a received webhook; do not fabricate delivery IDs or promise replay
-of events the API cannot recover. If agent fallback is selected instead, provide its actual bounded
-check/reminder mechanism and explicit limitations rather than just advising agents to remember.
-Add `CRON_NOTIFICATIONS` as a prerequisite only if that reviewed implementation actually needs it;
-a service refresh deadline need not introduce a general scheduler. Backend workers stay in-process.
+### `GITHUB_CI_RECOVERY` — repair current check runs and commit statuses
 
-Test suppressed webhooks for head/CI/check, review and merge state, duplicate webhook/reconciliation races and
-restart/checkpoint recovery with a controlled GitHub peer. Observe one eventual update for the
-promised scope, honest access/backoff state and no false claim of complete history. No live GitHub
-outage or exhaustive historical event matrix is required.
+**In flight; Codex, 2026-10-27 PDT.** Reconcile paginated check runs and latest commit-status contexts
+for the observed PR head in its authorized repositories. Reuse the `check_run` and `status` selectors;
+normalize webhook and polling facts to shared durable identities. Give CI its own refresh deadline
+and coverage/error status so pending mergeability neither blocks recovery nor accelerates CI reads.
+Keep existing raw branch/commit activity and unsupported webhook categories unchanged.
 
-### `GITHUB_SHEPHERD_GUIDANCE` — explain monitoring limits and completion checks
+Exit: suppressed CI webhooks recover after a durable deadline/restart; webhook/poll races deduplicate;
+reruns, head changes, pagination, overlapping and late subscriptions, filters and revoked access retain
+their meaning. New event history uses existing GitHub retention while current snapshots and inbox
+copies keep their independent lifetimes. Include the schema rollout and rollback in the PR.
 
-**Blocked on the recovery mechanism in `GITHUB_NOTICE_RELIABILITY_DESIGN`; if agent reminders are chosen it also needs the frozen [`CRON_NOTIFICATIONS`](task_freezer.md#cron_notifications--scheduled-notifications-for-agents), which would first have to be promoted.** Agents are
-asked not just to subscribe to GitHub while waiting (e.g. for CI) but to back the subscription with
-a fallback check after N minutes, in case the webhook never delivers. Treat notifications as prompts
-to inspect authoritative current PR state, not evidence that the latest head passed or that silence
-means no progress. Document the chosen fallback deadline/ownership and how an agent notices
-unreliable monitoring. State who runs reminders. Notices can start a stopped harness in a running
-Sandbox; a suspended Sandbox requires explicit resume or its configured wake-on-message authority.
-Guidance accompanies the selected reliability behavior; it must not advertise a polling/reminder
-guarantee before that mechanism exists.
+### `GITHUB_REVIEW_LIFECYCLE_RECOVERY` — repair review and PR lifecycle state
+
+**Next; Codex, 2026-10-27 PDT.** Add submitted/dismissed review observations and OPEN/CLOSED/MERGED
+PR lifecycle observations in a separate PR, using the CI slice's generated identity and durable
+fan-out boundaries. Keep review IDs, reviewer identity and evaluated commit explicit; do not equate
+one approval with satisfaction of repository review rules. Respect the existing review/lifecycle
+filters and creation boundaries.
+
+Exit: suppressed review and merge/close/reopen webhooks recover current state without duplicate
+webhook/poll notices; restart, pagination, access loss and subscription cancellation remain covered.
+Publish the remaining recovery scope honestly until this slice lands. No provider outage or
+exhaustive historical event replay exercise is required.
 
 ## 3. Multiagent decisions before implementations
 

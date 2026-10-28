@@ -113,6 +113,10 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 				AND ds.subject_key = ` + key + `) OR ` + about
 	}
 	subscription, inbox := args.add(match.SubscriptionID), args.add(match.InboxID)
+	excludeNormalizedCI := ""
+	if match.Subject.Kind == "pull_request" {
+		excludeNormalizedCI = `AND NOT (d.ci_normalized AND d.event IN ('check_run', 'status'))`
+	}
 	// The whole identity is compared, so the inbox/event unique index serves the lookup.
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT d.position, d.app_id, d.delivery_id, d.repository_id, d.event, d.action, d.payload
@@ -121,6 +125,7 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 			AND (`+strings.Join(accessible, " OR ")+`)
 			AND (`+strings.Join(selected, " OR ")+`)
 			AND (`+about+`)
+			`+excludeNormalizedCI+`
 			AND d.position > (SELECT github_start_position FROM subscription WHERE id = `+subscription+`)
 			AND NOT EXISTS (
 				SELECT 1 FROM subscription_match m
@@ -198,7 +203,7 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 		}
 		var subjectGeneration int64
 		table, where, args := recording.Subject.row()
-		if err := tx.QueryRowContext(ctx, "SELECT generation FROM "+table+" WHERE "+where, args[:]...).Scan(&subjectGeneration); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT generation FROM "+table+" WHERE "+where, args...).Scan(&subjectGeneration); err != nil {
 			return fmt.Errorf("%s %+v: %w", table, recording.Subject, err)
 		}
 		current := len(recording.Fences) > 0 && recording.RepairAt.After(now()) &&
@@ -225,9 +230,13 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 		if err != nil {
 			return err
 		}
+		ciCount, ciMore, err := s.recordGitHubCI(ctx, tx, claim.ID, recording)
+		if err != nil {
+			return err
+		}
 		// Ingress that committed since the subscription was read must not be overwritten by an idle schedule.
 		next := recording.RepairAt
-		if recording.More || mergeabilityMore || generation != recording.Generation {
+		if recording.More || mergeabilityMore || ciMore || generation != recording.Generation {
 			next = now()
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -236,7 +245,7 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 			WHERE id = $1`, recording.SubscriptionID, next, now()); err != nil {
 			return err
 		}
-		if len(recording.Matched) > 0 || mergeabilityCount > 0 {
+		if len(recording.Matched) > 0 || mergeabilityCount > 0 || ciCount > 0 {
 			if _, err := tx.ExecContext(ctx, `UPDATE inbox SET updated_at = $2 WHERE id = $1`, claim.ID, now()); err != nil {
 				return err
 			}

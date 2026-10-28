@@ -123,6 +123,8 @@ func TestDeliveriesPythonAcceptsAreStoredAsPythonStoresThem(t *testing.T) {
 
 			sameJSON(t, got.Payload, vector.Ingest.Payload)
 			got.Payload = nil
+			// These vectors pin raw receipt correlation. Current-state normalization has separate CI tests.
+			got.CI = nil
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("stored\n%+v\nwant\n%+v", got, want)
 			}
@@ -150,5 +152,16 @@ func TestDeliveriesPythonRefusesAreRefusedForTheSameReason(t *testing.T) {
 				t.Errorf("error = %v, want %v", err, want)
 			}
 		})
+	}
+}
+
+func TestACheckCreatedCompletedPreservesItsRawCreationSelector(t *testing.T) {
+	raw := []byte(`{"action":"created","installation":{"id":11},"repository":{"id":100,"full_name":"owner/repo"},"check_run":{"id":31,"head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"build","status":"completed","conclusion":"success"}}`)
+	ingest, err := ParseDelivery(testAppID, "check_run", uuid.New(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ingest.Action == nil || *ingest.Action != "created" || len(ingest.CI) != 0 {
+		t.Fatalf("ingest = %+v, want raw creation activity", ingest)
 	}
 }

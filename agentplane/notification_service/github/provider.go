@@ -164,6 +164,13 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 		}
 		repairAt = earlier(repairAt, validUntil)
 	}
+	if ciSelected(source) {
+		ciRepair, err := p.refreshCI(ctx, subject, fences)
+		if err != nil {
+			return err
+		}
+		repairAt = earlier(repairAt, ciRepair)
+	}
 
 	deliveries, err := p.store.GitHubDeliveries(ctx, store.GitHubMatch{
 		SubscriptionID: due.ID, InboxID: claim.ID, AppID: binding.AppID, Subject: subject,
@@ -177,6 +184,74 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 		Matched: deliveries, More: len(deliveries) == store.GitHubDeliveryPageSize,
 		Fences: fences, Subject: subject, SubjectGeneration: state.Generation, RepairAt: repairAt,
 	})
+}
+
+func ciSelected(source store.GitHubSource) bool {
+	if _, ok := source.Subject.(store.PullRequestSubject); !ok {
+		return false
+	}
+	for _, filter := range source.Filters() {
+		if filter.Event == store.EventCheckRun || filter.Event == store.EventStatus {
+			return true
+		}
+	}
+	return false
+}
+
+// CI has its own refresh deadline: pending mergeability must neither hold up CI observations nor
+// cause CI reads on every short mergeability retry. A classified CI failure is visible on its shared
+// status row while ordinary webhook and mergeability delivery continue.
+func (p *Provider) refreshCI(ctx context.Context, subject store.GitHubSubjectKey, fences []store.GitHubAccessFence) (time.Time, error) {
+	key := store.GitHubCIRefreshKey{AppID: p.appID, InstallationID: fences[0].Key.InstallationID, Subject: subject}
+	lease, err := p.state.Acquire(ctx, key)
+	var deferred *store.RefreshDeferredError
+	if errors.As(err, &deferred) {
+		return deferred.Until, nil
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	if lease != nil {
+		observations, err := p.readCI(ctx, subject, fences)
+		if err != nil {
+			err = p.refreshFailed(ctx, *lease, err)
+		} else {
+			err = p.state.Succeed(ctx, *lease, store.GitHubSuccess{Fences: fences, CI: observations})
+		}
+		if errors.As(err, &deferred) {
+			return deferred.Until, nil
+		}
+		if err != nil {
+			return time.Time{}, err
+		}
+	}
+	state, err := p.state.CIState(ctx, key)
+	return state.RepairAt, err
+}
+
+func (p *Provider) readCI(ctx context.Context, subject store.GitHubSubjectKey, fences []store.GitHubAccessFence) ([]store.GitHubCIObservation, error) {
+	targets, err := p.state.CITargets(ctx, subject)
+	if err != nil {
+		return nil, err
+	}
+	observations := make([]store.GitHubCIObservation, 0)
+	for _, target := range targets {
+		for _, fence := range fences {
+			if fence.Key.RepositoryID != target.Repository.ID {
+				continue
+			}
+			read, err := p.client.CommitCI(ctx, target.Repository.Name, target.SHA, fence.Key.InstallationID)
+			if err != nil {
+				return nil, err
+			}
+			for i := range read {
+				read[i].RepositoryID = target.Repository.ID
+			}
+			observations = append(observations, read...)
+			break
+		}
+	}
+	return observations, nil
 }
 
 func earlier(a, b time.Time) time.Time {

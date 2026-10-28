@@ -176,6 +176,9 @@ func summarize(cursor int64, event EventIdentity, payload []byte, createdAt time
 				}
 			}
 		}
+	case GitHubObservationEvent:
+		summary.Provider = EntryFromGitHub
+		summary.Summary = fmt.Sprintf("GitHub %s observation · sequence %d", event.Event, event.Sequence)
 	case GitHubMergeabilityEvent:
 		summary.Provider = EntryFromGitHub
 		summary.Summary = fmt.Sprintf("GitHub PR #%d mergeability · sequence %d", event.PullRequestNumber, event.Sequence)

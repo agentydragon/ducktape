@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -40,6 +42,7 @@ type GitHubStatus struct {
 	// Access is ordered by repository, then installation.
 	Access  []GitHubAccessStatus
 	Subject GitHubSubjectStatus
+	CI      *GitHubRefreshStatus
 }
 
 func (row refreshRow) status() (GitHubRefreshStatus, error) {
@@ -133,6 +136,21 @@ func loadGitHubStatus(ctx context.Context, q querier, subscription *Subscription
 	}
 	if status.Subject.GitHubRefreshStatus, err = row.status(); err != nil {
 		return err
+	}
+	if subject.Kind == "pull_request" {
+		ciRow, err := loadRefresh(ctx, q, GitHubCIRefreshKey{
+			AppID: app, InstallationID: installation, Subject: subject,
+		})
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err == nil {
+			ciStatus, err := ciRow.status()
+			if err != nil {
+				return err
+			}
+			status.CI = &ciStatus
+		}
 	}
 	subscription.GitHub = &status
 	return nil
