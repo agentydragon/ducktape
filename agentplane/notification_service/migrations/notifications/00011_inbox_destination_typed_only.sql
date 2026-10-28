@@ -25,8 +25,8 @@ ALTER TABLE inbox
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
 
--- Typed-only writers leave the JSON rollback copy NULL. Keep the expansion applied until a compatible release
--- has restored those copies; dropping the relational fields first would lose destination identity.
+-- The normalized columns belong to 00005 and remain required by the previous dual-write release.
+-- Typed-only writers leave JSON NULL, so refuse Down until the retained copies have been restored.
 -- +goose StatementBegin
 DO $$
 BEGIN
@@ -38,7 +38,4 @@ END $$;
 
 ALTER TABLE inbox
     DROP CONSTRAINT inbox_destination_fields_valid,
-    ALTER COLUMN destination_ref SET NOT NULL,
-    DROP COLUMN destination_uid,
-    DROP COLUMN destination_name,
-    DROP COLUMN destination_namespace;
+    ALTER COLUMN destination_ref SET NOT NULL;
