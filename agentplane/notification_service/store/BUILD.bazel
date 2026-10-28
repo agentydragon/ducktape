@@ -114,6 +114,7 @@ go_test(
         "@com_github_pressly_goose_v3//:goose",
         "@io_bazel_rules_go//go/runfiles",
         "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//encoding/protowire",
         "@org_golang_google_protobuf//proto",
     ],
 )

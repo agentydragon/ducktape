@@ -75,7 +75,6 @@ consolidated schema. Delete this node then.
 ```mermaid
 flowchart LR
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history]
-    NOTIFICATION_RUNNER_BOUNDARY_COMPARE[Unscheduled: semantic notice runner-boundary comparison]
     NOTIFICATION_SERVICE_SPLIT[Unscheduled: split, move or rename the Notification Service's responsibilities]
     NOTIFICATION_SERVICE_SPLIT -. related .-> NOTIFICATION_COMMAND_OUTCOME_DESIGN
     COMMAND_WATCH_SUBSCRIPTION_DESIGN[Unscheduled: a subscription kind that runs an agent's command on a schedule]
@@ -107,19 +106,6 @@ the one service besides the History Service fold that derives state from Session
 `CommandAdmitted` entry says the runner admitted it, but not that the harness executed it or that
 the message reached the model's context; today that needs the history. Decide where that
 outcome is recorded before the Notification Service stops reading history.
-
-### `NOTIFICATION_RUNNER_BOUNDARY_COMPARE` — semantic notice runner-boundary comparison
-
-**Unscheduled.** The current History scan stores the full `EventEntry` at the notice's last runner
-cursor in `notice.runner_entry`, then compares serialized protobuf bytes when that cursor is replayed.
-Deterministic protobuf encoding is not canonical across languages or builds, so equivalent
-`EventEntry` values can look like changed history. Compare decoded entries semantically under an
-explicit policy for unknown and newly added fields, while keeping historical Python-written rows
-readable and retaining the full replay boundary. Accept equivalent encodings; keep a genuinely
-changed entry at the committed cursor and any cursor gap as `InvalidHistoryError`. Preserve the
-existing command admission, confirmation, failure and no-op receipt handling. Store tests cover these
-cases, including the unknown-field policy and historical Python rows. This repairs current
-reconciliation independently of any later change to where notice outcomes are recorded.
 
 ### `NOTIFICATION_SERVICE_SPLIT` — split, move or rename the Notification Service's responsibilities
 

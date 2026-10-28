@@ -58,6 +58,11 @@ GitHub webhook and observation payloads remain JSONB. Subscription `creation_pro
 `runner_entry` remain binary protobuf snapshots. Expired entries retain identity tombstones while
 their content stays cleared.
 
+At a committed runner cursor, replay decodes the stored snapshot and compares the full `EventEntry` with
+`proto.Equal`. All known fields, including fields added later, and unknown fields recursively must match.
+Unknown field-number groups may be reordered; occurrences and opaque wire bytes within one field number
+remain significant, so this does not equate different non-minimal encodings.
+
 Rollback requires a native-schema-capable service image. Restore a backup only before admitting
 new writes, never over newly accepted work. Keep the Deployment stopped during restore, then verify
 readiness, authorization, inbox reads, new writes, expiry and replay deduplication. Staging

@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -135,8 +134,8 @@ func (s *Store) CheckpointBeforeAttempt(ctx context.Context, claim Claim, notice
 	})
 }
 
-// marshalEntry serializes an entry as Python's `SerializeToString(deterministic=True)` does, which is what
-// `notice.runner_entry` holds and a replayed boundary is compared with.
+// marshalEntry serializes a new boundary as Python's `SerializeToString(deterministic=True)` does, preserving
+// the persisted wire format used by existing notice rows.
 func marshalEntry(entry *eventlogpb.EventEntry) ([]byte, error) {
 	wire, err := proto.MarshalOptions{Deterministic: true}.Marshal(entry)
 	if wire == nil {
@@ -197,21 +196,26 @@ func (s *Store) Receipt(ctx context.Context, claim Claim, notice Notice, entry *
 		if err != nil {
 			return err
 		}
-		wire, err := marshalEntry(entry)
-		if err != nil {
-			return err
-		}
 		cursor := int64(entry.GetCursor())
 		if cursor == row.RunnerCursor && row.RunnerCursor != 0 {
-			// TODO: Compare decoded entries semantically with an explicit policy for unknown and newly
-			// added fields; deterministic protobuf bytes are not canonical across builds or languages.
-			if !bytes.Equal(row.runnerEntry, wire) {
+			var stored eventlogpb.EventEntry
+			if err := proto.Unmarshal(row.runnerEntry, &stored); err != nil {
+				return &InvalidHistoryError{fmt.Sprintf("cannot decode committed runner boundary: %v", err)}
+			}
+			// proto.Equal compares all known fields recursively and checks unknown fields by number,
+			// allowing different field numbers to be reordered while preserving each number's raw
+			// occurrences. Newly added known fields participate automatically.
+			if !proto.Equal(&stored, entry) {
 				return &InvalidHistoryError{"runner history changed at the committed boundary"}
 			}
 			return nil
 		}
 		if afterCursor > row.RunnerCursor || row.RunnerCursor >= cursor {
 			return &InvalidHistoryError{"runner history has a gap"}
+		}
+		wire, err := marshalEntry(entry)
+		if err != nil {
+			return err
 		}
 		commandID := row.CommandID.String()
 		event := entry.GetEvent()
