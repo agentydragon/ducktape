@@ -76,11 +76,11 @@ async def test_list_keeps_each_resource_status_separate(
     }
     live = views["live"]
     assert live.HasField("pod")
-    assert MessageToDict(live.status) == {
-        "conditions": [_READY],
-        "incarnation": {"name": "live", "uid": live.pod.uid},
-        "operatingMode": "Running",
-    }
+    sandbox_status = MessageToDict(live.status)
+    assert sandbox_status["conditions"] == [_READY]
+    assert sandbox_status["incarnation"] == {"name": "live", "uid": live.pod.uid}
+    assert sandbox_status["operatingMode"] == "Running"
+    assert "containerStatuses" not in sandbox_status
     pod_status = MessageToDict(live.pod.status)
     assert (pod_status["phase"], pod_status["podIP"]) == ("Running", "10.0.0.7")
     assert pod_status["conditions"] == [{"type": "Ready", "status": "True"}]
