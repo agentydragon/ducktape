@@ -1,4 +1,4 @@
-"""Macro: ts_library — one Bazel target per TypeScript module, type-checked as it builds.
+"""Macro: ts_library — TypeScript library targets with shared compilation policy.
 
 `js_library` only stages files; it never runs the compiler. A frontend built from it
 therefore needs a second, whole-project `tsc` target that lists every file again, and the
@@ -17,7 +17,7 @@ the generated `<name>_typecheck` target, which is not tagged `manual` and so is 
 by `//...` and by the bazel-diff affected set that <../ci/bazel_ci.py> builds. CI still
 fails; a bare `bazel build //pkg:lib` no longer does.
 
-Deviation from stock `ts_project`: the tsconfig is passed as a dict rather than a label,
+Repository policy: use the inline config dictionary supported by `ts_project`,
 so rules_ts writes a per-target config whose `files` array is exactly this target's
 `srcs`. `tsconfig` here names the shared `ts_config` the generated config extends for
 compiler options. Handing `ts_project` the shared file directly would instead let its
@@ -48,8 +48,8 @@ def ts_library(name, srcs, tsconfig, isolated_typecheck = False, deps = [], **kw
         **kwargs: Passed through to `ts_project` (`assets`, `data`, `testonly`, `tags`, …).
     """
 
-    # Expose the generated config and its extends closure through JsInfo. The
-    # stock ESLint aspect gathers deps, but the generated file alone has no JsInfo.
+    # Temporary typed-lint spike adapter: expose the generated config via JsInfo.
+    # This depends on rules_ts's output name; it is not compilation policy.
     ts_config(
         name = "_tsconfig_" + name,
         src = ":tsconfig_%s.json" % name,

@@ -3,7 +3,7 @@
 Date: 2026-10-27 (America/Los_Angeles), based on devel `1696fd6d3b`.
 Relocated fixtures validated at `f171a5928ee4a127feb4e81c6a69e3bf47ab1f82`;
 the real-library and cost sample below was collected at `b111c348ef6d95f252218b4a5f83d6e768f3f9da`.
-Subsequent changes only update this write-up and the spike README.
+Subsequent changes update documentation and comments; runtime behavior is unchanged.
 
 ## Finding
 
@@ -24,6 +24,13 @@ with the shared base config in `deps`, and adds that wrapper to the library depe
 The aspect gathers those files through its existing dependency handling. The generated JSON
 and its exact `files` list are unchanged. The wrapper references rules_ts 3.10.1's generated
 output name; that convention must be checked when upgrading rules_ts.
+
+This extra dependency is temporary spike wiring for ESLint's JsInfo input gathering.
+`ts_project` already publishes the compiler's config closure through TsConfigInfo.
+A supported way to consume that metadata from lint integration has not yet been verified;
+the generated-filename backreference should not become the compilation wrapper's permanent
+interface. `ts_library` remains a small compilation-policy wrapper, while lint integration
+owns interpreting the compiler context.
 
 The standard ESLint binary selects `devinfra/lint/x/typed_eslint/eslint.config.mjs` when
 `--//devinfra/lint/x/typed_eslint:enabled` is set. This flag defaults to false.
@@ -133,7 +140,7 @@ bbr build //agentplane/app/frontend/threads:client \
 [Real-target invocation: pass](https://app.buildbuddy.io/invocation/8ccc2c81-d5d8-4211-a7ea-a13c5e95d3f2).
 These are representative libraries, not full-program coverage or a run of their application tests.
 
-## Cost and adoption gates
+## Observed cost
 
 The [real-target run](https://app.buildbuddy.io/invocation/8ccc2c81-d5d8-4211-a7ea-a13c5e95d3f2)
 executed ten typed human-report actions. BuildBuddy's RBE usage metadata records
@@ -147,19 +154,3 @@ The stock aspect runs human reporting as a validation action; machine reporting 
 when `rules_lint_machine` is requested. Requesting both formats starts two ESLint processes
 and constructs the TypeScript program twice. The spike now uses a single aspect in both modes;
 selecting the custom config does not add a second syntax-lint pass.
-
-Recommended next implementation:
-
-1. Check discovery cost and config-selection parity across the full target set. The parser
-   [documents support for project globs](https://typescript-eslint.io/packages/parser/#project)
-   and warns about recursive-glob cost. This experiment exercises the repo's `ts_library`
-   config chains, not arbitrary raw ts_project configs or project reference graphs.
-2. Audit all authored files covered by the current typed tests against library `srcs`, all
-   project-specific overrides and exclusions, and inline directive behavior. Exercise every
-   affected library with all three rules before deleting the whole-program tests/filegroups.
-3. Verify affected-target selection and measure cold and incremental CI cost on that complete
-   set. The aspect visits explicitly selected targets; building an application does not by
-   itself prove every transitive library was linted. Include isolated typecheck/test libraries.
-4. Make the combined config the default and delete the redundant typed tests/filegroups together
-   once those gates pass. Define the treatment of authored TypeScript in js_library targets
-   without generated configs before expanding beyond the tested ts_library contract.
