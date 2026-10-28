@@ -38,7 +38,6 @@ func TestSessionEnvironmentCarriesItsOwnDestination(t *testing.T) {
 func TestSessionBlockersTrackBusyReasonsAndReturnToIdle(t *testing.T) {
 	ctx, root, resources, store, manager := runnerTestManager(t, nil, func(string) string { return "test-destination" })
 	s := runnerTestReserve(t, ctx, manager, store, "session-1", filepath.Join(root, "project"), "setup script")
-	s.SetSetupScript("setup script")
 	if err := publish(ctx, resources, s.ID(), Runtime{Phase: Preparing}); err != nil {
 		t.Fatal(err)
 	}

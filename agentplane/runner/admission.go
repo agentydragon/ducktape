@@ -2,8 +2,6 @@ package runner
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"path/filepath"
 
@@ -64,26 +62,19 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 		return nil, rpcError(err)
 	}
 	if exists {
-		s, err := r.sessions.Load(r.ctx, request.SessionId)
+		record, err := r.store.Read(request.SessionId)
 		if err != nil {
 			return nil, rpcError(err)
 		}
-		if !proto.Equal(s.Attached().Spec, spec) {
+		if !proto.Equal(record.Spec(), spec) {
 			return nil, status.Errorf(codes.AlreadyExists, "session %s exists with a different spec", request.GetSessionId())
 		}
-		if request.SetupScript != nil {
-			hash := sha256.Sum256([]byte(*request.SetupScript))
-			var selected *string
-			if *request.SetupScript != "" {
-				value := hex.EncodeToString(hash[:])
-				selected = &value
-			}
-			if !equalString(s.SetupScriptSHA256(), selected) {
-				return nil, status.Error(codes.AlreadyExists, "session exists with a different setup script")
-			}
+		if request.SetupScript != nil && !record.MatchesSetupScript(request.GetSetupScript()) {
+			return nil, status.Error(codes.AlreadyExists, "session exists with a different setup script")
 		}
-		if s.SetupScriptSHA256() != nil && request.SetupScript != nil {
-			s.SetSetupScript(request.GetSetupScript())
+		s, err := r.sessions.Load(r.ctx, request.SessionId)
+		if err != nil {
+			return nil, rpcError(err)
 		}
 		return &runnerservicepb.OpenSessionResponse{Attached: s.Attached()}, nil
 	}
@@ -119,15 +110,9 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	if err != nil {
 		return nil, rpcError(err)
 	}
-	if record.SetupScriptSHA256 != nil {
-		script := request.GetSetupScript()
-		s.SetSetupScript(script)
-	}
 	r.changed()
 	return &runnerservicepb.OpenSessionResponse{Attached: s.Attached()}, nil
 }
-
-func equalString(a, b *string) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
 
 func (r *Runner) admit(id string, c *commandpb.Command) (entry *eventlogpb.EventEntry, resultErr error) {
 	if c.CommandId == "" || c.Operation == nil {

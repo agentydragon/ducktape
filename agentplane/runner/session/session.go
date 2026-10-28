@@ -50,7 +50,6 @@ type Session struct {
 	setup                                                  runnerpb.SetupState
 	launch                                                 runnerpb.LaunchOutcome
 	failure                                                *uint64
-	setupScript                                            *string
 	setupJob, stopping                                     *operation.Operation
 	connection                                             *nativeConnection
 	work                                                   sync.WaitGroup
@@ -89,7 +88,7 @@ type sessionDependencies struct {
 
 func newSession(deps sessionDependencies, id string, record *retained.Record, journal *journal.Journal) *Session {
 	s := &Session{deps: deps, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, controlDispatches: map[string]chan struct{}{}, interrupts: map[string]string{}, launch: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED}
-	if record.SetupScriptSHA256 != nil {
+	if record.HasSetupScript() {
 		s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
 	}
 	s.connection = &nativeConnection{deps: nativeConnectionDependencies{
@@ -348,10 +347,3 @@ func (s *Session) directory() string {
 
 func (s *Session) ID() string                     { return s.id }
 func (s *Session) EventJournal() *journal.Journal { return s.journal }
-func (s *Session) SetupScriptSHA256() *string     { return s.record.SetupScriptSHA256 }
-func (s *Session) SetSetupScript(script string) {
-	s.mu.Lock()
-	s.setupScript = &script
-	s.mu.Unlock()
-	s.wake()
-}

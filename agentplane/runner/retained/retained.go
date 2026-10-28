@@ -140,9 +140,11 @@ type Record struct {
 	TotalContextBudgetTokens *int
 	ReasoningEffort          string
 	Instructions             string
-	SetupScriptSHA256        *string
-	EventSourceID            string
-	NativeSessionID          *string
+	SetupScript              string
+	// SetupScriptSHA256 is retained only for records written by older Runner versions.
+	SetupScriptSHA256 *string
+	EventSourceID     string
+	NativeSessionID   *string
 }
 
 type sessionRecordJSON struct {
@@ -152,6 +154,7 @@ type sessionRecordJSON struct {
 	TotalContextBudgetTokens *int    `json:"total_context_budget_tokens"`
 	ReasoningEffort          string  `json:"reasoning_effort"`
 	Instructions             string  `json:"instructions"`
+	SetupScript              string  `json:"setup_script,omitempty"`
 	SetupScriptSHA256        *string `json:"setup_script_sha256"`
 	EventSourceID            string  `json:"event_source_id"`
 	NativeSessionID          *string `json:"native_session_id"`
@@ -162,10 +165,17 @@ func (r Record) MarshalJSON() ([]byte, error) {
 	if !ok || (r.Harness != runnerpb.Harness_HARNESS_CLAUDE && r.Harness != runnerpb.Harness_HARNESS_CODEX) {
 		return nil, fmt.Errorf("invalid persisted harness value %d", r.Harness)
 	}
+	setupScriptSHA256 := r.SetupScriptSHA256
+	if r.SetupScript != "" {
+		// TODO: Remove the compatibility digest after the old-Runner rollback window closes.
+		value := setupScriptDigest(r.SetupScript)
+		setupScriptSHA256 = &value
+	}
 	return json.Marshal(sessionRecordJSON{
 		Harness: name, CWD: r.CWD, Model: r.Model, TotalContextBudgetTokens: r.TotalContextBudgetTokens,
-		ReasoningEffort: r.ReasoningEffort, Instructions: r.Instructions, SetupScriptSHA256: r.SetupScriptSHA256,
-		EventSourceID: r.EventSourceID, NativeSessionID: r.NativeSessionID,
+		ReasoningEffort: r.ReasoningEffort, Instructions: r.Instructions, SetupScript: r.SetupScript,
+		SetupScriptSHA256: setupScriptSHA256,
+		EventSourceID:     r.EventSourceID, NativeSessionID: r.NativeSessionID,
 	})
 }
 
@@ -178,10 +188,16 @@ func (r *Record) UnmarshalJSON(data []byte) error {
 	if !ok || (harness != int32(runnerpb.Harness_HARNESS_CLAUDE) && harness != int32(runnerpb.Harness_HARNESS_CODEX)) {
 		return fmt.Errorf("invalid persisted harness %q", wire.Harness)
 	}
+	legacySetupScriptSHA256 := wire.SetupScriptSHA256
+	if wire.SetupScript != "" {
+		// New records carry source as authority. The digest is serialized only for
+		// rollback compatibility with Runner versions that understand hash-only records.
+		legacySetupScriptSHA256 = nil
+	}
 	*r = Record{
 		Harness: runnerpb.Harness(harness), CWD: wire.CWD, Model: wire.Model,
 		TotalContextBudgetTokens: wire.TotalContextBudgetTokens, ReasoningEffort: wire.ReasoningEffort,
-		Instructions: wire.Instructions, SetupScriptSHA256: wire.SetupScriptSHA256,
+		Instructions: wire.Instructions, SetupScript: wire.SetupScript, SetupScriptSHA256: legacySetupScriptSHA256,
 		EventSourceID: wire.EventSourceID, NativeSessionID: wire.NativeSessionID,
 	}
 	return nil
@@ -197,14 +213,30 @@ func NewRecord(spec *runnerpb.SessionSpec, setupScript string, totalContextBudge
 	record := Record{
 		Harness: spec.GetHarness(), CWD: spec.GetCwd(), Model: spec.GetModel(),
 		TotalContextBudgetTokens: totalContextBudgetTokens, ReasoningEffort: spec.GetReasoningEffort(),
-		Instructions: spec.GetInstructions(), EventSourceID: uuid.NewString(),
-	}
-	if setupScript != "" {
-		digest := sha256.Sum256([]byte(setupScript))
-		value := hex.EncodeToString(digest[:])
-		record.SetupScriptSHA256 = &value
+		Instructions: spec.GetInstructions(), SetupScript: setupScript, EventSourceID: uuid.NewString(),
 	}
 	return record, nil
+}
+
+// MatchesSetupScript compares a supplied script against the retained source, or
+// against the legacy digest when reading a hash-only record. Callers should skip
+// this check when the OpenSession request omits setup_script.
+func (r Record) MatchesSetupScript(script string) bool {
+	if r.SetupScript != "" {
+		return r.SetupScript == script
+	}
+	if r.SetupScriptSHA256 != nil {
+		return *r.SetupScriptSHA256 == setupScriptDigest(script)
+	}
+	return script == ""
+}
+
+// HasSetupScript reports whether the source or a legacy setup identity was retained.
+func (r Record) HasSetupScript() bool { return r.SetupScript != "" || r.SetupScriptSHA256 != nil }
+
+func setupScriptDigest(script string) string {
+	digest := sha256.Sum256([]byte(script))
+	return hex.EncodeToString(digest[:])
 }
 
 func (r Record) Spec() *runnerpb.SessionSpec {

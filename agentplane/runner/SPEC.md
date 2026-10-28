@@ -100,11 +100,14 @@ budget remains authoritative across all of its native services.
   Opening never starts a harness. Later admitted execution work starts it in the background, and the
   runner returns that command's admission without waiting for startup. A harness that does not
   survive its launch and handshake produces durable launch-failure and command-failure events.
-- An unknown session may select one setup script on `OpenSession`. The runner creates `spec.cwd`,
-  executes the script with `/bin/sh -eu` from that directory after bootstrap succeeds, and records
-  started, stdout/stderr, and terminal events in the session's durable Event log. `OpenSession` does
-  not wait for setup. The harness starts only after setup exits successfully and a command is
-  admitted. A failed or interrupted setup is terminal for that session and is never rerun. A
+- An unknown session may select one setup script on `OpenSession`. The source is retained with the
+  session record so an identical retry can resume a first reservation that failed before
+  publication. The runner creates `spec.cwd`, executes the script with `/bin/sh -eu` from that
+  directory after bootstrap succeeds, and records started, stdout/stderr, and terminal events in
+  the session's durable Event log. `OpenSession` does not wait for setup. The harness starts only
+  after setup exits successfully and a command is admitted. After a restart, a setup that was still
+  running is recorded as interrupted before the Session is published; its retained source is never
+  replayed. A failed or interrupted setup is terminal for that session and is never rerun. A
   different setup source is refused. Start a new session to try again.
 - `spec.instructions` are the session's standing instructions: what the session is for, and the
   orders that hold for every turn of it. They reach the model appended to the harness's own system

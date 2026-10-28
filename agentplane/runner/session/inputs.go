@@ -26,7 +26,7 @@ func (m *Manager) publishSession(s *Session, demand bool) {
 	}
 	s.mu.Lock()
 	input.Harness = s.record.Harness
-	input.SetupRequested = s.setupScript != nil
+	input.SetupRequested = s.record.SetupScript != ""
 	input.Setup, input.Pending, input.ProcessID = s.setup, len(s.pending), s.processID
 	input.ProcessRunning = s.process != nil && s.process.Running()
 	input.InspectionRunning = s.inspection != nil

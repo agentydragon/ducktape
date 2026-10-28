@@ -112,10 +112,10 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	}
 	if input.SetupRequested && current.SetupAttempt == "" {
 		s.mu.Lock()
-		script, job := s.setupScript, s.setupJob
+		script, job := s.record.SetupScript, s.setupJob
 		s.mu.Unlock()
-		if script != nil && job == nil && input.Setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
-			op, startErr := s.startOperation(&s.setupJob, func(ctx context.Context) error { return s.runSetup(ctx, *script) })
+		if script != "" && job == nil && input.Setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
+			op, startErr := s.startOperation(&s.setupJob, func(ctx context.Context) error { return s.runSetup(ctx, script) })
 			if op != nil {
 				current.SetupAttempt = op.ID()
 			}
