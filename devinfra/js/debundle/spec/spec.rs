@@ -108,6 +108,22 @@ pub struct TransformSpec {
     pub emit_browser_harness: Option<EmitBrowserHarnessConfig>,
 }
 
+impl TransformSpec {
+    /// Chunk ids selected by the `materialize_logical_modules` stage.
+    ///
+    /// Keep this selection shared by the pipeline and commands that need to
+    /// validate stage completion; input chunks without stage metadata are not
+    /// selected for materialization.
+    pub fn materialize_chunk_ids(&self) -> BTreeSet<String> {
+        self.logical_modules
+            .keys()
+            .chain(self.unassigned_mode.keys())
+            .chain(self.chunk_renames.keys())
+            .cloned()
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionRuntime {

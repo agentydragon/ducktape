@@ -7,8 +7,8 @@ use std::process::Command;
 
 use debundle_e2e_support::{
     CommandResult, FixtureOpts, Member, debundler_path, find_outcome, logical_module,
-    mixed_selector_failure_fixture, outcomes, run_source_only_validate, run_spec_validate,
-    write_text_file, write_validate_fixture_spec,
+    logical_module_with_anon, mixed_selector_failure_fixture, outcomes, run_source_only_validate,
+    run_spec_validate, write_text_file, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -32,6 +32,10 @@ fn validate_ndjson_streams_one_object_per_outcome_plus_summary() {
         summary["counts"],
         json!({"no_match": 1, "ambiguous": 1, "duplicate_claim": 1})
     );
+    assert_eq!(
+        summary["validation"],
+        json!({"success": false, "checked": 4, "matched": 1})
+    );
 
     for line in &parsed[..3] {
         assert_eq!(line["section"], "outcome");
@@ -47,6 +51,10 @@ fn validate_text_summarizes_counts_and_one_line_per_outcome() {
     assert!(out.status.success(), "stderr={}", out.stderr);
 
     let stdout = out.stdout;
+    assert!(
+        stdout.contains("Selector validation: failed; checked=4, matched=1"),
+        "{stdout}"
+    );
     let expected: [(&str, &[&str]); 3] = [
         ("no_match", &["diagnostics/missing", "MissingFormatter"]),
         ("ambiguous", &["diagnostics/ambiguous", "AmbiguousHelper"]),
@@ -68,27 +76,53 @@ fn validate_text_summarizes_counts_and_one_line_per_outcome() {
 
 #[test]
 fn validate_clean_spec_reports_no_problems() {
-    let opts = FixtureOpts::new(
+    let mut opts = FixtureOpts::new(
         r#"function renderCard(value) {
   return value.trim();
 }
 console.log(renderCard(" ok "));
-export { renderCard };
+import { value as importedValue } from "./vendor.js";
+export { renderCard, importedValue };
 "#,
-        vec![logical_module(
+        vec![logical_module_with_anon(
             "source_units/card",
-            &[Member::new("renderCard")],
+            &[
+                Member::new("renderCard"),
+                Member::renamed_with_kind("CardValue", "importedValue", Some("import_specifier")),
+            ],
+            &[r#"console.log(renderCard(" ok "));"#],
         )],
     );
+    opts.extra_files = &[("static/app/vendor.js", "export const value = 1;\n")];
     let fixture = write_validate_fixture_spec(opts);
 
     let json = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
     assert!(json.status.success(), "stderr={}", json.stderr);
     let report: Value = serde_json::from_str(&json.stdout).unwrap();
     assert!(outcomes(&report).is_empty(), "{report:#}");
+    assert_eq!(
+        report["validation"],
+        json!({"success": true, "checked": 3, "matched": 3}),
+        "binding/import pins and an anonymous selector are checked and matched"
+    );
 
     let text = run_spec_validate(&fixture.spec_path, &["--format", "text"]);
     assert!(text.status.success(), "stderr={}", text.stderr);
+    assert!(
+        text.stdout
+            .contains("Selector validation: success; checked=3, matched=3"),
+        "{}",
+        text.stdout
+    );
+
+    let ndjson = run_spec_validate(&fixture.spec_path, &["--format", "ndjson"]);
+    assert!(ndjson.status.success(), "stderr={}", ndjson.stderr);
+    let summary: Value = serde_json::from_str(ndjson.stdout.lines().last().unwrap()).unwrap();
+    assert_eq!(summary["section"], "summary");
+    assert_eq!(
+        summary["validation"],
+        json!({"success": true, "checked": 3, "matched": 3})
+    );
 
     let default = Command::new(debundler_path())
         .args(["spec", "validate", "--spec"])
@@ -97,6 +131,57 @@ export { renderCard };
         .output()
         .unwrap();
     assert!(default.status.success(), "stderr={:?}", default.stderr);
+}
+
+#[test]
+fn validate_empty_selection_reports_zero_counts_in_every_format_and_mode() {
+    let full_tree = write_validate_fixture_spec(FixtureOpts::new("const unused = 1;", Vec::new()));
+    let json = run_spec_validate(&full_tree.spec_path, &["--format", "json"]);
+    assert!(json.status.success(), "stderr={}", json.stderr);
+    let json_report: Value = serde_json::from_str(&json.stdout).unwrap();
+    assert_eq!(
+        json_report["validation"],
+        json!({"success": true, "checked": 0, "matched": 0})
+    );
+
+    let text = run_spec_validate(&full_tree.spec_path, &["--format", "text"]);
+    assert!(text.status.success(), "stderr={}", text.stderr);
+    assert!(
+        text.stdout
+            .contains("Selector validation: success; checked=0, matched=0"),
+        "{}",
+        text.stdout
+    );
+
+    let ndjson = run_spec_validate(&full_tree.spec_path, &["--format", "ndjson"]);
+    assert!(ndjson.status.success(), "stderr={}", ndjson.stderr);
+    let summary: Value = serde_json::from_str(ndjson.stdout.trim()).unwrap();
+    assert_eq!(summary["section"], "summary");
+    assert_eq!(
+        summary["validation"],
+        json!({"success": true, "checked": 0, "matched": 0})
+    );
+
+    let source_only = SourceOnlyValidateFixture::new("const unused = 1;", &[]);
+    let json_report = source_only.json();
+    assert_eq!(
+        json_report["validation"],
+        json!({"success": true, "checked": 0, "matched": 0})
+    );
+    let text = source_only.run("text");
+    assert!(
+        text.stdout
+            .contains("Selector validation: success; checked=0, matched=0"),
+        "{}",
+        text.stdout
+    );
+    let ndjson = source_only.run("ndjson");
+    let summary: Value = serde_json::from_str(ndjson.stdout.trim()).unwrap();
+    assert_eq!(summary["section"], "summary");
+    assert_eq!(
+        summary["validation"],
+        json!({"success": true, "checked": 0, "matched": 0})
+    );
 }
 
 #[test]
@@ -124,6 +209,47 @@ fn validate_reports_all_outcomes_before_failing_by_default() {
         report["counts"],
         json!({"no_match": 1, "ambiguous": 1, "duplicate_claim": 1})
     );
+    assert_eq!(
+        report["validation"],
+        json!({"success": false, "checked": 4, "matched": 1})
+    );
+}
+
+#[test]
+fn validate_preserves_fail_fast_pipeline_error_after_chunk_reports() {
+    let extra_modules = vec![logical_module(
+        "later/missing",
+        &[Member::renamed("Ghost", "missingBinding")],
+    )];
+    let fixture = write_validate_fixture_spec(
+        FixtureOpts::new(
+            "function present() { return 1; }\nexport { present };\n",
+            vec![logical_module("first/clean", &[Member::new("present")])],
+        )
+        .with_extra_chunks(&[("static/later", "const available = 1;\n")])
+        .with_extra_chunk_logical_modules(&[("static/later", extra_modules)]),
+    );
+    let output = Command::new(debundler_path())
+        .args(["spec", "validate", "--spec"])
+        .arg(&fixture.spec_path)
+        .args(["--fail-fast", "--format", "json"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "the deferred full-pipeline error must remain fatal\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.is_empty(),
+        "do not publish selector counts after the pipeline failed: {stdout}"
+    );
+    assert!(
+        stderr.contains("Transform spec referenced 1 top-level binding name"),
+        "preserve the actual pipeline failure after per-chunk reports: {stderr}"
+    );
+    assert!(stderr.contains("missingBinding"), "{stderr}");
 }
 
 #[test]
@@ -142,6 +268,10 @@ fn validate_source_only_fails_by_default_after_ndjson_report() {
     let summary: Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
     assert_eq!(summary["section"], "summary");
     assert_eq!(summary["counts"], json!({"no_match": 1, "ambiguous": 1}));
+    assert_eq!(
+        summary["validation"],
+        json!({"success": false, "checked": 3, "matched": 1})
+    );
 }
 
 #[test]
@@ -195,6 +325,18 @@ fn validate_source_only_json_reports_every_source_selector_failure() {
         json!({"no_match": 1, "ambiguous": 1}),
         "{report:#}"
     );
+    assert_eq!(
+        report["validation"],
+        json!({"success": false, "checked": 3, "matched": 1}),
+        "{report:#}"
+    );
+    let text = fixture.run("text");
+    assert!(
+        text.stdout
+            .contains("Selector validation: failed; checked=3, matched=1"),
+        "{}",
+        text.stdout
+    );
 
     let outcomes = outcomes(&report);
     let missing = find_outcome(outcomes, "no_match", "MissingWidget");
@@ -234,6 +376,10 @@ fn validate_source_only_ndjson_is_one_line_per_queue_item_plus_summary() {
     let (summary, records) = parsed.split_last().expect("a summary line");
     assert_eq!(summary["section"], "summary");
     assert_eq!(summary["counts"], json!({"no_match": 1, "ambiguous": 1}));
+    assert_eq!(
+        summary["validation"],
+        json!({"success": false, "checked": 3, "matched": 1})
+    );
     // Outcomes first, then the matched templates' identifiers.
     let outcomes = records
         .iter()
@@ -272,6 +418,11 @@ annotations:
         )],
     );
     let report = fixture.json();
+    assert_eq!(
+        report["validation"],
+        json!({"success": false, "checked": 1, "matched": 1}),
+        "the module-level annotation error fails validation without counting as a selector"
+    );
     let outcomes = outcomes(&report);
     assert_eq!(outcomes.len(), 1, "{report:#}");
     let record = &outcomes[0];
@@ -306,6 +457,11 @@ sideEffect("shared");
         ],
     );
     let report = fixture.json();
+    assert_eq!(
+        report["validation"],
+        json!({"success": false, "checked": 2, "matched": 0}),
+        "anonymous selector entities are counted independently of outcome rows"
+    );
     assert_eq!(
         report["counts"],
         json!({"no_match": 1, "ambiguous": 1}),
@@ -355,6 +511,10 @@ start();
         )],
     );
     let report = fixture.json();
+    assert_eq!(
+        report["validation"],
+        json!({"success": false, "checked": 1, "matched": 0})
+    );
     let outcomes = outcomes(&report);
     assert_eq!(outcomes.len(), 1, "{report:#}");
     let record = &outcomes[0];
@@ -388,6 +548,11 @@ const leftTwo = renderPanel("shared"), rightTwo = renderPanel("shared");
         )],
     );
     let report = fixture.json();
+    assert_eq!(
+        report["validation"],
+        json!({"success": false, "checked": 2, "matched": 0}),
+        "each source_matches binding is one selector entity"
+    );
     assert_eq!(report["counts"], json!({"ambiguous": 2}), "{report:#}");
 
     let outcomes = outcomes(&report);
@@ -420,6 +585,7 @@ impl SourceOnlyValidateFixture {
         let source_file = root.path().join("chunk.js");
         let modules_root = root.path().join("modules");
         write_text_file(&source_file, source);
+        std::fs::create_dir_all(&modules_root).unwrap();
         for (path, yaml) in modules {
             write_text_file(&modules_root.join(path), yaml);
         }

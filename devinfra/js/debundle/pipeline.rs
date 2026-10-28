@@ -210,15 +210,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         preflight_output_roots(&spec)?;
     }
     let artifact = load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
-    let materialise_chunk_ids: Vec<String> = spec
-        .logical_modules
-        .keys()
-        .chain(spec.unassigned_mode.keys())
-        .chain(spec.chunk_renames.keys())
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
+    let materialise_chunk_ids: Vec<String> = spec.materialize_chunk_ids().into_iter().collect();
     let prepare_result = prepare_js_chunks(&spec, artifact)?;
     let counts = prepare_result.counts;
     let chunk_records = prepare_result.chunk_records;

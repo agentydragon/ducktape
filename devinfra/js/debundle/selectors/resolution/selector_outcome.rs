@@ -746,6 +746,40 @@ pub struct SelectorOutcomeReport {
     /// Filled only by `spec validate`.
     #[serde(default)]
     pub templates: Vec<TemplateIdentifiers>,
+    /// Aggregate evidence for a completed `spec validate` invocation. Outcome
+    /// rows remain limited to diagnostics; this summary counts every selector
+    /// entity evaluated, including entities that resolved successfully.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation: Option<SelectorValidationCounts>,
+}
+
+/// Selector work completed by `spec validate`. One checked selector is one
+/// member, one `source_matches[].bindings[]` entry, or one anonymous statement.
+/// `success` is derived from these facts and the report's error outcomes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct SelectorValidationCounts {
+    pub checked: usize,
+    pub matched: usize,
+}
+
+impl SelectorValidationCounts {
+    pub fn record(&mut self, matched: bool) {
+        self.checked += 1;
+        self.matched += usize::from(matched);
+    }
+
+    pub fn extend(&mut self, other: Self) {
+        self.checked += other.checked;
+        self.matched += other.matched;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct SelectorValidationSummary {
+    pub success: bool,
+    pub checked: usize,
+    pub matched: usize,
 }
 
 impl SelectorOutcomeReport {
@@ -757,9 +791,34 @@ impl SelectorOutcomeReport {
         counts
     }
 
+    pub fn validation_summary(&self) -> Option<SelectorValidationSummary> {
+        let validation = self.validation?;
+        Some(SelectorValidationSummary {
+            success: validation.checked == validation.matched
+                && self
+                    .outcomes
+                    .iter()
+                    .all(|outcome| outcome.severity() != Severity::Error),
+            checked: validation.checked,
+            matched: validation.matched,
+        })
+    }
+
     /// A count line, then one [`SelectorOutcome::render_line`] per outcome,
     /// at most `limit` of them.
     pub fn render_text(&self, out: &mut String, limit: Option<usize>) {
+        if let Some(validation) = self.validation_summary() {
+            let status = if validation.success {
+                "success"
+            } else {
+                "failed"
+            };
+            let _ = writeln!(
+                out,
+                "Selector validation: {status}; checked={}, matched={}",
+                validation.checked, validation.matched
+            );
+        }
         if !self.templates.is_empty() {
             let mut kinds = BTreeMap::<&str, usize>::new();
             for identifier in self
@@ -791,7 +850,11 @@ impl SelectorOutcomeReport {
             }
         }
         if self.outcomes.is_empty() {
-            out.push_str("No selector problems found.\n");
+            if self.validation.is_some() {
+                out.push_str("No selector outcome issues recorded.\n");
+            } else {
+                out.push_str("No selector problems found.\n");
+            }
             return;
         }
         let counts = self
@@ -818,13 +881,18 @@ impl SelectorOutcomeReport {
 
 impl Serialize for SelectorOutcomeReport {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut report = serializer.serialize_struct("SelectorOutcomeReport", 3)?;
+        let mut report = serializer.serialize_struct("SelectorOutcomeReport", 4)?;
         report.serialize_field("counts", &self.counts())?;
         report.serialize_field("outcomes", &self.outcomes)?;
         if self.templates.is_empty() {
             report.skip_field("templates")?;
         } else {
             report.serialize_field("templates", &self.templates)?;
+        }
+        if let Some(validation) = self.validation_summary() {
+            report.serialize_field("validation", &validation)?;
+        } else {
+            report.skip_field("validation")?;
         }
         report.end()
     }

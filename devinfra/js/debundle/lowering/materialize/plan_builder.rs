@@ -225,6 +225,12 @@ impl ChunkPlanBuilder {
                 if matches!(member.selector, MemberSelector::Binding(_)) {
                     let binding_id = top_level_id(&member.binding, ctx.chunk_top_level_mark);
                     if !ctx.declaration_by_name.contains_key(&binding_id) {
+                        self.outcomes.record_selector_result(
+                            ctx.chunk_id,
+                            &request.target_path,
+                            Entity::Export(member.export_name.clone()),
+                            false,
+                        );
                         self.unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
                             chunk_id: ctx.chunk_id.to_string(),
                             module_path: spec::ModulePath::parse(&request.target_path, "")
@@ -255,6 +261,12 @@ impl ChunkPlanBuilder {
                     &member.binding,
                     imported_from_by_src,
                 )?;
+                self.outcomes.record_selector_result(
+                    ctx.chunk_id,
+                    &request.target_path,
+                    Entity::Export(member.export_name.clone()),
+                    true,
+                );
                 let kind = BindingKind::Imported {
                     imported_name: imported_name.into(),
                     imported_from,
@@ -449,7 +461,7 @@ impl ChunkPlanBuilder {
                 self.record(outcome)?;
                 continue;
             };
-            match entity {
+            let claimed = match entity {
                 EntityIndex::AnonymousStatement(statement_index) => {
                     self.claim_anonymous_statement(
                         index,
@@ -461,6 +473,7 @@ impl ChunkPlanBuilder {
                                 .clone(),
                         },
                     )?;
+                    true
                 }
                 EntityIndex::Member(member_index) => {
                     let member = &request.members[resolved_members[index][member_index]];
@@ -480,14 +493,23 @@ impl ChunkPlanBuilder {
                         chunk_id,
                         body,
                         declaration_by_name,
-                    )?;
+                    )?
                 }
-            }
+            };
             if matches!(
                 resolved_by,
                 ResolvedBy::Elimination { .. } | ResolvedBy::ReferencedBy { .. }
             ) {
                 eliminated.push(outcome);
+            } else if let Some(placement) = &outcome.placement
+                && let Some(entity) = &placement.entity
+            {
+                self.outcomes.record_selector_result(
+                    &outcome.chunk,
+                    &placement.logical_module,
+                    entity.clone(),
+                    claimed,
+                );
             }
         }
         eliminated
@@ -591,7 +613,7 @@ impl ChunkPlanBuilder {
         chunk_id: &str,
         body: &[ModuleItem],
         declaration_by_name: &HashMap<Id, Vec<StatementId>>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let binding_id = top_level_id(binding, chunk_top_level_mark);
         if !declaration_by_name.contains_key(&binding_id) {
             // Mirror the named-member path: a resolved binding with no top-level
@@ -604,7 +626,7 @@ impl ChunkPlanBuilder {
                 binding_name: binding.to_string(),
                 export_name: member.export_name.clone(),
             });
-            return Ok(());
+            return Ok(false);
         }
         let module_id = ModuleId(index);
         if let Some(existing_kind) = self
@@ -629,7 +651,8 @@ impl ChunkPlanBuilder {
                 request,
                 member,
             );
-            return self.record(duplicate);
+            self.record(duplicate)?;
+            return Ok(false);
         }
         // The residual sweep ran before chunk analysis (before this pass), so the target
         // binding — unclaimed at sweep time — was parked at the residual plan. Move
@@ -658,7 +681,7 @@ impl ChunkPlanBuilder {
             plan.binding_comments
                 .insert(binding.to_string(), comment.clone());
         }
-        Ok(())
+        Ok(true)
     }
 
     pub(super) fn resolved_binding_for_member(
