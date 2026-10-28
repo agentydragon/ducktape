@@ -29,6 +29,7 @@ from util.bazel.runfiles import get_required_path
 CLAUDE_BINARY = "claude_code_cli_linux_x64/claude"
 CODEX_BINARY = "agentplane_codex_cli_linux_x64/bin/codex"
 RUNNER_BINARY = "_main/agentplane/runner/cmd/agentplane-runner_/agentplane-runner"
+EXECUTOR_BINARY = "_main/agentplane/runner/executor/cmd/agentplane-executor_/agentplane-executor"
 TOKEN = "test-key"
 PLATFORM_INSTRUCTIONS = "Test platform guidance."
 SANDBOX = SandboxIdentity(namespace="test-sandboxes", name="test-sandbox", uid="test-sandbox-uid")

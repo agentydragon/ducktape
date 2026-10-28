@@ -4112,7 +4112,6 @@ spec:
               readOnly: true
           workingDir: /state
         - args:
-            - --executor-container
             - --socket
             - /run/agentplane/executor/control.sock
             - --listen
@@ -4122,7 +4121,7 @@ spec:
             - --binary
             - /bin/codex
           command:
-            - /run/agentplane/runner/bin/agentplane-runner
+            - /run/agentplane/runner/bin/agentplane-executor
           env:
             - name: HTTP_PROXY
               value: http://127.0.0.1:3128

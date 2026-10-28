@@ -11,7 +11,8 @@ between Sessions or a safe place for another principal's credentials.
 
 ## Pods
 
-The template puts the companion and `exec-server` in a separate container on the same tools image.
+The template starts `agentplane-executor` from the Runner disk in a separate container on the same
+tools image. That standalone binary does not include the Runner runtime or SQLite storage.
 Kubernetes `resources` supplies its memory and CPU limits; kubelet restarts the container. Its PID
 namespace must be private (`shareProcessNamespace: false`), and the companion must be PID 1.
 Both containers mount the same state, workspace, home, temporary directory, runner binary disk,

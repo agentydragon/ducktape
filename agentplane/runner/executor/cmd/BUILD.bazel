@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+go_binary(
+    name = "agentplane-executor",
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/executor/cmd",
+    pure = "on",
+    visibility = [
+        "//agentplane/runner:__pkg__",
+        "//agentplane/runner/testing:__pkg__",
+    ],
+    deps = ["//agentplane/runner/executor"],
+)

@@ -1,7 +1,7 @@
 # Agentplane runner
 
 A statically linked Go executable that runs the native harnesses of its sessions, a Claude Code process per session
-and one Codex app-server for every Codex session, and exposes both through one protocol, over the control stream and Event ingress it dials. The contract is in <SPEC.md>; the wire definition is
+and one Codex app-server for every Codex session, and exposes both through one protocol, over the control stream and Event ingress it dials. Pod Codex tools can run in the standalone `agentplane-executor` companion. The contract is in <SPEC.md>; the wire definition is
 [`agentplane/proto/runner.proto`](../proto/runner.proto).
 
 The deployment renders `platform_instructions.j2` with concrete service URLs; the runner appends
@@ -31,8 +31,10 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 - `session.go`: Session host state, readiness and recovery; `session_events.go` owns journal-backed
   Event effects, and `session_native.go` owns native process, dispatch and stream effects.
 - `session_setup.go`: the accepted one-shot Session setup effect.
-- `codex_exec_server.go` and `codex_exec_server_container.go`: isolated Codex execution operations, RPC probes
-  and container ownership fencing ([execution modes](docs/codex_executor.md)).
+- `codex_exec_server.go`: isolated Codex execution operations, RPC probes and container ownership fencing
+  ([execution modes](docs/codex_executor.md)).
+- `executor/`: the PID-1 companion for Pod Codex execution, its Unix control protocol and reaper.
+  `executor/cmd/` builds the standalone `agentplane-executor` binary.
 - `codex_app_server.go`: the Runner's one Codex app-server, its startup and exit, and the journaling of
   each frame in the Sessions that `codex/router.go` assigns it to.
 - `transport.go`: the outbound control tunnel and independent per-Session ingress
@@ -59,9 +61,11 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   Pods and VMs invoke the same executable with explicit `--config` and `--launch-file` arguments. The [Runner configuration inventory](CONFIGURATION.md)
   documents the public flags, configuration sources and VM paths for Pod and VM deployments.
 
-The production build target is `//agentplane/runner/cmd:agentplane-runner`, shipped in `//agentplane/runner:disk_image`.
-The binary includes the supervisor and SQLite; the native Claude/Codex executables,
-workspace tools and CA certificates are supplied by the runtime image.
+The production build targets are `//agentplane/runner/cmd:agentplane-runner` and
+`//agentplane/runner/executor/cmd:agentplane-executor`, shipped together in
+`//agentplane/runner:disk_image`. The runner includes its supervisor and SQLite; the companion is
+independent of the Runner runtime and SQLite. The native Claude/Codex executables, workspace tools
+and CA certificates are supplied by the runtime image.
 
 ## Codex executor container
 
@@ -109,13 +113,14 @@ same Go process.
 ## Release and image inputs
 
 Bazel builds the runner disk image (`//agentplane/runner:disk_image`) from source at the same commit
-as the runner. The VM guest does not embed the runner: the image packs it and the `agentplane`
-command into a read-only erofs (`disk/runner.img`) that the `runner-vm` template attaches beside the
-guest; the same image also carries them as plain files under `bin/`, which the runner Pod templates
-mount at `/run/agentplane/runner` and start the runner from, so the Pod's tools image (`image.nix`)
-holds neither. The k3s fixture mounts the same image. A runner or CLI change therefore republishes
-the runner disk image but not the `runner` tools image. The `agentplane-cli` artifact pin still
-feeds the Action sandbox images, which rebuild on any pin bump.
+as the runner. The VM guest does not embed the runner: the image packs it, the executor companion
+and the `agentplane` command into a read-only erofs (`disk/runner.img`) that the `runner-vm` template
+attaches beside the guest; the same image also carries them as plain files under `bin/`, which the
+runner Pod templates mount at `/run/agentplane/runner` and start the runner and companion from, so
+the Pod's tools image (`image.nix`) holds neither. The k3s fixture mounts the same image. A runner,
+companion or CLI change therefore republishes the runner disk image but not the `runner` tools
+image. The `agentplane-cli` artifact pin still feeds the Action sandbox images, which rebuild on
+any pin bump.
 
 ## VM workspace disk
 

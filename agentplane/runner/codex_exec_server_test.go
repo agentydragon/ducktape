@@ -2,8 +2,10 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +17,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	executorcontrol "github.com/agentydragon/ducktape/agentplane/runner/executor/control"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/coder/websocket"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -328,9 +331,7 @@ func newExecutorLifecycleRunner(t *testing.T, start func(context.Context) (*code
 	socket := filepath.Join(dir, "executor-control.sock")
 	companionCtx, cancelCompanion := context.WithCancel(context.Background())
 	companionDone := make(chan error, 1)
-	go func() {
-		companionDone <- serveCodexExecServerContainer(companionCtx, socket, filepath.Join(dir, "unused-codex"), "ws://127.0.0.1:4599", "127.0.0.1:0")
-	}()
+	go func() { companionDone <- serveExecutorControlStub(companionCtx, socket) }()
 	waitForSocket(t, socket)
 
 	config := Config{
@@ -440,56 +441,33 @@ func waitExecutor(t *testing.T, r *Runner, predicate func(codexExecServerRuntime
 	}
 }
 
-// A companion whose Codex binary cannot start serves a refusal instead of exiting: a generation that
-// spawned nothing has no work to fence, and a container restarting into the same failure would leave
-// no socket to fence and a Runner able neither to run Codex nor to quiesce.
-func TestCodexExecServerContainerRefusesClaimAndKeepsServing(t *testing.T) {
-	dir := t.TempDir()
-	socket := filepath.Join(dir, "control.sock")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	served := make(chan error, 1)
-	go func() {
-		served <- serveCodexExecServerContainer(ctx, socket, filepath.Join(dir, "absent-codex"), "ws://127.0.0.1:4501", "127.0.0.1:0")
-	}()
-	waitForSocket(t, socket)
-
-	health := httptest.NewServer(codexExecServerContainerHealthHandler(socket))
-	defer health.Close()
-	checkHealth := func() {
-		t.Helper()
-		response, err := health.Client().Get(health.URL + "/healthz")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer response.Body.Close()
-		if response.StatusCode != http.StatusOK {
-			t.Fatalf("unclaimed companion health = %d, want 200", response.StatusCode)
-		}
+func serveExecutorControlStub(ctx context.Context, socket string) error {
+	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
+		return err
 	}
-	checkHealth()
-	for attempt := 1; attempt <= 2; attempt++ {
-		_, err := claimCodexExecServerContainer(ctx, socket, map[string]string{"PATH": "/usr/bin"})
-		var refusal codexExecServerRefusal
-		if !errors.As(err, &refusal) {
-			t.Fatalf("claim %d: %v (%T), want an codexExecServerRefusal", attempt, err, err)
-		}
-		if !strings.Contains(err.Error(), "absent-codex") {
-			t.Errorf("claim %d: %q, want the companion's reason", attempt, err)
-		}
-		checkHealth()
-	}
-
-	_, status, err := codexExecServerControl(ctx, socket, codexExecServerControlRequest{Operation: "inspect"})
+	listener, err := net.Listen("unix", socket)
 	if err != nil {
-		t.Fatalf("inspect after refusals: %v", err)
+		return err
 	}
-	if status.Owned || status.Error != "" {
-		t.Errorf("inspect after refusals = %+v, want an unowned generation reporting no error", status)
-	}
-	cancel()
-	if err := <-served; err != nil {
-		t.Fatalf("companion after cancellation: %v", err)
+	defer listener.Close()
+	stop := context.AfterFunc(ctx, func() { _ = listener.Close() })
+	defer stop()
+	status := executorcontrol.Status{Generation: "executor-test-generation"}
+	for {
+		connection, err := listener.Accept()
+		if ctx.Err() != nil {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		go func(c net.Conn) {
+			defer c.Close()
+			var request executorcontrol.Request
+			if json.NewDecoder(c).Decode(&request) == nil && request.Operation == "inspect" {
+				_ = json.NewEncoder(c).Encode(status)
+			}
+		}(connection)
 	}
 }
 

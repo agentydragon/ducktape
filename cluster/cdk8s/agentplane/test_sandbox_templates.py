@@ -92,9 +92,8 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
         "kind": "pod",
         "executor": {"url": "ws://127.0.0.1:4501", "socket": "/run/agentplane/executor/control.sock"},
     }
-    assert executor["command"] == ["/run/agentplane/runner/bin/agentplane-runner"]
+    assert executor["command"] == ["/run/agentplane/runner/bin/agentplane-executor"]
     assert executor["args"] == [
-        "--executor-container",
         "--socket",
         "/run/agentplane/executor/control.sock",
         "--listen",

@@ -58,7 +58,7 @@ def inspect_codex_exec_server_container(path: Path) -> CodexExecServerContainerS
 @pytest.fixture
 def codex_exec_server_container(tmp_path: Path) -> Iterator[CodexExecServerContainer]:
     load_oci_image(debian_slim.IMAGE)
-    runner_binary = get_required_path(launches.RUNNER_BINARY).resolve()
+    companion_binary = get_required_path(launches.EXECUTOR_BINARY).resolve()
     codex_binary = get_required_path(launches.CODEX_BINARY).resolve()
     socket_path = tmp_path / "executor.sock"
     with socket.socket() as executor_listener, socket.socket() as health_listener:
@@ -70,13 +70,12 @@ def codex_exec_server_container(tmp_path: Path) -> Iterator[CodexExecServerConta
         LoggedContainer(debian_slim.IMAGE.tag, test_name="runner-executor-companion")
         .with_kwargs(network_mode="host", mem_limit="512m", pids_limit=64, user=f"{os.getuid()}:{os.getgid()}")
         .with_volume_mapping(str(tmp_path), str(tmp_path), mode="rw")
-        .with_volume_mapping(str(runner_binary), "/runner", mode="ro")
+        .with_volume_mapping(str(companion_binary), "/runner", mode="ro")
         .with_volume_mapping(str(codex_binary.parent.parent), "/opt/codex", mode="ro")
         .with_command(
             shlex.join(
                 [
                     "/runner",
-                    "--executor-container",
                     "--socket",
                     str(socket_path),
                     "--listen",

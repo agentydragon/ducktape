@@ -76,16 +76,17 @@ the harness environment. Lifecycle, recovery and scope are documented in
 The delivery mechanism differs: a Pod mounts ConfigMaps, while a VM mounts read-only ConfigMap disks.
 The paths consumed by Runner and tools are identical.
 
-| Path                                           | Owner and contents                                  |
-| ---------------------------------------------- | --------------------------------------------------- |
-| `/run/agentplane/config/runner.json`           | Template-owned Runner configuration.                |
-| `/run/agentplane/sandbox/launch.json`          | Controller-owned Sandbox identity and bootstrap.    |
-| `/run/agentplane/config/kubeconfig`            | Sandbox workload identity through the egress proxy. |
-| `/run/agentplane/trust/ca-certificates.crt`    | Egress proxy CA bundle.                             |
-| `/run/agentplane/trust/ca-certificates.p12`    | Java proxy trust store.                             |
-| `/run/agentplane/runner/bin/agentplane-runner` | Shared executable on the read-only Runner disk.     |
-| `/state`                                       | Durable Session journals and native persistence.    |
-| `/state/workspaces`                            | Sandbox-owned workspace storage.                    |
+| Path                                             | Owner and contents                                  |
+| ------------------------------------------------ | --------------------------------------------------- |
+| `/run/agentplane/config/runner.json`             | Template-owned Runner configuration.                |
+| `/run/agentplane/sandbox/launch.json`            | Controller-owned Sandbox identity and bootstrap.    |
+| `/run/agentplane/config/kubeconfig`              | Sandbox workload identity through the egress proxy. |
+| `/run/agentplane/trust/ca-certificates.crt`      | Egress proxy CA bundle.                             |
+| `/run/agentplane/trust/ca-certificates.p12`      | Java proxy trust store.                             |
+| `/run/agentplane/runner/bin/agentplane-runner`   | Shared executable on the read-only Runner disk.     |
+| `/run/agentplane/runner/bin/agentplane-executor` | PID-1 companion for isolated Pod Codex execution.   |
+| `/state`                                         | Durable Session journals and native persistence.    |
+| `/state/workspaces`                              | Sandbox-owned workspace storage.                    |
 
 The Pod also mounts the CA at the system trust location for clients which do not read CA environment
 variables. Its runner config is a per-template ConfigMap, including specializations such as the

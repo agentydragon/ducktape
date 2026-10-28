@@ -4,8 +4,9 @@
 # SandboxTemplate (cluster/cdk8s/agentplane/runner_sandbox.py), which names the harnesses by their
 # /bin paths here.
 #
-# The runner and the `agentplane` command are not in this image: the template mounts them from
-# the runner disk image (//agentplane/runner:disk_image) at /run/agentplane/runner and starts the runner there,
+# The runner, executor companion and `agentplane` command are not in this image: the template mounts
+# them from the runner disk image (//agentplane/runner:disk_image) at /run/agentplane/runner and starts
+# the runner there,
 # so a runner or CLI bump republishes that small image and not this one. PATH ends with the mount's
 # bin so the harnesses find `agentplane`.
 #

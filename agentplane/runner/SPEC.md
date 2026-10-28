@@ -135,7 +135,9 @@ budget for an isolated process purpose, while the parent aggregate remains autho
   local tools. Claude execution is unchanged.
 - In VMs the executor and native harnesses have separate sibling cgroup budgets under the Runner
   service. In Pods the executor companion is PID 1 in a separate container with a private PID namespace
-  and Kubernetes resource limits. Workspace and runtime paths are shared under the same Sandbox principal.
+  and Kubernetes resource limits. It runs from the standalone `agentplane-executor` binary on the
+  Runner disk, outside the Runner runtime and SQLite package. Workspace and runtime paths are shared
+  under the same Sandbox principal.
 - Runner starts the executor before the app-server and probes RPC progress every five seconds with
   a three-second deadline. Three consecutive failures fence its work and restart the executor with
   bounded backoff; a successful probe resets the failure count. Server exit fences without waiting

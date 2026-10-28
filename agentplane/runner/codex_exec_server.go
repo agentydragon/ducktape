@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"net"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	executorcontrol "github.com/agentydragon/ducktape/agentplane/runner/executor/control"
 	"github.com/coder/websocket"
 	"github.com/sethvargo/go-retry"
 	"go.uber.org/zap"
@@ -301,47 +301,6 @@ func (r codexExecServerRefusal) Error() string {
 	return "executor companion refused to start Codex: " + r.reason
 }
 
-// All companion control traffic is local to a Pod over an emptyDir Unix socket.
-// A generation identifies a whole container PID namespace, not just exec-server.
-type codexExecServerControlRequest struct {
-	Operation   string            `json:"operation"`
-	Environment map[string]string `json:"environment,omitempty"`
-}
-type codexExecServerControlStatus struct {
-	Generation string `json:"generation"`
-	Owned      bool   `json:"owned"`
-	// Error explains a claim that was refused without starting anything, so the reason survives
-	// the wire. Empty otherwise. A refusal never ends a container generation: no child was spawned,
-	// so there is nothing left in it to fence.
-	Error string `json:"error,omitempty"`
-}
-
-func codexExecServerControl(ctx context.Context, socket string, request codexExecServerControlRequest) (net.Conn, codexExecServerControlStatus, error) {
-	c, err := (&net.Dialer{}).DialContext(ctx, "unix", socket)
-	if err != nil {
-		return nil, codexExecServerControlStatus{}, err
-	}
-	stop := context.AfterFunc(ctx, func() { _ = c.Close() })
-	defer stop()
-	deadline, _ := ctx.Deadline()
-	_ = c.SetDeadline(deadline)
-	if err := json.NewEncoder(c).Encode(request); err != nil {
-		_ = c.Close()
-		return nil, codexExecServerControlStatus{}, err
-	}
-	var status codexExecServerControlStatus
-	if err := json.NewDecoder(c).Decode(&status); err != nil {
-		_ = c.Close()
-		return nil, status, err
-	}
-	if status.Generation == "" {
-		_ = c.Close()
-		return nil, status, errors.New("executor companion returned no generation")
-	}
-	_ = c.SetDeadline(time.Time{})
-	return c, status, nil
-}
-
 // fenceCodexExecServerContainer waits until a fresh, idle container proves the old PID
 // namespace is gone. EOF alone is insufficient: detached descendants can remain
 // alive between the companion exiting and the container runtime finishing cleanup.
@@ -349,7 +308,7 @@ func fenceCodexExecServerContainer(ctx context.Context, socket, previous string)
 	return retry.Do(ctx, retry.NewConstant(200*time.Millisecond), func(ctx context.Context) error {
 		attempt, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-		c, status, err := codexExecServerControl(attempt, socket, codexExecServerControlRequest{Operation: "inspect"})
+		c, status, err := executorcontrol.Connect(attempt, socket, executorcontrol.Request{Operation: "inspect"})
 		if err != nil {
 			return retry.RetryableError(err)
 		}
@@ -358,7 +317,7 @@ func fenceCodexExecServerContainer(ctx context.Context, socket, previous string)
 			return nil
 		}
 		if status.Owned {
-			if err := json.NewEncoder(c).Encode(codexExecServerControlRequest{Operation: "fence"}); err != nil {
+			if err := json.NewEncoder(c).Encode(executorcontrol.Request{Operation: "fence"}); err != nil {
 				return retry.RetryableError(err)
 			}
 		}
@@ -367,7 +326,7 @@ func fenceCodexExecServerContainer(ctx context.Context, socket, previous string)
 }
 
 func claimCodexExecServerContainer(ctx context.Context, socket string, env map[string]string) (*codexExecServerInstance, error) {
-	c, status, err := codexExecServerControl(ctx, socket, codexExecServerControlRequest{Operation: "claim", Environment: env})
+	c, status, err := executorcontrol.Connect(ctx, socket, executorcontrol.Request{Operation: "claim", Environment: env})
 	if err != nil {
 		return nil, err
 	}

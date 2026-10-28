@@ -1,4 +1,4 @@
-package runner
+package executor
 
 import (
 	"context"
@@ -9,26 +9,29 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/executor/control"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 )
 
-const codexExecServerContainerMode = "--executor-container"
-
-// CodexExecServerContainerMain must be PID 1 in a private container PID namespace.
+// Main must be PID 1 in a private container PID namespace.
 // Returning to main exits that namespace, letting the runtime kill even children
 // that escaped their process group. This mode never runs as an ordinary VM child.
-func CodexExecServerContainerMain(args []string) int {
-	flags := flag.NewFlagSet("executor container", flag.ContinueOnError)
+func Main(args []string) int {
+	flags := flag.NewFlagSet("agentplane-executor", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
 	socket := flags.String("socket", "", "local ownership socket")
 	listen := flags.String("listen", "", "Codex WebSocket endpoint")
 	binary := flags.String("binary", "", "Codex executable")
@@ -40,25 +43,37 @@ func CodexExecServerContainerMain(args []string) int {
 		fmt.Fprintln(os.Stderr, "executor companion requires PID 1, absolute socket and binary paths, an HTTP health address, and a private PID namespace")
 		return 64
 	}
-	if err := validateExecutorURL(*listen); err != nil {
+	if err := validateURL(*listen); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 64
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	if err := serveCodexExecServerContainer(ctx, *socket, *binary, *listen, *healthListen); err != nil {
+	if err := serve(ctx, *socket, *binary, *listen, *healthListen); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return 0
 }
 
-func codexExecServerContainerHealthHandler(socket string) http.Handler {
+func validateURL(value string) error {
+	u, err := url.Parse(value)
+	if err != nil {
+		return err
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil || port < 1 || port > 65535 || u.Scheme != "ws" || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return errors.New("executor URL must be ws://127.0.0.1:<nonzero port>")
+	}
+	return nil
+}
+
+func healthHandler(socket string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
 		defer cancel()
-		connection, _, err := codexExecServerControl(ctx, socket, codexExecServerControlRequest{Operation: "inspect"})
+		connection, _, err := control.Connect(ctx, socket, control.Request{Operation: "inspect"})
 		if err != nil {
 			http.Error(w, "companion control unavailable", http.StatusServiceUnavailable)
 			return
@@ -69,7 +84,7 @@ func codexExecServerContainerHealthHandler(socket string) http.Handler {
 	return mux
 }
 
-func serveCodexExecServerContainer(ctx context.Context, socket, binary, listen, healthListen string) error {
+func serve(ctx context.Context, socket, binary, listen, healthListen string) error {
 	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
 		return err
 	}
@@ -92,7 +107,7 @@ func serveCodexExecServerContainer(ctx context.Context, socket, binary, listen, 
 	lifetime, cancel := context.WithCancel(ctx)
 	defer cancel()
 	healthServer := &http.Server{
-		Handler:           codexExecServerContainerHealthHandler(socket),
+		Handler:           healthHandler(socket),
 		ReadHeaderTimeout: time.Second,
 		WriteTimeout:      2 * time.Second,
 		IdleTimeout:       5 * time.Second,
@@ -114,13 +129,13 @@ func serveCodexExecServerContainer(ctx context.Context, socket, binary, listen, 
 	})
 	servers.Go(func() error {
 		defer cancel()
-		return serveCodexExecServerControl(lifetime, cancel, listener, binary, listen)
+		return serveControl(lifetime, cancel, listener, binary, listen)
 	})
 	return servers.Wait()
 }
 
-func serveCodexExecServerControl(lifetime context.Context, cancel context.CancelFunc, listener net.Listener, binary, listen string) error {
-	status := codexExecServerControlStatus{Generation: uuid.NewString()}
+func serveControl(lifetime context.Context, cancel context.CancelFunc, listener net.Listener, binary, listen string) error {
+	status := control.Status{Generation: uuid.NewString()}
 	var mu sync.Mutex
 	for {
 		connection, err := listener.Accept()
@@ -137,7 +152,7 @@ func serveCodexExecServerControl(lifetime context.Context, cancel context.Cancel
 			_ = c.SetDeadline(time.Now().Add(3 * time.Second))
 			decoder := json.NewDecoder(io.LimitReader(c, 1<<20))
 			decoder.DisallowUnknownFields()
-			var request codexExecServerControlRequest
+			var request control.Request
 			if decoder.Decode(&request) != nil {
 				return
 			}
@@ -153,11 +168,9 @@ func serveCodexExecServerControl(lifetime context.Context, cancel context.Cancel
 				child.Stdout, child.Stderr = os.Stdout, os.Stderr
 				child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 				if err := child.Start(); err != nil {
-					// Nothing was spawned, so this generation holds no work to fence. Refuse the claim
-					// with the reason and keep serving: exiting here makes the runtime restart a container
-					// whose next start fails the same way, and a claimant in restart backoff leaves no
-					// socket to fence, so the Runner can neither start nor quiesce.
-					fmt.Fprintln(os.Stderr, "start Codex exec-server:", err)
+					// Nothing started, so this generation has no work to fence. Refuse and keep serving,
+					// allowing Runner to retry or fence without waiting for a container restart.
+					fmt.Fprintln(os.Stderr, "start Codex executor:", err)
 					refused := status
 					refused.Error = err.Error()
 					mu.Unlock()
@@ -165,7 +178,7 @@ func serveCodexExecServerControl(lifetime context.Context, cancel context.Cancel
 					return
 				}
 				status.Owned = true
-				go reapCodexExecServerContainer(lifetime, child.Process, cancel)
+				go reap(lifetime, child.Process, cancel)
 			} else if request.Operation != "inspect" || len(request.Environment) != 0 {
 				mu.Unlock()
 				return
@@ -187,7 +200,7 @@ func serveCodexExecServerControl(lifetime context.Context, cancel context.Cancel
 				return
 			}
 			_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
-			var next codexExecServerControlRequest
+			var next control.Request
 			if decoder.Decode(&next) == nil && next.Operation == "fence" {
 				cancel()
 			}
@@ -195,9 +208,8 @@ func serveCodexExecServerControl(lifetime context.Context, cancel context.Cancel
 	}
 }
 
-// PID 1 also reaps orphaned grandchildren. A single wait4 owner avoids races
-// between os/exec.Wait and a generic orphan reaper consuming the executor status.
-func reapCodexExecServerContainer(ctx context.Context, process *os.Process, exited context.CancelFunc) {
+// PID 1 reaps orphaned grandchildren. One wait4 owner avoids racing os/exec.Wait with the reaper.
+func reap(ctx context.Context, process *os.Process, exited context.CancelFunc) {
 	defer process.Release()
 	changed := make(chan os.Signal, 1)
 	signal.Notify(changed, syscall.SIGCHLD)
@@ -209,7 +221,7 @@ func reapCodexExecServerContainer(ctx context.Context, process *os.Process, exit
 			var status unix.WaitStatus
 			pid, err := unix.Wait4(-1, &status, unix.WNOHANG, nil)
 			if pid == process.Pid {
-				fmt.Fprintln(os.Stderr, "Codex exec-server exited:", status)
+				fmt.Fprintln(os.Stderr, "Codex executor exited:", status)
 				exited()
 				return
 			}
@@ -224,4 +236,18 @@ func reapCodexExecServerContainer(ctx context.Context, process *os.Process, exit
 		case <-ticker.C:
 		}
 	}
+}
+
+// The server gives exec-server a minimal, deterministic environment from Runner's claim.
+func environment(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]string, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, key+"="+values[key])
+	}
+	return result
 }

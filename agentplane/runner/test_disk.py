@@ -22,7 +22,7 @@ def test_runner_disk_holds_the_executables(tmp_path: Path) -> None:
         check=True,
     )
 
-    for name in ("agentplane", "agentplane-runner"):
+    for name in ("agentplane", "agentplane-executor", "agentplane-runner"):
         assert os.access(tmp_path / "bin" / name, os.X_OK)
 
 

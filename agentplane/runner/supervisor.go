@@ -35,8 +35,6 @@ func InternalMode(args []string) (handled bool, exitCode int) {
 		return false, 0
 	}
 	switch args[0] {
-	case codexExecServerContainerMode:
-		return true, CodexExecServerContainerMain(args[1:])
 	case supervisorMode:
 		return true, SupervisorMain(args[1:])
 	case execMode:
