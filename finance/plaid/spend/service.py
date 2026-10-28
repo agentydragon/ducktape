@@ -35,6 +35,7 @@ from finance.plaid.spend.allowance import (
     TransactionPeriodId,
     accounting_disposition,
     calculate,
+    daily_reference,
     prepare_accounting,
     round_minor_units,
 )
@@ -629,6 +630,9 @@ class SpendService:
                     status=Status.UNAVAILABLE,
                     currency=policy.currency,
                     monthly_minor_units=policy.monthly_minor_units,
+                    daily_reference_minor_units=round_minor_units(
+                        daily_reference(policy.monthly_minor_units), precision=0
+                    ),
                     activation_at=policy.activation_at,
                     time_zone=self._configuration.time_zone.key,
                     available_minor_units=None,

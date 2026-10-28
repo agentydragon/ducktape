@@ -22,6 +22,7 @@
       "status": "active",
       "currency": "USD",
       "monthly_minor_units": 70000,
+      "daily_reference_minor_units": 2300,
       "activation_at": "2026-10-15",
       "available_minor_units": 70000,
       "last_synced_at": "2026-10-15T11:01:00Z",

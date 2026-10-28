@@ -538,7 +538,7 @@ const PlaidSpendIndicator = GObject.registerClass(
             `7d ${formatDaily(periodReport(allowance, "recorded_pace_periods", "rolling_7d")?.observed_daily_minor_units, allowance.currency)} · ` +
               `30d ${formatDaily(periodReport(allowance, "recorded_pace_periods", "rolling_30d")?.observed_daily_minor_units, allowance.currency)}`
           );
-          const daily = Math.round((Number(allowance.monthly_minor_units) * 12) / 365.2425);
+          const daily = allowance.daily_reference_minor_units;
           this._addReadOnly(`Leash ~${formatDaily(daily, allowance.currency)}`, "plaid-spend-caption");
           for (const [periodId, label] of [
             ["rolling_7d", "7d"],

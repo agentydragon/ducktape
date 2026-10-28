@@ -22,6 +22,9 @@ service publishes their generated schema at `/openapi.json`; the browser generat
 values calculated by the service are integer currency minor units. Original Plaid transaction amounts in the
 authenticated detail view remain decimal strings in major units. Card percentages and sustainability rates are
 `Decimal` values serialized as strings. Browser calculations use Decimal.js until the display/chart boundary.
+The allowance response includes the required `daily_reference_minor_units` value, computed from the monthly credit and
+rounded once to the nearest minor unit using half-up rounding. The spending signal compares observed pace to the
+full-precision Decimal rate; clients display the supplied value without recalculating it.
 Server-side policy models and YAML loading live in [`configuration.py`](configuration.py), separate from the response
 models used by desktop clients. Loading preserves decimal tokens before validation, including tax rates and holding
 corrections, using [`finance.yaml_decimal`](../../yaml_decimal.py).

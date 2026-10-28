@@ -111,7 +111,7 @@ export function SpendingHistoryChart({
       )
     );
     const orderedCategories = [...categories.entries()].sort((left, right) => right[1].total - left[1].total);
-    const leashDailyMinorUnits = Math.round((allowance.monthly_minor_units * 12) / 365.2425);
+    const leashDailyMinorUnits = allowance.daily_reference_minor_units;
     const totalMinorUnits = orderedCategories.reduce((total, [, category]) => total + category.total, 0);
     const dailyAverageMinorUnits = dates.length > 0 ? Math.round(totalMinorUnits / dates.length) : 0;
     const datasets = [
@@ -161,7 +161,7 @@ export function SpendingHistoryChart({
       totalMinorUnits,
       days: dates.length,
     };
-  }, [allowance.monthly_minor_units, dates, periodId, transactions]);
+  }, [allowance.daily_reference_minor_units, dates, periodId, transactions]);
 
   useEffect(() => {
     if (!canvasRef.current || !transactions || !chart) return;

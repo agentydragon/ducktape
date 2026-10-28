@@ -493,6 +493,7 @@ class AllowanceView(BaseModel):
     status: Status
     currency: str
     monthly_minor_units: int
+    daily_reference_minor_units: int
     activation_at: date_type
     time_zone: str
     available_minor_units: int | None
@@ -515,6 +516,11 @@ class AllowanceView(BaseModel):
 class AllowanceCalculation:
     view: AllowanceView
     reconciliation: ReconciliationReport
+
+
+def daily_reference(monthly_minor_units: int) -> Decimal:
+    """Return the unrounded monthly-credit-equivalent daily rate in minor units."""
+    return Decimal(monthly_minor_units) * 12 / Decimal("365.2425")
 
 
 def month_anniversary(start: datetime, months: int) -> datetime:
@@ -982,7 +988,7 @@ def calculate(
         if projected_end < 0
         else PaceAlert.NORMAL
     )
-    reference_rate = Decimal(policy.monthly_minor_units) * 12 / Decimal("365.2425")
+    reference_rate = daily_reference(policy.monthly_minor_units)
     basis_observed = next(
         period.observed_daily_minor_units for period in recorded_pace_periods if period.period.id == forecast_basis
     )
@@ -1003,6 +1009,7 @@ def calculate(
         status=Status.ACTIVE,
         currency=policy.currency,
         monthly_minor_units=policy.monthly_minor_units,
+        daily_reference_minor_units=round_minor_units(reference_rate, precision=0),
         activation_at=policy.activation_at,
         time_zone=zone.key,
         available_minor_units=available,

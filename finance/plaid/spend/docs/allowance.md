@@ -200,8 +200,10 @@ and year _spend totals_ still start at activation. The separate `recorded_pace_p
 startup without pace evidence). `forecast.basis_period` identifies the selected rolling window.
 `forecast.daily_pace_minor_units` is the potentially higher, early-burst-sensitive projection pace; do not present it as
 a literal rolling average. Web, GNOME and CLI show both observed rates against the same approximate
-monthly-credit-equivalent daily reference; `spending_signal` compares the selected estimate window's observed rate and
-forecast against that **provisional allowance**, not a sustainability guarantee. Web can select the estimate window;
+monthly-credit-equivalent daily reference supplied in `daily_reference_minor_units`. The service rounds that displayed
+value half-up to one minor unit, while `spending_signal` compares the selected estimate window's observed rate with the
+full-precision Decimal rate and its forecast against that **provisional allowance**, not a sustainability guarantee.
+Web can select the estimate window;
 GNOME and CLI use the configured default. Each recorded pace report's `unmatched_charges` count and
 amount count positive, default-flexible purchases in the pace lookback, including before activation; this is separate
 from the postactivation review tally. Purchase days define membership in each window and the transaction list:

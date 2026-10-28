@@ -74,7 +74,7 @@ def policy(*, activation_at: date = START_DATE, rules: list[Rule] | None = None)
 
 def row(
     day: str,
-    amount: int,
+    amount: int | Decimal,
     *,
     pending: bool = False,
     transaction_id: str | None = None,
@@ -391,6 +391,26 @@ def test_monthly_observed_pace_warns_when_selected_without_weekly_forecast_or_op
     )
     assert monthly.forecast.basis_period.id == PeriodId.ROLLING_30D
     assert monthly.spending_signal == PaceAlert.WARNING
+
+
+def test_daily_reference_is_rounded_for_wire_but_unrounded_rate_drives_signal():
+    now = datetime(2026, 1, 31, tzinfo=UTC)
+    result = allowance_view(
+        calculate(
+            policy(activation_at=date(2025, 12, 1)),
+            [row("2026-01-30", Decimal("23.03"))],
+            time_zone=ZoneInfo("UTC"),
+            now=now,
+            last_synced_at=now,
+        )
+    )
+
+    # 10,000 * 12 / 365.2425 is about 328.55 minor units. The wire value rounds to 329,
+    # while an observed pace of 329 still exceeds the unrounded business rate.
+    assert result.daily_reference_minor_units == 329
+    assert pace(result, PeriodId.ROLLING_7D) == 329
+    assert result.forecast.alert_state == PaceAlert.NORMAL
+    assert result.spending_signal == PaceAlert.WARNING
 
 
 def test_no_pace_until_history_or_a_full_week_of_zero_spend():

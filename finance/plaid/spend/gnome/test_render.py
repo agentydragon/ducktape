@@ -279,7 +279,7 @@ def test_allowance_paced(render_session: tuple[GnomeSession, Path]) -> None:
         menu_text = _allowance_menu_text(session)
         assert "7d $28/day" in menu_text
         assert "30d $18/day" in menu_text
-        assert "Leash ~$23/day" in menu_text
+        assert "Leash ~$28/day" in menu_text
         assert "7d unmatched 3 ($12)" in menu_text
         assert "Sync 1h ago" in menu_text
         assert "View updated" not in menu_text

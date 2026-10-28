@@ -625,6 +625,8 @@ def dashboard_url() -> Iterator[str]:
             time_zone="UTC",
             currency="USD",
             monthly_minor_units=70000,
+            # Deliberately differs from the monthly-derived rate to verify both UI displays use the API field.
+            daily_reference_minor_units=2800,
             activation_at=activation,
             available_minor_units=70000 if warmup else 20000,
             next_credit_at=datetime(2026, 10, 25, tzinfo=UTC),
@@ -1222,6 +1224,7 @@ async def test_spending_decision_render(
     await expect(page.locator('span[title="$200.00"]').first).to_be_attached()
     await expect(page.get_by_text("30 days", exact=True)).to_have_count(1)
     await expect(page.get_by_text("$13 / day", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Provisional leash ~$28 / day.", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Below provisional leash", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Unmatched in selected window: 2 ($3)", exact=False)).to_have_count(1)
     await expect(page.get_by_text("$75", exact=True)).to_have_count(1)
@@ -1233,7 +1236,7 @@ async def test_spending_decision_render(
     await view.capture(normal.removesuffix(".png"), label=f"{width}px available", full_page=True, animations="disabled")
     await page.get_by_text("30 days", exact=True).click()
     await expect(page.locator("#spending-history-summary")).to_have_text(
-        "$550 flexible spending over 30 days; average $18 per day; leash reference $23 per day."
+        "$550 flexible spending over 30 days; average $18 per day; leash reference $28 per day."
     )
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
@@ -1246,7 +1249,7 @@ async def test_spending_decision_render(
     )
     await page.get_by_text("7 days", exact=True).click()
     await expect(page.locator("#spending-history-summary")).to_have_text(
-        "$15 flexible spending over 7 days; average $2 per day; leash reference $23 per day."
+        "$15 flexible spending over 7 days; average $2 per day; leash reference $28 per day."
     )
     await page.get_by_label("Hypothetical flexible purchase").fill("250")
     await page.get_by_text("Over allowance", exact=True).last.wait_for()

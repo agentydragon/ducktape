@@ -463,10 +463,12 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         result = await service.read_view()
         assert result.allowance is not None
         assert result.allowance.available_minor_units == 8_800
+        assert result.allowance.daily_reference_minor_units == 329
         await connection.execute("UPDATE public.links SET status = 'removed' WHERE item_id = 'item-checking'")
         unavailable = (await service.read_view()).allowance
         assert unavailable is not None
         assert unavailable.status == Status.UNAVAILABLE
+        assert unavailable.daily_reference_minor_units == 329
         await connection.execute(
             "UPDATE public.links SET status = 'active', last_synced_at = $1 WHERE item_id = 'item-checking'",
             now - timedelta(days=4),
@@ -474,6 +476,7 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         unavailable = (await service.read_view()).allowance
         assert unavailable is not None
         assert unavailable.status == Status.UNAVAILABLE
+        assert unavailable.daily_reference_minor_units == 329
 
 
 async def test_prior_purchases_are_queried_for_pace_but_not_balance(
