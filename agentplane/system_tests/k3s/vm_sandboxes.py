@@ -108,11 +108,20 @@ def install(kubectl: Kubectl, objects: list[dict[str, Any]]) -> None:
 
 
 def wait_for_apis(kubectl: Kubectl) -> None:
-    """KubeVirt's operator creates the VirtualMachine API; the Sandbox Controller looks for it once, at start."""
+    """Wait for the CRDs and Kyverno webhook before applying resources that invoke admission."""
     crds = ["crd/virtualmachines.kubevirt.io", "crd/clusterpolicies.kyverno.io"]
     # `condition=Established` fails at once on a CRD that does not exist yet.
     kubectl("wait", "--for=create", *crds, f"--timeout={READY_SECONDS}s")
     kubectl("wait", "--for=condition=Established", *crds, f"--timeout={READY_SECONDS}s")
+    # A ClusterPolicy invokes Kyverno admission even before any VM is created.
+    kubectl(
+        "-n", KYVERNO_NAMESPACE, "wait", "--for=create", "endpoints/kyverno-svc",
+        f"--timeout={READY_SECONDS}s",
+    )  # fmt: skip
+    kubectl(
+        "-n", KYVERNO_NAMESPACE, "wait", "--for=jsonpath={.subsets[0].addresses[0].ip}", "endpoints/kyverno-svc",
+        f"--timeout={READY_SECONDS}s",
+    )  # fmt: skip
 
 
 def wait_until_ready(kubectl: Kubectl) -> None:
