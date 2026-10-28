@@ -16,8 +16,8 @@ Staged API change: [action result discriminator rollout](docs/action_result_disc
   system v2) and its tunables
 - `state.py` / `actions.py` / `events.py`: wire models (reads, action results, event reads)
 - `export_schema.py`: schema-only app printing OpenAPI to `:frontend_openapi_json`; the frontend
-  compiles `//study_casino/frontend/lib:schema_zod_codegen` into
-  `//study_casino/frontend/lib:schema_zod` (`schema.zod.mjs` and `.d.mts`)
+  generates and compiles `//study_casino/frontend/lib:schema_zod`
+  (`schema_zod.mjs` and `.d.mts`)
 - `migrations/`: Alembic, applied at startup against CNPG
 - `frontend/`: `sync.js` (REST + WebSocket client, Zod-parsed), `use_casino.js` (state +
   mutations hook), one `.jsx` per view/game; bundled via `//devinfra/js:spa_bundle`.

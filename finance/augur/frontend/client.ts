@@ -16,7 +16,7 @@ import {
   zRolloutRequest,
   zRolloutResponse,
   zSettingsResponse,
-} from "./lib/api/schema.zod";
+} from "./lib/schema_zod";
 
 type FetchOptions = { signal?: AbortSignal };
 

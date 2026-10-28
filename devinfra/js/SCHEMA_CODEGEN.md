@@ -41,28 +41,34 @@ declaration for type checking and does not emit it as JavaScript source.
 
 ## OpenAPI Zod source
 
-`openapi_zod` remains a file-only converter: it produces the Zod TypeScript source selected by a
-local Hey API config. The config and every local schema/config reference are declared inputs. Compile
-the generated source with an ordinary `ts_library`, where the consumer declares compiler settings
-and runtime dependencies; for an `.mts` source it emits both `.mjs` and `.d.mts` for JavaScript and
-TypeScript consumers:
+`openapi_zod_ts_library` generates Zod TypeScript using a local Hey API config and compiles it as a
+`ts_library`. The config and every local schema/config reference are declared inputs. The caller
+declares the shared tsconfig and runtime dependencies; the named target is the compiled library:
 
 ```starlark
-load("//devinfra/js:openapi_zod.bzl", "openapi_zod")
-load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:openapi_zod_ts_library.bzl", "openapi_zod_ts_library")
 
-openapi_zod(
-    name = "schema_zod_codegen",
+openapi_zod_ts_library(
+    name = "schema_zod",
     schema = ":openapi_schema",
     config = "openapi-ts.config.mjs",
+    tsconfig = ":tsconfig",
+    deps = ["//:node_modules/zod"],
     schema_files = [":referenced_schema"],
     config_files = [":local_config_helper"],
-    out = "api/schema.zod.mts",
 )
+```
 
-ts_library(
+The raw generated source is also available by file label, `:schema_zod.ts` by default. Set `out` to
+choose another source path. Use an `.mts` output when a plain JavaScript consumer needs the compiled
+`.mjs` module and matching `.d.mts` declaration:
+
+```starlark
+openapi_zod_ts_library(
     name = "schema_zod",
-    srcs = [":schema_zod_codegen"],
+    out = "schema_zod.mts",
+    schema = ":openapi_schema",
+    config = "openapi-ts.config.mjs",
     tsconfig = ":tsconfig",
     deps = ["//:node_modules/zod"],
 )

@@ -31,6 +31,7 @@ js_binary(
     visibility = ["//visibility:public"],
 )
 
+# Hey API's Zod plugin used by `openapi_zod_ts_library`.
 js_binary(
     name = "openapi_zod_codegen",
     data = [
@@ -40,6 +41,7 @@ js_binary(
     entry_point = "openapi_zod_codegen.mjs",
     visibility = ["//visibility:public"],
 )
+
 js_library(
     name = "schema_remote_fetch_guard",
     srcs = ["schema_remote_fetch_guard.mjs"],

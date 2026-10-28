@@ -1,20 +1,14 @@
-load("//devinfra/js:openapi_zod.bzl", "openapi_zod")
+load("//devinfra/js:openapi_zod_ts_library.bzl", "openapi_zod_ts_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
 TSCONFIG = "//finance/augur/frontend:tsconfig"
 
-openapi_zod(
-    name = "schema_zod_codegen",
-    out = "api/schema.zod.ts",
+openapi_zod_ts_library(
+    name = "schema_zod",
     config = "openapi-ts.config.mjs",
     schema = "//finance/augur/api:frontend_openapi_json",
-)
-
-ts_library(
-    name = "schema_zod",
-    srcs = [":schema_zod_codegen"],
     tsconfig = TSCONFIG,
     deps = ["//:node_modules/zod"],
 )
@@ -69,5 +63,5 @@ filegroup(
     srcs = glob([
         "*.ts",
         "*.tsx",
-    ]) + [":schema_zod_codegen"],
+    ]) + [":schema_zod.ts"],
 )

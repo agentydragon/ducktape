@@ -1,6 +1,5 @@
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("//devinfra/js:openapi_zod.bzl", "openapi_zod")
-load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:openapi_zod_ts_library.bzl", "openapi_zod_ts_library")
 
 package(default_visibility = ["//study_casino/frontend:__pkg__"])
 
@@ -9,18 +8,11 @@ ts_config(
     src = "tsconfig.json",
 )
 
-openapi_zod(
-    name = "schema_zod_codegen",
-    out = "api/schema.zod.mts",
+openapi_zod_ts_library(
+    name = "schema_zod",
+    out = "schema_zod.mts",
     config = "openapi-ts.config.mjs",
     schema = "//study_casino:frontend_openapi_json",
-)
-
-# Compile the generated source normally so JavaScript consumers use the emitted .mjs while
-# TypeScript consumers resolve the matching .d.mts declaration.
-ts_library(
-    name = "schema_zod",
-    srcs = [":schema_zod_codegen"],
     tsconfig = ":tsconfig",
     deps = ["//:node_modules/zod"],
 )
