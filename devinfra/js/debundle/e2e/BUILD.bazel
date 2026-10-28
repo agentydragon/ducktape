@@ -165,7 +165,10 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "prototype_property_integrity_test")
 
-debundle_e2e_test(name = "local_record_factory_contract_test")
+debundle_e2e_test(
+    name = "local_record_factory_contract_test",
+    deps = ["//devinfra/js/debundle:analysis"],
+)
 
 debundle_e2e_test(name = "map_entry_callbacks_test")
 
