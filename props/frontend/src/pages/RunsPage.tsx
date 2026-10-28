@@ -1,7 +1,8 @@
 import RunsBrowser from "$components/RunsBrowser";
 import { useSearchParams } from "react-router";
 import { useRunModal } from "$lib/runModalContext";
-import type { ExampleKind, RunTrigger, Split } from "$lib/types";
+import type { ExampleKind, Split } from "$lib/api/schema";
+import type { RunTrigger } from "$lib/types";
 
 export default function RunsPage() {
   const [searchParams] = useSearchParams();

@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { AgentRunDetail, LLMRequestInfo, SnapshotDetailResponse } from "../lib/api/schema";
+import type { AgentRunDetail, LlmRequestInfo, SnapshotDetailResponse } from "../lib/api/schema";
 import { fetchLLMRequests, fetchRun, fetchRunLogs, fetchSnapshotDetail, fetchSnapshotFiles } from "../lib/api/client";
 import { toast } from "../lib/toast";
 import RunDetail from "./RunDetail";
@@ -85,7 +85,7 @@ function run(runId: string, snapshotSlug?: string): AgentRunDetail {
   } satisfies AgentRunDetail;
 }
 
-function llmRequest(model: string): LLMRequestInfo {
+function llmRequest(model: string): LlmRequestInfo {
   return {
     id: 1,
     model,
@@ -96,7 +96,7 @@ function llmRequest(model: string): LLMRequestInfo {
     error: null,
     latency_ms: null,
     created_at: "2026-01-01T00:00:00Z",
-  } satisfies LLMRequestInfo;
+  } satisfies LlmRequestInfo;
 }
 
 function llmResponse(model: string): LLMResponse {

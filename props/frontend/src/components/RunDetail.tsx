@@ -8,7 +8,7 @@ import type {
   FileContentResponse,
   GraderTypeConfig,
   GradingEdgeInfo,
-  LLMRequestInfo,
+  LlmRequestInfo,
   ReportedIssueInfo,
   SnapshotDetailResponse,
 } from "../lib/api/schema";
@@ -38,7 +38,7 @@ interface Props {
   initialRun?: AgentRunDetail;
   initialSnapshotDetail?: SnapshotDetailResponse;
   initialFileContents?: Map<string, FileContentResponse>;
-  initialLLMRequests?: LLMRequestInfo[];
+  initialLLMRequests?: LlmRequestInfo[];
 }
 
 type RunLoad = { status: "loading" } | { status: "loaded"; run: AgentRunDetail } | { status: "error"; message: string };
@@ -109,7 +109,7 @@ export default function RunDetail({
     () => new Map(initialFileContents ?? [])
   );
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
-  const [llmRequests, setLlmRequests] = useState<LLMRequestInfo[]>(initialLLMRequests ?? []);
+  const [llmRequests, setLlmRequests] = useState<LlmRequestInfo[]>(initialLLMRequests ?? []);
   const [loadingLLMRequests, setLoadingLLMRequests] = useState(false);
   const [containerLogs, setContainerLogs] = useState<string | null>(null);
   const [loadingLogs, setLoadingLogs] = useState(false);
@@ -365,7 +365,7 @@ interface LoadedRunContentProps {
   snapshotDetail: SnapshotDetailResponse | null;
   fileContents: Map<string, FileContentResponse>;
   loadingSnapshot: boolean;
-  llmRequests: LLMRequestInfo[];
+  llmRequests: LlmRequestInfo[];
   loadingLLMRequests: boolean;
   containerLogs: string | null;
   loadingLogs: boolean;

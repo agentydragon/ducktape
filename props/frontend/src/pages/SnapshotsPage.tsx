@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { Badge, Card, Center, Loader, Table, Text, Title } from "@mantine/core";
 
 import { useNavigate } from "react-router";
-import { fetchSnapshots, type SnapshotsListResponse } from "$lib/api/client";
+import type { SnapshotsListResponse } from "$lib/api/schema";
+import { fetchSnapshots } from "$lib/api/client";
 
 interface Props {
   initialData?: SnapshotsListResponse["snapshots"];

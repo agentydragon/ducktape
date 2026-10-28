@@ -1,4 +1,4 @@
-import type { LLMRequestInfo } from "../lib/api/schema";
+import type { LlmRequestInfo } from "../lib/api/schema";
 import { ChevronDown, ChevronRight } from "../lib/icons";
 import LLMRequestSection from "./LLMRequestSection";
 import LLMResponseSection from "./LLMResponseSection";
@@ -6,7 +6,7 @@ import JsonCode from "./JsonCode";
 import RawJsonSection from "./RawJsonSection";
 
 interface Props {
-  requests: LLMRequestInfo[];
+  requests: LlmRequestInfo[];
   initialExpanded?: number[];
 }
 
