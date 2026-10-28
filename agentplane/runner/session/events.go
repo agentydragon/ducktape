@@ -79,7 +79,7 @@ func (s *Session) apply(entry *eventlogpb.EventEntry, ids []string) {
 	if turn := e.GetTurnStarted(); turn != nil {
 		s.activeTurn = turn.TurnId
 	}
-	if e.GetTurnCompleted() != nil {
+	if turn := e.GetTurnCompleted(); turn != nil && s.activeTurn == turn.GetTurnId() {
 		s.activeTurn = ""
 	}
 	for _, id := range ids {
@@ -96,8 +96,16 @@ func (s *Session) recordEvent(ctx context.Context, e *eventpb.Event, sources []u
 		s.writeMu.Lock()
 		defer s.writeMu.Unlock()
 	}
+	return s.recordEventUnderWriteGate(ctx, e, sources, ids)
+}
+
+// recordEventUnderWriteGate appends and applies an event. Callers must own
+// writeMu for turn transitions; completeTurn uses it to publish reconciliation
+// blocking before the matching completion becomes visible, without reopening
+// dispatch in the middle of the transition.
+func (s *Session) recordEventUnderWriteGate(ctx context.Context, e *eventpb.Event, sources []uint64, ids []string) (*eventlogpb.EventEntry, error) {
 	entry, err := s.journal.Append(ctx, e, journal.AppendOptions{Sources: sources, TerminalCommandIDs: ids})
-	if err != nil {
+	if err != nil || entry == nil {
 		return nil, err
 	}
 	s.apply(entry, ids)
@@ -117,10 +125,15 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 	if err := s.journal.CommitBatch(ctx); err != nil {
 		return err
 	}
+	s.writeMu.Lock()
 	var reconciliation *pendingReconciliation
 	s.mu.Lock()
+	if s.activeTurn == "" || s.activeTurn != turn.GetTurnId() {
+		s.mu.Unlock()
+		s.writeMu.Unlock()
+		return nil
+	}
 	interrupt := s.interrupts[turn.TurnId]
-	delete(s.interrupts, turn.TurnId)
 	adapter := s.adapter
 	teardown := s.nativeStop == stopQuiesce
 	if turn.Status == eventpb.TurnStatus_TURN_STATUS_INTERRUPTED && adapter != nil {
@@ -128,32 +141,54 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 		s.reconciliations = append(s.reconciliations, reconciliation)
 	}
 	s.mu.Unlock()
+	completed := proto.Clone(turn).(*eventpb.TurnCompleted)
 	ids := []string{}
 	if turn.Status == eventpb.TurnStatus_TURN_STATUS_INTERRUPTED {
-		turn.InterruptedByCommandId = interrupt
-		turn.EndedByTeardown = teardown && interrupt == ""
+		completed.InterruptedByCommandId = interrupt
+		completed.EndedByTeardown = teardown && interrupt == ""
 		if interrupt != "" {
 			ids = append(ids, interrupt)
 		}
 	}
-	if _, err := s.recordEvent(ctx, observation(turn), sources, ids); err != nil {
-		return err
-	}
-	if reconciliation != nil {
+	removeReconciliation := func() {
+		if reconciliation == nil {
+			return
+		}
 		s.mu.Lock()
-		reconciliation.ready = true
+		for i, pending := range s.reconciliations {
+			if pending == reconciliation {
+				s.reconciliations = append(s.reconciliations[:i], s.reconciliations[i+1:]...)
+				break
+			}
+		}
 		s.mu.Unlock()
 	}
-	if turn.Status == eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST {
-		items, err := s.journal.ObservedItems(ctx, turn.TurnId)
+	entry, err := s.recordEventUnderWriteGate(ctx, observation(completed), sources, ids)
+	if err != nil || entry == nil {
+		removeReconciliation()
+		s.writeMu.Unlock()
 		if err != nil {
 			return err
 		}
-		if err := s.Emit(ctx, observation(harness.UnknownReport(turn.TurnId, items, "the harness exited before continuation could be inspected")), nil); err != nil {
+		return nil
+	}
+	s.mu.Lock()
+	delete(s.interrupts, turn.TurnId)
+	if reconciliation != nil {
+		reconciliation.ready = true
+	}
+	s.mu.Unlock()
+	s.writeMu.Unlock()
+	if completed.Status == eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST {
+		items, err := s.journal.ObservedItems(ctx, completed.TurnId)
+		if err != nil {
+			return err
+		}
+		if err := s.Emit(ctx, observation(harness.UnknownReport(completed.TurnId, items, "the harness exited before continuation could be inspected")), nil); err != nil {
 			return err
 		}
 	}
-	if interrupt != "" && turn.Status != eventpb.TurnStatus_TURN_STATUS_INTERRUPTED {
+	if interrupt != "" && completed.Status != eventpb.TurnStatus_TURN_STATUS_INTERRUPTED {
 		if err := s.NoopCommand(ctx, interrupt, "the turn completed before interruption took effect", sources); err != nil {
 			return err
 		}

@@ -264,6 +264,10 @@ event. The event has a timestamp. Derived events name the `Native` events they c
 `source_sequences`; the harness frames themselves are delivered verbatim, in both directions, so
 harness-native detail is one lookup away.
 
+The journal records `TurnCompleted` only when its turn id matches the active-turn checkpoint;
+stale and duplicate completion notifications are no-ops. A native frame that carried one remains
+retained verbatim as `Native`.
+
 | Family  | Events                                                                                                                                       |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | harness | `HarnessStarted` (resumed, pid), `HarnessExited` (exit code, stopped by the runner), `HarnessLost`, `HarnessStderr`                          |

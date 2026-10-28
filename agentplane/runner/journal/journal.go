@@ -427,7 +427,9 @@ func applyCheckpoint(state *RecoveryState, entry *eventlogpb.EventEntry) {
 	case event.GetTurnStarted() != nil:
 		state.ActiveTurnID = event.GetTurnStarted().GetTurnId()
 	case event.GetTurnCompleted() != nil:
-		state.ActiveTurnID = ""
+		if state.ActiveTurnID != "" && state.ActiveTurnID == event.GetTurnCompleted().GetTurnId() {
+			state.ActiveTurnID = ""
+		}
 	}
 }
 
@@ -608,6 +610,24 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 	if last == math.MaxInt64 {
 		return nil, errors.New("journal cursor exhausted")
 	}
+	var checkpointSource, activeTurn string
+	var through int64
+	var harnessRunning bool
+	if err := j.conn.QueryRowContext(
+		ctx,
+		"SELECT source_id, through_cursor, harness_running, active_turn_id FROM checkpoint WHERE id = 1",
+	).Scan(&checkpointSource, &through, &harnessRunning, &activeTurn); err != nil {
+		return nil, storageError("read journal checkpoint", err)
+	}
+	if checkpointSource != j.sourceID || through != last {
+		return nil, storageError("validate journal checkpoint", ErrChangedOutside)
+	}
+	if completed := event.GetTurnCompleted(); completed != nil && (activeTurn == "" || activeTurn != completed.GetTurnId()) {
+		// Native protocols can repeat or deliver stale completion notifications.
+		// Keep their raw Native frame, but do not let them advance the normalized
+		// log or clear a different active turn.
+		return nil, nil
+	}
 	cursor := uint64(last + 1)
 	copyEvent := proto.Clone(event).(*eventpb.Event)
 	copyEvent.SourceSequences = append(copyEvent.SourceSequences[:0], options.Sources...)
@@ -623,19 +643,6 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 	}
 	if _, err := j.conn.ExecContext(ctx, "INSERT INTO event_entry (cursor, payload) VALUES (?, ?)", cursor, payload); err != nil {
 		return nil, storageError("insert runner EventEntry", err)
-	}
-	var checkpointSource, activeTurn string
-	var through int64
-	var harnessRunning bool
-	err = j.conn.QueryRowContext(
-		ctx,
-		"SELECT source_id, through_cursor, harness_running, active_turn_id FROM checkpoint WHERE id = 1",
-	).Scan(&checkpointSource, &through, &harnessRunning, &activeTurn)
-	if err != nil {
-		return nil, storageError("read journal checkpoint", err)
-	}
-	if checkpointSource != j.sourceID || through != last {
-		return nil, storageError("validate journal checkpoint", ErrChangedOutside)
 	}
 	nextState := RecoveryState{ThroughCursor: uint64(through), HarnessRunning: harnessRunning, ActiveTurnID: activeTurn}
 	applyCheckpoint(&nextState, entry)
@@ -656,12 +663,18 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 		}
 	}
 	if completed := copyEvent.GetTurnCompleted(); completed != nil {
-		if _, err := j.conn.ExecContext(
+		result, err := j.conn.ExecContext(
 			ctx,
 			"UPDATE turn_boundary SET end_cursor = ?, status = ? WHERE turn_id = ? AND end_cursor IS NULL",
 			cursor, completed.GetStatus(), completed.GetTurnId(),
-		); err != nil {
+		)
+		if err != nil {
 			return nil, storageError("complete turn boundary", err)
+		}
+		if rows, err := result.RowsAffected(); err != nil {
+			return nil, storageError("verify completed turn boundary", err)
+		} else if rows != 1 {
+			return nil, storageError("verify completed turn boundary", fmt.Errorf("turn %q has no open boundary", completed.GetTurnId()))
 		}
 	}
 	if checkpoint := copyEvent.GetDebugCheckpoint(); checkpoint != nil {
@@ -697,6 +710,8 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 }
 
 func (j *Journal) Append(ctx context.Context, event *eventpb.Event, options AppendOptions) (*eventlogpb.EventEntry, error) {
+	// A stale or duplicate TurnCompleted is intentionally ignored and returns
+	// (nil, nil). Callers must treat a nil entry as an idempotent no-op.
 	var result *eventlogpb.EventEntry
 	err := j.write(ctx, func(batch *journalBatch) error {
 		entry, err := j.appendEntry(ctx, batch, event, options, false)
