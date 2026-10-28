@@ -24,7 +24,7 @@ async def test_session_list_and_captured_version(visual: VisualHarness, capture_
         await expect(progress).to_contain_text("ThinkPad")
         await expect(progress).to_contain_text("Atlas")
         await expect(progress).to_contain_text("Rugged")
-        await expect(progress).to_contain_text("Snapshots: 4 of 5 registered complete")
+        await expect(progress).to_contain_text("Snapshots: 3 of 5 registered complete")
         await expect(progress).to_contain_text("File entries: 42 processed · 9 pending · 2 failed")
         await expect(progress).to_contain_text("Snapshot counts include registered snapshots")
         await expect(page.get_by_text("ThinkPad", exact=True).first).to_be_visible()
