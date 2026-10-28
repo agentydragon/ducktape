@@ -6,30 +6,31 @@
 
 ## Hardware Inventory
 
-| Component      | Device                        | PCI/USB ID  | Driver                 | Status        | Notes               |
-| -------------- | ----------------------------- | ----------- | ---------------------- | ------------- | ------------------- |
-| CPU            | Intel Core Ultra (Lunar Lake) | —           | —                      | Working       |                     |
-| GPU            | Intel Arc 130V/140V           | `8086:64a0` | `xe`                   | Working       | Vulkan crash (GTK4) |
-| Wi-Fi          | Intel Wi-Fi 7 BE201 320MHz    | `8086:a840` | `iwlwifi`/`iwlmld`     | Working       | Cosmetic WEXT warn  |
-| Bluetooth      | Intel BE201 (PCIe)            | `8086:a876` | `btintel_pcie`         | **Broken**    | <bluetooth.md>      |
-| Webcam         | OmniVision OV08F40 via IPU7   | `8086:645d` | `intel_ipu7` (staging) | **Partial**   | <webcam.md>         |
-| NPU            | Intel Lunar Lake NPU          | `8086:643e` | `intel_vpu`            | Working       | <npu.md>            |
-| Audio          | Realtek ALC3204 (HDA)         | `8086:a828` | `snd_hda_intel`        | Working       |                     |
-| NVMe           | KIOXIA EG6 (DRAM-less)        | `1e0f:001b` | `nvme`                 | Working       |                     |
-| Touchscreen    | eGalax EETI8082 (I2C)         | `0EEF:C005` | `hid-multitouch`       | Working       | + stylus            |
-| SD Card Reader | Realtek RTS525A               | `10ec:525a` | `rtsx_pci`             | Working       |                     |
-| 5G Modem       | Foxconn DW5934e (SDX72)       | `105b:e11d` | `mhi_pci_generic`      | **Partial**   | <modem.md>          |
-| Fingerprint    | Broadcom BCM 58200            | `0a5c:5867` | none                   | **No driver** |                     |
-| Sensor Hub     | Intel ISH (3 sensors)         | —           | `intel_ish_ipc`        | Working       | Cosmetic warn       |
-| Thunderbolt 4  | Intel Lunar Lake-M            | `8086:a831` | `xhci_hcd`             | Working       |                     |
+| Component      | Device                        | PCI/USB ID  | Driver                 | Status        | Notes                                                                      |
+| -------------- | ----------------------------- | ----------- | ---------------------- | ------------- | -------------------------------------------------------------------------- |
+| CPU            | Intel Core Ultra (Lunar Lake) | —           | —                      | Working       |                                                                            |
+| GPU            | Intel Arc 130V/140V           | `8086:64a0` | `xe`                   | Working       | Vulkan crash (GTK4)                                                        |
+| Wi-Fi          | Intel Wi-Fi 7 BE201 320MHz    | `8086:a840` | `iwlwifi`/`iwlmld`     | Working       | Cosmetic WEXT warn                                                         |
+| Bluetooth      | Intel BE201 (PCIe)            | `8086:a876` | `btintel_pcie`         | **Broken**    | <bluetooth.md>                                                             |
+| Webcam         | OmniVision OV08F40 via IPU7   | `8086:645d` | `intel_ipu7` (staging) | **Partial**   | <webcam.md>                                                                |
+| NPU            | Intel Lunar Lake NPU          | `8086:643e` | `intel_vpu`            | Working       | [driver evidence](../../../../cluster/docs/inference/rugged_npu_driver.md) |
+| Audio          | Realtek ALC3204 (HDA)         | `8086:a828` | `snd_hda_intel`        | Working       |                                                                            |
+| NVMe           | KIOXIA EG6 (DRAM-less)        | `1e0f:001b` | `nvme`                 | Working       |                                                                            |
+| Touchscreen    | eGalax EETI8082 (I2C)         | `0EEF:C005` | `hid-multitouch`       | Working       | + stylus                                                                   |
+| SD Card Reader | Realtek RTS525A               | `10ec:525a` | `rtsx_pci`             | Working       |                                                                            |
+| 5G Modem       | Foxconn DW5934e (SDX72)       | `105b:e11d` | `mhi_pci_generic`      | **Partial**   | <modem.md>                                                                 |
+| Fingerprint    | Broadcom BCM 58200            | `0a5c:5867` | none                   | **No driver** |                                                                            |
+| Sensor Hub     | Intel ISH (3 sensors)         | —           | `intel_ish_ipc`        | Working       | Cosmetic warn                                                              |
+| Thunderbolt 4  | Intel Lunar Lake-M            | `8086:a831` | `xhci_hcd`             | Working       |                                                                            |
 
 ## Issue Details
 
 - <webcam.md> — IPU7 camera, PipeWire portal, Chrome/Zoom status
 - <bluetooth.md> — Intel BE201 PCIe probe failure (ETIME)
 - <modem.md> — Foxconn 5G modem, FCC unlock, Google Fi
-- <npu.md> — Intel NPU setup and inference frameworks
-- <llm_arc_gpu.md> — LLM inference on Arc GPU (SYCL/IPEX-LLM, retired; see file for live alternatives)
+- [NPU driver evidence](../../../../cluster/docs/inference/rugged_npu_driver.md) —
+  Level Zero library discovery and real device execution; the llama.cpp service
+  still needs separate acceptance.
 - <llm_npu.md> — LLM inference on NPU (OpenVINO)
 - <gemma4.md> — Gemma 4 E2B on LiteRT-LM, Ollama, and OpenVINO/NPU
 - <esim.md> — 5G modem eSIM provisioning, FCC unlock research, lpac commands
