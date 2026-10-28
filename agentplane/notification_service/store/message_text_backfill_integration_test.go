@@ -348,7 +348,8 @@ func TestBackfillMessageTextCompletesAnEmptyFreshDatabase(t *testing.T) {
 
 func newMessageTextBackfillFixture(t *testing.T) fixture {
 	t.Helper()
-	db, _ := newMessageTextBackfillDatabase(t, 18)
+	// Cross the content-writer fence while empty, then seed Messages before the TEXT expansion.
+	db, _ := newMessageTextBackfillDatabase(t, 19)
 	f := fixtureForDatabase(t, db, messageQuotas())
 	f.openInbox(t)
 	return f
