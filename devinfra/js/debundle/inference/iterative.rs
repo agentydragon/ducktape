@@ -117,6 +117,23 @@ impl<R: IterativeRules> IterativeInference<R> {
         self,
         producers: impl IntoIterator<Item = R::Rule>,
     ) -> IterativeFacts<R::Key, R::Fact> {
+        self.solve_with_premises::<true>(producers)
+    }
+
+    /// Complete the same closure when the caller consumes only values. Keep
+    /// read watchers and typed dependencies, but do not build a direct-premise
+    /// graph that would immediately be discarded by `into_values`.
+    pub(crate) fn solve_values(
+        self,
+        producers: impl IntoIterator<Item = R::Rule>,
+    ) -> BTreeMap<R::Key, R::Fact> {
+        self.solve_with_premises::<false>(producers).into_values()
+    }
+
+    fn solve_with_premises<const RETAIN_PREMISES: bool>(
+        self,
+        producers: impl IntoIterator<Item = R::Rule>,
+    ) -> IterativeFacts<R::Key, R::Fact> {
         let Self { rules, mut facts } = self;
         let mut registered: BTreeSet<_> = producers.into_iter().collect();
         for (key, fact) in &facts {
@@ -136,7 +153,7 @@ impl<R: IterativeRules> IterativeInference<R> {
         let mut evaluations = 0usize;
         while let Some((round, rule)) = pending.pop_first() {
             scheduled.remove(&rule);
-            let mut context = IterativeContext::<R>::new(&mut facts);
+            let mut context = IterativeContext::<R, RETAIN_PREMISES>::new(&mut facts);
             rules.evaluate(&rule, &mut context);
             #[cfg(test)]
             {
@@ -190,14 +207,14 @@ impl<R: IterativeRules> IterativeInference<R> {
 
 /// Mutable access is scoped to one monotone producer. Both absent and present
 /// reads install watchers, including reads made before a producer exists.
-pub(crate) struct IterativeContext<'a, R: IterativeRules> {
+pub(crate) struct IterativeContext<'a, R: IterativeRules, const RETAIN_PREMISES: bool = true> {
     facts: &'a mut BTreeMap<R::Key, Judgment<R::Key, R::Fact>>,
     reads: BTreeSet<R::Key>,
     changed: BTreeSet<R::Key>,
     dependencies: ProofDependencies,
 }
 
-impl<'a, R: IterativeRules> IterativeContext<'a, R> {
+impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R, RETAIN_PREMISES> {
     fn new(facts: &'a mut BTreeMap<R::Key, Judgment<R::Key, R::Fact>>) -> Self {
         Self {
             facts,
@@ -208,7 +225,9 @@ impl<'a, R: IterativeRules> IterativeContext<'a, R> {
     }
 }
 
-impl<R: IterativeRules> FactContext<R::Key, R::Fact> for IterativeContext<'_, R> {
+impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact>
+    for IterativeContext<'_, R, RETAIN_PREMISES>
+{
     fn read(&mut self, key: R::Key) -> Option<&R::Fact> {
         self.reads.insert(key.clone());
         let fact = self.facts.get(&key)?;
@@ -224,7 +243,11 @@ impl<R: IterativeRules> FactContext<R::Key, R::Fact> for IterativeContext<'_, R>
                 entry.insert(Judgment {
                     value: contribution,
                     dependencies: self.dependencies.clone(),
-                    premises: self.reads.clone(),
+                    premises: if RETAIN_PREMISES {
+                        self.reads.clone()
+                    } else {
+                        BTreeSet::new()
+                    },
                 });
                 true
             }
@@ -233,7 +256,9 @@ impl<R: IterativeRules> FactContext<R::Key, R::Fact> for IterativeContext<'_, R>
                 let changed = R::merge(&key, &mut fact.value, contribution);
                 let dependencies = fact.dependencies.clone();
                 fact.dependencies.extend(&self.dependencies);
-                fact.premises.extend(self.reads.iter().cloned());
+                if RETAIN_PREMISES {
+                    fact.premises.extend(self.reads.iter().cloned());
+                }
                 changed || fact.dependencies != dependencies
             }
         };
@@ -564,6 +589,39 @@ mod tests {
             assert_eq!(first.premises(), second.premises());
         }
         assert_eq!(facts.into_values(), reversed.into_values());
+    }
+
+    #[test]
+    fn values_only_closure_preserves_requests_cycles_and_dependency_wakeups() {
+        let producers = [
+            RequestedProducer::InitialInputs,
+            RequestedProducer::AdditionalInputs,
+        ];
+        assert_eq!(
+            IterativeInference::new(RequestedRules).solve_values(producers.clone()),
+            IterativeInference::new(RequestedRules)
+                .solve(producers)
+                .into_values(),
+        );
+        assert_eq!(
+            IterativeInference::new(Rules).solve_values(0..4),
+            IterativeInference::new(Rules).solve(0..4).into_values(),
+        );
+        let mut inference = IterativeInference::new(Rules);
+        inference.seed(2, BTreeSet::from([20]));
+        // Inspect the private closure here: the public values-only API does
+        // not expose judgments whose explanatory premises were discarded.
+        let facts = inference.solve_with_premises::<false>([0, 2]);
+        let result = facts.get(&3).unwrap();
+        assert_eq!(result.value(), &BTreeSet::from([20]));
+        assert_eq!(
+            result.dependencies().value_inputs,
+            BTreeSet::from([ValueInputRef {
+                defining_chunk: "captured".into(),
+                input_index: 0,
+            }]),
+        );
+        assert_eq!(facts.evaluations(), 3);
     }
 
     #[test]

@@ -1484,6 +1484,8 @@ impl FlowProgram {
         let producer_count = events.len();
         #[cfg(test)]
         let argument_evaluations = Rc::new(Cell::new(0));
+        #[cfg(test)]
+        let event_executions = Rc::new(Cell::new(0));
         let rules = FlowRules {
             events,
             declared_ids: declared_ids.clone(),
@@ -1491,6 +1493,8 @@ impl FlowProgram {
             candidate_facts_enabled: !candidate_objects.is_empty(),
             #[cfg(test)]
             argument_evaluations: argument_evaluations.clone(),
+            #[cfg(test)]
+            event_executions: event_executions.clone(),
         };
         let mut inference = IterativeInference::new(rules);
         let candidate_words = candidate_objects.len().div_ceil(64);
@@ -1502,9 +1506,9 @@ impl FlowProgram {
                 FlowFact::CandidateReachability(Arc::new(bits)),
             );
         }
-        let facts = inference.solve(0..producer_count);
+        let facts = inference.solve_values(0..producer_count);
         #[cfg(test)]
-        let evaluations = facts.evaluations();
+        let evaluations = event_executions.get();
         #[cfg(not(test))]
         let evaluations = 0;
         let mut flow = ChunkValueFlow {
@@ -1515,7 +1519,7 @@ impl FlowProgram {
             callable_source_unit,
             ..ChunkValueFlow::default()
         };
-        for (key, fact) in facts.into_values() {
+        for (key, fact) in facts {
             match (key, fact) {
                 (FlowKey::ValueFlowActive, FlowFact::ValueFlowActive)
                 | (FlowKey::ReadyParameters(_), FlowFact::ReadyParameters(_)) => {}
@@ -1806,6 +1810,8 @@ struct FlowRules {
     candidate_facts_enabled: bool,
     #[cfg(test)]
     argument_evaluations: Rc<Cell<usize>>,
+    #[cfg(test)]
+    event_executions: Rc<Cell<usize>>,
 }
 
 impl FlowRules {
@@ -1924,6 +1930,8 @@ impl IterativeRules for FlowRules {
         rule: &usize,
         context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
     ) {
+        #[cfg(test)]
+        self.event_executions.set(self.event_executions.get() + 1);
         let event = &self.events[*rule];
         match event {
             FlowEvent::FunctionDeclaration { id, origin }
