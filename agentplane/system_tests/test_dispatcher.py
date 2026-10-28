@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 import grpc
@@ -139,7 +140,7 @@ async def _archive_runner_data(
     *,
     mount_sources: dict[str, Path] | None = None,
     extra_backups: tuple[tuple[str, Path], ...] = (),
-) -> dict[str, object]:
+) -> dict[str, Any]:
     sources = mount_sources or await _container_mount_sources(name, artifact_dir)
     archive = artifact_dir / "runner-data.tar"
     partial_archive = artifact_dir / "runner-data.tar.partial"
@@ -199,7 +200,7 @@ async def _archive_runner_data(
             f"runner data archiver exited {process.returncode} without a manifest: "
             f"{stderr.decode(errors='replace')[-2000:]} {stdout.decode(errors='replace')[-2000:]}"
         )
-    manifest = json.loads(manifest_path.read_text())
+    manifest: dict[str, Any] = json.loads(manifest_path.read_text())
     manifest["mount_sources"] = {destination: str(source) for destination, source in sources.items()}
     if process.returncode:
         manifest["archiver_exit_code"] = process.returncode
