@@ -61,6 +61,7 @@ from util.testing.otel_tracing import configure_tracing
 from util.testing.postgres_fixtures import database_names, postgres_container, postgres_image
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-asyncio auto mode and register custom markers."""
     config.option.asyncio_mode = "auto"
@@ -73,8 +74,7 @@ def pytest_configure(config: pytest.Config) -> None:
     if not os.environ.get("PROPS_AGENT_PASSWORD_SALT"):
         os.environ["PROPS_AGENT_PASSWORD_SALT"] = "test-agent-password-salt"
 
-    # Set pytest's supported live logging options before its trylast configure
-    # hook creates the logging plugin and its CLI handler.
+    # Set these before pytest's logging plugin reads them in its configure hook.
     config.option.log_cli_level = "INFO"
     config.option.log_cli_format = "%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s"
     config.option.log_cli_date_format = "%H:%M:%S"
