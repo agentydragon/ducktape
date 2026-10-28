@@ -312,6 +312,23 @@ py_test(
 )
 
 py_test(
+    name = "test_discovery_ledger",
+    srcs = ["test_discovery_ledger.py"],
+    requires_docker = True,
+    deps = [
+        ":database",
+        ":ingest",
+        ":models",
+        ":restic",
+        ":testing",
+        "//:conftest",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_codex_parent_links",
     srcs = ["test_codex_parent_links.py"],
     requires_docker = True,
