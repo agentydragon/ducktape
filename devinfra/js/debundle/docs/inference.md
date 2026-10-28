@@ -1,8 +1,11 @@
 # Shared inference
 
-`inference.rs` computes positive certificates over an immutable analysis context.
-`facts/semantic_inference.rs` owns the shared rule set. Structural analysis
-supplies candidates; candidates alone cannot certify an operation.
+`inference.rs` provides a dependency worklist for finite growing facts and
+positive certificates. `facts/semantic_inference.rs` composes native,
+construction, and callable rules in that store. Structural analysis supplies
+candidates; candidates alone cannot certify an operation. Rules use typed
+`FactContext` access so an enclosing rule family can project their keys without
+copying a private summary or hiding a read from the worklist.
 
 The current rules compose as follows:
 
@@ -85,8 +88,10 @@ proof.
 
 A `Judgment` has private construction. It contains a fact, direct premise keys,
 and the union of captured-input dependencies used to establish it. Reading a
-premise through `RuleContext::require` automatically records both the premise
-key and its dependencies. Author and runtime assumptions enter through
+premise through the rule context automatically records both the premise key and
+its dependencies. Semantic certificates use `GuardedContext::finish` around
+positive `require` calls; any absent requirement prevents publication, while a
+later contribution wakes the consumer. Author and runtime assumptions enter through
 `assume`; an author assertion remains distinct from an inferred source fact.
 `RuleContext::import` borrows a proved judgment from an earlier immutable
 context and inherits its dependencies. Call-local rules require an explicit
@@ -108,42 +113,73 @@ their own runtime assumptions.
 
 ## Scheduling
 
-There is one rule producer for each key, and the reachable key graph must be
-finite. A query discovers its prerequisites. Missing prerequisites are queued;
-reverse watchers identify exactly which waiting rules to retry when a new fact
-is proved. The FIFO queue deduplicates pending keys. Unrelated rules are never
-scanned, and a shared prerequisite is evaluated once after it succeeds.
+`IterativeInference` owns the facts and reverse watchers. Producers read typed
+keys and join contributions; both missing and present reads install watchers.
+Multiple producers can contribute to one fact. Changes to values or captured
+input dependencies wake consumers. Source-ordered rounds retain the
+conservative initial-sweep semantics of source analyses. Only a completed
+closure is exposed outside a producer.
 
-The queue drains to a positive closure. `Proven`, `Waiting` and `Unsupported`
-distinguish a certificate, an unmet prerequisite, and an evaluated unsupported
-rule. A waiting cycle does not prove itself. None of these negative states
-establishes that a JavaScript behavior is impossible; graph consumers retain
-their conservative fallback.
+Binding, property, parameter and return flow shares a store with candidate-object
+reachability. Return and property contributions propagate candidate identities
+through the same worklist; escape consumers get filtered read-only views.
+Candidate roots are registered before solving, including caller-supplied roots
+outside the source-origin table. Global escape taint, Set aliases, native and
+namespace aliases, capability rejection, primitive/fluent value classes, and
+read/rebind closure use the same typed transfer interface.
 
-`IterativeInference` supports finite growing-fact domains alongside positive
-certificates. Producers read typed keys and join contributions; both missing and
-present reads install watchers. Multiple producers can contribute to one fact.
-Changes to values or captured-input dependencies wake consumers. Source-ordered
-rounds retain the conservative initial-sweep semantics of source analyses.
-Only a completed closure is exposed outside a producer.
+Recursive purity grows body-completion facts and direct/call-site effects.
+The canonical classifier emits an obligation at an inferred local or imported
+call instead of reading an optimistic Pure verdict. All function effects in an
+export-analysis context, across module boundaries, share one worklist. Effects
+and captured-input dependencies flow through those edges until closure. A
+function is projected as Pure only after its body and every reachable call
+obligation have been analyzed and the completed effect fact is empty. Pure
+recursive cycles therefore need no optimistic purity seed. Unknown targets
+remain direct unknown-call effects. Pinned export assertions are explicit
+axioms; export inference does not consume chunk-local declared-pure hints.
 
-Global escape propagation joins statement and binding taint. Recursive function
-purity uses SCC-local closures, followed by program-wide imported/exported
-summaries. Purity's knowledge order starts optimistically pure, grows consumed
-input dependencies, and ends at terminal impurity. The first impurity witness
-is retained without recursively appending reasons. These provisional facts stay
-inside the iterative domain; they are never exposed as positive certificates
-before completion. Author-asserted exports remain separate pinned axioms.
+The call-local `Inference` mode retains demand-driven immutable certificates.
+A query discovers missing prerequisites and the FIFO queue retries consumers
+when those prerequisites become proven. A waiting cycle does not prove itself;
+unsupported or missing facts retain the conservative fallback. This mode borrows
+position-specific object state and discards it after the call.
 
-Native absence still requires a completed census. Execution-prefix facts depend
-on position and captured context; a call-local store cannot be reused across a
-later mutation. A new iterative domain must define its finite order, join,
-completion boundary and conservative fallback. A missing fact during iteration
-is bottom, not proof that a JavaScript behavior is impossible.
+## Dependency regions and barriers
+
+Every feedback region must iterate in one store. Completion barriers are valid
+only at actual one-way dependencies; the old pass order alone is insufficient.
+The source-level evidence is recorded in `plans/shared_inference.md`.
+
+- Source shapes and value flow feed escape/write admission. Their consumers do
+  not change source assignments, properties, parameters or returns.
+- Source-only alias validation precedes author-assisted aliases. An assertion
+  cannot establish the source-only absence premise used to accept that assertion.
+- Native integrity requires a completed conditional write census from every
+  analyzed chunk. Native branch pruning consumes source-derived callback object
+  argument coverage; later inferred callback-factory certificates do not produce
+  that coverage. Integrity and callable certificates therefore cannot certify
+  their own census by cycling through a generic factory flag.
+- Completed native/construction/callable facts feed function effects. Function
+  purity does not write the source/native census. Local and imported effects do
+  feed each other and have no intervening completion barrier.
+- Completed static read/rebind and function facts feed execution-prefix heap,
+  capture and reentry interpretation. Prefix execution does not update static
+  flow or function-purity caches. A checked call-local result can discharge an
+  exact statement obligation without making the provider function globally pure.
+- Own-property queries borrow the selected current prefix state. Their results
+  do not update provider source certificates and cannot survive a later mutation.
+
+A changed source, author input, import summary or analysis policy creates a new
+context. A missing fact during evaluation is bottom, not proof that a JavaScript
+behavior is impossible.
 
 ## Storage and diagnostics
 
-The store retains direct premise keys, not recursive proof-tree copies. The
+The store retains direct premise keys, not recursive proof-tree copies. Growing
+purity effects contain function keys rather than recursively nested `Arc<Purity>`
+causes. Final diagnostic projection constructs a finite acyclic cause graph after
+closure, retaining provider source locations across imports. The
 current queue uses ordered maps and sets for deterministic discovery and
 deduplication. It schedules affected dependency edges rather than rescanning all
 rules. These are structural bounds, not a measured CPU or memory improvement.

@@ -143,3 +143,61 @@ export { result };
             .all(|reason| reason.source_location.as_ref().unwrap().source_path == "static/lib.js")
     );
 }
+
+fn assert_recursive_import_effects(effect: &str) {
+    let second = format!(
+        "import {{ first }} from './first.js';\n\
+         export function second(stop) {{\n{effect}\n\
+         return stop === true ? 8 : first(true);\n}}\n"
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { first } from './first.js';\n\
+             const result = first(false);\nconsole.log(result);\nexport { result };\n",
+            vec![logical_module("result_module", &[Member::new("result")])],
+        )
+        .with_extra_chunks(&[
+            (
+                "static/first",
+                "import { second } from './second.js';\n\
+                 export function first(stop) { return stop === true ? 7 : second(true); }\n",
+            ),
+            ("static/second", &second),
+        ]),
+    );
+    assert_preserved_entry_output(&fixture, "8\n");
+    let graph = fixture.dependency_graph();
+    let result = source_unit_for_binding(&graph, "result");
+    let purity = &graph
+        .nodes
+        .iter()
+        .find(|node| node.id == result)
+        .unwrap()
+        .purity;
+    assert_eq!(purity.is_pure(), effect.is_empty());
+    if !effect.is_empty() {
+        let assignments = reachable_assignments(&graph, purity);
+        assert!(
+            assignments.iter().any(|reason| reason
+                .source_location
+                .as_ref()
+                .is_some_and(|location| location.source_path == "static/second.js"
+                    && location.start_line == 3)),
+            "the recursive call's explanation must reach its provider's direct effect"
+        );
+        assert!(
+            graph.purity_causes.len() <= 4,
+            "recursive causes stay finite"
+        );
+    }
+}
+
+#[test]
+fn cross_module_recursive_functions_without_effects_are_pure() {
+    assert_recursive_import_effects("");
+}
+
+#[test]
+fn cross_module_recursive_effects_retain_the_provider_witness() {
+    assert_recursive_import_effects("globalThis.observed = true;");
+}
