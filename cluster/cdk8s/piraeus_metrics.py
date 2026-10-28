@@ -77,7 +77,7 @@ def add_thin_pool_monitoring(
                     automount_service_account_token=False,
                     host_network=False,
                     node_selector=node_selector,
-                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION, node_scheduling.ROAMING_TOLERATION],
                     termination_grace_period_seconds=5,
                     volumes=[
                         k8s.Volume(name="host-dev", host_path=k8s.HostPathVolumeSource(path="/dev", type="Directory")),

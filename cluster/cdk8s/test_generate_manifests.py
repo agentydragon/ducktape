@@ -140,6 +140,7 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
         _next_hdd_satellite,
         _last_hdd_satellite,
         wyrm2_satellite,
+        rugged_satellite,
     ) = values["linstorSatelliteConfigurations"]
     assert ssd_satellite["nodeSelector"] == {
         "storage.allegedly.works/piraeus-ready": "true",
@@ -222,6 +223,16 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     assert wyrm2_hdd_pool["name"] == "hdd"
     assert wyrm2_satellite["properties"] == hdd_satellite["properties"]
     assert wyrm2_satellite["patches"] == ssd_satellite["patches"]
+
+    # Rugged's `ssd` pool is laid out like every other node's, on the NixOS satellite template.
+    assert rugged_satellite["nodeSelector"] == {
+        "storage.allegedly.works/piraeus-ready": "true",
+        "kubernetes.io/hostname": "rugged",
+    }
+    [rugged_pool] = rugged_satellite["storagePools"]
+    assert rugged_pool["name"] == "ssd"
+    assert rugged_pool["lvmThinPool"] == ssd_satellite["storagePools"][0]["lvmThinPool"]
+    assert rugged_satellite["podTemplate"] == wyrm2_satellite["podTemplate"]
 
     ssd_class, hdd_class, replicated_ssd_class = values["storageClasses"]
     assert ssd_class == {

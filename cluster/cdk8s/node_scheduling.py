@@ -28,6 +28,10 @@ HIL_OVH_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HIL_OVH_ZONE}
 # Control-plane nodes also carry this key as a label, which node affinities and selectors match.
 CONTROL_PLANE_TAINT_KEY = "node-role.kubernetes.io/control-plane"
 CONTROL_PLANE_TOLERATION = k8s.Toleration(key=CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule")
+# The laptops' taint (their NixOS `nodeTaints`): only Pods that may vanish with the laptop tolerate it.
+ROAMING_TOLERATION = k8s.Toleration(
+    key="node-role.kubernetes.io/roaming", operator="Equal", value="true", effect="NoSchedule"
+)
 # Keeps a Pod that tolerates the control plane on ordinary workers unless they are full.
 PREFER_WORKERS = k8s.Affinity(
     node_affinity=k8s.NodeAffinity(

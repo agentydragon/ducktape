@@ -56,6 +56,9 @@ _WYRM2_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "wyrm
 # Atlas zvols hot-added with these Proxmox disk serials: rpool/data (single NVMe) and tank (raidz2).
 _WYRM2_SSD_DATA_DEVICE = "/dev/disk/by-id/virtio-piraeus-ssd"
 _WYRM2_HDD_DATA_DEVICE = "/dev/disk/by-id/virtio-piraeus-hdd"
+_RUGGED_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "rugged"}
+# The opened LUKS partition behind rugged's root (nix/nixos/hosts/rugged/default.nix crypttab).
+_RUGGED_DATA_DEVICE = "/dev/mapper/piraeus-ssd"
 _CONTROLLER_POD_SELECTOR = {"app.kubernetes.io/component": "linstor-controller"}
 _REACTOR_CONFIG_PATCH = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-reactor-patch.yaml")).read_text()
 _DRBD_ALLOY_CONFIG = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-drbd-metrics.alloy")).read_text()
@@ -191,11 +194,7 @@ def cluster_chart(app: App) -> Chart:
                             )
                         )
                     ),
-                    tolerations=[
-                        k8s.Toleration(
-                            key="node-role.kubernetes.io/control-plane", operator="Exists", effect="NoSchedule"
-                        )
-                    ],
+                    tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION, node_scheduling.ROAMING_TOLERATION],
                     security_context=k8s.PodSecurityContext(
                         run_as_non_root=True,
                         run_as_user=473,
@@ -378,6 +377,15 @@ def cluster_chart(app: App) -> Chart:
         storage_pool="hdd",
         name="piraeus-lvm-metrics-wyrm2-hdd",
     )
+    piraeus_metrics.add_thin_pool_monitoring(
+        Construct(chart, "rugged-metrics"),
+        namespace=NAMESPACE,
+        node_selector=_RUGGED_SELECTOR,
+        volume_group=_FIRST_NODE_VOLUME_GROUP,
+        thin_pool=_FIRST_NODE_THIN_POOL,
+        storage_pool="ssd",
+        name="piraeus-lvm-metrics-rugged",
+    )
     repository = oci_helm_repository(
         chart, "piraeus-charts", "flux-system", url="oci://ghcr.io/piraeusdatastore/helm-charts"
     )
@@ -400,9 +408,8 @@ def cluster_chart(app: App) -> Chart:
             "linstorCluster": {
                 # Admit canaries and workers explicitly prepared to join Piraeus.
                 "nodeAffinity": _CLUSTER_NODE_AFFINITY,
-                "tolerations": [
-                    {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}
-                ],
+                # Satellites and CSI node Pods run on the laptops too, once one is labelled ready.
+                "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION, node_scheduling.ROAMING_TOLERATION],
                 "properties": [{"name": "TcpPortAutoRange", "value": "7900-7999"}],
                 "controller": {"enabled": True, "podTemplate": {"spec": {"nodeSelector": _CONTROLLER_NODE_SELECTOR}}},
                 "csiController": {
@@ -594,6 +601,26 @@ def cluster_chart(app: App) -> Chart:
                             },
                             "source": {"hostDevices": [_WYRM2_HDD_DATA_DEVICE]},
                         },
+                    ],
+                },
+                {
+                    "name": "rugged",
+                    # A roaming laptop: only strict-local `piraeus-ssd-local` claims land here (the
+                    # replicated class keeps copies in hil-ovh), and they go offline with the laptop.
+                    "nodeSelector": _RUGGED_SELECTOR,
+                    "patches": _SATELLITE_PATCHES,
+                    "podTemplate": _NIXOS_SATELLITE_POD_TEMPLATE,
+                    "deletionPolicy": "Retain",
+                    "storagePools": [
+                        {
+                            "name": "ssd",
+                            "lvmThinPool": {
+                                "volumeGroup": _FIRST_NODE_VOLUME_GROUP,
+                                "thinPool": _FIRST_NODE_THIN_POOL,
+                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
+                            },
+                            "source": {"hostDevices": [_RUGGED_DATA_DEVICE]},
+                        }
                     ],
                 },
             ],
