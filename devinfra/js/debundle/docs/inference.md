@@ -20,10 +20,6 @@ flowchart LR
     identity --> calls[Guarded native call summaries]
     empty --> class[Local class construction]
     native --> set[Primitive Set iteration]
-    ownshape[Canonical own-property shapes] --> prefix[Own-property prefix state]
-    identity --> projection[Own-property projection]
-    prefix --> projection
-    projection --> names[Own-name and descriptor results]
     shape[Canonical source shapes] --> function[Stable function identity]
     function --> callback[Callback factory]
     function --> record[Returned record construction]
@@ -59,7 +55,7 @@ Own-property inspection uses a separate call-local inference store. The shared
 semantic context supplies completed native identity and integrity judgments;
 the local rules derive an exact object origin, its canonical source shape, and
 the current prefix state before projecting names or descriptors. Each query
-copies only the selected object's current property state, and that inference
+borrows only the selected object's current property state, and that inference
 context is discarded after the call. It cannot reuse a prefix-derived fact
 after a later mutation. Name projection follows ECMAScript own-string-key
 ordering, while descriptor projection retains current data identities and
@@ -77,10 +73,13 @@ class proof.
 A `Judgment` has private construction. It contains a fact, direct premise keys,
 and the union of captured-input dependencies used to establish it. Reading a
 premise through `RuleContext::require` automatically records both the premise
-key and its dependencies. Only completed external premises enter through
-`assume`; an author assertion remains distinct from an inferred source fact.
-An evaluator cannot publish a fact after requesting an unproved prerequisite,
-even if it accidentally returns a successful value.
+key and its dependencies. `RuleContext::import` carries a completed judgment
+from another immutable context and inherits its dependencies, so local bridge
+rules retain the imported proof's identity for downstream explanations.
+`RuleContext::assume` adds dependencies from a completed author or runtime
+premise; those assumptions remain distinct from inferred source facts and
+imported judgments. An evaluator cannot publish a fact after requesting an
+unproved prerequisite, even if it accidentally returns a successful value.
 
 The typed key names the judgment, rather than a universal "safe" boolean.
 Consumers still make purpose-specific decisions: an allocation certificate does
