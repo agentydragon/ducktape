@@ -306,6 +306,8 @@ py_test(
 
 py_test(
     name = "test_initialize",
+    # Cold RBE runs load the real History test's Postgres image before the 8-case suite.
+    size = "medium",
     srcs = ["test_initialize.py"],
     data = [
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
