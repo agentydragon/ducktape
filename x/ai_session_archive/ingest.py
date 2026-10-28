@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from x.ai_session_archive.database import (
-    ArchiveSnapshotRow,
+    ResticSnapshotRow,
     FileVersionRecordRow,
     FileVersionRow,
     MachineRow,
@@ -136,15 +136,15 @@ class SnapshotIngestor:
         try:
             with self._session_factory() as db, db.begin():
                 row = db.scalar(
-                    select(ArchiveSnapshotRow)
+                    select(ResticSnapshotRow)
                     .where(
-                        ArchiveSnapshotRow.machine_id == self._source.machine_id,
-                        ArchiveSnapshotRow.snapshot_id == snapshot.id,
+                        ResticSnapshotRow.machine_id == self._source.machine_id,
+                        ResticSnapshotRow.snapshot_id == snapshot.id,
                     )
                     .with_for_update()
                 )
                 if row is None:
-                    row = ArchiveSnapshotRow(
+                    row = ResticSnapshotRow(
                         machine_id=self._source.machine_id,
                         snapshot_id=snapshot.id,
                         captured_at=snapshot.captured_at,
@@ -202,7 +202,7 @@ class SnapshotIngestor:
         parent_id = snapshot.parent_id
         if parent_id is None:
             return None
-        parent = db.get(ArchiveSnapshotRow, (self._source.machine_id, parent_id))
+        parent = db.get(ResticSnapshotRow, (self._source.machine_id, parent_id))
         if parent is None:
             # A pruned/missing diff base cannot safely seed path state. Inventory this snapshot itself.
             return None
@@ -349,10 +349,10 @@ class SnapshotIngestor:
             self._process_file(snapshot, file_row.path)
         with self._session_factory() as db, db.begin():
             snapshot_row = db.scalar(
-                select(ArchiveSnapshotRow)
+                select(ResticSnapshotRow)
                 .where(
-                    ArchiveSnapshotRow.machine_id == self._source.machine_id,
-                    ArchiveSnapshotRow.snapshot_id == snapshot.id,
+                    ResticSnapshotRow.machine_id == self._source.machine_id,
+                    ResticSnapshotRow.snapshot_id == snapshot.id,
                 )
                 .with_for_update()
             )
@@ -553,7 +553,7 @@ class SnapshotIngestor:
         return [payload_by_hash[record.sha256] for record in records]
 
     def _previous_version(self, db: DbSession, current: SnapshotFileRow) -> FileVersionRow | None:
-        snapshot = db.get(ArchiveSnapshotRow, (current.machine_id, current.snapshot_id))
+        snapshot = db.get(ResticSnapshotRow, (current.machine_id, current.snapshot_id))
         if snapshot is None:
             return None
         cursor_id = snapshot.comparison_snapshot_id
@@ -565,7 +565,7 @@ class SnapshotIngestor:
                 if prior.status not in ("complete", "partial") or prior.file_version_id is None:
                     return None
                 return db.get(FileVersionRow, prior.file_version_id)
-            ancestor = db.get(ArchiveSnapshotRow, (current.machine_id, cursor_id))
+            ancestor = db.get(ResticSnapshotRow, (current.machine_id, cursor_id))
             if ancestor is not None and ancestor.comparison_snapshot_id is None:
                 return None
             cursor_id = ancestor.parent_snapshot_id if ancestor is not None else None
@@ -586,9 +586,9 @@ class SnapshotIngestor:
 
     def _mark_inventory_failed(self, snapshot: ResticSnapshot, exc: Exception) -> None:
         with self._session_factory() as db, db.begin():
-            row = db.get(ArchiveSnapshotRow, (self._source.machine_id, snapshot.id))
+            row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id))
             if row is None:
-                row = ArchiveSnapshotRow(
+                row = ResticSnapshotRow(
                     machine_id=self._source.machine_id,
                     snapshot_id=snapshot.id,
                     captured_at=snapshot.captured_at,
@@ -616,7 +616,7 @@ class SnapshotIngestor:
     def _report(self, snapshot_count: int) -> IngestReport:
         with self._session_factory() as db:
             snapshots = list(
-                db.scalars(select(ArchiveSnapshotRow).where(ArchiveSnapshotRow.machine_id == self._source.machine_id))
+                db.scalars(select(ResticSnapshotRow).where(ResticSnapshotRow.machine_id == self._source.machine_id))
             )
             files = list(
                 db.scalars(select(SnapshotFileRow).where(SnapshotFileRow.machine_id == self._source.machine_id))

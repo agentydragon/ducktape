@@ -1,6 +1,6 @@
 # Local AI session archive index
 
-This package imports transcript file versions from one machine's Restic repository into a fresh Postgres index. `SnapshotIngestor.ingest()` enumerates snapshots in archive order, uses a diff only when its exact parent is already inventoried and completely processed, and otherwise performs an independent full inventory. Each changed transcript has a durable snapshot/file ledger row, so failed extraction is visible and a later run retries it. Snapshot processing is complete only after all supported changes are either imported or recorded as terminally unclassified/not-indexed/deleted states.
+This package imports transcript file versions from one machine's Restic repository into a fresh Postgres index. `SnapshotIngestor.ingest()` enumerates snapshots in archive order, uses a diff only when its exact parent is already inventoried and completely processed, and otherwise performs an independent full inventory. The `restic_snapshots` and `snapshot_files` tables form the durable snapshot/file ledger, so failed extraction is visible and a later run retries it. Snapshot processing is complete only after all supported changes are either imported or recorded as terminally unclassified/not-indexed/deleted states.
 
 Configure the snapshot paths of the harness roots explicitly. The values must match paths returned by Restic, which can differ from the importing process's home directory:
 

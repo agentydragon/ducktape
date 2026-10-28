@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 
 from util.testing.postgres import DatabaseNames, create_temporary_database
 from x.ai_session_archive.database import (
-    ArchiveSnapshotRow,
+    ResticSnapshotRow,
     Base,
     FileVersionRecordRow,
     FileVersionRow,
@@ -206,7 +206,7 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(tmp_path: 
         changed_row = db.get(SnapshotFileRow, ("archive-test", same_metadata_snapshot.id, str(main_path)))
         assert changed_row is not None
         assert changed_row.change_kind == "M"
-        changed_snapshot_row = db.get(ArchiveSnapshotRow, ("archive-test", same_metadata_snapshot.id))
+        changed_snapshot_row = db.get(ResticSnapshotRow, ("archive-test", same_metadata_snapshot.id))
         assert changed_snapshot_row is not None
         assert changed_snapshot_row.comparison_snapshot_id == initial_snapshot.id
 
@@ -248,7 +248,7 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(tmp_path: 
         assert len(telemetry) == 1
         assert telemetry[0].status == "unclassified"
         snapshot_rows = list(
-            db.scalars(select(ArchiveSnapshotRow).where(ArchiveSnapshotRow.machine_id == "archive-test"))
+            db.scalars(select(ResticSnapshotRow).where(ResticSnapshotRow.machine_id == "archive-test"))
         )
         assert all(row.capture_status == "unknown" for row in snapshot_rows)
 
@@ -333,7 +333,7 @@ def test_parentless_restic_snapshot_uses_full_inventory(tmp_path: Path, postgres
     assert report.files_failed == 0
     assert report.snapshots_incomplete == 0
     with factory() as db:
-        snapshot_row = db.get(ArchiveSnapshotRow, ("parentless-test", second_snapshot.id))
+        snapshot_row = db.get(ResticSnapshotRow, ("parentless-test", second_snapshot.id))
         assert snapshot_row is not None
         assert snapshot_row.comparison_snapshot_id is None
         file_row = db.get(SnapshotFileRow, ("parentless-test", second_snapshot.id, str(transcript)))

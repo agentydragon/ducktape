@@ -10,7 +10,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from x.ai_session_archive.database import (
-    ArchiveSnapshotRow,
+    ResticSnapshotRow,
     FileVersionRecordRow,
     FileVersionRow,
     MachineRow,
@@ -36,14 +36,14 @@ def _session_summary_query() -> Any:
     latest_version_id = (
         select(SnapshotFileRow.file_version_id)
         .join(
-            ArchiveSnapshotRow,
-            (ArchiveSnapshotRow.machine_id == SnapshotFileRow.machine_id)
-            & (ArchiveSnapshotRow.snapshot_id == SnapshotFileRow.snapshot_id),
+            ResticSnapshotRow,
+            (ResticSnapshotRow.machine_id == SnapshotFileRow.machine_id)
+            & (ResticSnapshotRow.snapshot_id == SnapshotFileRow.snapshot_id),
         )
         .join(FileVersionRow, FileVersionRow.id == SnapshotFileRow.file_version_id)
         .where(FileVersionRow.session_id == SessionRow.id)
         .where(SnapshotFileRow.status.in_(("complete", "partial")))
-        .order_by(ArchiveSnapshotRow.captured_at.desc(), ArchiveSnapshotRow.snapshot_id.desc())
+        .order_by(ResticSnapshotRow.captured_at.desc(), ResticSnapshotRow.snapshot_id.desc())
         .limit(1)
         .scalar_subquery()
     )
