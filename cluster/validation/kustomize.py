@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import tempfile
-from pathlib import Path
+from collections.abc import Sequence
+from pathlib import Path, PurePosixPath
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -130,6 +132,55 @@ class KustomizeBuildError(Exception):
     def __init__(self, kustomization_path: Path, error: str) -> None:
         self.kustomization_path = kustomization_path
         super().__init__(f"kustomize build failed for {kustomization_path.parent}: {error}")
+
+
+def stage_artifact_copies(repo_root: Path, artifact_root: Path, copies: Sequence[tuple[str, str]]) -> None:
+    """Materialize source-watcher `@repo/...` copies under a temporary artifact root.
+
+    Directory copies already appear at their artifact paths in the source checkout. Supplemental
+    files may not, so integration tests stage declared copies without modifying the checkout.
+    This supports directory `/**` and exact-file copies; unsupported patterns fail rather than
+    producing a partial artifact.
+    """
+
+    repo_root = repo_root.resolve()
+    artifact_root.mkdir(parents=True, exist_ok=True)
+
+    def relative_path(uri: str, prefix: str, *, directory_glob: bool = False) -> tuple[PurePosixPath, bool]:
+        if not uri.startswith(prefix):
+            raise ValueError(f"artifact copy path must start with {prefix!r}: {uri!r}")
+        path = uri.removeprefix(prefix).rstrip("/")
+        is_glob = directory_glob and path.endswith("/**")
+        if is_glob:
+            path = path.removesuffix("/**")
+        if not path or any(part in {"", ".", ".."} for part in path.split("/")):
+            raise ValueError(f"artifact copy path must be a safe relative path: {uri!r}")
+        if any(character in path for character in "*?[]{}"):
+            raise ValueError(f"unsupported artifact copy pattern: {uri!r}")
+        return PurePosixPath(path), is_glob
+
+    for source_uri, destination_uri in copies:
+        source_rel, is_directory = relative_path(source_uri, "@repo/", directory_glob=True)
+        destination_rel, destination_has_glob = relative_path(destination_uri, "@artifact/")
+        if destination_has_glob:
+            raise ValueError(f"artifact destination cannot contain a glob: {destination_uri!r}")
+
+        source = (repo_root / Path(*source_rel.parts)).resolve()
+        destination = (artifact_root / Path(*destination_rel.parts)).resolve()
+        if not source.is_relative_to(repo_root):
+            raise ValueError(f"artifact source escapes repository root: {source_uri!r}")
+        if not destination.is_relative_to(artifact_root.resolve()):
+            raise ValueError(f"artifact destination escapes staging root: {destination_uri!r}")
+
+        if is_directory:
+            if not source.is_dir():
+                raise FileNotFoundError(f"artifact directory source is missing: {source_uri!r}")
+            shutil.copytree(source, destination, dirs_exist_ok=True)
+        else:
+            if not source.is_file():
+                raise FileNotFoundError(f"artifact file source is missing: {source_uri!r}")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
 
 
 def _kustomize_build_args(kust: KustomizeFile, scratch: Path) -> list[str | Path]:

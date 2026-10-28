@@ -123,7 +123,10 @@ filegroup(
 filegroup(
     name = "session_backup_sops_source",
     srcs = ["secrets/shared/session-backup.yaml"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/validation:__pkg__",
+    ],
 )
 
 # Root conftest.py for shared pytest configuration

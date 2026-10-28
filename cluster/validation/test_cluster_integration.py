@@ -14,6 +14,8 @@ former `cluster-validate` pre-commit hook was removed in favor of running them
 from __future__ import annotations
 
 import asyncio
+import tempfile
+from contextlib import ExitStack
 from pathlib import Path
 
 import pytest
@@ -30,6 +32,7 @@ from cluster.validation.checks import (
 )
 from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
+from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND
 from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.image_automation import (
@@ -37,12 +40,14 @@ from cluster.validation.image_automation import (
     check_image_policy_markers,
     check_no_flow_mappings_where_flux_writes,
 )
-from cluster.validation.k8s import K8sResource
+from cluster.validation.k8s import ArtifactGeneratorResource, K8sResource
 from cluster.validation.kustomize import (
     KustomizeBuildResult,
+    KustomizeFile,
     flux_generated_kustomization,
     parse_kustomize_file,
     run_kustomize_build,
+    stage_artifact_copies,
 )
 
 
@@ -61,10 +66,77 @@ def cluster(repo_root: Path) -> ParsedCluster:
     local_dirs = {d for spec in parsed.flux_kustomizations.values() if (d := spec.local_dir(repo_root))}
     kusts = [k for path, k in parsed.kustomize_files.items() if path.parent.resolve() in local_dirs]
 
-    async def _build_all() -> list[KustomizeBuildResult]:
-        return await asyncio.gather(*[run_kustomize_build(k) for k in kusts])
+    artifact_specs: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    for manifest_path, resources in parsed.source_resources.items():
+        generator_resources = [resource for resource in resources if isinstance(resource, ArtifactGeneratorResource)]
+        if not generator_resources:
+            continue
+        for document in yaml.safe_load_all(manifest_path.read_text()):
+            if not isinstance(document, dict) or document.get("kind") != "ArtifactGenerator":
+                continue
+            namespace = document.get("metadata", {}).get("namespace", "")
+            for artifact in document.get("spec", {}).get("artifacts", []):
+                artifact_specs[(namespace, artifact["name"])] = [
+                    (copy["from"], copy["to"]) for copy in artifact.get("copy", [])
+                ]
+    specs_by_dir = {
+        directory.resolve(): spec
+        for spec in parsed.flux_kustomizations.values()
+        if (directory := spec.local_dir(repo_root)) is not None
+    }
 
-    parsed.build_results = asyncio.run(_build_all())
+    def needs_artifact_staging(copies: list[tuple[str, str]]) -> bool:
+        # Directory copies already appear at their artifact paths in the source checkout.
+        # Exact-file copies and remapped directories need a temporary materialized artifact.
+        for source_uri, destination_uri in copies:
+            if not source_uri.startswith("@repo/") or not destination_uri.startswith("@artifact/"):
+                continue
+            source = source_uri.removeprefix("@repo/")
+            if source == "**":
+                source = ""
+            elif source.endswith("/**"):
+                source = source.removesuffix("/**").rstrip("/")
+            destination = destination_uri.removeprefix("@artifact/").rstrip("/")
+            if source != destination:
+                return True
+        return False
+
+    staged_artifacts: dict[tuple[str, str], Path] = {}
+    with ExitStack() as staging_dirs:
+        for key, copies in artifact_specs.items():
+            if not needs_artifact_staging(copies):
+                continue
+            staging_root = Path(staging_dirs.enter_context(tempfile.TemporaryDirectory(prefix="flux-artifact-")))
+            try:
+                stage_artifact_copies(repo_root, staging_root, copies)
+            except (ValueError, FileNotFoundError) as error:
+                raise ValueError(f"failed to stage ExternalArtifact {key}: {error}") from error
+            staged_artifacts[key] = staging_root
+
+        async def _build_all() -> list[KustomizeBuildResult]:
+            async def _build(kust: KustomizeFile) -> KustomizeBuildResult:
+                spec = specs_by_dir[kust.path.parent.resolve()]
+                source_ref = spec.source_ref
+                if source_ref is None or source_ref.kind != EXTERNAL_ARTIFACT_KIND:
+                    return await run_kustomize_build(kust)
+
+                artifact_namespace = source_ref.namespace or spec.namespace
+                staged_root = staged_artifacts.get((artifact_namespace, source_ref.name))
+                if staged_root is None:
+                    return await run_kustomize_build(kust)
+
+                staged_path = staged_root / kust.path.relative_to(repo_root)
+                if not staged_path.is_file():
+                    raise FileNotFoundError(
+                        f"ExternalArtifact {artifact_namespace}/{source_ref.name} does not contain "
+                        f"{staged_path.relative_to(staged_root)}"
+                    )
+                staged_result = await run_kustomize_build(KustomizeFile(path=staged_path))
+                return staged_result.model_copy(update={"kustomization_path": kust.path})
+
+            return await asyncio.gather(*[_build(kust) for kust in kusts])
+
+        parsed.build_results = asyncio.run(_build_all())
     return parsed
 
 

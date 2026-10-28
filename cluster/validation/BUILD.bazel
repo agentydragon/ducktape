@@ -279,6 +279,7 @@ py_test(
     size = "medium",
     srcs = ["test_cluster_integration.py"],
     data = [
+        "//:session_backup_sops_source",
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
         "//cluster/k8s:cluster_all_files",
