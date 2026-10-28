@@ -50,12 +50,7 @@ class ResticRepository:
         self.environment = dict(environment)
 
     def _run(self, arguments: tuple[str, ...]) -> bytes:
-        result = subprocess.run(
-            [self.binary, *arguments],
-            env=self.environment,
-            capture_output=True,
-            check=False,
-        )
+        result = subprocess.run([self.binary, *arguments], env=self.environment, capture_output=True, check=False)
         if result.returncode != 0:
             raise ResticCommandError(arguments, result.returncode, result.stderr)
         return result.stdout
@@ -105,7 +100,9 @@ class ResticRepository:
             if message_type == "snapshot":
                 continue
             if message_type != "node":
-                raise ResticOutputError(f"restic ls returned unknown message type on line {line_number}: {message_type!r}")
+                raise ResticOutputError(
+                    f"restic ls returned unknown message type on line {line_number}: {message_type!r}"
+                )
             try:
                 path = str(item["path"])
                 size = int(item.get("size", 0))
@@ -116,12 +113,7 @@ class ResticRepository:
             if size < 0:
                 raise ResticOutputError(f"restic ls returned a negative file size on line {line_number}")
             files.append(
-                ResticFile(
-                    path=str(PurePosixPath(path)),
-                    file_type=file_type,
-                    byte_size=size,
-                    modified_at=modified_at,
-                )
+                ResticFile(path=str(PurePosixPath(path)), file_type=file_type, byte_size=size, modified_at=modified_at)
             )
         return files
 
@@ -141,7 +133,9 @@ class ResticRepository:
             if message_type == "statistics":
                 continue
             if message_type != "change":
-                raise ResticOutputError(f"restic diff returned unknown message type on line {line_number}: {message_type!r}")
+                raise ResticOutputError(
+                    f"restic diff returned unknown message type on line {line_number}: {message_type!r}"
+                )
             try:
                 changes.append(ResticChange(path=str(PurePosixPath(item["path"])), modifier=str(item["modifier"])))
             except (KeyError, TypeError, ValueError) as exc:
@@ -151,11 +145,7 @@ class ResticRepository:
     def dump_to(self, snapshot_id: str, path: str, destination: BinaryIO) -> None:
         arguments = ("dump", snapshot_id, "--", path)
         result = subprocess.run(
-            [self.binary, *arguments],
-            env=self.environment,
-            stdout=destination,
-            stderr=subprocess.PIPE,
-            check=False,
+            [self.binary, *arguments], env=self.environment, stdout=destination, stderr=subprocess.PIPE, check=False
         )
         if result.returncode != 0:
             raise ResticCommandError(arguments, result.returncode, result.stderr)
@@ -163,6 +153,6 @@ class ResticRepository:
 
 def _parse_datetime(value: str) -> datetime:
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.fromisoformat(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"invalid RFC3339 timestamp: {value!r}") from exc

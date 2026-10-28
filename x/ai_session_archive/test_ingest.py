@@ -75,9 +75,7 @@ def _backup(env: dict[str, str], *source_paths: Path) -> None:
     )
 
 
-def test_real_restic_import_retains_every_changed_and_deleted_version(
-    tmp_path: Path, postgres_engine: Engine
-) -> None:
+def test_real_restic_import_retains_every_changed_and_deleted_version(tmp_path: Path, postgres_engine: Engine) -> None:
     repository, env = _new_repository(tmp_path)
     claude_root = tmp_path / "home" / ".claude"
     codex_root = tmp_path / "home" / ".codex"
@@ -101,9 +99,7 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(
         b'{"type":"assistant","timestamp":"2026-01-01T00:00:03Z"}\n'
     )
     telemetry_path.write_bytes(b'{"event":"not a conversation"}\n')
-    codex_path.write_bytes(
-        b'{"type":"session_meta","payload":{"id":"archived-session","cwd":"/repo"}}\n["scalar",1]\n'
-    )
+    codex_path.write_bytes(b'{"type":"session_meta","payload":{"id":"archived-session","cwd":"/repo"}}\n["scalar",1]\n')
 
     _backup(env, claude_root, codex_root)
     initial_snapshot = repository.list_snapshots()[0]
@@ -127,12 +123,7 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(
         assert child.parent_link_kind == "claude_path_inferred"
         assert not child.identity_inferred
         children = list_sessions(
-            db,
-            machine_id="archive-test",
-            harness=Harness.CLAUDE,
-            parent_session_id=main.id,
-            cursor=None,
-            limit=100,
+            db, machine_id="archive-test", harness=Harness.CLAUDE, parent_session_id=main.id, cursor=None, limit=100
         )
         assert [item.id for item in children.data] == [child.id]
         child_versions = list_versions(db, session_id=child.id)
@@ -147,11 +138,7 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(
         assert len(codex_sessions.data) == 1
         codex_versions = list_versions(db, session_id=codex_sessions.data[0].id)
         codex_events = list_events(
-            db,
-            session_id=codex_sessions.data[0].id,
-            version_id=codex_versions[0].id,
-            cursor=None,
-            limit=20,
+            db, session_id=codex_sessions.data[0].id, version_id=codex_versions[0].id, cursor=None, limit=20
         )
         assert codex_events is not None
         assert codex_events.data[1].parsed == ["scalar", 1]
@@ -169,11 +156,7 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(
         assert [event.ordinal for event in first_page.data] == [0]
         assert first_page.next_cursor == 0
         second_page = list_events(
-            db,
-            session_id=main.id,
-            version_id=first_version.id,
-            cursor=first_page.next_cursor,
-            limit=1,
+            db, session_id=main.id, version_id=first_version.id, cursor=first_page.next_cursor, limit=1
         )
         assert second_page is not None
         assert [event.ordinal for event in second_page.data] == [1]
@@ -181,13 +164,16 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(
         assert first_events.data[0].timestamp is not None
         assert first_events.data[0].timestamp.utcoffset() is not None
         assert first_events.data[0].raw_base64 == first_events.data[1].raw_base64
-        assert len(
-            list(
-                db.scalars(
-                    select(FileVersionRecordRow).where(FileVersionRecordRow.file_version_id == first_version.id)
+        assert (
+            len(
+                list(
+                    db.scalars(
+                        select(FileVersionRecordRow).where(FileVersionRecordRow.file_version_id == first_version.id)
+                    )
                 )
             )
-        ) == 3
+            == 3
+        )
         assert get_session(db, session_id=main.id) is not None
 
     original_stat = main_path.stat()
@@ -197,13 +183,19 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(
     snapshots = repository.list_snapshots()
     same_metadata_snapshot = snapshots[-1]
     changes = repository.diff_snapshots(snapshots[-2].id, same_metadata_snapshot.id)
-    assert any(
-        change.path.endswith("/main-session.jsonl") and change.modifier == "M" for change in changes
-    ), [(change.path, change.modifier) for change in changes]
+    assert any(change.path.endswith("/main-session.jsonl") and change.modifier == "M" for change in changes), [
+        (change.path, change.modifier) for change in changes
+    ]
     report = ingestor.ingest()
     assert report.files_failed == 0
     with factory() as db:
-        main = next(item for item in list_sessions(db, machine_id="archive-test", harness=Harness.CLAUDE, cursor=None, limit=100).data if item.title == "hello")
+        main = next(
+            item
+            for item in list_sessions(
+                db, machine_id="archive-test", harness=Harness.CLAUDE, cursor=None, limit=100
+            ).data
+            if item.title == "hello"
+        )
         versions = list_versions(db, session_id=main.id)
         assert len(versions) == 2
         changed = next(version for version in versions if version.snapshot_id == same_metadata_snapshot.id)
@@ -225,7 +217,13 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(
     ingestor.ingest()
 
     with factory() as db:
-        main = next(item for item in list_sessions(db, machine_id="archive-test", harness=Harness.CLAUDE, cursor=None, limit=100).data if item.title == "hello")
+        main = next(
+            item
+            for item in list_sessions(
+                db, machine_id="archive-test", harness=Harness.CLAUDE, cursor=None, limit=100
+            ).data
+            if item.title == "hello"
+        )
         versions = list_versions(db, session_id=main.id)
         assert len(versions) == 3
         truncated = next(version for version in versions if version.snapshot_id == truncation_snapshot.id)
@@ -246,7 +244,9 @@ def test_real_restic_import_retains_every_changed_and_deleted_version(
         )
         assert len(telemetry) == 1
         assert telemetry[0].status == "unclassified"
-        snapshot_rows = list(db.scalars(select(ArchiveSnapshotRow).where(ArchiveSnapshotRow.machine_id == "archive-test")))
+        snapshot_rows = list(
+            db.scalars(select(ArchiveSnapshotRow).where(ArchiveSnapshotRow.machine_id == "archive-test"))
+        )
         assert all(row.capture_status == "unknown" for row in snapshot_rows)
 
 
@@ -327,10 +327,7 @@ def test_restic_question_modifier_is_an_indexable_content_change() -> None:
     assert entries[0][1] == "?"
 
 
-@pytest.mark.parametrize(
-    "timestamp",
-    ["2026-01-01T00:00:00", "not-a-timestamp"],
-)
+@pytest.mark.parametrize("timestamp", ["2026-01-01T00:00:00", "not-a-timestamp"])
 def test_timezone_naive_or_invalid_record_timestamps_are_unknown(timestamp: str) -> None:
     assert _record_timestamp({"timestamp": timestamp}) is None
 

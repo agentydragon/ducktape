@@ -4,7 +4,22 @@
 from collections.abc import Callable
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, JSON, LargeBinary, String, UniqueConstraint, Uuid, create_engine
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    UniqueConstraint,
+    Uuid,
+    create_engine,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -40,9 +55,15 @@ class ArchiveSnapshotRow(Base):
     # Restic snapshot metadata does not establish whether the workstation capture skipped unreadable files.
     capture_status: Mapped[str] = mapped_column(String(20), nullable=False, default="unknown")
     __table_args__ = (
-        CheckConstraint("inventory_status IN ('pending', 'complete', 'failed')", name="ck_archive_snapshots_inventory_status"),
-        CheckConstraint("processing_status IN ('pending', 'complete', 'failed')", name="ck_archive_snapshots_processing_status"),
-        CheckConstraint("capture_status IN ('unknown', 'complete', 'incomplete')", name="ck_archive_snapshots_capture_status"),
+        CheckConstraint(
+            "inventory_status IN ('pending', 'complete', 'failed')", name="ck_archive_snapshots_inventory_status"
+        ),
+        CheckConstraint(
+            "processing_status IN ('pending', 'complete', 'failed')", name="ck_archive_snapshots_processing_status"
+        ),
+        CheckConstraint(
+            "capture_status IN ('unknown', 'complete', 'incomplete')", name="ck_archive_snapshots_capture_status"
+        ),
         Index("idx_archive_snapshots_machine_time", "machine_id", "captured_at"),
     )
 
@@ -155,9 +176,7 @@ class RecordPayloadRow(Base):
 class FileVersionRecordRow(Base):
     __tablename__ = "file_version_records"
 
-    file_version_id: Mapped[Any] = mapped_column(
-        ForeignKey("file_versions.id", ondelete="RESTRICT"), primary_key=True
-    )
+    file_version_id: Mapped[Any] = mapped_column(ForeignKey("file_versions.id", ondelete="RESTRICT"), primary_key=True)
     ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
     byte_offset: Mapped[int] = mapped_column(BigInteger, nullable=False)
     payload_id: Mapped[Any] = mapped_column(ForeignKey("record_payloads.id", ondelete="RESTRICT"), nullable=False)

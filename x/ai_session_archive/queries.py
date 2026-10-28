@@ -31,9 +31,7 @@ def list_machines(session: DbSession) -> list[Machine]:
 
 def _session_summary_query() -> Any:
     version_count = (
-        select(func.count(FileVersionRow.id))
-        .where(FileVersionRow.session_id == SessionRow.id)
-        .scalar_subquery()
+        select(func.count(FileVersionRow.id)).where(FileVersionRow.session_id == SessionRow.id).scalar_subquery()
     )
     latest_version_id = (
         select(SnapshotFileRow.file_version_id)
@@ -81,10 +79,7 @@ def _decode_session_cursor(cursor: str) -> tuple[datetime | None, UUID]:
 
 def _encode_session_cursor(row: SessionRow) -> str:
     payload = json.dumps(
-        {
-            "last_activity_at": row.last_activity_at.isoformat() if row.last_activity_at else None,
-            "id": str(row.id),
-        },
+        {"last_activity_at": row.last_activity_at.isoformat() if row.last_activity_at else None, "id": str(row.id)},
         separators=(",", ":"),
     ).encode("ascii")
     return base64.urlsafe_b64encode(payload).decode("ascii")
@@ -189,12 +184,7 @@ def _version_lineage(session: DbSession, version: FileVersionRow) -> list[FileVe
 
 
 def list_events(
-    session: DbSession,
-    *,
-    session_id: UUID,
-    version_id: UUID,
-    cursor: int | None,
-    limit: int,
+    session: DbSession, *, session_id: UUID, version_id: UUID, cursor: int | None, limit: int
 ) -> EventPage | None:
     if not 1 <= limit <= MAX_EVENT_PAGE_SIZE:
         raise ValueError(f"limit must be between 1 and {MAX_EVENT_PAGE_SIZE}")

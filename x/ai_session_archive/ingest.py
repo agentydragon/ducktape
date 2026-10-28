@@ -121,9 +121,12 @@ class SnapshotIngestor:
                 db.add(MachineRow(id=self._source.machine_id, display_name=self._source.display_name))
             else:
                 machine.display_name = self._source.display_name
-            configured = {(row.harness, row.root_path) for row in db.scalars(
-                select(SessionRootRow).where(SessionRootRow.machine_id == self._source.machine_id)
-            )}
+            configured = {
+                (row.harness, row.root_path)
+                for row in db.scalars(
+                    select(SessionRootRow).where(SessionRootRow.machine_id == self._source.machine_id)
+                )
+            }
             for root in self._roots:
                 key = (root.harness.value, str(root.path))
                 if key not in configured:
@@ -169,10 +172,7 @@ class SnapshotIngestor:
                 row.comparison_snapshot_id = comparison_snapshot_id
                 row.inventory_error = None
                 for path, modifier, file_type, size, modified_at, status, error, location in entries:
-                    existing = db.get(
-                        SnapshotFileRow,
-                        (self._source.machine_id, snapshot.id, path),
-                    )
+                    existing = db.get(SnapshotFileRow, (self._source.machine_id, snapshot.id, path))
                     if existing is not None:
                         continue
                     session_id = None
@@ -225,7 +225,9 @@ class SnapshotIngestor:
                 status, error = "not_indexed", f"JSONL path is a {file.file_type}, not a regular file"
             else:
                 status, error = "pending", None
-            entries.append((file.path, "inventory", file.file_type, file.byte_size, file.modified_at, status, error, location))
+            entries.append(
+                (file.path, "inventory", file.file_type, file.byte_size, file.modified_at, status, error, location)
+            )
         return entries
 
     def _changed_entries(
@@ -270,10 +272,7 @@ class SnapshotIngestor:
             if root.harness == Harness.CLAUDE:
                 supported = len(relative_parts) >= 3 and relative_parts[0] == "projects"
             else:
-                supported = (
-                    len(relative_parts) >= 2
-                    and relative_parts[0] in ("sessions", "archived_sessions")
-                )
+                supported = len(relative_parts) >= 2 and relative_parts[0] in ("sessions", "archived_sessions")
             if not supported:
                 return None
             parent_source_path = None
@@ -394,7 +393,9 @@ class SnapshotIngestor:
                 if row.change_kind == "-":
                     row.status = "deleted"
                     return
-                if any(part not in _KNOWN_DIFF_MODIFIERS and part != "inventory" for part in row.change_kind.split(",")):
+                if any(
+                    part not in _KNOWN_DIFF_MODIFIERS and part != "inventory" for part in row.change_kind.split(",")
+                ):
                     raise ValueError(f"unrecognized Restic diff modifier: {row.change_kind}")
 
                 with tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode="w+b") as contents:
@@ -402,7 +403,9 @@ class SnapshotIngestor:
                     contents.seek(0)
                     sha256, byte_size, record_count = _fingerprint_file(contents)
                     contents.seek(0)
-                    session_row = db.get(SessionRow, row.session_id) if row.session_id else self._ensure_session(db, location)
+                    session_row = (
+                        db.get(SessionRow, row.session_id) if row.session_id else self._ensure_session(db, location)
+                    )
                     if session_row is None:
                         raise RuntimeError(f"missing session row for {path}")
                     version_row, metadata = self._store_version(
@@ -439,10 +442,7 @@ class SnapshotIngestor:
         contents: BinaryIO,
     ) -> tuple[FileVersionRow, dict[str, Any]]:
         existing = db.scalar(
-            select(FileVersionRow).where(
-                FileVersionRow.session_id == session_row.id,
-                FileVersionRow.sha256 == sha256,
-            )
+            select(FileVersionRow).where(FileVersionRow.session_id == session_row.id, FileVersionRow.sha256 == sha256)
         )
         if existing is not None:
             if existing.byte_size != byte_size or existing.parser_version != PARSER_VERSION:
@@ -527,8 +527,7 @@ class SnapshotIngestor:
             batch = hashes[start : start + 1000]
             rows = db.scalars(
                 select(RecordPayloadRow).where(
-                    RecordPayloadRow.sha256.in_(batch),
-                    RecordPayloadRow.parser_version == PARSER_VERSION,
+                    RecordPayloadRow.sha256.in_(batch), RecordPayloadRow.parser_version == PARSER_VERSION
                 )
             )
             payload_by_hash.update((row.sha256, row) for row in rows)
@@ -617,14 +616,10 @@ class SnapshotIngestor:
     def _report(self, snapshot_count: int) -> IngestReport:
         with self._session_factory() as db:
             snapshots = list(
-                db.scalars(
-                    select(ArchiveSnapshotRow).where(ArchiveSnapshotRow.machine_id == self._source.machine_id)
-                )
+                db.scalars(select(ArchiveSnapshotRow).where(ArchiveSnapshotRow.machine_id == self._source.machine_id))
             )
             files = list(
-                db.scalars(
-                    select(SnapshotFileRow).where(SnapshotFileRow.machine_id == self._source.machine_id)
-                )
+                db.scalars(select(SnapshotFileRow).where(SnapshotFileRow.machine_id == self._source.machine_id))
             )
         return IngestReport(
             snapshots_seen=snapshot_count,
@@ -746,7 +741,7 @@ def _record_timestamp(record: Mapping[str, Any]) -> datetime | None:
         value = record.get(key)
         if isinstance(value, str):
             try:
-                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                parsed = datetime.fromisoformat(value)
                 return parsed if parsed.tzinfo is not None and parsed.utcoffset() is not None else None
             except ValueError:
                 continue
@@ -797,12 +792,7 @@ def _extract_session_metadata(record: Mapping[str, Any], metadata: dict[str, Any
                     break
 
 
-def _effective_payload_ids(
-    db: DbSession,
-    version: FileVersionRow | None,
-    start: int,
-    end: int,
-) -> list[UUID]:
+def _effective_payload_ids(db: DbSession, version: FileVersionRow | None, start: int, end: int) -> list[UUID]:
     if version is None:
         return []
     end = min(end, version.record_count)
