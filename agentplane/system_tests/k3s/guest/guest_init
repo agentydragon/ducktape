@@ -88,6 +88,8 @@ acpid_pid=$!
 umask 0007
 export ANTHROPIC_AUTH_TOKEN=agentplane-credential-agentplane-workload
 export OPENAI_API_KEY=agentplane-credential-agentplane-workload
+# This k3s guest has no OTLP collector. Avoid waiting for the exporter's shutdown timeout.
+export OTEL_SDK_DISABLED=true
 while [ "$shutdown_requested" -eq 0 ]; do
 	# The inner shell enters the runner's cgroup, then becomes the runner.
 	sh -c "echo \$\$ >$service/runner/cgroup.procs && exec $runtime/runner/bin/agentplane-runner --config $runtime/config/runner.json --launch-file $runtime/sandbox/launch.json" &
