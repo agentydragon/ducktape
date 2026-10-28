@@ -196,6 +196,28 @@ func summarize(cursor int64, event model.EventIdentity, payload []byte, createdA
 	return summary, nil
 }
 
+func summarizeStored(cursor int64, event model.EventIdentity, githubPayload []byte, content entryContentStorage, createdAt time.Time) (EntrySummary, error) {
+	if message, ok := event.(model.MessageEvent); ok {
+		return EntrySummary{
+			Cursor: cursor, CreatedAt: createdAt.UTC(), Provider: EntryFromMessage,
+			Summary: fmt.Sprintf("Message from %s/%s", message.Sender.Namespace, message.Sender.Name),
+		}, nil
+	}
+	payload, err := entryPayloadFromRead(event, githubPayload, content)
+	if err != nil {
+		return EntrySummary{}, fmt.Errorf("entry %d content: %w", cursor, err)
+	}
+	return summarize(cursor, event, payload, createdAt)
+}
+
+// Status needs only Action and mergeability lifecycle fields. Message summaries use the authenticated sender in
+// the identity, so the SQL projection never fetches or decodes a Message body.
+const entryContentSummaryReadColumns = `action_state, action_at,
+	action_actor_kind, action_actor_namespace, action_actor_name, action_actor_issuer, action_actor_subject,
+	mergeability_repository, mergeability_base_ref, mergeability_head_sha, mergeability_base_sha,
+	mergeability_previous, mergeability_current, mergeability_observed_at, mergeability_observed_at_submicro_nanos,
+	merge_commit_sha, merge_commit_base_sha, merge_commit_head_sha, NULL::text, NULL::text`
+
 func truncate(s string) string {
 	if characters := []rune(s); len(characters) > maxSummaryField {
 		return string(characters[:maxSummaryField])
@@ -240,9 +262,9 @@ func (s *Store) SandboxStatus(ctx context.Context, ref model.DestinationRef, deb
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		status.ObservedAt = now()
 		inboxes, nextWork, err := inboxesOf(ctx, tx, `
-			WHERE coalesce(destination_namespace, destination_ref->>'namespace') = $1
-				AND coalesce(destination_name, destination_ref->>'name') = $2
-				AND coalesce(destination_uid, destination_ref->>'uid') = $3
+			WHERE destination_namespace = $1
+				AND destination_name = $2
+				AND destination_uid = $3
 			ORDER BY session_id, id LIMIT $4`, ref.Namespace, ref.Name, ref.UID, maxInboxesPerSandbox)
 		if err != nil {
 			return err
@@ -324,7 +346,9 @@ func subscriptionStatuses(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, ob
 
 func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, after int64) ([]EntrySummary, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT cursor, event, payload, created_at FROM entry WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
+		`SELECT cursor, `+eventIdentityReadColumns+`,
+			CASE WHEN identity_provider IN ('github', 'github_observation') THEN payload END, `+entryContentSummaryReadColumns+`, created_at FROM entry
+			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inboxID, after, maxPendingEntrySummaries)
 	if err != nil {
 		return nil, err
@@ -333,16 +357,22 @@ func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, a
 	var summaries []EntrySummary
 	for rows.Next() {
 		var cursor int64
-		var event, payload []byte
+		var identityRead eventIdentityRead
+		var payload []byte
+		var content entryContentStorage
 		var createdAt time.Time
-		if err := rows.Scan(&cursor, &event, &payload, &createdAt); err != nil {
+		destinations := append([]any{&cursor}, identityRead.destinations()...)
+		destinations = append(destinations, &payload)
+		destinations = append(destinations, content.destinations()...)
+		destinations = append(destinations, &createdAt)
+		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
-		identity, err := model.DecodeEventIdentity(event)
+		identity, err := identityRead.event()
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inboxID, cursor, err)
 		}
-		summary, err := summarize(cursor, identity, payload, createdAt)
+		summary, err := summarizeStored(cursor, identity, payload, content, createdAt)
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s: %w", inboxID, err)
 		}
@@ -393,7 +423,7 @@ func (s *Store) SessionNoticeStates(ctx context.Context, namespace string, sessi
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		states.ObservedAt = now()
 		inboxes, _, err := inboxesOf(ctx, tx, `
-			WHERE coalesce(destination_namespace, destination_ref->>'namespace') = $1 AND NOT retired
+			WHERE destination_namespace = $1 AND NOT retired
 				AND session_id IN (SELECT jsonb_array_elements_text($2::jsonb))
 			ORDER BY session_id, id`, namespace, string(wanted))
 		if err != nil {

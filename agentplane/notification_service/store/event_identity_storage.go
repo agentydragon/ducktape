@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// eventIdentityStorage is the relational copy of an entry's source identity. The legacy JSON identity remains
-// the deduplication key until the explicit online backfill and index build have completed.
+// eventIdentityStorage is an entry's relational source identity. Writers retain its legacy JSON form for
+// compatibility with older readers during rollout; this release uses the indexed relational key for deduplication.
 type eventIdentityStorage struct {
 	provider                   string
 	actionsRequestID           *uuid.UUID
@@ -38,8 +38,8 @@ const eventIdentityReadColumns = `identity_provider, actions_request_id::text, a
 	github_pull_request_number, github_mergeability_sequence, github_snapshot_version, github_observation_sequence,
 	message_id::text, message_sender_namespace, message_sender_name`
 
-// eventIdentityRead decodes a relational source key for the offline content backfill. Serving readers retain
-// the JSONB identity until the identity backfill and index build complete.
+// eventIdentityRead decodes a relational source key for the offline content backfill and serving readers.
+// The JSONB identity remains dual-written for older readers during rollout.
 type eventIdentityRead struct {
 	provider                   sql.NullString
 	actionsRequestID           sql.NullString

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,6 +99,30 @@ func insertBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor i
 		message_id, message_sender_namespace, message_sender_name)
 		VALUES ($1, $2, $3::jsonb, $4::jsonb, now(), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`, args...)
 	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// insertContentBackfilledEntry models a retained row after the identity and content backfills.
+func insertContentBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor int64, eventJSON []byte, payload string) {
+	t.Helper()
+	event, err := model.DecodeEventIdentity(eventJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := entryContentStorageFor(event, json.RawMessage(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertBackfilledEntry(t, db, inboxID, cursor, eventJSON, payload)
+	values := content.args()
+	placeholders := make([]string, len(values))
+	for i := range placeholders {
+		placeholders[i] = fmt.Sprintf("$%d", i+3)
+	}
+	query := `UPDATE entry SET (` + entryContentReadColumns + `) = (` + strings.Join(placeholders, ", ") + `)
+		WHERE inbox_id = $1 AND cursor = $2`
+	if _, err := db.ExecContext(t.Context(), query, append([]any{inboxID, cursor}, values...)...); err != nil {
 		t.Fatal(err)
 	}
 }

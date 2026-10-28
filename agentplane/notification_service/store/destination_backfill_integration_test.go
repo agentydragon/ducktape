@@ -26,8 +26,17 @@ func newDestinationBackfillDatabase(t *testing.T) (*sql.DB, context.Context) {
 	return db, t.Context()
 }
 
+// allowLegacyInboxDestinationTestRows creates a disposable legacy-schema fixture for backfill tests.
+func allowLegacyInboxDestinationTestRows(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+	if _, err := db.ExecContext(ctx, `ALTER TABLE inbox DROP CONSTRAINT inbox_destination_fields_valid`); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBackfillInboxDestinationsPreservesPythonRowsAndSubscriptionIdempotency(t *testing.T) {
 	db, ctx := newDestinationBackfillDatabase(t)
+	allowLegacyInboxDestinationTestRows(t, ctx, db)
 	owner := model.ServiceAccount{Namespace: "test-namespace", Name: "test-destination-backfill"}
 	ref := model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-uid"}
 	creation := model.Subscribe{
@@ -48,6 +57,7 @@ func TestBackfillInboxDestinationsPreservesPythonRowsAndSubscriptionIdempotency(
 		t.Fatal(err)
 	}
 	subscriptionID := uuid.New()
+	allowLegacySubscriptionCreationTestRows(t, ctx, db)
 	if _, err := db.ExecContext(ctx, `INSERT INTO subscription (
 		id, inbox_id, idempotency_key, creation, version, actions_after_sequence, generation, cancelled, expires_at)
 		VALUES ($1, $2, $3, $4::jsonb, 1, $5, 0, false, $6)`,
@@ -56,11 +66,13 @@ func TestBackfillInboxDestinationsPreservesPythonRowsAndSubscriptionIdempotency(
 		t.Fatal(err)
 	}
 	store := New(db, defaultQuotas())
-	assertLegacyInboxReadableAndIdempotent(t, ctx, store, owner, ref, creation, inboxID)
-
+	if err := BackfillSubscriptionCreations(ctx, db); err != nil {
+		t.Fatal(err)
+	}
 	if err := BackfillInboxDestinations(ctx, db); err != nil {
 		t.Fatal(err)
 	}
+	assertInboxReadableAndIdempotent(t, ctx, store, owner, ref, creation, inboxID)
 	var namespace, name, uid string
 	if err := db.QueryRowContext(ctx, `SELECT destination_namespace, destination_name, destination_uid
 		FROM inbox WHERE id = $1`, inboxID).Scan(&namespace, &name, &uid); err != nil {
@@ -95,7 +107,7 @@ func TestBackfillInboxDestinationsPreservesPythonRowsAndSubscriptionIdempotency(
 	}
 }
 
-func assertLegacyInboxReadableAndIdempotent(
+func assertInboxReadableAndIdempotent(
 	t *testing.T, ctx context.Context, store *Store, owner model.ServiceAccount, ref model.DestinationRef, creation model.Subscribe, id uuid.UUID,
 ) {
 	t.Helper()
@@ -128,10 +140,20 @@ func TestSubscribeDualWritesNormalizedDestination(t *testing.T) {
 	if got != ref {
 		t.Fatalf("new inbox destination = %+v, want %+v", got, ref)
 	}
+	var legacyJSON []byte
+	if err := db.QueryRowContext(ctx, `SELECT destination_ref FROM inbox
+		WHERE owner_namespace = $1 AND owner_name = $2`, owner.Namespace, owner.Name).Scan(&legacyJSON); err != nil {
+		t.Fatal(err)
+	}
+	var legacyRef model.DestinationRef
+	if err := json.Unmarshal(legacyJSON, &legacyRef); err != nil || legacyRef != ref {
+		t.Fatalf("legacy destination_ref = %+v, %v; want %+v", legacyRef, err, ref)
+	}
 }
 
 func TestBackfillInboxDestinationsResumesAfterInvalidRowAndUsesUUIDIndexes(t *testing.T) {
 	db, ctx := newDestinationBackfillDatabase(t)
+	allowLegacyInboxDestinationTestRows(t, ctx, db)
 	const rowCount = destinationBackfillBatchSize + 1
 	if _, err := db.ExecContext(ctx, `INSERT INTO inbox (
 		id, owner_namespace, owner_name, destination_key, destination_ref, session_id, last_cursor, acknowledged,
@@ -256,6 +278,79 @@ func TestBackfillInboxDestinationsResumesAfterInvalidRowAndUsesUUIDIndexes(t *te
 	}
 	if repaired != (model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-uid"}) {
 		t.Fatalf("old-writer row after completed-cursor recovery = %+v", repaired)
+	}
+}
+
+func TestValidateInboxDestinationConstraints(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		insert func(context.Context, *sql.DB) error
+		wantOK bool
+	}{
+		{
+			name: "valid rows",
+			insert: func(ctx context.Context, db *sql.DB) error {
+				_, err := db.ExecContext(ctx, `INSERT INTO inbox (
+					id, owner_namespace, owner_name, destination_key, destination_namespace, destination_name, destination_uid,
+					session_id, last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
+					VALUES ($1, 'test-namespace', 'valid-destination-proof', 'key', 'test-namespace', 'sandbox', 'uid',
+					'session', 0, 0, 0, 0, false, now(), now(), now())`, uuid.New())
+				return err
+			},
+			wantOK: true,
+		},
+		{
+			name:   "empty database",
+			insert: func(context.Context, *sql.DB) error { return nil },
+			wantOK: true,
+		},
+		{
+			name: "null and empty keys",
+			insert: func(ctx context.Context, db *sql.DB) error {
+				if _, err := db.ExecContext(ctx, `ALTER TABLE inbox DROP CONSTRAINT inbox_destination_fields_valid`); err != nil {
+					return err
+				}
+				if _, err := db.ExecContext(ctx, `INSERT INTO inbox (
+					id, owner_namespace, owner_name, destination_key, destination_ref, destination_namespace, destination_name,
+					destination_uid, session_id, last_cursor, acknowledged, covered, expired_through, retired, updated_at,
+					next_attempt, claim_until)
+					VALUES ($1, 'test-namespace', 'invalid-destination-proof', 'null', '{}', NULL, 'sandbox', 'uid',
+					'session', 0, 0, 0, 0, false, now(), now(), now()),
+					($2, 'test-namespace', 'invalid-destination-proof', 'empty', '{}', 'test-namespace', '', 'uid',
+					'session-2', 0, 0, 0, 0, false, now(), now(), now())`, uuid.New(), uuid.New()); err != nil {
+					return err
+				}
+				_, err := db.ExecContext(ctx, `ALTER TABLE inbox ADD CONSTRAINT inbox_destination_fields_valid CHECK (
+					destination_namespace IS NOT NULL AND char_length(destination_namespace) BETWEEN 1 AND 63 AND
+					destination_name IS NOT NULL AND char_length(destination_name) BETWEEN 1 AND 63 AND
+					destination_uid IS NOT NULL AND char_length(destination_uid) BETWEEN 1 AND 128
+				) NOT VALID`)
+				return err
+			},
+			wantOK: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db, ctx := newDestinationBackfillDatabase(t)
+			if err := test.insert(ctx, db); err != nil {
+				t.Fatal(err)
+			}
+			err := ValidateInboxDestinationConstraints(ctx, db)
+			if test.wantOK && err != nil {
+				t.Fatalf("validate normalized destination proof: %v", err)
+			}
+			if !test.wantOK && err == nil {
+				t.Fatal("validated constraints with NULL and empty destination keys")
+			}
+			var validated bool
+			if err := db.QueryRowContext(ctx, `SELECT convalidated FROM pg_constraint
+				WHERE conrelid = 'inbox'::regclass AND conname = 'inbox_destination_fields_valid'`).Scan(&validated); err != nil {
+				t.Fatal(err)
+			}
+			if validated != test.wantOK {
+				t.Fatalf("destination shape proof validated = %t, want %t", validated, test.wantOK)
+			}
+		})
 	}
 }
 

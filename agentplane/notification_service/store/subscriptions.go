@@ -60,28 +60,26 @@ type Subscription struct {
 	GitHub *GitHubStatus
 }
 
-const subscriptionColumns = `s.id, s.inbox_id,
-	CASE WHEN s.creation_proto IS NULL AND s.source_provider IS NULL THEN s.creation END,
-	s.creation_proto, s.source_provider, s.idempotency_key, s.version, s.cancelled, s.expires_at,
+const subscriptionColumns = `s.id, s.inbox_id, s.creation_proto, s.source_provider,
+	s.idempotency_key, s.version, s.cancelled, s.expires_at,
 	s.last_success_at, s.error, s.error_kind, s.error_since, s.error_observed_at, s.next_attempt`
 
 // scanSubscription reads subscriptionColumns, then any columns the query adds into extra. viewedAt is the time
 // the subscription is judged expired at.
 func scanSubscription(row rowScanner, viewedAt time.Time, extra ...any) (Subscription, error) {
 	var subscription Subscription
-	var creation []byte
 	var creationProto sql.Null[[]byte]
 	var sourceProvider sql.NullString
 	var message, kind sql.NullString
 	var lastSuccess, since, observed, nextAttempt sql.NullTime
 	if err := row.Scan(append([]any{
-		&subscription.ID, &subscription.InboxID, &creation, &creationProto, &sourceProvider, &subscription.IdempotencyKey,
+		&subscription.ID, &subscription.InboxID, &creationProto, &sourceProvider, &subscription.IdempotencyKey,
 		&subscription.Version, &subscription.Cancelled, &subscription.ExpiresAt, &lastSuccess, &message, &kind,
 		&since, &observed, &nextAttempt,
 	}, extra...)...); err != nil {
 		return Subscription{}, err
 	}
-	body, err := decodeStoredSubscriptionCreation(subscription.ID, creation, creationProto, sourceProvider, subscription.IdempotencyKey)
+	body, err := decodeStoredSubscriptionCreation(subscription.ID, creationProto, sourceProvider, subscription.IdempotencyKey)
 	if err != nil {
 		return Subscription{}, err
 	}
@@ -246,16 +244,13 @@ func (s *Store) Subscribe(ctx context.Context, owner model.ServiceAccount, body 
 		}
 		written := now()
 		var existingID uuid.UUID
-		var existing []byte
 		var existingProto sql.Null[[]byte]
 		var existingProvider sql.NullString
-		err = tx.QueryRowContext(ctx, `SELECT id,
-			CASE WHEN creation_proto IS NULL AND source_provider IS NULL THEN creation END,
-			creation_proto, source_provider
+		err = tx.QueryRowContext(ctx, `SELECT id, creation_proto, source_provider
 			FROM subscription WHERE inbox_id = $1 AND idempotency_key = $2`,
-			inbox.ID, body.IdempotencyKey).Scan(&existingID, &existing, &existingProto, &existingProvider)
+			inbox.ID, body.IdempotencyKey).Scan(&existingID, &existingProto, &existingProvider)
 		if err == nil {
-			previous, err := decodeStoredSubscriptionCreation(existingID, existing, existingProto, existingProvider, body.IdempotencyKey)
+			previous, err := decodeStoredSubscriptionCreation(existingID, existingProto, existingProvider, body.IdempotencyKey)
 			if err != nil {
 				return err
 			}
@@ -326,7 +321,7 @@ func (s *Store) ListSubscriptions(ctx context.Context, owner Owner, afterID *uui
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+subscriptionColumns+` FROM subscription s JOIN inbox i ON i.id = s.inbox_id
 		WHERE i.owner_namespace = $1 AND i.owner_name = $2
-			AND coalesce(i.destination_uid, i.destination_ref ->> 'uid') = $3 AND s.id > $4
+			AND i.destination_uid = $3 AND s.id > $4
 		ORDER BY s.id LIMIT 128`, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, startAfter(afterID))
 	if err != nil {
 		return nil, err
@@ -356,7 +351,7 @@ func (s *Store) GetSubscription(ctx context.Context, owner Owner, id uuid.UUID) 
 	subscription, err := scanSubscription(s.db.QueryRowContext(ctx, `
 		SELECT `+subscriptionColumns+` FROM subscription s JOIN inbox i ON i.id = s.inbox_id
 		WHERE s.id = $1 AND i.owner_namespace = $2 AND i.owner_name = $3
-			AND coalesce(i.destination_uid, i.destination_ref ->> 'uid') = $4`,
+			AND i.destination_uid = $4`,
 		id, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID), now())
 	if errors.Is(err, sql.ErrNoRows) {
 		return Subscription{}, ErrNotFound

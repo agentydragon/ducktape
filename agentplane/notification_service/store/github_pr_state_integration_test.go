@@ -126,7 +126,7 @@ func TestGitHubPRReviewPollAndWebhookDeduplicateInEitherOrderAndSnapshotLateSubs
 			}
 			if got := g.count(t, `SELECT count(*) FROM subscription_match m JOIN entry e
 				ON e.inbox_id = $1 AND e.cursor = m.cursor WHERE m.subscription_id = $2
-				AND e.event->>'provider' = 'github' AND e.event->>'event' = 'pull_request_review'`, g.inbox, first.ID); got != 0 {
+				AND e.identity_provider = 'github' AND e.github_event = 'pull_request_review'`, g.inbox, first.ID); got != 0 {
 				t.Errorf("normalized raw review matches = %d, want zero", got)
 			}
 
@@ -256,7 +256,7 @@ func TestGitHubPRLifecyclePollRecoveryPreservesRealActions(t *testing.T) {
 	}
 	if got := g.count(t, `SELECT count(*) FROM subscription_match m JOIN entry e
 		ON e.inbox_id = $1 AND e.cursor = m.cursor WHERE m.subscription_id = $2
-		AND e.event->>'provider' = 'github' AND e.event->>'event' = 'pull_request'`, closed.InboxID, closed.ID); got != 0 {
+		AND e.identity_provider = 'github' AND e.github_event = 'pull_request'`, closed.InboxID, closed.ID); got != 0 {
 		t.Errorf("covered closed raw webhook matches = %d, want zero", got)
 	}
 
@@ -279,7 +279,7 @@ func TestGitHubPRLifecyclePollRecoveryPreservesRealActions(t *testing.T) {
 	}
 	if got := g.count(t, `SELECT count(*) FROM subscription_match m JOIN entry e
 		ON e.inbox_id = $1 AND e.cursor = m.cursor WHERE m.subscription_id = $2
-		AND e.event->>'provider' = 'github' AND e.event->>'event' = 'pull_request'`, reopened.InboxID, reopened.ID); got != 1 {
+		AND e.identity_provider = 'github' AND e.github_event = 'pull_request'`, reopened.InboxID, reopened.ID); got != 1 {
 		t.Errorf("uncovered reopened raw actions = %d, want one", got)
 	}
 }
