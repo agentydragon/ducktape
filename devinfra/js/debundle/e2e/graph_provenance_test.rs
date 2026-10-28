@@ -169,6 +169,19 @@ fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
 }
 
 #[test]
+fn aliased_source_match_remains_resolvable_by_the_graph_edit_gate() {
+    let fixture = AliasGraphFixture::new();
+    let output = fixture.command(&["bindings", "assign", "value:next"], None, None);
+    assert_success(&output);
+    assert!(fixture.modules.join("next.yaml").is_file());
+
+    assert_graph_mismatch(
+        &fixture.command(&["coverage"], None, None),
+        "yaml_membership",
+    );
+}
+
+#[test]
 fn aliased_chunk_sources_keep_root_and_shadow_guards_during_relocation() {
     let fixture = AliasGraphFixture::new();
     let wrong_root = TempDir::new().unwrap();
@@ -190,6 +203,14 @@ fn aliased_chunk_sources_keep_root_and_shadow_guards_during_relocation() {
         "selector_source_root",
     );
     fs::remove_file(logical_shadow).unwrap();
+
+    let logical_directory = fixture.source_root.join("virtual/chunk.js");
+    fs::create_dir_all(&logical_directory).unwrap();
+    assert_graph_mismatch(
+        &fixture.command(&["coverage"], Some(&fixture.source_root), None),
+        "selector_source_root",
+    );
+    fs::remove_dir_all(logical_directory).unwrap();
 
     let fallback_shadow = fixture.modules.parent().unwrap().join("virtual/chunk.js");
     fs::create_dir_all(fallback_shadow.parent().unwrap()).unwrap();
