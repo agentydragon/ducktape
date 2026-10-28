@@ -18,6 +18,12 @@ change is selected yet.
   not prevent later submissions. It did not reproduce a failure to stop the
   outer runner through the normal cancellation path.
 - Ten seconds is the documented lease default, not a measured hosted setting.
+- The [normal cancellation reproduction](normal_path_reproduction.md) now
+  reproduces continued successful action execution: both a plain action and a
+  controlled analysis-barrier case succeeded on their first attempt. New
+  executions completed 30-second commands after the wrapper exited 130 and
+  cancellation was observed. The barrier case establishes causal ordering;
+  neither case measures outer process termination or attributes the requeue.
 
 ## Cancellation ownership
 
@@ -138,14 +144,15 @@ attempts separate when interpreting execution indexes.
    outer worker's task-deletion, lease-error, and command-stop timestamps. Record
    server/executor versions and configuration provenance. Inferring a lease from
    a terminal API record is insufficient.
-3. **Measure normal cancellation with an independent observer.** Use an owned
-   isolated run with a unique uncached blocked action. Observe actual command
-   start, then signal only the GitHub-style entry PID. Capture outer and child
-   cancellation outcomes, all resulting execution IDs, and positive evidence of
-   remote command termination from outside the canceled process group. That
-   observer channel is not implemented yet; a missing heartbeat alone could be
-   a transport failure. An idle reusable VM or Bazel server is not active build
-   work. Align clocks or retain clock uncertainty explicitly.
+3. **Extend the reproduced normal path with physical-stop evidence.** The
+   [new probes](normal_path_reproduction.md) signal only the entry PID after an
+   active execution is observed, capture outer/child cancellation, and verify
+   continued worker execution using cached results and output. Still missing is
+   positive evidence of outer command termination from outside the canceled
+   process group. A missing heartbeat alone could be a transport failure; an
+   idle reusable VM or Bazel server is not active build work. Contrast default
+   retries with `--remote_retries=0` and trace the initiating Execute/dispatch to
+   test the newly identified Bazel retry hypothesis. Retain clock uncertainty.
 4. **Exercise ownership cases separately.** For two owned consumers of one
    merged action, cancel one and verify the survivor receives its result. Record
    retries/hedges only if they actually occur. Use explicit barriers/releases
