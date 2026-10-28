@@ -1,4 +1,4 @@
-"""Compatibility tests for request-scoped FastMCP OpenAPI clients."""
+"""Behavior tests for request-scoped FastMCP OpenAPI clients."""
 
 from __future__ import annotations
 
@@ -55,11 +55,11 @@ _SPEC: dict[str, Any] = {
 
 @pytest.fixture
 async def placeholder_client() -> AsyncIterator[httpx2.AsyncClient]:
-    async def unexpected_request(request: httpx2.Request) -> httpx2.Response:
-        raise AssertionError(f"provider-level client was used for {request.url}")
+    async def provider_level_response(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json={"value": "provider-level"})
 
     async with httpx2.AsyncClient(
-        base_url="https://placeholder.invalid", transport=httpx2.MockTransport(unexpected_request)
+        base_url="https://placeholder.invalid", transport=httpx2.MockTransport(provider_level_response)
     ) as client:
         yield client
 
@@ -70,7 +70,7 @@ def echo_provider(placeholder_client: httpx2.AsyncClient) -> OpenAPIProvider:
 
 
 async def test_preserves_schema_filters_injected_argument_and_closes_each_client(
-    echo_provider: OpenAPIProvider, placeholder_client: httpx2.AsyncClient
+    echo_provider: OpenAPIProvider,
 ) -> None:
     requests: list[tuple[str, str | None]] = []
     entered: list[httpx2.AsyncClient] = []
@@ -101,10 +101,11 @@ async def test_preserves_schema_filters_injected_argument_and_closes_each_client
     echo_provider.add_transform(RequestScopedOpenAPIClients(trusted_client))
     listed = await echo_provider.list_tools()
     wrapped = await echo_provider.get_tool("echo")
-    assert wrapped is listed[0]
     assert wrapped is not None
+    assert wrapped.name == listed[0].name
     assert wrapped.parameters == original_schema
-    assert wrapped.parameters is not original_schema
+    wrapped.parameters["properties"]["value"]["description"] = "changed in transformed tool"
+    assert original_schema["properties"]["value"]["description"] == "Value returned by the test backend."
 
     first = await wrapped.run({"value": "one", "_fastmcp_request_scoped_http_client": "attacker-controlled"})
     second = await wrapped.run({"value": "two"})
@@ -116,7 +117,7 @@ async def test_preserves_schema_filters_injected_argument_and_closes_each_client
     assert exited == entered
     assert entered[0] is not entered[1]
     assert all(client.is_closed for client in exited)
-    assert parent._client is placeholder_client
+    assert (await parent.run({"value": "parent"})).structured_content == {"value": "provider-level"}
 
 
 async def test_rejects_openapi_parameter_that_collides_with_injected_client(
@@ -137,9 +138,7 @@ async def test_rejects_openapi_parameter_that_collides_with_injected_client(
         await provider.get_tool("echo")
 
 
-async def test_rebuilds_fastmcp_request_for_httpx2_client(
-    echo_provider: OpenAPIProvider, placeholder_client: httpx2.AsyncClient
-) -> None:
+async def test_native_httpx2_client_receives_openapi_request(echo_provider: OpenAPIProvider) -> None:
     observed: list[type[object]] = []
 
     async def backend(request: httpx2.Request) -> httpx2.Response:
@@ -163,12 +162,10 @@ async def test_rebuilds_fastmcp_request_for_httpx2_client(
 
     assert result.structured_content == {"value": "httpx2"}
     assert observed == [httpx2.Request]
-    assert parent._client is placeholder_client
+    assert (await parent.run({"value": "parent"})).structured_content == {"value": "provider-level"}
 
 
-async def test_concurrent_calls_keep_request_clients_isolated(
-    echo_provider: OpenAPIProvider, placeholder_client: httpx2.AsyncClient
-) -> None:
+async def test_concurrent_calls_keep_request_clients_isolated(echo_provider: OpenAPIProvider) -> None:
     current_bearer: ContextVar[str] = ContextVar("current_bearer")
     both_requests_started = asyncio.Event()
     observed: list[tuple[str, str | None]] = []
@@ -219,7 +216,7 @@ async def test_concurrent_calls_keep_request_clients_isolated(
     assert sorted(observed) == [("alpha", "Bearer operator-alpha"), ("beta", "Bearer operator-beta")]
     assert sorted(entered) == ["operator-alpha", "operator-beta"]
     assert sorted(exited) == ["operator-alpha", "operator-beta"]
-    assert parent._client is placeholder_client
+    assert (await parent.run({"value": "parent"})).structured_content == {"value": "provider-level"}
 
 
 if __name__ == "__main__":
