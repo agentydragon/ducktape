@@ -1,5 +1,9 @@
 # Typed ESLint with the stock aspect
 
+The config, opt-in flag, [fixtures](fixtures/BUILD.bazel), and [write-up](investigation.md)
+all live in this directory. Shared integration is limited to `devinfra/js/ts_library.bzl`
+and the ESLint launcher in `devinfra/lint/BUILD.bazel`.
+
 The experiment selects a custom ESLint config through the existing aspect's binary.
 It uses `parserOptions.project: ["**/tsconfig_*.json"]` to discover generated projects in
 Bazel's declared inputs. The config retains the ordinary rules and adds
