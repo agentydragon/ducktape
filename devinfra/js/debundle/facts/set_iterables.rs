@@ -7,7 +7,7 @@
 use super::*;
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
-use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
@@ -88,7 +88,7 @@ impl IterativeRules for AliasInvalidationRules {
     type Fact = ();
     type Rule = Id;
 
-    fn evaluate(&self, id: &Id, context: &mut IterativeContext<'_, Self>) {
+    fn evaluate(&self, id: &Id, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         if context.read(id.clone()).is_none() {
             return;
         }

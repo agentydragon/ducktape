@@ -8,7 +8,7 @@
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use roaring::RoaringBitmap;
@@ -31,7 +31,7 @@ impl IterativeRules for SccLazyEffectRules {
     type Fact = LazyEffectBits;
     type Rule = usize;
 
-    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+    fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let mut reads = RoaringBitmap::new();
         let mut rebinds = RoaringBitmap::new();
         for &successor in &self.successors[*rule] {

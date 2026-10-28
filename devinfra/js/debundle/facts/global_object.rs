@@ -1,5 +1,5 @@
 use super::*;
-use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
 
 /// Identifier names that, when not shadowed by a chunk-top-level
 /// declaration or import, evaluate to the global object in the
@@ -72,7 +72,7 @@ pub(crate) fn apply_global_escape_taint(
         type Fact = ();
         type Rule = usize;
 
-        fn evaluate(&self, index: &usize, context: &mut IterativeContext<'_, Self>) {
+        fn evaluate(&self, index: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
             let facts = &self.0[*index];
             let escaped = context.read(Key::Statement(*index)).is_some()
                 || facts

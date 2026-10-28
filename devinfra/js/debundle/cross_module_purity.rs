@@ -27,7 +27,7 @@
 //! `unknown_call` exactly as before. The oracle only ever *removes*
 //! false-impurity; it never asserts purity it did not derive from a body.
 
-use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -325,7 +325,11 @@ pub fn resolve_imported_purities(
         type Fact = Arc<Purity>;
         type Rule = ModuleKey;
 
-        fn evaluate(&self, module: &ModuleKey, context: &mut IterativeContext<'_, Self>) {
+        fn evaluate(
+            &self,
+            module: &ModuleKey,
+            context: &mut impl FactContext<Self::Key, Self::Fact>,
+        ) {
             let facts = &self.modules[module];
             let imported = facts
                 .imports

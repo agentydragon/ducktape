@@ -810,7 +810,7 @@ pub(super) fn infer_namespace_aliases(
     assignments: &[&(Id, ValueExpr)],
     facts: &NamespaceValueFacts,
 ) -> BTreeSet<Id> {
-    use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
+    use crate::inference::{FactContext, IterativeInference, IterativeRules};
     struct AliasRules<'a> {
         namespace: &'a Id,
         assignments: &'a [&'a (Id, ValueExpr)],
@@ -820,7 +820,7 @@ pub(super) fn infer_namespace_aliases(
         type Key = ();
         type Fact = BTreeSet<Id>;
         type Rule = usize;
-        fn evaluate(&self, rule: &usize, context: &mut IterativeContext<'_, Self>) {
+        fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
             let (target, value) = self.assignments[*rule];
             if target == self.namespace {
                 return;

@@ -3,7 +3,7 @@ use crate::facts::{
     DynamicScopeFact, LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableProof,
     SetIterableShapes,
 };
-use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use std::cell::RefCell;
 use std::sync::Arc;
 
@@ -359,7 +359,11 @@ impl ChunkCodeGraph {
             type Fact = Arc<Purity>;
             type Rule = usize;
 
-            fn evaluate(&self, index: &usize, context: &mut IterativeContext<'_, Self>) {
+            fn evaluate(
+                &self,
+                index: &usize,
+                context: &mut impl FactContext<Self::Key, Self::Fact>,
+            ) {
                 let previous = context
                     .read(*index)
                     .expect("SCC seeded optimistically")

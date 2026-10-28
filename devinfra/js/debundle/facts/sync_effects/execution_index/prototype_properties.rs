@@ -190,7 +190,7 @@ impl IterativeRules for CapabilityContainmentRules<'_> {
     type Fact = NativeReceiverRoots;
     type Rule = usize;
 
-    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+    fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let (target, value) = &self.bindings[*rule];
         let mut reads = BTreeSet::new();
         contained_root_bindings(value, self.index, &mut reads);

@@ -18,7 +18,7 @@ use std::{cell::Cell, rc::Rc};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
 
 use super::{
     LazyBoundary, PositionBucketed, StatementFacts, TopLevelItemView, lazy_visit_arrow_expr,
@@ -657,7 +657,11 @@ impl IterativeRules for CandidateObjectRules {
     type Fact = Arc<Vec<u64>>;
     type Rule = OriginId;
 
-    fn evaluate(&self, value: &OriginId, context: &mut IterativeContext<'_, Self>) {
+    fn evaluate(
+        &self,
+        value: &OriginId,
+        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
+    ) {
         let Some(reached) = context.read(*value).cloned() else {
             return;
         };
@@ -1882,7 +1886,7 @@ impl FlowRules {
     fn values_of_expr_tracking(
         &self,
         expr: &FlowValueExpr,
-        context: &mut IterativeContext<'_, Self>,
+        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
         binding_dependencies: Option<&mut BTreeSet<Id>>,
     ) -> Values {
         let mut binding_dependencies = binding_dependencies;
@@ -1905,7 +1909,7 @@ impl FlowRules {
     }
 
     fn propose_values(
-        context: &mut IterativeContext<'_, Self>,
+        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
         key: FlowKey,
         values: Values,
     ) -> bool {
@@ -1918,7 +1922,7 @@ impl FlowRules {
     }
 
     fn propose_property(
-        context: &mut IterativeContext<'_, Self>,
+        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
         object: u32,
         property: String,
         values: Values,
@@ -1944,7 +1948,11 @@ impl IterativeRules for FlowRules {
     type Fact = FlowFact;
     type Rule = usize;
 
-    fn evaluate(&self, rule: &usize, context: &mut IterativeContext<'_, Self>) {
+    fn evaluate(
+        &self,
+        rule: &usize,
+        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
+    ) {
         let event = &self.events[*rule];
         match event {
             FlowEvent::FunctionDeclaration { id, origin }

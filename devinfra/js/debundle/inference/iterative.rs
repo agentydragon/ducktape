@@ -10,12 +10,21 @@ use super::Judgment;
 use crate::analysis_inputs::ProofDependencies;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Typed access to facts during one producer evaluation. A family adapter can
+/// project this interface onto a shared program store without copying facts or
+/// hiding reads from the dependency worklist.
+pub(crate) trait FactContext<Key, Fact> {
+    fn read(&mut self, key: Key) -> Option<&Fact>;
+    fn propose(&mut self, key: Key, contribution: Fact) -> bool;
+    fn assume(&mut self, dependencies: &ProofDependencies);
+}
+
 pub(crate) trait IterativeRules: Sized {
     type Key: Clone + Ord;
     type Fact;
     type Rule: Clone + Ord;
 
-    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>);
+    fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>);
 
     /// Join a contribution into a fact, returning whether its value changed.
     /// The semantic domain must have finite height and an associative,
@@ -119,8 +128,10 @@ impl<'a, R: IterativeRules> IterativeContext<'a, R> {
             dependencies: ProofDependencies::default(),
         }
     }
+}
 
-    pub(crate) fn read(&mut self, key: R::Key) -> Option<&R::Fact> {
+impl<R: IterativeRules> FactContext<R::Key, R::Fact> for IterativeContext<'_, R> {
+    fn read(&mut self, key: R::Key) -> Option<&R::Fact> {
         self.reads.insert(key.clone());
         let fact = self.facts.get(&key)?;
         self.dependencies.extend(fact.dependencies());
@@ -128,7 +139,7 @@ impl<'a, R: IterativeRules> IterativeContext<'a, R> {
     }
 
     /// Writes are immediately visible to subsequent reads in this producer.
-    pub(crate) fn propose(&mut self, key: R::Key, contribution: R::Fact) -> bool {
+    fn propose(&mut self, key: R::Key, contribution: R::Fact) -> bool {
         use std::collections::btree_map::Entry;
         let changed = match self.facts.entry(key.clone()) {
             Entry::Vacant(entry) => {
@@ -154,7 +165,7 @@ impl<'a, R: IterativeRules> IterativeContext<'a, R> {
         changed
     }
 
-    pub(crate) fn assume(&mut self, dependencies: &ProofDependencies) {
+    fn assume(&mut self, dependencies: &ProofDependencies) {
         self.dependencies.extend(dependencies);
     }
 }
@@ -194,7 +205,7 @@ mod tests {
         type Key = usize;
         type Fact = BTreeSet<usize>;
         type Rule = usize;
-        fn evaluate(&self, rule: &usize, context: &mut IterativeContext<'_, Self>) {
+        fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
             match rule {
                 0 => {
                     if let Some(values) = context.read(2).cloned() {

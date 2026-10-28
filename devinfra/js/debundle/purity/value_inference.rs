@@ -5,7 +5,7 @@
 //! in `plain_data`.
 
 use super::*;
-use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum ValueKey {
@@ -56,7 +56,11 @@ impl IterativeRules for ValueRules<'_> {
     type Fact = ValueFact;
     type Rule = ValueRule;
 
-    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+    fn evaluate(
+        &self,
+        rule: &Self::Rule,
+        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
+    ) {
         match rule {
             ValueRule::Fluent { target, root } => {
                 if context.read(ValueKey::Fluent(root.clone())).is_some() {
@@ -105,7 +109,11 @@ impl IterativeRules for ValueRules<'_> {
 }
 
 impl ValueRules<'_> {
-    fn evaluate_const(&self, producer: &ConstProducer, context: &mut IterativeContext<'_, Self>) {
+    fn evaluate_const(
+        &self,
+        producer: &ConstProducer,
+        context: &mut impl FactContext<<Self as IterativeRules>::Key, <Self as IterativeRules>::Fact>,
+    ) {
         // Source-order const classification is position-sensitive. Wait for
         // every earlier declaration that the initializer references, including
         // unsupported consts whose completed fact is explicitly false. Never

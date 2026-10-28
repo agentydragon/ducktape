@@ -34,7 +34,7 @@ use crate::facts::statement_facts::{
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin};
 use crate::facts::{LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableShapes};
-use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePrototypeMutation,
@@ -822,7 +822,7 @@ impl IterativeRules for MutationReceiverAliasRules<'_> {
     type Fact = bool;
     type Rule = usize;
 
-    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+    fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let (target, value) = self.assignments[*rule];
         let receiver = if target != self.namespace {
             let mut is_receiver_alias = |binding: &Id| context.read(binding.clone()).is_some();
@@ -1853,25 +1853,19 @@ fn intrinsic_roots(
     }
 }
 
-fn read_intrinsic_alias_inputs<R>(
-    context: &mut IterativeContext<'_, R>,
+fn read_intrinsic_alias_inputs(
+    context: &mut impl FactContext<Id, NativeReceiverRoots>,
     value: &ValueExpr,
-) -> BTreeMap<Id, NativeReceiverRoots>
-where
-    R: IterativeRules<Key = Id, Fact = NativeReceiverRoots>,
-{
+) -> BTreeMap<Id, NativeReceiverRoots> {
     let mut mentioned = BTreeSet::new();
     value.bindings(&mut mentioned);
     read_intrinsic_aliases(context, mentioned)
 }
 
-fn read_intrinsic_aliases<R>(
-    context: &mut IterativeContext<'_, R>,
+fn read_intrinsic_aliases(
+    context: &mut impl FactContext<Id, NativeReceiverRoots>,
     bindings: impl IntoIterator<Item = Id>,
-) -> BTreeMap<Id, NativeReceiverRoots>
-where
-    R: IterativeRules<Key = Id, Fact = NativeReceiverRoots>,
-{
+) -> BTreeMap<Id, NativeReceiverRoots> {
     bindings
         .into_iter()
         .filter_map(|binding| {
@@ -1893,7 +1887,7 @@ impl IterativeRules for RawIntrinsicAliasRules<'_> {
     type Fact = NativeReceiverRoots;
     type Rule = usize;
 
-    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+    fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let (target, value) = self.assignments[*rule];
         let aliases = read_intrinsic_alias_inputs(context, value);
         let roots = intrinsic_roots(
@@ -2050,7 +2044,7 @@ impl IterativeRules for PostAuthorIntrinsicAliasRules<'_> {
     type Fact = NativeReceiverRoots;
     type Rule = usize;
 
-    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+    fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let (target, value) = self.assignments[*rule];
         if self.index.ordinary_input_refs.contains_key(target) {
             return;
@@ -2345,7 +2339,7 @@ impl IterativeRules for NativeIntegrityRootRules<'_> {
     type Fact = IntrinsicRoots;
     type Rule = usize;
 
-    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+    fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let write = self.writes[*rule];
         let invalid = {
             let Some(mutated) = context.read(()) else {
@@ -4836,7 +4830,7 @@ impl ExecutionIndex {
             type Key = Rejected;
             type Fact = ();
             type Rule = ();
-            fn evaluate(&self, _: &(), context: &mut IterativeContext<'_, Self>) {
+            fn evaluate(&self, _: &(), context: &mut impl FactContext<Self::Key, Self::Fact>) {
                 let legacy: Members = self
                     .legacy
                     .iter()
