@@ -25,10 +25,6 @@ def _text_field(value: str) -> str:
     return value
 
 
-def _amount(value: Decimal) -> str:
-    return f"{value:.2f}"
-
-
 def _effective_signed_avg(kind: str, window_avg: Decimal, adjustment: BudgetAdjustment | None) -> Decimal:
     if not isinstance(adjustment, OverrideBudgetAdjustment):
         return window_avg
@@ -70,14 +66,14 @@ def build_summary_csv(snapshot: BudgetSnapshotResponse, adjustments: dict[str, B
             planned = (
                 Decimal(0) if hidden else _effective_signed_avg(bucket.kind.value, row.window_monthly_avg, adjustment)
             )
-            planning_fields = [_amount(planned), "yes" if hidden else ""]
+            planning_fields = [format(planned, "f"), "yes" if hidden else ""]
         rows.append(
             [
                 _text_field(bucket.label),
                 _text_field(bucket.kind.value),
                 _text_field(bucket.family or ""),
-                *[_amount(value) for value in row.monthly_amounts],
-                _amount(row.window_monthly_avg),
+                *[format(value, "f") for value in row.monthly_amounts],
+                format(row.window_monthly_avg, "f"),
                 str(row.transaction_count),
                 *planning_fields,
             ]
@@ -97,7 +93,7 @@ def build_transactions_csv(response: BudgetTransactionsResponse) -> str:
             _text_field(row.pfc_detailed or ""),
             _text_field(row.account_name),
             _text_field(row.institution_name or ""),
-            _amount(row.amount),
+            format(row.amount, "f"),
         ]
         for row in response.transactions
     )

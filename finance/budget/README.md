@@ -22,8 +22,9 @@ Consumers: augur's API server serves it at `/api/budget/*` for the frontend's
 | `csv_export.py`     | CSV exports: the bucket-by-month summary (plus planning columns when adjustments are sent) and one bucket's transactions                                                            |
 
 Plaid transaction amounts, SQL monthly totals, HTTP wire amounts, and planning adjustments stay `Decimal`. Pydantic
-serializes HTTP amounts as decimal strings; CSV and Beancount exports render currency to cents. Browser planning and
-rollup arithmetic uses Decimal.js, with conversion to browser numbers only for display and chart coordinates.
+serializes HTTP amounts as decimal strings; CSV exports preserve decimal precision in fixed-point notation.
+Beancount exports render currency to cents. Browser planning and rollup arithmetic uses Decimal.js, with conversion
+to browser numbers only for display and chart coordinates.
 
 ## What lives in ducktape vs gaffer-private
 
