@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -61,7 +62,8 @@ func TestReadsReturnTheirResources(t *testing.T) {
 	if err != nil || pullRequest.Head.SHA != testSHA || pullRequest.Head.Repository == nil ||
 		*pullRequest.Head.Repository != (Repository{ID: 200, FullName: "fork/repo"}) || pullRequest.BaseRef != "main" ||
 		pullRequest.BaseSHA != testBaseSHA || pullRequest.State != store.GitHubPullRequestOpen ||
-		pullRequest.Mergeability != store.GitHubMergeable {
+		pullRequest.Mergeability != store.GitHubMergeable || pullRequest.MergeCommit == nil ||
+		*pullRequest.MergeCommit != (store.GitHubMergeCommit{SHA: testMergeCommitSHA, BaseSHA: testBaseSHA, HeadSHA: testSHA}) {
 		t.Errorf("PullRequest = %+v, %v", pullRequest, err)
 	}
 	if err := client.CheckIssue(ctx, "owner/repo", 8, installationID); err != nil {
@@ -72,35 +74,86 @@ func TestReadsReturnTheirResources(t *testing.T) {
 	}
 }
 
+func TestValidGitSHAsMatchTheStoreFormat(t *testing.T) {
+	for _, test := range []struct {
+		sha  string
+		want bool
+	}{
+		{sha: testSHA, want: true},
+		{sha: strings.ToUpper(testSHA)},
+		{sha: strings.Repeat("g", 40)},
+		{sha: strings.Repeat("a", 39)},
+	} {
+		if got := validGitSHA(test.sha); got != test.want {
+			t.Errorf("validGitSHA(%q) = %v, want %v", test.sha, got, test.want)
+		}
+	}
+}
+
 func TestPullRequestReportsLifecycleAndMergeabilityStates(t *testing.T) {
 	for _, test := range []struct {
 		name          string
 		state         string
 		merged        string
 		mergeable     string
+		mergeCommit   string
 		wantState     store.GitHubPullRequestState
 		wantMergeable store.GitHubMergeableState
+		wantProof     bool
+		wantRefReads  int
+		wantTestReads int
 	}{
-		{name: "mergeable", state: "open", merged: "false", mergeable: "true", wantState: store.GitHubPullRequestOpen, wantMergeable: store.GitHubMergeable},
-		{name: "conflicting", state: "open", merged: "false", mergeable: "false", wantState: store.GitHubPullRequestOpen, wantMergeable: store.GitHubConflicting},
-		{name: "mergeability is being computed", state: "open", merged: "false", mergeable: "null", wantState: store.GitHubPullRequestOpen, wantMergeable: store.GitHubMergeabilityUnknown},
-		{name: "closed unmerged", state: "closed", merged: "false", mergeable: "null", wantState: store.GitHubPullRequestClosed, wantMergeable: store.GitHubMergeabilityUnknown},
-		{name: "merged", state: "closed", merged: "true", mergeable: "true", wantState: store.GitHubPullRequestMerged, wantMergeable: store.GitHubMergeable},
+		{
+			name: "mergeable", state: "open", merged: "false", mergeable: "true", mergeCommit: testMergeCommitSHA,
+			wantState: store.GitHubPullRequestOpen, wantMergeable: store.GitHubMergeable, wantProof: true, wantRefReads: 1, wantTestReads: 1,
+		},
+		{
+			name: "conflicting", state: "open", merged: "false", mergeable: "false",
+			wantState: store.GitHubPullRequestOpen, wantMergeable: store.GitHubConflicting, wantRefReads: 1,
+		},
+		{
+			name: "mergeability is being computed", state: "open", merged: "false", mergeable: "null",
+			wantState: store.GitHubPullRequestOpen, wantMergeable: store.GitHubMergeabilityUnknown, wantRefReads: 1,
+		},
+		{
+			name: "closed unmerged", state: "closed", merged: "false", mergeable: "null",
+			wantState: store.GitHubPullRequestClosed, wantMergeable: store.GitHubMergeabilityUnknown,
+		},
+		{
+			name: "merged", state: "closed", merged: "true", mergeable: "true", mergeCommit: testMergeCommitSHA,
+			wantState: store.GitHubPullRequestMerged, wantMergeable: store.GitHubMergeable,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fake := newFake(t)
+			mergeCommitField := ""
+			if test.mergeCommit != "" {
+				mergeCommitField = `,"merge_commit_sha":"` + test.mergeCommit + `"`
+			}
 			fake.respond("/repos/owner/repo/pulls/7", 200, nil,
-				`{"number":7,"state":"`+test.state+`","merged":`+test.merged+`,"base":{"ref":"main","sha":"`+testBaseSHA+`"},"mergeable":`+test.mergeable+`,"head":{"sha":"`+testSHA+`","repo":null}}`)
+				`{"number":7,"state":"`+test.state+`","merged":`+test.merged+`,"base":{"ref":"main","sha":"`+testBaseSHA+`"},"mergeable":`+test.mergeable+mergeCommitField+`,"head":{"sha":"`+testSHA+`","repo":null}}`)
 			observation, err := newTestClient(t, fake).PullRequest(t.Context(), "owner/repo", 7, installationID)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if observation.Head != (Revision{SHA: testSHA}) || observation.BaseRef != "main" || observation.BaseSHA != testBaseSHA ||
+			if observation.Head != (Revision{SHA: testSHA}) || observation.BaseRef != "main" ||
 				observation.State != test.wantState || observation.Mergeability != test.wantMergeable {
 				t.Errorf("PullRequest = %+v", observation)
 			}
+			if observation.BaseSHA != testBaseSHA {
+				t.Errorf("pull request base SHA = %q, want %q", observation.BaseSHA, testBaseSHA)
+			}
+			if (observation.MergeCommit != nil) != test.wantProof {
+				t.Errorf("merge proof = %+v, want present %v", observation.MergeCommit, test.wantProof)
+			}
 			if got := fake.count("/repos/owner/repo/pulls/7"); got != 1 {
 				t.Errorf("%d pull request reads, want one", got)
+			}
+			if got := fake.count("/repos/owner/repo/git/ref/heads/main"); got != test.wantRefReads {
+				t.Errorf("%d base ref reads, want %d", got, test.wantRefReads)
+			}
+			if got := fake.count("/repos/owner/repo/git/commits/" + testMergeCommitSHA); got != test.wantTestReads {
+				t.Errorf("%d test-merge reads, want %d", got, test.wantTestReads)
 			}
 		})
 	}
@@ -108,20 +161,218 @@ func TestPullRequestReportsLifecycleAndMergeabilityStates(t *testing.T) {
 
 func TestPullRequestRequiresItsStateAndBaseRevision(t *testing.T) {
 	for name, body := range map[string]string{
-		"missing state":          `{"number":7,"merged":false,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
-		"missing merged state":   `{"number":7,"state":"closed","base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
-		"null merged state":      `{"number":7,"state":"closed","merged":null,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
-		"open but marked merged": `{"number":7,"state":"open","merged":true,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
-		"missing base":           `{"number":7,"state":"open","merged":false,"head":{"sha":"` + testSHA + `"}}`,
-		"missing base ref":       `{"number":7,"state":"open","merged":false,"base":{"sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
-		"missing base sha":       `{"number":7,"state":"open","merged":false,"base":{"ref":"main"},"head":{"sha":"` + testSHA + `"}}`,
-		"unrecognized state":     `{"number":7,"state":"merged","merged":false,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"missing number":            `{"state":"open","merged":false,"base":{"ref":"main"},"head":{"sha":"` + testSHA + `"}}`,
+		"different number":          `{"number":8,"state":"open","merged":false,"base":{"ref":"main"},"head":{"sha":"` + testSHA + `"}}`,
+		"missing state":             `{"number":7,"merged":false,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"missing merged state":      `{"number":7,"state":"closed","base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"null merged state":         `{"number":7,"state":"closed","merged":null,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"open but marked merged":    `{"number":7,"state":"open","merged":true,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"terminal missing base":     `{"number":7,"state":"closed","merged":false,"head":{"sha":"` + testSHA + `"}}`,
+		"terminal missing ref":      `{"number":7,"state":"closed","merged":false,"base":{"sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
+		"terminal missing base sha": `{"number":7,"state":"closed","merged":false,"base":{"ref":"main"},"head":{"sha":"` + testSHA + `"}}`,
+		"unrecognized state":        `{"number":7,"state":"merged","merged":false,"base":{"ref":"main","sha":"` + testBaseSHA + `"},"head":{"sha":"` + testSHA + `"}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			fake := newFake(t)
 			fake.respond("/repos/owner/repo/pulls/7", 200, nil, body)
 			_, err := newTestClient(t, fake).PullRequest(t.Context(), "owner/repo", 7, installationID)
-			asError[*invalidResponseError](t, err)
+			if name == "different number" {
+				asError[*SourceChangedError](t, err)
+			} else {
+				asError[*invalidResponseError](t, err)
+			}
+		})
+	}
+}
+
+func TestOpenMergeablePullRequestsNeedAValidTestMergeForTheCurrentRevisions(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		mergeSHA      string
+		commitStatus  int
+		commitBody    string
+		wantCommitGet int
+	}{
+		{name: "missing merge commit SHA"},
+		{name: "test merge is no longer available", mergeSHA: testMergeCommitSHA, commitStatus: http.StatusNotFound, wantCommitGet: 1},
+		{name: "different commit identity", mergeSHA: testMergeCommitSHA, commitBody: mergeCommitBody(otherBaseSHA, testBaseSHA, testSHA), wantCommitGet: 1},
+		{name: "one parent", mergeSHA: testMergeCommitSHA, commitBody: mergeCommitBody(testMergeCommitSHA, testBaseSHA), wantCommitGet: 1},
+		{name: "three parents", mergeSHA: testMergeCommitSHA, commitBody: mergeCommitBody(testMergeCommitSHA, testBaseSHA, testSHA, otherBaseSHA), wantCommitGet: 1},
+		{name: "missing parent identity", mergeSHA: testMergeCommitSHA, commitBody: mergeCommitBody(testMergeCommitSHA, testBaseSHA, ""), wantCommitGet: 1},
+		{name: "null parent", mergeSHA: testMergeCommitSHA, commitBody: `{"sha":"` + testMergeCommitSHA + `","parents":[null,{"sha":"` + testSHA + `"}]}`, wantCommitGet: 1},
+		{name: "old base parent", mergeSHA: testMergeCommitSHA, commitBody: mergeCommitBody(testMergeCommitSHA, otherBaseSHA, testSHA), wantCommitGet: 1},
+		{name: "different head parent", mergeSHA: testMergeCommitSHA, commitBody: mergeCommitBody(testMergeCommitSHA, testBaseSHA, otherBaseSHA), wantCommitGet: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fake := newFake(t)
+			fake.respond("/repos/owner/repo/pulls/7", http.StatusOK, nil,
+				mergeablePullRequestBody("main", otherBaseSHA, testSHA, "true", test.mergeSHA))
+			commitPath := "/repos/owner/repo/git/commits/" + testMergeCommitSHA
+			if test.commitStatus != 0 {
+				fake.respond(commitPath, test.commitStatus, nil, "")
+			} else if test.commitBody != "" {
+				fake.respond(commitPath, http.StatusOK, nil, test.commitBody)
+			}
+
+			observation, err := newTestClient(t, fake).PullRequest(t.Context(), "owner/repo", 7, installationID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if observation.State != store.GitHubPullRequestOpen || observation.Mergeability != store.GitHubMergeabilityUnknown ||
+				observation.MergeCommit != nil || observation.BaseSHA != testBaseSHA {
+				t.Errorf("observation = %+v, want UNKNOWN without proof at current base %s", observation, testBaseSHA)
+			}
+			if got := fake.count(commitPath); got != test.wantCommitGet {
+				t.Errorf("test-merge reads = %d, want %d", got, test.wantCommitGet)
+			}
+		})
+	}
+}
+
+func TestOpenPullRequestUsesActualBaseRefInsteadOfPRBaseMetadata(t *testing.T) {
+	for name, test := range map[string]struct {
+		mergeable string
+		prBaseSHA string
+	}{
+		"mergeable with stale PR base":   {mergeable: "true", prBaseSHA: otherBaseSHA},
+		"conflicting with stale PR base": {mergeable: "false", prBaseSHA: otherBaseSHA},
+		"mergeable without PR base SHA":  {mergeable: "true"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := newFake(t)
+			fake.respond("/repos/owner/repo/pulls/7", http.StatusOK, nil,
+				mergeablePullRequestBody("main", test.prBaseSHA, testSHA, test.mergeable, testMergeCommitSHAIf(test.mergeable)))
+			observation, err := newTestClient(t, fake).PullRequest(t.Context(), "owner/repo", 7, installationID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if observation.BaseSHA != testBaseSHA {
+				t.Errorf("base SHA = %q, want current branch tip %s rather than PR metadata %s", observation.BaseSHA, testBaseSHA, test.prBaseSHA)
+			}
+			want := store.GitHubConflicting
+			if test.mergeable == "true" {
+				want = store.GitHubMergeable
+			}
+			if observation.Mergeability != want {
+				t.Errorf("mergeability = %s, want %s", observation.Mergeability, want)
+			}
+			if (observation.MergeCommit != nil) != (test.mergeable == "true") {
+				t.Errorf("merge proof = %+v, want present %v", observation.MergeCommit, test.mergeable == "true")
+			}
+		})
+	}
+}
+
+func testMergeCommitSHAIf(mergeable string) string {
+	if mergeable == "true" {
+		return testMergeCommitSHA
+	}
+	return ""
+}
+
+func TestOpenPullRequestWithoutCurrentBaseRefIsUnknownWithoutInventingASHA(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		baseRef      string
+		baseStatus   int
+		wantRefReads int
+		wantCommit   int
+	}{
+		{name: "missing PR base ref"},
+		{name: "base branch missing", baseRef: "main", baseStatus: http.StatusNotFound, wantRefReads: 1, wantCommit: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fake := newFake(t)
+			fake.respond("/repos/owner/repo/pulls/7", http.StatusOK, nil,
+				mergeablePullRequestBody(test.baseRef, otherBaseSHA, testSHA, "true", testMergeCommitSHA))
+			if test.baseStatus != 0 {
+				fake.respond("/repos/owner/repo/git/ref/heads/main", test.baseStatus, nil, "")
+			}
+
+			observation, err := newTestClient(t, fake).PullRequest(t.Context(), "owner/repo", 7, installationID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if observation.Mergeability != store.GitHubMergeabilityUnknown || observation.MergeCommit != nil || observation.BaseSHA != "" {
+				t.Errorf("observation = %+v, want UNKNOWN with no base SHA or proof", observation)
+			}
+			if got := fake.count("/repos/owner/repo/git/ref/heads/main"); got != test.wantRefReads {
+				t.Errorf("base ref reads = %d, want %d", got, test.wantRefReads)
+			}
+			if got := fake.count("/repos/owner/repo/git/commits/" + testMergeCommitSHA); got != test.wantCommit {
+				t.Errorf("test-merge reads = %d, want %d", got, test.wantCommit)
+			}
+		})
+	}
+}
+
+func TestBaseRefIsReadAfterTheTestMergeAndFencesAMovingBase(t *testing.T) {
+	fake := newFake(t)
+	fake.respond("/repos/owner/repo/pulls/7", http.StatusOK, nil,
+		mergeablePullRequestBody("main", testBaseSHA, testSHA, "true", testMergeCommitSHA))
+	commitPath := "/repos/owner/repo/git/commits/" + testMergeCommitSHA
+	basePath := "/repos/owner/repo/git/ref/heads/main"
+	var readTestMerge bool
+	fake.handler = func(w http.ResponseWriter, _ *http.Request, path string) bool {
+		switch path {
+		case commitPath:
+			readTestMerge = true
+			fmt.Fprint(w, mergeCommitBody(testMergeCommitSHA, testBaseSHA, testSHA))
+			return true
+		case basePath:
+			if !readTestMerge {
+				t.Error("base ref was read before the test merge")
+			}
+			fmt.Fprintf(w, `{"object":{"sha":%q}}`, otherBaseSHA)
+			return true
+		default:
+			return false
+		}
+	}
+
+	observation, err := newTestClient(t, fake).PullRequest(t.Context(), "owner/repo", 7, installationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observation.BaseSHA != otherBaseSHA || observation.Mergeability != store.GitHubMergeabilityUnknown || observation.MergeCommit != nil {
+		t.Errorf("observation = %+v, want UNKNOWN after base moved to %s", observation, otherBaseSHA)
+	}
+	requests := fake.requestURIs()
+	if len(requests) < 2 || !strings.HasSuffix(requests[len(requests)-2], "/commits/"+testMergeCommitSHA) ||
+		!strings.HasSuffix(requests[len(requests)-1], "/git/ref/heads/main") {
+		t.Errorf("last requests = %v, want test merge followed by current base ref", requests)
+	}
+}
+
+func TestErrorsReadingTheTestMergeStillReachTheCaller(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		status int
+		want   any
+		stall  bool
+	}{
+		{name: "access denied", status: http.StatusForbidden, want: &AccessError{}},
+		{name: "rate limited", status: http.StatusTooManyRequests, want: &RateLimitedError{}},
+		{name: "transport failed", stall: true, want: &TransportError{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fake := newFake(t)
+			commitPath := "/repos/owner/repo/git/commits/" + testMergeCommitSHA
+			if test.stall {
+				fake.stall = commitPath
+			} else {
+				fake.respond(commitPath, test.status, nil, "")
+			}
+			client := newTestClient(t, fake, func(s *Settings) { s.RequestTimeoutSeconds = 0.2 })
+			_, err := client.PullRequest(t.Context(), "owner/repo", 7, installationID)
+			switch test.want.(type) {
+			case *AccessError:
+				asError[*AccessError](t, err)
+			case *RateLimitedError:
+				asError[*RateLimitedError](t, err)
+			case *TransportError:
+				asError[*TransportError](t, err)
+			}
 		})
 	}
 }

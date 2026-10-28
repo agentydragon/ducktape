@@ -242,7 +242,7 @@ lag the actual branch tip. Correcting that existing contract does not wait for t
 
 ```mermaid
 flowchart LR
-    GITHUB_MERGEABILITY_FRESHNESS[Ready: fresh post-change mergeability observations]
+    GITHUB_MERGEABILITY_FRESHNESS[In flight: fresh post-change mergeability observations]
     GITHUB_NOTICE_RELIABILITY_DESIGN[Decision: eventual-state recovery vs agent fallback]
     GITHUB_NOTIFICATION_RECOVERY[Blocked: selected reconciliation or reminder mechanism]
     GITHUB_SHEPHERD_GUIDANCE[Blocked: after the reliability decision; fallback-check wording]
@@ -252,7 +252,12 @@ flowchart LR
 
 ### `GITHUB_MERGEABILITY_FRESHNESS` — handle stale definite GitHub results after a change
 
-**Ready; found in the 2026-10-27 live acceptance exercise.** Ensure a head/base change cannot settle
+**In flight — Codex, 2026-10-28 UTC:** implementing test-merge parent validation, current base-ref reads,
+persisted rechecks and deterministic coverage in `agentplane-mergeability-freshness`. The
+[bounded GitHub probe](../notification_service/debug/github_mergeability_freshness_probe.md) confirmed stale
+positive and negative results; implementation PR and deployment acceptance remain pending.
+
+Ensure a head/base change cannot settle
 monitoring for the ordinary freshness interval merely because GitHub initially returns an old
 non-null answer. Persist the required follow-up across worker restarts, preserve access/error
 backoff and generation fences, and source revision labels from the actual relevant refs rather than
@@ -271,8 +276,10 @@ current tip or which pair was evaluated. Do not equate that current-ref read wit
 
 `CONFLICTING` needs a separate freshness rule: a successful test merge commit may not exist, and
 no documented general field was found binding a negative result to an evaluated base/head pair.
-Establish the available evidence and document the negative-result recheck/emission policy and its
-limits before implementing it. Neither an absent merge commit nor the accompanying PR ref fields
+The probe established the available evidence. Report a negative with observed refs and no pair
+proof; recheck after successive 5, 15 and 45 second delays before ordinary freshness refreshes.
+Unverified results use 5, 15 and 45 second delays, then a 60-second cap, with persisted counters
+reset by changed observed refs/state. Document these policy limits in the API and agent guidance. Neither an absent merge commit nor the accompanying PR ref fields
 proves a fresh conflict calculation. Keep the distinction between a validated positive result and
 an observed negative result explicit; a fixed delay alone is not evidence of the evaluated pair.
 

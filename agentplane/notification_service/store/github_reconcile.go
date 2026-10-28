@@ -16,7 +16,7 @@ type GitHubSubjectState struct {
 	Generation int64
 	// LastSuccessAt is when the subject was last refreshed, nil while it never was.
 	LastSuccessAt *time.Time
-	// RepairAt includes an earlier retry while GitHub computes mergeability.
+	// RepairAt includes early rechecks for unverified or negative mergeability results.
 	RepairAt time.Time
 }
 

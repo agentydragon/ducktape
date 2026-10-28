@@ -113,10 +113,12 @@ func TestSharedRefreshesAreMadeOnceAndSurviveARestart(t *testing.T) {
 	claim := h.claim()
 	h.reconcileAll(claim)
 	for path, want := range map[string]int{
-		"/repos/owner/repo/installation": 1,
-		"/repositories/100":              1,
-		"/repos/owner/repo/pulls/7":      1,
-		"/repos/owner/repo/pulls/8":      1,
+		"/repos/owner/repo/installation":                      1,
+		"/repositories/100":                                   1,
+		"/repos/owner/repo/pulls/7":                           1,
+		"/repos/owner/repo/pulls/8":                           1,
+		"/repos/owner/repo/git/commits/" + testMergeCommitSHA: 2,
+		"/repos/owner/repo/git/ref/heads/main":                2,
 	} {
 		if got := h.fake.count(path); got != want {
 			t.Errorf("%d requests for %s, want %d", got, path, want)

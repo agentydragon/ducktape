@@ -33,7 +33,8 @@ Acknowledgement may already have advanced and entries newer than the coverage sn
    subscriber; `sequence` identifies a transition observed after subscription, including a first
    conflict from unknown. Transition sequences are durable and globally increasing. Neither has a
    webhook delivery ID. Its payload describes the observed base and head SHAs, mergeability
-   state, and observation time. A message from another agent is `event.message`, with
+   state, and observation time. A positive result includes a validated `mergeCommit` and its parent
+   refs; a conflict is GitHub-reported without equivalent pair evidence. A message from another agent is `event.message`, with
    `messageId` and the `sender` ServiceAccount the service authenticated, and no `subscriptionIds`; its
    `payload` is the `body` and, when the sender gave one, `from_session`, an unverified label for the
    Session it wrote from. Reply only through a send of your own

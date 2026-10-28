@@ -12,7 +12,10 @@ func TestCleanupGitHubDeliveriesRetainsSnapshotsAndInboxCopies(t *testing.T) {
 	seed := g.follow(t, g.source(PullRequestSubject{Number: 7}), "seed")
 	for _, observation := range []GitHubPullRequestObservation{
 		{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: GitHubPullRequestOpen, Mergeability: GitHubConflicting},
-		{BaseRef: "main", HeadSHA: commitB, BaseSHA: commitB, State: GitHubPullRequestOpen, Mergeability: GitHubMergeable},
+		{
+			BaseRef: "main", HeadSHA: commitB, BaseSHA: commitB, State: GitHubPullRequestOpen, Mergeability: GitHubMergeable,
+			MergeCommit: testMergeCommit(commitB, commitB),
+		},
 		{BaseRef: "main", HeadSHA: commitC, BaseSHA: commitB, State: GitHubPullRequestOpen, Mergeability: GitHubConflicting},
 	} {
 		g.observePullRequest(t, seed, observation)

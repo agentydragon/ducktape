@@ -274,7 +274,7 @@ func (p *Provider) readSubject(ctx context.Context, source store.GitHubSource, s
 			revisions: revisions,
 			pullRequest: &store.GitHubPullRequestObservation{
 				BaseRef: pullRequest.BaseRef, HeadSHA: pullRequest.Head.SHA, BaseSHA: pullRequest.BaseSHA,
-				State: pullRequest.State, Mergeability: pullRequest.Mergeability,
+				State: pullRequest.State, Mergeability: pullRequest.Mergeability, MergeCommit: pullRequest.MergeCommit,
 			},
 		}, nil
 	case store.IssueSubject:

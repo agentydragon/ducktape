@@ -83,6 +83,15 @@ subscription. A snapshot version increases when relevant current state changes; 
 are durable and globally increasing. Neither is a GitHub webhook delivery UUID. Payloads use camelCase fields
 `repository`, `pullRequestNumber`, `baseRef`, `headSha`, `baseSha`, `previousMergeability` (`UNKNOWN` for an initial snapshot or a first observed transition from unknown), `mergeability` (`MERGEABLE` or `CONFLICTING`), and `observedAt` (timestamp).
 
+An open `MERGEABLE` observation requires GitHub's successful test merge commit to have exactly
+the observed base and head as its two parents. Its payload additionally contains
+`mergeCommit: {"sha":"...","baseSha":"...","headSha":"..."}`. The service reads the current base
+branch ref after fetching that commit; it does not use the PR response's potentially stale base SHA
+as the current tip. Missing or mismatched test merge evidence leaves the observation `UNKNOWN`.
+`CONFLICTING` is GitHub's reported result alongside the refs read by the service: GitHub exposes no
+equivalent proof of the pair evaluated for a negative result. Neither those refs nor elapsed time
+proves a fresh conflict calculation. Read current state before acting on either kind of notice.
+
 A `source` with neither field set is rejected as `INVALID_ARGUMENT`. A service without the GitHub App refuses
 a `github` source with `PERMISSION_DENIED`; no route lists enabled providers. Inbox cursors,
 acknowledgement, and runner notices remain provider-neutral.
@@ -246,7 +255,15 @@ confirmation or retrying a delivery instead exposes that wait reason. `next_work
 
 PR observations retain GitHub's lifecycle states `OPEN`, `CLOSED` (without merging), and `MERGED`
 separately from mergeability states `MERGEABLE`, `CONFLICTING`, and `UNKNOWN`. Only open PRs generate
-mergeability notifications or schedule retries for `UNKNOWN`; terminal lifecycle states do neither.
+mergeability notifications or schedule mergeability rechecks; terminal lifecycle states do neither.
+`UNKNOWN` retries after 5, 15 and 45 seconds, then every 60 seconds until a settled result or source
+failure. `CONFLICTING` gets three early rechecks after 5, 15 and 45 seconds, then ordinary subject
+refreshes (600 seconds by default). These are successive delays, not deadlines from the first read.
+The attempt counter and deadline survive worker restarts. A changed observed ref/state tuple resets
+the counter; repeated invalidations of an unchanged tuple do not. Access failures and rate limits
+use the existing source-error backoff. Rechecks improve detection latency without proving negative
+freshness or recovering changes that revert between reads. Each open-PR read adds a base-ref request;
+a positive result also needs a test-commit request, in addition to the PR request.
 
 ## Current source-processing observations
 
@@ -267,6 +284,6 @@ GitHub subscriptions additionally expose access and subject observations in `git
 GitHub status. Access observations include validation time, expiry and `currently_valid` at the
 time of the read; that is not a promise about later delivery. Observations include failure facts,
 retry and refresh-lease deadlines. `github.subject.retryAt` also gives the next refresh time while
-mergeability is pending; this does not imply a failure or a pending inbox notice. Subject refreshes
+mergeability is pending or a negative result is being rechecked; this does not imply a failure or a pending inbox notice. Subject refreshes
 monitor both PR head and base changes and retry pending mergeability checks. They can produce
 mergeability observations but do not recover missing webhook activity.

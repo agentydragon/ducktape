@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,9 +16,11 @@ type storedPullRequestObservation struct {
 	baseRef                 string
 	headSHA                 string
 	baseSHA                 string
+	mergeCommitSHA          sql.NullString
 	state                   GitHubPullRequestState
 	mergeability            GitHubMergeableState
 	lastSettledMergeability GitHubMergeableState
+	recheckAttempt          int
 	snapshotVersion         int64
 	observedAt              time.Time
 }
@@ -25,11 +28,12 @@ type storedPullRequestObservation struct {
 func (g githubFixture) pullRequestObservation(t *testing.T, number int64) storedPullRequestObservation {
 	t.Helper()
 	var observation storedPullRequestObservation
-	if err := g.db.QueryRowContext(t.Context(), `SELECT base_ref, head_sha, base_sha, state, mergeability,
-		last_settled_mergeability, snapshot_version, observed_at
+	if err := g.db.QueryRowContext(t.Context(), `SELECT base_ref, head_sha, base_sha, merge_commit_sha, state, mergeability,
+		last_settled_mergeability, mergeability_recheck_attempt, snapshot_version, observed_at
 		FROM github_pull_request WHERE repository_id = $1 AND number = $2`, g.repository, number).Scan(
-		&observation.baseRef, &observation.headSHA, &observation.baseSHA, &observation.state, &observation.mergeability,
-		&observation.lastSettledMergeability, &observation.snapshotVersion, &observation.observedAt,
+		&observation.baseRef, &observation.headSHA, &observation.baseSHA, &observation.mergeCommitSHA,
+		&observation.state, &observation.mergeability,
+		&observation.lastSettledMergeability, &observation.recheckAttempt, &observation.snapshotVersion, &observation.observedAt,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -79,16 +83,63 @@ func (g githubFixture) forcePullRequestRefreshDue(t *testing.T, sub githubSubscr
 
 func (g githubFixture) observePullRequest(t *testing.T, sub githubSubscription, observation GitHubPullRequestObservation) {
 	t.Helper()
+	if err := g.tryObservePullRequest(t, sub, observation); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (g githubFixture) tryObservePullRequest(t *testing.T, sub githubSubscription, observation GitHubPullRequestObservation) error {
+	t.Helper()
 	g.forcePullRequestRefreshDue(t, sub)
+	return g.tryCompletePullRequestRefresh(t, sub, observation)
+}
+
+func (g githubFixture) tryCompletePullRequestRefresh(t *testing.T, sub githubSubscription, observation GitHubPullRequestObservation) error {
+	t.Helper()
 	lease, err := g.state.Acquire(t.Context(), sub.Subject)
 	if err != nil || lease == nil {
 		t.Fatalf("pull request refresh lease = %v, %v", lease, err)
 	}
 	base := g.validate(t, g.access())
-	if err := g.state.Succeed(t.Context(), *lease, GitHubSuccess{
+	return g.state.Succeed(t.Context(), *lease, GitHubSuccess{
 		Fences: []GitHubAccessFence{base}, PullRequest: &observation,
-	}); err != nil {
+	})
+}
+
+func testMergeCommit(baseSHA, headSHA string) *GitHubMergeCommit {
+	return &GitHubMergeCommit{SHA: strings.Repeat("d", 40), BaseSHA: baseSHA, HeadSHA: headSHA}
+}
+
+func (g githubFixture) assertPullRequestRetry(t *testing.T, sub githubSubscription, wantDelay time.Duration, wantAttempt int) {
+	t.Helper()
+	stored := g.pullRequestObservation(t, 7)
+	if stored.recheckAttempt != wantAttempt {
+		t.Errorf("mergeability retry attempt = %d, want %d", stored.recheckAttempt, wantAttempt)
+	}
+	retry := g.pullRequestRetryAt(t, sub)
+	if !retry.Valid {
+		t.Fatalf("mergeability retry deadline is unset, want %v", wantDelay)
+	}
+	if got := retry.Time.Sub(stored.observedAt); got != wantDelay {
+		t.Errorf("mergeability retry delay = %v, want %v", got, wantDelay)
+	}
+}
+
+func (g githubFixture) assertNoPullRequestRetry(t *testing.T, sub githubSubscription, wantAttempt int) {
+	t.Helper()
+	stored := g.pullRequestObservation(t, 7)
+	if stored.recheckAttempt != wantAttempt {
+		t.Errorf("mergeability retry attempt = %d, want %d", stored.recheckAttempt, wantAttempt)
+	}
+	if retry := g.pullRequestRetryAt(t, sub); retry.Valid {
+		t.Errorf("mergeability retry deadline = %v, want ordinary freshness only", retry)
+	}
+	state, err := g.state.Subject(t.Context(), sub.Subject)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if state.LastSuccessAt == nil || !state.RepairAt.Equal(state.LastSuccessAt.Add(testFreshness)) {
+		t.Errorf("subject repair state = %+v, want ordinary %v freshness", state, testFreshness)
 	}
 }
 
@@ -156,9 +207,10 @@ func TestPendingMergeabilityRetrySurvivesStateReconstructionAndKeepsLastResult(t
 	stored := g.pullRequestObservation(t, 7)
 	if stored.baseRef != "main" || stored.headSHA != commitC || stored.baseSHA != commitB ||
 		stored.state != GitHubPullRequestOpen || stored.mergeability != GitHubMergeabilityUnknown ||
-		stored.lastSettledMergeability != GitHubConflicting || stored.snapshotVersion != 2 {
+		stored.lastSettledMergeability != GitHubConflicting || stored.snapshotVersion != 2 || stored.recheckAttempt != 1 {
 		t.Errorf("pending observation = %+v, want updated revisions, UNKNOWN state, preserved conflict and sequence", stored)
 	}
+	g.assertPullRequestRetry(t, sub, 5*time.Second, 1)
 
 	state, err := g.state.Subject(t.Context(), sub.Subject)
 	if err != nil {
@@ -192,9 +244,129 @@ func TestPendingMergeabilityRetrySurvivesStateReconstructionAndKeepsLastResult(t
 	}); err != nil {
 		t.Fatal(err)
 	}
+	g.assertPullRequestRetry(t, sub, 5*time.Second, 1)
 	if got := g.mergeabilitySequences(t, 7); !slices.Equal(got, firstSequence) {
 		t.Errorf("CONFLICTING → UNKNOWN → CONFLICTING event sequences = %v, want no duplicate after %v", got, firstSequence)
 	}
+}
+
+func TestUnknownRetryAttemptSurvivesReacquireWebhookAndResetsOnRefChange(t *testing.T) {
+	g := newGitHubFixture(t)
+	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	observation := GitHubPullRequestObservation{
+		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
+		State: GitHubPullRequestOpen, Mergeability: GitHubMergeabilityUnknown,
+	}
+	g.observePullRequest(t, sub, observation)
+	g.assertPullRequestRetry(t, sub, 5*time.Second, 1)
+
+	// Process restart preserves both the pending deadline and the tuple's next retry step.
+	g.state = NewGitHubState(g.Store, testFreshness)
+	lease, err := g.state.Acquire(t.Context(), sub.Subject)
+	if lease != nil || err != nil {
+		t.Fatalf("refresh before pending deadline = %v, %v; want no lease", lease, err)
+	}
+	g.exec(t, `UPDATE github_subject SET next_attempt = now() - interval '1 second'
+		WHERE repository_id = $1 AND kind = $2 AND subject_key = $3`, sub.Subject.RepositoryID, sub.Subject.Kind, sub.Subject.Key)
+	if err := g.tryCompletePullRequestRefresh(t, sub, observation); err != nil {
+		t.Fatal(err)
+	}
+	g.assertPullRequestRetry(t, sub, 15*time.Second, 2)
+
+	// An unchanged pull_request webhook forces a read, but the unchanged observation keeps its retry budget.
+	g.deliver(t, "pull_request", onPullRequest(7), action("edited"))
+	if err := g.tryCompletePullRequestRefresh(t, sub, observation); err != nil {
+		t.Fatal(err)
+	}
+	g.assertPullRequestRetry(t, sub, 45*time.Second, 3)
+
+	// A changed head starts this observed tuple at the first delay again.
+	g.deliver(t, "pull_request", onPullRequest(7), action("synchronize"))
+	changed := observation
+	changed.HeadSHA = commitC
+	if err := g.tryCompletePullRequestRefresh(t, sub, changed); err != nil {
+		t.Fatal(err)
+	}
+	g.assertPullRequestRetry(t, sub, 5*time.Second, 1)
+}
+
+func TestUnknownRetryScheduleCapsAtSixtySecondsAndSettledResultsResetIt(t *testing.T) {
+	g := newGitHubFixture(t)
+	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	unknown := GitHubPullRequestObservation{
+		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
+		State: GitHubPullRequestOpen, Mergeability: GitHubMergeabilityUnknown,
+	}
+	want := []struct {
+		delay   time.Duration
+		attempt int
+	}{
+		{5 * time.Second, 1},
+		{15 * time.Second, 2},
+		{45 * time.Second, 3},
+		{time.Minute, 4},
+		{time.Minute, 4},
+	}
+	for i, step := range want {
+		g.observePullRequest(t, sub, unknown)
+		if stored := g.pullRequestObservation(t, 7); stored.mergeability != GitHubMergeabilityUnknown {
+			t.Fatalf("unknown retry step %d stored mergeability = %s", i, stored.mergeability)
+		}
+		g.assertPullRequestRetry(t, sub, step.delay, step.attempt)
+	}
+
+	conflicting := unknown
+	conflicting.Mergeability = GitHubConflicting
+	g.observePullRequest(t, sub, conflicting)
+	g.assertPullRequestRetry(t, sub, 5*time.Second, 1)
+	if got := g.mergeabilitySequences(t, 7); len(got) != 1 {
+		t.Errorf("UNKNOWN → CONFLICTING event sequences = %v, want the negative transition despite retry scheduling", got)
+	}
+
+	mergeable := conflicting
+	mergeable.Mergeability = GitHubMergeable
+	mergeable.MergeCommit = testMergeCommit(mergeable.BaseSHA, mergeable.HeadSHA)
+	g.observePullRequest(t, sub, mergeable)
+	g.assertNoPullRequestRetry(t, sub, 0)
+}
+
+func TestConflictingRetryScheduleStopsAfterThreeEarlyRechecks(t *testing.T) {
+	g := newGitHubFixture(t)
+	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	conflicting := GitHubPullRequestObservation{
+		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
+		State: GitHubPullRequestOpen, Mergeability: GitHubConflicting,
+	}
+	for _, step := range []struct {
+		delay   time.Duration
+		attempt int
+	}{
+		{5 * time.Second, 1},
+		{15 * time.Second, 2},
+		{45 * time.Second, 3},
+	} {
+		g.observePullRequest(t, sub, conflicting)
+		g.assertPullRequestRetry(t, sub, step.delay, step.attempt)
+	}
+	// Once the unchanged conflict exhausts its short retry budget, source freshness controls the next read.
+	g.observePullRequest(t, sub, conflicting)
+	g.assertNoPullRequestRetry(t, sub, 3)
+
+	// An unchanged webhook reacquires the subject without resetting the exhausted tuple's counter.
+	g.deliver(t, "pull_request", onPullRequest(7), action("edited"))
+	if err := g.tryCompletePullRequestRefresh(t, sub, conflicting); err != nil {
+		t.Fatal(err)
+	}
+	g.assertNoPullRequestRetry(t, sub, 3)
+
+	// A changed base ref starts a new negative retry budget.
+	g.deliver(t, "pull_request", onPullRequest(7), action("edited"))
+	changed := conflicting
+	changed.BaseRef = "release"
+	if err := g.tryCompletePullRequestRefresh(t, sub, changed); err != nil {
+		t.Fatal(err)
+	}
+	g.assertPullRequestRetry(t, sub, 5*time.Second, 1)
 }
 
 func TestInitiallyMergeablePullRequestDoesNotEmitUntilItConflicts(t *testing.T) {
@@ -202,8 +374,14 @@ func TestInitiallyMergeablePullRequestDoesNotEmitUntilItConflicts(t *testing.T) 
 	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
 	g.observePullRequest(t, sub, GitHubPullRequestObservation{
 		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-		State: GitHubPullRequestOpen, Mergeability: GitHubMergeable,
+		State: GitHubPullRequestOpen, Mergeability: GitHubMergeable, MergeCommit: testMergeCommit(commitB, commitA),
 	})
+	stored := g.pullRequestObservation(t, 7)
+	if !stored.mergeCommitSHA.Valid || stored.mergeCommitSHA.String != testMergeCommit(commitB, commitA).SHA ||
+		stored.baseSHA != commitB || stored.headSHA != commitA {
+		t.Errorf("initial verified MERGEABLE observation = %+v, want proof against current refs", stored)
+	}
+	g.assertNoPullRequestRetry(t, sub, 0)
 	if got := g.mergeabilitySequences(t, 7); len(got) != 0 {
 		t.Fatalf("initial MERGEABLE observation sequences = %v, want none", got)
 	}
@@ -226,6 +404,41 @@ func TestInitiallyMergeablePullRequestDoesNotEmitUntilItConflicts(t *testing.T) 
 	}
 }
 
+func TestMergeablePullRequestRequiresMatchingTestMergeProof(t *testing.T) {
+	tests := []struct {
+		name  string
+		proof *GitHubMergeCommit
+	}{
+		{name: "missing"},
+		{name: "wrong-base", proof: &GitHubMergeCommit{SHA: strings.Repeat("e", 40), BaseSHA: commitC, HeadSHA: commitA}},
+		{name: "wrong-head", proof: &GitHubMergeCommit{SHA: strings.Repeat("e", 40), BaseSHA: commitB, HeadSHA: commitC}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := newGitHubFixture(t)
+			sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+			err := g.tryObservePullRequest(t, sub, GitHubPullRequestObservation{
+				BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
+				State: GitHubPullRequestOpen, Mergeability: GitHubMergeable, MergeCommit: test.proof,
+			})
+			if err == nil {
+				t.Fatal("accepted MERGEABLE observation without a matching test merge")
+			}
+			var count int
+			if err := g.db.QueryRowContext(t.Context(), `SELECT count(*) FROM github_pull_request
+				WHERE repository_id = $1 AND number = 7`, g.repository).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != 0 {
+				t.Errorf("rejected observation persisted %d pull request rows", count)
+			}
+			if got := g.mergeabilitySequences(t, 7); len(got) != 0 {
+				t.Errorf("rejected observation generated transition sequences %v", got)
+			}
+		})
+	}
+}
+
 func TestMergeabilityTransitionsUseDefaultFiltersAndDeduplicateSubscribers(t *testing.T) {
 	g := newGitHubFixture(t)
 	defaultOne := g.follow(t, g.source(PullRequestSubject{Number: 7}), "default-one")
@@ -233,7 +446,10 @@ func TestMergeabilityTransitionsUseDefaultFiltersAndDeduplicateSubscribers(t *te
 	explicitComments := g.follow(t, g.source(PullRequestSubject{Number: 7}, EventFilter{Event: EventIssueComment}), "comments")
 	observations := []GitHubPullRequestObservation{
 		{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: GitHubPullRequestOpen, Mergeability: GitHubConflicting},
-		{BaseRef: "main", HeadSHA: commitB, BaseSHA: commitB, State: GitHubPullRequestOpen, Mergeability: GitHubMergeable},
+		{
+			BaseRef: "main", HeadSHA: commitB, BaseSHA: commitB, State: GitHubPullRequestOpen, Mergeability: GitHubMergeable,
+			MergeCommit: testMergeCommit(commitB, commitB),
+		},
 		{BaseRef: "main", HeadSHA: commitC, BaseSHA: commitB, State: GitHubPullRequestOpen, Mergeability: GitHubConflicting},
 	}
 	for _, observation := range observations {
@@ -257,6 +473,14 @@ func TestMergeabilityTransitionsUseDefaultFiltersAndDeduplicateSubscribers(t *te
 		{GitHubConflicting, GitHubMergeable},
 		{GitHubMergeable, GitHubConflicting},
 	}
+	wantRefs := []struct {
+		base string
+		head string
+	}{
+		{base: commitB, head: commitA},
+		{base: commitB, head: commitB},
+		{base: commitB, head: commitC},
+	}
 	for i, entry := range entries {
 		event, ok := entry.Event.(GitHubMergeabilityEvent)
 		if !ok || event.Sequence != sequences[i] || event.AppID != g.app || event.RepositoryID != g.repository || event.PullRequestNumber != 7 {
@@ -268,12 +492,30 @@ func TestMergeabilityTransitionsUseDefaultFiltersAndDeduplicateSubscribers(t *te
 		var payload struct {
 			PreviousMergeability GitHubMergeableState `json:"previousMergeability"`
 			Mergeability         GitHubMergeableState `json:"mergeability"`
+			BaseSHA              string               `json:"baseSha"`
+			HeadSHA              string               `json:"headSha"`
+			MergeCommit          *GitHubMergeCommit   `json:"mergeCommit"`
 		}
 		if err := json.Unmarshal(entry.Payload, &payload); err != nil {
 			t.Errorf("entry %d mergeability payload: %v", i, err)
 		} else if payload.PreviousMergeability != wantStates[i].previous || payload.Mergeability != wantStates[i].current {
 			t.Errorf("entry %d payload states = %s → %s, want %s → %s", i,
 				payload.PreviousMergeability, payload.Mergeability, wantStates[i].previous, wantStates[i].current)
+		} else if payload.BaseSHA != wantRefs[i].base || payload.HeadSHA != wantRefs[i].head {
+			t.Errorf("entry %d payload refs = %s/%s, want observed pair %s/%s", i,
+				payload.BaseSHA, payload.HeadSHA, wantRefs[i].base, wantRefs[i].head)
+		} else if i == 1 {
+			wantProof := testMergeCommit(commitB, commitB)
+			if payload.BaseSHA != commitB || payload.HeadSHA != commitB || payload.MergeCommit == nil || *payload.MergeCommit != *wantProof {
+				t.Errorf("verified MERGEABLE payload = refs %s/%s, proof %#v; want refs %s/%s and proof %#v",
+					payload.BaseSHA, payload.HeadSHA, payload.MergeCommit, commitB, commitB, wantProof)
+			}
+			stored := g.pullRequestObservation(t, 7)
+			if !stored.mergeCommitSHA.Valid || stored.mergeCommitSHA.String != wantProof.SHA || stored.baseSHA != wantProof.BaseSHA || stored.headSHA != wantProof.HeadSHA {
+				t.Errorf("stored MERGEABLE proof = %+v, want matching pair and sha %s", stored, wantProof.SHA)
+			}
+		} else if payload.MergeCommit != nil {
+			t.Errorf("unverified %s transition unexpectedly carries merge proof %#v", payload.Mergeability, payload.MergeCommit)
 		}
 	}
 	if got := sequencesForSubscription(t, entries, explicitComments.ID); len(got) != 0 {
@@ -495,7 +737,7 @@ func TestRetargetedPullRequestBasePushFencesInFlightRefresh(t *testing.T) {
 	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
 	g.observePullRequest(t, sub, GitHubPullRequestObservation{
 		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-		State: GitHubPullRequestOpen, Mergeability: GitHubMergeable,
+		State: GitHubPullRequestOpen, Mergeability: GitHubMergeable, MergeCommit: testMergeCommit(commitB, commitA),
 	})
 	// The PR webhook schedules a refresh, but the saved snapshot still names main.
 	g.deliver(t, "pull_request", onPullRequest(7), action("edited"))
@@ -509,7 +751,7 @@ func TestRetargetedPullRequestBasePushFencesInFlightRefresh(t *testing.T) {
 		Fences: []GitHubAccessFence{g.validate(t, g.access())},
 		PullRequest: &GitHubPullRequestObservation{
 			BaseRef: "release", HeadSHA: commitA, BaseSHA: commitB,
-			State: GitHubPullRequestOpen, Mergeability: GitHubMergeable,
+			State: GitHubPullRequestOpen, Mergeability: GitHubMergeable, MergeCommit: testMergeCommit(commitB, commitA),
 		},
 	})
 	var deferred *RefreshDeferredError
@@ -562,7 +804,7 @@ func TestTerminalPullRequestsDoNotEmitMergeabilityEventsOrRetry(t *testing.T) {
 			})
 			stored := g.pullRequestObservation(t, 7)
 			if stored.state != terminal.state || stored.mergeability != GitHubMergeabilityUnknown ||
-				stored.lastSettledMergeability != GitHubMergeabilityUnknown || stored.snapshotVersion != 1 {
+				stored.lastSettledMergeability != GitHubMergeabilityUnknown || stored.snapshotVersion != 1 || stored.recheckAttempt != 0 {
 				t.Errorf("initial terminal observation = %+v, want persisted %s state with no settled result or event", stored, terminal.state)
 			}
 			if retry := g.pullRequestRetryAt(t, sub); retry.Valid {
@@ -601,7 +843,7 @@ func TestTerminalPullRequestsDoNotEmitMergeabilityEventsOrRetry(t *testing.T) {
 			})
 			stored := g.pullRequestObservation(t, 7)
 			if stored.state != terminal.state || stored.mergeability != GitHubMergeabilityUnknown ||
-				stored.lastSettledMergeability != GitHubConflicting || stored.snapshotVersion != 3 {
+				stored.lastSettledMergeability != GitHubConflicting || stored.snapshotVersion != 3 || stored.recheckAttempt != 0 {
 				t.Errorf("terminal transition observation = %+v, want %s, UNKNOWN and retained conflict", stored, terminal.state)
 			}
 			if retry := g.pullRequestRetryAt(t, sub); retry.Valid {

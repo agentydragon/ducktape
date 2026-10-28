@@ -22,11 +22,13 @@ import (
 )
 
 const (
-	testAppID         = 42
-	testSHA           = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	testBaseSHA       = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	installationToken = "fixture-installation-token"
-	tokenPath         = "/app/installations/11/access_tokens"
+	testAppID          = 42
+	testSHA            = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	testBaseSHA        = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	otherBaseSHA       = "dddddddddddddddddddddddddddddddddddddddd"
+	testMergeCommitSHA = "cccccccccccccccccccccccccccccccccccccccc"
+	installationToken  = "fixture-installation-token"
+	tokenPath          = "/app/installations/11/access_tokens"
 )
 
 var testKey = sync.OnceValue(func() *rsa.PrivateKey {
@@ -193,13 +195,17 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request, path string, 
 	case path == "/repos/owner/repo" || path == "/repositories/100":
 		reply(http.StatusOK, `{"id": 100, "full_name": "owner/repo"}`)
 	case path == "/repos/owner/repo/pulls/7":
-		reply(http.StatusOK, fmt.Sprintf(`{"number": 7, "state": "open", "merged": false, "base": {"ref": "main", "sha": %q}, "mergeable": true, "head": {"sha": %q, "repo": {"id": 200, "full_name": "fork/repo"}}}`, testBaseSHA, testSHA))
+		reply(http.StatusOK, fmt.Sprintf(`{"number": 7, "state": "open", "merged": false, "base": {"ref": "main", "sha": %q}, "mergeable": true, "merge_commit_sha": %q, "head": {"sha": %q, "repo": {"id": 200, "full_name": "fork/repo"}}}`, testBaseSHA, testMergeCommitSHA, testSHA))
 	case path == "/repos/owner/repo/issues/8":
 		reply(http.StatusOK, `{"number": 8}`)
 	case path == "/repos/owner/repo/git/ref/heads/devel", path == "/repos/owner/repo/git/ref/heads/feature/x":
 		reply(http.StatusOK, fmt.Sprintf(`{"object": {"sha": %q}}`, testSHA))
+	case path == "/repos/owner/repo/git/ref/heads/main":
+		reply(http.StatusOK, fmt.Sprintf(`{"object": {"sha": %q}}`, testBaseSHA))
 	case strings.HasPrefix(path, "/repos/owner/repo/git/ref/heads/"):
 		reply(http.StatusNotFound, `{"message": "Not Found"}`)
+	case path == "/repos/owner/repo/git/commits/"+testMergeCommitSHA:
+		reply(http.StatusOK, fmt.Sprintf(`{"sha": %q, "parents": [{"sha": %q}, {"sha": %q}]}`, testMergeCommitSHA, testBaseSHA, testSHA))
 	case strings.HasPrefix(path, "/repos/owner/repo/commits/"):
 		reply(http.StatusOK, fmt.Sprintf(`{"sha": %q}`, last))
 	default:
@@ -254,6 +260,23 @@ func testSettings(apiURL string) Settings {
 	settings.PrivateKey = testKeyPEM()
 	settings.WebhookSecret = "test-webhook-secret!"
 	return settings
+}
+
+func mergeablePullRequestBody(baseRef, baseSHA, headSHA, mergeable, mergeCommitSHA string) string {
+	mergeCommit := ""
+	if mergeCommitSHA != "" {
+		mergeCommit = fmt.Sprintf(`,"merge_commit_sha":%q`, mergeCommitSHA)
+	}
+	return fmt.Sprintf(`{"number":7,"state":"open","merged":false,"base":{"ref":%q,"sha":%q},"mergeable":%s%s,"head":{"sha":%q,"repo":{"id":200,"full_name":"fork/repo"}}}`,
+		baseRef, baseSHA, mergeable, mergeCommit, headSHA)
+}
+
+func mergeCommitBody(sha string, parents ...string) string {
+	encodedParents := make([]string, len(parents))
+	for i, parent := range parents {
+		encodedParents[i] = fmt.Sprintf(`{"sha":%q}`, parent)
+	}
+	return fmt.Sprintf(`{"sha":%q,"parents":[%s]}`, sha, strings.Join(encodedParents, ","))
 }
 
 // newTestClient serves fake over HTTP and returns a client for it; edit adjusts the settings first.

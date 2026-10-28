@@ -30,17 +30,27 @@ const (
 	GitHubMergeabilityUnknown GitHubMergeableState = "UNKNOWN"
 )
 
-// GitHubPullRequestObservation is one API read of a PR and the revisions GitHub assessed.
+// GitHubMergeCommit is the successful test merge and the exact revisions in its parent pair.
+type GitHubMergeCommit struct {
+	SHA     string `json:"sha"`
+	BaseSHA string `json:"baseSha"`
+	HeadSHA string `json:"headSha"`
+}
+
+// GitHubPullRequestObservation records observed refs and GitHub's mergeability result.
+// An open MERGEABLE result also requires a test merge whose parents match those refs.
 type GitHubPullRequestObservation struct {
 	BaseRef      string
 	HeadSHA      string
 	BaseSHA      string
 	State        GitHubPullRequestState
 	Mergeability GitHubMergeableState
+	MergeCommit  *GitHubMergeCommit
 }
 
-// A pending computation is successful source contact, with an earlier durable repair deadline.
-const mergeabilityRetry = 5 * time.Second
+// Unverified positives keep polling with bounded backoff. Negative results have no parent proof;
+// recheck them three times before returning to the ordinary source freshness deadline.
+var mergeabilityRetries = [...]time.Duration{5 * time.Second, 15 * time.Second, 45 * time.Second, time.Minute}
 
 type mergeabilityPayload struct {
 	Repository           string               `json:"repository"`
@@ -51,6 +61,7 @@ type mergeabilityPayload struct {
 	PreviousMergeability GitHubMergeableState `json:"previousMergeability"`
 	Mergeability         GitHubMergeableState `json:"mergeability"`
 	ObservedAt           time.Time            `json:"observedAt"`
+	MergeCommit          *GitHubMergeCommit   `json:"mergeCommit,omitempty"`
 }
 
 // observePullRequest runs under the subject lease and access fences checked by Succeed. Its event and
@@ -78,38 +89,65 @@ func (s *Store) observePullRequest(ctx context.Context, tx *sql.Tx, subject GitH
 	default:
 		return fmt.Errorf("invalid pull request mergeability %q", observation.Mergeability)
 	}
+	var mergeCommitSHA any
+	if proof := observation.MergeCommit; proof != nil {
+		if observation.State != GitHubPullRequestOpen || observation.Mergeability != GitHubMergeable ||
+			!shaPattern.MatchString(proof.SHA) || !shaPattern.MatchString(proof.BaseSHA) || !shaPattern.MatchString(proof.HeadSHA) ||
+			proof.BaseSHA != observation.BaseSHA || proof.HeadSHA != observation.HeadSHA {
+			return errors.New("test merge proof does not match the open mergeable observation")
+		}
+		mergeCommitSHA = proof.SHA
+	} else if observation.State == GitHubPullRequestOpen && observation.Mergeability == GitHubMergeable {
+		return errors.New("an open mergeable observation requires matching test merge proof")
+	}
 	previous := GitHubMergeabilityUnknown
-	if err := tx.QueryRowContext(ctx, `SELECT last_settled_mergeability FROM github_pull_request WHERE repository_id = $1 AND number = $2`,
-		subject.RepositoryID, number).Scan(&previous); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	var attempt int
+	if err := tx.QueryRowContext(ctx, `SELECT last_settled_mergeability,
+		CASE WHEN (base_ref, head_sha, base_sha, state, mergeability) = ($3, $4, $5, $6, $7)
+			THEN mergeability_recheck_attempt ELSE 0 END
+		FROM github_pull_request WHERE repository_id = $1 AND number = $2`,
+		subject.RepositoryID, number, observation.BaseRef, observation.HeadSHA, observation.BaseSHA,
+		observation.State, observation.Mergeability).Scan(&previous, &attempt); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 	pending := observation.State == GitHubPullRequestOpen && observation.Mergeability == GitHubMergeabilityUnknown
+	var recheckAt *time.Time
+	if pending || (observation.State == GitHubPullRequestOpen && observation.Mergeability == GitHubConflicting && attempt < 3) {
+		next := at.Add(mergeabilityRetries[min(attempt, len(mergeabilityRetries)-1)])
+		recheckAt = &next
+		attempt = min(attempt+1, len(mergeabilityRetries))
+	} else if observation.State != GitHubPullRequestOpen || observation.Mergeability == GitHubMergeable {
+		attempt = 0
+	}
 	settled := previous
 	if observation.State == GitHubPullRequestOpen && observation.Mergeability != GitHubMergeabilityUnknown {
 		settled = observation.Mergeability
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO github_pull_request AS p (repository_id, number, base_ref, head_sha, base_sha, state, mergeability, last_settled_mergeability, observed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO github_pull_request AS p (repository_id, number, base_ref, head_sha, base_sha, state, mergeability, last_settled_mergeability, observed_at, merge_commit_sha, mergeability_recheck_attempt)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (repository_id, number) DO UPDATE SET base_ref = EXCLUDED.base_ref,
 			head_sha = EXCLUDED.head_sha, base_sha = EXCLUDED.base_sha, state = EXCLUDED.state,
 			mergeability = EXCLUDED.mergeability, last_settled_mergeability = EXCLUDED.last_settled_mergeability,
-			observed_at = EXCLUDED.observed_at,
+			observed_at = EXCLUDED.observed_at, merge_commit_sha = EXCLUDED.merge_commit_sha,
+			mergeability_recheck_attempt = EXCLUDED.mergeability_recheck_attempt,
 			snapshot_version = p.snapshot_version + CASE WHEN
 				(p.base_ref, p.head_sha, p.base_sha, p.state, p.mergeability) IS DISTINCT FROM
 				(EXCLUDED.base_ref, EXCLUDED.head_sha, EXCLUDED.base_sha, EXCLUDED.state, EXCLUDED.mergeability)
 				THEN 1 ELSE 0 END`,
 		subject.RepositoryID, number, observation.BaseRef, observation.HeadSHA, observation.BaseSHA,
-		observation.State, observation.Mergeability, settled, at); err != nil {
+		observation.State, observation.Mergeability, settled, at, mergeCommitSHA, attempt); err != nil {
 		return err
 	}
-	if pending {
+	if recheckAt != nil {
 		_, err := tx.ExecContext(ctx, `UPDATE github_subject SET next_attempt = $4
 			WHERE repository_id = $1 AND kind = $2 AND subject_key = $3`,
-			subject.RepositoryID, subject.Kind, subject.Key, at.Add(mergeabilityRetry))
-		return err
+			subject.RepositoryID, subject.Kind, subject.Key, *recheckAt)
+		if err != nil {
+			return err
+		}
 	}
-	if observation.State != GitHubPullRequestOpen || previous == settled || (previous == GitHubMergeabilityUnknown && settled == GitHubMergeable) {
+	if pending || observation.State != GitHubPullRequestOpen || previous == settled || (previous == GitHubMergeabilityUnknown && settled == GitHubMergeable) {
 		return nil
 	}
 	var repository string
@@ -119,7 +157,7 @@ func (s *Store) observePullRequest(ctx context.Context, tx *sql.Tx, subject GitH
 	payload, err := json.Marshal(mergeabilityPayload{
 		Repository: repository, PullRequestNumber: number, BaseRef: observation.BaseRef,
 		HeadSHA: observation.HeadSHA, BaseSHA: observation.BaseSHA, PreviousMergeability: previous,
-		Mergeability: settled, ObservedAt: at,
+		Mergeability: settled, ObservedAt: at, MergeCommit: observation.MergeCommit,
 	})
 	if err != nil {
 		return err
