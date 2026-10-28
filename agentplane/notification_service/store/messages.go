@@ -189,13 +189,17 @@ func (s *Store) SentMessage(ctx context.Context, sender ServiceAccount, id uuid.
 
 func sentMessage(ctx context.Context, tx *sql.Tx, sender ServiceAccount, id uuid.UUID) (SentMessage, error) {
 	sent := SentMessage{ID: id}
+	var inboxID uuid.UUID
 	var destination []byte
+	var namespace, name, uid sql.NullString
 	err := tx.QueryRowContext(ctx, `
-		SELECT i.destination_ref, i.session_id, m.idempotency_key, e.created_at,
+		SELECT i.id, i.destination_ref, i.destination_namespace, i.destination_name, i.destination_uid,
+			i.session_id, m.idempotency_key, e.created_at,
 			m.cursor <= i.covered, m.cursor <= i.acknowledged, i.retired
 		FROM message m JOIN inbox i ON i.id = m.inbox_id JOIN entry e ON e.inbox_id = m.inbox_id AND e.cursor = m.cursor
 		WHERE m.id = $1 AND m.sender_namespace = $2 AND m.sender_name = $3`,
-		id, sender.Namespace, sender.Name).Scan(&destination, &sent.SessionID, &sent.IdempotencyKey, &sent.AcceptedAt,
+		id, sender.Namespace, sender.Name).Scan(&inboxID, &destination, &namespace, &name, &uid,
+		&sent.SessionID, &sent.IdempotencyKey, &sent.AcceptedAt,
 		&sent.Covered, &sent.Acknowledged, &sent.InboxRetired)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SentMessage{}, ErrNotFound
@@ -204,7 +208,8 @@ func sentMessage(ctx context.Context, tx *sql.Tx, sender ServiceAccount, id uuid
 		return SentMessage{}, err
 	}
 	sent.AcceptedAt = sent.AcceptedAt.UTC()
-	if err := decode(destination, &sent.DestinationRef); err != nil {
+	sent.DestinationRef, err = storedDestinationRef(inboxID, destination, namespace, name, uid)
+	if err != nil {
 		return SentMessage{}, err
 	}
 	return sent, nil

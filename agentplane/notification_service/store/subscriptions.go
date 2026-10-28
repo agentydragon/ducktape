@@ -285,7 +285,8 @@ func (s *Store) ListSubscriptions(ctx context.Context, owner Owner, afterID *uui
 	viewedAt := now()
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+subscriptionColumns+` FROM subscription s JOIN inbox i ON i.id = s.inbox_id
-		WHERE i.owner_namespace = $1 AND i.owner_name = $2 AND i.destination_ref ->> 'uid' = $3 AND s.id > $4
+		WHERE i.owner_namespace = $1 AND i.owner_name = $2
+			AND coalesce(i.destination_uid, i.destination_ref ->> 'uid') = $3 AND s.id > $4
 		ORDER BY s.id LIMIT 128`, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, startAfter(afterID))
 	if err != nil {
 		return nil, err
@@ -314,7 +315,8 @@ func (s *Store) ListSubscriptions(ctx context.Context, owner Owner, afterID *uui
 func (s *Store) GetSubscription(ctx context.Context, owner Owner, id uuid.UUID) (Subscription, error) {
 	subscription, err := scanSubscription(s.db.QueryRowContext(ctx, `
 		SELECT `+subscriptionColumns+` FROM subscription s JOIN inbox i ON i.id = s.inbox_id
-		WHERE s.id = $1 AND i.owner_namespace = $2 AND i.owner_name = $3 AND i.destination_ref ->> 'uid' = $4`,
+		WHERE s.id = $1 AND i.owner_namespace = $2 AND i.owner_name = $3
+			AND coalesce(i.destination_uid, i.destination_ref ->> 'uid') = $4`,
 		id, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID), now())
 	if errors.Is(err, sql.ErrNoRows) {
 		return Subscription{}, ErrNotFound

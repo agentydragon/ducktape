@@ -61,7 +61,8 @@ type InboxPage struct {
 	Notice  *Notice
 }
 
-const inboxColumns = `id, destination_ref, session_id, last_cursor, acknowledged, covered, expired_through, retired, delivery_error`
+const inboxColumns = `id, destination_ref, destination_namespace, destination_name, destination_uid,
+	session_id, last_cursor, acknowledged, covered, expired_through, retired, delivery_error`
 
 type rowScanner interface{ Scan(...any) error }
 
@@ -69,15 +70,18 @@ type rowScanner interface{ Scan(...any) error }
 func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	var inbox Inbox
 	var destination []byte
+	var namespace, name, uid sql.NullString
 	var deliveryError sql.NullString
 	if err := row.Scan(append([]any{
-		&inbox.ID, &destination, &inbox.SessionID, &inbox.LastCursor, &inbox.Acknowledged,
+		&inbox.ID, &destination, &namespace, &name, &uid, &inbox.SessionID, &inbox.LastCursor, &inbox.Acknowledged,
 		&inbox.Covered, &inbox.ExpiredThrough, &inbox.Retired, &deliveryError,
 	}, extra...)...); err != nil {
 		return Inbox{}, err
 	}
-	if err := decode(destination, &inbox.DestinationRef); err != nil {
-		return Inbox{}, fmt.Errorf("inbox %s destination_ref: %w", inbox.ID, err)
+	var err error
+	inbox.DestinationRef, err = storedDestinationRef(inbox.ID, destination, namespace, name, uid)
+	if err != nil {
+		return Inbox{}, err
 	}
 	if deliveryError.Valid {
 		inbox.DeliveryError = &deliveryError.String
@@ -85,10 +89,25 @@ func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	return inbox, nil
 }
 
+func storedDestinationRef(id uuid.UUID, destination []byte, namespace, name, uid sql.NullString) (DestinationRef, error) {
+	if namespace.Valid && name.Valid && uid.Valid {
+		return DestinationRef{Namespace: namespace.String, Name: name.String, UID: uid.String}, nil
+	}
+	if namespace.Valid || name.Valid || uid.Valid {
+		return DestinationRef{}, fmt.Errorf("inbox %s has incomplete normalized destination fields", id)
+	}
+	var ref DestinationRef
+	if err := decode(destination, &ref); err != nil {
+		return DestinationRef{}, fmt.Errorf("inbox %s destination_ref: %w", id, err)
+	}
+	return ref, nil
+}
+
 // owned is the owner's inbox, locked for update when lock is set. An inbox of another owner is not found.
 func owned(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, owner Owner, lock bool) (Inbox, error) {
 	query := `SELECT ` + inboxColumns + ` FROM inbox
-		WHERE id = $1 AND owner_namespace = $2 AND owner_name = $3 AND destination_ref ->> 'uid' = $4`
+		WHERE id = $1 AND owner_namespace = $2 AND owner_name = $3
+			AND coalesce(destination_uid, destination_ref ->> 'uid') = $4`
 	if lock {
 		query += ` FOR UPDATE`
 	}
@@ -114,7 +133,8 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner ServiceAccoun
 	if errors.Is(err, sql.ErrNoRows) {
 		var count int
 		if err := tx.QueryRowContext(ctx, `
-			SELECT count(*) FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_ref ->> 'uid' = $3`,
+			SELECT count(*) FROM inbox WHERE owner_namespace = $1 AND owner_name = $2
+				AND coalesce(destination_uid, destination_ref ->> 'uid') = $3`,
 			owner.Namespace, owner.Name, ref.UID).Scan(&count); err != nil {
 			return Inbox{}, err
 		}
@@ -129,11 +149,13 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner ServiceAccoun
 		return Inbox{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref, session_id,
+		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref,
+			destination_namespace, destination_name, destination_uid, session_id,
 			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6, 0, 0, 0, 0, false, $7, $7, $7)
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 0, 0, 0, 0, false, $10, $10, $10)
 		ON CONFLICT DO NOTHING`,
-		uuid.New(), owner.Namespace, owner.Name, key, string(destination), sessionID, written); err != nil {
+		uuid.New(), owner.Namespace, owner.Name, key, string(destination), ref.Namespace, ref.Name, ref.UID,
+		sessionID, written); err != nil {
 		return Inbox{}, err
 	}
 	inbox, err := scanInbox(tx.QueryRowContext(ctx,
@@ -152,7 +174,8 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner ServiceAccoun
 func (s *Store) ListInboxes(ctx context.Context, owner Owner) ([]Inbox, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+inboxColumns+` FROM inbox
-		WHERE owner_namespace = $1 AND owner_name = $2 AND destination_ref ->> 'uid' = $3 ORDER BY id LIMIT 1000`,
+		WHERE owner_namespace = $1 AND owner_name = $2
+			AND coalesce(destination_uid, destination_ref ->> 'uid') = $3 ORDER BY id LIMIT 1000`,
 		owner.Account.Namespace, owner.Account.Name, owner.SandboxUID)
 	if err != nil {
 		return nil, err

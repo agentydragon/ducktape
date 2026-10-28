@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "actions.go",
         "claims.go",
+        "destination_backfill.go",
         "github_deliveries.go",
         "github_ingest.go",
         "github_mergeability.go",
@@ -29,6 +30,7 @@ go_library(
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
         "@org_golang_google_protobuf//proto",
     ],
 )
@@ -56,6 +58,7 @@ go_test(
     srcs = [
         "actions_integration_test.go",
         "claims_integration_test.go",
+        "destination_backfill_integration_test.go",
         "github_ingest_integration_test.go",
         "github_integration_test.go",
         "github_matching_integration_test.go",
