@@ -1,0 +1,61 @@
+--- a/lint/eslint.bzl
++++ b/lint/eslint.bzl
+@@ -68,6 +68,13 @@
+     # Linting of ts targets often requires the tsconfig
+     if hasattr(ctx.rule.attr, "tsconfig"):
+         js_inputs.append(ctx.rule.attr.tsconfig)
++
++    if ctx.attr._use_tsconfig and hasattr(ctx.rule.attr, "tsconfig"):
++        # A generated tsconfig is a plain file target, so the JsInfo gather below
++        # cannot supply it. The extended ts_config does provide a JsInfo closure.
++        inputs += ctx.rule.files.tsconfig
++        if hasattr(ctx.rule.attr, "extends") and ctx.rule.attr.extends:
++            js_inputs.append(ctx.rule.attr.extends)
+ 
+     # Add the config file along with any deps it has on npm packages
+     if "gather_files_from_js_providers" in dir(js_lib_helpers):
+@@ -108,6 +115,8 @@
+         patch: output file for patch (optional). If provided, uses run_patcher instead of run/run_shell.
+         target: the aspect target, used to reuse bin-tree inputs already produced by the target
+         args: additional command-line arguments to pass to eslint
++        use_tsconfig: Supply the target's tsconfig and extends inputs, and expose
++            its path in BAZEL_ESLINT_TSCONFIG for a type-aware ESLint config.
+     """
+     file_inputs = [ctx.attr._workaround_17660]
+ 
+@@ -201,6 +210,9 @@
+     # 2: Force 256 color support even when a tty isn't detected
+     color_env = {"FORCE_COLOR": "2"} if ctx.attr._options[LintOptionsInfo].color else {}
+ 
++    if ctx.attr._use_tsconfig and hasattr(ctx.rule.attr, "tsconfig"):
++        color_env["BAZEL_ESLINT_TSCONFIG"] = ctx.rule.files.tsconfig[0].short_path
++
+     if len(files_to_lint) == 0:
+         noop_lint_action(ctx, outputs)
+         return [info]
+@@ -229,7 +241,7 @@
+ 
+     return [info]
+ 
+-def lint_eslint_aspect(binary, configs, rule_kinds = ["js_library", "ts_project", "ts_project_rule"], args = []):
++def lint_eslint_aspect(binary, configs, rule_kinds = ["js_library", "ts_project", "ts_project_rule"], args = [], use_tsconfig = False):
+     """A factory function to create a linter aspect.
+ 
+     Args:
+@@ -242,6 +254,8 @@
+         configs: label(s) of the eslint config file(s)
+         rule_kinds: which [kinds](https://bazel.build/query/language#kind) of rules should be visited by the aspect
+         args: additional command-line arguments to pass to eslint
++        use_tsconfig: Supply the target's tsconfig and extends inputs, and expose
++            its path in BAZEL_ESLINT_TSCONFIG for a type-aware ESLint config.
+     """
+ 
+     # syntax-sugar: allow a single config file in addition to a list
+@@ -281,6 +295,7 @@
+             "_rule_kinds": attr.string_list(
+                 default = rule_kinds,
+             ),
++            "_use_tsconfig": attr.bool(default = use_tsconfig),
+             "_args": attr.string_list(
+                 default = args,
+             ),

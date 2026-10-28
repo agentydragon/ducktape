@@ -86,10 +86,15 @@ bazel_dep(name = "rules_conda", version = "0.3.2")
 # actions run with a narrow PATH. Use POSIX shell redirection instead. No exact
 # upstream issue was found; retire this patch after upstream removes the external
 # `touch` dependency, or after a supported narrow-PATH test proves it unnecessary.
+# The typed-tsconfig patch is an opt-in hook exercised by devinfra/lint/x/typed_eslint;
+# remove it with the spike or replace it when upstream supplies target-local config inputs.
 single_version_override(
     module_name = "aspect_rules_lint",
     patch_strip = 1,
-    patches = ["//patches:aspect_rules_lint_no_external_touch.patch"],
+    patches = [
+        "//patches:aspect_rules_lint_no_external_touch.patch",
+        "//patches:aspect_rules_lint_typed_tsconfig.patch",
+    ],
 )
 
 # Conda epoch versions (e.g. "1!164.3095") contain '!' which is invalid in Bazel

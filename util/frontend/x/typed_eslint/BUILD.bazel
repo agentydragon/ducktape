@@ -1,0 +1,80 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+
+package(default_testonly = True)
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+ts_config(
+    name = "worker_config",
+    src = "worker.json",
+    deps = [":tsconfig"],
+)
+
+write_file(
+    name = "generate_contract",
+    out = "contract.d.ts",
+    content = [
+        "export declare function generatedPromise(): Promise<number>;",
+        "export declare function generatedValue(): number;",
+        "export declare function onEvent(callback: () => void): void;",
+    ],
+)
+
+js_library(
+    name = "contract",
+    srcs = [":generate_contract"],
+)
+
+ts_library(
+    name = "api",
+    srcs = ["api.ts"],
+    tsconfig = ":tsconfig",
+)
+
+ts_library(
+    name = "good",
+    srcs = ["good.ts"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":api",
+        ":contract",
+    ],
+)
+
+ts_library(
+    name = "worker",
+    srcs = ["worker.ts"],
+    tsconfig = ":worker_config",
+    deps = [":api"],
+)
+
+# Negative specimens compile, but the opt-in typed ESLint aspect must reject them.
+ts_library(
+    name = "floating",
+    srcs = ["floating.ts"],
+    tags = ["manual"],
+    tsconfig = ":tsconfig",
+    deps = [":api"],
+)
+
+ts_library(
+    name = "misused",
+    srcs = ["misused.ts"],
+    tags = ["manual"],
+    tsconfig = ":tsconfig",
+    deps = [":contract"],
+)
+
+ts_library(
+    name = "non_thenable",
+    srcs = ["non_thenable.ts"],
+    tags = ["manual"],
+    tsconfig = ":tsconfig",
+    deps = [":contract"],
+)
