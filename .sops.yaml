@@ -685,6 +685,7 @@ creation_rules:
     key_groups:
       - age:
           - *admin
+          - *cluster-secrets
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *iguana-agentydragon
