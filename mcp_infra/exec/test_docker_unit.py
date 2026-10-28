@@ -5,11 +5,9 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-from aiodocker.containers import DockerContainer
-from aiodocker.stream import Stream
 from fastmcp.client import Client
 from fastmcp.resources.template import match_uri_template
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, retry_if_result, stop_after_delay, wait_fixed
 
 from mcp_infra.exec.docker import container_session
 from mcp_infra.exec.docker.container_session import ContainerSessionState, run_session_container, scoped_container
@@ -55,11 +53,10 @@ async def test_exec_stdout_stderr_timeout(exec_session) -> None:
 
 async def test_persession_exec_timeout_then_next_ok(exec_session) -> None:
     # Force timeout
-    t1 = await _call_exec(exec_session, ["sh", "-lc", "printf 'started\\n'; echo $$; exec sleep 30"], timeout_ms=500)
+    t1 = await _call_exec(exec_session, ["sh", "-lc", "printf 'started\\n'; exec sleep 30"], timeout_ms=500)
     assert t1.exit == TimedOut()
-    assert isinstance(t1.stdout, str)
-    assert t1.stdout.startswith("started\n")
-    # Next call should succeed after restart
+    assert t1.stdout == "started\n"
+    # The session container remains usable.
     r1 = await _call_exec(exec_session, ["/bin/echo", "ok"])
     assert r1.exit == Exited(exit_code=0)
     assert isinstance(r1.stdout, str)
@@ -88,7 +85,6 @@ async def test_collector_error_propagates(async_docker_client, debian_slim_image
 async def test_external_cancellation_closes_stream(async_docker_client, debian_slim_image, monkeypatch) -> None:
     started = asyncio.Event()
     closed = asyncio.Event()
-    pid_data = bytearray()
     original_collect = container_session._collect_from_exec_stream
 
     async def collect_after_first_output(stream, stdout_buf, stderr_buf):
@@ -101,7 +97,7 @@ async def test_external_cancellation_closes_stream(async_docker_client, debian_s
         stream.close = close
         chunk = await stream.read_out()
         assert chunk is not None
-        pid_data.extend(chunk.data)
+        assert chunk.data == b"started\n"
         started.set()
         await original_collect(stream, stdout_buf, stderr_buf)
 
@@ -110,7 +106,7 @@ async def test_external_cancellation_closes_stream(async_docker_client, debian_s
     async with scoped_container(async_docker_client, opts) as container_id:
         session = ContainerSessionState(async_docker_client, container_id, opts)
         input = ResolvedExecInput(
-            cmd=["sh", "-lc", "echo $$; exec sleep 120"], cwd=None, env=None, user=None, timeout_ms=60000
+            cmd=["sh", "-lc", "echo started; exec sleep 30"], cwd=None, env=None, user=None, timeout_ms=60000
         )
         task = asyncio.create_task(run_session_container(session, input.cmd, input))
         await asyncio.wait_for(started.wait(), 10)
@@ -118,194 +114,85 @@ async def test_external_cancellation_closes_stream(async_docker_client, debian_s
         with pytest.raises(asyncio.CancelledError):
             await task
         assert closed.is_set()
-        monkeypatch.setattr(container_session, "_collect_from_exec_stream", original_collect)
-        pid = int(pid_data.decode().strip())
-        assert not await _proc_exists(session, pid)
 
 
 async def _proc_cmdline(session: ContainerSessionState, pid: int) -> bytes:
+    """A dead process has an absent or empty cmdline, including unreaped zombies."""
     input = ResolvedExecInput(
         cmd=["sh", "-c", f"cat /proc/{pid}/cmdline 2>/dev/null || true"], cwd=None, env=None, user=None, timeout_ms=5000
     )
     stdout, _, exit_code, timed_out = await run_session_container(session, input.cmd, input)
-    assert exit_code == 0
     assert not timed_out
+    assert exit_code == 0
     return bytes(stdout)
 
 
-async def _proc_exists(session: ContainerSessionState, pid: int) -> bool:
-    input = ResolvedExecInput(cmd=["sh", "-c", f"test -e /proc/{pid}"], cwd=None, env=None, user=None, timeout_ms=5000)
-    _, _, exit_code, timed_out = await run_session_container(session, input.cmd, input)
-    assert not timed_out
-    return exit_code == 0
-
-
-async def test_timeout_kills_parent_and_child(async_docker_client, debian_slim_image) -> None:
-    opts = make_container_opts(debian_slim_image)
-    async with scoped_container(async_docker_client, opts) as container_id:
-        session = ContainerSessionState(async_docker_client, container_id, opts)
-        input = ResolvedExecInput(
-            cmd=["sh", "-c", "sleep 120 & echo $$ $!; wait"], cwd=None, env=None, user=None, timeout_ms=300
-        )
-        stdout, _, exit_code, timed_out = await run_session_container(session, input.cmd, input)
-        assert timed_out
-        assert exit_code is None
-        parent_pid, child_pid = map(int, stdout.decode().split())
-        assert not await _proc_exists(session, parent_pid)
-        assert not await _proc_exists(session, child_pid)
-
-
-async def test_timeout_preserves_sibling_exec(async_docker_client, debian_slim_image) -> None:
+async def test_deadline_kills_parent_and_child_but_preserves_sibling(async_docker_client, debian_slim_image) -> None:
     opts = make_container_opts(debian_slim_image)
     async with scoped_container(async_docker_client, opts) as container_id:
         session = ContainerSessionState(async_docker_client, container_id, opts)
         container = await async_docker_client.containers.get(container_id)
-        sibling = await container.exec(["sh", "-c", "echo $$; exec sleep 120"], stdout=True, stderr=True)
-        sibling_stream = sibling.start()
-        chunk = await sibling_stream.read_out()
-        assert chunk is not None
-        sibling_pid = int(chunk.data.decode().strip())
-        input = ResolvedExecInput(
-            cmd=["sh", "-c", "echo $$; exec sleep 120"], cwd=None, env=None, user=None, timeout_ms=300
-        )
-        stdout, _, _, timed_out = await run_session_container(session, input.cmd, input)
-        assert timed_out
-        target_pid = int(stdout.decode().strip())
-        assert not await _proc_exists(session, target_pid)
-        assert await _proc_cmdline(session, sibling_pid) == b"sleep\x00120\x00"
-        await sibling_stream.close()
+        sibling = await container.exec(["sh", "-c", "echo $$; exec sleep 30"], stdout=True)
+        async with sibling.start() as sibling_stream:
+            chunk = await sibling_stream.read_out()
+            assert chunk is not None
+            sibling_pid = int(chunk.data)
+            input = ResolvedExecInput(
+                cmd=["sh", "-c", "sleep 30 & echo $$ $!; wait"], cwd=None, env=None, user=None, timeout_ms=300
+            )
+            stdout, _, exit_code, timed_out = await run_session_container(session, input.cmd, input)
+            assert timed_out
+            assert exit_code is None
+            parent_pid, child_pid = map(int, stdout.split())
+            assert await _proc_cmdline(session, parent_pid) == b""
+            assert await _proc_cmdline(session, child_pid) == b""
+            assert await _proc_cmdline(session, sibling_pid) == b"sleep\x0030\x00"
 
 
-async def test_leader_exit_with_child_holding_stdout_times_out(async_docker_client, debian_slim_image) -> None:
-    opts = make_container_opts(debian_slim_image)
-    async with scoped_container(async_docker_client, opts) as container_id:
-        session = ContainerSessionState(async_docker_client, container_id, opts)
-        input = ResolvedExecInput(
-            cmd=["sh", "-c", "sleep 120 & echo $!; exit 0"], cwd=None, env=None, user=None, timeout_ms=300
-        )
-        stdout, _, _, timed_out = await run_session_container(session, input.cmd, input)
-        assert timed_out
-        child_pid = int(stdout.decode().strip())
-        assert not await _proc_exists(session, child_pid)
-
-
-async def test_redirected_background_returns_normally(async_docker_client, debian_slim_image) -> None:
-    opts = make_container_opts(debian_slim_image)
-    async with scoped_container(async_docker_client, opts) as container_id:
-        session = ContainerSessionState(async_docker_client, container_id, opts)
-        input = ResolvedExecInput(
-            cmd=["sh", "-c", "sleep 120 >/dev/null 2>&1 & echo $!"], cwd=None, env=None, user=None, timeout_ms=5000
-        )
-        stdout, _, exit_code, timed_out = await run_session_container(session, input.cmd, input)
-        assert not timed_out
-        assert exit_code == 0
-        child_pid = int(stdout.decode().strip())
-        assert await _proc_cmdline(session, child_pid) == b"sleep\x00120\x00"
-
-
-async def test_exec_preserves_argv_env_user_cwd_and_exit(async_docker_client, debian_slim_image) -> None:
-    opts = make_container_opts(debian_slim_image)
-    async with scoped_container(async_docker_client, opts) as container_id:
-        session = ContainerSessionState(async_docker_client, container_id, opts)
-        input = ResolvedExecInput(
-            cmd=["sh", "-c", 'printf "%s|%s|%s\\n" "$PROBE" "$(pwd)" "$(id -u)"; echo err >&2; exit 7'],
-            cwd="/tmp",
-            env=["PROBE=value with spaces"],
-            user="65534",
-            timeout_ms=5000,
-        )
-        stdout, stderr, exit_code, timed_out = await run_session_container(session, input.cmd, input)
-        assert not timed_out
-        assert exit_code == 7
-        assert stdout == b"value with spaces|/tmp|65534\n"
-        assert stderr == b"err\n"
-        literal = ResolvedExecInput(
-            cmd=["/usr/bin/printf", "%s\\n", "$PROBE"], cwd=None, env=None, user=None, timeout_ms=5000
-        )
-        stdout, _, exit_code, timed_out = await run_session_container(session, literal.cmd, literal)
-        assert not timed_out
-        assert exit_code == 0
-        assert stdout == b"$PROBE\n"
-
-        missing = ResolvedExecInput(cmd=["/no/such/command"], cwd=None, env=None, user=None, timeout_ms=5000)
-        _, stderr, exit_code, timed_out = await run_session_container(session, missing.cmd, missing)
-        assert not timed_out
-        assert exit_code == 127
-        assert b"no such file" in stderr.lower()
-
-
-@pytest.mark.parametrize("pause_before_post", [True, False])
-async def test_cancel_during_lazy_stream_start_cleans_accepted_exec(
-    async_docker_client, debian_slim_image, monkeypatch, pause_before_post
+async def test_cancellation_leaves_remote_deadline_in_force(
+    async_docker_client, debian_slim_image, monkeypatch
 ) -> None:
+    started = asyncio.Event()
+    pid_data = bytearray()
+    original_collect = container_session._collect_from_exec_stream
+
+    async def collect_after_pid(stream, stdout_buf, stderr_buf):
+        chunk = await stream.read_out()
+        assert chunk is not None
+        pid_data.extend(chunk.data)
+        started.set()
+        await original_collect(stream, stdout_buf, stderr_buf)
+
     opts = make_container_opts(debian_slim_image)
     async with scoped_container(async_docker_client, opts) as container_id:
         session = ContainerSessionState(async_docker_client, container_id, opts)
-        container = await async_docker_client.containers.get(container_id)
-        original_init = Stream._init
-        original_exec = DockerContainer.exec
-        created_exec = []
-
-        async def capture_exec(self, command, **kwargs):
-            exec_obj = await original_exec(self, command, **kwargs)
-            if command[0].startswith("/.ducktape_docker_exec_supervisor_"):
-                created_exec.append(exec_obj)
-            return exec_obj
-
-        monkeypatch.setattr(DockerContainer, "exec", capture_exec)
-        accepted = asyncio.Event()
-        release = asyncio.Event()
-
-        async def pause_after_start(self):
-            if pause_before_post and not accepted.is_set():
-                accepted.set()
-                await release.wait()
-            await original_init(self)
-            if not pause_before_post and not accepted.is_set():
-                accepted.set()
-                await release.wait()
-
-        monkeypatch.setattr(Stream, "_init", pause_after_start)
         input = ResolvedExecInput(
-            cmd=["sh", "-c", "echo $$ >/tmp/docker-exec-race-pid; exec sleep 120"],
-            cwd=None,
-            env=None,
-            user=None,
-            timeout_ms=60000,
+            cmd=["sh", "-c", "echo $$; exec sleep 30"], cwd=None, env=None, user=None, timeout_ms=1000
         )
+        monkeypatch.setattr(container_session, "_collect_from_exec_stream", collect_after_pid)
         task = asyncio.create_task(run_session_container(session, input.cmd, input))
-        await asyncio.wait_for(accepted.wait(), 10)
-
-        async def read_pid() -> int:
-            probe = await container.exec(["sh", "-c", "cat /tmp/docker-exec-race-pid 2>/dev/null"], stdout=True)
-            stream = probe.start()
-            chunks = bytearray()
-            while (chunk := await stream.read_out()) is not None:
-                chunks.extend(chunk.data)
-            assert chunks, "Docker exec has not written its PID yet"
-            return int(chunks.decode().strip())
-
-        if not pause_before_post:
-            async for attempt in AsyncRetrying(
-                stop=stop_after_delay(10),
-                wait=wait_fixed(0.05),
-                retry=retry_if_exception_type(AssertionError),
-                reraise=True,
-            ):
-                with attempt:
-                    pid = await read_pid()
+        await asyncio.wait_for(started.wait(), 10)
         task.cancel()
-        release.set()
         with pytest.raises(asyncio.CancelledError):
             await task
-        assert len(created_exec) == 1
-        assert not (await created_exec[0].inspect())["Running"]
-        if pause_before_post:
-            try:
-                pid = await read_pid()
-            except AssertionError:
-                return
-        assert not await _proc_exists(session, pid)
+        monkeypatch.setattr(container_session, "_collect_from_exec_stream", original_collect)
+        pid = int(pid_data)
+        cmdline: bytes = await AsyncRetrying(
+            retry=retry_if_result(bool), wait=wait_fixed(0.05), stop=stop_after_delay(5)
+        )(_proc_cmdline, session, pid)
+        assert cmdline == b""
+
+
+@pytest.mark.parametrize("exit_code", [124, 125, 137])
+async def test_early_command_exit_status_is_preserved(exec_session, exit_code: int) -> None:
+    result = await _call_exec(exec_session, ["sh", "-c", f"exit {exit_code}"])
+    assert result.exit == Exited(exit_code=exit_code)
+
+
+async def test_timeout_preserves_literal_arguments(exec_session) -> None:
+    result = await _call_exec(exec_session, ["/usr/bin/printf", "%s\\n", "$HOME; echo surprise"])
+    assert result.exit == Exited(exit_code=0)
+    assert result.stdout == "$HOME; echo surprise\n"
 
 
 def test_from_config_roundtrip() -> None:

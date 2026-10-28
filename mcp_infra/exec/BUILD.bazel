@@ -67,7 +67,6 @@ py_test(
         "//mcp_infra/exec/docker:types",
         "//mcp_infra/testing:fixtures",
         "//util/exec:models",
-        "@pypi//aiodocker",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

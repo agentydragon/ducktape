@@ -21,12 +21,10 @@ assert_no_deps(
 py_library(
     name = "container_session",
     srcs = ["container_session.py"],
-    data = ["//mcp_infra/exec/docker/liveness_pipe:docker_exec_supervisor"],
     visibility = ["//visibility:public"],
     deps = [
         ":types",
         "//mcp_infra:constants",
-        "//util/bazel:runfiles",
         "//util/exec:models",
         "@pypi//aiodocker",
         "@pypi//anyio",

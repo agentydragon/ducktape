@@ -76,7 +76,11 @@ CwdPolicy = Annotated[ModelChooses | DefaultValue | AlwaysSetTo, Field(discrimin
 
 
 class ContainerExecServerConfig(BaseModel):
-    """Complete JSON-serializable configuration for a ContainerExecServer."""
+    """Container configuration; image must supply GNU-compatible /usr/bin/timeout.
+
+    Required timeout options: --signal=KILL and fractional-second durations.
+    Session startup also requires /bin/sh and sleep infinity.
+    """
 
     image: str
     binds: list[BindMount] = Field(default_factory=list)
