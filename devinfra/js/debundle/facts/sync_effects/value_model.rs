@@ -790,22 +790,44 @@ pub(super) fn infer_namespace_aliases(
     assignments: &[&(Id, ValueExpr)],
     facts: &NamespaceValueFacts,
 ) -> BTreeSet<Id> {
-    let mut aliases = BTreeSet::new();
-    loop {
-        let mut changed = false;
-        for assignment in assignments {
-            let (target, value) = *assignment;
-            if target != namespace
-                && value.may_equal_namespace(namespace, &aliases, facts, &mut BTreeSet::new())
-                && aliases.insert(target.clone())
+    use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
+    struct AliasRules<'a> {
+        namespace: &'a Id,
+        assignments: &'a [&'a (Id, ValueExpr)],
+        facts: &'a NamespaceValueFacts,
+    }
+    impl IterativeRules for AliasRules<'_> {
+        type Key = ();
+        type Fact = BTreeSet<Id>;
+        type Rule = usize;
+        fn evaluate(&self, rule: &usize, context: &mut IterativeContext<'_, Self>) {
+            let (target, value) = self.assignments[*rule];
+            if target == self.namespace {
+                return;
+            }
+            let aliases = context.read(()).cloned().unwrap_or_default();
+            if value.may_equal_namespace(self.namespace, &aliases, self.facts, &mut BTreeSet::new())
             {
-                changed = true;
+                context.propose((), BTreeSet::from([target.clone()]));
             }
         }
-        if !changed {
-            return aliases;
+        fn merge(_: &(), current: &mut BTreeSet<Id>, contribution: BTreeSet<Id>) -> bool {
+            let before = current.len();
+            current.extend(contribution);
+            current.len() != before
         }
     }
+    let mut inference = IterativeInference::new(AliasRules {
+        namespace,
+        assignments,
+        facts,
+    });
+    inference.seed((), BTreeSet::new());
+    inference
+        .solve(0..assignments.len())
+        .into_values()
+        .remove(&())
+        .expect("alias seed")
 }
 
 impl NamespaceValueFacts {
