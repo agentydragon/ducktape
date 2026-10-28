@@ -73,6 +73,11 @@ the AddItem branch and let Grocy fill the default itself.
 Action: file an issue (and ideally a PR) at
 https://github.com/grocy/grocy showing the inconsistency between
 AddProduct (lines 157-167) and TransferProduct (lines 1331-1341).
+Checked 2026-10-28: upstream `master` still has the `>= -1` AddProduct guard.
+[Issue #2721](https://github.com/grocy/grocy/issues/2721) remains open, but
+concerns the inventory form's freezer-date prefill; it does not report this
+AddProduct fallback bug. No matching issue appeared in a repository issue/PR
+search for `default_best_before_days_after_freezing`.
 
 ## File upstream Grocy PR for missing entity-schema properties
 
@@ -88,3 +93,8 @@ the missing properties and the three missing schemas. Maintainer (berrnd)
 has accepted similar drift fixes (#1451, #1967, #2198, #2694). Once a
 Grocy release shipping the upstream fix is pinned in `MODULE.bazel`,
 remove the corresponding downstream patches from `fix_openapi_spec.py`.
+Checked 2026-10-28: upstream `master` still lacks the patched Product fields,
+the cited Location/QuantityUnit/ShoppingListItem fields, and the three named
+schemas. A repository issue/PR search for missing OpenAPI schemas found no
+open item covering this set; [#2772](https://github.com/grocy/grocy/issues/2772)
+covered a different missing schema and is closed.
