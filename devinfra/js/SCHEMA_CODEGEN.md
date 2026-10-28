@@ -41,10 +41,11 @@ declaration for type checking and does not emit it as JavaScript source.
 
 ## OpenAPI Zod source
 
-`openapi_zod` converts a declared OpenAPI file into the Zod TypeScript source selected by a local
-Hey API config. The config and every local schema/config reference are declared inputs. Compile the
-generated source with an ordinary `ts_library`; for an `.mts` source it emits both `.mjs` and
-`.d.mts` for JavaScript and TypeScript consumers:
+`openapi_zod` remains a file-only converter: it produces the Zod TypeScript source selected by a
+local Hey API config. The config and every local schema/config reference are declared inputs. Compile
+the generated source with an ordinary `ts_library`, where the consumer declares compiler settings
+and runtime dependencies; for an `.mts` source it emits both `.mjs` and `.d.mts` for JavaScript and
+TypeScript consumers:
 
 ```starlark
 load("//devinfra/js:openapi_zod.bzl", "openapi_zod")
