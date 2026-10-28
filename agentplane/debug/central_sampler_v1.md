@@ -250,3 +250,16 @@ nested `process/read` reply evidence. The fixture now writes
 and their boundary-record request/reply bodies. That evidence must distinguish an empty
 exec-server reply from loss after the sampler receives a chunk before choosing a backend fix.
 The stdout assertion remains unchanged.
+
+## Identity Pod image after VM input cleanup
+
+[CI invocation 36453d32](https://app.buildbuddy.io/invocation/36453d32-4bd0-5347-9662-41ae84180c2b)
+failed before sampler startup: the separate `test-central-sampler` identity Pod had
+`ErrImageNeverPull` for `git.allegedly.works/ducktape-ci/runner:unset`. Removing the Pod
+runner layout from VM tests exposed this helper's hidden dependency. Earlier passing runs
+had the image available and did not establish that the VM test's image inputs were complete.
+
+The helper now uses the running app container's image, already imported for both Pod and VM
+stacks, and executes `/bin/sleep` from its Debian base. It keeps its own service account,
+waits for Pod readiness, and anchors the same UID-bound tokens; TokenReview coverage is
+unchanged. Ordinary VM tests still omit the Pod runner image.

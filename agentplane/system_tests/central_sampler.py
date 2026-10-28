@@ -211,6 +211,7 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
         await core.create_namespaced_service_account(
             namespace(), k8s.V1ServiceAccount(metadata=k8s.V1ObjectMeta(name=SERVICE))
         )
+        app = await _pod(core, "app")
         identity = await core.create_namespaced_pod(
             namespace(),
             k8s.V1Pod(
@@ -221,9 +222,10 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
                     containers=[
                         k8s.V1Container(
                             name="identity",
-                            image="git.allegedly.works/ducktape-ci/runner:unset",
+                            # The identity Pod only needs sleep; reuse the imported Debian-based app image.
+                            image=next(container.image for container in app.spec.containers if container.name == "app"),
                             image_pull_policy="Never",
-                            command=["sleep", "infinity"],
+                            command=["/bin/sleep", "infinity"],
                         )
                     ],
                 ),
@@ -234,7 +236,6 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
         gateway_token.write_text(await _bound_token(core, SERVICE, identity, "agentplane-runner-gateway"))
         writer_token = directory / "history-writer-token"
         writer_token.write_text(await _bound_token(core, SERVICE, identity, RUNNER_INGRESS_AUDIENCE))
-        app = await _pod(core, "app")
         caller_token = await _bound_token(core, "app", app, "session-dispatcher")
         reader_token = directory / "history-reader-token"
         reader_token.write_text(await _bound_token(core, "app", app, HISTORY_READER_AUDIENCE))
