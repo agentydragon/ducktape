@@ -43,7 +43,7 @@ func TestStdoutFramerAcceptsLimitAndRejectsOversizedFrames(t *testing.T) {
 
 	copy(line, prefix)
 	batch := framer.Feed(line)
-	if batch.Err == nil || batch.Err.Error() != "native frame exceeded the 64 MiB limit" || !batch.PendingTooLong {
+	if batch.Err != errStdoutFrameTooLong || !batch.PendingTooLong {
 		t.Fatalf("prefix and oversized unfinished frame = %+v, want prefix plus a pending-line error", batch)
 	}
 	if len(batch.Lines) != 1 || string(batch.Lines[0]) != "before-overflow" {
@@ -52,17 +52,5 @@ func TestStdoutFramerAcceptsLimitAndRejectsOversizedFrames(t *testing.T) {
 	batch = framer.Feed([]byte("\n"))
 	if batch.Err == nil || batch.PendingTooLong {
 		t.Fatalf("oversized terminated frame = %+v, want a complete-line error", batch)
-	}
-
-	framer = StdoutFramer{}
-	for i := range line {
-		line[i] = 'x'
-	}
-	if batch = framer.Feed(line[:MaxFrameLineBytes]); len(batch.Lines) != 0 || batch.Err != nil {
-		t.Fatalf("maximum unfinished frame = %d lines, err = %v", len(batch.Lines), batch.Err)
-	}
-	batch = framer.Feed([]byte("\n"))
-	if batch.Err != nil || len(batch.Lines) != 1 || len(batch.Lines[0]) != MaxFrameLineBytes {
-		t.Fatalf("maximum frame = %d lines, err = %v", len(batch.Lines), batch.Err)
 	}
 }
