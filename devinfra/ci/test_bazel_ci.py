@@ -56,6 +56,8 @@ def test_pr_target_selection(tmp_path: Path, changed_file: str, graph_wide: bool
             "RBE_CONTAINER_IMAGE": "test-image",
             "TEST_INVOCATION_ID": "11111111-1111-1111-1111-111111111111",
             "BUILD_INVOCATION_ID": "22222222-2222-2222-2222-222222222222",
+            "RACE_INVOCATION_ID": "33333333-3333-3333-3333-333333333333",
+            "FAKE_GO_TESTS": "//ci:go_test",
         }
     )
     result = subprocess.run(
@@ -83,6 +85,44 @@ def test_pr_target_selection(tmp_path: Path, changed_file: str, graph_wide: bool
     # The pre-assigned ID has to reach Bazel: it is the only handle a consumer has on
     # this invocation when the run is cancelled before `bb remote` returns.
     assert "--invocation_id=11111111-1111-1111-1111-111111111111" in test_args
+    assert "--@io_bazel_rules_go//go/config:race" not in test_args
+    assert "--@io_bazel_rules_go//go/config:race" not in (tmp_path / "build-args.log").read_text()
+    assert (tmp_path / "race-targets.log").read_text() == "//ci:go_test\n"
+    race_args = (tmp_path / "race-args.log").read_text().splitlines()
+    assert "--invocation_id=33333333-3333-3333-3333-333333333333" in race_args
+    assert "--@io_bazel_rules_go//go/config:race" in race_args
+    assert race_args[-3] == "--build_metadata=DISABLE_TARGET_TRACKING=true"
+    assert 'except attr("tags", "manual|live_openai_api"' in (tmp_path / "go-test-query.log").read_text()
+
+
+@pytest.mark.parametrize(("go_tests", "race_exit", "expected"), [("", 0, 0), ("//ci:go_test", 1, 1)])
+def test_race_gate_skips_empty_and_propagates_failure(
+    tmp_path: Path, go_tests: str, race_exit: int, expected: int
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_executable(bin_dir / "bazel", get_required_path("_main/devinfra/ci/testing/fake_bazel.py").read_text())
+    _write_executable(bin_dir / "python3", "#!/bin/sh\nexit 0\n")
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{bin_dir}:{env['PATH']}",
+            "GITHUB_EVENT_NAME": "push",
+            "PR_HEAD_SHA": "",
+            "CI_TEST_LOG_DIR": str(tmp_path),
+            "RBE_CONTAINER_IMAGE": "test-image",
+            "TEST_INVOCATION_ID": "11111111-1111-1111-1111-111111111111",
+            "BUILD_INVOCATION_ID": "22222222-2222-2222-2222-222222222222",
+            "RACE_INVOCATION_ID": "33333333-3333-3333-3333-333333333333",
+            "FAKE_GO_TESTS": go_tests,
+            "FAKE_RACE_EXIT": str(race_exit),
+        }
+    )
+    result = subprocess.run(
+        [sys.executable, str(BAZEL_CI)], cwd=REPO_ROOT, env=env, capture_output=True, text=True, check=False
+    )
+    assert result.returncode == expected, result.stderr + result.stdout
+    assert (tmp_path / "race-args.log").exists() == bool(go_tests)
 
 
 if __name__ == "__main__":

@@ -77,11 +77,15 @@ Aspect definitions in `devinfra/lint/linters.bzl`:
 
 ## GitHub CI Workflows
 
-| Workflow           | What Runs                                                                                 |
-| ------------------ | ----------------------------------------------------------------------------------------- |
-| `pre-commit.yml`   | `pre-commit run` on the PR's changed files (`--all-files` on pushes and manual runs)      |
-| `bazel-ci.yml`     | `bazel test`, then `bazel build` (lint runs by default), over the affected targets on PRs |
-| `ansible-lint.yml` | Full ansible-lint (thorough mode)                                                         |
+| Workflow           | What Runs                                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| `pre-commit.yml`   | `pre-commit run` on the PR's changed files (`--all-files` on pushes and manual runs)           |
+| `bazel-ci.yml`     | `bazel test`, `bazel build` (lint runs by default), then affected Go tests with race detection |
+| `ansible-lint.yml` | Full ansible-lint (thorough mode)                                                              |
+
+The Go race pass is a separate CI gate after the ordinary test and build, so its
+instrumented outputs are not reused for publication. Go tests that explicitly
+require `pure = "on"` retain that mode and cannot use Go's cgo-based race detector.
 
 ## Formatting
 

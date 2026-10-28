@@ -22,6 +22,10 @@ def test_every_input_separates_the_result() -> None:
     assert invocation_id(run_id="33060467223", attempt="1", role="test") != base
     assert invocation_id(run_id="33060467222", attempt="2", role="test") != base
     assert invocation_id(run_id="33060467222", attempt="1", role="build") != base
+    assert invocation_id(run_id="33060467222", attempt="1", role="race") != base
+    assert invocation_id(run_id="33060467222", attempt="1", role="race") != invocation_id(
+        run_id="33060467222", attempt="1", role="build"
+    )
 
 
 def test_scope_separates_parallel_release_artifact_builds() -> None:

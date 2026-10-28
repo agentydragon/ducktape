@@ -34,7 +34,9 @@ def main() -> None:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--attempt", required=True)
     parser.add_argument(
-        "--role", required=True, choices=["test", "build", "nix-wheel-build", "release-unstamped", "release-stamped"]
+        "--role",
+        required=True,
+        choices=["test", "build", "race", "nix-wheel-build", "release-unstamped", "release-stamped"],
     )
     parser.add_argument("--scope", default="", help="Optional scope to separate parallel invocations of one role")
     args = parser.parse_args()
