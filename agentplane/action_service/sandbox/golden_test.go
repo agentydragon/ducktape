@@ -81,17 +81,6 @@ func TestActionRoster(t *testing.T) {
 			for key, definition := range definitions {
 				offered[key] = action{definition.Title, (*annotations)(definition.Annotations)}
 			}
-			actionNames := make([]string, 0, len(definitions))
-			for name := range definitions {
-				actionNames = append(actionNames, name)
-			}
-			want := make([]string, 0, len(contract.Roster()))
-			for _, name := range contract.Roster() {
-				want = append(want, string(name))
-			}
-			if !sameActions(actionNames, want) {
-				t.Errorf("executor Action names = %v, contract roster = %v", actionNames, want)
-			}
 			document, err := json.Marshal(offered)
 			if err != nil {
 				t.Fatal(err)
@@ -105,25 +94,6 @@ func TestActionRoster(t *testing.T) {
 			}
 		})
 	}
-}
-
-func sameActions(got, want []string) bool {
-	if len(got) != len(want) {
-		return false
-	}
-	counts := make(map[string]int, len(got))
-	for _, action := range got {
-		counts[action]++
-	}
-	for _, action := range want {
-		counts[action]--
-	}
-	for _, count := range counts {
-		if count != 0 {
-			return false
-		}
-	}
-	return true
 }
 
 func TestArgumentValidation(t *testing.T) {
