@@ -115,16 +115,24 @@ pub struct TransformSpec {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostNoReentry {
+    #[serde(with = "serde_yaml::with::singleton_map")]
     pub runtime: HostNoReentryRuntime,
     #[serde(default)]
     pub operations: BTreeSet<HostNoReentryOperation>,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum HostNoReentryRuntime {
     #[serde(rename = "bun_standalone_1_3_10")]
     BunStandalone1_3_10,
+    /// Author-audited identity of the executable that supplies the host APIs.
+    /// The analyzer records this identity; it does not execute or authenticate it.
+    BunStandaloneBuild {
+        version: String,
+        revision: String,
+        executable_sha256: String,
+    },
 }
 
 /// Exact zero-argument operations audited for the versioned host above.

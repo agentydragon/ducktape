@@ -1243,13 +1243,35 @@ calls, and visible root replacement retain the conservative publication guard.
 ## Version-scoped host call timing
 
 `host_no_reentry` is an optional author assertion for two exact zero-argument
-operations in an unmodified Bun 1.3.10 standalone release:
+operations in an audited Bun standalone runtime. The existing Bun 1.3.10 profile
+is:
 
 ```yaml
 host_no_reentry:
   runtime: bun_standalone_1_3_10
   operations: [async_local_storage_construct, promise_resolve]
 ```
+
+For a separately audited build, record its exact identity instead of reusing a
+different release's profile:
+
+```yaml
+host_no_reentry:
+  runtime:
+    bun_standalone_build:
+      version: "1.4.3"
+      revision: "<40 hexadecimal characters from Bun.revision>"
+      executable_sha256: "<64 hexadecimal characters for the audited executable>"
+  operations: [async_local_storage_construct, promise_resolve]
+```
+
+Replace the identity placeholders with measured values. All three identity
+fields are required; the version must be nonempty and contain no whitespace,
+and the revision and executable digest must have the specified hexadecimal
+lengths. These fields identify the author's audit. The analyzer validates their
+format and retains them as evidence; it does not run or authenticate the host
+executable, infer compatibility from a version, or transfer an audit between
+builds. Keep the runtime/builtin provenance and audit with the spec.
 
 The accepted operations are a direct `new` of a named `AsyncLocalStorage` import
 from Bun's builtin `async_hooks` or `node:async_hooks`, and a direct ordinary
@@ -1264,7 +1286,7 @@ later method calls, and module-loader reentry retain their ordinary analysis.
 Omitting this field keeps generic/Node behavior conservative.
 
 The author must verify that the analyzed program actually runs under the
-specified Bun release with its original builtin loader, exports, Promise
+specified Bun build with its original builtin loader, exports, Promise
 constructor and descriptors. Earlier loaded modules, preloads, plugins,
 patched binaries, and host instrumentation must not replace those capabilities
 or introduce synchronous hooks before these initializers. The analyzer's
@@ -1274,10 +1296,17 @@ The version string alone is not a binary identity proof. The tagged Bun 1.3.10
 and [`v8.promiseHooks`](https://github.com/oven-sh/bun/blob/bun-v1.3.10/src/js/node/v8.ts)
 stubs support this bounded assertion; [Node's `async_hooks`](https://nodejs.org/api/async_hooks.html)
 can synchronously invoke registered callbacks during Promise creation, so the
-assertion must not migrate to Node or later Bun versions without a new audit.
-Current graph reports expose the resulting synchronous precision, but do not
-record per-call host-contract consumption; keep the authored policy and its
-runtime provenance with the acceptance evidence.
+assertion must not migrate to Node or another Bun build without a new audit.
+Debugger-initiated evaluation and state changes are outside the behavior-equivalence
+contract; ordinary program-accessible hooks and getters remain in scope.
+
+Each successful use appears in the source unit's synchronous report under
+`author_host_contract_uses`, with the selected runtime, exact operation and
+source location. An unused policy produces no use record. These are static proof
+uses, not a runtime invocation trace. Failed Promise/global integrity guards
+remain visible under `native_integrity_checks` as `host_promise_resolve`. Host
+assertions establish timing only; their provenance must not be presented as an
+unconditional inferred native guarantee.
 
 ## Audited builtin-global membership probes
 

@@ -145,6 +145,8 @@ const MAX_SYNCHRONOUS_CALLBACK_POOL: usize = 64;
 
 struct Executor<'a> {
     native_integrity_checks: RefCell<BTreeSet<NativeIntegrityCheck>>,
+    host_runtime: Option<&'a spec::HostNoReentryRuntime>,
+    author_host_contract_uses: Vec<crate::reports::schema::HostNoReentryUse>,
     index: &'a ExecutionIndex,
     graph: &'a ChunkCodeGraph,
     facts: &'a [StatementFacts],
@@ -373,36 +375,53 @@ impl Executor<'_> {
 
     /// Author-asserted timing for two exact operations in the pinned Bun host.
     /// This does not supply a return value or a purity/throw summary.
-    fn host_call_does_not_reenter(&self, call: &Call) -> bool {
+    fn host_call_does_not_reenter(&mut self, call: &Call) -> bool {
         if call.has_spread || !call.args.is_empty() || !self.index.dynamic_scope_owners.is_empty() {
             return false;
         }
-        match (call.kind, &call.callee) {
-            (CallKind::New, ValueExpr::Binding(binding)) => self
-                .index
-                .host_async_local_storage_imports
-                .contains(binding),
+        let Some(runtime) = self.host_runtime else {
+            return false;
+        };
+        let operation = match (call.kind, &call.callee) {
+            (CallKind::New, ValueExpr::Binding(binding))
+                if self
+                    .index
+                    .host_async_local_storage_imports
+                    .contains(binding) =>
+            {
+                spec::HostNoReentryOperation::AsyncLocalStorageConstruct
+            }
             (CallKind::Call, ValueExpr::Member(receiver, Some(member), true))
                 if call.no_reentry_candidate && member == "resolve" =>
             {
                 let ValueExpr::Binding(binding) = receiver.as_ref() else {
                     return false;
                 };
-                self.index.host_promise_resolve
+                if !(self.index.host_promise_resolve
                     && binding.0.as_ref() == "Promise"
                     && !self.flow.is_declared(binding)
                     && !self.shadowed.contains("Promise")
-                    && !self
-                        .index
-                        .mutated_intrinsic_roots
-                        .contains(&IntrinsicRoot::Promise)
-                    && !self
-                        .index
-                        .mutated_intrinsic_roots
-                        .contains(&IntrinsicRoot::GlobalObject)
+                    && self.native_guard_intact(
+                        NativeIntegrityGuard::HostPromiseResolve,
+                        &[IntrinsicRoot::Promise, IntrinsicRoot::GlobalObject],
+                    ))
+                {
+                    return false;
+                }
+                spec::HostNoReentryOperation::PromiseResolve
             }
-            _ => false,
+            _ => return false,
+        };
+        let proof_use = crate::reports::schema::HostNoReentryUse {
+            runtime: runtime.clone(),
+            operation,
+            source_location: None,
+            span: call.span,
+        };
+        if !self.author_host_contract_uses.contains(&proof_use) {
+            self.author_host_contract_uses.push(proof_use);
         }
+        true
     }
 
     fn native_return_values(
@@ -5049,6 +5068,12 @@ pub(crate) fn annotate_synchronous_calls(
     let enum_data_members = super::stable_ts_enum_named_data_members(proofs.graph, facts);
     let mut executor = Executor {
         native_integrity_checks: RefCell::default(),
+        host_runtime: hints
+            .assumptions
+            .host_no_reentry
+            .as_ref()
+            .map(|policy| &policy.runtime),
+        author_host_contract_uses: Vec::new(),
         index: &index,
         graph: proofs.graph,
         facts,
@@ -5404,6 +5429,8 @@ pub(crate) fn annotate_synchronous_calls(
         outcome.effects.callback_factory_uses = std::mem::take(&mut executor.proof_uses);
         outcome.effects.returned_record_uses =
             std::mem::take(&mut executor.returned_record_proof_uses);
+        outcome.effects.author_host_contract_uses =
+            std::mem::take(&mut executor.author_host_contract_uses);
         outcome.effects.native_integrity_checks =
             std::mem::take(executor.native_integrity_checks.get_mut())
                 .into_iter()

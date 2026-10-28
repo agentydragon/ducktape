@@ -77,6 +77,7 @@ pub fn build_dependency_graph_with(
                     precision_losses: calls.precision_losses.clone(),
                     callback_factory_uses: Vec::new(),
                     returned_record_uses: Vec::new(),
+                    author_host_contract_uses: calls.author_host_contract_uses.clone(),
                 }
             }),
             native_integrity_witnesses: stmt

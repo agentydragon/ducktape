@@ -667,6 +667,30 @@ pub fn load_transform_spec_source(source: &TransformSpecSource) -> Result<Transf
 }
 
 fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
+    if let Some(spec::HostNoReentry {
+        runtime:
+            spec::HostNoReentryRuntime::BunStandaloneBuild {
+                version,
+                revision,
+                executable_sha256,
+            },
+        ..
+    }) = &spec.host_no_reentry
+    {
+        anyhow::ensure!(
+            !version.is_empty() && !version.chars().any(char::is_whitespace),
+            "host_no_reentry.runtime.bun_standalone_build.version must name the audited Bun version"
+        );
+        for (field, digest, length) in [
+            ("revision", revision, 40),
+            ("executable_sha256", executable_sha256, 64),
+        ] {
+            anyhow::ensure!(
+                digest.len() == length && digest.bytes().all(|byte| byte.is_ascii_hexdigit()),
+                "host_no_reentry.runtime.bun_standalone_build.{field} must contain {length} hexadecimal characters"
+            );
+        }
+    }
     if spec.inputs.input_root.as_os_str().is_empty() {
         bail!("Transform spec inputs.input_root must not be empty");
     }

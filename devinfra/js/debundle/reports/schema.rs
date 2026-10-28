@@ -302,6 +302,7 @@ pub enum NativeMutationOperation {
 pub enum NativeIntegrityGuard {
     OrdinaryObjectPrototype,
     ArrayIntrinsics,
+    HostPromiseResolve,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -323,6 +324,18 @@ pub struct SynchronousExecutionReport {
     pub callback_factory_uses: Vec<CallbackFactoryUseReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub returned_record_uses: Vec<ReturnedRecordUseReport>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub author_host_contract_uses: Vec<HostNoReentryUse>,
+}
+
+/// A successful timing refinement that depends on an author host assertion.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HostNoReentryUse {
+    pub runtime: spec::HostNoReentryRuntime,
+    pub operation: spec::HostNoReentryOperation,
+    pub source_location: Option<SourceLocation>,
+    #[serde(skip)]
+    pub(crate) span: swc_common::Span,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]

@@ -10,6 +10,18 @@ fn policy(operations: &[HostNoReentryOperation]) -> HostNoReentry {
     }
 }
 
+fn build_policy(operations: &[HostNoReentryOperation]) -> HostNoReentry {
+    let mut policy = policy(operations);
+    // Synthetic identity exercises assertion transport, not host authentication.
+    // The test's actual Bun runtime is supplied independently by Bazel.
+    policy.runtime = HostNoReentryRuntime::BunStandaloneBuild {
+        version: "1.3.10".to_string(),
+        revision: "a".repeat(40),
+        executable_sha256: "b".repeat(64),
+    };
+    policy
+}
+
 fn split<'a>(source: &'a str, binding: &'static str) -> FixtureOpts<'a> {
     FixtureOpts::new(
         source,
@@ -68,6 +80,107 @@ console.log(Boolean(gate), later);
     );
     assert_host_call_remains_impure(&fixture, "gate");
     assert_preserved_entry_output_with_bun(&fixture, "true 42\n");
+}
+
+#[test]
+fn audited_build_identity_and_consumed_operation_are_reported() {
+    for (source, operation) in [
+        (
+            r#"import { AsyncLocalStorage as Storage } from "node:async_hooks";
+globalThis.saved = () => later;
+const value = new Storage();
+const later = 42;
+console.log(Boolean(value), later);
+"#,
+            HostNoReentryOperation::AsyncLocalStorageConstruct,
+        ),
+        (
+            r#"globalThis.saved = () => later;
+const value = Promise.resolve();
+const later = 42;
+console.log(Boolean(value), later);
+"#,
+            HostNoReentryOperation::PromiseResolve,
+        ),
+    ] {
+        expect_atomic_conflict_rejection(
+            split(source, "value"),
+            &["host/value", "host/later"],
+            &[],
+        );
+        let policy = build_policy(&[operation]);
+        let fixture = run_fixture(split(source, "value").with_host_no_reentry(policy.clone()));
+        assert_host_call_remains_impure(&fixture, "value");
+        assert_preserved_entry_output_with_bun(&fixture, "true 42\n");
+        let graph = fixture.dependency_graph();
+        let uses: Vec<_> = graph
+            .nodes
+            .iter()
+            .filter_map(|node| node.synchronous_execution.as_ref())
+            .flat_map(|report| &report.author_host_contract_uses)
+            .collect();
+        assert_eq!(uses.len(), 1, "only the consumed operation is evidence");
+        assert_eq!(uses[0].runtime, policy.runtime);
+        assert_eq!(uses[0].operation, operation);
+        assert!(uses[0].source_location.is_some());
+    }
+}
+
+#[test]
+fn audited_build_does_not_certify_arguments_or_replaced_promise() {
+    for source in [
+        r#"import { AsyncLocalStorage as Storage } from "node:async_hooks";
+globalThis.saved = () => later;
+const value = new Storage({ get name() { globalThis.saved(); return "name"; } });
+const later = 42;
+console.log(Boolean(value), later);
+"#,
+        r#"globalThis.saved = () => later;
+const value = Promise.resolve({ get then() { globalThis.saved(); } });
+const later = 42;
+console.log(Boolean(value), later);
+"#,
+        r#"globalThis.saved = () => later;
+Promise.resolve = () => { globalThis.saved(); };
+const value = Promise.resolve();
+const later = 42;
+console.log(Boolean(value), later);
+"#,
+    ] {
+        expect_atomic_conflict_rejection(
+            split(source, "value").with_host_no_reentry(build_policy(&[
+                HostNoReentryOperation::AsyncLocalStorageConstruct,
+                HostNoReentryOperation::PromiseResolve,
+            ])),
+            &["host/value", "host/later"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn invalid_build_identity_is_rejected_and_unused_policy_is_not_evidence() {
+    let source = "const value = 42; console.log(value);";
+    let mut policy = build_policy(&[HostNoReentryOperation::PromiseResolve]);
+    if let HostNoReentryRuntime::BunStandaloneBuild { revision, .. } = &mut policy.runtime {
+        *revision = "not-a-revision".to_string();
+    }
+    expect_rejection_containing_all(
+        FixtureOpts::new(source, vec![]).with_host_no_reentry(policy),
+        &["bun_standalone_build.revision", "40 hexadecimal characters"],
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_host_no_reentry(build_policy(&[HostNoReentryOperation::PromiseResolve])),
+    );
+    assert!(
+        fixture
+            .dependency_graph()
+            .nodes
+            .iter()
+            .filter_map(|node| node.synchronous_execution.as_ref())
+            .all(|report| report.author_host_contract_uses.is_empty())
+    );
 }
 
 #[test]

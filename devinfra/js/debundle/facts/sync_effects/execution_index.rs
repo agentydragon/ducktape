@@ -2351,13 +2351,15 @@ impl ExecutionIndex {
         plain_array_bindings: &BTreeSet<String>,
         construction_proof: &LocalClassConstructionProof,
     ) -> Self {
-        let host_operations = hints
-            .assumptions
-            .host_no_reentry
-            .as_ref()
-            .map(|policy| match policy.runtime {
-                HostNoReentryRuntime::BunStandalone1_3_10 => &policy.operations,
-            });
+        let host_operations =
+            hints
+                .assumptions
+                .host_no_reentry
+                .as_ref()
+                .map(|policy| match &policy.runtime {
+                    HostNoReentryRuntime::BunStandalone1_3_10
+                    | HostNoReentryRuntime::BunStandaloneBuild { .. } => &policy.operations,
+                });
         let global_guards_requested = !hints.assumptions.deferred_global_publications.is_empty()
             || !hints.assumptions.non_reentrant_global_membership.is_empty();
         let mut index = Self {

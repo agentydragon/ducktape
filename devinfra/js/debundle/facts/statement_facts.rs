@@ -217,6 +217,7 @@ pub(crate) struct SynchronousCalls {
         std::sync::Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<ReturnedRecordUseFact>,
+    pub author_host_contract_uses: Vec<crate::reports::schema::HostNoReentryUse>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
