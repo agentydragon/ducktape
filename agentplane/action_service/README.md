@@ -460,35 +460,24 @@ environment gives the service its own `actions` database and login role on the n
 CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
 separate from the integration app's database.
 
-### Native storage cutover
+### Schema initialization
 
-Goose version 6 converts Action identities from JSON to `action_group`/`action_name` columns, event
-actors to binary `Principal` messages, and decision policy evidence to binary `PolicyEvidence`
-messages. Arguments, results and errors retain their native JSONB representation. Actor and evidence
-messages are immutable historical snapshots; the relational columns continue to carry request,
-caller, state, operator and decision lookup fields. The historical JSON decoder is private to the
-migration, so future runtime model changes cannot reinterpret old records.
+Goose version 7 creates the final typed schema on an empty database. A database that completed
+version 6 is adopted in place: the migration validates its history and schema, then records version
+7 without replaying DDL or rewriting Action rows. Existing Goose versions 1–6 and Alembic history
+remain intact. Databases behind version 6, or with a partial or unmarked schema, must first be
+repaired with the previous migration-capable image. Do not renumber this baseline; subsequent schema
+changes use later Goose versions.
 
-This is one coordinated rollout on the sole instance, `agentplane-staging`. Its `Recreate`
-Deployment stops the old writers before starting the new Pods. Goose's session lock serializes the
-init containers, and version 6 expands, converts in bounded batches, validates and drops the old
-columns in one transaction. There is no separate backfill command or validation stage. Malformed
-history or cancellation rolls back the entire version, including DDL and its Goose history entry;
-retrying the init container starts from the unchanged version 5 data. Applied versions 1–5 remain
-unchanged. Human decisions and all other Action history are preserved.
-
-Before landing the cutover, deploy the packaging prerequisite
-[PR #12655](https://github.com/agentydragon/ducktape/pull/12655): the currently pinned service image
-must already contain `actions-migrate` when the Deployment switches its init command. The final
-init and server then share one image pin. After version 6 commits, old JSON-reading or JSON-writing
-images cannot run against the schema; rollback requires a compatible typed-storage image or a
-coordinated database restore. Keep a pre-cutover database backup and verify the deployed migration
-version, row counts and service readiness after rollout.
-
-A populated migration benchmark and preservation/rollback tests are recorded in
-[the cutover evidence](debug/2026_10_28_native_storage_cutover.md). The measured transaction is small
-enough for an init-container conversion at current staging scale; it still takes exclusive table
-locks and makes Actions unavailable during the conversion.
+Action identities use `action_group`/`action_name` columns, event actors use binary `Principal`
+messages, and decision policy evidence uses binary `PolicyEvidence` messages. Arguments, results and
+errors retain JSONB. The `Recreate` Deployment stops old writers before the image-coupled migration
+init container runs; Goose's session lock serializes concurrent starts. A database with historical
+versions 1–6 retains its rollback path to a typed-storage-compatible version 6 image. A fresh
+version 7 database requires a rollback image that understands the version 7 baseline, or a
+coordinated database restore. See the
+[version 6 cutover evidence](debug/2026_10_28_native_storage_cutover.md) and
+[version 7 baseline verification](debug/2026_10_28_final_schema_baseline.md).
 
 ## MCP executor transports
 

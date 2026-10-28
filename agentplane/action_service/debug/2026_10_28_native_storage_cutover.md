@@ -42,14 +42,9 @@ it does not reproduce staging hardware, cache state, contention or a latency bou
 
 [Benchmark invocation 2ae73ffb-aa94-4d46-ae89-6e96791f0e19](https://app.buildbuddy.io/invocation/2ae73ffb-aa94-4d46-ae89-6e96791f0e19).
 
-Reproduce with Bazel on RBE:
-
-```sh
-bbr test //agentplane/action_service/migrations:native_storage_integration_test \
-  --test_arg=-test.run=^$ \
-  --test_arg=-test.bench=BenchmarkNativeStorageCutover \
-  --test_arg=-test.benchtime=1x --test_arg=-test.benchmem --test_output=all
-```
+The benchmark target belonged to the version 6 cutover image and was retired with the
+historical converter in version 7. The invocation above preserves its measured result;
+[version 7 baseline verification](2026_10_28_final_schema_baseline.md) covers the new migrator.
 
 ## Rollout boundary
 
@@ -63,3 +58,29 @@ and application readiness after deployment; local and RBE tests do not prove liv
 rollout success. This coordinated conversion intentionally has an Actions outage
 while the transaction holds exclusive locks. Old JSON storage images cannot be
 used after commit without a coordinated database restore.
+
+## Verified staging cutover
+
+PR #12360 merged as `030ac3944c708e6ac763052f6cfe809c880ede81`. The image containing
+that migration reached staging as `devel-20261028133355-0cfeb66` on 2026-10-28. Both
+migration init containers exited successfully between 13:37:47 and 13:37:53 UTC
+(4 and 5 seconds including connection/lock waiting); both serving replicas became
+ready with zero restarts. Goose version 6 is applied, and Flux reports Ready and Healthy.
+
+Read-only pre/post queries produced identical counts and MD5 fingerprints for all
+non-converted fields, ordered by primary key:
+
+| Table             |   Rows | Fingerprint                        |
+| ----------------- | -----: | ---------------------------------- |
+| `action_request`  |  7,332 | `c64b6bd2fd3eaff82e872f06662e2d1a` |
+| `action_event`    | 36,552 | `82422daf39210c0b1af8f7e560a191ab` |
+| `action_decision` |  7,299 | `c7ac8cb0940bab03a2410d5445e4d1ea` |
+
+The fingerprints hash `to_jsonb(row)` after excluding the converted columns, then
+aggregate each row hash in primary-key order. This includes human notes, descriptions,
+arguments, state and timestamps. The separately normalized `[group,name]` identity
+fingerprint also matched (`58494bd09b107dc007d49432b8e655e6`). All 2,439 human
+decisions remain. Non-null converted actor/evidence counts match the old source
+counts (33 and 4,860), with no empty binary snapshots. All three retired JSON columns
+are absent. These live checks complement the migration's full-field conversion tests;
+they do not replace an authenticated operator workflow test.

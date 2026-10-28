@@ -3,11 +3,7 @@ load("//devinfra/python:defs.bzl", "py_test")
 
 go_library(
     name = "migrations",
-    srcs = [
-        "action_storage.go",
-        "action_storage_legacy.go",
-        "migrations.go",
-    ],
+    srcs = ["migrations.go"],
     embedsrcs = glob(["actions/*.sql"]),
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/migrations",
     visibility = [
@@ -15,12 +11,8 @@ go_library(
         "//agentplane/mcp_edge:__subpackages__",
     ],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
-        "//agentplane/proto:sandboxes_go_proto",
-        "@com_github_lib_pq//:pq",
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -42,16 +34,14 @@ py_test(
 )
 
 go_test(
-    name = "native_storage_integration_test",
+    name = "baseline_integration_test",
     size = "medium",
-    srcs = ["native_storage_integration_test.go"],
+    srcs = ["baseline_integration_test.go"],
     embed = [":migrations"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
         "//agentplane/testing/postgres",
         "@com_github_lib_pq//:pq",
         "@com_github_pressly_goose_v3//:goose",
-        "@org_golang_google_protobuf//proto",
     ],
 )

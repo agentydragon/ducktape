@@ -41,12 +41,12 @@ def test_concurrent_and_repeated_init_containers(postgres_admin_url: str, databa
             with engine.connect() as conn:
                 assert (
                     conn.scalar(
-                        text("SELECT count(*) FROM action_service_goose_version WHERE version_id = 6 AND is_applied")
+                        text("SELECT count(*) FROM action_service_goose_version WHERE version_id = 7 AND is_applied")
                     )
                     == 1
                 )
                 assert (
-                    conn.scalar(text("SELECT max(version_id) FROM action_service_goose_version WHERE is_applied")) == 6
+                    conn.scalar(text("SELECT max(version_id) FROM action_service_goose_version WHERE is_applied")) == 7
                 )
                 assert (
                     conn.scalar(

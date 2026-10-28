@@ -19,9 +19,10 @@ remain JSONB. Serving code reads and writes only this representation, with no le
 
 The migration init container and server use the same image. The Deployment uses `Recreate` for
 schema cutovers so old writers stop before migration. Goose serializes init containers with its
-PostgreSQL session lock. Version 6 converts historical JSON and contracts the schema in one
-transaction; failure leaves the old schema and data intact. A committed cutover requires a
-storage-compatible image for application rollback.
+PostgreSQL session lock. Version 7 creates the typed schema for a fresh database or adopts a
+complete version 6 schema without rewriting data. Older and incomplete schemas are rejected;
+existing Goose history remains intact. A database created at version 7 requires a
+version-7-aware rollback image or a coordinated restore.
 
 ## Built-in input contracts
 
