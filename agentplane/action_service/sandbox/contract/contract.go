@@ -45,11 +45,11 @@ type TemplateArgs struct {
 // ExecArgs is the input to exec. Decode uses the stable group ceilings; the advertised input uses the current
 // binding's smaller maxima. Existing admitted requests can therefore still reach execution and be clipped.
 type ExecArgs struct {
-	Name           SandboxName     `json:"name" jsonschema_description:"DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one."`
-	Script         string          "json:\"script\" jsonschema:\"minLength=1\" jsonschema_description:\"Bash script text run with `bash -lc`. Pipes, redirects, globs, variable expansion and compound commands use normal Bash semantics.\""
-	TimeoutSeconds catalog.Integer `json:"timeout_seconds" jsonschema:"exclusiveMinimum=0" jsonschema_description:"Wall-clock ceiling for the script."`
-	MaxOutputBytes catalog.Integer `json:"max_output_bytes" jsonschema:"minimum=0" jsonschema_description:"Maximum bytes retained independently from stdout and stderr."`
-	Cwd            *string         `json:"cwd,omitempty" jsonschema:"nullable" jsonschema_description:"Working directory; omit to start in the container's own working directory."`
+	Name           SandboxName `json:"name" jsonschema_description:"DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one."`
+	Script         string      "json:\"script\" jsonschema:\"minLength=1\" jsonschema_description:\"Bash script text run with `bash -lc`. Pipes, redirects, globs, variable expansion and compound commands use normal Bash semantics.\""
+	TimeoutSeconds int         `json:"timeout_seconds" jsonschema:"exclusiveMinimum=0" jsonschema_description:"Wall-clock ceiling for the script."`
+	MaxOutputBytes int         `json:"max_output_bytes" jsonschema:"minimum=0" jsonschema_description:"Maximum bytes retained independently from stdout and stderr."`
+	Cwd            *string     `json:"cwd,omitempty" jsonschema:"nullable" jsonschema_description:"Working directory; omit to start in the container's own working directory."`
 }
 
 // NoArgs is the empty input to list.

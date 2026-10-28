@@ -15,8 +15,8 @@ surfaces do not require caller admission.
 Sandbox and orchestration Action inputs have one Go contract per wire shape. The same typed
 contract produces the advertised JSON Schema and validates arguments before decoding them for its
 executor. Objects reject unknown properties, including nested objects. Optional nullable fields
-accept absence and explicit null; required fields remain required. Integer fields accept integral
-JSON spellings such as `60`, `60.0`, and `6e1`, and reject fractions, booleans, null, and overflow.
+accept absence and explicit null; required fields remain required. Integer inputs use Go's standard
+JSON decoding: send integer literals such as `60`. Field constraints enforce their allowed ranges.
 Invalid arguments expose no validator detail that could quote their values.
 
 Sandbox exec admission advertises the deployment's current timeout and output maxima. Execution

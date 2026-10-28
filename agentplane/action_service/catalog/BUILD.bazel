@@ -8,7 +8,6 @@ go_library(
         "arguments.go",
         "catalog.go",
         "input.go",
-        "integer.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/catalog",
     deps = [
@@ -25,7 +24,6 @@ go_test(
         "catalog_test.go",
         "golden_test.go",
         "input_test.go",
-        "integer_test.go",
     ],
     embed = [":catalog"],
     embedsrcs = ["golden.json"],

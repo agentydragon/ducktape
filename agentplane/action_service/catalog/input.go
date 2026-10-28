@@ -48,18 +48,7 @@ func NewInput[T any](options InputOptions) (Input[T], error) {
 	if typeOf.Kind() != reflect.Struct {
 		return empty, fmt.Errorf("Action %s input must be a struct", options.Name)
 	}
-	// The reflector's custom-schema method puts named types in $defs. Map Integer
-	// inline so per-field numerical tags apply to its integer type, rather than to
-	// a $ref sibling whose Type is empty during tag processing.
-	reflector := &jsonschema.Reflector{
-		Anonymous: true, ExpandedStruct: true,
-		Mapper: func(fieldType reflect.Type) *jsonschema.Schema {
-			if fieldType == reflect.TypeOf(Integer(0)) {
-				return Integer(0).JSONSchema()
-			}
-			return nil
-		},
-	}
+	reflector := &jsonschema.Reflector{Anonymous: true, ExpandedStruct: true}
 	schema := reflector.ReflectFromType(typeOf)
 	if options.Configure != nil {
 		if err := options.Configure(schema); err != nil {

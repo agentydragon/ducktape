@@ -338,7 +338,7 @@ unavailable error (HTTP 503), not unknown-action. Replica-local health is never 
 Keep Action names, wire input structs, constraints and metadata in the group's lightweight
 `contract` package. Construct `catalog.Input[T]` with `catalog.NewInput[T]`: reflection uses `T`,
 and `Decode` returns that same type after schema validation. Use `json`/`jsonschema` field tags for
-presence, nullability and constraints, and `catalog.Integer` for exact JSON integers. A deployment
+presence, nullability and constraints, and plain `int` fields for integers. A deployment
 constraint belongs in the contract builder's schema configuration, applied to a fresh schema.
 Do not maintain a parallel argument-schema document, decoder destination map, or Python model for these inputs.
 

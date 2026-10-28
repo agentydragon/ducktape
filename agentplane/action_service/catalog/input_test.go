@@ -17,7 +17,7 @@ type testInput struct {
 	Other inputPlace `json:"other"`
 	Cwd   *string    `json:"cwd,omitempty" jsonschema:"nullable"`
 	Label *string    `json:"label,omitempty"`
-	Count Integer    `json:"count" jsonschema:"minimum=1,maximum=100,default=3"`
+	Count int        `json:"count" jsonschema:"minimum=1,maximum=100,default=3"`
 }
 
 func TestInputAdvertisementAndTypedDecode(t *testing.T) {
@@ -51,8 +51,8 @@ func TestInputAdvertisementAndTypedDecode(t *testing.T) {
 	}
 	for _, payload := range []string{
 		`{"place":{"name":"a"},"other":{"name":"b"},"count":60}`,
-		`{"place":{"name":"a"},"other":{"name":"b"},"count":60.0,"cwd":null}`,
-		`{"place":{"name":"a"},"other":{"name":"b"},"count":6e1,"cwd":"/tmp"}`,
+		`{"place":{"name":"a"},"other":{"name":"b"},"count":60,"cwd":null}`,
+		`{"place":{"name":"a"},"other":{"name":"b"},"count":60,"cwd":"/tmp"}`,
 	} {
 		decoded, err := input.Decode(json.RawMessage(payload))
 		if err != nil || decoded.Count != 60 || decoded.Place.Name != "a" || decoded.Other.Name != "b" {
@@ -77,7 +77,7 @@ func TestInputAdvertisementAndTypedDecode(t *testing.T) {
 	}
 	// A schema default is only an annotation: the decoder does not fill absent data.
 	optional, err := NewInput[struct {
-		Count Integer `json:"count,omitempty" jsonschema:"default=3"`
+		Count int `json:"count,omitempty" jsonschema:"default=3"`
 	}](InputOptions{Name: "optional", Description: "Optional count"})
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func TestInputBindingIsolationAndDefinitionCopies(t *testing.T) {
 		Annotations: &ToolAnnotations{Title: &title, ReadOnlyHint: &readOnly},
 	}
 	newBounded := func(maximum string) Input[struct {
-		Count Integer `json:"count"`
+		Count int `json:"count"`
 	}] {
 		t.Helper()
 		options.Configure = func(schema *jsonschema.Schema) error {
@@ -109,7 +109,7 @@ func TestInputBindingIsolationAndDefinitionCopies(t *testing.T) {
 			return nil
 		}
 		input, err := NewInput[struct {
-			Count Integer `json:"count"`
+			Count int `json:"count"`
 		}](options)
 		if err != nil {
 			t.Fatal(err)
@@ -148,38 +148,6 @@ func TestInputBindingIsolationAndDefinitionCopies(t *testing.T) {
 	}
 	if _, err := high.Decode(validForHigh); err != nil {
 		t.Fatalf("one binding mutation affected another: %v", err)
-	}
-}
-
-func TestInputIntegerRangeMatchesDecoder(t *testing.T) {
-	input, err := NewInput[struct {
-		Count Integer `json:"count"`
-	}](InputOptions{Name: "integer", Description: "Signed integer"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, payload := range []string{`{"count":9223372036854775807}`, `{"count":-9223372036854775808}`} {
-		if _, err := input.Decode(json.RawMessage(payload)); err != nil {
-			t.Errorf("Decode(%s): %v", payload, err)
-		}
-	}
-	for _, payload := range []string{`{"count":9223372036854775808}`, `{"count":-9223372036854775809}`} {
-		if _, err := input.Decode(json.RawMessage(payload)); !errors.Is(err, ErrInvalidArguments) {
-			t.Errorf("Decode(%s): %v, want ErrInvalidArguments", payload, err)
-		}
-	}
-	var schema struct {
-		Properties map[string]struct {
-			Minimum json.Number `json:"minimum"`
-			Maximum json.Number `json:"maximum"`
-		} `json:"properties"`
-	}
-	if err := json.Unmarshal(input.Definition().InputSchema, &schema); err != nil {
-		t.Fatal(err)
-	}
-	property := schema.Properties["count"]
-	if property.Minimum != "-9223372036854775808" || property.Maximum != "9223372036854775807" {
-		t.Fatalf("advertised integer range is not signed int64: %v", property)
 	}
 }
 

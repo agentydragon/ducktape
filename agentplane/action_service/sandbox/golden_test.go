@@ -146,29 +146,6 @@ func decodeContractInput(executor *Executor, action string, arguments json.RawMe
 	}
 }
 
-func TestExecIntegerSpellingsDecodeExactly(t *testing.T) {
-	executor, err := NewExecutor(catalog.PodBinding{
-		MaxTimeoutSeconds: 3600,
-		MaxOutputBytes:    1_000_000,
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, input := range []string{
-		`{"name":"box","script":"true","timeout_seconds":60,"max_output_bytes":1000}`,
-		`{"name":"box","script":"true","timeout_seconds":60.0,"max_output_bytes":1e3}`,
-		`{"name":"box","script":"true","timeout_seconds":6e1,"max_output_bytes":1000}`,
-	} {
-		args, err := executor.inputs.DecodeExec.Decode(json.RawMessage(input))
-		if err != nil {
-			t.Fatalf("Decode(%s) = %v", input, err)
-		}
-		if args.TimeoutSeconds != 60 || args.MaxOutputBytes != 1000 {
-			t.Errorf("Decode(%s) = timeout %d, output %d", input, args.TimeoutSeconds, args.MaxOutputBytes)
-		}
-	}
-}
-
 func TestBoundExecSchemaKeepsAdmissionCapsSeparateFromStoredDecode(t *testing.T) {
 	lower, err := NewExecutor(catalog.PodBinding{MaxTimeoutSeconds: 1, MaxOutputBytes: 4}, nil)
 	if err != nil {

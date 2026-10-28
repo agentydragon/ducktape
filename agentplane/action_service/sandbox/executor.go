@@ -104,7 +104,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 			return store.ExecutionOutcome{}, err
 		}
 		return worker.Succeeded(e.inventory.Run(ctx, caller, string(args.Name), Script{
-			Text: args.Script, Cwd: args.Cwd, TimeoutSeconds: int(args.TimeoutSeconds), MaxOutputBytes: int(args.MaxOutputBytes),
+			Text: args.Script, Cwd: args.Cwd, TimeoutSeconds: args.TimeoutSeconds, MaxOutputBytes: args.MaxOutputBytes,
 		}))
 	case string(contract.List):
 		if _, err := e.inputs.List.Decode(request.Arguments); err != nil {

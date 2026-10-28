@@ -132,17 +132,6 @@
     "max_output_bytes": 1000,
     "name": "test-box",
     "script": "true",
-    "timeout_seconds": 60.0
-   },
-   "name": "timeout as an integral float",
-   "valid": true
-  },
-  {
-   "action": "exec",
-   "input": {
-    "max_output_bytes": 1000,
-    "name": "test-box",
-    "script": "true",
     "timeout_seconds": "60"
    },
    "name": "timeout as integer text",

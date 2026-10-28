@@ -43,14 +43,14 @@ func (Harness) JSONSchema() *jsonschema.Schema {
 }
 
 type LaunchArgs struct {
-	Name                    string           `json:"name" jsonschema_description:"The new Sandbox's name, a DNS label no Sandbox in the namespace has." jsonschema:"minLength=1,maxLength=57,pattern=^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
-	Template                string           `json:"template" jsonschema_description:"The SandboxTemplate it runs from." jsonschema:"minLength=1"`
-	PolicySets              []string         `json:"policy_sets,omitempty" jsonschema_description:"PolicySets its own account is bound to, beside this deployment's defaults." jsonschema:"uniqueItems=true"`
-	InboxTags               []string         `json:"inbox_tags,omitempty" jsonschema_description:"Groups its Session inboxes take messages as." jsonschema:"uniqueItems=true"`
-	Bootstrap               string           `json:"bootstrap,omitempty" jsonschema_description:"Shell source its runner runs once, before its first Session." jsonschema:"maxLength=65536"`
-	WakeOnSend              bool             `json:"wake_on_send,omitempty" jsonschema_description:"Whether an inbox message or a submitted input resumes it once it is suspended."`
-	IdleSuspendAfterSeconds *catalog.Integer `json:"idle_suspend_after_seconds,omitempty" jsonschema_description:"How long its runner stays idle before it is suspended. Absent, it never is." jsonschema:"minimum=60,maximum=31536000"`
-	LauncherGrants          []string         "json:\"launcher_grants,omitempty\" jsonschema_description:\"What you may then do to this Sandbox without asking again, bound to your own account and deleted with the Sandbox: `send_message` to its Session inboxes, and each named Action of this group on it.\" jsonschema:\"uniqueItems=true\""
+	Name                    string   `json:"name" jsonschema_description:"The new Sandbox's name, a DNS label no Sandbox in the namespace has." jsonschema:"minLength=1,maxLength=57,pattern=^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`
+	Template                string   `json:"template" jsonschema_description:"The SandboxTemplate it runs from." jsonschema:"minLength=1"`
+	PolicySets              []string `json:"policy_sets,omitempty" jsonschema_description:"PolicySets its own account is bound to, beside this deployment's defaults." jsonschema:"uniqueItems=true"`
+	InboxTags               []string `json:"inbox_tags,omitempty" jsonschema_description:"Groups its Session inboxes take messages as." jsonschema:"uniqueItems=true"`
+	Bootstrap               string   `json:"bootstrap,omitempty" jsonschema_description:"Shell source its runner runs once, before its first Session." jsonschema:"maxLength=65536"`
+	WakeOnSend              bool     `json:"wake_on_send,omitempty" jsonschema_description:"Whether an inbox message or a submitted input resumes it once it is suspended."`
+	IdleSuspendAfterSeconds *int     `json:"idle_suspend_after_seconds,omitempty" jsonschema_description:"How long its runner stays idle before it is suspended. Absent, it never is." jsonschema:"minimum=60,maximum=31536000"`
+	LauncherGrants          []string "json:\"launcher_grants,omitempty\" jsonschema_description:\"What you may then do to this Sandbox without asking again, bound to your own account and deleted with the Sandbox: `send_message` to its Session inboxes, and each named Action of this group on it.\" jsonschema:\"uniqueItems=true\""
 }
 
 type OpenSessionArgs struct {
@@ -97,9 +97,9 @@ type ChangeReasoningEffortArgs struct {
 }
 
 type ReadTurnsArgs struct {
-	Sandbox   SandboxRef      `json:"sandbox" jsonschema_description:"The Sandbox as launch_sandbox returned it: its name and the UID of that incarnation. A Sandbox deleted and launched again under the name is another one, and is refused."`
-	SessionID string          `json:"session_id" jsonschema_description:"The Session's ID, as open_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
-	Count     catalog.Integer `json:"count" jsonschema_description:"How many recent turns to read, oldest first." jsonschema:"minimum=1,maximum=100"`
+	Sandbox   SandboxRef `json:"sandbox" jsonschema_description:"The Sandbox as launch_sandbox returned it: its name and the UID of that incarnation. A Sandbox deleted and launched again under the name is another one, and is refused."`
+	SessionID string     `json:"session_id" jsonschema_description:"The Session's ID, as open_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
+	Count     int        `json:"count" jsonschema_description:"How many recent turns to read, oldest first." jsonschema:"minimum=1,maximum=100"`
 }
 
 type WaitForTurnArgs struct {
