@@ -14,9 +14,21 @@ import (
 const executorSendQueue = 32
 
 type frameWrite struct {
-	frame    *controlpb.RunnerFrame
-	deadline time.Time
-	done     chan error
+	frame     *controlpb.RunnerFrame
+	deadline  time.Time
+	timer     *time.Timer
+	timerDone chan struct{}
+	timerStop sync.Once
+	done      chan error
+}
+
+func (w *frameWrite) stopTimer() {
+	w.timerStop.Do(func() {
+		if !w.timer.Stop() {
+			// Stop can return false while the callback is still recording the terminal error.
+			<-w.timerDone
+		}
+	})
 }
 
 // sender keeps WebSocket payload traffic behind Runner replies and heartbeats. The
@@ -56,18 +68,12 @@ func (s *sender) SendExecutor(frame *controlpb.RunnerFrame) error {
 }
 
 func (s *sender) enqueue(frame *controlpb.RunnerFrame, queue chan *frameWrite) error {
-	request := &frameWrite{frame: frame, deadline: time.Now().Add(s.timeout), done: make(chan error, 1)}
-	timerFinished := make(chan struct{})
-	timer := time.AfterFunc(time.Until(request.deadline), func() {
+	request := &frameWrite{frame: frame, deadline: time.Now().Add(s.timeout), timerDone: make(chan struct{}), done: make(chan error, 1)}
+	request.timer = time.AfterFunc(time.Until(request.deadline), func() {
+		defer close(request.timerDone)
 		s.fail(status.Error(codes.Unavailable, "runner control stream send timed out"))
-		close(timerFinished)
 	})
-	defer func() {
-		if !timer.Stop() {
-			// Stop can return false while the callback is still recording the terminal error.
-			<-timerFinished
-		}
-	}()
+	defer request.stopTimer()
 	select {
 	case queue <- request:
 	case <-s.done:
@@ -90,7 +96,6 @@ func (s *sender) run() {
 	for {
 		select {
 		case <-s.ctx.Done():
-			s.fail(status.FromContextError(s.ctx.Err()).Err())
 			return
 		case <-s.done:
 			return
@@ -108,7 +113,6 @@ func (s *sender) run() {
 		case request := <-s.data:
 			s.write(request)
 		case <-s.ctx.Done():
-			s.fail(status.FromContextError(s.ctx.Err()).Err())
 			return
 		}
 	}
@@ -116,18 +120,25 @@ func (s *sender) run() {
 
 func (s *sender) write(request *frameWrite) {
 	if err := s.errorIfFailed(); err != nil {
+		request.stopTimer()
 		request.done <- err
 		return
 	}
 	if time.Until(request.deadline) <= 0 {
 		s.fail(status.Error(codes.Unavailable, "runner control stream send timed out"))
+		request.stopTimer()
 		request.done <- s.error()
 		return
 	}
-	if err := s.send(request.frame); err != nil {
+	err := s.send(request.frame)
+	if err != nil && s.ctx.Err() == nil {
 		s.fail(err)
 	}
-	request.done <- s.failureOr(nil)
+	request.stopTimer()
+	if ctxErr := s.ctx.Err(); ctxErr != nil {
+		err = status.FromContextError(ctxErr).Err()
+	}
+	request.done <- s.failureOr(err)
 }
 
 func (s *sender) fail(err error) {
