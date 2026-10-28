@@ -42,6 +42,9 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   dependencies and owns no Runner lifecycle coordinator.
 - `lifecycle/`: the narrow shared COSI contract for Runner desired state and aggregate status. The root
   Runner controller and independent component controllers use its typed readers and writers.
+- `operation/`: the shared one-shot operation lifecycle for slot ownership, cancellation, publication
+  ordering and worker joins. Session, bootstrap and Codex app-server retain their typed COSI result
+  publication and deletion adapters.
 - `executor/`: the PID-1 companion for Pod Codex execution, its Unix control protocol and reaper.
   `executor/cmd/` builds the standalone `agentplane-executor` binary.
 - `codexappserver/`: the one shared Codex process, its COSI lifecycle resources and controller,

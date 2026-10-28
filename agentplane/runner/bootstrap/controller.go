@@ -69,7 +69,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		return err
 	}
 	if done {
-		current = outcome(op.err)
+		current = outcome(op.Err())
 		return write()
 	}
 	if isTerminal(current.Phase) || !input.Requested {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/siderolabs/gen/optional"
@@ -80,10 +81,10 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	// Consume completed protocol initialization and drain operations before making any policy decision.
 	// Their slots stay owned until observed here, so these operations cannot overlap.
 	if op, done := server.takeOperation(&server.initializing); done {
-		if op.err != nil {
+		if op.Err() != nil {
 			current.Phase = Stopped
 			current.ProcessID = ""
-			current.Error = op.err.Error()
+			current.Error = op.Err().Error()
 			current.ExecServerReadyDeadline = time.Time{}
 		} else {
 			server.mu.Lock()
@@ -117,11 +118,11 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		current.ProcessID = ""
 		current.StopError = ""
 		current.ExecServerReadyDeadline = time.Time{}
-		if op.err != nil {
-			current.StopError = op.err.Error()
+		if op.Err() != nil {
+			current.StopError = op.Err().Error()
 		}
 	}
-	var initializing, draining *operation
+	var initializing, draining *operation.Operation
 	var p *Process
 	server.mu.Lock()
 	initializing = server.initializing
@@ -179,9 +180,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		p = server.current
 		server.mu.Unlock()
 		if initializing != nil {
-			if initializing.cancel != nil {
-				initializing.cancel()
-			}
+			initializing.Cancel()
 			return write()
 		}
 		if draining != nil {

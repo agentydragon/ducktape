@@ -7,15 +7,18 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -37,6 +40,57 @@ type fixture struct {
 	host    *Host
 	workers sync.WaitGroup
 	runDone chan error
+}
+
+type initialOperationFailureState struct {
+	state.State
+	err error
+}
+
+func (s initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
+	if result, ok := value.(*typed.Resource[operationResult, componentExtension[operationResult]]); ok && !result.TypedSpec().Done {
+		return s.err
+	}
+	return s.State.Modify(ctx, value, update, opts...)
+}
+
+func TestInitialOperationPublicationFailureClearsSlotAndSkipsWork(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	publicationErr := errors.New("initial operation state write failed")
+	workers := &sync.WaitGroup{}
+	store := state.WrapCore(namespaced.NewState(inmem.Build))
+	reported := make(chan error, 1)
+	host := &Host{
+		deps: Dependencies{
+			Context: ctx, State: initialOperationFailureState{State: store, err: publicationErr}, Workers: workers,
+			OnError: func(err error) { reported <- err },
+		},
+		changed: make(chan struct{}),
+	}
+	var effects atomic.Int32
+	err := host.startOperation(&host.initializing, func(context.Context) error {
+		effects.Add(1)
+		return nil
+	})
+	workers.Wait()
+	if !errors.Is(err, publicationErr) {
+		t.Fatalf("start error = %v, want initial publication failure", err)
+	}
+	if got := effects.Load(); got != 0 {
+		t.Fatalf("app-server effects = %d, want 0", got)
+	}
+	if host.initializing != nil {
+		t.Fatal("operation slot remained owned after initial publication failure")
+	}
+	select {
+	case err := <-reported:
+		if !errors.Is(err, publicationErr) {
+			t.Fatalf("reported error = %v, want initial publication failure", err)
+		}
+	default:
+		t.Fatal("initial publication failure was not reported")
+	}
 }
 
 // waitSubscriptionContext stops Host after its readiness predicate has run and
@@ -167,7 +221,8 @@ func TestDesiredChangeWakesHostWithoutRuntimeWrite(t *testing.T) {
 		t.Fatal("initial app-server runtime was not observed")
 	}
 	f.host.mu.Lock()
-	f.host.initializing = &operation{done: make(chan struct{})}
+	f.host.initializing = operation.New(f.ctx)
+	f.host.initializing.Cancel()
 	f.host.mu.Unlock()
 	ctx, cancel := context.WithTimeout(f.ctx, 5*time.Second)
 	defer cancel()

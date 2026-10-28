@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
+	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
@@ -40,15 +41,15 @@ type Session struct {
 	processID                                              string
 	processState                                           runnerpb.ProcessState
 	nativeStop                                             stopReason
-	preparation, dispatching, inspection, halting, sealing *operation
-	controlDispatches                                      map[string]*operation
+	preparation, dispatching, inspection, halting, sealing *operation.Operation
+	controlDispatches                                      map[string]chan struct{}
 	reconciliations                                        []*pendingReconciliation
 	activeTurn                                             string
 	setup                                                  runnerpb.SetupState
 	launch                                                 runnerpb.LaunchOutcome
 	failure                                                *uint64
 	setupScript                                            *string
-	setupJob, stopping                                     *operation
+	setupJob, stopping                                     *operation.Operation
 	readers                                                sync.WaitGroup
 	work                                                   sync.WaitGroup
 	pending                                                map[string]bool
@@ -80,13 +81,13 @@ type sessionDependencies struct {
 	launchProcess      func(context.Context, string, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
 	resolveModelConfig func(context.Context, runnerpb.Harness, string) (*int, error)
 	publish            func(*Session, bool)
-	publishOperation   func(string, *operation, bool)
+	publishOperation   func(string, string, bool) error
 	changed            func()
 	fail               func(error)
 }
 
 func newSession(deps sessionDependencies, id string, record *retained.Record, journal *journal.Journal) *Session {
-	s := &Session{deps: deps, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, controlDispatches: map[string]*operation{}, interrupts: map[string]string{}, launch: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED}
+	s := &Session{deps: deps, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, controlDispatches: map[string]chan struct{}{}, interrupts: map[string]string{}, launch: runnerpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED}
 	if record.SetupScriptSHA256 != nil {
 		s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
 	}
@@ -263,23 +264,23 @@ func (s *Session) halt(ctx context.Context, reason stopReason) {
 	s.mu.Unlock()
 	s.admitMu.Unlock()
 	if preparation != nil {
-		preparation.cancel()
-		<-preparation.done
+		preparation.Cancel()
+		<-preparation.Done()
 	}
 	if dispatching != nil {
-		<-dispatching.done
+		<-dispatching.Done()
 	}
 	if setupJob != nil {
-		<-setupJob.done
+		<-setupJob.Done()
 	}
 	s.mu.Lock()
-	controls := make([]*operation, 0, len(s.controlDispatches))
+	controls := make([]chan struct{}, 0, len(s.controlDispatches))
 	for _, control := range s.controlDispatches {
 		controls = append(controls, control)
 	}
 	s.mu.Unlock()
 	for _, control := range controls {
-		<-control.done
+		<-control
 	}
 	s.admitMu.Lock()
 	s.mu.Lock()

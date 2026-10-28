@@ -9,6 +9,7 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -85,7 +86,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		return err
 	}
 	if desiredState.Mode == runnerlifecycle.Running && current.Generation != desiredState.Generation {
-		for _, slot := range []**operation{&s.halting, &s.sealing} {
+		for _, slot := range []**operation.Operation{&s.halting, &s.sealing} {
 			if op, done := s.takeOperation(slot); done {
 				c.manager.forgetOperation(op)
 			}
@@ -98,15 +99,15 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	if op, done := s.takeOperation(&s.setupJob); done {
 		c.manager.forgetOperation(op)
 		if current.SetupAttempt == "" {
-			current.SetupAttempt = op.id
+			current.SetupAttempt = op.ID()
 		}
-		if op.err != nil {
-			current.Error = op.err.Error()
-			s.deps.fail(op.err)
+		if op.Err() != nil {
+			current.Error = op.Err().Error()
+			s.deps.fail(op.Err())
 			if err := write(); err != nil {
 				return err
 			}
-			return op.err
+			return op.Err()
 		}
 	}
 	if input.SetupRequested && current.SetupAttempt == "" {
@@ -116,7 +117,9 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		if script != nil && job == nil && setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
 			s.startOperation(&s.setupJob, func(ctx context.Context) error { return s.runSetup(ctx, *script) })
 			s.mu.Lock()
-			current.SetupAttempt = s.setupJob.id
+			if s.setupJob != nil {
+				current.SetupAttempt = s.setupJob.ID()
+			}
 			s.mu.Unlock()
 			if err := write(); err != nil {
 				return err
@@ -129,7 +132,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		processID := s.processID
 		live := s.process != nil && s.process.Running()
 		s.mu.Unlock()
-		if op.err == nil && live && desiredState.Mode == runnerlifecycle.Running && current.Phase == Preparing {
+		if op.Err() == nil && live && desiredState.Mode == runnerlifecycle.Running && current.Phase == Preparing {
 			current.Phase, current.ProcessID = Ready, processID
 			s.mu.Lock()
 			s.processState = runnerpb.ProcessState_PROCESS_STATE_RUNNING
@@ -146,14 +149,14 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	}
 	if op, done := s.takeOperation(&s.dispatching); done {
 		c.manager.forgetOperation(op)
-		if op.err != nil {
-			return op.err
+		if op.Err() != nil {
+			return op.Err()
 		}
 	}
 	if op, done := s.takeOperation(&s.inspection); done {
 		c.manager.forgetOperation(op)
-		if op.err != nil {
-			return op.err
+		if op.Err() != nil {
+			return op.Err()
 		}
 	}
 	// Reconciliation runs independently from halt, so native stdout can deliver its replies.
@@ -204,7 +207,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 				return nil
 			}
 			s.mu.Lock()
-			settled := operationDone(halt) && len(s.controlDispatches) == 0
+			settled := halt.Finished() && len(s.controlDispatches) == 0
 			s.mu.Unlock()
 			if settled {
 				current.Phase = Halted
@@ -215,12 +218,12 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		if op, done := s.takeOperation(&s.stopping); done {
 			c.manager.forgetOperation(op)
-			if op.err != nil {
-				current.Error = op.err.Error()
+			if op.Err() != nil {
+				current.Error = op.Err().Error()
 				if err := write(); err != nil {
 					return err
 				}
-				return op.err
+				return op.Err()
 			}
 			current.ProcessStopped = true
 		}
@@ -242,8 +245,8 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		if op, done := s.takeOperation(&s.sealing); done {
 			c.manager.forgetOperation(op)
-			if op.err != nil {
-				return op.err
+			if op.Err() != nil {
+				return op.Err()
 			}
 		}
 		s.mu.Lock()

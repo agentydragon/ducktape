@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/controller/runtime"
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -26,6 +29,58 @@ import (
 )
 
 const bootstrapTestTimeout = 10 * time.Second
+
+type initialOperationFailureState struct {
+	state.State
+	err error
+}
+
+func (s initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
+	if result, ok := value.(*typed.Resource[operationResult, componentExtension[operationResult]]); ok && !result.TypedSpec().Done {
+		return s.err
+	}
+	return s.State.Modify(ctx, value, update, opts...)
+}
+
+func TestInitialOperationPublicationFailureClearsSlotAndSkipsWork(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	publicationErr := errors.New("initial operation state write failed")
+	workers := &sync.WaitGroup{}
+	reported := make(chan error, 1)
+	store := state.WrapCore(namespaced.NewState(inmem.Build))
+	host, err := NewHost(Config{}, Dependencies{
+		Context: ctx, State: initialOperationFailureState{State: store, err: publicationErr}, Workers: workers,
+		Admission: func(context.Context, lifecycle.Desired, func(context.Context) error) error { return nil },
+		OnError:   func(err error) { reported <- err },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var effects atomic.Int32
+	host.startOperation(func(context.Context) error {
+		effects.Add(1)
+		return nil
+	})
+	workers.Wait()
+	if got := effects.Load(); got != 0 {
+		t.Fatalf("bootstrap effects = %d, want 0", got)
+	}
+	host.mu.Lock()
+	slot := host.operation
+	host.mu.Unlock()
+	if slot != nil {
+		t.Fatal("operation slot remained owned after initial publication failure")
+	}
+	select {
+	case err := <-reported:
+		if !errors.Is(err, publicationErr) {
+			t.Fatalf("reported error = %v, want initial publication failure", err)
+		}
+	default:
+		t.Fatal("initial publication failure was not reported")
+	}
+}
 
 type hostTestRuntime struct {
 	ctx       context.Context

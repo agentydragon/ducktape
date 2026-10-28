@@ -55,7 +55,7 @@ func (s *Session) runtimeState() Runtime {
 
 func (s *Session) readyLocked() bool {
 	current := s.runtimeState()
-	return !operationDone(s.halting) && (current.Phase == Ready || current.Phase == Stopping) && current.ProcessID == s.processID && s.process != nil && s.process.Running()
+	return !s.halting.Finished() && (current.Phase == Ready || current.Phase == Stopping) && current.ProcessID == s.processID && s.process != nil && s.process.Running()
 }
 
 func (s *Session) executionClosed() bool {

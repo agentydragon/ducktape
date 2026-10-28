@@ -15,6 +15,7 @@ import (
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -22,7 +23,6 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
-	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -65,15 +65,9 @@ type Host struct {
 
 	requestMu sync.Mutex
 	mu        sync.Mutex
-	operation *operation
+	operation *operation.Operation
 	logMu     sync.Mutex
 	log       *Log
-}
-
-type operation struct {
-	id   string
-	done chan struct{}
-	err  error
 }
 
 func NewHost(config Config, deps Dependencies) (*Host, error) {
@@ -277,48 +271,53 @@ func (h *Host) startOperation(work func(context.Context) error) {
 		h.mu.Unlock()
 		return
 	}
-	op := &operation{id: uuid.NewString(), done: make(chan struct{})}
+	op := operation.New(h.ctx)
+	op.Register(h.workers)
 	h.operation = op
-	h.workers.Add(1)
 	h.mu.Unlock()
 
-	if err := publish(h.ctx, h.state, op.id, operationResult{}); err != nil {
-		h.onError(err)
-	}
-	h.runtimeChanged(true)
-	go func() {
-		defer h.workers.Done()
-		ctx, cancel := context.WithCancel(h.ctx)
-		defer cancel()
-		err := work(ctx)
+	err := op.Start(
+		func(done bool) error { return h.publishOperation(op, done) },
+		h.onError,
+		work,
+		func() { h.runtimeChanged(true) },
+		func() { h.runtimeChanged(false) },
+	)
+	if err != nil {
 		h.mu.Lock()
-		op.err = err
-		if publishErr := publish(h.ctx, h.state, op.id, operationResult{Done: true}); publishErr != nil {
-			h.onError(publishErr)
+		if h.operation == op {
+			h.operation = nil
 		}
-		close(op.done)
 		h.mu.Unlock()
-		h.runtimeChanged(false)
-	}()
+	}
 }
 
-func (h *Host) takeOperation(ctx context.Context) (*operation, bool, error) {
+func (h *Host) publishOperation(op *operation.Operation, done bool) error {
+	return publish(h.ctx, h.state, op.ID(), operationResult{Done: done})
+}
+
+func (h *Host) forgetOperation(ctx context.Context, op *operation.Operation) error {
+	err := h.state.Destroy(ctx, resource.NewMetadata(lifecycle.Namespace, OperationType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
+	if state.IsNotFoundError(err) {
+		return nil
+	}
+	return err
+}
+
+func (h *Host) takeOperation(ctx context.Context) (*operation.Operation, bool, error) {
 	h.mu.Lock()
 	op := h.operation
 	if op == nil {
 		h.mu.Unlock()
 		return nil, false, nil
 	}
-	select {
-	case <-op.done:
-	default:
+	if !op.Finished() {
 		h.mu.Unlock()
 		return nil, false, nil
 	}
 	h.mu.Unlock()
 
-	err := h.state.Destroy(ctx, resource.NewMetadata(lifecycle.Namespace, OperationType, op.id, resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
-	if err != nil && !state.IsNotFoundError(err) {
+	if err := h.forgetOperation(ctx, op); err != nil {
 		return nil, false, err
 	}
 	h.mu.Lock()

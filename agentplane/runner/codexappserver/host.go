@@ -17,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/codex"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
@@ -63,8 +64,8 @@ type Host struct {
 	current                     *Process
 	initializingOwner           *Attachment
 	initializingOwnerGeneration uint64
-	initializing                *operation
-	draining                    *operation
+	initializing                *operation.Operation
+	draining                    *operation.Operation
 	initializationGeneration    uint64
 	drainEffect                 func(context.Context) error
 	changeMu                    sync.Mutex

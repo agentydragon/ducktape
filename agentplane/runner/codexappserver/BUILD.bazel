@@ -19,6 +19,7 @@ go_library(
         "//agentplane/runner/codex/execserver",
         "//agentplane/runner/harness",
         "//agentplane/runner/lifecycle",
+        "//agentplane/runner/operation",
         "//agentplane/runner/supervision",
         "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/resource",
@@ -26,7 +27,6 @@ go_library(
         "@com_github_cosi_project_runtime//pkg/resource/typed",
         "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_cosi_project_runtime//pkg/state",
-        "@com_github_google_uuid//:uuid",
         "@com_github_siderolabs_gen//optional",
         "@org_uber_go_zap//:zap",
     ],
@@ -40,6 +40,7 @@ go_test(
     deps = [
         "//agentplane/runner/harness",
         "//agentplane/runner/lifecycle",
+        "//agentplane/runner/operation",
         "//agentplane/runner/supervision",
         "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/controller/runtime",

@@ -46,7 +46,7 @@ func TestOperationCompletionPublicationPrecedesConsumption(t *testing.T) {
 	s.mu.Unlock()
 	<-st.publishing
 	// The native effect returned, but its completion has not been published.
-	if operationDone(slot) {
+	if slot.Finished() {
 		t.Error("operation became consumable before its completion was published")
 	}
 	// Release the state write before acquiring the host mutex, which serializes
@@ -55,10 +55,10 @@ func TestOperationCompletionPublicationPrecedesConsumption(t *testing.T) {
 	s.work.Wait()
 	op, done := s.takeOperation(&s.preparation)
 	m.forgetOperation(op)
-	if !done || op.err != nil || s.preparation != nil {
+	if !done || op.Err() != nil || s.preparation != nil {
 		t.Fatalf("consumed operation = %+v, done=%t slot=%p", op, done, s.preparation)
 	}
-	if _, found, err := componentRead[operationResult](ctx, st, op.id); err != nil || found {
+	if _, found, err := componentRead[operationResult](ctx, st, op.ID()); err != nil || found {
 		t.Fatalf("operation result survived consumption: found=%t error=%v", found, err)
 	}
 }

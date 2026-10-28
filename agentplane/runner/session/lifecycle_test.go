@@ -121,7 +121,7 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 			}
 			close(adapter.release)
 			select {
-			case <-op.done:
+			case <-op.Done():
 			case <-ctx.Done():
 				t.Fatal("quiesce did not join preparation")
 			}

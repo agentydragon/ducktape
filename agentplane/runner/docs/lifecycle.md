@@ -106,6 +106,13 @@ useful for direct resource transformations; these state machines instead coordin
 and asynchronous effects. Individual process attempts use resource teardown and finalizers for
 the cleanup barrier; Session and Runner inputs live for the runtime lifetime.
 
+`operation.Operation` shares slot ownership, cancellation, completion publication ordering and
+worker accounting across Session, bootstrap and the Codex app-server. Each component owns its typed
+COSI result publisher and deleter. A failed initial publication clears the slot and skips the effect;
+a failed completion publication remains in the operation error, closes the local completion channel
+after the write returns, and reports the failure without marking the COSI result complete. The worker
+barrier includes completion callbacks so hosts can join them before discarding component state.
+
 These in-memory resources need no schema code generation. Upstream protobuf resource specs and
 registration become useful if resources later need persistence or a remote COSI API; adding that
 serialization now would duplicate the existing durable journal contract. COSI's default expvar
