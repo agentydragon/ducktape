@@ -4,7 +4,10 @@ package(default_visibility = ["//agentplane/runner:__subpackages__"])
 
 go_library(
     name = "stream",
-    srcs = ["connection.go", "retry.go"],
+    srcs = [
+        "connection.go",
+        "retry.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/stream",
     deps = [
         "//agentplane/observability",
