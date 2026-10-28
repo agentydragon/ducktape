@@ -33,11 +33,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use js_ast::SourceLineIndex;
-use swc_common::Span;
+use swc_common::{BytePos, Span};
 use swc_ecma_ast::ModuleItem;
 
 use crate::SourceLocation;
-use crate::analysis_inputs::{CallableSummary, CallbackFactoryEvidence};
+use crate::analysis_inputs::{CallableSourceLocation, CallableSummary, CallbackFactoryEvidence};
 use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
 };
@@ -352,8 +352,15 @@ pub fn resolve_imported_callback_factories(
                         defining_module: module.clone(),
                         export: export.clone(),
                         local: local.clone(),
-                        source_path: facts.source.as_ref().map(|(path, _)| path.clone()),
-                        function_start,
+                        source_location: facts.source.as_ref().and_then(|(path, index)| {
+                            let (line, column) =
+                                index.line_and_column_for_pos(BytePos(function_start))?;
+                            Some(CallableSourceLocation {
+                                path: path.clone(),
+                                line,
+                                column,
+                            })
+                        }),
                     },
                 ));
         }
@@ -762,15 +769,6 @@ mod tests {
             "export function wrap(callback) { return () => callback(); }\n\
              export const audited = makeOpaque();",
         );
-        let function_start = match &lib.body[0] {
-            ModuleItem::ModuleDecl(swc_ecma_ast::ModuleDecl::ExportDecl(export)) => {
-                match &export.decl {
-                    swc_ecma_ast::Decl::Fn(function) => function.function.span.lo.0,
-                    _ => panic!("expected function export"),
-                }
-            }
-            _ => panic!("expected export declaration"),
-        };
         let modules = BTreeMap::from([
             (
                 "app".to_string(),
@@ -789,8 +787,10 @@ mod tests {
                 facts(&lib, &[], &[("wrap", "wrap"), ("audited", "audited")]),
             ),
         ]);
-        let asserted =
-            BTreeMap::from([("lib".to_string(), BTreeSet::from(["audited".to_string()]))]);
+        let asserted = BTreeMap::from([
+            ("lib".to_string(), BTreeSet::from(["audited".to_string()])),
+            ("vendor".to_string(), BTreeSet::from(["wrap".to_string()])),
+        ]);
         let resolved = resolve_imported_callback_factories(&modules, &asserted);
         assert_eq!(
             resolved["app"]["localWrap"].callback_factory_evidence(),
@@ -798,8 +798,7 @@ mod tests {
                 defining_module: "lib".to_string(),
                 export: "wrap".to_string(),
                 local: "wrap".to_string(),
-                source_path: None,
-                function_start,
+                source_location: None,
             }]),
         );
         assert_eq!(

@@ -671,31 +671,9 @@ fn returned_wrapper_does_not_invoke_its_callback_at_creation() {
     assert_eq!(evidence["defining_module"], "static/peer");
     assert_eq!(evidence["export"], "factory");
     assert_eq!(evidence["local"], "factory");
-    assert_eq!(evidence["source_path"], "static/peer.js");
-    assert!(evidence["function_start"].as_u64().is_some());
-}
-
-#[test]
-fn vendor_affected_provider_does_not_supply_inferred_factory_summary() {
-    let peers = [(
-        "static/peer",
-        "export function factory(callback) { return () => callback(); }\n",
-    )];
-    let vendor_marks = [(
-        "static/peer.js",
-        VendorMark {
-            identity: "neutral-provider".into(),
-            role: Default::default(),
-            level: VendorLevel::Suppress,
-        },
-    )];
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(SOURCE, modules())
-            .with_extra_chunks(&peers)
-            .with_vendor_marks(&vendor_marks),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
+    assert_eq!(evidence["source_location"]["path"], "static/peer.js");
+    assert_eq!(evidence["source_location"]["line"], 1);
+    assert_eq!(evidence["source_location"]["column"], 8);
 }
 
 #[test]

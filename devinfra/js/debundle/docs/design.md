@@ -100,7 +100,7 @@ neither author assertions nor imported summaries are unconditional source facts.
 For bare named imports with a return-only callback-factory capability,
 `imported_callables` retains the defining module and export plus its evidence:
 an author assertion or the checked immutable wrapper's local binding and
-function start. Projection onto the importer's local name preserves this evidence;
+source location. Projection onto the importer's local name preserves this evidence;
 the execution index uses the capability only for eligible call shapes. Inline-only,
 retained-signature, and namespace-member author contracts remain distinct.
 The per-chunk `modules.json` report projects these imported summaries for

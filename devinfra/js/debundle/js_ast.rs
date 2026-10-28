@@ -116,12 +116,19 @@ impl SourceLineIndex {
         if span.is_dummy() {
             return None;
         }
-        let file = self.file_for_pos(span.lo())?;
-        let start_line = file.line_for_pos(span.lo());
+        let (start_line, start_column) = self.line_and_column_for_pos(span.lo())?;
         let end_line = self.line_for_pos(span.hi())?;
-        let line_start = *file.line_starts.get(start_line.checked_sub(1)?)?;
-        let start_column = (span.lo().0 - line_start.0 + 1) as usize;
         Some((start_line, end_line, start_column))
+    }
+
+    pub fn line_and_column_for_pos(&self, pos: BytePos) -> Option<(usize, usize)> {
+        if pos == BytePos(0) {
+            return None;
+        }
+        let file = self.file_for_pos(pos)?;
+        let line = file.line_for_pos(pos);
+        let line_start = *file.line_starts.get(line.checked_sub(1)?)?;
+        Some((line, (pos.0 - line_start.0 + 1) as usize))
     }
 
     fn line_for_pos(&self, pos: BytePos) -> Option<usize> {
