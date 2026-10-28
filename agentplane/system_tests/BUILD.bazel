@@ -1,5 +1,5 @@
 load("//agentplane/system_tests:defs.bzl", "system_test")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # gazelle:exclude test_agent_messaging.py
 # gazelle:exclude test_dcr.py
@@ -413,6 +413,18 @@ py_library(
         "@pypi//py_key_value_aio",
         "@pypi//pydantic",
     ],
+)
+
+py_library(
+    name = "dcr_probe",
+    srcs = ["dcr_probe.py"],
+    deps = [":dcr"],
+)
+
+py_binary(
+    name = "dcr_probe_bin",
+    main_module = "agentplane.system_tests.dcr_probe",
+    deps = [":dcr_probe"],
 )
 
 py_test(

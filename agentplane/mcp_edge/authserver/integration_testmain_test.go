@@ -342,6 +342,15 @@ type harness struct {
 
 func start(t *testing.T, configure ...func(*Config)) *harness {
 	t.Helper()
+	return startWithResource(t, func(server *Server) http.Handler {
+		return auth.RequireBearerToken(server.VerifyBearer, &auth.RequireBearerTokenOptions{
+			ResourceMetadataURL: server.ResourceMetadataURL(),
+		})(whoami())
+	}, configure...)
+}
+
+func startWithResource(t *testing.T, resource func(*Server) http.Handler, configure ...func(*Config)) *harness {
+	t.Helper()
 	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
 	if err != nil {
 		t.Fatal(err)
@@ -374,9 +383,7 @@ func start(t *testing.T, configure ...func(*Config)) *harness {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	mux.Handle(resourcePath, auth.RequireBearerToken(h.server.VerifyBearer, &auth.RequireBearerTokenOptions{
-		ResourceMetadataURL: h.server.ResourceMetadataURL(),
-	})(whoami()))
+	mux.Handle(resourcePath, resource(h.server))
 	mux.Handle("/", h.server.Handler())
 	listener.Config.Handler = mux
 	listener.Start()

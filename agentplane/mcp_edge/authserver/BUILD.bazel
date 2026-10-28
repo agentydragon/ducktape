@@ -29,6 +29,35 @@ go_library(
 )
 
 go_test(
+    name = "sdk_dcr_test",
+    size = "medium",
+    srcs = [
+        "integration_testmain_test.go",
+        "sdk_dcr_test.go",
+    ],
+    data = ["//agentplane/system_tests:dcr_probe_bin"],
+    embed = [":authserver"],
+    tags = ["requires_docker"],
+    deps = [
+        "//agentplane/action_service/migrations",
+        "//agentplane/mcp_edge:connection_service_go_proto",
+        "//agentplane/mcp_edge/connections",
+        "//agentplane/mcp_edge/mcpserver",
+        "//agentplane/proto:sandboxes_go_proto",
+        "//agentplane/testing/postgres",
+        "//agentplane/workload_auth/go/auth",
+        "@com_github_go_jose_go_jose_v4//:go-jose",
+        "@com_github_go_jose_go_jose_v4//jwt",
+        "@com_github_lib_pq//:pq",
+        "@com_github_modelcontextprotocol_go_sdk//auth",
+        "@com_github_modelcontextprotocol_go_sdk//mcp",
+        "@io_bazel_rules_go//go/runfiles",
+        "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_x_oauth2//:oauth2",
+    ],
+)
+
+go_test(
     name = "integration_test",
     size = "medium",
     srcs = [
