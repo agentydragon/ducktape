@@ -83,12 +83,9 @@ def iptables_binary(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
-    original_path = os.environ["PATH"]
-    os.environ["PATH"] = f"{iptables.parent}{os.pathsep}{original_path}"
-    try:
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("PATH", f"{iptables.parent}{os.pathsep}{os.environ['PATH']}")
         yield iptables
-    finally:
-        os.environ["PATH"] = original_path
 
 
 def _run_iptables(iptables: Path, *args: str) -> str:
