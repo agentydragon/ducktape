@@ -86,6 +86,17 @@ enum ProbeVerdict {
     BudgetSkipped,
 }
 
+impl ProbeVerdict {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::RemovableUnderRemainingAssumptions => "removable_under_remaining_assumptions",
+            Self::FailedFullAcceptance => "failed_full_acceptance",
+            Self::Inconclusive => "inconclusive",
+            Self::BudgetSkipped => "budget_skipped",
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct ProbeResult {
     target: ContractTarget,
@@ -131,9 +142,16 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
         "contract selection matched no contracts"
     );
 
+    let eligible = targets.len().min(args.max_probes);
+    eprintln!("audit-progress baseline start eligible={eligible} completed=0");
     let mut baseline_provenance = None;
-    run_transform_probe(&cli, &spec, |_| Ok(()), &mut baseline_provenance)
-        .context("baseline full acceptance failed; no removal probes were run")?;
+    if let Err(error) = run_transform_probe(&cli, &spec, |_| Ok(()), &mut baseline_provenance) {
+        eprintln!(
+            "audit-progress baseline complete eligible={eligible} completed=0 verdict=failed"
+        );
+        return Err(error).context("baseline full acceptance failed; no removal probes were run");
+    }
+    eprintln!("audit-progress baseline complete eligible={eligible} completed=0 verdict=passed");
     let baseline_provenance =
         baseline_provenance.context("baseline recorded no input provenance")?;
 
@@ -147,9 +165,13 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
             });
             continue;
         }
+        let ordinal = index + 1;
         baseline_provenance
             .verify(&CurrentRoots::default())
             .context("audit inputs changed after baseline")?;
+        eprintln!(
+            "audit-progress probe start ordinal={ordinal}/{eligible} completed={index} target={target:?}"
+        );
         let mut probe_provenance = None;
         let outcome = run_transform_probe(
             &cli,
@@ -158,10 +180,13 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
             &mut probe_provenance,
         );
         if let Some(provenance) = &probe_provenance {
-            ensure!(
-                same_inputs(&baseline_provenance, provenance),
-                "audit inputs changed between baseline and probe"
-            );
+            if !same_inputs(&baseline_provenance, provenance) {
+                eprintln!(
+                    "audit-progress probe complete ordinal={ordinal}/{eligible} completed={} verdict=aborted target={target:?}",
+                    ordinal
+                );
+                bail!("audit inputs changed between baseline and probe");
+            }
         }
         let (verdict, error) = match outcome {
             Ok(()) => (ProbeVerdict::RemovableUnderRemainingAssumptions, None),
@@ -176,6 +201,11 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
             }
             Err(error) => (ProbeVerdict::Inconclusive, Some(format!("{error:#}"))),
         };
+        eprintln!(
+            "audit-progress probe complete ordinal={ordinal}/{eligible} completed={} verdict={} target={target:?}",
+            ordinal,
+            verdict.label()
+        );
         results.push(ProbeResult {
             target,
             verdict,

@@ -453,6 +453,14 @@ marker keys are reported as policy labels. The probe produces no graph or
 output artifacts, since a graph for the edited in-memory spec could not
 honestly carry the original YAML's provenance.
 
+Progress goes to stderr. It reports baseline start and completion, then start
+and completion for each attempted probe. Probe events include the typed target,
+its 1-based ordinal among probes allowed by `--max-probes`, the eligible count,
+the number completed, and the verdict. Budget-skipped targets remain in the
+aggregate report without probe events. Text, JSON, and NDJSON stdout remain one
+complete aggregate report; a baseline or probe failure before report completion
+leaves stdout without a partial report.
+
 Every `spec validate` format includes a `validation` summary. JSON places it
 beside `counts` and `outcomes`; the final NDJSON `summary` line includes it;
 text prints `Selector validation: success|failed; checked=N, matched=M`.

@@ -28,7 +28,7 @@ fn split_modules() -> Vec<LogicalModuleEntry> {
     ]
 }
 
-fn audit(spec: &std::path::Path, extra: &[&str]) -> std::process::Output {
+fn audit_with_format(spec: &std::path::Path, format: &str, extra: &[&str]) -> std::process::Output {
     let mut args = vec![
         "spec",
         "audit-contracts",
@@ -37,13 +37,17 @@ fn audit(spec: &std::path::Path, extra: &[&str]) -> std::process::Output {
         "--policy-key",
         "static/peer",
         "--format",
-        "json",
+        format,
     ];
     args.extend_from_slice(extra);
     if !extra.contains(&"--max-probes") {
         args.extend(["--max-probes", "8"]);
     }
     run_debundle(&args)
+}
+
+fn audit(spec: &std::path::Path, extra: &[&str]) -> std::process::Output {
+    audit_with_format(spec, "json", extra)
 }
 
 fn parsed(output: &std::process::Output) -> Value {
@@ -53,6 +57,14 @@ fn parsed(output: &std::process::Output) -> Value {
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).unwrap()
+}
+
+fn progress_lines(output: &std::process::Output) -> Vec<String> {
+    String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .filter(|line| line.starts_with("audit-progress "))
+        .map(str::to_owned)
+        .collect()
 }
 
 fn configure_separate_report_dir(spec_path: &Path) -> PathBuf {
@@ -89,7 +101,13 @@ fn baseline_failure_stops_before_any_removal_verdict() {
         stderr.contains("baseline full acceptance failed"),
         "{stderr}"
     );
-    assert!(!String::from_utf8_lossy(&output.stdout).contains("removable"));
+    assert!(output.stdout.is_empty());
+    let progress = progress_lines(&output);
+    assert_eq!(progress.len(), 2, "{progress:#?}");
+    assert!(progress[0].starts_with("audit-progress baseline start "));
+    assert!(progress[0].contains("eligible=1 completed=0"));
+    assert!(progress[1].starts_with("audit-progress baseline complete "));
+    assert!(progress[1].contains("eligible=1 completed=0 verdict=failed"));
     assert_no_pipeline_artifacts(&fixture.spec_path, &report_dir);
 }
 
@@ -122,12 +140,20 @@ fn one_removal_rechecks_full_acceptance_and_keeps_other_hints() {
     assert_eq!(before, fs::read(&fixture.spec_path).unwrap());
     assert_no_pipeline_artifacts(&fixture.spec_path, &report_dir);
 
-    let needed = parsed(&audit(
-        &fixture.spec_path,
-        &["--kind", "no_reentry_exports"],
-    ));
+    let needed_output = audit(&fixture.spec_path, &["--kind", "no_reentry_exports"]);
+    let needed = parsed(&needed_output);
     assert_eq!(needed["results"][0]["target"]["export"], "makeSlot");
     assert_eq!(needed["results"][0]["verdict"], "failed_full_acceptance");
+    let needed_progress = progress_lines(&needed_output);
+    assert_eq!(needed_progress.len(), 4, "{needed_progress:#?}");
+    assert!(needed_progress[0].starts_with("audit-progress baseline start "));
+    assert!(needed_progress[1].starts_with("audit-progress baseline complete "));
+    assert!(needed_progress[2].starts_with("audit-progress probe start "));
+    assert!(needed_progress[2].contains("ordinal=1/1 completed=0"));
+    assert!(needed_progress[2].contains("kind: NoReentryExports"));
+    assert!(needed_progress[3].starts_with("audit-progress probe complete "));
+    assert!(needed_progress[3].contains("ordinal=1/1 completed=1"));
+    assert!(needed_progress[3].contains("verdict=failed_full_acceptance"));
     assert_no_pipeline_artifacts(&fixture.spec_path, &report_dir);
 
     // The accepted removal also emits the same behavior under the Node oracle.
@@ -141,6 +167,75 @@ fn one_removal_rechecks_full_acceptance_and_keeps_other_hints() {
             .with_chunk_export_purity(&after_first_removal),
     );
     assert_preserved_entry_output(&emitted, "slot 42\n");
+}
+
+#[test]
+fn bounded_audit_reports_ordered_progress_and_preserves_report_formats() {
+    let policy = [ChunkExportPurityBuilder::new("static/peer")
+        .with_no_reentry_exports(&["makeSlot"])
+        .with_pure_exports(&["makeSlot", "spare"])
+        .build()];
+    let fixture = write_validate_fixture_spec(
+        FixtureOpts::new(SOURCE, split_modules())
+            .with_extra_chunks(PEER)
+            .with_chunk_export_purity(&policy),
+    );
+
+    let json = audit(
+        &fixture.spec_path,
+        &["--kind", "pure_exports", "--max-probes", "1"],
+    );
+    let report = parsed(&json);
+    assert_eq!(report["independently_probed"], 1);
+    assert_eq!(report["budget_skipped"], 1);
+    assert_eq!(report["results"][0]["target"]["kind"], "pure_exports");
+    assert_eq!(report["results"][0]["target"]["export"], "makeSlot");
+    assert_eq!(
+        report["results"][0]["verdict"],
+        "removable_under_remaining_assumptions"
+    );
+    assert_eq!(report["results"][1]["verdict"], "budget_skipped");
+
+    let progress = progress_lines(&json);
+    assert_eq!(progress.len(), 4, "{progress:#?}");
+    assert!(progress[0].starts_with("audit-progress baseline start "));
+    assert!(progress[0].contains("eligible=1 completed=0"));
+    assert!(progress[1].starts_with("audit-progress baseline complete "));
+    assert!(progress[1].contains("eligible=1 completed=0 verdict=passed"));
+    assert!(progress[2].starts_with("audit-progress probe start "));
+    assert!(progress[2].contains("ordinal=1/1 completed=0"));
+    assert!(progress[2].contains("kind: PureExports"));
+    assert!(progress[2].contains("export: \"makeSlot\""));
+    assert!(progress[3].starts_with("audit-progress probe complete "));
+    assert!(progress[3].contains("ordinal=1/1 completed=1"));
+    assert!(progress[3].contains("verdict=removable_under_remaining_assumptions"));
+    assert!(progress[3].contains("kind: PureExports"));
+    assert!(progress[3].contains("export: \"makeSlot\""));
+
+    let ndjson = audit_with_format(
+        &fixture.spec_path,
+        "ndjson",
+        &["--kind", "pure_exports", "--max-probes", "1"],
+    );
+    assert!(
+        ndjson.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ndjson.stderr)
+    );
+    let ndjson_report: Value = serde_json::from_slice(&ndjson.stdout).unwrap();
+    assert_eq!(ndjson_report["section"], "audit");
+    assert_eq!(
+        ndjson_report["independently_probed"],
+        report["independently_probed"]
+    );
+    assert_eq!(ndjson_report["budget_skipped"], report["budget_skipped"]);
+    assert_eq!(ndjson_report["results"], report["results"]);
+    let ndjson_progress = progress_lines(&ndjson);
+    assert_eq!(ndjson_progress.len(), 4, "{ndjson_progress:#?}");
+    assert!(ndjson_progress[0].starts_with("audit-progress baseline start "));
+    assert!(ndjson_progress[1].starts_with("audit-progress baseline complete "));
+    assert!(ndjson_progress[2].starts_with("audit-progress probe start "));
+    assert!(ndjson_progress[3].starts_with("audit-progress probe complete "));
 }
 
 #[test]
