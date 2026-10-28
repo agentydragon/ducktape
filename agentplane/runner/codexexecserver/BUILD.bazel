@@ -6,17 +6,18 @@ package(default_visibility = [
 ])
 
 go_library(
-    name = "execserver",
+    name = "codexexecserver",
     srcs = [
         "controller.go",
         "host.go",
         "resources.go",
         "server.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner/codex/execserver",
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/codexexecserver",
     deps = [
         "//agentplane/runner/executor/control",
         "//agentplane/runner/lifecycle",
+        "//agentplane/runner/operation",
         "//agentplane/runner/supervision",
         "@com_github_coder_websocket//:websocket",
         "@com_github_cosi_project_runtime//pkg/controller",
@@ -25,7 +26,6 @@ go_library(
         "@com_github_cosi_project_runtime//pkg/resource/typed",
         "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_cosi_project_runtime//pkg/state",
-        "@com_github_google_uuid//:uuid",
         "@com_github_sethvargo_go_retry//:go-retry",
         "@com_github_siderolabs_gen//optional",
         "@org_uber_go_zap//:zap",
@@ -33,12 +33,12 @@ go_library(
 )
 
 go_test(
-    name = "execserver_test",
+    name = "codexexecserver_test",
     srcs = [
         "controller_test.go",
         "server_test.go",
     ],
-    embed = [":execserver"],
+    embed = [":codexexecserver"],
     race = "on",
     deps = [
         "//agentplane/runner/lifecycle",

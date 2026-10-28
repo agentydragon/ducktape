@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
-	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
@@ -19,7 +19,7 @@ type runnerLifecycleController struct{ l *lifecycle }
 func (*runnerLifecycleController) Name() string { return runnerControllerName }
 func (*runnerLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerInputType, session.DrainInputType, session.RuntimeType, journalSealType, ingressAckType, execserver.RuntimeType, codexappserver.RuntimeType, bootstrap.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerInputType, session.DrainInputType, session.RuntimeType, journalSealType, ingressAckType, codexexecserver.RuntimeType, codexappserver.RuntimeType, bootstrap.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: runnerlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -138,7 +138,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		return write()
 	}
 	if c.l.runner.codexExecServer != nil {
-		runtime, found, err := execserver.ReadRuntime(ctx, r)
+		runtime, found, err := codexexecserver.ReadRuntime(ctx, r)
 		if err != nil {
 			return err
 		}
@@ -146,7 +146,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			current.Error = runtime.StopError
 			return write()
 		}
-		if !found || runtime.Phase != execserver.Stopped {
+		if !found || runtime.Phase != codexexecserver.Stopped {
 			return write()
 		}
 	}

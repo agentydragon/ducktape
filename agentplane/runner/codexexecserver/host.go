@@ -1,4 +1,4 @@
-package execserver
+package codexexecserver
 
 import (
 	"context"
@@ -7,13 +7,13 @@ import (
 	"sync"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
-	"github.com/google/uuid"
 )
 
 type (
@@ -50,14 +50,7 @@ type Host struct {
 
 	inputMu sync.Mutex
 	mu      sync.Mutex
-	probeOp *operation
-}
-
-type operation struct {
-	id     string
-	cancel context.CancelFunc
-	done   chan struct{}
-	err    error
+	probeOp *operation.Operation
 }
 
 func NewHost(config Config, deps Dependencies, adapters Adapters) (*Host, error) {
@@ -138,35 +131,25 @@ func (h *Host) startProbe(work func(context.Context) error) {
 		h.mu.Unlock()
 		return
 	}
-	ctx, cancel := context.WithCancel(h.ctx)
-	op := &operation{id: uuid.NewString(), cancel: cancel, done: make(chan struct{})}
+	op := operation.New(h.ctx)
 	h.probeOp = op
-	h.workers.Add(1)
+	op.Register(h.workers)
 	h.mu.Unlock()
 
-	if err := h.publishOperation(op, false); err != nil {
+	if err := op.Start(
+		&h.mu,
+		func(done bool) error { return h.publishOperation(op, done) },
+		h.onError,
+		work,
+		nil,
+		nil,
+	); err != nil {
 		h.mu.Lock()
 		if h.probeOp == op {
 			h.probeOp = nil
 		}
 		h.mu.Unlock()
-		cancel()
-		h.workers.Done()
-		h.onError(err)
-		return
 	}
-	go func() {
-		defer h.workers.Done()
-		defer cancel()
-		err := work(ctx)
-		h.mu.Lock()
-		op.err = err
-		if publishErr := h.publishOperation(op, true); publishErr != nil {
-			h.onError(publishErr)
-		}
-		close(op.done)
-		h.mu.Unlock()
-	}()
 }
 
 func (h *Host) probePending() bool {
@@ -179,43 +162,27 @@ func (h *Host) cancelProbe() {
 	h.mu.Lock()
 	op := h.probeOp
 	h.mu.Unlock()
-	if op != nil && op.cancel != nil {
-		op.cancel()
+	if op != nil {
+		op.Cancel()
 	}
 }
 
-func (h *Host) takeProbe() (*operation, bool) {
-	h.mu.Lock()
-	if !operationDone(h.probeOp) {
-		h.mu.Unlock()
+func (h *Host) takeProbe() (*operation.Operation, bool) {
+	op, done := operation.Consume(&h.mu, &h.probeOp)
+	if !done {
 		return nil, false
 	}
-	op := h.probeOp
-	h.probeOp = nil
-	h.mu.Unlock()
 
-	err := h.state.Destroy(h.ctx, resource.NewMetadata(lifecycle.Namespace, OperationType, op.id, resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
+	err := h.state.Destroy(h.ctx, resource.NewMetadata(lifecycle.Namespace, OperationType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
 	if err != nil && !state.IsNotFoundError(err) {
 		h.onError(err)
 	}
 	return op, true
 }
 
-func operationDone(op *operation) bool {
-	if op == nil {
-		return false
-	}
-	select {
-	case <-op.done:
-		return true
-	default:
-		return false
-	}
-}
-
-func (h *Host) publishOperation(op *operation, done bool) error {
+func (h *Host) publishOperation(op *operation.Operation, done bool) error {
 	value := operationResult{Controller: ControllerName, Done: done}
-	return safe.StateModify(h.ctx, h.state, componentResource(op.id, value), func(current *typed.Resource[operationResult, componentExtension[operationResult]]) error {
+	return safe.StateModify(h.ctx, h.state, componentResource(op.ID(), value), func(current *typed.Resource[operationResult, componentExtension[operationResult]]) error {
 		*current.TypedSpec() = value
 		return nil
 	}, state.WithUpdateOwner(HostOwner))

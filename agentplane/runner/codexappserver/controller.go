@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -26,7 +26,7 @@ func (*LifecycleController) Settings() controller.QSettings {
 			{Namespace: lifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.DesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputQMapped},
-			{Namespace: lifecycle.Namespace, Type: execserver.RuntimeType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: codexexecserver.RuntimeType, Kind: controller.InputQMapped},
 			{Namespace: lifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: RuntimeType, Kind: controller.OutputExclusive}},
@@ -247,7 +247,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	}
 
 	if server.deps.ExecServer != nil {
-		executor, found, err := execserver.ReadRuntime(ctx, r)
+		executor, found, err := codexexecserver.ReadRuntime(ctx, r)
 		if err != nil {
 			return err
 		}
@@ -275,7 +275,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			current.ExecServerReadyDeadline = time.Time{}
 			return write()
 		}
-		if !found || executor.Phase != execserver.Ready {
+		if !found || executor.Phase != codexexecserver.Ready {
 			current.Generation = desiredState.Generation
 			current.Phase = Initializing
 			current.ProcessID = ""

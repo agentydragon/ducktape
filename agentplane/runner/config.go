@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
@@ -66,7 +66,7 @@ type Config struct {
 	Claude, Codex                    *harness.LaunchConfig
 	VMProcessPolicy                  *supervision.SystemdPolicy
 	PodPID1                          bool
-	CodexExecServer                  *execserver.Config
+	CodexExecServer                  *codexexecserver.Config
 	WorkspaceRoot, InitializationCwd string
 	DebugCheckpoint                  *session.DebugCheckpointConfig
 	HTTPClient                       *http.Client

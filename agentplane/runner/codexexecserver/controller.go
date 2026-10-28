@@ -1,4 +1,4 @@
-package execserver
+package codexexecserver
 
 import (
 	"context"
@@ -168,9 +168,10 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	}
 
 	if probeDone {
+		probeErr := probeResult.Err()
 		switch current.Phase {
 		case Probing:
-			if probeResult.err == nil {
+			if probeErr == nil {
 				current.Phase = Ready
 				current.Error = ""
 				current.Refusal = ""
@@ -179,25 +180,25 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 				current.NextProbe = now.Add(healthInterval)
 				zap.L().Info("Codex exec-server ready", zap.String("url", h.config.URL))
 			} else if !now.Before(current.ReadyDeadline) {
-				current.Error = fmt.Sprintf("Codex exec-server did not become ready within %s: %v", readyBudget, probeResult.err)
+				current.Error = fmt.Sprintf("Codex exec-server did not become ready within %s: %v", readyBudget, probeErr)
 				current.RestartFailures++
 				current.Phase = Stopping
 			} else {
-				current.Error = probeResult.err.Error()
+				current.Error = probeErr.Error()
 				current.NextProbe = now.Add(readinessRetry)
 			}
 		case Ready:
-			if probeResult.err == nil {
+			if probeErr == nil {
 				current.ConsecutiveProbeFailures = 0
 				current.Error = ""
 				current.RestartFailures = 0
 				current.NextProbe = now.Add(healthInterval)
 			} else {
 				current.ConsecutiveProbeFailures++
-				current.Error = probeResult.err.Error()
-				zap.L().Warn("Codex exec-server health probe failed", zap.Int("consecutive_failures", int(current.ConsecutiveProbeFailures)), zap.Error(probeResult.err))
+				current.Error = probeErr.Error()
+				zap.L().Warn("Codex exec-server health probe failed", zap.Int("consecutive_failures", int(current.ConsecutiveProbeFailures)), zap.Error(probeErr))
 				if current.ConsecutiveProbeFailures >= 3 {
-					current.Error = fmt.Sprintf("executor failed %d consecutive health probes: %v", current.ConsecutiveProbeFailures, probeResult.err)
+					current.Error = fmt.Sprintf("executor failed %d consecutive health probes: %v", current.ConsecutiveProbeFailures, probeErr)
 					current.RestartFailures++
 					current.Phase = Stopping
 				} else {

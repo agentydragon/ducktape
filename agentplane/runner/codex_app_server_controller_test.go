@@ -11,8 +11,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	execserver "github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/scripts"
@@ -47,8 +47,8 @@ func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
 	}
 	startHostWaiter()
 	waitCodexDemand(t, r, 1)
-	waitExecutor(t, r, func(current execserver.Runtime) bool {
-		return current.Phase == execserver.Retrying && strings.Contains(current.Error, "temporary executor startup failure")
+	waitExecutor(t, r, func(current codexexecserver.Runtime) bool {
+		return current.Phase == codexexecserver.Retrying && strings.Contains(current.Error, "temporary executor startup failure")
 	}, "transient executor startup failure")
 	waitCodex(t, r, func(current codexappserver.Runtime) bool {
 		return current.Phase == codexappserver.Initializing && !current.ExecServerReadyDeadline.IsZero()
@@ -71,7 +71,7 @@ func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
 		t.Fatal("executor recovery did not reach native start")
 	}
 	close(releaseRecovery)
-	waitExecutor(t, r, func(current execserver.Runtime) bool { return current.Phase == execserver.Ready }, "executor recovery")
+	waitExecutor(t, r, func(current codexexecserver.Runtime) bool { return current.Phase == codexexecserver.Ready }, "executor recovery")
 	failed := waitCodex(t, r, func(current codexappserver.Runtime) bool {
 		return current.Phase == codexappserver.Stopped && current.Attempt >= 2 && current.Error != ""
 	}, "shared Codex startup attempt")
@@ -168,7 +168,7 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	codexExecServerConfig := execserver.Config{URL: "ws://127.0.0.1:4599"}
+	codexExecServerConfig := codexexecserver.Config{URL: "ws://127.0.0.1:4599"}
 	codexConfig := harness.LaunchConfig{Binary: "/bin/false"}
 	config := Config{StateDir: stateDir, Codex: &codexConfig, CodexExecServer: &codexExecServerConfig}
 	r := &Runner{
@@ -187,7 +187,7 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 		_ = owner.Close()
 		t.Fatal(err)
 	}
-	adapters := execserver.Adapters{Start: startEffect, Probe: func(context.Context) error { return nil }}
+	adapters := codexexecserver.Adapters{Start: startEffect, Probe: func(context.Context) error { return nil }}
 	lifecycle, err := newLifecycle(r, &adapters)
 	if err != nil {
 		cancel()

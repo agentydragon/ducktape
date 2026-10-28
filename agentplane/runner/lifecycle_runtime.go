@@ -6,8 +6,8 @@ import (
 	"sync"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
-	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -30,7 +30,7 @@ type lifecycle struct {
 	processes *supervision.Host
 }
 
-func newLifecycle(r *Runner, adapters *execserver.Adapters) (*lifecycle, error) {
+func newLifecycle(r *Runner, adapters *codexexecserver.Adapters) (*lifecycle, error) {
 	if err := r.config.resolveSessionReconcileConcurrency(); err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func newLifecycle(r *Runner, adapters *execserver.Adapters) (*lifecycle, error) 
 		if adapters == nil {
 			return nil, errors.New("Codex exec-server adapters are required")
 		}
-		executor, err := execserver.NewHost(*r.config.CodexExecServer, execserver.Dependencies{
+		executor, err := codexexecserver.NewHost(*r.config.CodexExecServer, codexexecserver.Dependencies{
 			Context: r.ctx, State: l.state, Workers: &l.workers, Processes: l.processes,
 			Admission: r.admitLifecycleEffect, OnError: r.fail, OnRuntimeChange: r.changed,
 		}, *adapters)

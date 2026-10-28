@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/codex"
-	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/operation"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
@@ -48,7 +48,7 @@ type Dependencies struct {
 	StateDir           string
 	RequestAdmission   RequestAdmission
 	Admission          lifecycle.AdmissionGuard
-	ExecServer         *execserver.Host
+	ExecServer         *codexexecserver.Host
 	OnError            func(error)
 	OnChange           func()
 }

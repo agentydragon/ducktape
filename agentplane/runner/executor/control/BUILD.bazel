@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 package(default_visibility = [
     "//agentplane/runner:__pkg__",
-    "//agentplane/runner/codex/execserver:__pkg__",
+    "//agentplane/runner/codexexecserver:__pkg__",
     "//agentplane/runner/executor:__pkg__",
 ])
 

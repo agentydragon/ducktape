@@ -16,7 +16,7 @@ go_library(
     deps = [
         "//agentplane/proto:runner_go_proto",
         "//agentplane/runner/codex",
-        "//agentplane/runner/codex/execserver",
+        "//agentplane/runner/codexexecserver",
         "//agentplane/runner/harness",
         "//agentplane/runner/lifecycle",
         "//agentplane/runner/operation",

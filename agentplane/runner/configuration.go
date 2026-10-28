@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
@@ -147,7 +147,7 @@ func (v VMEnvironmentConfiguration) policy(slice string, aggregate, process supe
 }
 
 // The environment selects resource ownership and executor transport together.
-func (f Configuration) resolveEnvironment() (*supervision.SystemdPolicy, *execserver.Config, *VMEnvironmentConfiguration, bool, error) {
+func (f Configuration) resolveEnvironment() (*supervision.SystemdPolicy, *codexexecserver.Config, *VMEnvironmentConfiguration, bool, error) {
 	var tag struct {
 		Kind string `json:"kind"`
 	}
@@ -155,7 +155,7 @@ func (f Configuration) resolveEnvironment() (*supervision.SystemdPolicy, *execse
 		return nil, nil, nil, false, fmt.Errorf("environment is required: %w", err)
 	}
 	var isolation *supervision.SystemdPolicy
-	var executor *execserver.Config
+	var executor *codexexecserver.Config
 	var vm *VMEnvironmentConfiguration
 	var podPID1 bool
 	switch tag.Kind {
@@ -169,7 +169,7 @@ func (f Configuration) resolveEnvironment() (*supervision.SystemdPolicy, *execse
 		}
 		podPID1 = pod.Supervision == "pid1"
 		if pod.Executor != nil {
-			executor = &execserver.Config{URL: pod.Executor.URL, ContainerSocket: pod.Executor.Socket}
+			executor = &codexexecserver.Config{URL: pod.Executor.URL, ContainerSocket: pod.Executor.Socket}
 			if !filepath.IsAbs(pod.Executor.Socket) {
 				return nil, nil, nil, false, errors.New("container executor socket must be absolute")
 			}
@@ -195,7 +195,7 @@ func (f Configuration) resolveEnvironment() (*supervision.SystemdPolicy, *execse
 			return nil, nil, nil, false, errors.New("executor endpoint and resource budget must be supplied together")
 		}
 		if vm.Executor != nil {
-			executor = &execserver.Config{URL: vm.Executor.URL, Isolation: vm.policy(supervision.ExecutorSlice, *vm.Resources.Executor, *vm.Resources.Executor)}
+			executor = &codexexecserver.Config{URL: vm.Executor.URL, Isolation: vm.policy(supervision.ExecutorSlice, *vm.Resources.Executor, *vm.Resources.Executor)}
 		}
 	default:
 		return nil, nil, nil, false, fmt.Errorf("unknown environment kind %q", tag.Kind)

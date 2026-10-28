@@ -9,8 +9,8 @@ import (
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
-	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
@@ -41,7 +41,7 @@ type Runner struct {
 	createMu            sync.Mutex
 	bootstrapHost       *bootstrap.Host
 	codexAppServer      *codexappserver.Host
-	codexExecServer     *execserver.Host
+	codexExecServer     *codexexecserver.Host
 	changes             chan struct{}
 	fatal               chan error
 	idleSince           *timestamppb.Timestamp
@@ -54,7 +54,7 @@ func New(config Config) (*Runner, error) {
 	return newRunner(config, nil)
 }
 
-func newRunner(config Config, adapters *execserver.Adapters) (*Runner, error) {
+func newRunner(config Config, adapters *codexexecserver.Adapters) (*Runner, error) {
 	if err := config.resolveSessionReconcileConcurrency(); err != nil {
 		return nil, err
 	}
@@ -106,17 +106,17 @@ func newRunner(config Config, adapters *execserver.Adapters) (*Runner, error) {
 		}
 	}
 	if config.CodexExecServer != nil && adapters == nil {
-		adapters = &execserver.Adapters{
-			Start: execserver.NativeStart(execserver.NativeConfig{
+		adapters = &codexexecserver.Adapters{
+			Start: codexexecserver.NativeStart(codexexecserver.NativeConfig{
 				Config: *config.CodexExecServer, Binary: config.Codex.Binary, StateDir: config.StateDir,
 				Environment: config.HarnessEnvironment, Supervisor: executorSupervisor,
 			}),
-			Probe: execserver.ProbeAt(config.CodexExecServer.URL),
+			Probe: codexexecserver.ProbeAt(config.CodexExecServer.URL),
 		}
 	}
 	if config.CodexExecServer != nil && config.CodexExecServer.ContainerSocket != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		err := execserver.FenceContainer(ctx, config.CodexExecServer.ContainerSocket, "")
+		err := codexexecserver.FenceContainer(ctx, config.CodexExecServer.ContainerSocket, "")
 		cancel()
 		if err != nil {
 			_ = owner.Close()

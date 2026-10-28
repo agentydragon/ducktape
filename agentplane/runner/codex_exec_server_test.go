@@ -14,7 +14,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	execserver "github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/runner/executor/control"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
@@ -26,12 +26,12 @@ const codexExecServerTestTimeout = 10 * time.Second
 
 func TestExecutorEnsureReturnsTypedCompanionRefusal(t *testing.T) {
 	r := newExecutorLifecycleRunner(t, func(context.Context) (*supervision.Instance, error) {
-		return nil, execserver.Refusal{Reason: "Codex binary is unavailable"}
+		return nil, codexexecserver.Refusal{Reason: "Codex binary is unavailable"}
 	}, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), codexExecServerTestTimeout)
 	defer cancel()
 	err := ensureExecutor(ctx, r)
-	var refusal execserver.Refusal
+	var refusal codexexecserver.Refusal
 	if !errors.As(err, &refusal) || refusal.Reason != "Codex binary is unavailable" {
 		t.Fatalf("ensure = %v (%T), want the typed companion refusal", err, err)
 	}
@@ -51,7 +51,7 @@ func TestReopeningRunnerAdmissionClearsExecServerDemand(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	before, found, err := execserver.ReadInput(r.ctx, r.lifecycle.state)
+	before, found, err := codexexecserver.ReadInput(r.ctx, r.lifecycle.state)
 	if err != nil || !found || before.Demand != 4 {
 		r.mu.Unlock()
 		t.Fatalf("executor demand before reopening = %+v, found=%t err=%v", before, found, err)
@@ -66,7 +66,7 @@ func TestReopeningRunnerAdmissionClearsExecServerDemand(t *testing.T) {
 	}
 	r.mu.Unlock()
 
-	after, found, err := execserver.ReadInput(r.ctx, r.lifecycle.state)
+	after, found, err := codexexecserver.ReadInput(r.ctx, r.lifecycle.state)
 	if err != nil || !found || after.Demand != 0 {
 		t.Fatalf("executor demand after reopening = %+v, found=%t err=%v", after, found, err)
 	}
@@ -123,7 +123,7 @@ func TestExecutorConcurrentStartupPublishesOneProcessAndClosesThroughCOSI(t *tes
 	if got := stops.Load(); got != 1 {
 		t.Fatalf("fenced %d executor instances, want one", got)
 	}
-	if current := executorRuntimeState(r); current.Phase != execserver.Stopped || current.StopError != "" {
+	if current := executorRuntimeState(r); current.Phase != codexexecserver.Stopped || current.StopError != "" {
 		t.Fatalf("executor runtime after close = %+v, want a clean stopped state", current)
 	}
 }
@@ -153,7 +153,7 @@ func TestExecutorFailedFenceRetainsOwnershipAndBlocksSuccessor(t *testing.T) {
 		}
 		synctest.Wait()
 		ready := executorRuntimeState(r)
-		if ready.Phase != execserver.Ready {
+		if ready.Phase != codexexecserver.Ready {
 			t.Fatalf("executor before native exit = %+v, want ready", ready)
 		}
 		done <- errors.New("executor exited unexpectedly")
@@ -163,7 +163,7 @@ func TestExecutorFailedFenceRetainsOwnershipAndBlocksSuccessor(t *testing.T) {
 		if !strings.Contains(failed.StopError, fenceFailure.Error()) {
 			t.Fatalf("executor StopError = %q, want %q", failed.StopError, fenceFailure)
 		}
-		if failed.Phase != execserver.Stopped || failed.Generation != ready.Generation {
+		if failed.Phase != codexexecserver.Stopped || failed.Generation != ready.Generation {
 			t.Fatalf("executor runtime after failed fence = %+v, want stopped generation %d", failed, ready.Generation)
 		}
 		desired, err := r.lifecycle.state.Get(r.ctx, resource.NewMetadata(runnerlifecycle.Namespace, supervision.DesiredStateType, failed.ProcessID, resource.VersionUndefined))
@@ -186,7 +186,7 @@ func TestExecutorFailedFenceRetainsOwnershipAndBlocksSuccessor(t *testing.T) {
 		}
 		synctest.Wait()
 		blocked := executorRuntimeState(r)
-		if blocked.Phase != execserver.Stopped || blocked.Generation != ready.Generation || blocked.StopError == "" || starts.Load() != 1 {
+		if blocked.Phase != codexexecserver.Stopped || blocked.Generation != ready.Generation || blocked.StopError == "" || starts.Load() != 1 {
 			t.Fatalf("executor advanced after failed fence and new demand: runtime=%+v starts=%d", blocked, starts.Load())
 		}
 
@@ -234,7 +234,7 @@ func TestExecutorCloseCancelsConcurrentStartupWithoutRestart(t *testing.T) {
 	if starts.Load() != 1 || stops.Load() != 0 {
 		t.Fatalf("startup/stop counts = %d/%d, want one canceled start and no instance to fence", starts.Load(), stops.Load())
 	}
-	if current := executorRuntimeState(r); current.Phase != execserver.Stopped || current.StopError != "" {
+	if current := executorRuntimeState(r); current.Phase != codexexecserver.Stopped || current.StopError != "" {
 		t.Fatalf("executor runtime after close = %+v, want clean stopped state", current)
 	}
 }
@@ -251,11 +251,11 @@ func newExecutorLifecycleRunner(t *testing.T, start func(context.Context) (*supe
 	config := Config{
 		StateDir: t.TempDir(),
 		Codex:    &harness.LaunchConfig{Binary: "/bin/false"},
-		CodexExecServer: &execserver.Config{
+		CodexExecServer: &codexexecserver.Config{
 			URL: "ws://127.0.0.1:4599", ContainerSocket: socket,
 		},
 	}
-	adapters := execserver.Adapters{Start: start, Probe: probe}
+	adapters := codexexecserver.Adapters{Start: start, Probe: probe}
 	if adapters.Probe == nil {
 		adapters.Probe = func(context.Context) error { return nil }
 	}
@@ -298,7 +298,7 @@ func newTestExecutorInstance(stops *atomic.Int32) *supervision.Instance {
 	}
 }
 
-func waitExecutor(t *testing.T, r *Runner, predicate func(execserver.Runtime) bool, want string) execserver.Runtime {
+func waitExecutor(t *testing.T, r *Runner, predicate func(codexexecserver.Runtime) bool, want string) codexexecserver.Runtime {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), codexExecServerTestTimeout)
 	defer cancel()
@@ -377,20 +377,20 @@ func ensureExecutor(ctx context.Context, r *Runner) error {
 	}
 	return r.lifecycle.waitFor(ctx, func() (bool, error) {
 		current := executorRuntimeState(r)
-		if current.Phase == execserver.Ready {
+		if current.Phase == codexexecserver.Ready {
 			return true, nil
 		}
 		if current.Refusal != "" {
-			return true, execserver.Refusal{Reason: current.Refusal}
+			return true, codexexecserver.Refusal{Reason: current.Refusal}
 		}
-		if current.Phase == execserver.Stopped && current.Error != "" {
+		if current.Phase == codexexecserver.Stopped && current.Error != "" {
 			return true, errors.New(current.Error)
 		}
 		return false, nil
 	})
 }
 
-func executorRuntimeState(r *Runner) execserver.Runtime {
+func executorRuntimeState(r *Runner) codexexecserver.Runtime {
 	current, _, err := r.codexExecServer.RuntimeState(r.ctx)
 	if err != nil {
 		r.fail(err)

@@ -1,4 +1,4 @@
-package execserver
+package codexexecserver
 
 import (
 	"context"
@@ -167,21 +167,70 @@ func TestProbeCompletionIsPublishedBeforeConsumption(t *testing.T) {
 		t.Fatal(err)
 	}
 	host.startProbe(func(context.Context) error { return nil })
+	op := host.probeOp
 	var releaseOnce sync.Once
 	release := func() { releaseOnce.Do(func() { close(blocked.release) }) }
 	defer release()
 	<-blocked.publishing
-	if operationDone(host.probeOp) {
+	if op == nil || op.Finished() {
 		t.Fatal("probe became consumable before its completion was published")
 	}
 	release()
 	workers.Wait()
 	result, done := host.takeProbe()
-	if !done || result.err != nil || host.probeOp != nil {
-		t.Fatalf("consumed probe = %+v, done=%t slot=%p", result, done, host.probeOp)
+	if !done || result == nil || result.Err() != nil || host.probePending() {
+		t.Fatalf("consumed probe = %+v, done=%t pending=%t", result, done, host.probePending())
 	}
-	if _, found, err := readOperation(ctx, blocked, result.id); err != nil || found {
+	if _, found, err := readOperation(ctx, blocked, result.ID()); err != nil || found {
 		t.Fatalf("probe operation resource survived consumption: found=%t err=%v", found, err)
+	}
+}
+
+func TestProbeCompletionPublicationFailureIsRetainedAndReportedOutsideLock(t *testing.T) {
+	ctx := context.Background()
+	publicationErr := errors.New("completion state write failed")
+	store := state.WrapCore(namespaced.NewState(inmem.Build))
+	failed := &failedOperationState{State: store, err: publicationErr}
+	var workers sync.WaitGroup
+	processes := supervision.NewHost(ctx, failed, lifecycle.Namespace, &workers, func(err error) {
+		t.Errorf("process host error: %v", err)
+	})
+	reported := make(chan error, 1)
+	var host *Host
+	var reportHeldHostLock atomic.Bool
+	var err error
+	host, err = NewHost(Config{URL: "ws://127.0.0.1:4501"}, Dependencies{
+		Context: ctx, State: failed, Workers: &workers, Processes: processes,
+		Admission: func(context.Context, lifecycle.Desired, func(context.Context) error) error { return nil },
+		OnError: func(err error) {
+			if !host.mu.TryLock() {
+				reportHeldHostLock.Store(true)
+			} else {
+				host.mu.Unlock()
+			}
+			reported <- err
+		},
+	}, Adapters{
+		Start: func(context.Context) (*supervision.Instance, error) { return nil, errors.New("unused") },
+		Probe: func(context.Context) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	host.startProbe(func(context.Context) error { return nil })
+	workers.Wait()
+	result, done := host.takeProbe()
+	if !done || result == nil || host.probePending() {
+		t.Fatalf("consumed probe = %+v, done=%t pending=%t", result, done, host.probePending())
+	}
+	if !errors.Is(result.Err(), publicationErr) {
+		t.Errorf("probe error = %v, want completion publication error", result.Err())
+	}
+	if err := <-reported; !errors.Is(err, publicationErr) {
+		t.Errorf("reported error = %v, want completion publication error", err)
+	}
+	if reportHeldHostLock.Load() {
+		t.Error("completion publication failure was reported while holding the host mutex")
 	}
 }
 
@@ -412,6 +461,23 @@ type blockedOperationState struct {
 	state.State
 	publishing chan struct{}
 	release    chan struct{}
+}
+
+type failedOperationState struct {
+	state.State
+	err error
+}
+
+func (s *failedOperationState) Modify(
+	ctx context.Context,
+	value resource.Resource,
+	update func(resource.Resource) error,
+	opts ...state.UpdateOption,
+) error {
+	if result, ok := value.(*typed.Resource[operationResult, componentExtension[operationResult]]); ok && result.TypedSpec().Done {
+		return s.err
+	}
+	return s.State.Modify(ctx, value, update, opts...)
 }
 
 func (s *blockedOperationState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
