@@ -10,6 +10,7 @@ go_library(
         "creation_backfill.go",
         "destination_backfill.go",
         "event_identity_backfill.go",
+        "event_identity_runtime.go",
         "event_identity_storage.go",
         "github_deliveries.go",
         "github_ingest.go",

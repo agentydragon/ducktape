@@ -320,7 +320,8 @@ func subscriptionStatuses(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, ob
 
 func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, after int64) ([]EntrySummary, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT cursor, event, payload, created_at FROM entry WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
+		`SELECT cursor, `+eventIdentityReadColumns+`, payload, created_at FROM entry
+			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inboxID, after, maxPendingEntrySummaries)
 	if err != nil {
 		return nil, err
@@ -329,12 +330,15 @@ func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, a
 	var summaries []EntrySummary
 	for rows.Next() {
 		var cursor int64
-		var event, payload []byte
+		var identityRead eventIdentityRead
+		var payload []byte
 		var createdAt time.Time
-		if err := rows.Scan(&cursor, &event, &payload, &createdAt); err != nil {
+		destinations := append([]any{&cursor}, identityRead.destinations()...)
+		destinations = append(destinations, &payload, &createdAt)
+		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
-		identity, err := DecodeEventIdentity(event)
+		identity, err := identityRead.event()
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inboxID, cursor, err)
 		}

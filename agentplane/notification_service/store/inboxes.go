@@ -224,7 +224,8 @@ func (s *Store) Read(ctx context.Context, owner Owner, inboxID uuid.UUID, after 
 
 func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, limit int) ([]Entry, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT cursor, event, payload FROM entry WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
+		`SELECT cursor, `+eventIdentityReadColumns+`, payload FROM entry
+			WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT $3`,
 		inbox.ID, after, limit)
 	if err != nil {
 		return nil, err
@@ -233,11 +234,14 @@ func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, lim
 	var entries []Entry
 	for rows.Next() {
 		var entry Entry
-		var event, payload []byte
-		if err := rows.Scan(&entry.Cursor, &event, &payload); err != nil {
+		var identity eventIdentityRead
+		var payload []byte
+		destinations := append([]any{&entry.Cursor}, identity.destinations()...)
+		destinations = append(destinations, &payload)
+		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
-		if entry.Event, err = DecodeEventIdentity(event); err != nil {
+		if entry.Event, err = identity.event(); err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inbox.ID, entry.Cursor, err)
 		}
 		if payload == nil {
@@ -348,14 +352,11 @@ func (s *Store) Retire(ctx context.Context, owner Owner, inboxID uuid.UUID) erro
 // the next cursor unless it already holds one, and the subscription's match with it. The caller holds the
 // inbox's row locked for update in tx.
 func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscriptionID uuid.UUID, event EventIdentity, payload json.RawMessage) error {
-	identity, err := json.Marshal(event)
+	cursor, found, err := eventIdentityLookup(ctx, tx, inboxID, event)
 	if err != nil {
 		return err
 	}
-	var cursor int64
-	err = tx.QueryRowContext(ctx, `SELECT cursor FROM entry WHERE inbox_id = $1 AND event = $2::jsonb`,
-		inboxID, string(identity)).Scan(&cursor)
-	if errors.Is(err, sql.ErrNoRows) {
+	if !found {
 		var messages int64
 		if err := tx.QueryRowContext(ctx,
 			`SELECT last_cursor, (SELECT count(*) FROM message WHERE inbox_id = $1) FROM inbox WHERE id = $1`,
@@ -372,8 +373,6 @@ func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscripti
 		if err := insertEntry(ctx, tx, inboxID, cursor, event, payload, now()); err != nil {
 			return err
 		}
-	} else if err != nil {
-		return err
 	}
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO subscription_match (subscription_id, cursor) VALUES ($1, $2) ON CONFLICT DO NOTHING`,

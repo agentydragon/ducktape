@@ -52,8 +52,10 @@ image with `backfill-event-identities --writer-gate=notification-event-identity-
 shapes that collide under the natural key, validates the shape constraint, and builds the unique natural-key
 indexes concurrently. A collision stops the command with exact inbox/cursor groups, retaining every original
 entry and JSON document for explicit resolution. The command is separate from Pod init, so retained inboxes do
-not hold serving readiness while they are scanned. This phase keeps serving deduplication on JSONB; a later
-runtime release can switch readers after it observes the completed backfill/index phase. Keep the JSONB index
+not hold serving readiness while they are scanned. This phase keeps serving deduplication on JSONB. Do not roll
+the runtime release that reads and deduplicates by relational keys until the command has completed with phase
+`indexed` on every service database, including newly initialized databases; an empty database still needs the
+natural-key indexes. The runtime release has no JSONB fallback or per-append readiness probe. Keep the JSONB index
 until every old writer has drained and every reader has moved to relational keys.
 
 To roll back before the backfill/index command runs, restore the previous service image and leave the additive

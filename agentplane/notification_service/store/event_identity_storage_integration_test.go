@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -85,5 +86,71 @@ func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t
 	if got[6].provider != "message" || got[6].messageID.String != messageID.String() ||
 		got[6].messageSenderNamespace.String != "sender-ns" || got[6].messageSenderName.String != "sender" {
 		t.Errorf("message identity columns = %+v", got[6])
+	}
+}
+
+func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, body("identity-runtime"))
+	requestID := uuid.New()
+	deliveryID := uuid.New()
+	messageID := uuid.New()
+	empty := ""
+	events := []EventIdentity{
+		ActionsEvent{RequestID: requestID, Sequence: 17},
+		ActionsEvent{RequestID: requestID, Sequence: 18},
+		GitHubEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: EventPullRequest},
+		GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: EventPullRequest, Action: &empty},
+		GitHubMergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 4},
+		GitHubMergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 5},
+		MessageEvent{MessageID: messageID, Sender: ServiceAccount{Namespace: "sender-ns", Name: "sender"}},
+	}
+	for _, event := range events {
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, `{}`)
+	}
+	// Make one legacy copy disagree with the relational identity so this test proves that new reads and retries
+	// use the populated columns. Production writers still dual-write the correct JSON for old readers in rollout.
+	legacyEvent, err := json.Marshal(ActionsEvent{RequestID: requestID, Sequence: 999})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.exec(t, `UPDATE entry SET event = $3::jsonb WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, 1, string(legacyEvent))
+	page := f.read(t, subscription.InboxID, 0)
+	if len(page.Entries) != len(events) {
+		t.Fatalf("read %d entries, want %d", len(page.Entries), len(events))
+	}
+	for i, event := range events {
+		requireEqual(t, page.Entries[i].Event, event)
+	}
+
+	// An expired payload remains deduplicated by its permanent identity. A replay does not create an entry or
+	// restore content after cleanup has advanced the expired prefix.
+	f.exec(t, `UPDATE entry SET payload = NULL WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
+	f.exec(t, `UPDATE inbox SET expired_through = 1 WHERE id = $1`, subscription.InboxID)
+	for _, event := range events {
+		if err := f.transaction(t.Context(), func(tx *sql.Tx) error {
+			return f.AppendEvent(t.Context(), tx, subscription.InboxID, subscription.ID, event, []byte(`{"retry":true}`))
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1`, subscription.InboxID); got != len(events) {
+		t.Fatalf("replay left %d entries, want %d", got, len(events))
+	}
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND cursor = 1 AND payload IS NULL`, subscription.InboxID); got != 1 {
+		t.Fatalf("expired payload rows = %d, want 1 after replay", got)
+	}
+
+	tx, err := f.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	summaries, err := pendingEntrySummaries(t.Context(), tx, subscription.InboxID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != len(events)-1 || summaries[0].Summary != "Action "+requestID.String()+" · event 18" {
+		t.Fatalf("pending summaries from relational identity = %+v", summaries)
 	}
 }

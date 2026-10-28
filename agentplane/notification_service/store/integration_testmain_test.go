@@ -52,6 +52,30 @@ func newOwner() ServiceAccount {
 	return ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
 }
 
+// insertBackfilledEntry stores the native event JSON a prior writer created alongside the relational identity
+// that the identity backfill has populated before the relational-reader release.
+func insertBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor int64, eventJSON []byte, payload string) {
+	t.Helper()
+	event, err := DecodeEventIdentity(eventJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	columns, err := eventIdentityStorageFor(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := append([]any{inboxID, cursor, string(eventJSON), payload}, columns.args()...)
+	_, err = db.ExecContext(t.Context(), `INSERT INTO entry (inbox_id, cursor, event, payload, created_at,
+		identity_provider, actions_request_id, actions_sequence,
+		github_app_id, github_delivery_id, github_repository_id, github_event, github_action,
+		github_pull_request_number, github_mergeability_sequence, github_snapshot_version,
+		message_id, message_sender_namespace, message_sender_name)
+		VALUES ($1, $2, $3::jsonb, $4::jsonb, now(), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 // testSandboxUID is the Sandbox incarnation body's destination names.
 const testSandboxUID = "test-uid"
 
