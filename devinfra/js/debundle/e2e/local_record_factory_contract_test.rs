@@ -102,11 +102,6 @@ fn assert_atomic_fallback(
     later_members: &[&'static str],
     callback_statements: &[&str],
 ) {
-    let expected_modules = if callback_members.contains(&"label") {
-        &["callbacks/wrapped", "values/label"][..]
-    } else {
-        &["callbacks/wrapped", "values/later"][..]
-    };
     expect_atomic_conflict_rejection(
         fixture_opts(
             source,
@@ -115,7 +110,7 @@ fn assert_atomic_fallback(
             later_members,
             callback_statements,
         ),
-        expected_modules,
+        &["callbacks/wrapped", "values/later"],
         &[],
     );
 }
@@ -218,12 +213,6 @@ fn only_initialized_unreassigned_top_level_primitive_literals_are_closed_inputs(
             &["label"][..],
         ),
         (
-            "",
-            "const label = \"Example\";\n",
-            "create({ name: label, execute: () => later })",
-            &["label"][..],
-        ),
-        (
             "const label = \"Example\";\nfunction updateLabel() { label = \"Changed\"; }\n",
             "",
             "create({ name: label, execute: () => later })",
@@ -260,6 +249,23 @@ fn only_initialized_unreassigned_top_level_primitive_literals_are_closed_inputs(
         );
         assert_atomic_fallback(&source, callback_members, &[], &[]);
     }
+}
+
+#[test]
+fn a_literal_constant_after_the_call_keeps_its_eager_tdz_dependency() {
+    let source = fixture_source(
+        "",
+        FACTORY,
+        "",
+        "create({ name: label, execute: () => later })",
+        "const label = \"Example\";\n",
+        "console.log(command.run());",
+    );
+    expect_atomic_conflict_rejection(
+        fixture_opts(&source, true, &["label"], &[], &[]),
+        &["callbacks/wrapped", "values/label"],
+        &["eager_use"],
+    );
 }
 
 #[test]
