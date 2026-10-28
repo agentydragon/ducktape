@@ -120,11 +120,26 @@ rule. A waiting cycle does not prove itself. None of these negative states
 establishes that a JavaScript behavior is impossible; graph consumers retain
 their conservative fallback.
 
-This is not a replacement for every fixed point in Debundle. Possible values
-grow by union; recursive purity can start optimistically and lose purity; native
-absence needs a completed census; execution-prefix facts depend on position and
-captured context. Such domains need their own merge and completion contracts
-before they can use shared scheduling.
+`IterativeInference` supports finite growing-fact domains alongside positive
+certificates. Producers read typed keys and join contributions; both missing and
+present reads install watchers. Multiple producers can contribute to one fact.
+Changes to values or captured-input dependencies wake consumers. Source-ordered
+rounds retain the conservative initial-sweep semantics of source analyses.
+Only a completed closure is exposed outside a producer.
+
+Global escape propagation joins statement and binding taint. Recursive function
+purity uses SCC-local closures, followed by program-wide imported/exported
+summaries. Purity's knowledge order starts optimistically pure, grows consumed
+input dependencies, and ends at terminal impurity. The first impurity witness
+is retained without recursively appending reasons. These provisional facts stay
+inside the iterative domain; they are never exposed as positive certificates
+before completion. Author-asserted exports remain separate pinned axioms.
+
+Native absence still requires a completed census. Execution-prefix facts depend
+on position and captured context; a call-local store cannot be reused across a
+later mutation. A new iterative domain must define its finite order, join,
+completion boundary and conservative fallback. A missing fact during iteration
+is bottom, not proof that a JavaScript behavior is impossible.
 
 ## Storage and diagnostics
 

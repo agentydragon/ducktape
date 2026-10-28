@@ -3,6 +3,8 @@ use crate::facts::{
     DynamicScopeFact, LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableProof,
     SetIterableShapes,
 };
+use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
+use std::cell::RefCell;
 use std::sync::Arc;
 
 /// Chunk-wide code graph: indexes top-level bindings and answers
@@ -343,54 +345,91 @@ impl ChunkCodeGraph {
         declared_pure: &BTreeSet<String>,
         locate: &mut Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) {
-        let scc_set: BTreeSet<usize> = scc.iter().copied().collect();
-        // Reverse adjacency restricted to this SCC: callee → callers.
-        let mut callers_in_scc: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-        for &i in scc {
-            for &callee in &callees_of[i] {
-                if scc_set.contains(&callee) {
-                    callers_in_scc.entry(callee).or_default().push(i);
-                }
-            }
+        struct BodyRules<'a, 'ast, 'loc> {
+            graph: RefCell<&'a mut ChunkCodeGraph>,
+            functions: &'a [ChunkFunction<'ast>],
+            callees: &'a [BTreeSet<usize>],
+            members: BTreeSet<usize>,
+            shadowed: &'a BTreeSet<&'static str>,
+            declared_pure: &'a BTreeSet<String>,
+            locate: RefCell<&'a mut Option<&'loc mut dyn FnMut(Span) -> Option<SourceLocation>>>,
         }
-        let mut pending: BTreeSet<usize> = scc_set;
-        while let Some(&i) = pending.iter().next() {
-            pending.remove(&i);
-            let mut new_purity =
-                classify_function_body(&functions[i], shadowed, declared_pure, self);
-            let name = &functions[i].name;
-            let previous = self.function_purity(name).expect("seeded by build").clone();
-            // Monotone fixed-point: pure verdicts may gain proof
-            // dependencies as callees converge. Once a function is
-            // classified NotPure, re-classifying with concatenated
-            // reasons would diverge (the reason list grows every
-            // iteration), so settle on the first NotPure verdict.
-            if previous.is_pure() {
-                new_purity = new_purity.with_dependencies(
-                    previous
-                        .dependencies()
-                        .expect("pure verdict has dependencies"),
+        impl IterativeRules for BodyRules<'_, '_, '_> {
+            type Key = usize;
+            type Fact = Arc<Purity>;
+            type Rule = usize;
+
+            fn evaluate(&self, index: &usize, context: &mut IterativeContext<'_, Self>) {
+                let previous = context
+                    .read(*index)
+                    .expect("SCC seeded optimistically")
+                    .clone();
+                if !previous.is_pure() {
+                    return;
+                }
+                let mut graph = self.graph.borrow_mut();
+                for callee in &self.callees[*index] {
+                    if self.members.contains(callee) {
+                        let purity = context.read(*callee).expect("callee seeded").clone();
+                        graph.bindings.insert(
+                            self.functions[*callee].name.clone(),
+                            ChunkBinding::Function { purity },
+                        );
+                    }
+                }
+                let mut purity = classify_function_body(
+                    &self.functions[*index],
+                    self.shadowed,
+                    self.declared_pure,
+                    &graph,
                 );
-            }
-            let should_update = previous.is_pure() && &new_purity != previous.as_ref();
-            if should_update {
-                if let Some(locate) = locate.as_deref_mut()
-                    && let Purity::NotPure { reasons } = &mut new_purity
+                if let Purity::NotPure { reasons } = &mut purity
+                    && let Some(locate) = self.locate.borrow_mut().as_deref_mut()
                 {
                     for reason in reasons {
                         reason.source_location = locate(reason.span);
                     }
                 }
-                self.bindings.insert(
-                    name.clone(),
-                    ChunkBinding::Function {
-                        purity: Arc::new(new_purity),
-                    },
-                );
-                if let Some(callers) = callers_in_scc.get(&i) {
-                    pending.extend(callers.iter().copied());
+                if let Some(dependencies) = purity.dependencies() {
+                    context.assume(dependencies);
                 }
+                context.propose(*index, Arc::new(purity));
             }
+
+            fn merge(_: &usize, current: &mut Arc<Purity>, contribution: Arc<Purity>) -> bool {
+                join_purity(current, contribution)
+            }
+        }
+        let initial: Vec<_> = scc
+            .iter()
+            .map(|index| {
+                (
+                    *index,
+                    self.function_purity(&functions[*index].name)
+                        .expect("seeded")
+                        .clone(),
+                )
+            })
+            .collect();
+        let rules = BodyRules {
+            graph: RefCell::new(&mut *self),
+            functions,
+            callees: callees_of,
+            members: scc.iter().copied().collect(),
+            shadowed,
+            declared_pure,
+            locate: RefCell::new(locate),
+        };
+        let mut inference = IterativeInference::new(rules);
+        for (key, purity) in initial {
+            inference.seed(key, purity);
+        }
+        let completed = inference.solve(scc.iter().copied());
+        for (index, purity) in completed.into_values() {
+            self.bindings.insert(
+                functions[index].name.clone(),
+                ChunkBinding::Function { purity },
+            );
         }
     }
 

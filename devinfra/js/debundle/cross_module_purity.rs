@@ -27,6 +27,7 @@
 //! `unknown_call` exactly as before. The oracle only ever *removes*
 //! false-impurity; it never asserts purity it did not derive from a body.
 
+use crate::inference::{IterativeContext, IterativeInference, IterativeRules};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -313,43 +314,65 @@ pub fn resolve_imported_purities(
         }
     }
 
-    // Greatest-fixpoint: rebuild every module with the current cross-module
-    // verdicts, demote newly impure exports, and add dependencies to still-pure
-    // exports. Both the verdict transition and dependency union are monotone
-    // over finite domains. Modules whose imported summaries did not change
-    // since their last build cannot produce new results, so they are skipped.
-    let mut last_inputs: BTreeMap<&ModuleKey, BTreeMap<String, Arc<Purity>>> = BTreeMap::new();
-    loop {
-        let mut changed = false;
-        for (key, facts_prepared) in &prepared {
-            let key = *key;
-            let facts = &modules[key];
-            let imported = facts.imported_purities(&export_purity);
-            if last_inputs.get(key) == Some(&imported) {
-                continue;
-            }
-            let graph = facts.build_graph(facts_prepared, &imported);
-            last_inputs.insert(key, imported);
-            for (export_name, local) in &facts.exports {
-                let slot_key = (key.clone(), export_name.clone());
-                if !export_purity.contains_key(&slot_key) || pinned.contains(&slot_key) {
+    struct ExportRules<'a, 'ast> {
+        modules: &'a BTreeMap<ModuleKey, ModulePurityFacts<'ast>>,
+        prepared: &'a BTreeMap<&'a ModuleKey, PreparedModulePurityFacts<'ast>>,
+        slots: BTreeSet<(ModuleKey, String)>,
+        pinned: &'a BTreeSet<(ModuleKey, String)>,
+    }
+    impl IterativeRules for ExportRules<'_, '_> {
+        type Key = (ModuleKey, String);
+        type Fact = Arc<Purity>;
+        type Rule = ModuleKey;
+
+        fn evaluate(&self, module: &ModuleKey, context: &mut IterativeContext<'_, Self>) {
+            let facts = &self.modules[module];
+            let imported = facts
+                .imports
+                .iter()
+                .filter_map(|(local, target)| {
+                    context
+                        .read((target.module.clone(), target.export.clone()))
+                        .cloned()
+                        .map(|purity| (local.clone(), purity))
+                })
+                .collect();
+            let graph = facts.build_graph(&self.prepared[&module], &imported);
+            for (export, local) in &facts.exports {
+                let key = (module.clone(), export.clone());
+                if !self.slots.contains(&key) || self.pinned.contains(&key) {
                     continue;
                 }
-                let Some(purity) = graph.function_purity(local) else {
-                    continue;
-                };
-                if let Some(updated) =
-                    merge_inferred_export_purity(&export_purity[&slot_key], purity)
-                {
-                    export_purity.insert(slot_key, Arc::new(updated));
-                    changed = true;
+                if let Some(purity) = graph.function_purity(local) {
+                    context.propose(key, purity.clone());
                 }
             }
         }
-        if !changed {
-            break;
+
+        fn merge(_: &Self::Key, current: &mut Arc<Purity>, contribution: Arc<Purity>) -> bool {
+            if let Some(next) = merge_inferred_export_purity(current, &contribution) {
+                *current = Arc::new(next);
+                true
+            } else {
+                false
+            }
         }
     }
+    let producers = prepared
+        .keys()
+        .map(|key| (*key).clone())
+        .collect::<Vec<_>>();
+    let rules = ExportRules {
+        modules,
+        prepared: &prepared,
+        slots: export_purity.keys().cloned().collect(),
+        pinned: &pinned,
+    };
+    let mut inference = IterativeInference::new(rules);
+    for (key, purity) in export_purity {
+        inference.seed(key, purity);
+    }
+    let export_purity = inference.solve(producers).into_values();
 
     modules
         .iter()
