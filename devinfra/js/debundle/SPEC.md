@@ -1109,7 +1109,9 @@ the truncated callable or source unit. Nested execution carries its reasons to
 the active top-level source unit; repeated and cached outcomes deduplicate equal
 reasons at the same source site. A record describes an analysis fallback, not
 proof that the operation executes on every runtime path. Historical graphs may
-omit `synchronous_execution`.
+omit `synchronous_execution`. The loss list is diagnostic evidence, not an
+exhaustive proof trace; `complete` remains authoritative even when the list is
+empty.
 
 ## Vendor split-brain evidence
 
