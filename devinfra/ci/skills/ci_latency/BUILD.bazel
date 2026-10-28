@@ -14,6 +14,7 @@ skill_package(
                 "scripts/collect.sh",
                 "scripts/contention.jq",
                 "scripts/evidence.sh",
+                "scripts/gate_headroom.py",
                 "scripts/inspect.sh",
                 "scripts/summarize.jq",
                 "scripts/test_costs.jq",
@@ -69,9 +70,12 @@ jq(
 
 py_library(
     name = "artifact_tools",
-    srcs = [
-        "scripts/attribution.py",
-    ],
+    srcs = ["scripts/attribution.py"],
+)
+
+py_library(
+    name = "gate_headroom",
+    srcs = ["scripts/gate_headroom.py"],
 )
 
 py_test(
@@ -79,6 +83,17 @@ py_test(
     srcs = ["test_artifacts.py"],
     deps = [
         ":artifact_tools",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_gate_headroom",
+    srcs = ["test_gate_headroom.py"],
+    deps = [
+        ":gate_headroom",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

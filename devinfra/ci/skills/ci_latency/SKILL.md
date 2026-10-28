@@ -295,6 +295,30 @@ critical-path improvements, and concurrency changes. Say what evidence would
 falsify each recommendation and how to compare before/after. Put instrument-first
 items behind actionable fixes unless missing evidence actually blocks the choice.
 
+### Bound conditional gate headroom
+
+When several measured gates overlap on the same PR head, use
+`python3 scripts/gate_headroom.py reviewed_gate_heads.json gate_headroom.json`
+to estimate how a fixed reduction to one or more gate offsets changes the observed
+maximum. Input `heads` are exact head IDs with the same complete set of gate
+completion offsets, in seconds from one labeled workflow-start proxy per head;
+`scenarios` name proposed per-gate reductions in seconds. Inputs must be finite
+and nonnegative. An empty reduction map is a valid no-change scenario. The script
+clips adjusted offsets at zero, reports each head's gate headroom before another
+gate becomes last, and summarizes per-head savings using nearest-rank p50/p90.
+Tied last gates each count in `last_gate_counts`, so counts can exceed the head
+population; tie-head counts are also reported.
+
+Treat this as a conditional upper-bound sensitivity, not a treatment effect or
+measured improvement. It holds other gate clocks and dependency structure fixed;
+adjusted completion order may change. It uses only the supplied gate completion
+clocks and does not establish actual auto-merge readiness.
+`total_saved_wall_seconds` sums per-head savings across the sample; it is not one
+elapsed cohort wall clock. Do not add worker seconds or CPU seconds to gate offsets.
+Verify that offsets belong to the same exact PR head and a common labeled start
+proxy before comparing them; if that clock cannot be reconstructed, do not run the
+recipe on mixed clocks.
+
 ## Interpret correctly
 
 - Discover CodeQL by `dynamic/github-code-scanning/codeql` or workflow ID, **not**
