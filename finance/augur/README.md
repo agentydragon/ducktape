@@ -63,6 +63,11 @@ is core; fitted models live in `x/models/`.
 **Money.** `World` counts integer quanta and knows no currency. Callers convert at their edge
 through a `Currency` (<sim/money.py>: `USD`, `Currency.quanta`) and the exact helpers in
 <sim/fixed_point.py> (`quantity_to_quanta`, `rate_to_ppb`), which raise rather than round.
+
+The Plaid startup source retains imported balances, position values, and cost basis as `Decimal`
+while resolving the portfolio. It converts a computed lot quantity to `float` only when creating
+`HoldingTaxLotConfig`, whose simulation input is `PositiveFloat`; money continues through the
+existing exact currency path.
 Sampled paths round only through `sampled_array_to_quanta` / `round_ppb` (applied by
 `compile_series`), exact derived amounts only through `round_currency_amount`.
 

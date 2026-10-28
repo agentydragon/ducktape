@@ -3,10 +3,26 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -62,6 +78,7 @@ class LinkRow(Base):
 
 class AccountRow(Base):
     __tablename__ = "accounts"
+    __table_args__ = (UniqueConstraint("account_id", "item_id", name="uq_accounts_account_item"),)
 
     account_id: Mapped[str] = mapped_column(String, primary_key=True)
     item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)
@@ -78,12 +95,21 @@ class AccountRow(Base):
 
 class TransactionRow(Base):
     __tablename__ = "transactions"
+    __table_args__ = (
+        CheckConstraint(
+            "( \"amount\" IS NULL OR \"amount\" NOT IN ('NaN','Infinity','-Infinity'))",
+            name="ck_transactions_finite_values",
+        ),
+        ForeignKeyConstraint(
+            ["account_id", "item_id"], ["accounts.account_id", "accounts.item_id"], name="fk_transactions_account_item"
+        ),
+    )
 
     transaction_id: Mapped[str] = mapped_column(String, primary_key=True)
     account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)
     item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)
     date: Mapped[date] = mapped_column(Date, nullable=False)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(asdecimal=True), nullable=False)
     iso_currency_code: Mapped[str | None] = mapped_column(String, nullable=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     merchant_name: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -99,14 +125,25 @@ class TransactionRow(Base):
 
 class BalanceSnapshotRow(Base):
     __tablename__ = "balance_snapshots"
+    __table_args__ = (
+        CheckConstraint(
+            "( \"available\" IS NULL OR \"available\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"current\" IS NULL OR \"current\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"limit\" IS NULL OR \"limit\" NOT IN ('NaN','Infinity','-Infinity'))",
+            name="ck_balance_snapshots_finite_values",
+        ),
+        ForeignKeyConstraint(
+            ["account_id", "item_id"],
+            ["accounts.account_id", "accounts.item_id"],
+            name="fk_balance_snapshots_account_item",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)
     item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    available: Mapped[float | None] = mapped_column(Float, nullable=True)
-    current: Mapped[float | None] = mapped_column(Float, nullable=True)
-    limit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    available: Mapped[Decimal | None] = mapped_column(Numeric(asdecimal=True), nullable=True)
+    current: Mapped[Decimal | None] = mapped_column(Numeric(asdecimal=True), nullable=True)
+    limit: Mapped[Decimal | None] = mapped_column(Numeric(asdecimal=True), nullable=True)
     iso_currency_code: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
@@ -122,34 +159,108 @@ class SecurityRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 
-class HoldingSnapshotRow(Base):
-    __tablename__ = "holding_snapshots"
+class HoldingCaptureRow(Base):
+    __tablename__ = "holding_captures"
+    __table_args__ = (
+        UniqueConstraint("api_event_id", name="uq_holding_captures_api_event"),
+        UniqueConstraint("id", "item_id", name="uq_holding_captures_id_item"),
+        Index("idx_holding_captures_item_latest", "item_id", "captured_at", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    api_event_id: Mapped[int] = mapped_column(Integer, ForeignKey("plaid_api_events.id"), nullable=False)
+
+
+class HoldingCaptureAccountRow(Base):
+    __tablename__ = "holding_capture_accounts"
+    __table_args__ = (
+        CheckConstraint(
+            "current IS NULL OR current NOT IN ('NaN','Infinity','-Infinity')",
+            name="ck_holding_capture_accounts_finite_values",
+        ),
+        ForeignKeyConstraint(
+            ["capture_id", "item_id"],
+            ["holding_captures.id", "holding_captures.item_id"],
+            name="fk_holding_capture_accounts_capture_item",
+        ),
+        ForeignKeyConstraint(
+            ["account_id", "item_id"],
+            ["accounts.account_id", "accounts.item_id"],
+            name="fk_holding_capture_accounts_account_item",
+        ),
+    )
+
+    capture_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[str] = mapped_column(String, primary_key=True)
+    item_id: Mapped[str] = mapped_column(String, nullable=False)
+    current: Mapped[Decimal | None] = mapped_column(Numeric(asdecimal=True), nullable=True)
+    iso_currency_code: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class HoldingSnapshotRow(Base):
+    __tablename__ = "holding_snapshots"
+    __table_args__ = (
+        CheckConstraint(
+            "( \"quantity\" IS NULL OR \"quantity\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"cost_basis\" IS NULL OR \"cost_basis\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"institution_price\" IS NULL OR \"institution_price\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"institution_value\" IS NULL OR \"institution_value\" NOT IN ('NaN','Infinity','-Infinity'))",
+            name="ck_holding_snapshots_finite_values",
+        ),
+        UniqueConstraint("capture_id", "account_id", "security_id", name="uq_holding_snapshots_capture_position"),
+        ForeignKeyConstraint(
+            ["account_id", "item_id"],
+            ["accounts.account_id", "accounts.item_id"],
+            name="fk_holding_snapshots_account_item",
+        ),
+        ForeignKeyConstraint(
+            ["capture_id", "account_id"],
+            ["holding_capture_accounts.capture_id", "holding_capture_accounts.account_id"],
+            name="fk_holding_snapshots_capture_account",
+        ),
+        ForeignKeyConstraint(
+            ["capture_id", "item_id"],
+            ["holding_captures.id", "holding_captures.item_id"],
+            name="fk_holding_snapshots_capture_item",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    capture_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)
     security_id: Mapped[str] = mapped_column(String, ForeignKey("securities.security_id"), nullable=False)
     item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
-    cost_basis: Mapped[float | None] = mapped_column(Float, nullable=True)
-    institution_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    institution_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(asdecimal=True), nullable=True)
+    cost_basis: Mapped[Decimal | None] = mapped_column(Numeric(asdecimal=True), nullable=True)
+    institution_price: Mapped[Decimal | None] = mapped_column(Numeric(asdecimal=True), nullable=True)
+    institution_value: Mapped[Decimal | None] = mapped_column(Numeric(asdecimal=True), nullable=True)
     iso_currency_code: Mapped[str | None] = mapped_column(String, nullable=True)
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
 
 class InvestmentTransactionRow(Base):
     __tablename__ = "investment_transactions"
+    __table_args__ = (
+        CheckConstraint(
+            "( \"amount\" IS NULL OR \"amount\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"quantity\" IS NULL OR \"quantity\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"price\" IS NULL OR \"price\" NOT IN ('NaN','Infinity','-Infinity')) AND ( \"fees\" IS NULL OR \"fees\" NOT IN ('NaN','Infinity','-Infinity'))",
+            name="ck_investment_transactions_finite_values",
+        ),
+        ForeignKeyConstraint(
+            ["account_id", "item_id"],
+            ["accounts.account_id", "accounts.item_id"],
+            name="fk_investment_transactions_account_item",
+        ),
+    )
 
     investment_transaction_id: Mapped[str] = mapped_column(String, primary_key=True)
     account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)
     security_id: Mapped[str | None] = mapped_column(String, nullable=True)
     item_id: Mapped[str] = mapped_column(String, ForeignKey("links.item_id"), nullable=False)
     date: Mapped[date] = mapped_column(Date, nullable=False)
-    amount: Mapped[float | None] = mapped_column(Float, nullable=True)
-    quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
-    price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    fees: Mapped[float | None] = mapped_column(Float, nullable=True)
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(asdecimal=True), nullable=True)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(asdecimal=True), nullable=True)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(asdecimal=True), nullable=True)
+    fees: Mapped[Decimal | None] = mapped_column(Numeric(asdecimal=True), nullable=True)
     type: Mapped[str | None] = mapped_column(String, nullable=True)
     subtype: Mapped[str | None] = mapped_column(String, nullable=True)
     iso_currency_code: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -161,6 +272,13 @@ class InvestmentTransactionRow(Base):
 
 class LiabilityCreditSnapshotRow(Base):
     __tablename__ = "liability_credit_snapshots"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["account_id", "item_id"],
+            ["accounts.account_id", "accounts.item_id"],
+            name="fk_liability_credit_snapshots_account_item",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)
@@ -171,6 +289,13 @@ class LiabilityCreditSnapshotRow(Base):
 
 class LiabilityMortgageSnapshotRow(Base):
     __tablename__ = "liability_mortgage_snapshots"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["account_id", "item_id"],
+            ["accounts.account_id", "accounts.item_id"],
+            name="fk_liability_mortgage_snapshots_account_item",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)
@@ -181,6 +306,13 @@ class LiabilityMortgageSnapshotRow(Base):
 
 class LiabilityStudentSnapshotRow(Base):
     __tablename__ = "liability_student_snapshots"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["account_id", "item_id"],
+            ["accounts.account_id", "accounts.item_id"],
+            name="fk_liability_student_snapshots_account_item",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.account_id"), nullable=False)

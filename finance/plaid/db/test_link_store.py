@@ -3,15 +3,29 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import asyncpg
 import pytest
 import pytest_bazel
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, SyncAlreadyRunningError
 from util.db_url import render_postgresql_url
+
+
+async def _record_holdings_event(storage: PlaidLinkStorage, item_id: str) -> int:
+    return await storage.record_api_event(
+        ApiEvent(
+            endpoint="investments/holdings/get",
+            item_id=item_id,
+            status="ok",
+            request_json={},
+            response_json={"accounts": [], "securities": [], "holdings": []},
+        )
+    )
 
 
 async def test_successful_sync_run_marks_investment_only_link_synced(
@@ -91,6 +105,17 @@ async def test_spend_changed_notifies_after_commit_and_on_link_removal(
             captured_at=datetime.now(UTC),
         )
         assert await asyncio.wait_for(notifications.get(), timeout=5) == ("plaid_spend_changed", "")
+        event_id = await _record_holdings_event(storage, "item-investments")
+        await storage.apply_holdings(
+            item_id="item-investments",
+            accounts=[{"account_id": "account-investments", "name": "Brokerage", "type": "investment"}],
+            securities=[],
+            holdings=[],
+            api_event_id=event_id,
+            captured_at=datetime.now(UTC),
+        )
+        assert await asyncio.wait_for(notifications.get(), timeout=5) == ("plaid_spend_changed", "")
+        assert await listener.fetchval("SELECT count(*) FROM holding_captures") == 1
         await storage.purge_link_data("item-investments")
         assert await asyncio.wait_for(notifications.get(), timeout=5) == ("plaid_spend_changed", "")
         assert await listener.fetchval("SELECT count(*) FROM links WHERE item_id = $1", "item-investments") == 0
@@ -181,6 +206,273 @@ async def test_transaction_delta_commits_changes_and_cursor_together(storage: Pl
             ).scalar_one()
         assert kept == ("Updated Coffee", 10.0, False)
         assert removed is True
+    finally:
+        await engine.dispose()
+
+
+async def test_transaction_foreign_key_rejects_account_from_another_item(
+    storage: PlaidLinkStorage, add_link: Callable[[str], Awaitable[None]], db_url: str
+) -> None:
+    await add_link("item-account-owner")
+    await add_link("item-transaction-owner")
+    await storage.apply_accounts(
+        item_id="item-account-owner",
+        accounts=[{"account_id": "account-owned", "name": "Checking", "type": "depository"}],
+        captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
+    )
+
+    engine = create_async_engine(db_url)
+    try:
+        with pytest.raises(IntegrityError):
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text(
+                        "INSERT INTO transactions "
+                        "(transaction_id, account_id, item_id, date, amount, name, pending, raw_json, updated_at) "
+                        "VALUES ('txn-cross-item', 'account-owned', 'item-transaction-owner', "
+                        "'2026-06-01', 1, 'Cross Item', false, '{}'::jsonb, now())"
+                    )
+                )
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.parametrize("amount", ["NaN", "Infinity", "-Infinity"])
+async def test_transaction_numeric_check_rejects_nonfinite_direct_sql_values(
+    amount: str, storage: PlaidLinkStorage, db_url: str
+) -> None:
+    await storage.upsert_link(
+        item_id="item-nonfinite-amount",
+        access_token_secret="item-nonfinite-amount-token",
+        products_requested=["transactions"],
+        institution_id="ins_transactions",
+        institution_name="Transactions Test",
+        label=None,
+    )
+    await storage.apply_accounts(
+        item_id="item-nonfinite-amount",
+        accounts=[{"account_id": "account-nonfinite-amount", "name": "Checking", "type": "depository"}],
+        captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
+    )
+
+    engine = create_async_engine(db_url)
+    try:
+        with pytest.raises(IntegrityError):
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text(
+                        "INSERT INTO transactions "
+                        "(transaction_id, account_id, item_id, date, amount, name, pending, raw_json, updated_at) "
+                        "VALUES (:transaction_id, 'account-nonfinite-amount', 'item-nonfinite-amount', "
+                        "'2026-06-01', CAST(:amount AS numeric), 'Nonfinite', false, '{}'::jsonb, now())"
+                    ),
+                    {"transaction_id": f"txn-nonfinite-{amount}", "amount": amount},
+                )
+    finally:
+        await engine.dispose()
+
+
+async def test_apply_holdings_records_empty_capture_and_covered_empty_account(
+    storage: PlaidLinkStorage, add_link: Callable[[str], Awaitable[None]], db_url: str
+) -> None:
+    captured_at = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
+    await add_link("item-empty-holdings")
+    await add_link("item-covered-holdings")
+    empty_event_id = await _record_holdings_event(storage, "item-empty-holdings")
+    await storage.apply_holdings(
+        item_id="item-empty-holdings",
+        api_event_id=empty_event_id,
+        accounts=[],
+        securities=[],
+        holdings=[],
+        captured_at=captured_at,
+    )
+
+    await storage.apply_accounts(
+        item_id="item-covered-holdings",
+        accounts=[
+            {"account_id": "account-no-positions", "name": "Retirement", "type": "investment"},
+            {
+                "account_id": "account-with-position",
+                "name": "Brokerage",
+                "type": "investment",
+                "balances": {"current": 123.45, "iso_currency_code": "USD"},
+            },
+        ],
+        captured_at=captured_at,
+    )
+    covered_event_id = await _record_holdings_event(storage, "item-covered-holdings")
+    await storage.apply_holdings(
+        item_id="item-covered-holdings",
+        api_event_id=covered_event_id,
+        accounts=[
+            {"account_id": "account-no-positions", "name": "Retirement", "type": "investment"},
+            {
+                "account_id": "account-with-position",
+                "name": "Brokerage",
+                "type": "investment",
+                "balances": {"current": 123.45, "iso_currency_code": "USD"},
+            },
+        ],
+        securities=[{"security_id": "security-one", "name": "One", "raw_json": {}}],
+        holdings=[{"account_id": "account-with-position", "security_id": "security-one", "quantity": 1}],
+        captured_at=captured_at,
+    )
+
+    engine = create_async_engine(db_url)
+    try:
+        async with engine.connect() as conn:
+            captures = (
+                await conn.execute(text("SELECT id, item_id, api_event_id FROM holding_captures ORDER BY item_id"))
+            ).all()
+            account_observations = (
+                await conn.execute(
+                    text(
+                        "SELECT capture_id, account_id, current, iso_currency_code "
+                        "FROM holding_capture_accounts ORDER BY account_id"
+                    )
+                )
+            ).all()
+            holding_rows = (await conn.execute(text("SELECT capture_id, account_id FROM holding_snapshots"))).all()
+        assert len(captures) == 2
+        assert [capture[1] for capture in captures] == ["item-covered-holdings", "item-empty-holdings"]
+        assert [capture[2] for capture in captures] == [covered_event_id, empty_event_id]
+        assert captures[0][0] != captures[1][0]
+        assert [observation[0] for observation in account_observations] == [captures[0][0], captures[0][0]]
+        assert [observation[1] for observation in account_observations] == [
+            "account-no-positions",
+            "account-with-position",
+        ]
+        assert [observation[2] for observation in account_observations] == [None, Decimal("123.45")]
+        assert [observation[3] for observation in account_observations] == [None, "USD"]
+        assert len(holding_rows) == 1
+        assert holding_rows[0][0] == captures[0][0]
+        assert holding_rows[0][1] == "account-with-position"
+    finally:
+        await engine.dispose()
+
+
+async def test_apply_holdings_rolls_back_if_a_snapshot_row_is_invalid(
+    storage: PlaidLinkStorage, add_link: Callable[[str], Awaitable[None]], db_url: str
+) -> None:
+    captured_at = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
+    await add_link("item-invalid-holdings")
+    await storage.apply_accounts(
+        item_id="item-invalid-holdings",
+        accounts=[{"account_id": "account-invalid-holdings", "name": "Brokerage", "type": "investment"}],
+        captured_at=captured_at,
+    )
+    event_id = await _record_holdings_event(storage, "item-invalid-holdings")
+
+    with pytest.raises(IntegrityError):
+        await storage.apply_holdings(
+            item_id="item-invalid-holdings",
+            api_event_id=event_id,
+            accounts=[{"account_id": "account-invalid-holdings", "name": "Brokerage", "type": "investment"}],
+            securities=[{"security_id": "security-rollback", "name": "Rollback", "raw_json": {}}],
+            holdings=[
+                {"account_id": "account-invalid-holdings", "security_id": "security-rollback", "quantity": 1},
+                {"account_id": "account-invalid-holdings", "security_id": "security-rollback", "quantity": 2},
+            ],
+            captured_at=captured_at,
+        )
+
+    engine = create_async_engine(db_url)
+    try:
+        async with engine.connect() as conn:
+            assert (
+                await conn.execute(
+                    text("SELECT count(*) FROM holding_captures WHERE item_id = 'item-invalid-holdings'")
+                )
+            ).scalar_one() == 0
+            assert (
+                await conn.execute(
+                    text("SELECT count(*) FROM holding_capture_accounts WHERE item_id = 'item-invalid-holdings'")
+                )
+            ).scalar_one() == 0
+            assert (
+                await conn.execute(
+                    text("SELECT count(*) FROM holding_snapshots WHERE item_id = 'item-invalid-holdings'")
+                )
+            ).scalar_one() == 0
+            assert (
+                await conn.execute(text("SELECT count(*) FROM securities WHERE security_id = 'security-rollback'"))
+            ).scalar_one() == 0
+    finally:
+        await engine.dispose()
+
+
+async def test_delete_detached_account_removes_its_capture_rows_and_keeps_item_provenance(
+    storage: PlaidLinkStorage, add_link: Callable[[str], Awaitable[None]], db_url: str
+) -> None:
+    first_observation = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
+    later_observation = datetime(2026, 6, 2, 12, 0, tzinfo=UTC)
+    item_id = "item-detached-capture"
+    await add_link(item_id)
+    first_accounts = [
+        {"account_id": "account-detached", "name": "Old Brokerage", "type": "investment"},
+        {"account_id": "account-retained", "name": "Current Brokerage", "type": "investment"},
+    ]
+    await storage.apply_accounts(item_id=item_id, accounts=first_accounts, captured_at=first_observation)
+    event_id = await _record_holdings_event(storage, item_id)
+    await storage.apply_holdings(
+        item_id=item_id,
+        api_event_id=event_id,
+        accounts=first_accounts,
+        securities=[
+            {"security_id": "security-detached", "name": "Old Fund", "raw_json": {}},
+            {"security_id": "security-retained", "name": "Current Fund", "raw_json": {}},
+        ],
+        holdings=[
+            {"account_id": "account-detached", "security_id": "security-detached", "quantity": 1},
+            {"account_id": "account-retained", "security_id": "security-retained", "quantity": 2},
+        ],
+        captured_at=first_observation,
+    )
+    await storage.apply_accounts(item_id=item_id, accounts=[first_accounts[1]], captured_at=later_observation)
+    preview = await storage.get_account_deletion_preview(item_id=item_id, account_id="account-detached")
+
+    await storage.delete_detached_account(item_id=item_id, account_id="account-detached", expected_preview=preview)
+
+    engine = create_async_engine(db_url)
+    try:
+        async with engine.connect() as conn:
+            assert (
+                await conn.execute(text("SELECT count(*) FROM accounts WHERE account_id = 'account-detached'"))
+            ).scalar_one() == 0
+            captures = (
+                await conn.execute(
+                    text("SELECT id, api_event_id FROM holding_captures WHERE item_id = :item_id"), {"item_id": item_id}
+                )
+            ).all()
+            covered_accounts = (
+                (
+                    await conn.execute(
+                        text("SELECT account_id FROM holding_capture_accounts WHERE item_id = :item_id"),
+                        {"item_id": item_id},
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            holdings = (
+                (
+                    await conn.execute(
+                        text("SELECT account_id FROM holding_snapshots WHERE item_id = :item_id"), {"item_id": item_id}
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert (
+                await conn.execute(
+                    text("SELECT count(*) FROM plaid_api_events WHERE id = :event_id"), {"event_id": event_id}
+                )
+            ).scalar_one() == 1
+        assert len(captures) == 1
+        assert captures[0][1] == event_id
+        assert covered_accounts == ["account-retained"]
+        assert holdings == ["account-retained"]
     finally:
         await engine.dispose()
 
@@ -343,8 +635,18 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
         next_cursor="cursor-purge",
         captured_at=captured_at,
     )
+    purge_holding_event_id = await _record_holdings_event(storage, "item-purge")
     await storage.apply_holdings(
         item_id="item-purge",
+        api_event_id=purge_holding_event_id,
+        accounts=[
+            {
+                "account_id": "account-purge",
+                "name": "Purge Checking",
+                "type": "depository",
+                "balances": {"current": 11.0, "iso_currency_code": "USD"},
+            }
+        ],
         securities=[
             {"security_id": "security-purge", "name": "Purge Fund", "raw_json": {}},
             {"security_id": "security-shared", "name": "Shared Fund", "raw_json": {}},
@@ -355,8 +657,18 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
         ],
         captured_at=captured_at,
     )
+    keep_holding_event_id = await _record_holdings_event(storage, "item-keep")
     await storage.apply_holdings(
         item_id="item-keep",
+        api_event_id=keep_holding_event_id,
+        accounts=[
+            {
+                "account_id": "account-keep",
+                "name": "Keep Brokerage",
+                "type": "investment",
+                "balances": {"current": 20.0, "iso_currency_code": "USD"},
+            }
+        ],
         securities=[{"security_id": "security-shared", "name": "Shared Fund", "raw_json": {}}],
         holdings=[{"account_id": "account-keep", "security_id": "security-shared", "quantity": 3.0}],
         captured_at=captured_at,
@@ -417,6 +729,15 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
                 await conn.execute(text("SELECT count(*) FROM links WHERE item_id = 'item-keep'"))
             ).scalar_one() == 1
             assert (
+                await conn.execute(text("SELECT count(*) FROM holding_captures WHERE item_id = 'item-purge'"))
+            ).scalar_one() == 0
+            assert (
+                await conn.execute(text("SELECT count(*) FROM holding_capture_accounts WHERE item_id = 'item-purge'"))
+            ).scalar_one() == 0
+            assert (
+                await conn.execute(text("SELECT count(*) FROM holding_captures WHERE item_id = 'item-keep'"))
+            ).scalar_one() == 1
+            assert (
                 await conn.execute(text("SELECT count(*) FROM securities WHERE security_id = 'security-purge'"))
             ).scalar_one() == 0
             assert (
@@ -430,7 +751,7 @@ async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
             ).scalar_one() == 0
             assert (
                 await conn.execute(text("SELECT count(*) FROM plaid_api_events WHERE item_id = 'item-purge'"))
-            ).scalar_one() == 1
+            ).scalar_one() == 2
     finally:
         await engine.dispose()
 

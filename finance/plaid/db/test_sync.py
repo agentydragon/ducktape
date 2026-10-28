@@ -1,6 +1,7 @@
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -15,10 +16,20 @@ from plaid.model.item_get_request import ItemGetRequest
 from plaid.model.item_webhook_update_request import ItemWebhookUpdateRequest
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
+from urllib3.response import HTTPResponse
 
 from finance.plaid.db.client import PlaidClient
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink
-from finance.plaid.db.sync import redact_payload, sync_all, sync_link, sync_transactions_only
+from finance.plaid.db.sync import _call, redact_payload, sync_all, sync_link, sync_transactions_only
+from finance.plaid.payloads import AccountsGetResponse
+
+
+def _raw_response(payload: dict[str, Any]) -> HTTPResponse:
+    return _raw_json_response(json.dumps(payload, separators=(",", ":")).encode())
+
+
+def _raw_json_response(body: bytes) -> HTTPResponse:
+    return HTTPResponse(body=body)
 
 
 def test_redact_payload_returns_json_serializable_dates() -> None:
@@ -35,6 +46,34 @@ def test_redact_payload_returns_json_serializable_dates() -> None:
         "start_date": "2026-05-01",
         "nested": [{"captured_at": "2026-05-31T02:07:00+00:00"}],
     }
+
+
+async def test_call_preserves_decimal_json_tokens_before_pydantic_validation() -> None:
+    class _PrecisionApi(_FakeApi):
+        def accounts_get(self, accounts_get_request: AccountsGetRequest, **kwargs: Any) -> HTTPResponse:
+            assert kwargs["_preload_content"] is False
+            return _raw_json_response(
+                b'{"accounts":[{"account_id":"account-1","name":"Checking","type":"depository",'
+                b'"balances":{"available":9007199254740993.01,"current":0.10000000000000000001,'
+                b'"limit":null,"iso_currency_code":"USD"}}],"request_id":"req-accounts"}'
+            )
+
+    plaid_api = _PrecisionApi()
+    client = PlaidClient(api=plaid_api)
+    result = await _call(
+        storage=cast(PlaidLinkStorage, _FakeStorage()),
+        run_id=uuid4(),
+        endpoint="accounts/get",
+        call=client.sdk.accounts_get,
+        request=AccountsGetRequest(access_token="secret"),
+        item_id="item-1",
+        response_model=AccountsGetResponse,
+    )
+
+    [account] = result.response.accounts
+    assert account.balances is not None
+    assert account.balances.available == Decimal("9007199254740993.01")
+    assert account.balances.current == Decimal("0.10000000000000000001")
 
 
 def _stored_link(item_id: str, products: list[str], cursor: str | None = None) -> StoredLink:
@@ -99,7 +138,9 @@ def _no_liability_accounts_error() -> PlaidApiException:
 class _FakeApi(plaid_api.PlaidApi):
     """Plaid API fake; raises `errors[endpoint, access_token]` from that one endpoint."""
 
-    def __init__(self, errors: dict[tuple[str, str], Exception] | None = None) -> None:
+    def __init__(
+        self, errors: dict[tuple[str, str], Exception] | None = None, holdings_response: dict[str, Any] | None = None
+    ) -> None:
         super().__init__()
         self._errors = errors or {}
         self.liabilities_calls = 0
@@ -108,6 +149,7 @@ class _FakeApi(plaid_api.PlaidApi):
         self.sync_requests: list[TransactionsSyncRequest] = []
         self.item_webhooks: list[str | None] = []
         self.item_webhook: str | None = None
+        self.holdings_response = holdings_response
 
     def _maybe_raise(self, endpoint: str, access_token: str) -> None:
         if (exc := self._errors.get((endpoint, access_token))) is not None:
@@ -115,15 +157,15 @@ class _FakeApi(plaid_api.PlaidApi):
 
     def item_get(self, item_get_request: ItemGetRequest, **kwargs: Any) -> Any:
         self._maybe_raise("item/get", item_get_request.access_token)
-        return {"item": {"webhook": self.item_webhook}, "request_id": "req-item"}
+        return _raw_response({"item": {"webhook": self.item_webhook}, "request_id": "req-item"})
 
     def item_webhook_update(self, item_webhook_update_request: ItemWebhookUpdateRequest, **kwargs: Any) -> Any:
         self.item_webhooks.append(item_webhook_update_request.webhook)
-        return {"request_id": "req-webhook"}
+        return _raw_response({"request_id": "req-webhook"})
 
     def accounts_get(self, accounts_get_request: AccountsGetRequest, **kwargs: Any) -> Any:
         self._maybe_raise("accounts/get", accounts_get_request.access_token)
-        return {"accounts": [], "request_id": "req-accounts"}
+        return _raw_response({"accounts": [], "request_id": "req-accounts"})
 
     def transactions_sync(self, transactions_sync_request: TransactionsSyncRequest, **kwargs: Any) -> Any:
         self.sync_requests.append(transactions_sync_request)
@@ -132,26 +174,30 @@ class _FakeApi(plaid_api.PlaidApi):
             response = self.sync_responses.pop(0)
             if isinstance(response, Exception):
                 raise response
-            return response
-        return _sync_response()
+            return _raw_response(response)
+        return _raw_response(_sync_response())
 
     def investments_holdings_get(
         self, investments_holdings_get_request: InvestmentsHoldingsGetRequest, **kwargs: Any
     ) -> Any:
         self._maybe_raise("investments/holdings/get", investments_holdings_get_request.access_token)
-        return {"securities": [], "holdings": [], "request_id": "req-hold"}
+        return _raw_response(
+            self.holdings_response or {"accounts": [], "securities": [], "holdings": [], "request_id": "req-hold"}
+        )
 
     def investments_transactions_get(
         self, investments_transactions_get_request: InvestmentsTransactionsGetRequest, **kwargs: Any
     ) -> Any:
         self.investment_transaction_calls += 1
         self._maybe_raise("investments/transactions/get", investments_transactions_get_request.access_token)
-        return {"total_investment_transactions": 0, "investment_transactions": [], "request_id": "req-itxn"}
+        return _raw_response(
+            {"total_investment_transactions": 0, "investment_transactions": [], "request_id": "req-itxn"}
+        )
 
     def liabilities_get(self, liabilities_get_request: LiabilitiesGetRequest, **kwargs: Any) -> Any:
         self.liabilities_calls += 1
         self._maybe_raise("liabilities/get", liabilities_get_request.access_token)
-        return {"liabilities": {}, "request_id": "req-liab"}
+        return _raw_response({"liabilities": {}, "request_id": "req-liab"})
 
 
 @dataclass
@@ -164,6 +210,8 @@ class _FakeStorage:
     liability_snapshots: list[str] = field(default_factory=list)
     account_refreshes: list[str] = field(default_factory=list)
     transaction_deltas: list[dict[str, Any]] = field(default_factory=list)
+    api_events: list[ApiEvent] = field(default_factory=list)
+    holding_captures: list[dict[str, Any]] = field(default_factory=list)
 
     async def list_active_links(self) -> list[StoredLink]:
         return self.links
@@ -175,8 +223,9 @@ class _FakeStorage:
     async def finish_sync_run(self, run_id: UUID, *, status: str, error_summary: str | None = None) -> None:
         self.finished.append((run_id, status, error_summary))
 
-    async def record_api_event(self, event: ApiEvent) -> None:
-        pass
+    async def record_api_event(self, event: ApiEvent) -> int:
+        self.api_events.append(event)
+        return len(self.api_events)
 
     async def upsert_link(self, **kwargs: Any) -> None:
         pass
@@ -188,7 +237,7 @@ class _FakeStorage:
         self.transaction_deltas.append(kwargs)
 
     async def apply_holdings(self, **kwargs: Any) -> None:
-        pass
+        self.holding_captures.append(kwargs)
 
     async def upsert_investment_transactions(self, **kwargs: Any) -> None:
         pass
@@ -226,6 +275,56 @@ async def test_investment_transactions_follow_the_requested_products() -> None:
     )
 
     assert api.investment_transaction_calls == 1
+    assert len(storage.holding_captures) == 1
+    capture = storage.holding_captures[0]
+    event_index = next(
+        i for i, event in enumerate(storage.api_events, start=1) if event.endpoint == "investments/holdings/get"
+    )
+    assert capture["api_event_id"] == event_index
+    assert capture["accounts"] == []
+
+
+@pytest.mark.parametrize("missing_field", ["accounts", "holdings", "securities"])
+async def test_sync_link_rejects_incomplete_holdings_response(missing_field: str) -> None:
+    link = _stored_link("item-incomplete-holdings", ["investments"])
+    response = {"accounts": [], "securities": [], "holdings": [], "request_id": "req-hold"}
+    del response[missing_field]
+    storage = _FakeStorage(links=[link])
+    api = _FakeApi(holdings_response=response)
+
+    with pytest.raises(ValueError, match="must include accounts, holdings, and securities"):
+        await sync_link(
+            api=PlaidClient(api=api),
+            storage=cast(PlaidLinkStorage, storage),
+            secrets=_FakeSecrets(),
+            link=link,
+            trigger="test",
+        )
+
+    assert not storage.holding_captures
+    assert any(event.endpoint == "investments/holdings/get" and event.status == "ok" for event in storage.api_events)
+    assert [(status, err is not None) for _, status, err in storage.finished] == [("failed", True)]
+
+
+async def test_valid_holdings_capture_survives_a_later_investment_sync_failure() -> None:
+    link = _stored_link("item-failed-investment-history", ["investments"])
+    storage = _FakeStorage(links=[link])
+    failure = PlaidApiException(status=500, reason="Unavailable")
+    api = _FakeApi(
+        errors={("investments/transactions/get", "token-for-secret-item-failed-investment-history"): failure}
+    )
+
+    with pytest.raises(PlaidApiException):
+        await sync_link(
+            api=PlaidClient(api=api),
+            storage=cast(PlaidLinkStorage, storage),
+            secrets=_FakeSecrets(),
+            link=link,
+            trigger="test",
+        )
+
+    assert len(storage.holding_captures) == 1
+    assert [(status, err is not None) for _, status, err in storage.finished] == [("failed", True)]
 
 
 async def test_sync_link_tolerates_no_investment_accounts() -> None:

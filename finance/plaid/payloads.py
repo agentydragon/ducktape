@@ -11,12 +11,13 @@ https://plaid.com/docs/transactions/webhooks/ and https://plaid.com/docs/api/web
 from __future__ import annotations
 
 import datetime
+from decimal import Decimal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class PlaidPayload(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(allow_inf_nan=False, extra="allow")
 
 
 class PlaidApiResponse(PlaidPayload):
@@ -24,9 +25,9 @@ class PlaidApiResponse(PlaidPayload):
 
 
 class PlaidBalance(PlaidPayload):
-    available: float | None = None
-    current: float | None = None
-    limit: float | None = None
+    available: Decimal | None = None
+    current: Decimal | None = None
+    limit: Decimal | None = None
     iso_currency_code: str | None = None
     unofficial_currency_code: str | None = None
 
@@ -72,7 +73,7 @@ class PlaidTransaction(PlaidPayload):
     transaction_id: str
     account_id: str
     date: datetime.date
-    amount: float
+    amount: Decimal
     name: str
     pending: bool
     iso_currency_code: str | None = None
@@ -113,10 +114,10 @@ class PlaidSecurity(PlaidPayload):
 class PlaidHolding(PlaidPayload):
     account_id: str
     security_id: str
-    quantity: float | None = None
-    cost_basis: float | None = None
-    institution_price: float | None = None
-    institution_value: float | None = None
+    quantity: Decimal | None = None
+    cost_basis: Decimal | None = None
+    institution_price: Decimal | None = None
+    institution_value: Decimal | None = None
     iso_currency_code: str | None = None
     unofficial_currency_code: str | None = None
 
@@ -132,10 +133,10 @@ class PlaidInvestmentTransaction(PlaidPayload):
     account_id: str
     date: datetime.date
     security_id: str | None = None
-    amount: float | None = None
-    quantity: float | None = None
-    price: float | None = None
-    fees: float | None = None
+    amount: Decimal | None = None
+    quantity: Decimal | None = None
+    price: Decimal | None = None
+    fees: Decimal | None = None
     type: str | None = None
     subtype: str | None = None
     iso_currency_code: str | None = None

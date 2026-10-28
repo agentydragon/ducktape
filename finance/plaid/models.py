@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -21,9 +22,9 @@ class AccountInventory(BaseModel):
     last_seen_at: datetime.datetime
     detached_at: datetime.datetime | None
     balance_captured_at: datetime.datetime | None
-    balance_available: float | None
-    balance_current: float | None
-    balance_limit: float | None
+    balance_available: Decimal | None
+    balance_current: Decimal | None
+    balance_limit: Decimal | None
     balance_iso_currency_code: str | None
     transaction_count: int
     investment_transaction_count: int

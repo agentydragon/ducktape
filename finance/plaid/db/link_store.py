@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from finance.plaid.db.models import (
     AccountRow,
     BalanceSnapshotRow,
+    HoldingCaptureAccountRow,
+    HoldingCaptureRow,
     HoldingSnapshotRow,
     InvestmentTransactionRow,
     ItemSyncQueueRow,
@@ -155,8 +157,15 @@ class PlaidLinkStorage:
     @classmethod
     async def initialize(cls, db_url: str) -> PlaidLinkStorage:
         engine, session_factory = async_session_factory(db_url)
-        async with engine.begin() as conn:
-            await conn.run_sync(_run_alembic_migrations)
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended('finance.plaid.db:migrations', 0))")
+                )
+                await conn.run_sync(_run_alembic_migrations)
+        except BaseException:
+            await engine.dispose()
+            raise
         return cls(session_factory, engine)
 
     async def close(self) -> None:
@@ -234,9 +243,14 @@ class PlaidLinkStorage:
                 InvestmentTransactionRow,
                 TransactionRow,
                 BalanceSnapshotRow,
-                AccountRow,
             ):
                 await session.execute(delete(row_type).where(row_type.item_id == item_id))
+            capture_ids = select(HoldingCaptureRow.id).where(HoldingCaptureRow.item_id == item_id)
+            await session.execute(
+                delete(HoldingCaptureAccountRow).where(HoldingCaptureAccountRow.capture_id.in_(capture_ids))
+            )
+            await session.execute(delete(HoldingCaptureRow).where(HoldingCaptureRow.item_id == item_id))
+            await session.execute(delete(AccountRow).where(AccountRow.item_id == item_id))
             await session.execute(delete(ItemSyncQueueRow).where(ItemSyncQueueRow.item_id == item_id))
             await session.execute(delete(LinkRow).where(LinkRow.item_id == item_id))
             if security_ids_to_check:
@@ -489,6 +503,11 @@ class PlaidLinkStorage:
             ):
                 await session.execute(delete(row_type).where(row_type.account_id == account_id))
             await session.execute(
+                delete(HoldingCaptureAccountRow).where(
+                    HoldingCaptureAccountRow.item_id == item_id, HoldingCaptureAccountRow.account_id == account_id
+                )
+            )
+            await session.execute(
                 delete(AccountRow).where(AccountRow.account_id == account_id, AccountRow.item_id == item_id)
             )
             await _notify_spend_changed(session)
@@ -673,25 +692,27 @@ class PlaidLinkStorage:
                 await _notify_spend_changed(session)
             await session.commit()
 
-    async def record_api_event(self, event: ApiEvent) -> None:
+    async def record_api_event(self, event: ApiEvent) -> int:
         async with self._session_factory() as session:
-            session.add(
-                PlaidApiEventRow(
-                    sync_run_id=event.sync_run_id,
-                    endpoint=event.endpoint,
-                    item_id=event.item_id,
-                    account_id=event.account_id,
-                    request_id=event.request_id,
-                    status=event.status,
-                    duration_ms=event.duration_ms,
-                    error_type=event.error_type,
-                    error_code=event.error_code,
-                    request_json=event.request_json,
-                    response_json=event.response_json,
-                    created_at=utcnow(),
-                )
+            row = PlaidApiEventRow(
+                sync_run_id=event.sync_run_id,
+                endpoint=event.endpoint,
+                item_id=event.item_id,
+                account_id=event.account_id,
+                request_id=event.request_id,
+                status=event.status,
+                duration_ms=event.duration_ms,
+                error_type=event.error_type,
+                error_code=event.error_code,
+                request_json=event.request_json,
+                response_json=event.response_json,
+                created_at=utcnow(),
             )
+            session.add(row)
+            await session.flush()
+            event_id = row.id
             await session.commit()
+            return event_id
 
     async def apply_accounts(
         self, *, item_id: str, accounts: Sequence[PlaidAccount | dict[str, Any]], captured_at: datetime
@@ -803,11 +824,48 @@ class PlaidLinkStorage:
         item_id: str,
         securities: Sequence[PlaidSecurity | dict[str, Any]],
         holdings: Sequence[PlaidHolding | dict[str, Any]],
+        accounts: Sequence[PlaidAccount | dict[str, Any]],
+        api_event_id: int,
         captured_at: datetime,
     ) -> None:
+        validated_securities = [_validated_payload(PlaidSecurity, security) for security in securities]
+        validated_holdings = [_validated_payload(PlaidHolding, holding) for holding in holdings]
+        validated_accounts = [_validated_payload(PlaidAccount, account) for account in accounts]
+        account_ids = [account.account_id for account in validated_accounts]
+        security_ids = [security.security_id for security in validated_securities]
+        if len(account_ids) != len(set(account_ids)):
+            raise ValueError("investments/holdings/get response contains duplicate accounts")
+        if len(security_ids) != len(set(security_ids)):
+            raise ValueError("investments/holdings/get response contains duplicate securities")
+        if missing_security_ids := {holding.security_id for holding in validated_holdings} - set(security_ids):
+            raise ValueError(f"holdings reference securities absent from the response: {sorted(missing_security_ids)}")
+        if uncovered_account_ids := {holding.account_id for holding in validated_holdings} - set(account_ids):
+            raise ValueError(f"holdings reference accounts absent from the response: {sorted(uncovered_account_ids)}")
+
         async with self._session_factory() as session:
-            for security_value in securities:
-                security = _validated_payload(PlaidSecurity, security_value)
+            link = await session.get(LinkRow, item_id)
+            if link is None:
+                raise ValueError(f"cannot capture holdings for missing Plaid Item: {item_id}")
+            api_event = await session.get(PlaidApiEventRow, api_event_id)
+            if (
+                api_event is None
+                or api_event.item_id != item_id
+                or api_event.endpoint != "investments/holdings/get"
+                or api_event.status != "ok"
+            ):
+                raise ValueError(f"API event {api_event_id} is not a successful holdings response for Item {item_id}")
+
+            if account_ids:
+                account_rows = (
+                    await session.execute(
+                        select(AccountRow.account_id, AccountRow.item_id).where(AccountRow.account_id.in_(account_ids))
+                    )
+                ).all()
+                owned_accounts: dict[str, str] = {cast(str, row[0]): cast(str, row[1]) for row in account_rows}
+                if any(owned_accounts.get(account_id) != item_id for account_id in account_ids):
+                    raise ValueError(f"holdings response contains accounts not owned by Item {item_id}")
+
+            for security in validated_securities:
                 values = {
                     "security_id": security.security_id,
                     "name": security.name,
@@ -822,10 +880,25 @@ class PlaidLinkStorage:
                     index_elements=["security_id"], set_={k: v for k, v in values.items() if k != "security_id"}
                 )
                 await session.execute(stmt)
-            for holding_value in holdings:
-                holding = _validated_payload(PlaidHolding, holding_value)
+
+            capture = HoldingCaptureRow(item_id=item_id, captured_at=captured_at, api_event_id=api_event_id)
+            session.add(capture)
+            await session.flush()
+            for account in validated_accounts:
+                balances = account.balances
+                session.add(
+                    HoldingCaptureAccountRow(
+                        capture_id=capture.id,
+                        account_id=account.account_id,
+                        item_id=item_id,
+                        current=balances.current if balances is not None else None,
+                        iso_currency_code=balances.iso_currency_code if balances is not None else None,
+                    )
+                )
+            for holding in validated_holdings:
                 session.add(
                     HoldingSnapshotRow(
+                        capture_id=capture.id,
                         account_id=holding.account_id,
                         security_id=holding.security_id,
                         item_id=item_id,
@@ -838,6 +911,7 @@ class PlaidLinkStorage:
                         raw_json=holding.model_dump(mode="json", exclude_unset=True),
                     )
                 )
+            await _notify_spend_changed(session)
             await session.commit()
 
     async def upsert_investment_transactions(

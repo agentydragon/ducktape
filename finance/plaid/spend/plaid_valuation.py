@@ -1,8 +1,7 @@
 """Transport-independent USD valuation of selected Plaid snapshot rows.
 
-Holding rows must come from each account's
-latest complete capture batch, never the latest row of each individual security.
-That batch must share the account balance's exact sync capture time.
+Holding rows must come from each account's latest complete capture, never the latest row
+of each individual security. Holding-sensitive balances must come from that same capture.
 """
 
 from collections.abc import Sequence
@@ -28,6 +27,9 @@ class AccountObservation(BaseModel):
     balance_currency: str | None
     current: Decimal | None
     captured_at: datetime | None
+    holding_capture_id: int | None = None
+    holding_capture_covered: bool | None = None
+    holding_capture_has_unapplied_observations: bool = False
 
 
 class HoldingObservation(BaseModel):
@@ -37,6 +39,7 @@ class HoldingObservation(BaseModel):
 
     account_id: str
     security_id: str
+    capture_id: int
     institution_value: Decimal | None
     holding_currency: str | None
     captured_at: datetime | None
@@ -125,6 +128,17 @@ def value_plaid_rows(
     rows_by_id = {row.account_id: row for row in account_rows}
     if len(rows_by_id) != len(account_rows) or set(rows_by_id) != set(selected_ids):
         raise PlaidValuationError("One or more selected Plaid accounts are missing or inactive.")
+    if required_holding_accounts.difference(rows_by_id):
+        raise PlaidValuationError("A holding selector refers to an account that is not selected.")
+
+    for account_id in required_holding_accounts:
+        account_observation = rows_by_id[account_id]
+        if account_observation.holding_capture_id is None:
+            raise PlaidValuationError("A selected account has no complete holding observation batch.")
+        if account_observation.holding_capture_covered is not True:
+            raise PlaidValuationError("The latest Item holding capture does not cover a selected account.")
+        if account_observation.holding_capture_has_unapplied_observations:
+            raise PlaidValuationError("Unapplied holding observations make the latest Item capture unsafe to read.")
 
     balances: dict[str, Decimal] = {}
     balance_times: dict[str, datetime] = {}
@@ -151,13 +165,11 @@ def value_plaid_rows(
         for exclusion in policy.excluded_securities
         for security_id in exclusion.security_ids
     }
-    correction_by_position = {
-        (correction.account_id, security_id): correction
-        for correction in plaid.holding_value_corrections
-        for security_id in correction.security_ids
-    }
     holding_by_position: dict[tuple[str, str], HoldingObservation] = {}
     holdings_by_account: dict[str, list[HoldingObservation]] = {}
+    if {holding.account_id for holding in holding_rows}.difference(required_holding_accounts):
+        raise PlaidValuationError("The mirror returned holdings for an account without a holding requirement.")
+
     for holding in holding_rows:
         position = (holding.account_id, holding.security_id)
         if position in holding_by_position:
@@ -166,10 +178,13 @@ def value_plaid_rows(
         holdings_by_account.setdefault(position[0], []).append(holding)
 
     for account_id in required_holding_accounts:
-        account_holdings = holdings_by_account.get(account_id)
-        if not account_holdings:
-            raise PlaidValuationError("A selected account has no complete holding observation batch.")
-        capture_times = {row.captured_at for row in account_holdings}
+        account_observation = rows_by_id[account_id]
+        capture_id = account_observation.holding_capture_id
+        assert capture_id is not None  # Required capture coverage was validated above.
+        account_holdings = holdings_by_account.get(account_id, [])
+        if any(row.capture_id != capture_id for row in account_holdings):
+            raise PlaidValuationError("A selected holding does not belong to the account's latest capture.")
+        capture_times = {row.captured_at for row in account_holdings} | {account_observation.captured_at}
         if len(capture_times) != 1:
             raise PlaidValuationError("A holding batch has inconsistent observation times.")
         holding_as_of = next(iter(capture_times))
@@ -178,22 +193,14 @@ def value_plaid_rows(
         issue = observation_age_issue(holding_as_of, now, plaid.max_age_hours)
         if issue is not None:
             raise PlaidValuationError(issue)
-        if balance_times[account_id] != holding_as_of:
-            raise PlaidValuationError(
-                "A selected account's balance and holdings have different sync capture times; wait for a complete sync."
-            )
-
-    configured_positions = excluded_positions | set(correction_by_position)
-    if configured_positions.difference(holding_by_position):
-        raise PlaidValuationError(
-            "A configured holding selector is absent from the latest observation; its current value is unknown."
-        )
+        balance_times[account_id] = holding_as_of
 
     excluded_amount = Decimal(0)
     observation_times = list(balance_times.values())
     excluded_by_account: dict[str, Decimal] = {}
     correction_account_ids = {correction.account_id for correction in plaid.holding_value_corrections}
-    for account_id, account_holdings in holdings_by_account.items():
+    for account_id in required_holding_accounts:
+        account_holdings = holdings_by_account.get(account_id, [])
         adjusted_total = Decimal(0)
         for holding in account_holdings:
             position = (account_id, holding.security_id)
@@ -214,9 +221,10 @@ def value_plaid_rows(
             tolerance = max(Decimal(1), abs(balance) * Decimal("0.01"))
             if abs(adjusted_total - balance) > tolerance:
                 raise PlaidValuationError("Corrected holdings do not reconcile to the selected account balance.")
-        holding_as_of = account_holdings[0].captured_at
-        assert isinstance(holding_as_of, datetime)  # Validated above for every required holding account.
-        observation_times.append(holding_as_of)
+        if account_holdings:
+            holding_as_of = account_holdings[0].captured_at
+            assert isinstance(holding_as_of, datetime)  # Validated above for every required holding account.
+            observation_times.append(holding_as_of)
 
     for account_id, excluded_value in excluded_by_account.items():
         if excluded_value > balances[account_id] + Decimal("0.01"):

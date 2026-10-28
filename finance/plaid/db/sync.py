@@ -9,7 +9,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from decimal import Decimal
+from typing import Any, cast
 from uuid import UUID
 
 from plaid.exceptions import ApiException as PlaidApiException
@@ -22,6 +23,7 @@ from plaid.model.item_webhook_update_request import ItemWebhookUpdateRequest
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 from plaid.model_utils import ModelNormal
+from urllib3.response import HTTPResponse
 
 from finance.plaid.db.client import PlaidClient
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
@@ -50,6 +52,12 @@ class SyncWindows:
 
     def as_dict(self) -> dict[str, int | str]:
         return {"transactions": "cursor", "investment_transaction_days": self.investment_transaction_days}
+
+
+@dataclass(frozen=True)
+class ApiCallResult[ResponseT: PlaidApiResponse]:
+    response: ResponseT
+    api_event_id: int
 
 
 def redact_payload(value: Any) -> Any:
@@ -143,16 +151,17 @@ async def sync_transactions_only(
     try:
         access_token = await secrets.read_access_token(link.access_token_secret)
         captured_at = datetime.now(UTC)
-        accounts_payload = await _call(
-            api,
-            storage,
-            run_id,
-            "accounts/get",
-            api.accounts_get,
-            AccountsGetRequest(access_token=access_token),
-            link.item_id,
-            response_model=AccountsGetResponse,
-        )
+        accounts_payload = (
+            await _call(
+                storage,
+                run_id,
+                "accounts/get",
+                api.sdk.accounts_get,
+                AccountsGetRequest(access_token=access_token),
+                link.item_id,
+                response_model=AccountsGetResponse,
+            )
+        ).response
         await storage.apply_accounts(item_id=link.item_id, accounts=accounts_payload.accounts, captured_at=captured_at)
         await _sync_transactions_inner(
             api=api,
@@ -186,16 +195,17 @@ async def _sync_link_inner(
     access_token = await secrets.read_access_token(link.access_token_secret)
     captured_at = datetime.now(UTC)
 
-    item = await _call(
-        api,
-        storage,
-        run_id,
-        "item/get",
-        api.item_get,
-        ItemGetRequest(access_token=access_token),
-        link.item_id,
-        response_model=ItemGetResponse,
-    )
+    item = (
+        await _call(
+            storage,
+            run_id,
+            "item/get",
+            api.sdk.item_get,
+            ItemGetRequest(access_token=access_token),
+            link.item_id,
+            response_model=ItemGetResponse,
+        )
+    ).response
     item_payload = item.item
     await storage.upsert_link(
         item_id=link.item_id,
@@ -215,26 +225,26 @@ async def _sync_link_inner(
         and item_payload.webhook != webhook_url
     ):
         await _call(
-            api,
             storage,
             run_id,
             "item/webhook/update",
-            api.item_webhook_update,
+            api.sdk.item_webhook_update,
             ItemWebhookUpdateRequest(access_token=access_token, webhook=webhook_url),
             link.item_id,
             response_model=ItemWebhookUpdateResponse,
         )
 
-    accounts_payload = await _call(
-        api,
-        storage,
-        run_id,
-        "accounts/get",
-        api.accounts_get,
-        AccountsGetRequest(access_token=access_token),
-        link.item_id,
-        response_model=AccountsGetResponse,
-    )
+    accounts_payload = (
+        await _call(
+            storage,
+            run_id,
+            "accounts/get",
+            api.sdk.accounts_get,
+            AccountsGetRequest(access_token=access_token),
+            link.item_id,
+            response_model=AccountsGetResponse,
+        )
+    ).response
     await storage.apply_accounts(item_id=link.item_id, accounts=accounts_payload.accounts, captured_at=captured_at)
 
     if Product.TRANSACTIONS.value in link.products_requested:
@@ -250,12 +260,11 @@ async def _sync_link_inner(
 
     if Product.INVESTMENTS.value in link.products_requested:
         try:
-            holdings = await _call(
-                api,
+            holdings_result = await _call(
                 storage,
                 run_id,
                 "investments/holdings/get",
-                api.investments_holdings_get,
+                api.sdk.investments_holdings_get,
                 InvestmentsHoldingsGetRequest(access_token=access_token),
                 link.item_id,
                 response_model=InvestmentsHoldingsGetResponse,
@@ -269,10 +278,15 @@ async def _sync_link_inner(
             # NO_LIABILITY_ACCOUNTS below — a mismatch to skip, not a sync to fail.
             logger.warning("investments/holdings/get: item %s has no investment accounts; skipping", link.item_id)
         else:
+            holdings = holdings_result.response
+            if holdings.securities is None or holdings.holdings is None or holdings.accounts is None:
+                raise ValueError("investments/holdings/get response must include accounts, holdings, and securities")
             await storage.apply_holdings(
                 item_id=link.item_id,
-                securities=holdings.securities or [],
-                holdings=holdings.holdings or [],
+                securities=holdings.securities,
+                holdings=holdings.holdings,
+                accounts=holdings.accounts,
+                api_event_id=holdings_result.api_event_id,
                 captured_at=captured_at,
             )
             end = captured_at.date()
@@ -284,16 +298,17 @@ async def _sync_link_inner(
 
     if Product.LIABILITIES.value in link.products_requested:
         try:
-            liabilities = await _call(
-                api,
-                storage,
-                run_id,
-                "liabilities/get",
-                api.liabilities_get,
-                LiabilitiesGetRequest(access_token=access_token),
-                link.item_id,
-                response_model=LiabilitiesGetResponse,
-            )
+            liabilities = (
+                await _call(
+                    storage,
+                    run_id,
+                    "liabilities/get",
+                    api.sdk.liabilities_get,
+                    LiabilitiesGetRequest(access_token=access_token),
+                    link.item_id,
+                    response_model=LiabilitiesGetResponse,
+                )
+            ).response
         except PlaidApiException as exc:
             if _plaid_error_code(exc) != "NO_LIABILITY_ACCOUNTS":
                 raise
@@ -327,16 +342,17 @@ async def _sync_transactions_inner(
                 request_args: dict[str, object] = {"access_token": access_token}
                 if page_cursor is not None:
                     request_args["cursor"] = page_cursor
-                payload = await _call(
-                    api,
-                    storage,
-                    run_id,
-                    "transactions/sync",
-                    api.transactions_sync,
-                    TransactionsSyncRequest(**request_args),
-                    item_id,
-                    response_model=TransactionsSyncResponse,
-                )
+                payload = (
+                    await _call(
+                        storage,
+                        run_id,
+                        "transactions/sync",
+                        api.sdk.transactions_sync,
+                        TransactionsSyncRequest(**request_args),
+                        item_id,
+                        response_model=TransactionsSyncResponse,
+                    )
+                ).response
                 added.extend(payload.added)
                 modified.extend(payload.modified)
                 removed.extend(payload.removed)
@@ -368,21 +384,22 @@ async def _fetch_investment_transactions(
     out: list[PlaidInvestmentTransaction] = []
     total = None
     while total is None or offset < total:
-        payload = await _call(
-            api,
-            storage,
-            run_id,
-            "investments/transactions/get",
-            api.investments_transactions_get,
-            InvestmentsTransactionsGetRequest(
-                access_token=access_token,
-                start_date=start,
-                end_date=end,
-                options=InvestmentsTransactionsGetRequestOptions(offset=offset, count=count),
-            ),
-            item_id,
-            response_model=InvestmentsTransactionsGetResponse,
-        )
+        payload = (
+            await _call(
+                storage,
+                run_id,
+                "investments/transactions/get",
+                api.sdk.investments_transactions_get,
+                InvestmentsTransactionsGetRequest(
+                    access_token=access_token,
+                    start_date=start,
+                    end_date=end,
+                    options=InvestmentsTransactionsGetRequestOptions(offset=offset, count=count),
+                ),
+                item_id,
+                response_model=InvestmentsTransactionsGetResponse,
+            )
+        ).response
         total = payload.total_investment_transactions
         page = payload.investment_transactions or []
         out.extend(page)
@@ -393,23 +410,25 @@ async def _fetch_investment_transactions(
 
 
 async def _call[PlaidRequestT: ModelNormal, ResponseT: PlaidApiResponse](
-    api: PlaidClient,
     storage: PlaidLinkStorage,
     run_id: UUID,
     endpoint: str,
-    call: Callable[[PlaidRequestT], object],
+    call: Callable[..., object],
     request: PlaidRequestT,
     item_id: str,
     *,
     response_model: type[ResponseT],
-) -> ResponseT:
+) -> ApiCallResult[ResponseT]:
     started = time.monotonic()
     request_json = request.to_dict()
     try:
-        response = await asyncio.to_thread(call, request)
-        serialized = api.api_client.sanitize_for_serialization(response)
-        typed_response = response_model.model_validate(serialized)
-        response_json = typed_response.model_dump(mode="json", exclude_unset=True)
+        response = cast(HTTPResponse, await asyncio.to_thread(call, request, _preload_content=False))
+        try:
+            serialized = json.loads(cast(bytes, response.data), parse_float=Decimal)
+            typed_response = response_model.model_validate(serialized)
+            response_json = typed_response.model_dump(mode="json", exclude_unset=True)
+        finally:
+            response.release_conn()
     except Exception as exc:
         await storage.record_api_event(
             ApiEvent(
@@ -424,7 +443,7 @@ async def _call[PlaidRequestT: ModelNormal, ResponseT: PlaidApiResponse](
             )
         )
         raise
-    await storage.record_api_event(
+    api_event_id = await storage.record_api_event(
         ApiEvent(
             sync_run_id=run_id,
             endpoint=endpoint,
@@ -436,7 +455,7 @@ async def _call[PlaidRequestT: ModelNormal, ResponseT: PlaidApiResponse](
             response_json=redact_payload(response_json),
         )
     )
-    return typed_response
+    return ApiCallResult(response=typed_response, api_event_id=api_event_id)
 
 
 def _plaid_error_code(exc: Exception) -> str | None:

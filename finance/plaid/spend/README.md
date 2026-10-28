@@ -235,18 +235,28 @@ The backend signs view-only GET requests in memory, caches ready valuations for 
 reads on the next request.
 
 Read-only analysis clients can reuse `plaid_valuation.value_plaid_rows` without importing the database or Coinbase
-clients. Portfolio reads execute SQLAlchemy Select builders against current active account balances and each account's
-latest complete holding capture batch, with security metadata for allocation details. Convert transport timestamps to
-timezone-aware `datetime` objects, validate them as `AccountObservation` / `HoldingObservation`, and pass holdings for
-the configured correction/exclusion accounts. Successful calls return `PlaidValuation` with named gross assets, signed
-liabilities and exclusions in USD cents. Unavailable data raises `PlaidValuationError`; it never returns a zero-valued
-portfolio. `corrected_holding_value` applies the same exact-position policy corrections to allocation detail rows.
+clients. Portfolio reads execute SQLAlchemy Select builders against active accounts, the latest complete capture for
+each Item, and its explicit per-account coverage. Capture IDs identify batches; timestamps describe observation time.
+Convert header timestamps to timezone-aware `datetime` objects, validate them as `AccountObservation` /
+`HoldingObservation`, and pass holdings for the configured correction/exclusion accounts. Successful calls return
+`PlaidValuation` with named gross assets, signed liabilities and exclusions in USD cents. Unavailable data raises
+`PlaidValuationError`; it never returns a zero-valued portfolio. `corrected_holding_value` applies the same
+exact-position policy corrections to allocation detail rows.
 
-For each account with corrections or exclusions, its latest balance and complete holding batch must have exactly
-the same `captured_at`. A full mirror sync assigns that shared timestamp; a partial or in-progress sync can leave
-the portfolio unavailable until the next coherent full sync. No older holding batch is substituted. Accounts at
-different institutions may have different capture times. This checks mirror sync alignment, not whether the
-institution's underlying balance and position values were updated atomically.
+For each account with corrections or exclusions, Spend takes the current balance, currency and observation time from
+that same holdings capture's account-coverage row. Other selected accounts continue to use their latest balance
+snapshots. The account's holdings must carry the same capture ID; timestamp equality does not identify a batch. The
+latest Item capture must explicitly cover every required account, with no fallback to an older capture. A covered
+capture with no holding rows means zero current positions, so an excluded or corrected security absent from that
+complete capture has value zero. An uncovered or never-captured account remains unavailable. This keeps ordinary
+accounts usable with transaction-only freshness while requiring a coherent holding observation wherever policy
+adjustments depend on positions.
+
+During rollout, an unlinked holding row (`capture_id IS NULL`) whose timestamp is at or after the latest complete
+capture makes a required holding read unavailable. A newer successful `/investments/holdings/get` receipt without a
+linked capture also makes it unavailable, including the case where an older writer returned an empty response and
+appended no rows. A later complete capture supersedes older unlinked rows and receipts. The timestamp comparison
+only bounds ambiguous orphan rows; capture IDs remain the identity for selecting holdings.
 
 Every historical spending point uses **today's** eligible portfolio; historical asset values are not reconstructed.
 Partial windows annualize only their contiguous covered days and are labeled. Inferred transaction boundaries are

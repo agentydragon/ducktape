@@ -65,8 +65,8 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(
                 account_name="Checking",
                 institution_name="Bank",
                 captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
-                available=450.0,
-                current=500.0,
+                available=Decimal("450.0"),
+                current=Decimal("500.000000000000000001"),
                 iso_currency_code="USD",
             ),
         )
@@ -83,10 +83,10 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(
                 ticker_symbol="A",
                 security_type="equity",
                 captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
-                quantity=2.0,
-                cost_basis=700,
-                institution_price=400.0,
-                institution_value=800.0,
+                quantity=Decimal("2.0"),
+                cost_basis=Decimal(700),
+                institution_price=Decimal("400.0"),
+                institution_value=Decimal("800.0"),
                 iso_currency_code="USD",
             ),
             CurrentHolding(
@@ -98,10 +98,10 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(
                 ticker_symbol="B",
                 security_type="equity",
                 captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
-                quantity=1.0,
-                cost_basis=200,
-                institution_price=500.0,
-                institution_value=500.0,
+                quantity=Decimal("1.0"),
+                cost_basis=Decimal(200),
+                institution_price=Decimal("500.0"),
+                institution_value=Decimal("500.0"),
                 iso_currency_code="USD",
             ),
         )
@@ -111,7 +111,7 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(
 
     resolved = resolve_portfolio_sources(minimal_config(portfolio_sources=plaid_config))
 
-    assert resolved.snapshot.cash == 600.0
+    assert resolved.snapshot.cash == Decimal("600.000000000000000001")
     assert resolved.snapshot.as_of_date == "2026-06-01"
     assert resolved.portfolio.accounts == (
         PortfolioAccountConfig(
@@ -159,10 +159,10 @@ def test_plaid_source_reuses_existing_portfolio_account(
                 ticker_symbol="A",
                 security_type="equity",
                 captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
-                quantity=2.0,
+                quantity=Decimal("2.0"),
                 cost_basis=None,
-                institution_price=400.0,
-                institution_value=800.0,
+                institution_price=Decimal("400.0"),
+                institution_value=Decimal("800.0"),
                 iso_currency_code="USD",
             ),
         )
@@ -206,6 +206,9 @@ def test_plaid_source_expands_holding_period_buckets(
     async def fake_cash(**kwargs) -> tuple[CurrentCashBalance, ...]:
         return ()
 
+    market_value = Decimal("9007199254740993.01") if managed else Decimal(1000)
+    cost_basis = Decimal("6000000000000000.02") if managed else Decimal(600)
+
     async def fake_holdings(**kwargs) -> tuple[CurrentHolding, ...]:
         return (
             CurrentHolding(
@@ -217,10 +220,10 @@ def test_plaid_source_expands_holding_period_buckets(
                 ticker_symbol="US.DIRECT.INDEXING",
                 security_type="equity",
                 captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
-                quantity=1000.0,
-                cost_basis=600,
-                institution_price=1.0,
-                institution_value=1000.0,
+                quantity=market_value,
+                cost_basis=cost_basis,
+                institution_price=Decimal("1.0"),
+                institution_value=market_value,
                 iso_currency_code="USD",
             ),
         )
@@ -277,7 +280,10 @@ def test_plaid_source_expands_holding_period_buckets(
         # The cohorts carry the statement's own value, split as the lots below are.
         assert [
             (cohort.value, cohort.cost_basis, cohort.purchase_month_index) for cohort in portfolio.initial_cohorts
-        ] == [(Decimal(250), Decimal(300), -4), (Decimal(750), Decimal(300), -16)]
+        ] == [
+            (Decimal("2251799813685248.2525"), Decimal("3000000000000000.01"), -4),
+            (Decimal("6755399441055744.7575"), Decimal("3000000000000000.01"), -16),
+        ]
         # Loss character is an explicit model assumption, not inferred from opening cohort weights.
         assert portfolio.assumptions.short_term_fraction == 0.75
     else:

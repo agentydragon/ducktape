@@ -176,7 +176,7 @@ def _cash_total(plaid: PlaidPortfolioSourceConfig, balances: tuple[CurrentCashBa
             raise ValueError(
                 f"Plaid cash account {balance.account_id!r} has no {plaid.cash.balance_field.value} balance"
             )
-        total += Decimal(str(value))
+        total += value
     return total
 
 
@@ -194,7 +194,7 @@ def _proxy_cohorts(group: PlaidSp500ProxyGroupConfig, holdings: tuple[CurrentHol
         if holding.cost_basis is None:
             missing_basis.append(holding.security_id)
         else:
-            total_cost_basis += Decimal(str(holding.cost_basis))
+            total_cost_basis += holding.cost_basis
     if total_value <= 0:
         raise ValueError(f"Plaid SP500 proxy group {group.position_id!r} has no positive-value holdings")
     if missing_basis:
@@ -257,6 +257,7 @@ def _sp500_proxy_holding(group: PlaidSp500ProxyGroupConfig, cohorts: tuple[TlhCo
             HoldingTaxLotConfig(
                 lot_id=lot_id,
                 holding_period_months_at_start=-cohort.purchase_month_index,
+                # Simulation lot quantities are floats; retain exact Plaid values until this config boundary.
                 quantity=float(cohort.value / group.unit_value),
                 cost_basis=cohort.cost_basis,
             )
@@ -267,9 +268,9 @@ def _sp500_proxy_holding(group: PlaidSp500ProxyGroupConfig, cohorts: tuple[TlhCo
 
 def _holding_value(holding: CurrentHolding) -> Decimal:
     if holding.institution_value is not None:
-        return Decimal(str(holding.institution_value))
+        return holding.institution_value
     if holding.quantity is not None and holding.institution_price is not None:
-        return Decimal(str(holding.quantity)) * Decimal(str(holding.institution_price))
+        return holding.quantity * holding.institution_price
     return Decimal(0)
 
 

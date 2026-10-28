@@ -63,7 +63,7 @@ class ClassifiedTxn:
     transaction_id: str
     date: date
     # Plaid sign convention: outflows positive, inflows negative.
-    amount: float
+    amount: Decimal
     name: str
     account_id: str
     bucket_id: str
@@ -92,13 +92,13 @@ def contra_account(bucket: BucketDef) -> str:
     return bucket.account or default_account(bucket)
 
 
-def _cents(value: float) -> Decimal:
+def _cents(value: Decimal) -> Decimal:
     """Quantize to two decimal places, normalizing -0.00 to 0.00."""
-    quantized = Decimal(str(value)).quantize(_CENTS)
+    quantized = value.quantize(_CENTS)
     return Decimal("0.00") if quantized == 0 else quantized
 
 
-def _amount(value: float, currency: str) -> Amount:
+def _amount(value: Decimal, currency: str) -> Amount:
     return Amount(_cents(value), currency)
 
 

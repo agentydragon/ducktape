@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from datetime import date
+from decimal import Decimal
 
 import pytest
 import pytest_asyncio
@@ -98,7 +99,7 @@ def _tx(
     account_id: str = "checking",
     item_id: str = "item-budget",
     on: date,
-    amount: float,
+    amount: Decimal | float,
     name: str,
     merchant_name: str | None = None,
     pfc_primary: str | None = None,
@@ -513,6 +514,11 @@ async def test_read_all_classified_returns_every_live_txn_with_its_bucket(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     await _seed_budget_rows(session_factory)
+    async with session_factory() as session:
+        session.add(
+            _tx("precision", on=date(2026, 4, 20), amount=Decimal("9007199254740993.01"), name="Precision amount")
+        )
+        await session.commit()
     config = _budget_config()  # source.plaid_account_ids=("checking",), coverage_starts=2026-03-15
 
     rows = await sql_read_model.read_all_classified(
@@ -528,6 +534,7 @@ async def test_read_all_classified_returns_every_live_txn_with_its_bucket(
         "wealthfront_in": "transfers_in",
         "tax_refund": "tax_refunds",
         "zero": "other",
+        "precision": "other",
         "grocery_lumpy": "groceries",
         "payroll": "income",
     }
@@ -538,6 +545,8 @@ async def test_read_all_classified_returns_every_live_txn_with_its_bucket(
     assert grocery.account_id == "checking"
     assert grocery.merchant_name == "Grocery"
     assert grocery.pfc_primary == "FOOD_AND_DRINK"
+    precision = next(row for row in rows if row.transaction_id == "precision")
+    assert precision.amount == Decimal("9007199254740993.01")
 
 
 def _config_with_match_overrides(match_overrides: tuple[MatchOverride, ...]) -> BudgetConfig:

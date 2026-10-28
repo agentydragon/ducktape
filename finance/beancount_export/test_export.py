@@ -9,6 +9,7 @@ directives rather than matching the printer's exact whitespace.
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 import pytest_bazel
 from beancount import loader
@@ -67,7 +68,7 @@ def test_output_parses_cleanly() -> None:
         ClassifiedTxn(
             transaction_id="tx1",
             date=date(2026, 5, 27),
-            amount=50.0,
+            amount=Decimal("50.0"),
             name="THRIVE MARKET",
             account_id="acct_checking",
             bucket_id="groceries",
@@ -91,13 +92,31 @@ def test_output_parses_cleanly() -> None:
     assert _units(txn, "Assets:BofA:Checking").number == -50
 
 
+def test_decimal_amount_beyond_float_precision_survives_beancount_conversion() -> None:
+    buckets = {"misc": _bucket("misc", BucketKind.EXPENSE, TransferDirection.OUTFLOW)}
+    txns = [
+        ClassifiedTxn(
+            transaction_id="precision",
+            date=date(2026, 5, 1),
+            amount=Decimal("9007199254740993.01"),
+            name="Exact amount",
+            account_id="a",
+            bucket_id="misc",
+        )
+    ]
+
+    (txn,) = _txns(_load(render_ledger(txns, buckets, {"a": "Assets:Checking"})))
+
+    assert _units(txn, "Expenses:Misc").number == Decimal("9007199254740993.01")
+
+
 def test_income_signs_are_inverted() -> None:
     buckets = {"salary": _bucket("salary", BucketKind.INCOME, TransferDirection.INFLOW, "Income:Salary")}
     txns = [
         ClassifiedTxn(
             transaction_id="tx_pay",
             date=date(2026, 5, 1),
-            amount=-1000.0,  # Plaid signs inflows negative.
+            amount=Decimal("-1000.0"),  # Plaid signs inflows negative.
             name="OPENAI PAYROLL",
             account_id="acct_checking",
             bucket_id="salary",
@@ -116,13 +135,28 @@ def test_entries_ordered_by_date_then_id() -> None:
     funding = {"a": "Assets:BofA:Checking"}
     txns = [
         ClassifiedTxn(
-            transaction_id="z", date=date(2026, 5, 2), amount=1.0, name="late", account_id="a", bucket_id="misc"
+            transaction_id="z",
+            date=date(2026, 5, 2),
+            amount=Decimal("1.0"),
+            name="late",
+            account_id="a",
+            bucket_id="misc",
         ),
         ClassifiedTxn(
-            transaction_id="b", date=date(2026, 5, 1), amount=1.0, name="early-b", account_id="a", bucket_id="misc"
+            transaction_id="b",
+            date=date(2026, 5, 1),
+            amount=Decimal("1.0"),
+            name="early-b",
+            account_id="a",
+            bucket_id="misc",
         ),
         ClassifiedTxn(
-            transaction_id="a", date=date(2026, 5, 1), amount=1.0, name="early-a", account_id="a", bucket_id="misc"
+            transaction_id="a",
+            date=date(2026, 5, 1),
+            amount=Decimal("1.0"),
+            name="early-a",
+            account_id="a",
+            bucket_id="misc",
         ),
     ]
     rendered = render_ledger(txns, buckets, funding)
@@ -134,10 +168,20 @@ def test_render_is_deterministic() -> None:
     funding = {"a": "Assets:BofA:Checking"}
     txns = [
         ClassifiedTxn(
-            transaction_id="b", date=date(2026, 5, 1), amount=2.5, name="two", account_id="a", bucket_id="misc"
+            transaction_id="b",
+            date=date(2026, 5, 1),
+            amount=Decimal("2.5"),
+            name="two",
+            account_id="a",
+            bucket_id="misc",
         ),
         ClassifiedTxn(
-            transaction_id="a", date=date(2026, 5, 1), amount=1.0, name="one", account_id="a", bucket_id="misc"
+            transaction_id="a",
+            date=date(2026, 5, 1),
+            amount=Decimal("1.0"),
+            name="one",
+            account_id="a",
+            bucket_id="misc",
         ),
     ]
     assert render_ledger(txns, buckets, funding) == render_ledger(list(reversed(txns)), buckets, funding)
@@ -150,7 +194,7 @@ def test_string_escaping_in_narration() -> None:
         ClassifiedTxn(
             transaction_id="tx",
             date=date(2026, 5, 1),
-            amount=1.0,
+            amount=Decimal("1.0"),
             name='ACME "PREMIUM" SVC',
             account_id="a",
             bucket_id="misc",
@@ -164,7 +208,12 @@ def test_negative_zero_is_normalized() -> None:
     buckets = {"misc": _bucket("misc", BucketKind.EXPENSE, TransferDirection.OUTFLOW)}
     txns = [
         ClassifiedTxn(
-            transaction_id="tx", date=date(2026, 5, 1), amount=0.0, name="zero", account_id="a", bucket_id="misc"
+            transaction_id="tx",
+            date=date(2026, 5, 1),
+            amount=Decimal("0.0"),
+            name="zero",
+            account_id="a",
+            bucket_id="misc",
         )
     ]
     ledger = render_ledger(txns, buckets, {"a": "Assets:BofA:Checking"})
@@ -178,7 +227,7 @@ def test_currency_honors_iso_code() -> None:
         ClassifiedTxn(
             transaction_id="tx",
             date=date(2026, 5, 1),
-            amount=1.0,
+            amount=Decimal("1.0"),
             name="euro",
             account_id="a",
             bucket_id="misc",

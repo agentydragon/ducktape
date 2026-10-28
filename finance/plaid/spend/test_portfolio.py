@@ -16,7 +16,16 @@ from sqlalchemy import insert
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from finance.plaid.db.models import AccountRow, BalanceSnapshotRow, HoldingSnapshotRow, LinkRow, SecurityRow
+from finance.plaid.db.models import (
+    AccountRow,
+    BalanceSnapshotRow,
+    HoldingCaptureAccountRow,
+    HoldingCaptureRow,
+    HoldingSnapshotRow,
+    LinkRow,
+    PlaidApiEventRow,
+    SecurityRow,
+)
 from finance.plaid.spend import portfolio
 from finance.plaid.spend.plaid_valuation import (
     AccountObservation,
@@ -60,6 +69,8 @@ def _balance(
         current=Decimal(current),
         balance_currency="USD",
         captured_at=captured_at,
+        holding_capture_id=1 if account_type == "investment" else None,
+        holding_capture_covered=True if account_type == "investment" else None,
     )
 
 
@@ -70,7 +81,18 @@ def _seed_plaid(
     now = datetime.now(UTC)
     holdings = holdings or []
     accounts = {row.account_id: row for row in balances}
+    investment_accounts = {account_id: row for account_id, row in accounts.items() if row.account_type == "investment"}
     securities = {row.security_id for row in holdings}
+    holding_captured_at = (
+        holdings[0].captured_at
+        if holdings
+        else next(iter(investment_accounts.values())).captured_at
+        if investment_accounts
+        else None
+    )
+    capture_id: int | None = None
+    if investment_accounts and holding_captured_at is None:
+        raise ValueError("Investment test accounts need a holding capture time.")
 
     with engine.begin() as connection:
         connection.execute(
@@ -135,15 +157,49 @@ def _seed_plaid(
                     for security_id in securities
                 ],
             )
+        if investment_accounts:
+            api_event_id = connection.execute(
+                insert(PlaidApiEventRow)
+                .values(
+                    endpoint="investments/holdings/get",
+                    item_id=item_id,
+                    status="ok",
+                    request_json={},
+                    response_json={},
+                    created_at=now,
+                )
+                .returning(PlaidApiEventRow.id)
+            ).scalar_one()
+            capture_id = connection.execute(
+                insert(HoldingCaptureRow)
+                .values(item_id=item_id, captured_at=holding_captured_at, api_event_id=api_event_id)
+                .returning(HoldingCaptureRow.id)
+            ).scalar_one()
+            connection.execute(
+                insert(HoldingCaptureAccountRow),
+                [
+                    {
+                        "capture_id": capture_id,
+                        "account_id": account_id,
+                        "item_id": item_id,
+                        "current": row.current,
+                        "iso_currency_code": row.balance_currency,
+                    }
+                    for account_id, row in investment_accounts.items()
+                ],
+            )
         if holdings:
+            if capture_id is None:
+                raise ValueError("Holding test rows need a covered investment account.")
             connection.execute(
                 insert(HoldingSnapshotRow),
                 [
                     {
                         "account_id": row.account_id,
                         "security_id": row.security_id,
+                        "capture_id": capture_id,
                         "item_id": item_id,
-                        "captured_at": row.captured_at,
+                        "captured_at": holding_captured_at,
                         "institution_value": row.institution_value,
                         "iso_currency_code": row.holding_currency,
                         "raw_json": {},
@@ -207,6 +263,7 @@ async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_
             HoldingObservation(
                 account_id="asset-brokerage",
                 security_id="security-fake-1",
+                capture_id=1,
                 captured_at=captured_at,
                 institution_value=Decimal(125),
                 holding_currency="USD",
@@ -222,6 +279,51 @@ async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_
     assert view.excluded_minor_units == 25_000
     assert view.net_minor_units == 75_000
     assert view.sources[0].amount_minor_units == 125_000
+    assert view.sources[0].as_of == captured_at
+
+
+@pytest.mark.asyncio
+async def test_holding_correction_uses_balance_from_the_same_capture(
+    postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    captured_at = datetime.now(UTC)
+    policy = _policy(
+        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+    )
+    _seed_plaid(
+        postgres_engine,
+        balances=[
+            _balance("asset-checking", 1000, captured_at),
+            _balance("asset-brokerage", 2000, captured_at, account_type="investment"),
+            _balance("card-account", 0, captured_at, account_type="credit"),
+        ],
+        holdings=[
+            HoldingObservation(
+                account_id="asset-brokerage",
+                security_id="security-fake-1",
+                capture_id=1,
+                captured_at=captured_at,
+                institution_value=Decimal(1000),
+                holding_currency="USD",
+            )
+        ],
+    )
+    newer_balance_at = captured_at + timedelta(minutes=1)
+    with postgres_engine.begin() as connection:
+        connection.execute(
+            insert(BalanceSnapshotRow).values(
+                account_id="asset-brokerage",
+                item_id="fake-item",
+                captured_at=newer_balance_at,
+                current=9000,
+                iso_currency_code="USD",
+            )
+        )
+
+    view = await read_portfolio(postgres_session_factory, policy, now=newer_balance_at + timedelta(minutes=1))
+
+    assert view.status == "ready"
+    assert view.assets_minor_units == 300_000
     assert view.sources[0].as_of == captured_at
 
 
@@ -242,6 +344,7 @@ async def test_correction_reconciles_with_independent_capture_times_across_accou
         HoldingObservation(
             account_id="asset-brokerage",
             security_id="security-fake-1",
+            capture_id=1,
             captured_at=now - timedelta(minutes=15),
             institution_value=Decimal(10),
             holding_currency="USD",
@@ -249,6 +352,7 @@ async def test_correction_reconciles_with_independent_capture_times_across_accou
         HoldingObservation(
             account_id="asset-brokerage",
             security_id="security-unadjusted",
+            capture_id=1,
             captured_at=now - timedelta(minutes=15),
             institution_value=Decimal(1000),
             holding_currency="USD",
@@ -270,7 +374,9 @@ async def test_correction_reconciles_with_independent_capture_times_across_accou
 
 @pytest.mark.parametrize("adjustment", ["correction", "exclusion"])
 @pytest.mark.parametrize("holding_offset_minutes", [-15, -1, 0, 1, 15])
-def test_plaid_adjustments_require_the_same_account_sync_capture(adjustment: str, holding_offset_minutes: int) -> None:
+def test_plaid_adjustments_reject_inconsistent_timestamps_within_capture(
+    adjustment: str, holding_offset_minutes: int
+) -> None:
     now = datetime(2026, 1, 2, tzinfo=UTC)
     captured_at = now - timedelta(hours=1)
     policy = _policy(
@@ -301,6 +407,7 @@ def test_plaid_adjustments_require_the_same_account_sync_capture(adjustment: str
         HoldingObservation(
             account_id="asset-brokerage",
             security_id="security-fake-1",
+            capture_id=1,
             captured_at=captured_at + timedelta(minutes=holding_offset_minutes),
             institution_value=Decimal(100 if adjustment == "correction" else 200),
             holding_currency="USD",
@@ -308,12 +415,57 @@ def test_plaid_adjustments_require_the_same_account_sync_capture(adjustment: str
     ]
 
     if holding_offset_minutes:
-        with pytest.raises(PlaidValuationError, match="different sync capture times"):
+        with pytest.raises(PlaidValuationError, match="inconsistent observation times"):
             value_plaid_rows(policy, account_rows=accounts, holding_rows=holdings, now=now)
     else:
         result = value_plaid_rows(policy, account_rows=accounts, holding_rows=holdings, now=now)
         assert result.assets_minor_units == 20_000
         assert result.excluded_minor_units == (20_000 if adjustment == "exclusion" else 0)
+
+
+def test_plaid_adjustments_match_capture_ids_even_when_timestamps_match() -> None:
+    now = datetime(2026, 1, 2, tzinfo=UTC)
+    policy = _policy(
+        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+    )
+    accounts = [
+        _balance("asset-checking", 0, now),
+        _balance("asset-brokerage", 200, now, account_type="investment").model_copy(update={"holding_capture_id": 2}),
+        _balance("card-account", 0, now, account_type="credit"),
+    ]
+    holdings = [
+        HoldingObservation(
+            account_id="asset-brokerage",
+            security_id="security-fake-1",
+            capture_id=1,
+            captured_at=now,
+            institution_value=Decimal(100),
+            holding_currency="USD",
+        )
+    ]
+
+    with pytest.raises(PlaidValuationError, match="latest capture"):
+        value_plaid_rows(policy, account_rows=accounts, holding_rows=holdings, now=now)
+
+
+@pytest.mark.parametrize(("current", "expected_ready"), [(0, True), (100, False)])
+def test_covered_empty_correction_capture_is_zero_and_still_reconciles(current: int, expected_ready: bool) -> None:
+    now = datetime(2026, 1, 2, tzinfo=UTC)
+    policy = _policy(
+        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+    )
+    accounts = [
+        _balance("asset-checking", 0, now),
+        _balance("asset-brokerage", current, now, account_type="investment"),
+        _balance("card-account", 0, now, account_type="credit"),
+    ]
+
+    if expected_ready:
+        result = value_plaid_rows(policy, account_rows=accounts, holding_rows=[], now=now)
+        assert result.assets_minor_units == 0
+    else:
+        with pytest.raises(PlaidValuationError, match="do not reconcile"):
+            value_plaid_rows(policy, account_rows=accounts, holding_rows=[], now=now)
 
 
 @pytest.mark.asyncio
@@ -335,6 +487,7 @@ async def test_corrected_holdings_that_do_not_reconcile_fail_closed(
             HoldingObservation(
                 account_id="asset-brokerage",
                 security_id="security-fake-1",
+                capture_id=1,
                 captured_at=now,
                 institution_value=Decimal(100),
                 holding_currency="USD",
@@ -350,7 +503,7 @@ async def test_corrected_holdings_that_do_not_reconcile_fail_closed(
 
 
 @pytest.mark.asyncio
-async def test_missing_excluded_position_with_other_holdings_fails_closed(
+async def test_complete_capture_treats_missing_excluded_position_as_absent(
     postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     now = datetime.now(UTC)
@@ -376,6 +529,7 @@ async def test_missing_excluded_position_with_other_holdings_fails_closed(
             HoldingObservation(
                 account_id="asset-brokerage",
                 security_id="security-still-held",
+                capture_id=1,
                 captured_at=captured_at,
                 institution_value=Decimal(2000),
                 holding_currency="USD",
@@ -385,13 +539,13 @@ async def test_missing_excluded_position_with_other_holdings_fails_closed(
 
     view = await read_portfolio(postgres_session_factory, policy, now=now)
 
-    assert view.status == "unavailable"
-    assert view.net_minor_units is None
-    assert "current value is unknown" in view.sources[0].issues[0]
+    assert view.status == "ready"
+    assert view.assets_minor_units == 300_000
+    assert view.excluded_minor_units == 0
 
 
 @pytest.mark.asyncio
-async def test_missing_correction_position_with_other_holdings_fails_closed(
+async def test_complete_capture_treats_missing_corrected_position_as_absent(
     postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     now = datetime.now(UTC)
@@ -410,6 +564,7 @@ async def test_missing_correction_position_with_other_holdings_fails_closed(
             HoldingObservation(
                 account_id="asset-brokerage",
                 security_id="security-still-held",
+                capture_id=1,
                 captured_at=captured_at,
                 institution_value=Decimal(2000),
                 holding_currency="USD",
@@ -419,13 +574,12 @@ async def test_missing_correction_position_with_other_holdings_fails_closed(
 
     view = await read_portfolio(postgres_session_factory, policy, now=now)
 
-    assert view.status == "unavailable"
-    assert view.net_minor_units is None
-    assert "current value is unknown" in view.sources[0].issues[0]
+    assert view.status == "ready"
+    assert view.assets_minor_units == 300_000
 
 
 @pytest.mark.asyncio
-async def test_empty_excluded_account_history_fails_closed(
+async def test_covered_empty_holding_capture_has_zero_current_holdings(
     postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     now = datetime.now(UTC)
@@ -450,9 +604,244 @@ async def test_empty_excluded_account_history_fails_closed(
 
     view = await read_portfolio(postgres_session_factory, policy, now=now)
 
+    assert view.status == "ready"
+    assert view.excluded_minor_units == 0
+
+
+@pytest.mark.asyncio
+async def test_spend_does_not_fall_back_when_latest_item_capture_lacks_account_coverage(
+    postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    captured_at = datetime.now(UTC)
+    policy = _policy(
+        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+    )
+    _seed_plaid(
+        postgres_engine,
+        balances=[
+            _balance("asset-checking", 1000, captured_at),
+            _balance("asset-brokerage", 2000, captured_at, account_type="investment"),
+            _balance("card-account", 0, captured_at, account_type="credit"),
+        ],
+        holdings=[
+            HoldingObservation(
+                account_id="asset-brokerage",
+                security_id="security-fake-1",
+                capture_id=1,
+                captured_at=captured_at,
+                institution_value=Decimal(1000),
+                holding_currency="USD",
+            )
+        ],
+    )
+    newest_at = captured_at + timedelta(minutes=1)
+    with postgres_engine.begin() as connection:
+        api_event_id = connection.execute(
+            insert(PlaidApiEventRow)
+            .values(
+                endpoint="investments/holdings/get",
+                item_id="fake-item",
+                status="ok",
+                request_json={},
+                response_json={},
+                created_at=newest_at,
+            )
+            .returning(PlaidApiEventRow.id)
+        ).scalar_one()
+        connection.execute(
+            insert(HoldingCaptureRow).values(item_id="fake-item", captured_at=newest_at, api_event_id=api_event_id)
+        )
+
+    view = await read_portfolio(postgres_session_factory, policy, now=newest_at + timedelta(minutes=1))
+
     assert view.status == "unavailable"
-    assert view.net_minor_units is None
-    assert view.sources[0].status == "unavailable"
+    assert "latest Item holding capture does not cover" in view.sources[0].issues[0]
+
+
+@pytest.mark.asyncio
+async def test_spend_fails_closed_on_unlinked_rows_from_an_old_writer(
+    postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    now = datetime.now(UTC)
+    policy = _policy(
+        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+    )
+    _seed_plaid(
+        postgres_engine,
+        balances=[
+            _balance("asset-checking", 1000, now),
+            _balance("asset-brokerage", 2000, now, account_type="investment"),
+            _balance("card-account", 0, now, account_type="credit"),
+        ],
+        holdings=[
+            HoldingObservation(
+                account_id="asset-brokerage",
+                security_id="security-fake-1",
+                capture_id=1,
+                captured_at=now,
+                institution_value=Decimal(1000),
+                holding_currency="USD",
+            )
+        ],
+    )
+    with postgres_engine.begin() as connection:
+        connection.execute(
+            insert(HoldingSnapshotRow).values(
+                account_id="asset-brokerage",
+                item_id="fake-item",
+                security_id="security-fake-1",
+                capture_id=None,
+                captured_at=now + timedelta(seconds=1),
+                institution_value=1000,
+                iso_currency_code="USD",
+                raw_json={},
+            )
+        )
+
+    view = await read_portfolio(postgres_session_factory, policy, now=now + timedelta(minutes=1))
+
+    assert view.status == "unavailable"
+    assert "Unapplied holding observations" in view.sources[0].issues[0]
+
+
+@pytest.mark.asyncio
+async def test_fresh_holding_capture_supersedes_older_unlinked_rows(
+    postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    now = datetime.now(UTC)
+    captured_at = now + timedelta(minutes=1)
+    policy = _policy(
+        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+    )
+    _seed_plaid(
+        postgres_engine,
+        balances=[
+            _balance("asset-checking", 1000, captured_at),
+            _balance("asset-brokerage", 2000, captured_at, account_type="investment"),
+            _balance("card-account", 0, captured_at, account_type="credit"),
+        ],
+        holdings=[
+            HoldingObservation(
+                account_id="asset-brokerage",
+                security_id="security-fake-1",
+                capture_id=1,
+                captured_at=captured_at,
+                institution_value=Decimal(1000),
+                holding_currency="USD",
+            )
+        ],
+    )
+    with postgres_engine.begin() as connection:
+        connection.execute(
+            insert(HoldingSnapshotRow).values(
+                account_id="asset-brokerage",
+                item_id="fake-item",
+                security_id="security-fake-1",
+                capture_id=None,
+                captured_at=now,
+                institution_value=1000,
+                iso_currency_code="USD",
+                raw_json={},
+            )
+        )
+
+    view = await read_portfolio(postgres_session_factory, policy, now=captured_at + timedelta(minutes=1))
+
+    assert view.status == "ready"
+    assert view.assets_minor_units == 300_000
+
+
+@pytest.mark.asyncio
+async def test_fresh_capture_supersedes_an_empty_legacy_holdings_receipt(
+    postgres_engine: Engine, postgres_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    now = datetime.now(UTC)
+    policy = _policy(
+        corrections=[{"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": 2}]
+    )
+    _seed_plaid(
+        postgres_engine,
+        balances=[
+            _balance("asset-checking", 1000, now),
+            _balance("asset-brokerage", 2000, now, account_type="investment"),
+            _balance("card-account", 0, now, account_type="credit"),
+        ],
+        holdings=[
+            HoldingObservation(
+                account_id="asset-brokerage",
+                security_id="security-fake-1",
+                capture_id=1,
+                captured_at=now,
+                institution_value=Decimal(1000),
+                holding_currency="USD",
+            )
+        ],
+    )
+    with postgres_engine.begin() as connection:
+        connection.execute(
+            insert(PlaidApiEventRow),
+            {
+                "endpoint": "investments/holdings/get",
+                "item_id": "fake-item",
+                "status": "ok",
+                "request_json": {},
+                "response_json": {},
+                "created_at": now + timedelta(minutes=1),
+            },
+        )
+
+    stale = await read_portfolio(postgres_session_factory, policy, now=now + timedelta(minutes=2))
+
+    assert stale.status == "unavailable"
+    assert "Unapplied holding observations" in stale.sources[0].issues[0]
+
+    captured_at = now + timedelta(minutes=3)
+    with postgres_engine.begin() as connection:
+        api_event_id = connection.execute(
+            insert(PlaidApiEventRow)
+            .values(
+                endpoint="investments/holdings/get",
+                item_id="fake-item",
+                status="ok",
+                request_json={},
+                response_json={},
+                created_at=captured_at,
+            )
+            .returning(PlaidApiEventRow.id)
+        ).scalar_one()
+        capture_id = connection.execute(
+            insert(HoldingCaptureRow)
+            .values(item_id="fake-item", captured_at=captured_at, api_event_id=api_event_id)
+            .returning(HoldingCaptureRow.id)
+        ).scalar_one()
+        connection.execute(
+            insert(HoldingCaptureAccountRow),
+            {
+                "capture_id": capture_id,
+                "account_id": "asset-brokerage",
+                "item_id": "fake-item",
+                "current": 2000,
+                "iso_currency_code": "USD",
+            },
+        )
+        connection.execute(
+            insert(HoldingSnapshotRow),
+            {
+                "capture_id": capture_id,
+                "account_id": "asset-brokerage",
+                "item_id": "fake-item",
+                "security_id": "security-fake-1",
+                "captured_at": captured_at,
+                "institution_value": 1000,
+                "iso_currency_code": "USD",
+                "raw_json": {},
+            },
+        )
+
+    fresh = await read_portfolio(postgres_session_factory, policy, now=captured_at + timedelta(minutes=1))
+
+    assert fresh.status == "ready"
+    assert fresh.assets_minor_units == 300_000
 
 
 @pytest.mark.asyncio

@@ -11,6 +11,7 @@ from decimal import Decimal, InvalidOperation
 import httpx
 import jwt
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
+from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -86,7 +87,11 @@ async def _read_plaid(
 
     try:
         async with session_factory() as session:
-            account_result = await session.execute(select_account_balances(selected_ids))
+            # Balance and holding selectors must observe one committed capture set.
+            await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+            account_result = await session.execute(
+                select_account_balances(selected_ids, holding_account_ids=sorted(required_holding_accounts))
+            )
             account_rows = account_result.mappings().all()
             holding_rows: Sequence[RowMapping] = ()
             if required_holding_accounts:

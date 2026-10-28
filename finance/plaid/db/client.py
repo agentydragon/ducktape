@@ -8,7 +8,6 @@ from typing import cast
 
 import certifi
 import plaid
-from plaid import ApiClient
 from plaid.api import plaid_api
 from plaid.exceptions import ApiException as PlaidApiException
 from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
@@ -18,19 +17,9 @@ from plaid.model.country_code import CountryCode
 from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
 from plaid.model.institutions_get_by_id_request_options import InstitutionsGetByIdRequestOptions
 from plaid.model.institutions_search_request import InstitutionsSearchRequest
-from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
-from plaid.model.investments_holdings_get_response import InvestmentsHoldingsGetResponse
-from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
-from plaid.model.investments_transactions_get_response import InvestmentsTransactionsGetResponse
-from plaid.model.item_get_request import ItemGetRequest
-from plaid.model.item_get_response import ItemGetResponse
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.item_public_token_exchange_response import ItemPublicTokenExchangeResponse
 from plaid.model.item_remove_request import ItemRemoveRequest
-from plaid.model.item_webhook_update_request import ItemWebhookUpdateRequest
-from plaid.model.item_webhook_update_response import ItemWebhookUpdateResponse
-from plaid.model.liabilities_get_request import LiabilitiesGetRequest
-from plaid.model.liabilities_get_response import LiabilitiesGetResponse
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
 from plaid.model.link_token_transactions import LinkTokenTransactions
@@ -126,8 +115,9 @@ class PlaidClient:
         self._api = api
 
     @property
-    def api_client(self) -> ApiClient:
-        return cast(ApiClient, self._api.api_client)
+    def sdk(self) -> plaid_api.PlaidApi:
+        """The generated SDK surface used by sync when it needs raw HTTP responses."""
+        return self._api
 
     def close(self) -> None:
         self._api.api_client.close()
@@ -267,15 +257,6 @@ class PlaidClient:
     def item_public_token_exchange(self, request: ItemPublicTokenExchangeRequest, /) -> ItemPublicTokenExchangeResponse:
         return cast(ItemPublicTokenExchangeResponse, self._api.item_public_token_exchange(request))
 
-    def item_get(self, request: ItemGetRequest, /) -> ItemGetResponse:
-        return cast(ItemGetResponse, self._api.item_get(request))
-
-    def item_webhook_update(self, request: ItemWebhookUpdateRequest, /) -> ItemWebhookUpdateResponse:
-        try:
-            return cast(ItemWebhookUpdateResponse, self._api.item_webhook_update(request))
-        except PlaidApiException as exc:
-            raise _plaid_api_error("/item/webhook/update", exc) from exc
-
     def webhook_verification_key_get(
         self, request: WebhookVerificationKeyGetRequest, /
     ) -> WebhookVerificationKeyGetResponse:
@@ -295,17 +276,6 @@ class PlaidClient:
 
     def transactions_sync(self, request: TransactionsSyncRequest, /) -> TransactionsSyncResponse:
         return cast(TransactionsSyncResponse, self._api.transactions_sync(request))
-
-    def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> InvestmentsHoldingsGetResponse:
-        return cast(InvestmentsHoldingsGetResponse, self._api.investments_holdings_get(request))
-
-    def investments_transactions_get(
-        self, request: InvestmentsTransactionsGetRequest, /
-    ) -> InvestmentsTransactionsGetResponse:
-        return cast(InvestmentsTransactionsGetResponse, self._api.investments_transactions_get(request))
-
-    def liabilities_get(self, request: LiabilitiesGetRequest, /) -> LiabilitiesGetResponse:
-        return cast(LiabilitiesGetResponse, self._api.liabilities_get(request))
 
     def sandbox_public_token_create(
         self, request: SandboxPublicTokenCreateRequest, /

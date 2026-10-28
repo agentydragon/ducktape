@@ -62,7 +62,10 @@ py_test(
 py_library(
     name = "read_model",
     srcs = ["read_model.py"],
-    visibility = ["//finance/augur:__subpackages__"],
+    visibility = [
+        "//finance/augur:__subpackages__",
+        "//finance/plaid/spend:__subpackages__",
+    ],
     deps = [
         ":models",
         "@pypi//sqlalchemy",
@@ -137,9 +140,11 @@ py_test(
         ":link_store",
         ":sync",
         "//:conftest",
+        "//finance/plaid:payloads",
         "@pypi//plaid_python",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//urllib3",
     ],
 )
 
@@ -185,6 +190,7 @@ py_library(
         ":secret_store",
         "//finance/plaid:payloads",
         "@pypi//plaid_python",
+        "@pypi//urllib3",
     ],
 )
 
@@ -225,5 +231,23 @@ py_library(
         ":testing",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_capture_migration",
+    size = "medium",
+    srcs = ["test_capture_migration.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":link_store",
+        "//:conftest",
+        "//util:db_url",
+        "//util/testing:postgres",
+        "@pypi//alembic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
