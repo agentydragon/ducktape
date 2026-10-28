@@ -1,0 +1,24 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm_ducktape//:eslint/package_json.bzl", eslint_bin = "bin")
+
+package(default_visibility = ["//visibility:public"])
+
+js_library(
+    name = "config",
+    srcs = ["eslint.config.mjs"],
+    tags = ["no-lint"],
+    deps = [
+        "//:eslintrc",
+        "//:node_modules/@typescript-eslint/eslint-plugin",
+        "//:node_modules/@typescript-eslint/parser",
+    ],
+)
+
+eslint_bin.eslint_binary(
+    name = "eslint",
+    data = [":config"],
+    fixed_args = [
+        "--config",
+        "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath :eslint.config.mjs)",
+    ],
+)
