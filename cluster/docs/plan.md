@@ -28,9 +28,9 @@ editing a route.
 ## Next Actions
 
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
-      SeaweedFS-backed PVC holding non-regeneratable state). Only
-      `grocy-{sf,vallejo}` and `tana-mcp` use the PVC-to-PVC `rsyncTLS` backup
-      pattern; Home Assistant also has a Restic `ReplicationSource` to SeaweedFS.
+      SeaweedFS-backed PVC holding non-regeneratable state). The named
+      `grocy-{sf,vallejo}` and `tana-mcp` workloads use PVC-to-PVC `rsyncTLS`;
+      Home Assistant also has a Restic `ReplicationSource` to SeaweedFS.
       That does not cover Forgejo's shared storage. The Forgejo loss above was
       survivable only because nothing had been pushed yet, not because we had a
       backup. Destination choice is non-trivial: `seaweedfs-ovh`→`seaweedfs-ovh`
