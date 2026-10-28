@@ -1,6 +1,6 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
-load("//devinfra/js:openapi.bzl", "js_openapi_zod")
+load("//devinfra/js:json_schema_typescript.bzl", "json_schema_typescript")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
@@ -21,20 +21,58 @@ filegroup(
 
 TSCONFIG = "//agentplane/app/frontend:tsconfig"
 
-# Generate the SSH argument/result validators from the schema FastMCP builds from the server's
-# registered tool signature and return type.
-js_openapi_zod(
-    name = "ssh_action_schemas_generated",
-    out = "schemas/ssh/exec.zod.ts",
-    generator = "//ssh_mcp_server:export_frontend_schema_bin",
-    tsconfig = "//agentplane/app/frontend:tsconfig_generated",
+genrule(
+    name = "ssh_action_schema_json_files",
+    srcs = [
+        "//ssh_mcp_server:exec.arguments.schema.json",
+        "//ssh_mcp_server:exec.result.schema.json",
+    ],
+    outs = [
+        "schemas/ssh/exec.arguments.schema.json",
+        "schemas/ssh/exec.result.schema.json",
+    ],
+    cmd = "mkdir -p $(RULEDIR)/schemas/ssh && cp $(location //ssh_mcp_server:exec.arguments.schema.json) $(RULEDIR)/schemas/ssh/exec.arguments.schema.json && cp $(location //ssh_mcp_server:exec.result.schema.json) $(RULEDIR)/schemas/ssh/exec.result.schema.json",
+)
+
+js_library(
+    name = "ssh_action_schema_json",
+    srcs = [":ssh_action_schema_json_files"],
+)
+
+json_schema_typescript(
+    name = "ssh_action_arguments_types_codegen",
+    out = "schemas/ssh/exec.arguments.d.ts",
+    schema = "//ssh_mcp_server:exec.arguments.schema.json",
+)
+
+json_schema_typescript(
+    name = "ssh_action_result_types_codegen",
+    out = "schemas/ssh/exec.result.d.ts",
+    schema = "//ssh_mcp_server:exec.result.schema.json",
+)
+
+js_library(
+    name = "ssh_action_arguments_types",
+    srcs = [":ssh_action_arguments_types_codegen"],
+    tags = ["no-lint"],
+)
+
+js_library(
+    name = "ssh_action_result_types",
+    srcs = [":ssh_action_result_types_codegen"],
+    tags = ["no-lint"],
 )
 
 ts_library(
     name = "ssh_action_schemas",
     srcs = ["schemas/ssh/exec.ts"],
     tsconfig = TSCONFIG,
-    deps = [":ssh_action_schemas_generated"],
+    deps = [
+        ":ssh_action_arguments_types",
+        ":ssh_action_result_types",
+        ":ssh_action_schema_json",
+        "//:node_modules/zod",
+    ],
 )
 
 # Validators and text shared by the GitHub Action widgets and their notification formatters.

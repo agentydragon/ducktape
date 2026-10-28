@@ -42,6 +42,43 @@ py_binary(
     deps = [":export_frontend_schema"],
 )
 
+genrule(
+    name = "frontend_exec_schemas",
+    outs = [
+        "exec.arguments.schema.json",
+        "exec.result.schema.json",
+    ],
+    cmd = "$(location :export_frontend_schema_bin) $(RULEDIR)/exec.arguments.schema.json $(RULEDIR)/exec.result.schema.json",
+    tools = [":export_frontend_schema_bin"],
+    visibility = ["//agentplane/app/frontend/actions:__pkg__"],
+)
+
+py_library(
+    name = "export_exec_payload_fixture",
+    testonly = True,
+    srcs = ["export_exec_payload_fixture.py"],
+    deps = [
+        ":server",
+        "@pypi//fastmcp_slim",
+    ],
+)
+
+py_binary(
+    name = "export_exec_payload_fixture_bin",
+    testonly = True,
+    main_module = "ssh_mcp_server.export_exec_payload_fixture",
+    deps = [":export_exec_payload_fixture"],
+)
+
+genrule(
+    name = "exec_payload_fixture",
+    testonly = True,
+    outs = ["exec_payload_fixture.json"],
+    cmd = "$(location :export_exec_payload_fixture_bin) $@",
+    tools = [":export_exec_payload_fixture_bin"],
+    visibility = ["//agentplane/app/frontend/actions/rendering:__pkg__"],
+)
+
 py_test(
     name = "test_server",
     srcs = ["test_server.py"],
