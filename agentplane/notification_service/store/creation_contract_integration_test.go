@@ -40,7 +40,26 @@ func TestSubscriptionCreationContractRefusesPopulatedDatabaseWithoutProofsThenRe
 		g := newCreationContractFixture(t, defaultQuotas())
 		creation := body("creation-contract-refusal")
 		subscription := g.subscribe(t, creation)
-		legacyJSON, err := json.Marshal(creation)
+		actionSource := creation.Source.(model.ActionsSource)
+		legacyJSON, err := json.Marshal(struct {
+			DestinationRef model.DestinationRef `json:"destination_ref"`
+			SessionID      string               `json:"session_id"`
+			IdempotencyKey string               `json:"idempotency_key"`
+			Source         struct {
+				Provider      string    `json:"provider"`
+				RequestID     uuid.UUID `json:"request_id"`
+				AfterSequence int64     `json:"after_sequence"`
+			} `json:"source"`
+			LifetimeDays int64 `json:"lifetime_days"`
+		}{
+			DestinationRef: creation.DestinationRef, SessionID: creation.SessionID, IdempotencyKey: creation.IdempotencyKey,
+			Source: struct {
+				Provider      string    `json:"provider"`
+				RequestID     uuid.UUID `json:"request_id"`
+				AfterSequence int64     `json:"after_sequence"`
+			}{Provider: "actions", RequestID: actionSource.RequestID, AfterSequence: actionSource.AfterSequence},
+			LifetimeDays: creation.LifetimeDays,
+		})
 		if err != nil {
 			t.Fatal(err)
 		}

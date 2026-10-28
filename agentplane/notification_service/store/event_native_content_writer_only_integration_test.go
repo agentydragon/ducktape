@@ -2,7 +2,6 @@ package store
 
 import (
 	"database/sql"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -21,7 +20,7 @@ func TestNativeOnlyWriterMigrationRequiresBackfillAndRetiresUnsafeCommand(t *tes
 	f := fixtureForDatabase(t, db, defaultQuotas())
 	subscription := f.subscribe(t, body("typed-only"))
 	event := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
-	eventJSON, err := json.Marshal(event)
+	eventJSON, err := marshalHistoricalEventIdentity(event)
 	if err != nil {
 		t.Fatal(err)
 	}

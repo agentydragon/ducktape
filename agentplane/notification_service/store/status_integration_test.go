@@ -169,7 +169,7 @@ func TestSandboxStatusSummarizesWhatAwaitsAcknowledgementWithoutItsContent(t *te
 }
 
 func TestSandboxStatusSummarizesTypedContentWhenLegacyJSONConflicts(t *testing.T) {
-	f := newFixture(t, defaultQuotas())
+	f := newEventIdentityWriterOnlyFixture(t)
 	ref := uniqueSandbox()
 	f.sandboxUID = ref.UID
 	subscription := f.subscribeIn(t, "typed-summary", uniqueSession(), ref)

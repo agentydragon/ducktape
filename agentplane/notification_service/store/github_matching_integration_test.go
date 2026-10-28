@@ -74,7 +74,7 @@ func TestRedeliveryIsNotDeliveredAgain(t *testing.T) {
 }
 
 func TestDeliverySelectorUsesRelationalIdentityAfterWriterOnlyCutover(t *testing.T) {
-	g := newGitHubFixture(t)
+	g := newGitHubFixtureWithStoreFixture(t, newEventIdentityWriterOnlyFixture(t))
 	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	nilAction := g.deliver(t, "issue_comment", onPullRequest(7), labelled("nil action"))
 	emptyAction := g.deliver(t, "issue_comment", withAction(""), onPullRequest(7), labelled("empty action"))

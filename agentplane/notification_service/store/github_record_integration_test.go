@@ -352,7 +352,7 @@ func TestDeliveriesPythonAlreadyRecordedAreNotRecordedAgain(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			insertBackfilledEntry(t, g.db, g.inbox, 1, recorded, "{}")
+			insertContractedHistoricalEntry(t, g.db, g.inbox, 1, recorded, "{}")
 			g.exec(t, `INSERT INTO subscription_match (subscription_id, cursor) VALUES ($1, 1)`, sub.ID)
 			g.exec(t, `UPDATE inbox SET last_cursor = 1 WHERE id = $1`, g.inbox)
 
