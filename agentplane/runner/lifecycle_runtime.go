@@ -37,7 +37,11 @@ func newLifecycle(r *Runner) (*lifecycle, error) {
 	if err := engine.RegisterQController(&sessionLifecycleController{l: l}); err != nil {
 		return nil, err
 	}
-	for _, c := range []controller.QController{&executorLifecycleController{l: l}, &codexLifecycleController{l: l}, &bootstrapLifecycleController{l: l}} {
+	for _, c := range []controller.QController{
+		&executorLifecycleController{l: l, host: r.executor},
+		&codexLifecycleController{l: l, host: r.codex, executor: r.executor},
+		&bootstrapLifecycleController{l: l},
+	} {
 		if err := engine.RegisterQController(c); err != nil {
 			return nil, err
 		}

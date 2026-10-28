@@ -46,7 +46,11 @@ type codexRuntimeSpec struct {
 
 const codexExecutorReadyBudget = 30 * time.Second
 
-type codexLifecycleController struct{ l *lifecycle }
+type codexLifecycleController struct {
+	l        *lifecycle
+	host     *codexServer
+	executor *codexExecutor
+}
 
 func (*codexLifecycleController) Name() string { return codexControllerName }
 
@@ -99,7 +103,7 @@ func (c *codexLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger,
 		}
 		return err
 	}
-	server := c.l.runner.codex
+	server := c.host
 	if server == nil {
 		current = codexRuntimeSpec{Phase: codexStopped}
 		return write()
@@ -272,7 +276,7 @@ func (c *codexLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger,
 		return write()
 	}
 
-	if c.l.runner.executor != nil {
+	if c.executor != nil {
 		executor, found, err := lifecycleRead[executorRuntimeSpec](ctx, r, "executor")
 		if err != nil {
 			return err

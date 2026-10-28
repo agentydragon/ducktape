@@ -59,7 +59,10 @@ const (
 	executorControllerInput = "executor"
 )
 
-type executorLifecycleController struct{ l *lifecycle }
+type executorLifecycleController struct {
+	l    *lifecycle
+	host *codexExecutor
+}
 
 func (*executorLifecycleController) Name() string { return executorControllerName }
 
@@ -94,7 +97,7 @@ func (c *executorLifecycleController) MapInput(ctx context.Context, _ *zap.Logge
 }
 
 func (c *executorLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr resource.Pointer) error {
-	e := c.l.runner.executor
+	e := c.host
 	if e == nil {
 		return nil
 	}
@@ -413,16 +416,16 @@ func (c *executorLifecycleController) reconcileStop(ctx context.Context, e *code
 }
 
 func (c *executorLifecycleController) hostOperationPending(slot **operation) bool {
-	c.l.runner.executor.mu.Lock()
+	c.host.mu.Lock()
 	op := *slot
-	c.l.runner.executor.mu.Unlock()
+	c.host.mu.Unlock()
 	return op != nil
 }
 
 func (c *executorLifecycleController) cancelHostOperation(slot **operation) {
-	c.l.runner.executor.mu.Lock()
+	c.host.mu.Lock()
 	op := *slot
-	c.l.runner.executor.mu.Unlock()
+	c.host.mu.Unlock()
 	if op != nil && op.cancel != nil {
 		op.cancel()
 	}
