@@ -323,3 +323,17 @@ fn pure_tagged_template_reader_precedes_later_array_write() {
     assert_preserved_entry_output(&fixture, "0\n");
     assert_sequenced_edge(&fixture.dependency_graph(), 3, 2);
 }
+
+#[test]
+fn array_allocation_keeps_opaque_heap_frontier_live_without_read_syntax() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const values = [];\nglobalThis.noop = () => {};\nglobalThis.noop();\n",
+        vec![
+            logical_module("values", &[Member::new("values")]),
+            logical_module_with_anon("register", &[], &["globalThis.noop = () => {};"]),
+            logical_module_with_anon("invoke", &[], &["globalThis.noop();"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "");
+    assert_sequenced_edge(&fixture.dependency_graph(), 2, 0);
+}
