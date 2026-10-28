@@ -264,7 +264,7 @@ func TestCloseAfterQuiescePreservesSealAndWaitsForSetup(t *testing.T) {
 	}
 
 	closeDone := make(chan error, 1)
-	go func() { closeDone <- r.Close() }()
+	go func() { closeDone <- r.Close(context.Background()) }()
 	waitLifecycle(t, r, func() bool {
 		desiredState := r.lifecycle.desiredState()
 		return desiredState.Mode == runnerlifecycle.Closing && desiredState.SealUID == "test-incarnation" &&
@@ -384,7 +384,7 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 		t.Fatalf("facts during admission = %v, want Admission blocker without idle token", facts)
 	}
 	closeDone := make(chan error, 1)
-	go func() { closeDone <- r.Close() }()
+	go func() { closeDone <- r.Close(context.Background()) }()
 	if err := runnerlifecycle.WatchStatus(ctx, r.lifecycle.state, func(runtime runnerlifecycle.Status) (bool, error) {
 		return runtime.Stage == runnerlifecycle.Draining, nil
 	}); err != nil {
@@ -475,7 +475,7 @@ func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
 func TestCloseProgressesForEmptyRunner(t *testing.T) {
 	r := newBareRunner(t)
 	closeDone := make(chan error, 1)
-	go func() { closeDone <- r.Close() }()
+	go func() { closeDone <- r.Close(context.Background()) }()
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatalf("Close empty Runner: %v", err)
 	}

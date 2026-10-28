@@ -35,7 +35,7 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 	}
 
 	closeDone := make(chan error, 1)
-	go func() { closeDone <- r.Close() }()
+	go func() { closeDone <- r.Close(context.Background()) }()
 	waitLifecycle(t, r, func() bool { return r.lifecycle.desiredState().Mode == runnerlifecycle.Closing }, "runner close request")
 	select {
 	case err := <-closeDone:
@@ -61,7 +61,7 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := restarted.Close(); err != nil {
+	if err := restarted.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if data, err := os.ReadFile(count); err != nil || string(data) != "b" {

@@ -48,6 +48,7 @@ type Runner struct {
 	idleSince           *timestamppb.Timestamp
 	lifecycle           *lifecycle
 	closeOnce           sync.Once
+	closeDone           chan struct{}
 	closeErr            error
 }
 
@@ -337,33 +338,50 @@ func (r *Runner) Quiesce(_ context.Context, q *runnerpb.QuiesceRequest) (*runner
 	return &runnerpb.QuiesceResponse{Stage: runnerpb.QuiesceStage(facts.QuiesceStage)}, nil
 }
 
-func (r *Runner) Close() error {
+// Close starts local process cleanup once. Canceling ctx ends only this caller's wait;
+// accepted setup/bootstrap and the shared cleanup continue under Runner ownership.
+func (r *Runner) Close(ctx context.Context) error {
 	r.closeOnce.Do(func() {
-		r.mu.Lock()
-		err := r.lifecycle.setDesiredState(runnerlifecycle.Closing, "")
-		r.mu.Unlock()
-		r.changed()
-		if err == nil {
-			err = r.lifecycle.wait(r.ctx, runnerlifecycle.Closed)
-		}
-		if err != nil {
-			r.closeErr = err
-			return
-		}
-		// Controllers stop before joining workers, so no new operation can race Wait.
-		r.cancel()
-		<-r.lifecycle.done
-		r.lifecycle.workers.Wait()
-		var errs []error
-		errs = append(errs, r.sessions.Close())
-		if r.bootstrapHost != nil {
-			errs = append(errs, r.bootstrapHost.CloseLog())
-		}
-		if err := errors.Join(errs...); err != nil {
-			r.closeErr = err
-			return
-		}
-		r.closeErr = r.owner.Close()
+		r.closeDone = make(chan struct{})
+		go func() {
+			r.closeErr = r.finishClose()
+			close(r.closeDone)
+		}()
 	})
-	return r.closeErr
+	select {
+	case <-r.closeDone:
+		return r.closeErr
+	default:
+	}
+	select {
+	case <-r.closeDone:
+		return r.closeErr
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (r *Runner) finishClose() error {
+	r.mu.Lock()
+	err := r.lifecycle.setDesiredState(runnerlifecycle.Closing, "")
+	r.mu.Unlock()
+	r.changed()
+	if err == nil {
+		err = r.lifecycle.wait(r.ctx, runnerlifecycle.Closed)
+	}
+	if err != nil {
+		return err
+	}
+	// Controllers stop before joining workers, so no new operation can race Wait.
+	r.cancel()
+	<-r.lifecycle.done.Done()
+	r.lifecycle.workers.Wait()
+	errs := []error{r.sessions.Close()}
+	if r.bootstrapHost != nil {
+		errs = append(errs, r.bootstrapHost.CloseLog())
+	}
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+	return r.owner.Close()
 }

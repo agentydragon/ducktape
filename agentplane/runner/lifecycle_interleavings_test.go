@@ -103,7 +103,7 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 			finishSetup()
 		case "close":
 			completed = make(chan error, 1)
-			go func() { completed <- r.Close() }()
+			go func() { completed <- r.Close(context.Background()) }()
 			if !released["admission"] || !released["setup"] {
 				waitLifecycle(t, r, func() bool {
 					return r.lifecycle.desiredState().Mode == runnerlifecycle.Closing

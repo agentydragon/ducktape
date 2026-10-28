@@ -16,7 +16,7 @@ import (
 
 func (r *Runner) Run(ctx context.Context, controlEndpoint, ingressEndpoint Endpoint) error {
 	if err := r.Startup(r.ctx); err != nil {
-		return errors.Join(err, r.Close())
+		return errors.Join(err, r.Close(context.WithoutCancel(ctx)))
 	}
 	controlClient, err := control.New(control.Dependencies{
 		BootID:           r.bootID,
@@ -30,9 +30,9 @@ func (r *Runner) Run(ctx context.Context, controlEndpoint, ingressEndpoint Endpo
 		},
 	})
 	if err != nil {
-		return errors.Join(err, r.Close())
+		return errors.Join(err, r.Close(context.WithoutCancel(ctx)))
 	}
-	streamCtx, cancel := context.WithCancel(context.Background())
+	streamCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	var streams sync.WaitGroup
 	streams.Add(2)
 	go func() {
@@ -52,7 +52,7 @@ func (r *Runner) Run(ctx context.Context, controlEndpoint, ingressEndpoint Endpo
 	case <-ctx.Done():
 	case failure = <-r.fatal:
 	}
-	closeErr := r.Close()
+	closeErr := r.Close(context.WithoutCancel(ctx))
 	cancel()
 	streams.Wait()
 	return errors.Join(failure, closeErr)

@@ -128,7 +128,7 @@ func TestManagedProcessBlocksCloseUntilFence(t *testing.T) {
 	closeDone := make(chan struct{})
 	var closeErr error
 	go func() {
-		closeErr = r.Close()
+		closeErr = r.Close(context.Background())
 		close(closeDone)
 	}()
 	t.Cleanup(func() {
@@ -183,7 +183,7 @@ func newManagedProcessTestRunner(t *testing.T) *Runner {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := r.Close(); err != nil {
+		if err := r.Close(context.Background()); err != nil {
 			t.Errorf("close managed process test runner: %v", err)
 		}
 	})

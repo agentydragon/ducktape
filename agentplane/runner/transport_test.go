@@ -177,7 +177,7 @@ func newBareRunner(t *testing.T) *Runner {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := runner.Close(); err != nil {
+		if err := runner.Close(context.Background()); err != nil {
 			t.Errorf("close test runner: %v", err)
 		}
 	})

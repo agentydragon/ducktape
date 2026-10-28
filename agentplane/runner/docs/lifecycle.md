@@ -226,6 +226,12 @@ ingress acknowledgement. If it supersedes Quiesce before the exact final cursors
 the journals remain sealed and durable, but the Runner can close while Quiesce is still reporting
 `FLUSHING`.
 
+The local `Close(ctx)` method starts one shared cleanup operation. Each caller can stop waiting
+without canceling accepted setup/bootstrap or the cleanup. Lifecycle waits observe engine completion
+and return its failure cause if it exits; failed cleanup retains state ownership. `Run` waits for
+local cleanup independently of its signal context, while control and ingress remain available until
+that wait settles. `Quiesce` remains the only teardown RPC.
+
 An ordinary `Close` without a Quiesce seal stops the processes but leaves journals reopenable. On a
 new authenticated incarnation, the host durably reopens journals sealed by a different incarnation
 before accepting work; the same-incarnation lameduck marker continues to reject it. If a replacement

@@ -248,6 +248,11 @@ budget remains authoritative across all of its native services.
   generation from running cleanup. Close does not wait for ingress acknowledgement;
   if it supersedes Quiesce before that acknowledgement, the durable seals remain but the Runner can
   close while quiesce progress is still `FLUSHING`.
+- `Close(ctx)` is local process cleanup, not an RPC. Concurrent callers wait for the same cleanup;
+  a caller's cancellation or deadline ends only its wait, while accepted setup/bootstrap and cleanup
+  continue under Runner ownership. Lifecycle-engine exit interrupts waits with its failure cause;
+  incomplete cleanup never reports successful Close or releases state ownership. Process termination
+  waits for local cleanup independently of the signal context; it does not require ingress acknowledgement.
 - One in-memory COSI Runtime per Runner schedules five controller roles: Runner, Session (including
   one-shot setup), Codex exec-server, shared Codex app-server, and Sandbox bootstrap. Controllers own
   lifecycle policy, including readiness probes, restart deadlines and dependency-ordered shutdown;

@@ -17,6 +17,8 @@ func (l *lifecycle) waitFor(ctx context.Context, predicate func() (bool, error))
 			return ctx.Err()
 		case <-l.runner.ctx.Done():
 			return l.runner.ctx.Err()
+		case <-l.done.Done():
+			return context.Cause(l.done)
 		}
 	}
 }

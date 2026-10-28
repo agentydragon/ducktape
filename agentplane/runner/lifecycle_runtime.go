@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
@@ -24,7 +25,8 @@ type lifecycle struct {
 	runner    *Runner
 	state     state.State
 	engine    *cosiruntime.Runtime
-	done      chan struct{}
+	done      context.Context
+	finish    context.CancelCauseFunc
 	publishMu sync.Mutex
 	workers   sync.WaitGroup
 	processes *supervision.Host
@@ -41,7 +43,9 @@ func newLifecycle(r *Runner, adapters *codexexecserver.Adapters, store state.Sta
 	if err != nil {
 		return nil, err
 	}
-	l := &lifecycle{runner: r, state: store, engine: engine, done: make(chan struct{})}
+	// Completion is separate from Runner cancellation: workers are joined only after the engine exits.
+	done, finish := context.WithCancelCause(context.WithoutCancel(r.ctx))
+	l := &lifecycle{runner: r, state: store, engine: engine, done: done, finish: finish}
 	l.processes = supervision.NewHost(r.ctx, l.state, runnerlifecycle.Namespace, &l.workers, r.fail)
 	bootstrapHost, err := bootstrap.NewHost(bootstrap.Config{
 		Script: r.config.Launch.Bootstrap, StateDir: r.config.StateDir,
@@ -122,10 +126,18 @@ func (r *Runner) launchProcess(ctx context.Context, owner string, supervisor *su
 }
 
 func (l *lifecycle) run() {
-	defer close(l.done)
-	if err := l.engine.Run(l.runner.ctx); err != nil && !errors.Is(err, context.Canceled) {
-		l.runner.fail(err)
+	err := l.engine.Run(l.runner.ctx)
+	switch {
+	case err != nil && !errors.Is(err, context.Canceled):
+		err = fmt.Errorf("Runner lifecycle engine stopped: %w", err)
+	case l.runner.ctx.Err() != nil:
+		l.finish(context.Cause(l.runner.ctx))
+		return
+	default:
+		err = errors.New("Runner lifecycle engine stopped unexpectedly")
 	}
+	l.finish(err)
+	l.runner.fail(err)
 }
 
 func (l *lifecycle) desiredState() runnerlifecycle.Desired {
@@ -210,14 +222,20 @@ func (l *lifecycle) status() runnerlifecycle.Status {
 }
 
 func (l *lifecycle) wait(ctx context.Context, minimum runnerlifecycle.Stage) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	stop := context.AfterFunc(l.runner.ctx, cancel)
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	stop := context.AfterFunc(l.runner.ctx, func() { cancel(context.Cause(l.runner.ctx)) })
 	defer stop()
-	return runnerlifecycle.WatchStatus(ctx, l.state, func(current runnerlifecycle.Status) (bool, error) {
+	stopEngine := context.AfterFunc(l.done, func() { cancel(context.Cause(l.done)) })
+	defer stopEngine()
+	err := runnerlifecycle.WatchStatus(ctx, l.state, func(current runnerlifecycle.Status) (bool, error) {
 		if current.Error != "" {
 			return false, errors.New(current.Error)
 		}
 		return current.Generation == l.desiredState().Generation && current.Stage >= minimum, nil
 	})
+	if err != nil && errors.Is(err, ctx.Err()) {
+		return context.Cause(ctx)
+	}
+	return err
 }

@@ -150,7 +150,7 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 		if !expired.ExecServerReadyDeadline.IsZero() {
 			t.Errorf("Codex retained expired dependency deadline: %s", expired.ExecServerReadyDeadline)
 		}
-		if err := r.Close(); err != nil {
+		if err := r.Close(context.Background()); err != nil {
 			t.Fatalf("close synctest Runner: %v", err)
 		}
 	})
@@ -209,7 +209,7 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 	}
 	t.Cleanup(func() {
 		if r.closeErr == nil {
-			if err := r.Close(); err != nil {
+			if err := r.Close(context.Background()); err != nil {
 				t.Errorf("close Codex synctest Runner: %v", err)
 			}
 		}
@@ -221,10 +221,10 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 func forceStopTestRunner(t *testing.T, r *Runner) {
 	t.Helper()
 	select {
-	case <-r.lifecycle.done:
+	case <-r.lifecycle.done.Done():
 	default:
 		r.cancel()
-		<-r.lifecycle.done
+		<-r.lifecycle.done.Done()
 	}
 	r.lifecycle.workers.Wait()
 	if err := r.owner.Close(); err != nil {
