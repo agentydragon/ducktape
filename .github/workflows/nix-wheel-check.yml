@@ -116,13 +116,6 @@ jobs:
             --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
           echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
 
-      - name: Check generated command policies
-        run: |
-          nix build --no-link --print-out-paths \
-            .#checks.x86_64-linux.claude-code-permissions \
-            .#checks.x86_64-linux.codex-execpolicy-evaluation \
-            .#checks.x86_64-linux.gemini-cli-integration
-
       # Derive the Bazel target list + nix package list from the SSOT.
       # A release is in-gate when its `nixPackage: true`; every pin in an
       # in-gate release gets its target built and its output overridden.
@@ -167,16 +160,24 @@ jobs:
       # github.sha is the synthetic merge commit, keeping the remote build on
       # the same base+PR tree as the GitHub runner. Same rationale as
       # bazel-ci.yml.
-      - name: Build artifacts from source
-        uses: ./.github/actions/bb-remote
-        with:
-          args: build --invocation_id=${{ steps.invocation.outputs.id }} ${{ steps.inputs.outputs.bazel_targets }}
-          linkage_roles: nix-wheel-build
-          bazel_invocation_ids: ${{ steps.invocation.outputs.id }}
-          # Rotate away from the exhausted workspace while retaining warm
-          # runner reuse for subsequent artifact builds.
-          runner_recycling_key: ducktape-nix-wheel-v2
-          run_from_commit: ${{ steps.source.outputs.sha }}
+      - parallel:
+          - name: Check generated command policies
+            run: |
+              nix build --no-link --print-out-paths \
+                .#checks.x86_64-linux.claude-code-permissions \
+                .#checks.x86_64-linux.codex-execpolicy-evaluation \
+                .#checks.x86_64-linux.gemini-cli-integration
+
+          - name: Build artifacts from source
+            uses: ./.github/actions/bb-remote
+            with:
+              args: build --invocation_id=${{ steps.invocation.outputs.id }} ${{ steps.inputs.outputs.bazel_targets }}
+              linkage_roles: nix-wheel-build
+              bazel_invocation_ids: ${{ steps.invocation.outputs.id }}
+              # Rotate away from the exhausted workspace while retaining warm
+              # runner reuse for subsequent artifact builds.
+              runner_recycling_key: ducktape-nix-wheel-v2
+              run_from_commit: ${{ steps.source.outputs.sha }}
 
       - name: Fetch artifacts
         env:
