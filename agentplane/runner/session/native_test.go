@@ -147,7 +147,7 @@ func frameTestSessionWithController(t *testing.T, command []string, controller b
 		<-done
 		workers.Wait()
 		s.work.Wait()
-		s.readers.Wait()
+		s.connection.readers.Wait()
 		if err := m.Close(); err != nil {
 			t.Error(err)
 		}
@@ -173,8 +173,8 @@ func TestNativeReplyWaitsForTranslationCommit(t *testing.T) {
 			return ctx.Err()
 		}
 	}}
-	s.readers.Add(1)
-	go s.readStdout(p, adapter)
+	s.connection.readers.Add(1)
+	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	done := make(chan nativeResult, 1)
@@ -297,8 +297,8 @@ func TestNativeHandshakeWaitCancellationLeavesLateResponseJournaled(t *testing.T
 		close(lateReplyReceived)
 		return nil
 	}}
-	s.readers.Add(1)
-	go s.readStdout(p, adapter)
+	s.connection.readers.Add(1)
+	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
@@ -341,9 +341,9 @@ func TestNativeHandshakeWaitCancellationLeavesLateResponseJournaled(t *testing.T
 func TestStdoutRetainsFinalFrameWithoutNewline(t *testing.T) {
 	s, p, _ := frameTestSession(t, []string{"/bin/sh", "-c", `printf '{"final":true}\r'`})
 	adapter := frameTestAdapter{onFrame: func(context.Context, json.RawMessage, uint64) error { return nil }}
-	s.readers.Add(1)
-	go s.readStdout(p, adapter)
-	s.readers.Wait()
+	s.connection.readers.Add(1)
+	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+	s.connection.readers.Wait()
 	entries, err := s.journal.Since(context.Background(), 0, 128)
 	if err != nil {
 		t.Fatal(err)
@@ -423,8 +423,8 @@ func TestInterruptedReconciliationLeavesStdoutFreeForHistoryRPC(t *testing.T) {
 	if err := s.Emit(context.Background(), observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
 		t.Fatal(err)
 	}
-	s.readers.Add(1)
-	go s.readStdout(p, adapter)
+	s.connection.readers.Add(1)
+	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.SendNative(ctx, json.RawMessage(`{"interrupt":true}`)); err != nil {

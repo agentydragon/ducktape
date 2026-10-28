@@ -36,6 +36,8 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 - `session/`: durable Session inventory, recovery, journal and native protocol effects, setup,
   status projection, owned operation results, COSI input/runtime resources and controller. Runner
   supplies the synchronous admission barrier and shared process, workspace and ingress facilities.
+  Its native connection owns stream framing, reader joins and handshake waiters; Session supplies
+  frame translation and lifecycle callbacks and retains the exact-turn native-write gate.
 - `codex/execserver/`: isolated executor configuration, COSI resources and controller, host-owned probe
   operations, native launch adapter, RPC probes and container ownership fencing
   ([execution modes](docs/codex_executor.md)). The package takes explicit process, state and admission
