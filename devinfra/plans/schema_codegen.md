@@ -378,9 +378,9 @@ flowchart LR
     tool_export --> tool_json
     model_json --> json_typegen
     tool_json --> json_typegen
-    zod_ts["Generated Zod .ts / .mts<br/>raw file label"]:::artifact
+    zod_ts["Generated Zod .ts<br/>raw file label"]:::artifact
     zod_compile["B: ts_library / tsc<br/>inside macro; named target is compiled library"]:::proposed
-    zod_modules["Compiled Zod outputs<br/>.js + .d.ts or .mjs + .d.mts"]:::artifact
+    zod_modules["Compiled Zod outputs<br/>.js + .d.ts"]:::artifact
     zod_validation["Runtime request / response validation<br/>Augur and Study Casino<br/>TS and plain-JS consumers"]:::consumer
     model_types["Model / catalog .d.ts<br/>raw :out file label"]:::artifact
     model_types_library["Named js_library from the macro<br/>JsInfo.transitive_types"]:::proposed
@@ -685,9 +685,10 @@ checks supported names and compiler failures rather than claiming arbitrary sche
 
 `tsconfig`, declaration emission, module format, and `isolated_typecheck` are compiler settings.
 `openapi_zod_ts_library` fixes the output to a compiled `ts_library`; callers pass its tsconfig and
-runtime dependencies explicitly. The output path only names the generated source (`<name>.ts` by
-default, or `.mts` when a plain JavaScript consumer needs `.mjs` and `.d.mts`). The macro does not
-strip types itself or accept unrelated backend-export options. The spike includes a JavaScript-only
+runtime dependencies explicitly. The output path defaults to `<name>.ts`; Augur and Study Casino
+both use that default, producing `.js` and `.d.ts`. An explicit `out` can select another source path
+or an `.mts` extension for an integration requiring `.mjs` and `.d.mts`. The macro does not strip
+types itself or accept unrelated backend-export options. The spike includes a JavaScript-only
 import so the Study Casino case has a real consumer.
 
 The same distinction applies to Go and Python: code generation produces language artifacts; normal
