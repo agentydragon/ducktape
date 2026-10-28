@@ -89,6 +89,9 @@ func runFakeCertificateSigner(ctx context.Context, objects client.Client, namesp
 		certificates := &unstructured.UnstructuredList{}
 		certificates.SetGroupVersionKind(runnerCertificateGVK.GroupVersion().WithKind("CertificateList"))
 		if err := objects.List(ctx, certificates, client.InNamespace(namespace)); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
 			return err
 		}
 		for i := range certificates.Items {
@@ -98,6 +101,9 @@ func runFakeCertificateSigner(ctx context.Context, objects client.Client, namesp
 					"type": "Ready", "status": "True",
 				}}}
 				if err := objects.Status().Update(ctx, certificate); err != nil && !apierrors.IsConflict(err) {
+					if ctx.Err() != nil {
+						return nil
+					}
 					return err
 				}
 			}
@@ -114,6 +120,9 @@ func runFakeCertificateSigner(ctx context.Context, objects client.Client, namesp
 				Data: map[string][]byte{"tls.crt": []byte("test-cert"), "tls.key": []byte("test-key")},
 			}
 			if err := objects.Create(ctx, secret); err != nil && !apierrors.IsAlreadyExists(err) {
+				if ctx.Err() != nil {
+					return nil
+				}
 				return err
 			}
 		}
@@ -305,11 +314,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	eventually(t, func() bool {
 		return objects.Get(ctx, serviceKey, &service) == nil && len(service.Spec.Selector) == 0 && len(service.Spec.Ports) == 1 && service.Spec.Ports[0].Name == sandboxapi.ControlServicePortName && service.Spec.Ports[0].TargetPort.IntVal == sandboxapi.ControlServicePort
 	})
-	if err := objects.Get(ctx, key, sandbox); err != nil {
-		t.Fatal(err)
-	}
-	sandbox.Spec.PolicySets = nil
-	if err := objects.Update(ctx, sandbox); err != nil {
+	if err := objects.Patch(ctx, sandbox, client.RawPatch(types.MergePatchType, []byte(`{"spec":{"policySets":[]}}`))); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, func() bool { return apierrors.IsNotFound(objects.Get(ctx, key, &policyapi.PolicyBinding{})) })
