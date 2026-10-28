@@ -138,6 +138,9 @@ pub enum CallbackFactoryRejectionReport {
     NamespaceMemberWrite {
         witness: CallbackFactoryWriteWitnessReport,
     },
+    NamespaceDynamicPropertyWrite {
+        witness: CallbackFactoryWriteWitnessReport,
+    },
     UnsupportedGuard,
 }
 

@@ -1840,6 +1840,7 @@ struct ExecutionIndex {
     /// old and stronger contracts remains separate.
     audited_factory_members: BTreeMap<Id, BTreeSet<String>>,
     rejected_namespace_member_writes: BTreeMap<(Id, String), CallbackFactoryWriteWitness>,
+    rejected_namespace_dynamic_property_writes: BTreeMap<(Id, String), CallbackFactoryWriteWitness>,
     retained_callback_factory_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     retained_callback_constructor_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     no_reentry_callback_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
@@ -1938,6 +1939,7 @@ impl Default for ExecutionIndex {
             callback_factory_members: BTreeMap::new(),
             audited_factory_members: BTreeMap::new(),
             rejected_namespace_member_writes: BTreeMap::new(),
+            rejected_namespace_dynamic_property_writes: BTreeMap::new(),
             retained_callback_factory_imports: BTreeMap::new(),
             retained_callback_constructor_imports: BTreeMap::new(),
             no_reentry_callback_imports: BTreeMap::new(),
@@ -2356,6 +2358,8 @@ impl ExecutionIndex {
             && index.dynamic_scope_owners.is_empty();
         let namespace_member_write_witnesses =
             RefCell::new(BTreeMap::<(Id, String), CallbackFactoryWriteWitness>::new());
+        let namespace_dynamic_property_write_witnesses =
+            RefCell::new(BTreeMap::<(Id, String), CallbackFactoryWriteWitness>::new());
         let keep_namespace = |id: &Id, members: &BTreeSet<String>, writes: &BTreeSet<_>| {
             if private_namespace_family {
                 return true;
@@ -2447,6 +2451,37 @@ impl ExecutionIndex {
                 .iter()
                 .flatten()
                 .any(is_mutation_receiver);
+            // This is a diagnostic for the already rejected guard, not an
+            // admission rule. Only a concrete binding receiver supplies an
+            // attributable source witness; opaque receiver shapes stay unknown.
+            let dynamic_write_witness = index
+                .top_property_writes
+                .iter()
+                .enumerate()
+                .filter(|(owner, _)| !writes.contains(&SourceUnitOrdinal(*owner)))
+                .flat_map(|(owner, writes)| writes.iter().map(move |write| (owner, write)))
+                .find_map(|(owner, (receiver, property))| match (receiver, property) {
+                    (Some(binding), None)
+                        if binding == id
+                            || aliases.contains(binding)
+                            || receiver_aliases.contains(binding) =>
+                    {
+                        Some(CallbackFactoryWriteWitness {
+                            statement_ordinal: SourceUnitOrdinal(owner),
+                            receiver_binding: binding.0.to_string(),
+                            property: None,
+                        })
+                    }
+                    _ => None,
+                });
+            if let Some(witness) = dynamic_write_witness {
+                let mut recorded = namespace_dynamic_property_write_witnesses.borrow_mut();
+                for member in members {
+                    recorded
+                        .entry((id.clone(), member.clone()))
+                        .or_insert_with(|| witness.clone());
+                }
+            }
             let top_callback_result_write = index
                 .top_callback_result_writes
                 .iter()
@@ -2609,6 +2644,8 @@ impl ExecutionIndex {
             }
         }
         index.rejected_namespace_member_writes = namespace_member_write_witnesses.into_inner();
+        index.rejected_namespace_dynamic_property_writes =
+            namespace_dynamic_property_write_witnesses.into_inner();
         if index.deferred_global_requested {
             let first_publication = index
                 .deferred_global_candidates

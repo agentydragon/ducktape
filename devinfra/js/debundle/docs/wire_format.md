@@ -214,12 +214,16 @@ an impure known-function call. Older reports without the table or
 `dependency_graph.json.nodes[].callback_factory_barriers[]` is optional and
 omitted for accepted calls. It records a matched retained callback-factory
 signature that the conservative analyzer rejected. The currently supported
-rejection is `rejection.code = "namespace_member_write"`; its `witness`
-identifies the offending receiver/property write, graph `source_unit` ref,
+rejections are `rejection.code = "namespace_member_write"` for a static member
+write and `"namespace_dynamic_property_write"` for a computed-key write
+through the namespace binding or a recognized alias. Their `witness` identifies
+the receiver, optional static property, graph `source_unit` ref,
 `statement_ordinal`, and optional `source_location`. The
 `rejection.code = "unsupported_guard"` value preserves a rejected match whose
 cause is outside this write-witness family. This diagnostic field does not
-alter promotion or acceptance decisions.
+alter promotion or acceptance decisions. A computed-key write through a more
+complex receiver remains `unsupported_guard` unless another supported write
+also rejects the contract.
 
 Each contract may include `callback_source_units`, a list of graph source-unit
 refs and their `statement_ordinal`s for callback arguments resolved directly

@@ -147,23 +147,29 @@ fn build_source_unit_nodes_and_edges(
                 .callback_factory_barriers
                 .iter()
                 .map(|barrier| {
+                    let witness_report = |witness: &analysis::CallbackFactoryWriteWitness| {
+                        let witness_source = source_units_by_ordinal
+                            .get(&witness.statement_ordinal)
+                            .expect("callback factory witness must identify a graph source unit");
+                        CallbackFactoryWriteWitnessReport {
+                            source_unit: source_unit_key(witness_source.id),
+                            statement_ordinal: witness.statement_ordinal,
+                            source_location: witness_source.source_location.clone(),
+                            receiver_binding: Atom::from(witness.receiver_binding.as_str()),
+                            property: witness.property.clone(),
+                        }
+                    };
                     let rejection = match &barrier.rejection {
                         CallbackFactoryBarrierRejection::NamespaceMemberWrite { witness } => {
-                            let witness_source = source_units_by_ordinal
-                                .get(&witness.statement_ordinal)
-                                .expect(
-                                    "callback factory witness must identify a graph source unit",
-                                );
                             CallbackFactoryRejectionReport::NamespaceMemberWrite {
-                                witness: CallbackFactoryWriteWitnessReport {
-                                    source_unit: source_unit_key(witness_source.id),
-                                    statement_ordinal: witness.statement_ordinal,
-                                    source_location: witness_source.source_location.clone(),
-                                    receiver_binding: Atom::from(witness.receiver_binding.as_str()),
-                                    property: witness.property.clone(),
-                                },
+                                witness: witness_report(witness),
                             }
                         }
+                        CallbackFactoryBarrierRejection::NamespaceDynamicPropertyWrite {
+                            witness,
+                        } => CallbackFactoryRejectionReport::NamespaceDynamicPropertyWrite {
+                            witness: witness_report(witness),
+                        },
                         CallbackFactoryBarrierRejection::UnsupportedGuard => {
                             CallbackFactoryRejectionReport::UnsupportedGuard
                         }

@@ -729,7 +729,7 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
     assert_eq!(bounded["query_status"], "local_supported_witness_found");
     assert_eq!(
         bounded["coverage_scope"],
-        "callback_factory_namespace_member_write_guard_only"
+        "callback_factory_namespace_writes_only"
     );
     let limited = gate_diagnose_json(&rejected, "later", &["--limit", "1"]);
     assert_eq!(limited["total_count"], bounded["total_count"]);
@@ -938,7 +938,7 @@ fn same_source_unit_unrelated_callback_is_not_attributed_to_factory_barrier() {
 }
 
 #[test]
-fn dynamic_namespace_write_still_rejects_retention_and_is_inconclusive() {
+fn dynamic_namespace_write_reports_analyzer_witness_without_changing_gate() {
     let rejected = run_rejection_fixture(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
@@ -975,24 +975,105 @@ fn dynamic_namespace_write_still_rejects_retention_and_is_inconclusive() {
 
     let report = gate_diagnose_json(&rejected, "later", &[]);
     assert!(report["total_count"].as_u64().unwrap() > 0);
+    assert_eq!(report["query_status"], "local_supported_witness_found");
+    assert_eq!(
+        report["coverage_scope"],
+        "callback_factory_namespace_writes_only"
+    );
+    assert_eq!(
+        report["traces"][0]["coverage"],
+        "supported_namespace_dynamic_property_write"
+    );
+    assert_eq!(report["traces"][0]["matched_contract"]["member"], "make");
+    assert_eq!(
+        report["traces"][0]["first_rejected_guard"]["code"],
+        "namespace_dynamic_property_write"
+    );
+    let trace = &report["traces"][0];
+    assert_eq!(trace["constraining_dependency"]["binding"], "later");
+    assert_eq!(trace["constraining_dependency"]["role"], "promoted_at_init");
+    assert_eq!(
+        trace["matched_contract"]["callback_arguments"],
+        serde_json::json!([0])
+    );
+    assert_eq!(
+        trace["first_rejected_guard"]["witness"]["receiver_binding"],
+        "api"
+    );
+    assert!(trace["first_rejected_guard"]["witness"]["property"].is_null());
+    let inspection = trace["first_rejected_guard"]["witness"]["inspection_command"]
+        .as_str()
+        .unwrap();
+    let inspected = std::process::Command::new("/bin/sh")
+        .arg("-c")
+        .arg(inspection)
+        .output()
+        .expect("execute generated inspection command");
+    assert!(inspected.status.success());
+    assert!(
+        parse_stdout_json(&inspected)["files"][0]["statements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|statement| statement["source_unit_ids"]
+                .as_array()
+                .unwrap()
+                .contains(&trace["first_rejected_guard"]["witness"]["source_unit"])
+                && statement["source"]
+                    .as_str()
+                    .unwrap()
+                    .contains("api[method] = replacement"))
+    );
+}
+
+#[test]
+fn computed_write_through_aggregate_receiver_remains_inconclusive() {
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            "import { api } from './peer.js';\n\
+             let later = 0;\n\
+             const holder = { api };\n\
+             const method = 'make';\n\
+             holder.api[method] = callback => ({ invoke: callback });\n\
+             const callback = () => later;\n\
+             const wrapped = api.make(callback);\n\
+             later = 42;\n",
+            vec![
+                logical_module_with_anon(
+                    "callbacks/wrapped",
+                    &[
+                        Member::new("holder"),
+                        Member::new("method"),
+                        Member::new("callback"),
+                        Member::new("wrapped"),
+                    ],
+                    &["holder.api[method] = callback => ({ invoke: callback });"],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export const api = { make(callback) { return { invoke: callback }; } };\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
+            .with_retained_callback_factory_member("api", "make", 1, &[0])
+            .with_namespace_independent_members("api", &["make"])
+            .build()]),
+    );
+    let report = gate_diagnose_json(&rejected, "later", &[]);
     assert_eq!(
         report["query_status"],
         "inconclusive_for_supported_guard_family"
     );
     assert_eq!(
-        report["coverage_scope"],
-        "callback_factory_namespace_member_write_guard_only"
-    );
-    assert_eq!(
         report["traces"][0]["coverage"],
         "inconclusive_unsupported_guard"
     );
-    assert_eq!(report["traces"][0]["matched_contract"]["member"], "make");
     assert_eq!(
         report["traces"][0]["first_rejected_guard"]["code"],
         "unsupported_guard"
     );
-    assert!(report["traces"][0]["first_rejected_guard"]["witness"].is_null());
 }
 
 #[test]

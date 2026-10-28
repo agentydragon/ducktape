@@ -4257,6 +4257,10 @@ pub(crate) fn annotate_synchronous_calls(
             .rejected_namespace_member_writes
             .get(&(namespace.clone(), member.clone()))
             .cloned();
+        let dynamic_write_witness = index
+            .rejected_namespace_dynamic_property_writes
+            .get(&(namespace.clone(), member.clone()))
+            .cloned();
         for signature in candidate.call.signatures.iter().filter(|signature| {
             // `retained_callback_invocation` already applies these guards to
             // the parsed call. Keep them explicit here so a configured but
@@ -4287,7 +4291,14 @@ pub(crate) fn annotate_synchronous_calls(
                         Some(witness) => CallbackFactoryBarrierRejection::NamespaceMemberWrite {
                             witness: witness.clone(),
                         },
-                        None => CallbackFactoryBarrierRejection::UnsupportedGuard,
+                        None => match &dynamic_write_witness {
+                            Some(witness) => {
+                                CallbackFactoryBarrierRejection::NamespaceDynamicPropertyWrite {
+                                    witness: witness.clone(),
+                                }
+                            }
+                            None => CallbackFactoryBarrierRejection::UnsupportedGuard,
+                        },
                     },
                 });
         }

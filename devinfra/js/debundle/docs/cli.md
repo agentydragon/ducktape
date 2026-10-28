@@ -955,8 +955,10 @@ The SCC query commands (`gate list`, `gate describe`, and `gate cut`) accept
 exit 0.
 
 `gate diagnose <binding>` traces constraining promoted-at-initialization edges
-to a matched callback-factory contract rejected by the supported imported
-namespace-member write guard. It requires explicit graph, module-spec, and
+to a matched callback-factory contract rejected by a supported static member
+write or direct computed-key write through the imported namespace or a
+recognized alias. Other receiver shapes and guard families remain
+inconclusive. It requires explicit graph, module-spec, and
 source-root paths:
 
 ```sh

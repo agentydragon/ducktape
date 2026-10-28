@@ -173,6 +173,9 @@ pub enum CallbackFactoryBarrierRejection {
     NamespaceMemberWrite {
         witness: CallbackFactoryWriteWitness,
     },
+    NamespaceDynamicPropertyWrite {
+        witness: CallbackFactoryWriteWitness,
+    },
     UnsupportedGuard,
 }
 

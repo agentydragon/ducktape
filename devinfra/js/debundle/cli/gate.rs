@@ -262,7 +262,7 @@ impl GateDiagnoseStatus {
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GateDiagnoseCoverageScope {
-    CallbackFactoryNamespaceMemberWriteGuardOnly,
+    CallbackFactoryNamespaceWritesOnly,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -313,6 +313,7 @@ pub enum GateDiagnoseEdgeRole {
 #[serde(rename_all = "snake_case")]
 pub enum GateDiagnoseCoverage {
     SupportedNamespaceMemberWrite,
+    SupportedNamespaceDynamicPropertyWrite,
     InconclusiveUnsupportedGuard,
     InconclusiveNoSupportedCallbackFactoryBarrier,
     InconclusiveAmbiguousCallbackFactoryBarrierLink,
@@ -328,6 +329,7 @@ pub enum GateDiagnoseGuardCode {
     CallbackArgumentSourceUnresolved,
     CallbackArgumentSourceMismatch,
     NamespaceMemberWrite,
+    NamespaceDynamicPropertyWrite,
     UnsupportedGuard,
 }
 
@@ -339,6 +341,7 @@ impl GateDiagnoseGuardCode {
             Self::CallbackArgumentSourceUnresolved => "callback_argument_source_unresolved",
             Self::CallbackArgumentSourceMismatch => "callback_argument_source_mismatch",
             Self::NamespaceMemberWrite => "namespace_member_write",
+            Self::NamespaceDynamicPropertyWrite => "namespace_dynamic_property_write",
             Self::UnsupportedGuard => "unsupported_guard",
         }
     }
@@ -408,7 +411,7 @@ fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: InspectionRoots) -> Re
         } else {
             GateDiagnoseStatus::InconclusiveForSupportedGuardFamily
         },
-        coverage_scope: GateDiagnoseCoverageScope::CallbackFactoryNamespaceMemberWriteGuardOnly,
+        coverage_scope: GateDiagnoseCoverageScope::CallbackFactoryNamespaceWritesOnly,
         traces: returned,
     };
     let format = peel::OutputFormat::resolve(args.format);
@@ -546,6 +549,7 @@ fn diagnose_binding(
             && matches!(
                 &barrier.rejection,
                 CallbackFactoryRejectionReport::NamespaceMemberWrite { .. }
+                    | CallbackFactoryRejectionReport::NamespaceDynamicPropertyWrite { .. }
             );
 
         // Summary status describes all matching promoted edges, including rows
@@ -633,33 +637,45 @@ fn diagnose_barrier_witness(
     GateDiagnoseGuardCode,
     Option<GateDiagnoseWitness>,
 )> {
-    match &barrier.rejection {
-        CallbackFactoryRejectionReport::NamespaceMemberWrite { witness } => Ok((
+    let (coverage, code, witness) = match &barrier.rejection {
+        CallbackFactoryRejectionReport::NamespaceMemberWrite { witness } => (
             GateDiagnoseCoverage::SupportedNamespaceMemberWrite,
             GateDiagnoseGuardCode::NamespaceMemberWrite,
-            Some(GateDiagnoseWitness {
-                source_unit: witness.source_unit.clone(),
-                statement_ordinal: witness.statement_ordinal,
-                source_location: witness.source_location.clone(),
-                receiver_binding: witness.receiver_binding.clone(),
-                property: witness.property.clone(),
-                witness_selection:
-                    GateDiagnoseWitnessSelection::FirstSourceUnitOrderDeterministicWithinUnit,
-                inspection_command: inspection_command(
-                    &witness.source_unit,
-                    &args.graph,
-                    &args.modules,
-                    &args.source_root,
-                    inspection_roots,
-                )?,
-            }),
-        )),
-        CallbackFactoryRejectionReport::UnsupportedGuard => Ok((
-            GateDiagnoseCoverage::InconclusiveUnsupportedGuard,
-            GateDiagnoseGuardCode::UnsupportedGuard,
-            None,
-        )),
-    }
+            witness,
+        ),
+        CallbackFactoryRejectionReport::NamespaceDynamicPropertyWrite { witness } => (
+            GateDiagnoseCoverage::SupportedNamespaceDynamicPropertyWrite,
+            GateDiagnoseGuardCode::NamespaceDynamicPropertyWrite,
+            witness,
+        ),
+        CallbackFactoryRejectionReport::UnsupportedGuard => {
+            return Ok((
+                GateDiagnoseCoverage::InconclusiveUnsupportedGuard,
+                GateDiagnoseGuardCode::UnsupportedGuard,
+                None,
+            ));
+        }
+    };
+    Ok((
+        coverage,
+        code,
+        Some(GateDiagnoseWitness {
+            source_unit: witness.source_unit.clone(),
+            statement_ordinal: witness.statement_ordinal,
+            source_location: witness.source_location.clone(),
+            receiver_binding: witness.receiver_binding.clone(),
+            property: witness.property.clone(),
+            witness_selection:
+                GateDiagnoseWitnessSelection::FirstSourceUnitOrderDeterministicWithinUnit,
+            inspection_command: inspection_command(
+                &witness.source_unit,
+                &args.graph,
+                &args.modules,
+                &args.source_root,
+                inspection_roots,
+            )?,
+        }),
+    ))
 }
 
 fn inspection_command(

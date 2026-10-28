@@ -660,11 +660,13 @@ purity or permission to reorder argument evaluation.
 
 `debundle gate diagnose <binding>` provides a bounded source-backed trace for
 one ownership target through constraining promoted callback dependencies. Its
-initial supported rejection family is a matched imported namespace-member
-callback-factory signature rejected by a top-level write to that member or a
-recognized alias. The report names the matched signature and a write witness
-selected by source-unit order, with deterministic selection within a unit,
-including receiver, property, source span, and graph source-unit reference. A
+supported rejection family is a matched imported namespace-member
+callback-factory signature rejected by a top-level static write to that member
+or a recognized alias, or by a computed-key write whose receiver is the
+namespace binding or a recognized alias. The report names the matched signature
+and a write witness selected by source-unit order, with deterministic selection
+within a unit, including receiver, optional static property, source span, and
+graph source-unit reference. A
 supported row also requires the promoted edge's callee source unit to match a
 statically resolved callback argument root from that exact signature.
 Unresolved callback arguments and source-unit mismatches are inconclusive. The
@@ -675,7 +677,8 @@ crosswalk. Five rows are returned by
 default; `--all` requests exhaustive output, while query status summarizes all
 uniquely linked candidate edges regardless of the output limit. This is a
 local witness for this guard family, not a claim of a sole or globally earliest
-cause. Other guard families and absent promoted
+cause. Computed-key writes through other receiver expressions, other guard
+families, and absent promoted
 dependencies are inconclusive. Multiple candidate barriers at one source unit
 are also reported as an ambiguous link rather than cross-paired with callback
 dependencies. Configured overloads are included only when their arity and
