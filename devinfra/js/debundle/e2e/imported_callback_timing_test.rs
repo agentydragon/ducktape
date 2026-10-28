@@ -671,9 +671,10 @@ fn returned_wrapper_does_not_invoke_its_callback_at_creation() {
     assert_eq!(evidence["defining_module"], "static/peer");
     assert_eq!(evidence["export"], "factory");
     assert_eq!(evidence["local"], "factory");
-    assert_eq!(evidence["source_location"]["path"], "static/peer.js");
-    assert_eq!(evidence["source_location"]["line"], 1);
-    assert_eq!(evidence["source_location"]["column"], 8);
+    assert_eq!(evidence["source_location"]["source_path"], "static/peer.js");
+    assert_eq!(evidence["source_location"]["start_line"], 1);
+    assert_eq!(evidence["source_location"]["end_line"], 1);
+    assert_eq!(evidence["source_location"]["start_column"], 8);
 }
 
 #[test]

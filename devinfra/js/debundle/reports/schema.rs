@@ -8,7 +8,7 @@ use crate::ids::ModuleId;
 use crate::purity::Purity;
 use crate::{DepKind, SourceUnitClass, StatementKind};
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceLocation {
     pub source_path: String,
     pub start_line: usize,

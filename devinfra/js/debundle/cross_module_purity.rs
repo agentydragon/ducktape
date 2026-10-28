@@ -37,7 +37,7 @@ use swc_common::{BytePos, Span};
 use swc_ecma_ast::ModuleItem;
 
 use crate::SourceLocation;
-use crate::analysis_inputs::{CallableSourceLocation, CallableSummary, CallbackFactoryEvidence};
+use crate::analysis_inputs::{CallableSummary, CallbackFactoryEvidence};
 use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
 };
@@ -355,10 +355,11 @@ pub fn resolve_imported_callback_factories(
                         source_location: facts.source.as_ref().and_then(|(path, index)| {
                             let (line, column) =
                                 index.line_and_column_for_pos(BytePos(function_start))?;
-                            Some(CallableSourceLocation {
-                                path: path.clone(),
-                                line,
-                                column,
+                            Some(SourceLocation {
+                                source_path: path.clone(),
+                                start_line: line,
+                                end_line: line,
+                                start_column: Some(column),
                             })
                         }),
                     },

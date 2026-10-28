@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use crate::purity::Purity;
+use crate::reports::schema::SourceLocation;
 use spec::BuiltinGlobalRoot;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -37,13 +38,6 @@ pub enum LocalEffectPolicy {
 /// An assertion is an author contract; an inferred wrapper depends on the
 /// defining chunk's checked source shape.
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize)]
-pub struct CallableSourceLocation {
-    pub path: String,
-    pub line: usize,
-    pub column: usize,
-}
-
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize)]
 #[serde(tag = "origin", rename_all = "snake_case")]
 pub enum CallbackFactoryEvidence {
     AuthorAssertion {
@@ -55,7 +49,7 @@ pub enum CallbackFactoryEvidence {
         export: String,
         local: String,
         #[serde(skip_serializing_if = "Option::is_none")]
-        source_location: Option<CallableSourceLocation>,
+        source_location: Option<SourceLocation>,
     },
 }
 
