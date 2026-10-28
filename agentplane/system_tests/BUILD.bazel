@@ -181,7 +181,7 @@ system_test(
     ],
 )
 
-# All eleven kernel/systemd supervision subtests run once in a real VM, before Runner startup.
+# All kernel/systemd supervision subtests run once in a real VM, before Runner startup.
 system_test(
     name = "test_runner_systemd",
     srcs = ["test_runner_systemd.py"],

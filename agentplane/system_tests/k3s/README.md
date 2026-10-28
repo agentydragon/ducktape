@@ -134,7 +134,7 @@ also exercises denial of unprivileged management requests.
 
 The dedicated CI target `//agentplane/system_tests:test_runner_systemd_vm` selects a guest root
 with `runner_systemd_fixture` and an entrypoint override. Before `exec`ing the production runner,
-it runs all eleven subtests against the real manager. Its isolated `/state/.supervision-proof`
+it runs all subtests against the real manager. Its isolated `/state/.supervision-proof`
 exercises native process streams, limits, descendant fencing, uncertain launch outcomes and parent
 death. A failed proof prevents runner startup; its output is retained in the guest console. The
 outer test requires the completed success receipt as well as runner readiness. Ordinary VM targets
