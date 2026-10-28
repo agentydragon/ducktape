@@ -503,6 +503,13 @@ py_library(
     deps = ["@pypi//pyyaml"],
 )
 
+py_package(
+    name = "yaml_decimal_pkg",
+    packages = ["util"],
+    visibility = ["//finance/plaid/spend/desktop:__pkg__"],
+    deps = [":yaml_decimal"],
+)
+
 py_test(
     name = "test_yaml_decimal",
     srcs = ["test_yaml_decimal.py"],
