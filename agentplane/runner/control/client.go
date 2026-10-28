@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	heartbeatInterval = 10 * time.Second
-	streamLiveness    = 30 * time.Second
+	heartbeatInterval   = 10 * time.Second
+	controlWriteTimeout = 30 * time.Second
+	streamLiveness      = 30 * time.Second
 )
 
 // Endpoint is one authenticated Runner Gateway destination.
@@ -58,6 +59,7 @@ type Client struct {
 	stopRetry         func(error) bool
 	heartbeatInterval time.Duration
 	streamLiveness    time.Duration
+	writeTimeout      time.Duration
 	openExecutor      func(context.Context, uint64, func(*controlpb.RunnerFrame) error, func(*controlpb.RunnerFrame) error) ExecutorConnection
 }
 
@@ -74,6 +76,7 @@ func New(dependencies Dependencies) (*Client, error) {
 		stopRetry:         dependencies.StopRetry,
 		heartbeatInterval: heartbeatInterval,
 		streamLiveness:    streamLiveness,
+		writeTimeout:      controlWriteTimeout,
 		openExecutor:      dependencies.OpenExecutor,
 	}, nil
 }
@@ -94,10 +97,14 @@ func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	var receiving, calls, adoption sync.WaitGroup
 	var executor ExecutorConnection
+	var outbound *sender
 	defer func() {
 		cancel()
 		if executor != nil {
 			executor.Close()
+		}
+		if outbound != nil {
+			outbound.wait()
 		}
 		calls.Wait()
 		receiving.Wait()
@@ -107,8 +114,8 @@ func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	sender := newSender(ctx, controlStream.Send)
-	send := sender.Send
+	outbound = newSender(ctx, cancel, c.writeTimeout, controlStream.Send)
+	send := outbound.Send
 	if err := send(&controlpb.RunnerFrame{Frame: &controlpb.RunnerFrame_Hello{Hello: &controlpb.Hello{RunnerBootId: c.bootID}}}); err != nil {
 		return false, err
 	}
@@ -182,9 +189,9 @@ func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
 		}
 		select {
 		case <-ctx.Done():
-			return false, ctx.Err()
-		case <-sender.done:
-			return false, sender.error()
+			return streamStable(), outbound.failureOr(ctx.Err())
+		case <-outbound.done:
+			return streamStable(), outbound.error()
 		case err := <-adopted:
 			if err != nil {
 				return false, err
@@ -193,7 +200,7 @@ func (c *Client) connect(ctx context.Context, endpoint Endpoint) (bool, error) {
 				return false, err
 			}
 			if c.openExecutor != nil {
-				executor = c.openExecutor(ctx, welcome.ConnectionEpoch, send, sender.SendExecutor)
+				executor = c.openExecutor(ctx, welcome.ConnectionEpoch, send, outbound.SendExecutor)
 			}
 			incarnationAdopted = true
 			started = time.Now()

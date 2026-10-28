@@ -169,6 +169,9 @@ budget remains authoritative across all of its native services.
   adopts that incarnation UID. Until adoption succeeds, it publishes no Runner facts and answers
   tunneled calls with `UNAVAILABLE` without invoking Runner methods; afterward it publishes current
   facts and relays calls normally.
+- Runner control writes are serialized and bounded. A write that exceeds its bound cancels that
+  `Connect` stream so blocked writes and relayed calls can join before reconnect; reconnect never
+  replays calls from the lost stream.
 - `OpenSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
   `last_cursor`, and the active turn id as of that position. `GetStatus` returns one snapshot with a
   runner boot UUID, each harness process (its per-spawn UUID and the Sessions it hosts), session

@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
@@ -40,13 +42,13 @@ func (s *controlService) Connect(stream grpc.BidiStreamingServer[controlpb.Runne
 	return s.connect(stream)
 }
 
-func controlServer(t *testing.T, service *controlService) string {
+func controlServer(t *testing.T, service *controlService, options ...grpc.ServerOption) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer()
+	server := grpc.NewServer(options...)
 	controlpb.RegisterRunnerControlServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() {
@@ -54,6 +56,123 @@ func controlServer(t *testing.T, service *controlService) string {
 		_ = listener.Close()
 	})
 	return listener.Addr().String()
+}
+
+func TestSenderTimeoutCancelsAndRejectsQueuedWrite(t *testing.T) {
+	streamCtx, cancelStream := context.WithCancel(t.Context())
+	var cancelCalls, sendCalls, inFlight, maxInFlight atomic.Int32
+	started := make(chan struct{}, 1)
+	sender := newSender(streamCtx, func() {
+		cancelCalls.Add(1)
+		cancelStream()
+	}, 100*time.Millisecond, func(*controlpb.RunnerFrame) error {
+		sendCalls.Add(1)
+		active := inFlight.Add(1)
+		for max := maxInFlight.Load(); active > max; max = maxInFlight.Load() {
+			if maxInFlight.CompareAndSwap(max, active) {
+				break
+			}
+		}
+		started <- struct{}{}
+		defer inFlight.Add(-1)
+		<-streamCtx.Done()
+		return streamCtx.Err()
+	})
+	defer func() {
+		cancelStream()
+		sender.wait()
+	}()
+
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- sender.Send(&controlpb.RunnerFrame{}) }()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("underlying Send did not start")
+	}
+	secondDone := make(chan error, 1)
+	go func() { secondDone <- sender.Send(&controlpb.RunnerFrame{}) }()
+
+	firstErr := <-firstDone
+	if status.Code(firstErr) != codes.Unavailable {
+		t.Fatalf("timed-out Send error = %v, want Unavailable", firstErr)
+	}
+	if secondErr := <-secondDone; secondErr != firstErr {
+		t.Fatalf("queued Send error = %v, want terminal error %v", secondErr, firstErr)
+	}
+	sender.wait()
+	if got := sendCalls.Load(); got != 1 {
+		t.Fatalf("underlying Send calls = %d, want 1 after terminal failure", got)
+	}
+	if got := maxInFlight.Load(); got != 1 {
+		t.Fatalf("maximum concurrent underlying Sends = %d, want 1", got)
+	}
+	if got := inFlight.Load(); got != 0 {
+		t.Fatalf("underlying Sends still in flight = %d, want 0", got)
+	}
+	if got := cancelCalls.Load(); got != 1 {
+		t.Fatalf("stream cancellation calls = %d, want 1", got)
+	}
+}
+
+func TestSenderKeepsQueuedWriteDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const timeout = time.Second
+		streamCtx, cancelStream := context.WithCancel(t.Context())
+		firstSendStarted := make(chan struct{})
+		releaseFirstSend := make(chan struct{})
+		secondSendStarted := make(chan struct{})
+		secondQueuedAt := make(chan time.Time, 1)
+		cancelAt := make(chan time.Time, 1)
+		var sendCalls atomic.Int32
+		sender := newSender(streamCtx, func() {
+			cancelAt <- time.Now()
+			cancelStream()
+		}, timeout, func(*controlpb.RunnerFrame) error {
+			switch sendCalls.Add(1) {
+			case 1:
+				close(firstSendStarted)
+				<-releaseFirstSend
+				return nil
+			case 2:
+				close(secondSendStarted)
+				<-streamCtx.Done()
+				return streamCtx.Err()
+			default:
+				return errors.New("unexpected third Send")
+			}
+		})
+		defer func() {
+			cancelStream()
+			sender.wait()
+		}()
+
+		firstDone := make(chan error, 1)
+		go func() { firstDone <- sender.Send(&controlpb.RunnerFrame{}) }()
+		<-firstSendStarted
+		secondDone := make(chan error, 1)
+		time.AfterFunc(200*time.Millisecond, func() {
+			secondQueuedAt <- time.Now()
+			secondDone <- sender.Send(&controlpb.RunnerFrame{})
+		})
+		time.AfterFunc(900*time.Millisecond, func() { close(releaseFirstSend) })
+
+		if err := <-firstDone; err != nil {
+			t.Fatalf("first Send = %v, want success before its deadline", err)
+		}
+		<-secondSendStarted
+		secondErr := <-secondDone
+		if status.Code(secondErr) != codes.Unavailable {
+			t.Fatalf("queued Send error = %v, want Unavailable at its original deadline", secondErr)
+		}
+		queuedAt := <-secondQueuedAt
+		if got, want := <-cancelAt, queuedAt.Add(timeout); !got.Equal(want) {
+			t.Fatalf("stream canceled at %v, want queued deadline %v", got, want)
+		}
+		if got := sendCalls.Load(); got != 2 {
+			t.Fatalf("underlying Send calls = %d, want two serialized sends", got)
+		}
+	})
 }
 
 func controlClient(t *testing.T, service runnerservicepb.RunnerServer, facts func() (*controlpb.RunnerFacts, error), adopt func(context.Context, string) error, stopRetry func(error) bool) *Client {
@@ -710,6 +829,106 @@ func TestClientCancelsAndJoinsTunneledRPC(t *testing.T) {
 	case <-rpcCanceled:
 	default:
 		t.Fatal("control client returned before the tunneled RPC observed cancellation")
+	}
+}
+
+func TestClientCancelsBlockedConnectSendAndReconnects(t *testing.T) {
+	var attempts atomic.Int32
+	firstCallSent := make(chan struct{})
+	firstReplyReady := make(chan struct{})
+	firstStreamCanceled := make(chan struct{})
+	reconnected := make(chan struct{})
+	var rpcCallsOnReconnect atomic.Int32
+	var rpcCalls atomic.Int32
+	request, err := proto.Marshal(&runnerpb.ListSessionsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &controlService{connect: func(stream grpc.BidiStreamingServer[controlpb.RunnerFrame, controlpb.ServiceFrame]) error {
+		attempt := attempts.Add(1)
+		if err := welcome(stream); err != nil {
+			return err
+		}
+		if _, err := receiveFacts(stream); err != nil {
+			return err
+		}
+		if attempt == 1 {
+			for callID := uint64(91); callID < 123; callID++ {
+				if err := stream.Send(&controlpb.ServiceFrame{Frame: &controlpb.ServiceFrame_Call{Call: &tunnelpb.Call{
+					CallId: callID, Method: "/agentplane.runner.Runner/ListSessions", Request: request,
+				}}}); err != nil {
+					return err
+				}
+			}
+			close(firstCallSent)
+			<-stream.Context().Done()
+			close(firstStreamCanceled)
+			return stream.Context().Err()
+		}
+
+		rpcCallsOnReconnect.Store(rpcCalls.Load())
+		close(reconnected)
+		<-stream.Context().Done()
+		return stream.Context().Err()
+	}}
+	endpoint := controlServer(t, service, grpc.InitialWindowSize(64<<10), grpc.InitialConnWindowSize(64<<10))
+	var replyReadyOnce sync.Once
+	rpc := &runnerService{listSessions: func(context.Context, *runnerpb.ListSessionsRequest) (*runnerpb.ListSessionsResponse, error) {
+		rpcCalls.Add(1)
+		response := &runnerpb.ListSessionsResponse{Sessions: []*runnerpb.SessionSummary{{
+			SessionId: "large-reply",
+			Spec:      &runnerpb.SessionSpec{Instructions: strings.Repeat("x", 1<<20)},
+		}}}
+		replyReadyOnce.Do(func() { close(firstReplyReady) })
+		return response, nil
+	}}
+	client := controlClient(t, rpc, func() (*controlpb.RunnerFacts, error) {
+		return &controlpb.RunnerFacts{}, nil
+	}, func(context.Context, string) error { return nil }, nil)
+	client.heartbeatInterval = time.Hour
+	client.streamLiveness = 5 * time.Second
+	client.writeTimeout = 150 * time.Millisecond
+	runCtx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	done := make(chan error, 1)
+	go func() { done <- client.Run(runCtx, Endpoint{Target: endpoint, Bearer: "token"}) }()
+
+	select {
+	case <-firstCallSent:
+	case <-runCtx.Done():
+		t.Fatalf("first Runner call was not sent: %v", runCtx.Err())
+	}
+	select {
+	case <-firstReplyReady:
+	case <-runCtx.Done():
+		t.Fatalf("first large Runner reply was not produced: %v", runCtx.Err())
+	}
+	select {
+	case <-firstStreamCanceled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocked RunnerFrame.Send did not cancel the Connect stream within its write bound")
+	}
+	select {
+	case <-reconnected:
+	case <-runCtx.Done():
+		t.Fatalf("Runner control client did not reconnect and publish facts: %v", runCtx.Err())
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("control client after cancellation = %v, want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("control client did not join the reconnected stream")
+	}
+	if got := attempts.Load(); got != 2 {
+		t.Fatalf("Connect attempts = %d, want 2", got)
+	}
+	if got := rpcCallsOnReconnect.Load(); got == 0 || got > 32 {
+		t.Fatalf("tunneled Runner calls before reconnect = %d, want 1 through 32", got)
+	}
+	if got := rpcCalls.Load(); got != rpcCallsOnReconnect.Load() {
+		t.Fatalf("tunneled Runner calls after reconnect = %d, want no replay beyond %d", got, rpcCallsOnReconnect.Load())
 	}
 }
 
