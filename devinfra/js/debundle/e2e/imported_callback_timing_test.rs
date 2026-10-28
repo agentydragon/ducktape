@@ -4115,3 +4115,31 @@ fn source_record_native_integrity_handles_long_aliases_and_cycles() {
         &[],
     );
 }
+
+#[test]
+fn source_record_unknown_global_slot_mutation_preserves_constructor_reentry() {
+    let source = "import { factory } from './peer.js';\nimport './namespace.js';\nexport function readLater() { return Later; }\nglobalThis.saved = readLater;\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, readLater().name);\nexport { queue, Later };\n";
+    let namespace = "const key = Symbol.for('example.registry');\nglobalThis[key] = Symbol;\nglobalThis[key].for = () => 'Map';\nglobalThis[Symbol.for('other.registry')] = function () { try { globalThis.saved(); return { size: 'ready' }; } catch (error) { return { size: error.name }; } };\n";
+    let chunks = [
+        ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
+        ("static/namespace", namespace),
+    ];
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(&chunks));
+    assert_preserved_entry_output(&fixture, "ReferenceError Later\n");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "queue",
+                    &[Member::new("queue"), Member::new("readLater")],
+                    &["globalThis.saved = readLater;"],
+                ),
+                logical_module("later", &[Member::new("Later")]),
+            ],
+        )
+        .with_extra_chunks(&chunks),
+        &["queue", "later"],
+        &[],
+    );
+}
