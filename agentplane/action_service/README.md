@@ -428,6 +428,13 @@ environment gives the service its own `actions` database and login role on the n
 CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
 separate from the integration app's database.
 
+The migration image's default command only applies Goose migrations. The typed Action storage
+backfill is an explicit offline operation: first roll out the dual-writing Action Service version to
+every writer, then run the migration image with
+`backfill-storage --confirm-all-writers-dual-write` against the same `actions` database. The
+confirmation flag is required; the backfill can be rerun after interruption. It is not part of
+serving startup or readiness.
+
 ## MCP executor transports
 
 The Go `mcpexec.Executor` keeps one MCP session for each configured group. Its
