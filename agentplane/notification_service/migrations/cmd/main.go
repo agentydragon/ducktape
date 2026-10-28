@@ -17,11 +17,9 @@ import (
 )
 
 const (
-	databaseURLEnv                       = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
-	requiredEventIdentityWriterGate      = "notification-event-identity-dual-write-v1"
-	requiredEntryContentWriterGate       = "notification-entry-native-content-dual-write-v1"
-	defaultEntryContentBackfillBatchSize = 512
-	maxEntryContentBackfillBatchSize     = 4096
+	databaseURLEnv                  = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
+	requiredEventIdentityWriterGate = "notification-event-identity-dual-write-v1"
+	requiredEntryLegacyCleanupGate  = "notification-entry-native-content-writer-only-v1"
 )
 
 func main() {
@@ -55,27 +53,30 @@ func main() {
 		run = func(ctx context.Context, db *sql.DB) error {
 			return store.BackfillEventIdentities(ctx, db, *batchSize)
 		}
-	case os.Args[1] == "backfill-entry-content":
+	case os.Args[1] == "cleanup-entry-legacy-content":
 		flags := flag.NewFlagSet(os.Args[1], flag.ContinueOnError)
-		writerGate := flags.String("writer-gate", "", "required rollout gate: "+requiredEntryContentWriterGate)
-		batchSize := flags.Int("batch-size", defaultEntryContentBackfillBatchSize, "maximum entry keys per short transaction")
+		writerGate := flags.String("writer-gate", "", "required rollout gate: "+requiredEntryLegacyCleanupGate)
+		batchSize := flags.Int("batch-size", 512, "maximum entry keys per short transaction")
 		if err := flags.Parse(os.Args[2:]); err != nil {
 			os.Exit(2)
 		}
-		if flags.NArg() != 0 || *batchSize < 1 || *batchSize > maxEntryContentBackfillBatchSize {
-			fmt.Fprintf(os.Stderr, "backfill-entry-content accepts --writer-gate=... and --batch-size=N where N is between 1 and %d\n", maxEntryContentBackfillBatchSize)
+		if flags.NArg() != 0 || *batchSize < 1 || *batchSize > 4096 {
+			fmt.Fprintln(os.Stderr, "cleanup-entry-legacy-content accepts --writer-gate=... and --batch-size=N where N is between 1 and 4096")
 			os.Exit(2)
 		}
-		if *writerGate != requiredEntryContentWriterGate {
-			fmt.Fprintf(os.Stderr, "run only after every Notification Service writer and cleanup worker is at the dual-write rollout gate; pass --writer-gate=%s\n", requiredEntryContentWriterGate)
+		if *writerGate != requiredEntryLegacyCleanupGate {
+			fmt.Fprintf(os.Stderr, "drain every preceding dual-write writer and cleanup worker before installing the owned-JSON fence; pass --writer-gate=%s\n", requiredEntryLegacyCleanupGate)
 			os.Exit(2)
 		}
 		run = func(ctx context.Context, db *sql.DB) error {
-			return store.BackfillEntryContent(ctx, db, *batchSize)
+			if err := migrations.PrepareCleanup(ctx, db); err != nil {
+				return err
+			}
+			return store.CleanupEntryLegacyContent(ctx, db, *batchSize)
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
-		fmt.Fprintln(os.Stderr, "commands: (default) migrate, backfill-event-identities, backfill-entry-content")
+		fmt.Fprintln(os.Stderr, "commands: (default) migrate, backfill-event-identities, cleanup-entry-legacy-content")
 		os.Exit(2)
 	}
 	if err := migrate.Run(ctx, databaseURL, run); err != nil {

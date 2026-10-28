@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -222,10 +221,6 @@ func (s *Store) Subscribe(ctx context.Context, owner model.ServiceAccount, body 
 	if err := checkAccess(body.Source, access); err != nil {
 		return Subscription{}, err
 	}
-	creation, err := json.Marshal(body)
-	if err != nil {
-		return Subscription{}, err
-	}
 	creationProto, sourceProvider, err := encodeSubscriptionCreation(body)
 	if err != nil {
 		return Subscription{}, err
@@ -272,12 +267,12 @@ func (s *Store) Subscribe(ctx context.Context, owner model.ServiceAccount, body 
 		}
 		id := uuid.New()
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO subscription (id, inbox_id, idempotency_key, creation, creation_proto, source_provider,
+			INSERT INTO subscription (id, inbox_id, idempotency_key, creation_proto, source_provider,
 				version, actions_after_sequence,
 				github_start_position, github_app_id, github_installation_id, github_repository_id, github_subject_kind,
 				github_subject_key, github_commit_after_sequence, github_pr_state_after_sequence, generation, cancelled, expires_at, next_attempt)
-			VALUES ($1, $2, $3, $4::jsonb, $5, $6, 1, $7, $8, $9, $10, $11, $12, $13, coalesce($14, 0), coalesce($15, 0), 0, false, $16, $17)`,
-			id, inbox.ID, body.IdempotencyKey, string(creation), creationProto, sourceProvider, binding.actionsAfterSequence,
+			VALUES ($1, $2, $3, $4, $5, 1, $6, $7, $8, $9, $10, $11, $12, coalesce($13, 0), coalesce($14, 0), 0, false, $15, $16)`,
+			id, inbox.ID, body.IdempotencyKey, creationProto, sourceProvider, binding.actionsAfterSequence,
 			binding.githubStartPosition, binding.githubApp, binding.githubInstallation, binding.githubRepository,
 			binding.githubSubjectKind, binding.githubSubjectKey, binding.githubCommitAfterSequence,
 			binding.githubPRStateAfterSequence, expiry(written, body.LifetimeDays), written); err != nil {

@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// eventIdentityStorage is an entry's relational source identity. Writers retain its legacy JSON form for
+// eventIdentityStorage is an entry's relational source identity. Writers also retain its legacy JSON form for
 // compatibility with older readers during rollout; this release uses the indexed relational key for deduplication.
 type eventIdentityStorage struct {
 	provider                   string
@@ -38,8 +38,8 @@ const eventIdentityReadColumns = `identity_provider, actions_request_id::text, a
 	github_pull_request_number, github_mergeability_sequence, github_snapshot_version, github_observation_sequence,
 	message_id::text, message_sender_namespace, message_sender_name`
 
-// eventIdentityRead decodes a relational source key for the offline content backfill and serving readers.
-// The JSONB identity remains dual-written for older readers during rollout.
+// eventIdentityRead is one relational source key read from entry. The JSONB identity stays dual-written for old
+// readers during rollout, but new readers and deduplication no longer depend on its serialization.
 type eventIdentityRead struct {
 	provider                   sql.NullString
 	actionsRequestID           sql.NullString
@@ -202,11 +202,7 @@ func insertEntry(
 	payload json.RawMessage,
 	createdAt time.Time,
 ) error {
-	identity, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
-	columns, err := eventIdentityStorageFor(event)
+	identity, err := eventIdentityStorageFor(event)
 	if err != nil {
 		return err
 	}
@@ -214,14 +210,19 @@ func insertEntry(
 	if err != nil {
 		return fmt.Errorf("encode %T entry content: %w", event, err)
 	}
-	args := append([]any{inboxID, cursor, string(identity), string(payload), createdAt}, columns.args()...)
+	var nativeJSON any
+	switch event.(type) {
+	case model.GitHubEvent, model.GitHubObservationEvent:
+		nativeJSON = string(payload)
+	}
+	args := append([]any{inboxID, cursor, nativeJSON, createdAt}, identity.args()...)
 	args = append(args, content.args()...)
-	_, err = tx.ExecContext(ctx, `INSERT INTO entry (inbox_id, cursor, event, payload, created_at,
+	_, err = tx.ExecContext(ctx, `INSERT INTO entry (inbox_id, cursor, payload, created_at,
 		identity_provider, actions_request_id, actions_sequence,
 		github_app_id, github_delivery_id, github_repository_id, github_event, github_action,
 		github_pull_request_number, github_mergeability_sequence, github_snapshot_version, github_observation_sequence,
 		message_id, message_sender_namespace, message_sender_name, `+entryContentReadColumns+`)
-		VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40)`, args...)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)`, args...)
 	return err
 }
 

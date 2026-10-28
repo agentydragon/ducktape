@@ -137,18 +137,13 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner model.Service
 	} else if err != nil {
 		return Inbox{}, err
 	}
-	destination, err := json.Marshal(ref)
-	if err != nil {
-		return Inbox{}, err
-	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref,
+		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 			destination_namespace, destination_name, destination_uid, session_id,
 			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 0, 0, 0, 0, false, $10, $10, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, $9, $9, $9)
 		ON CONFLICT DO NOTHING`,
-		uuid.New(), owner.Namespace, owner.Name, key, string(destination), ref.Namespace, ref.Name, ref.UID,
-		sessionID, written); err != nil {
+		uuid.New(), owner.Namespace, owner.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, written); err != nil {
 		return Inbox{}, err
 	}
 	inbox, err := scanInbox(tx.QueryRowContext(ctx,

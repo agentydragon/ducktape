@@ -10,20 +10,21 @@ import (
 	"strings"
 	"testing"
 
-	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
 
 func TestEventIdentityBackfillResumesAfterACommittedBatch(t *testing.T) {
-	f := newFixture(t, defaultQuotas())
+	f := newEventIdentityBackfillFixture(t)
 	resetEventIdentityBackfill(t, f)
 	inboxID := uuid.Nil
-	f.exec(t, `INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref,
+	f.exec(t, `INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 		destination_namespace, destination_name, destination_uid, session_id,
 		last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, 'identity-backfill-test', 'owner', 'destination', '{}'::jsonb, 'identity-ns', 'identity-name', 'identity-uid', 'session', 6, 0, 0, 0,
+		VALUES ($1, 'identity-backfill-test', 'owner', 'destination', 'identity-ns', 'identity-name', 'identity-uid', 'session', 6, 0, 0, 0,
 			false, now(), now(), now())`, inboxID)
 	requestID := uuid.New()
 	deliveryID := uuid.New()
@@ -50,10 +51,10 @@ func TestEventIdentityBackfillResumesAfterACommittedBatch(t *testing.T) {
 	// Keep a representative analyzed cohort in a later native UUID range. Its rows already have relational
 	// identity, so the backfill exercises keyset planning without spending thousands of batches converting it.
 	seedInboxID := uuid.MustParse("ffffffff-ffff-ffff-ffff-ffffffffffff")
-	f.exec(t, `INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref,
+	f.exec(t, `INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 		destination_namespace, destination_name, destination_uid, session_id,
 		last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, 'identity-plan-test', 'owner', 'destination', '{}'::jsonb, 'identity-ns', 'identity-name', 'identity-uid', 'session', 10000, 0, 0, 0,
+		VALUES ($1, 'identity-plan-test', 'owner', 'destination', 'identity-ns', 'identity-name', 'identity-uid', 'session', 10000, 0, 0, 0,
 			false, now(), now(), now())`, seedInboxID)
 	planRequestID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	if _, err := f.db.ExecContext(t.Context(), `INSERT INTO entry (inbox_id, cursor, event, payload, created_at,
@@ -153,14 +154,14 @@ func eventIdentityBackfillCursors(rows []eventIdentityBackfillRow) []int64 {
 }
 
 func TestEventIdentityBackfillUsesSerializedByteBudgetBeforeLoadingDocuments(t *testing.T) {
-	f := newFixture(t, defaultQuotas())
+	f := newEventIdentityBackfillFixture(t)
 	resetEventIdentityBackfill(t, f)
 	inboxID := uuid.New()
 	const rowCount = 3000
-	f.exec(t, `INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref,
+	f.exec(t, `INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 		destination_namespace, destination_name, destination_uid, session_id,
 		last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, 'identity-byte-budget-test', 'owner', 'destination', '{}'::jsonb, 'identity-ns', 'identity-name', 'identity-uid', 'session', $2, 0, 0, 0,
+		VALUES ($1, 'identity-byte-budget-test', 'owner', 'destination', 'identity-ns', 'identity-name', 'identity-uid', 'session', $2, 0, 0, 0,
 			false, now(), now(), now())`, inboxID, rowCount)
 	random := rand.New(rand.NewSource(1))
 	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -219,7 +220,7 @@ func resetEventIdentityBackfill(t *testing.T, f fixture) {
 }
 
 func TestEventIdentityBackfillRefusesSameNamedIndexOnAnotherRelation(t *testing.T) {
-	f := newFixture(t, defaultQuotas())
+	f := newEventIdentityBackfillFixture(t)
 	resetEventIdentityBackfill(t, f)
 	index := eventIdentityIndexes[0]
 	f.exec(t, `CREATE TABLE event_identity_index_target_elsewhere (id BIGINT)`)
@@ -252,13 +253,13 @@ func TestEventIdentityBackfillRefusesSameNamedIndexOnAnotherRelation(t *testing.
 }
 
 func TestEventIdentityBackfillReportsProjectionCollisionsAndRetainsEvidence(t *testing.T) {
-	f := newFixture(t, defaultQuotas())
+	f := newEventIdentityBackfillFixture(t)
 	resetEventIdentityBackfill(t, f)
 	inboxID := uuid.New()
-	f.exec(t, `INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref,
+	f.exec(t, `INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 		destination_namespace, destination_name, destination_uid, session_id,
 		last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, 'identity-collision-test', 'owner', 'destination', '{}'::jsonb, 'identity-ns', 'identity-name', 'identity-uid', 'session', 8, 0, 0, 0,
+		VALUES ($1, 'identity-collision-test', 'owner', 'destination', 'identity-ns', 'identity-name', 'identity-uid', 'session', 8, 0, 0, 0,
 			false, now(), now(), now())`, inboxID)
 	deliveryID := uuid.New()
 	messageID := uuid.New()
@@ -308,13 +309,13 @@ func TestEventIdentityBackfillReportsProjectionCollisionsAndRetainsEvidence(t *t
 }
 
 func TestEventIdentityBackfillRejectsUnknownLegacyShapeWithLocation(t *testing.T) {
-	f := newFixture(t, defaultQuotas())
+	f := newEventIdentityBackfillFixture(t)
 	resetEventIdentityBackfill(t, f)
 	inboxID := uuid.New()
-	f.exec(t, `INSERT INTO inbox (id, owner_namespace, owner_name, destination_key, destination_ref,
+	f.exec(t, `INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 		destination_namespace, destination_name, destination_uid, session_id,
 		last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, 'identity-unknown-test', 'owner', 'destination', '{}'::jsonb, 'identity-ns', 'identity-name', 'identity-uid', 'session', 1, 0, 0, 0,
+		VALUES ($1, 'identity-unknown-test', 'owner', 'destination', 'identity-ns', 'identity-name', 'identity-uid', 'session', 1, 0, 0, 0,
 			false, now(), now(), now())`, inboxID)
 	event := `{"provider":"actions","request_id":"00000000-0000-0000-0000-000000000001","sequence":1,"future":true}`
 	if _, err := f.db.ExecContext(t.Context(), `INSERT INTO entry (inbox_id, cursor, event, payload, created_at)
@@ -333,6 +334,16 @@ func TestEventIdentityBackfillRejectsUnknownLegacyShapeWithLocation(t *testing.T
 	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND identity_provider IS NULL`, inboxID); got != 1 {
 		t.Fatalf("untouched legacy entries = %d, want 1", got)
 	}
+}
+
+func newEventIdentityBackfillFixture(t *testing.T) fixture {
+	t.Helper()
+	db, ctx := newStorageIntegrationDatabase(t)
+	resetNotificationSchema(t, db)
+	if err := migrations.UpTo(ctx, db, 16); err != nil {
+		t.Fatalf("build pre-provider-proof schema through migration 00016: %v", err)
+	}
+	return fixtureForDatabase(t, db, defaultQuotas())
 }
 
 func checkEventIdentityBackfillPlans(ctx context.Context, conn *sql.Conn) error {

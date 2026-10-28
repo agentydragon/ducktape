@@ -6,14 +6,14 @@ import (
 	"errors"
 	"fmt"
 
-	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
 	"github.com/google/uuid"
 )
 
 // eventIdentityLookup uses the indexed relational source key. The explicit backfill/index command must finish
-// before this reader release is rolled out. Writers continue to populate the legacy JSONB identity during the
-// mixed-version window.
+// before this reader release is rolled out. Event identity JSON is retained only for rollback until the later
+// identity contract removes the legacy column.
 func eventIdentityLookup(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, event model.EventIdentity) (int64, bool, error) {
 	switch event := event.(type) {
 	case model.ActionsEvent:

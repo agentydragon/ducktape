@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -120,9 +119,9 @@ func assertInboxReadableAndIdempotent(
 	}
 }
 
-func TestSubscribeDualWritesNormalizedDestination(t *testing.T) {
+func TestSubscribeWritesNormalizedDestination(t *testing.T) {
 	db, ctx := newDestinationBackfillDatabase(t)
-	owner := model.ServiceAccount{Namespace: "test-namespace", Name: "test-destination-dual-write"}
+	owner := model.ServiceAccount{Namespace: "test-namespace", Name: "test-destination-typed-only"}
 	ref := model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-uid"}
 	creation := model.Subscribe{
 		DestinationRef: ref, SessionID: "test-session", IdempotencyKey: "test-key", LifetimeDays: 7,
@@ -140,14 +139,13 @@ func TestSubscribeDualWritesNormalizedDestination(t *testing.T) {
 	if got != ref {
 		t.Fatalf("new inbox destination = %+v, want %+v", got, ref)
 	}
-	var legacyJSON []byte
-	if err := db.QueryRowContext(ctx, `SELECT destination_ref FROM inbox
-		WHERE owner_namespace = $1 AND owner_name = $2`, owner.Namespace, owner.Name).Scan(&legacyJSON); err != nil {
+	var legacyJSONIsNull bool
+	if err := db.QueryRowContext(ctx, `SELECT destination_ref IS NULL FROM inbox
+		WHERE owner_namespace = $1 AND owner_name = $2`, owner.Namespace, owner.Name).Scan(&legacyJSONIsNull); err != nil {
 		t.Fatal(err)
 	}
-	var legacyRef model.DestinationRef
-	if err := json.Unmarshal(legacyJSON, &legacyRef); err != nil || legacyRef != ref {
-		t.Fatalf("legacy destination_ref = %+v, %v; want %+v", legacyRef, err, ref)
+	if !legacyJSONIsNull {
+		t.Fatal("typed-only inbox writer populated the legacy destination_ref JSON column")
 	}
 }
 
@@ -374,27 +372,6 @@ func TestBoundedDestinationCandidatesLimitsSerializedBytes(t *testing.T) {
 	if _, _, err := boundedDestinationCandidates(oversized); err == nil {
 		t.Fatal("accepted a single destination_ref larger than the per-row bound")
 	}
-}
-
-func explainLines(ctx context.Context, tx *sql.Tx, query string, args ...any) (string, error) {
-	rows, err := tx.QueryContext(ctx, "EXPLAIN (COSTS OFF) "+query, args...)
-	if err != nil {
-		return "", err
-	}
-	var plan strings.Builder
-	for rows.Next() {
-		var line string
-		if err := rows.Scan(&line); err != nil {
-			_ = rows.Close()
-			return "", err
-		}
-		plan.WriteString(line)
-		plan.WriteByte('\n')
-	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		return "", err
-	}
-	return plan.String(), nil
 }
 
 func usesInboxPrimaryKeyWithoutFullScan(plan string) bool {

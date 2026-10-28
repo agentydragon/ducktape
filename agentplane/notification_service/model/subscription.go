@@ -96,7 +96,6 @@ type EventFilter struct {
 	Actions []string
 }
 
-// Validate checks the destination reference's namespace, name and UID bounds.
 func (r DestinationRef) Validate() error {
 	return errors.Join(
 		CheckText("destination_ref.namespace", r.Namespace, 1, 63),

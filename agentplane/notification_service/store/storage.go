@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/storagepb"
 	"github.com/google/uuid"
