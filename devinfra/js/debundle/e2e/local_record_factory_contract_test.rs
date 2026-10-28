@@ -174,7 +174,7 @@ fn invoking_or_extracting_a_result_callback_before_later_remains_rejected() {
             before_later,
             "console.log(observed);",
         );
-        assert_atomic_fallback(&source, &[], &members, &[]);
+        assert_atomic_fallback(&source, &members, &[], &[]);
     }
 }
 
