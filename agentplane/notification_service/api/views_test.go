@@ -74,3 +74,42 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 		t.Fatal("decoded a mergeability identity with both observation discriminators")
 	}
 }
+
+func TestGitHubObservationIdentityViewRoundTrips(t *testing.T) {
+	for _, event := range []store.EventName{store.EventCheckRun, store.EventStatus, store.EventPullRequestReview, store.EventPullRequest} {
+		identity, err := eventIdentityView(store.GitHubObservationEvent{
+			AppID: 11, RepositoryID: 22, Event: event, Sequence: 3,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		name, err := eventNameView(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubObservation{
+			GithubObservation: &notificationspb.GitHubObservationEvent{
+				AppId: 11, RepositoryId: 22, Event: name, Sequence: 3,
+			},
+		}}
+		if !proto.Equal(identity, want) {
+			t.Fatalf("identity view = %v, want %v", identity, want)
+		}
+		encoded, err := protojson.Marshal(identity)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded notificationspb.EventIdentity
+		if err := protojson.Unmarshal(encoded, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if !proto.Equal(&decoded, identity) {
+			t.Errorf("protojson round trip = %v, want %v", &decoded, identity)
+		}
+	}
+	if _, err := eventIdentityView(store.GitHubObservationEvent{
+		AppID: 11, RepositoryID: 22, Event: store.EventIssues, Sequence: 4,
+	}); err == nil {
+		t.Fatal("view accepted an unsupported observation event")
+	}
+}

@@ -117,7 +117,8 @@ type EventFilter struct {
 }
 
 // EventIdentity names an entry's event within its source, which is how a redelivery is told from a new event:
-// an ActionsEvent, a GitHubEvent, a GitHubMergeabilityEvent, a GitHubMergeabilitySnapshotEvent or a MessageEvent.
+// an ActionsEvent, a GitHubEvent, a GitHubObservationEvent, a GitHubMergeabilityEvent, a
+// GitHubMergeabilitySnapshotEvent or a MessageEvent.
 type EventIdentity interface{ isEventIdentity() }
 
 type ActionsEvent struct {
@@ -131,6 +132,15 @@ type GitHubEvent struct {
 	RepositoryID int64
 	Event        EventName
 	Action       *string
+}
+
+// GitHubObservationEvent is an Agentplane-generated observation of current GitHub state.
+// Sequence is a durable, generated-event sequence within its event category, not a GitHub delivery ID.
+type GitHubObservationEvent struct {
+	AppID        int64
+	RepositoryID int64
+	Event        EventName
+	Sequence     int64
 }
 
 // GitHubMergeabilityEvent is one Agentplane-generated observation of a pull request's mergeability.
@@ -159,6 +169,7 @@ type MessageEvent struct {
 
 func (ActionsEvent) isEventIdentity()                    {}
 func (GitHubEvent) isEventIdentity()                     {}
+func (GitHubObservationEvent) isEventIdentity()          {}
 func (GitHubMergeabilityEvent) isEventIdentity()         {}
 func (GitHubMergeabilitySnapshotEvent) isEventIdentity() {}
 func (MessageEvent) isEventIdentity()                    {}
@@ -476,6 +487,16 @@ func (e GitHubEvent) MarshalJSON() ([]byte, error) {
 	}{"github", e.AppID, e.DeliveryID, e.RepositoryID, e.Event, e.Action})
 }
 
+func (e GitHubObservationEvent) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Provider     string    `json:"provider"`
+		AppID        int64     `json:"app_id"`
+		RepositoryID int64     `json:"repository_id"`
+		Event        EventName `json:"event"`
+		Sequence     int64     `json:"sequence"`
+	}{"github_observation", e.AppID, e.RepositoryID, e.Event, e.Sequence})
+}
+
 func (e GitHubMergeabilityEvent) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Provider          string `json:"provider"`
@@ -716,6 +737,34 @@ func DecodeEventIdentity(data []byte) (EventIdentity, error) {
 		return GitHubEvent{
 			AppID: *wire.AppID, DeliveryID: *wire.DeliveryID, RepositoryID: *wire.RepositoryID,
 			Event: wire.Event, Action: wire.Action,
+		}, nil
+	case "github_observation":
+		var wire struct {
+			Provider     string     `json:"provider"`
+			AppID        *int64     `json:"app_id"`
+			RepositoryID *int64     `json:"repository_id"`
+			Event        *EventName `json:"event"`
+			Sequence     *int64     `json:"sequence"`
+		}
+		if err := decode(data, &wire); err != nil {
+			return nil, err
+		}
+		if err := errors.Join(
+			required("app_id", wire.AppID != nil),
+			required("repository_id", wire.RepositoryID != nil),
+			required("event", wire.Event != nil),
+			required("sequence", wire.Sequence != nil),
+		); err != nil {
+			return nil, err
+		}
+		if *wire.AppID <= 0 || *wire.RepositoryID <= 0 || *wire.Sequence <= 0 {
+			return nil, errors.New("app_id, repository_id and sequence must be positive")
+		}
+		if *wire.Event != EventCheckRun && *wire.Event != EventStatus && *wire.Event != EventPullRequestReview && *wire.Event != EventPullRequest {
+			return nil, fmt.Errorf("unsupported GitHub observation event %q", *wire.Event)
+		}
+		return GitHubObservationEvent{
+			AppID: *wire.AppID, RepositoryID: *wire.RepositoryID, Event: *wire.Event, Sequence: *wire.Sequence,
 		}, nil
 	case "github_mergeability":
 		var wire struct {

@@ -500,6 +500,7 @@ message EventIdentity {
     GitHubEvent github = 2;
     MessageEvent message = 3;
     GitHubMergeabilityEvent github_mergeability = 4;
+    GitHubObservationEvent github_observation = 5;
   }
 }
 
@@ -517,6 +518,15 @@ message GitHubEvent {
   int64 repository_id = 3;
   GitHubEventName event = 4;
   optional string action = 5;
+}
+
+// One Agentplane-generated observation of current GitHub state, never identified by
+// a webhook UUID. The payload carries the observed state and the sequence is durable within its event category.
+message GitHubObservationEvent {
+  int64 app_id = 1;
+  int64 repository_id = 2;
+  GitHubEventName event = 3;
+  int64 sequence = 4;
 }
 
 // One Agentplane-generated mergeability observation, identified by exactly one observation discriminator, never

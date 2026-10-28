@@ -271,6 +271,19 @@ func eventIdentityView(event store.EventIdentity) (*notificationspb.EventIdentit
 			AppId: event.AppID, DeliveryId: event.DeliveryID.String(), RepositoryId: event.RepositoryID,
 			Event: name, Action: event.Action,
 		}}}, nil
+	case store.GitHubObservationEvent:
+		if event.Event != store.EventCheckRun && event.Event != store.EventStatus && event.Event != store.EventPullRequestReview && event.Event != store.EventPullRequest {
+			return nil, fmt.Errorf("stored GitHub observation event %q is unknown", event.Event)
+		}
+		name, err := eventNameView(event.Event)
+		if err != nil {
+			return nil, err
+		}
+		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubObservation{
+			GithubObservation: &notificationspb.GitHubObservationEvent{
+				AppId: event.AppID, RepositoryId: event.RepositoryID, Event: name, Sequence: event.Sequence,
+			},
+		}}, nil
 	case store.GitHubMergeabilityEvent:
 		return &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubMergeability{
 			GithubMergeability: &notificationspb.GitHubMergeabilityEvent{

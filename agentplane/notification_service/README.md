@@ -45,6 +45,11 @@ A schema change is a Goose file in `migrations/notifications/`. The baseline, `0
 database that the retired Alembic history left at revision `0010_drop_write_only_columns` and refuses one behind it;
 the migrator keeps the advisory lock key the Alembic runner took.
 
+The generic `github_observation` inbox identity is read-compatible here for the planned CI/check, review
+and PR lifecycle recovery writers. This release does not produce it. Deploy this reader release to all replicas
+before merging or deploying a writer; retain its image as the data-preserving rollback floor once writing begins.
+Never roll back to an older decoder or run a down migration that discards retained notifications.
+
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
 flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,
 and `watch_lease_s` (default 300) is how long a watch lasts before it ends with `reconnect_required`.

@@ -200,6 +200,10 @@ func inboxEntryLine(entry *notificationspb.InboxEntry) string {
 		if action := provider.Github.GetAction(); action != "" {
 			identity += " " + strconv.Quote(action)
 		}
+	case *notificationspb.EventIdentity_GithubObservation:
+		identity = fmt.Sprintf("github %s observation sequence %d",
+			enumSuffix(provider.GithubObservation.GetEvent().String(), githubEventPrefix),
+			provider.GithubObservation.GetSequence())
 	case *notificationspb.EventIdentity_GithubMergeability:
 		switch observation := provider.GithubMergeability.GetObservation().(type) {
 		case *notificationspb.GitHubMergeabilityEvent_Sequence:

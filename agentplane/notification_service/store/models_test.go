@@ -132,3 +132,50 @@ func TestMessageEventKeepsItsPermissiveSenderWireShape(t *testing.T) {
 		})
 	}
 }
+
+func TestAGitHubObservationIdentityIsReadBackWithoutAWebhookDeliveryID(t *testing.T) {
+	sent := GitHubObservationEvent{AppID: 11, RepositoryID: 22, Event: EventCheckRun, Sequence: 3}
+	stored, err := json.Marshal(sent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"provider":"github_observation","app_id":11,"repository_id":22,"event":"check_run","sequence":3}`
+	requireEqual(t, string(stored), want)
+	read, err := DecodeEventIdentity(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireEqual(t, read, EventIdentity(sent))
+	status, err := DecodeEventIdentity([]byte(`{"provider":"github_observation","app_id":11,"repository_id":22,"event":"status","sequence":4}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireEqual(t, status, EventIdentity(GitHubObservationEvent{AppID: 11, RepositoryID: 22, Event: EventStatus, Sequence: 4}))
+	for _, event := range []EventName{EventPullRequestReview, EventPullRequest} {
+		want := GitHubObservationEvent{AppID: 11, RepositoryID: 22, Event: event, Sequence: 5}
+		encoded, err := json.Marshal(want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := DecodeEventIdentity(encoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		requireEqual(t, decoded, EventIdentity(want))
+	}
+	for name, stored := range map[string]string{
+		"no app ID":         `{"provider":"github_observation","repository_id":22,"event":"check_run","sequence":3}`,
+		"no repository ID":  `{"provider":"github_observation","app_id":11,"event":"check_run","sequence":3}`,
+		"no event":          `{"provider":"github_observation","app_id":11,"repository_id":22,"sequence":3}`,
+		"no sequence":       `{"provider":"github_observation","app_id":11,"repository_id":22,"event":"check_run"}`,
+		"zero app ID":       `{"provider":"github_observation","app_id":0,"repository_id":22,"event":"check_run","sequence":3}`,
+		"negative repo ID":  `{"provider":"github_observation","app_id":11,"repository_id":-1,"event":"check_run","sequence":3}`,
+		"zero sequence":     `{"provider":"github_observation","app_id":11,"repository_id":22,"event":"check_run","sequence":0}`,
+		"unsupported event": `{"provider":"github_observation","app_id":11,"repository_id":22,"event":"issues","sequence":3}`,
+		"unknown field":     `{"provider":"github_observation","app_id":11,"repository_id":22,"event":"check_run","sequence":3,"delivery_id":"5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60"}`,
+	} {
+		if _, err := DecodeEventIdentity([]byte(stored)); err == nil {
+			t.Errorf("%s: decoded", name)
+		}
+	}
+}

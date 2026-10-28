@@ -643,3 +643,27 @@ func TestEgressRulesPassThroughAndProxyRefusalsAreAttributed(t *testing.T) {
 		t.Errorf("exit %d, envelope %+v; want exit 1 attributed to the egress proxy", code, got)
 	}
 }
+
+func TestInboxSummaryNamesGitHubObservations(t *testing.T) {
+	for _, event := range []struct {
+		name notificationspb.GitHubEventName
+		want string
+	}{
+		{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_CHECK_RUN, "entry 7  github check_run observation sequence 12"},
+		{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_STATUS, "entry 7  github status observation sequence 12"},
+		{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_PULL_REQUEST, "entry 7  github pull_request observation sequence 12"},
+		{notificationspb.GitHubEventName_GITHUB_EVENT_NAME_PULL_REQUEST_REVIEW, "entry 7  github pull_request_review observation sequence 12"},
+	} {
+		line := inboxEntryLine(&notificationspb.InboxEntry{
+			Cursor: 7,
+			Event: &notificationspb.EventIdentity{Provider: &notificationspb.EventIdentity_GithubObservation{
+				GithubObservation: &notificationspb.GitHubObservationEvent{
+					RepositoryId: 22, Event: event.name, Sequence: 12,
+				},
+			}},
+		})
+		if line != event.want {
+			t.Errorf("summary = %q, want %q", line, event.want)
+		}
+	}
+}
