@@ -333,15 +333,6 @@ pub(super) fn infer_own_property_projection(
     };
     inference.query(&key)?;
     let judgment = inference.get(&key)?;
-    let projection = match judgment.value() {
-        OwnPropertyFact::NamesProjection(projection) => {
-            OwnPropertyProjection::Names(projection.clone())
-        }
-        OwnPropertyFact::DescriptorProjection(projection) => {
-            OwnPropertyProjection::Descriptors(projection.clone())
-        }
-        _ => return None,
-    };
     let conclusion = key.rule()?;
     let mut pending = vec![key.clone()];
     let mut visited = BTreeSet::new();
@@ -363,6 +354,15 @@ pub(super) fn infer_own_property_projection(
         conclusion,
         derivation_rules,
         value_input_refs: judgment.dependencies().value_inputs.clone(),
+    };
+    let projection = match inference.into_value(&key)? {
+        OwnPropertyFact::NamesProjection(projection) => {
+            OwnPropertyProjection::Names(projection)
+        }
+        OwnPropertyFact::DescriptorProjection(projection) => {
+            OwnPropertyProjection::Descriptors(projection)
+        }
+        _ => return None,
     };
     Some(OwnPropertyProof {
         projection,

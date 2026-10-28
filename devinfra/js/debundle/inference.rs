@@ -118,6 +118,12 @@ impl<R: RuleSet> Inference<R> {
         self.judgments.get(key)
     }
 
+    /// Consumes a completed store and moves out one proved fact. Callers can
+    /// expand its explanation first without cloning the fact's payload.
+    pub fn into_value(mut self, key: &R::Key) -> Option<R::Fact> {
+        self.judgments.remove(key).map(|judgment| judgment.value)
+    }
+
     /// Reports whether a discovered key is proven, waiting, or unsupported.
     ///
     /// `None` means the key has not been discovered. After [`Self::query`]
@@ -515,6 +521,7 @@ mod tests {
                 .map(|judgment| judgment.value().0.as_str()),
             Some("left+right")
         );
+        assert_eq!(inference.into_value(&Key::A).unwrap().0, "left+right");
     }
 
     #[test]
