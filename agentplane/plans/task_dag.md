@@ -253,13 +253,13 @@ flowchart LR
 ### `GITHUB_MERGEABILITY_FRESHNESS` — handle stale definite GitHub results after a change
 
 **In flight — Codex, 2026-10-28 UTC:** implementing test-merge parent validation, current base-ref reads,
-persisted rechecks and deterministic coverage in `agentplane-mergeability-freshness`. The
+persisted rechecks and deterministic coverage in [PR #12343](https://github.com/agentydragon/ducktape/pull/12343). The
 [bounded GitHub probe](../notification_service/debug/github_mergeability_freshness_probe.md) confirmed stale
-positive and negative results; implementation PR and deployment acceptance remain pending.
+positive and negative results; PR validation and deployment acceptance remain pending.
 
-Ensure a head/base change cannot settle
-monitoring for the ordinary freshness interval merely because GitHub initially returns an old
-non-null answer. Persist the required follow-up across worker restarts, preserve access/error
+Reject a positive result whose test merge does not match the observed head/current base, and
+apply the bounded negative-result recheck policy below. An old definite positive must not suppress
+rechecks until the ordinary freshness deadline. Persist the required follow-up across worker restarts, preserve access/error
 backoff and generation fences, and source revision labels from the actual relevant refs rather than
 assuming the PR response's base SHA is the current branch tip. Keep pending/settling observations
 separate from source failures, and fence observations overtaken by known head/base changes.

@@ -201,6 +201,98 @@ func TestAnInitialConflictProducesASyntheticMergeabilityEntry(t *testing.T) {
 	}
 }
 
+func TestUnverifiedMergeabilityStaysUnknownUntilTheTestMergeMatchesCurrentBase(t *testing.T) {
+	h := newHarness(t)
+	source := pullRequestSource(7, store.EventFilter{Event: store.EventMergeabilityChanged})
+	subscription := h.follow(source, "follow")
+	pullRequestPath := "/repos/owner/repo/pulls/7"
+	commitPath := "/repos/owner/repo/git/commits/" + testMergeCommitSHA
+	h.fake.respond(pullRequestPath, http.StatusOK, nil,
+		`{"number":7,"state":"open","merged":false,"base":{"ref":"main","sha":"`+testBaseSHA+`"},"mergeable":false,"head":{"sha":"`+testSHA+`","repo":{"id":100,"full_name":"owner/repo"}}}`)
+	claim := h.claim()
+	h.reconcileAll(claim)
+	initialEntries := h.page(subscription.InboxID).Entries
+	if len(initialEntries) != 1 {
+		t.Fatalf("%d entries after the initial conflict, want its transition", len(initialEntries))
+	}
+	initialEvent, ok := initialEntries[0].Event.(store.GitHubMergeabilityEvent)
+	if !ok || initialEvent.Sequence <= 0 {
+		t.Fatalf("initial event identity = %#v, want sequenced transition", initialEntries[0].Event)
+	}
+	if got := h.text(`SELECT mergeability::text FROM github_pull_request WHERE repository_id = $1 AND number = 7`, baseRepository); got != "CONFLICTING" {
+		t.Fatalf("persisted mergeability after the initial observation = %q, want CONFLICTING", got)
+	}
+	h.fake.restore(pullRequestPath)
+	h.world.update(func(w *world) { w.base = otherBaseSHA })
+	// GitHub says the PR is mergeable, but its test merge still has the previous base as a parent.
+	h.fake.respond(commitPath, http.StatusOK, nil, mergeCommitBody(testMergeCommitSHA, testBaseSHA, testSHA))
+	h.ingest("pull_request", pullRequestPayload(testSHA))
+	h.reconcileAll(claim)
+
+	if got := h.text(`SELECT mergeability::text FROM github_pull_request WHERE repository_id = $1 AND number = 7`, baseRepository); got != "UNKNOWN" {
+		t.Fatalf("persisted mergeability = %q, want UNKNOWN while the test merge has a stale base parent", got)
+	}
+	if got := h.text(`SELECT base_sha FROM github_pull_request WHERE repository_id = $1 AND number = 7`, baseRepository); got != otherBaseSHA {
+		t.Fatalf("persisted base SHA = %q, want current branch tip %s", got, otherBaseSHA)
+	}
+	state, err := h.provider.state.Subject(t.Context(), store.GitHubSubjectKey{RepositoryID: baseRepository, Kind: "pull_request", Key: "7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	freshness := time.Duration(DefaultSettings().FreshnessSeconds) * time.Second
+	if state.LastSuccessAt == nil || !state.RepairAt.Before(state.LastSuccessAt.Add(freshness)) {
+		t.Fatalf("subject state = %+v, want a durable early retry for UNKNOWN", state)
+	}
+	if entries := h.page(subscription.InboxID).Entries; len(entries) != 1 {
+		t.Fatalf("%d entries after the unverified positive, want no resolution notice", len(entries))
+	}
+
+	// A later poll gets a test merge whose parents match the current base and head. The PR's base.sha is stale,
+	// so the proof must be checked against the ref read by the client.
+	h.fake.restore(commitPath)
+	h.fake.respond(pullRequestPath, http.StatusOK, nil,
+		`{"number":7,"state":"open","merged":false,"base":{"ref":"main","sha":"`+testBaseSHA+`"},"mergeable":true,"merge_commit_sha":"`+testMergeCommitSHA+`","head":{"sha":"`+testSHA+`","repo":{"id":100,"full_name":"owner/repo"}}}`)
+	h.exec(`UPDATE github_subject SET next_attempt = now() WHERE repository_id = $1 AND kind = 'pull_request' AND subject_key = '7'`, baseRepository)
+	h.exec(`UPDATE subscription SET next_attempt = now() WHERE id = $1`, subscription.ID)
+	h.exec(`UPDATE inbox SET next_attempt = now() WHERE id = $1`, subscription.InboxID)
+	h.fake.forget()
+	h.restart()
+	if got := h.text(`SELECT mergeability::text FROM github_pull_request WHERE repository_id = $1 AND number = 7`, baseRepository); got != "UNKNOWN" {
+		t.Fatalf("persisted mergeability after restart = %q, want UNKNOWN before the fresh poll", got)
+	}
+	h.reconcileAll(claim)
+
+	if got := h.text(`SELECT mergeability::text FROM github_pull_request WHERE repository_id = $1 AND number = 7`, baseRepository); got != "MERGEABLE" {
+		t.Fatalf("persisted mergeability after restart = %q, want MERGEABLE", got)
+	}
+	if h.fake.count("/repos/owner/repo/git/ref/heads/main") != 1 || h.fake.count(commitPath) != 1 {
+		t.Errorf("current-base ref reads = %d, test-merge reads = %d, want one each",
+			h.fake.count("/repos/owner/repo/git/ref/heads/main"), h.fake.count(commitPath))
+	}
+	entries := h.page(subscription.InboxID).Entries
+	if len(entries) != 2 {
+		t.Fatalf("%d entries after the matching proof, want conflict and resolution transitions", len(entries))
+	}
+	if event, ok := entries[1].Event.(store.GitHubMergeabilityEvent); !ok || event.Sequence <= initialEvent.Sequence {
+		t.Fatalf("resolution event identity = %#v, want sequenced transition", entries[1].Event)
+	}
+	var notice struct {
+		PreviousMergeability store.GitHubMergeableState `json:"previousMergeability"`
+		Mergeability         store.GitHubMergeableState `json:"mergeability"`
+		BaseSHA              string                     `json:"baseSha"`
+		HeadSHA              string                     `json:"headSha"`
+		MergeCommit          *store.GitHubMergeCommit   `json:"mergeCommit"`
+	}
+	if err := json.Unmarshal(entries[1].Payload, &notice); err != nil {
+		t.Fatal(err)
+	}
+	if notice.PreviousMergeability != store.GitHubConflicting || notice.Mergeability != store.GitHubMergeable ||
+		notice.BaseSHA != otherBaseSHA || notice.HeadSHA != testSHA || notice.MergeCommit == nil ||
+		*notice.MergeCommit != (store.GitHubMergeCommit{SHA: testMergeCommitSHA, BaseSHA: otherBaseSHA, HeadSHA: testSHA}) {
+		t.Errorf("resolution payload = %+v, want a mergeable notice proved against current refs", notice)
+	}
+}
+
 // The access is validated before the subject is read, so it is the first thing a page was made under to go stale.
 func TestASubscriptionIsReadAgainWhenTheEarliestThingItWasReadUnderGoesStale(t *testing.T) {
 	h := newHarness(t)

@@ -454,6 +454,14 @@ func TestMergeabilityTransitionsUseDefaultFiltersAndDeduplicateSubscribers(t *te
 	}
 	for _, observation := range observations {
 		g.observePullRequest(t, defaultOne, observation)
+		if observation.Mergeability == GitHubMergeable {
+			wantProof := testMergeCommit(observation.BaseSHA, observation.HeadSHA)
+			stored := g.pullRequestObservation(t, 7)
+			if !stored.mergeCommitSHA.Valid || stored.mergeCommitSHA.String != wantProof.SHA ||
+				stored.baseSHA != wantProof.BaseSHA || stored.headSHA != wantProof.HeadSHA {
+				t.Errorf("stored MERGEABLE proof = %+v, want matching pair and sha %s", stored, wantProof.SHA)
+			}
+		}
 		g.reconcileAll(t, defaultOne, defaultTwo, explicitComments)
 	}
 
@@ -510,16 +518,16 @@ func TestMergeabilityTransitionsUseDefaultFiltersAndDeduplicateSubscribers(t *te
 				t.Errorf("verified MERGEABLE payload = refs %s/%s, proof %#v; want refs %s/%s and proof %#v",
 					payload.BaseSHA, payload.HeadSHA, payload.MergeCommit, commitB, commitB, wantProof)
 			}
-			stored := g.pullRequestObservation(t, 7)
-			if !stored.mergeCommitSHA.Valid || stored.mergeCommitSHA.String != wantProof.SHA || stored.baseSHA != wantProof.BaseSHA || stored.headSHA != wantProof.HeadSHA {
-				t.Errorf("stored MERGEABLE proof = %+v, want matching pair and sha %s", stored, wantProof.SHA)
-			}
 		} else if payload.MergeCommit != nil {
 			t.Errorf("unverified %s transition unexpectedly carries merge proof %#v", payload.Mergeability, payload.MergeCommit)
 		}
 	}
 	if got := sequencesForSubscription(t, entries, explicitComments.ID); len(got) != 0 {
 		t.Errorf("explicit comments filter received mergeability sequences %v", got)
+	}
+	stored := g.pullRequestObservation(t, 7)
+	if stored.mergeCommitSHA.Valid {
+		t.Errorf("final CONFLICTING snapshot retained stale merge proof %q", stored.mergeCommitSHA.String)
 	}
 }
 
@@ -659,8 +667,7 @@ func TestBaseBranchPushInvalidatesAndFencesAnInFlightPullRequestRefresh(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	g.exec(t, `UPDATE github_subject SET last_success_at = now() - interval '11 minutes'
-		WHERE repository_id = $1 AND kind = $2 AND subject_key = $3`, sub.Subject.RepositoryID, sub.Subject.Kind, sub.Subject.Key)
+	g.forcePullRequestRefreshDue(t, sub)
 	lease, err := g.state.Acquire(t.Context(), sub.Subject)
 	if err != nil || lease == nil {
 		t.Fatalf("in-flight refresh lease = %v, %v", lease, err)
