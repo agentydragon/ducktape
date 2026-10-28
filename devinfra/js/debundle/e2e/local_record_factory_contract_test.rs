@@ -353,7 +353,7 @@ fn checked_factory_call_purity_is_site_specific_and_keeps_eager_reads() {
             graph.edges.iter().any(|edge| {
                 edge.source == command_unit
                     && edge.target == label_unit
-                    && edge.edge_kind.to_string() == "eager_use"
+                    && edge.edge_kind == analysis::DepKind::EagerUse
                     && edge.binding.as_deref() == Some("label")
             }),
             "constructor's eager lexical read must remain an init dependency: {:#?}",
