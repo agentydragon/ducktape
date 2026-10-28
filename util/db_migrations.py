@@ -25,15 +25,6 @@ logger = logging.getLogger(__name__)
 CONNECT_BOUND = timedelta(minutes=2)
 
 
-def merged_metadata(*sources: MetaData) -> MetaData:
-    """One history's tables when they are declared on several declarative bases."""
-    merged = MetaData()
-    for source in sources:
-        for table in source.tables.values():
-            table.to_metadata(merged)
-    return merged
-
-
 @dataclass(frozen=True)
 class MigrationRunner:
     """One history, its tables, and the lock two replicas starting at once contend for.

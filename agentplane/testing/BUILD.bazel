@@ -32,12 +32,6 @@ py_library(
 )
 
 py_library(
-    name = "agent_docs",
-    srcs = ["agent_docs.py"],
-    deps = ["@pypi//httpx"],
-)
-
-py_library(
     name = "kubernetes_apiserver",
     srcs = ["kubernetes_apiserver.py"],
     data = [

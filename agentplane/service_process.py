@@ -1,9 +1,6 @@
-"""Process scaffolding for the agentplane service entry points: logging, Kubernetes configuration,
-and the wait for termination."""
+"""Process scaffolding for the Agentplane service entry points: logging and Kubernetes configuration."""
 
-import asyncio
 import logging
-import signal
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -32,16 +29,3 @@ async def kubernetes_configuration(kubeconfig: Path | None) -> k8s_client.Config
     else:
         await k8s_config.load_kube_config(config_file=str(kubeconfig), client_configuration=configuration)
     return configuration
-
-
-async def until_terminated() -> None:
-    """Returns on the first SIGTERM or SIGINT, so the caller's context managers shut the process down."""
-    stopping = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for signum in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(signum, stopping.set)
-    try:
-        await stopping.wait()
-    finally:
-        for signum in (signal.SIGTERM, signal.SIGINT):
-            loop.remove_signal_handler(signum)

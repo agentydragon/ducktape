@@ -171,24 +171,3 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
-py_library(
-    name = "agent_docs",
-    srcs = ["agent_docs.py"],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//fastapi",
-    ],
-)
-
-py_library(
-    name = "policy_watch",
-    srcs = ["policy_watch.py"],
-    deps = [
-        ":crd_group",
-        ":kubernetes_watch",
-        ":policy_sets",
-        "//util:kubernetes",
-        "//util:kubernetes_watch",
-    ],
-)

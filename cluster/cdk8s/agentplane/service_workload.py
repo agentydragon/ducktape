@@ -45,25 +45,6 @@ class ServiceWorkload:
     # Volume names `project_tokens` has patched in; the Deployment's own `volumes` omit them.
     _projected: list[str] = field(default_factory=list, init=False)
 
-    def mount_secret(self, volume: str, secret_name: str, mount_path: str, *, key: str) -> None:
-        """Mount one Secret key as a read-only file after the app's config volume is attached."""
-        deployment = ApiObject.of(self.deployment)
-        deployment.add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/volumes/-",
-                k8s.Volume(
-                    name=volume,
-                    secret=k8s.SecretVolumeSource(secret_name=secret_name, items=[k8s.KeyToPath(key=key, path=key)]),
-                ),
-            )
-        )
-        deployment.add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/containers/0/volumeMounts/-",
-                k8s.VolumeMount(name=volume, mount_path=mount_path, read_only=True),
-            )
-        )
-
     def project_tokens(self, volume: str, mount_path: str, audiences: Mapping[str, str]) -> None:
         """Mounts a rotating workload token for each `{file: audience}` under `mount_path`, apart
         from the API-server token. cdk8s-plus has no projected ServiceAccount token volume.

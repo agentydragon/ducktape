@@ -107,12 +107,6 @@ func (c *connections) holder(sandboxUID string) (*runnerConnection, error) {
 	}
 }
 
-func (c *connections) observeLease(sandboxUID string, epoch uint64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.leaseEpochs[sandboxUID] = epoch
-}
-
 func (c *connections) forgetLease(sandboxUID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

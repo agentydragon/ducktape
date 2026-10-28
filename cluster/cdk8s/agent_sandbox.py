@@ -1,24 +1,14 @@
-"""kubernetes-sigs/agent-sandbox: the controller, installed from its pinned upstream release
-manifest (`cluster/cdk8s/agent_sandbox.md`), and Ducktape's policy for agent-sandbox objects,
-built on `providers/agent_sandbox`."""
+"""Install and configure the kubernetes-sigs/agent-sandbox controller from its pinned release."""
 
 from __future__ import annotations
 
-from agent_sandbox_sandboxwarmpool_crds.io.x_k8s.agents.extensions import (
-    SandboxWarmPoolSpecSandboxTemplateRef,
-    SandboxWarmPoolSpecUpdateStrategy,
-    SandboxWarmPoolSpecUpdateStrategyType,
-)
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
-from constructs import Construct
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
-from cluster.cdk8s.providers.agent_sandbox.sandbox_warm_pool import SandboxWarmPool
 
 CONTROLLER_DIR = f"{GENERATED_ROOT}/agents/agent-sandbox/controller"
 _VERSION = "v0.5.5"
@@ -88,19 +78,4 @@ def agent_sandbox_controller(chart: Chart, directory: RenderedDirectory) -> Kust
             f"kubernetes-sigs/agent-sandbox {_VERSION} combined release asset "
             "(Sandbox, SandboxTemplate, SandboxClaim, SandboxWarmPool CRDs)."
         ),
-    )
-
-
-def warm_pool(scope: Construct, id: str, *, template: SandboxTemplate) -> SandboxWarmPool:
-    """One idle sandbox built from `template`, in a pool that takes the template's name and, since
-    the reference is by name alone, its namespace. `Recreate`, not the CRD's `OnReplenish`: a
-    changed pod template replaces the idle sandbox at once instead of leaving it for the next claim.
-    """
-    return SandboxWarmPool(
-        scope,
-        id,
-        metadata=ApiObjectMetadata(name=template.name, namespace=template.metadata.namespace),
-        sandbox_template_ref=SandboxWarmPoolSpecSandboxTemplateRef(name=template.name),
-        replicas=1,
-        update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
     )

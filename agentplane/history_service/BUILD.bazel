@@ -16,10 +16,6 @@ py_library(
         "//agentplane/app:__pkg__",
         "//agentplane/history_service:__subpackages__",
     ],
-    deps = [
-        "//agentplane/postgres:wakeups",
-        "@pypi//sqlalchemy",
-    ],
 )
 
 py_library(

@@ -47,12 +47,6 @@ async def run_frozen_specimens_check(deltas: list[pygit2.DiffDelta], head_tree: 
     return None
 
 
-def get_all_files(repo: pygit2.Repository) -> list[Path]:
-    """Get all tracked files from git index, excluding deleted files."""
-    repo_root = Path(repo.workdir)
-    return [Path(entry.path) for entry in repo.index if (repo_root / entry.path).exists()]
-
-
 def _staged_deltas(repo: pygit2.Repository) -> tuple[pygit2.Tree | None, list[pygit2.DiffDelta]]:
     """Return (head_tree, staged deltas) for the current index."""
     if repo.head_is_unborn:

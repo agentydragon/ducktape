@@ -1147,12 +1147,8 @@ py_library(
         ":flux",
         ":manifest_roots",
         ":namespaces",
-        "//cluster/cdk8s/providers/agent_sandbox:sandbox_template",
-        "//cluster/cdk8s/providers/agent_sandbox:sandbox_warm_pool",
-        "//cluster/cdk8s/providers/agent_sandbox:sandboxwarmpool",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
