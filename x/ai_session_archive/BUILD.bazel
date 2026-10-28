@@ -134,6 +134,31 @@ py_binary(
     deps = [":cli"],
 )
 
+aspect_py_binary(
+    name = "ingest_image_bin",
+    data = ["//third_party/restic"],
+    main = "cli.py",
+    deps = [":cli"],
+)
+
+py_image_layer(
+    name = "ingest_image_layers",
+    binary = ":ingest_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "ingest_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("ingest_image_bin"),
+    env = py_image_env(binary_name = "ingest_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":ingest_image_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
 py_library(
     name = "testing",
     testonly = True,
@@ -269,6 +294,7 @@ py_test(
 py_library(
     name = "web_settings",
     srcs = ["web_settings.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "@pypi//pydantic",
         "@pypi//pydantic_settings",

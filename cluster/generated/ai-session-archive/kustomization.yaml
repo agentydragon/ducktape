@@ -1,0 +1,6 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ai-session-archive.k8s.yaml
+components:
+  - ../../k8s/ai-session-archive-image-pins

@@ -120,3 +120,42 @@ Before first deployment, complete the replicated-class failover, resync, and exp
 rehearsal recorded in the [Piraeus production plan](../../docs/plans/piraeus_production.md#replicated-class-and-seaweed-reduction).
 
 TODO: Consider a separate recovery copy of the Restic repository if needed.
+
+## Archive projection and browser
+
+The separate `ai-session-archive` Flux Kustomization imports each host repository into a CNPG
+database in this namespace and serves the owner-authenticated browser at
+`https://ai-session-archive.allegedly.works`. It depends on this session-backup Kustomization,
+CNPG, External Secrets, the Forgejo image credential and image policies, SSO providers, and the
+SeaweedFS operator. The session-backup Kustomization depends only on Piraeus, so an unavailable
+archive dependency does not suspend the Rest Server.
+
+Each workstation has a 15-minute CronJob that scans all retained snapshots. Failed or interrupted
+imports retry on a later run, and newly uploaded snapshots appear without a one-time backfill
+command. Each host has its own `Forbid` concurrency policy. Runs are offset by five minutes to
+spread database and repository load. Imported history is durable application data: CNPG takes
+weekly base backups and continuously archives WAL to SeaweedFS with a 30-day recovery window. The
+database does not depend on replaying Restic snapshots as its only recovery path.
+
+The importers use the workstation's existing REST credentials and the shared Restic encryption
+password for snapshot inventory, diff, file listing, and extraction against the append-only
+server. Those credentials are not read-only: the server permits appends, but rejects pruning and
+deletion. The Kubernetes Secret
+`session-backup-rest-server-auth` must contain `restic_rest_username_<host>`,
+`restic_rest_password_<host>`, and `restic_password` alongside `.htpasswd`. Those values must
+come from the canonical workstation SOPS source `secrets/shared/session-backup.yaml`; do not
+create another credential copy. This deployment references the existing Secret and does not
+provide the pending source-to-Secret mapping, so importer pods require that prerequisite before
+they can start successfully.
+
+The deployment's SSO provider creates and reflects `ai-session-archive-oidc` into this namespace.
+Its Authentik application policy and the API's numeric subject check both restrict access to the
+owner. The CNPG app Secret supplies database credentials. Web and importer pods run the
+versioned migration image as an init container before starting, using a database migration lock
+to serialize concurrent runs. The CNPG database and reflected OIDC Secret must be ready before
+the web process can start.
+
+The import root arguments are `/.claude` and `/.codex`. The source service backs up relative
+`.claude` and `.codex` paths from each workstation home, and these are the roots present in the
+Restic tree. A snapshot's presence alone does not establish that all files were read successfully;
+the importer reports incomplete snapshots or failed files as job failures, and those are retried.

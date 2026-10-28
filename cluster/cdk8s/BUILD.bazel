@@ -495,10 +495,38 @@ py_library(
 )
 
 py_library(
+    name = "session_archive",
+    srcs = ["session_archive.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":cilium",
+        ":cnpg",
+        ":cnpg_backup",
+        ":flux",
+        ":gateway",
+        ":manifest_roots",
+        ":node_scheduling",
+        ":pod_policy",
+        ":secret_ref",
+        ":service_ref",
+        ":session_backup",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//util:settings_contract",
+        "//x/ai_session_archive:web_settings",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "session_backup",
     srcs = ["session_backup.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":cilium",
         ":flux",
         ":namespaces",
         ":pod_policy",
@@ -1611,6 +1639,7 @@ py_library(
         ":reflector",
         ":reloader",
         ":route53_domain_delegation",
+        ":session_archive",
         ":session_backup",
         ":talos_cloud_controller_manager",
         ":terraform",

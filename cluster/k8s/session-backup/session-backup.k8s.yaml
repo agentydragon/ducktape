@@ -177,3 +177,11 @@ spec:
         - ports:
             - port: "8000"
               protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: ai-session-archive-importer
+            k8s:io.kubernetes.pod.namespace: session-backup
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP

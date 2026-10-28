@@ -31,6 +31,7 @@ def chart(app: App) -> Chart:
             # keep-sorted start
             "agentplane-mcp-oauth",
             "agentplane-oidc",
+            "ai-session-archive-oidc",
             "airlock-oidc-config",
             "claude-session-sync-oidc",
             "cli-proxy-api-admin-oidc",

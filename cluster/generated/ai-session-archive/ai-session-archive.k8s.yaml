@@ -1,0 +1,754 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    description: Imported workstation AI session history, independently protected by CNPG backups and WAL archive.
+  name: session-archive-db
+  namespace: session-backup
+spec:
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: ai_session_archive
+      owner: ai_session_archive
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 2
+  monitoring:
+    enablePodMonitor: true
+  plugins:
+    - isWALArchiver: true
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: session-archive-db
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 100Gi
+    storageClass: piraeus-ssd-local
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for session-backup/session-archive-db.
+  name: session-backup-db-backups
+  namespace: session-backup
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: session-backup-db-backups
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: session-backup-db-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for session-backup/session-archive-db.
+  name: session-backup-db-backups
+  namespace: session-backup
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: session-backup-db-backups
+  namespace: session-backup
+spec:
+  identityRef:
+    name: session-backup-db-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: session-backup-db-backups-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  annotations:
+    description: SeaweedFS S3 destination for session-backup/session-archive-db base backups and WAL.
+  name: session-archive-db
+  namespace: session-backup
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://session-backup-db-backups/
+    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
+    s3Credentials:
+      accessKeyId:
+        key: AWS_ACCESS_KEY_ID
+        name: session-backup-db-backups-s3-credentials
+      secretAccessKey:
+        key: AWS_SECRET_ACCESS_KEY
+        name: session-backup-db-backups-s3-credentials
+    wal:
+      compression: gzip
+  retentionPolicy: 30d
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: session-archive-db
+  namespace: session-backup
+spec:
+  backupOwnerReference: self
+  cluster:
+    name: session-archive-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  schedule: 0 37 3 * * 3
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: session-backup
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Owner-authenticated browser and API for the session archive.
+  labels:
+    app.kubernetes.io/name: ai-session-archive
+  name: ai-session-archive
+  namespace: session-backup
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-session-archive
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ai-session-archive
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: AI_SESSION_ARCHIVE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: session-archive-db-app
+            - name: AI_SESSION_ARCHIVE_PUBLIC_BASE_URL
+              value: https://ai-session-archive.allegedly.works
+            - name: AI_SESSION_ARCHIVE_PORT
+              value: "8080"
+            - name: AI_SESSION_ARCHIVE_OIDC_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  key: AI_SESSION_ARCHIVE_OIDC_ISSUER
+                  name: ai-session-archive-oidc
+            - name: AI_SESSION_ARCHIVE_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: AI_SESSION_ARCHIVE_OIDC_CLIENT_ID
+                  name: ai-session-archive-oidc
+            - name: AI_SESSION_ARCHIVE_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: AI_SESSION_ARCHIVE_OIDC_CLIENT_SECRET
+                  name: ai-session-archive-oidc
+            - name: AI_SESSION_ARCHIVE_OIDC_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: AI_SESSION_ARCHIVE_OIDC_SESSION_SECRET
+                  name: ai-session-archive-oidc
+            - name: AI_SESSION_ARCHIVE_OIDC_ALLOWED_SUBJECT
+              valueFrom:
+                secretKeyRef:
+                  key: AI_SESSION_ARCHIVE_OIDC_ALLOWED_SUBJECT
+                  name: ai-session-archive-oidc
+          image: git.allegedly.works/ducktape-ci/ai-session-archive-web:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          name: ai-session-archive
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: session-archive-db-app
+          image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
+          imagePullPolicy: IfNotPresent
+          name: migrate-database
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: ai-session-archive
+  name: ai-session-archive
+  namespace: session-backup
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: ai-session-archive
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ai-session-archive
+  namespace: session-backup
+spec:
+  hostnames:
+    - ai-session-archive.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: ai-session-archive
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    description: Retry-safe import of every retained wyrm2 Restic snapshot.
+  labels:
+    app.kubernetes.io/instance: wyrm2
+    app.kubernetes.io/name: ai-session-archive-importer
+  name: ai-session-archive-import-wyrm2
+  namespace: session-backup
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 604800
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/instance: wyrm2
+            app.kubernetes.io/name: ai-session-archive-importer
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - --machine-id
+                - wyrm2
+                - --display-name
+                - Wyrm2
+                - --claude-root
+                - /.claude
+                - --codex-root
+                - /.codex
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      key: uri
+                      name: session-archive-db-app
+                - name: RESTIC_REPOSITORY
+                  value: rest:http://session-backup.session-backup.svc:8000/wyrm2
+                - name: RESTIC_REST_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      key: restic_rest_username_wyrm2
+                      name: session-backup-rest-server-auth
+                - name: RESTIC_REST_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: restic_rest_password_wyrm2
+                      name: session-backup-rest-server-auth
+                - name: RESTIC_PASSWORD_FILE
+                  value: /run/restic/password
+                - name: RESTIC_CACHE_DIR
+                  value: /tmp/restic-cache
+              image: git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset
+              imagePullPolicy: IfNotPresent
+              name: import
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 2Gi
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: false
+              volumeMounts:
+                - mountPath: /run/restic
+                  name: wyrm2-restic-password
+                  readOnly: true
+          imagePullSecrets:
+            - name: forgejo-images-creds
+          initContainers:
+            - env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      key: uri
+                      name: session-archive-db-app
+              image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
+              imagePullPolicy: IfNotPresent
+              name: migrate-database
+              resources:
+                limits:
+                  memory: 512Mi
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+          nodeSelector:
+            topology.kubernetes.io/zone: hil-ovh
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - name: wyrm2-restic-password
+              secret:
+                defaultMode: 288
+                items:
+                  - key: restic_password
+                    path: password
+                secretName: session-backup-rest-server-auth
+  schedule: 2,17,32,47 * * * *
+  successfulJobsHistoryLimit: 1
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    description: Retry-safe import of every retained rugged Restic snapshot.
+  labels:
+    app.kubernetes.io/instance: rugged
+    app.kubernetes.io/name: ai-session-archive-importer
+  name: ai-session-archive-import-rugged
+  namespace: session-backup
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 604800
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/instance: rugged
+            app.kubernetes.io/name: ai-session-archive-importer
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - --machine-id
+                - rugged
+                - --display-name
+                - Rugged
+                - --claude-root
+                - /.claude
+                - --codex-root
+                - /.codex
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      key: uri
+                      name: session-archive-db-app
+                - name: RESTIC_REPOSITORY
+                  value: rest:http://session-backup.session-backup.svc:8000/rugged
+                - name: RESTIC_REST_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      key: restic_rest_username_rugged
+                      name: session-backup-rest-server-auth
+                - name: RESTIC_REST_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: restic_rest_password_rugged
+                      name: session-backup-rest-server-auth
+                - name: RESTIC_PASSWORD_FILE
+                  value: /run/restic/password
+                - name: RESTIC_CACHE_DIR
+                  value: /tmp/restic-cache
+              image: git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset
+              imagePullPolicy: IfNotPresent
+              name: import
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 2Gi
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: false
+              volumeMounts:
+                - mountPath: /run/restic
+                  name: rugged-restic-password
+                  readOnly: true
+          imagePullSecrets:
+            - name: forgejo-images-creds
+          initContainers:
+            - env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      key: uri
+                      name: session-archive-db-app
+              image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
+              imagePullPolicy: IfNotPresent
+              name: migrate-database
+              resources:
+                limits:
+                  memory: 512Mi
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+          nodeSelector:
+            topology.kubernetes.io/zone: hil-ovh
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - name: rugged-restic-password
+              secret:
+                defaultMode: 288
+                items:
+                  - key: restic_password
+                    path: password
+                secretName: session-backup-rest-server-auth
+  schedule: 7,22,37,52 * * * *
+  successfulJobsHistoryLimit: 1
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    description: Retry-safe import of every retained iguana Restic snapshot.
+  labels:
+    app.kubernetes.io/instance: iguana
+    app.kubernetes.io/name: ai-session-archive-importer
+  name: ai-session-archive-import-iguana
+  namespace: session-backup
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 604800
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/instance: iguana
+            app.kubernetes.io/name: ai-session-archive-importer
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - --machine-id
+                - iguana
+                - --display-name
+                - Iguana
+                - --claude-root
+                - /.claude
+                - --codex-root
+                - /.codex
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      key: uri
+                      name: session-archive-db-app
+                - name: RESTIC_REPOSITORY
+                  value: rest:http://session-backup.session-backup.svc:8000/iguana
+                - name: RESTIC_REST_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      key: restic_rest_username_iguana
+                      name: session-backup-rest-server-auth
+                - name: RESTIC_REST_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: restic_rest_password_iguana
+                      name: session-backup-rest-server-auth
+                - name: RESTIC_PASSWORD_FILE
+                  value: /run/restic/password
+                - name: RESTIC_CACHE_DIR
+                  value: /tmp/restic-cache
+              image: git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset
+              imagePullPolicy: IfNotPresent
+              name: import
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 2Gi
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: false
+              volumeMounts:
+                - mountPath: /run/restic
+                  name: iguana-restic-password
+                  readOnly: true
+          imagePullSecrets:
+            - name: forgejo-images-creds
+          initContainers:
+            - env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      key: uri
+                      name: session-archive-db-app
+              image: git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset
+              imagePullPolicy: IfNotPresent
+              name: migrate-database
+              resources:
+                limits:
+                  memory: 512Mi
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+          nodeSelector:
+            topology.kubernetes.io/zone: hil-ovh
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - name: iguana-restic-password
+              secret:
+                defaultMode: 288
+                items:
+                  - key: restic_password
+                    path: password
+                secretName: session-backup-rest-server-auth
+  schedule: 12,27,42,57 * * * *
+  successfulJobsHistoryLimit: 1
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ai-session-archive-web
+  namespace: session-backup
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - auth.allegedly.works
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: session-archive-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: ai-session-archive
+      k8s:io.kubernetes.pod.namespace: session-backup
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ai-session-archive-importer
+  namespace: session-backup
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: session-backup
+            k8s:io.kubernetes.pod.namespace: session-backup
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: session-archive-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: ai-session-archive-importer
+      k8s:io.kubernetes.pod.namespace: session-backup
+  ingress: []
