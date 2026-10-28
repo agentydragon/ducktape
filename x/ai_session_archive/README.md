@@ -2,7 +2,7 @@
 
 This package imports transcript file versions from one machine's Restic repository into a fresh Postgres index. `SnapshotIngestor.ingest()` enumerates snapshots in archive order, uses a diff only when its exact parent is already inventoried and completely processed, and otherwise performs an independent full inventory. The `restic_snapshots` and `snapshot_files` tables form the durable snapshot/file ledger, so failed extraction is visible and a later run retries it. Snapshot processing is complete only after all supported changes are either imported or recorded as terminally unclassified/not-indexed/deleted states.
 
-Configure the snapshot paths of the harness roots explicitly. The values must match paths returned by Restic, which can differ from the importing process's home directory:
+Configure the Restic node roots explicitly. The repository's `session_backup.sh` changes to the workstation home and backs up relative `.claude` and `.codex` paths, so `restic ls` exposes the roots as `/.claude` and `/.codex`. Configure those paths even if `restic snapshots --json` lists the physical home paths in its `Paths` metadata:
 
 ```sh
 DATABASE_URL='postgresql+psycopg://…' \
@@ -11,11 +11,11 @@ RESTIC_PASSWORD_FILE='/run/secrets/restic-password' \
 MACHINE_ID='host-id' \
 MACHINE_DISPLAY_NAME='Host name' \
 bb run //x/ai_session_archive:ingest_cli -- \
-  --claude-root '/home/user/.claude' \
-  --codex-root '/home/user/.codex'
+  --claude-root '/.claude' \
+  --codex-root '/.codex'
 ```
 
-`DATABASE_URL` is read only from the environment so credentials do not appear in process arguments. Archive roots must be configured explicitly with `--claude-root` / `--codex-root` or `CLAUDE_ARCHIVE_ROOT` / `CODEX_ARCHIVE_ROOT`. These absolute paths must match the paths in the Restic snapshots; the importer does not infer them from its own home directory or harness environment. Repeat the root flags to map additional roots. The CLI runs the repository's pinned Restic binary from Bazel runfiles. Restic reads its normal environment settings; use `RESTIC_PASSWORD_FILE` for the repository password.
+`DATABASE_URL` is read only from the environment so credentials do not appear in process arguments. Archive roots must be configured explicitly with `--claude-root` / `--codex-root` or `CLAUDE_ARCHIVE_ROOT` / `CODEX_ARCHIVE_ROOT`. These absolute paths must match file-node paths returned by `restic ls`; the importer does not infer them from its own home directory or harness environment. Repeat the root flags to map additional roots. The CLI runs the repository's pinned Restic binary from Bazel runfiles. Restic reads its normal environment settings; use `RESTIC_PASSWORD_FILE` for the repository password.
 
 The first schema initializer is explicitly opt-in with `--initialize-fresh-database`. It uses SQLAlchemy `create_all` for a brand-new prototype database and does not upgrade an existing database. Production upgrades need versioned migrations before deploying schema changes. No cluster CronJob or secret provisioning is included here.
 

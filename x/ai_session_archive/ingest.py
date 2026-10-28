@@ -10,7 +10,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import PurePosixPath
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import select
@@ -214,7 +214,7 @@ class SnapshotIngestor:
     def _initial_entries(
         self, files: Iterable[ResticFile]
     ) -> list[tuple[str, str, str, int, datetime | None, str, str | None, _Location | None]]:
-        entries = []
+        entries: list[tuple[str, str, str, int, datetime | None, str, str | None, _Location | None]] = []
         for file in files:
             if not file.path.endswith(".jsonl"):
                 continue
@@ -237,7 +237,7 @@ class SnapshotIngestor:
         for change in changes:
             if change.path.endswith(".jsonl"):
                 combined.setdefault(change.path, []).append(change.modifier)
-        entries = []
+        entries: list[tuple[str, str, str, int, datetime | None, str, str | None, _Location | None]] = []
         for path, modifiers in sorted(combined.items()):
             modifier = ",".join(dict.fromkeys(modifiers))
             location = self._classify(path)
@@ -400,7 +400,7 @@ class SnapshotIngestor:
                 ):
                     raise ValueError(f"unrecognized Restic diff modifier: {row.change_kind}")
 
-                with tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode="w+b") as contents:
+                with cast(BinaryIO, tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode="w+b")) as contents:
                     self._source.restic.dump_to(snapshot.id, path, contents)
                     contents.seek(0)
                     sha256, byte_size, record_count = _fingerprint_file(contents)
@@ -454,13 +454,14 @@ class SnapshotIngestor:
 
         previous = self._previous_version(db, snapshot_file)
         previous_depth = previous.delta_depth if previous is not None else -1
-        is_checkpoint = previous is None or previous_depth + 1 >= CHECKPOINT_INTERVAL
-        if is_checkpoint:
+        if previous is None or previous_depth + 1 >= CHECKPOINT_INTERVAL:
             parent_version_id = None
             delta_depth = 0
+            is_checkpoint = True
         else:
             parent_version_id = previous.id
             delta_depth = previous_depth + 1
+            is_checkpoint = False
         version_id = uuid5(session_row.id, f"{PARSER_VERSION}:{sha256}")
         row = FileVersionRow(
             id=version_id,
@@ -752,7 +753,7 @@ def _fingerprint_file(source: BinaryIO) -> tuple[str, int, int]:
 
 
 def _read_record_batch(source: BinaryIO, metadata: dict[str, Any], *, limit: int) -> list[_ParsedRecord]:
-    records = []
+    records: list[_ParsedRecord] = []
     batch_bytes = 0
     byte_offset = int(metadata.get("_byte_offset", 0))
     while len(records) < limit and batch_bytes < RECORD_BATCH_MAX_BYTES and (raw_bytes := source.readline()):

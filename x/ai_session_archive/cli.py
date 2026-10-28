@@ -49,13 +49,13 @@ def _parse_args(arguments: list[str] | None) -> argparse.Namespace:
         "--claude-root",
         action="append",
         default=[],
-        help="absolute CLAUDE_CONFIG_DIR path as stored in Restic; repeat for additional roots",
+        help="absolute Restic node root for CLAUDE_CONFIG_DIR (session_backup.sh uses /.claude); repeat for more roots",
     )
     parser.add_argument(
         "--codex-root",
         action="append",
         default=[],
-        help="absolute CODEX_HOME path as stored in Restic; repeat for additional roots",
+        help="absolute Restic node root for CODEX_HOME (session_backup.sh uses /.codex); repeat for more roots",
     )
     parser.add_argument(
         "--initialize-fresh-database",

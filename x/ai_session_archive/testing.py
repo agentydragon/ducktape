@@ -51,9 +51,9 @@ def _new_repository(tmp_path: Path) -> tuple[ResticRepository, dict[str, str]]:
     return ResticRepository(binary=_restic_binary(), environment=environment), environment
 
 
-def _backup(environment: dict[str, str], *source_paths: Path, force: bool = False) -> None:
+def _backup(environment: dict[str, str], *source_paths: Path, force: bool = False, cwd: Path | None = None) -> None:
     arguments = [_restic_binary(), "backup"]
     if force:
         arguments.append("--force")
-    arguments.extend(("--host", "archive-test", *(str(path) for path in source_paths)))
-    subprocess.run(arguments, env=environment, check=True, capture_output=True)
+    arguments.extend(("--host", "archive-test", "--", *(str(path) for path in source_paths)))
+    subprocess.run(arguments, env=environment, check=True, capture_output=True, cwd=cwd)

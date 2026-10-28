@@ -19,8 +19,9 @@ pytest_plugins = ["util.testing.postgres_fixtures", "x.ai_session_archive.testin
 
 def test_initial_import_preserves_records_and_provenance(tmp_path: Path, postgres_engine: Engine) -> None:
     repository, env = _new_repository(tmp_path)
-    claude_root = tmp_path / "home" / ".claude"
-    codex_root = tmp_path / "home" / ".codex"
+    archive_home = tmp_path / "home"
+    claude_root = archive_home / ".claude"
+    codex_root = archive_home / ".codex"
     main_path = claude_root / "projects" / "example-project" / "main-session.jsonl"
     subagent_path = claude_root / "projects" / "example-project" / "main-session" / "subagents" / "agent-child.jsonl"
     telemetry_path = claude_root / "cache" / "telemetry.jsonl"
@@ -42,7 +43,7 @@ def test_initial_import_preserves_records_and_provenance(tmp_path: Path, postgre
     telemetry_path.write_bytes(b'{"event":"not a conversation"}\n')
     codex_path.write_bytes(b'{"type":"session_meta","payload":{"id":"archived-session","cwd":"/repo"}}\n["scalar",1]\n')
 
-    _backup(env, claude_root, codex_root)
+    _backup(env, Path(".claude"), Path(".codex"), cwd=archive_home)
     initial_snapshot = repository.list_snapshots()[0]
 
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
@@ -50,7 +51,7 @@ def test_initial_import_preserves_records_and_provenance(tmp_path: Path, postgre
         machine_id="archive-test",
         display_name="Archive test host",
         restic=repository,
-        roots=(HarnessRoot(Harness.CLAUDE, str(claude_root)), HarnessRoot(Harness.CODEX, str(codex_root))),
+        roots=(HarnessRoot(Harness.CLAUDE, "/.claude"), HarnessRoot(Harness.CODEX, "/.codex")),
     )
     ingestor = SnapshotIngestor(factory, source)
     report = ingestor.ingest()
@@ -123,7 +124,7 @@ def test_initial_import_preserves_records_and_provenance(tmp_path: Path, postgre
                 select(SnapshotFileRow).where(
                     SnapshotFileRow.machine_id == "archive-test",
                     SnapshotFileRow.snapshot_id == initial_snapshot.id,
-                    SnapshotFileRow.path == str(telemetry_path),
+                    SnapshotFileRow.path == "/.claude/cache/telemetry.jsonl",
                 )
             )
         )
