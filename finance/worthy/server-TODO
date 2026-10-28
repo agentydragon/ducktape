@@ -1,3 +1,2 @@
 The `server` command is still unimplemented (`main.rs` panics for `Command::Server`).
-The previous Go target and `:index.html` target no longer exist; keep this TODO
-until the server has an implementation and current run instructions.
+Implement it and document how to build and run the server.
