@@ -1,11 +1,13 @@
 //! `debundle scc` / `debundle cluster`: module-quotient SCC listing
 //! and per-binding neighbor queries over a generated dependency graph.
 
+use analysis::DepKind;
 use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
+use peel::plan::{LimitReport, apply_limit_with_metadata};
 use peel::{
-    CommonArgs as PeelCommonArgs, OutputFormat, print_ndjson_list, print_report,
-    resolve_binding_source_units,
+    CommonArgs as PeelCommonArgs, DEFAULT_DESCRIBE_LIMIT, ExplainDirection, OutputFormat,
+    print_ndjson_list, print_report, resolve_binding_source_units,
 };
 
 /// Args for `debundle scc`.
@@ -48,6 +50,27 @@ pub struct ClusterArgs {
 
     #[command(flatten)]
     pub common: PeelCommonArgs,
+
+    /// Maximum number of neighboring modules in each direction (default 20).
+    #[arg(
+        long,
+        default_value = "20",
+        default_value_if("all", "true", None),
+        conflicts_with = "all"
+    )]
+    pub limit: Option<usize>,
+
+    /// Emit every neighboring module. Conflicts with --limit.
+    #[arg(long)]
+    pub all: bool,
+
+    /// Which module-quotient edge directions to show.
+    #[arg(long, value_enum, default_value = "both")]
+    pub direction: ExplainDirection,
+
+    /// Keep edges with this dependency reason; repeat to include several reasons.
+    #[arg(long = "reason", value_name = "REASON")]
+    pub reasons: Vec<DepKind>,
 
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
@@ -99,6 +122,7 @@ pub struct ClusterReport {
     pub home_module: ModuleRef,
     pub incoming_modules: Vec<ModuleRef>,
     pub outgoing_modules: Vec<ModuleRef>,
+    pub limits: LimitReport,
 }
 
 /// These queries need one home module, unlike multi-source unit selection commands.
@@ -200,6 +224,14 @@ fn render_scc_text(report: &SccReport, out: &mut String) {
 }
 
 pub fn run_cluster(args: ClusterArgs) -> Result<()> {
+    if args.limit == Some(0) {
+        anyhow::bail!("--limit must be greater than zero; use --all for exhaustive results");
+    }
+    let limit = if args.all {
+        0
+    } else {
+        args.limit.unwrap_or(DEFAULT_DESCRIBE_LIMIT)
+    };
     let sym = args.resolve_sym()?;
     let graph = crate::load_dependency_graph_report(&args.common.dependency_graph_path)?;
     // Use the shared `resolve_binding_source_units` helper (same code path
@@ -213,20 +245,50 @@ pub fn run_cluster(args: ClusterArgs) -> Result<()> {
     let mut outgoing: std::collections::BTreeMap<String, ModuleRef> =
         std::collections::BTreeMap::new();
     for edge in &graph.quotient.edges {
-        if &edge.target == home_key && &edge.source != home_key {
+        if !args.reasons.is_empty()
+            && !edge
+                .edge_kinds
+                .iter()
+                .any(|kind| args.reasons.contains(kind))
+        {
+            continue;
+        }
+        if args.direction != ExplainDirection::Outgoing
+            && &edge.target == home_key
+            && &edge.source != home_key
+        {
             let module_ref = resolve_module_ref(&graph, &edge.source);
             incoming.insert(module_ref.id.clone(), module_ref);
         }
-        if &edge.source == home_key && &edge.target != home_key {
+        if args.direction != ExplainDirection::Incoming
+            && &edge.source == home_key
+            && &edge.target != home_key
+        {
             let module_ref = resolve_module_ref(&graph, &edge.target);
             outgoing.insert(module_ref.id.clone(), module_ref);
         }
     }
+    let mut incoming_modules = incoming.into_values().collect::<Vec<_>>();
+    let mut outgoing_modules = outgoing.into_values().collect::<Vec<_>>();
+    let mut sections = std::collections::BTreeMap::new();
+    apply_limit_with_metadata(
+        &mut incoming_modules,
+        limit,
+        &mut sections,
+        "incoming_modules",
+    );
+    apply_limit_with_metadata(
+        &mut outgoing_modules,
+        limit,
+        &mut sections,
+        "outgoing_modules",
+    );
     let report = ClusterReport {
         binding: sym.to_string(),
         home_module: resolve_module_ref(&graph, home_key),
-        incoming_modules: incoming.into_values().collect(),
-        outgoing_modules: outgoing.into_values().collect(),
+        incoming_modules,
+        outgoing_modules,
+        limits: LimitReport { limit, sections },
     };
     let format = OutputFormat::resolve(args.format);
     print_report(&report, format, render_cluster_text).context("writing cluster output")
@@ -260,6 +322,14 @@ fn render_cluster_text(report: &ClusterReport, out: &mut String) {
         "  outgoing: {}\n",
         join_module_labels(&report.outgoing_modules)
     ));
+    for (section, limit) in &report.limits.sections {
+        if limit.truncated {
+            out.push_str(&format!(
+                "  showing {} of {} rows in {section}; use --all for the rest\n",
+                limit.emitted, limit.total
+            ));
+        }
+    }
 }
 
 fn join_module_labels(refs: &[ModuleRef]) -> String {

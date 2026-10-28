@@ -530,3 +530,42 @@ fn describe_all_replays_without_a_conflicting_default_limit() {
             .any(|argument| argument == "--all")
     );
 }
+
+#[test]
+fn cluster_default_limit_and_all_replay_without_conflicting_flags() {
+    let fixture = GraphFixture::new("const alpha = 1; console.log(alpha);", &[]);
+    let bounded = fixture.json(&["cluster", "alpha", "--print-invocation"]);
+    let limit = bounded["arguments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|argument| argument["name"] == "limit")
+        .expect("default cluster limit is captured");
+    assert_eq!(limit["source"], "default");
+    assert_eq!(limit["value"]["values"][0], "20");
+    assert!(
+        bounded["argv"]
+            .as_array()
+            .unwrap()
+            .windows(2)
+            .any(|pair| { pair[0] == "--limit" && pair[1] == "20" })
+    );
+    assert_eq!(replay_printed(&bounded)["argv"], bounded["argv"]);
+
+    let all = fixture.json(&["cluster", "alpha", "--all", "--print-invocation"]);
+    assert!(
+        all["arguments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|argument| argument["name"] != "limit")
+    );
+    let argv = all["argv"].as_array().unwrap();
+    assert!(argv.iter().any(|argument| argument == "--all"));
+    assert!(
+        !argv
+            .iter()
+            .any(|argument| argument == "--limit" || argument == "--limit=20")
+    );
+    assert_eq!(replay_printed(&all)["argv"], all["argv"]);
+}

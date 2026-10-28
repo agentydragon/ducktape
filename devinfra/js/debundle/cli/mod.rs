@@ -546,22 +546,42 @@ fn emit_graph_mismatch_json(format: OutputFormat, error: &anyhow::Error) {
 }
 
 #[derive(serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-enum QueryFailureReason {
+#[serde(tag = "reason", rename_all = "snake_case")]
+enum QueryFailureReason<'a> {
     Io,
     InvalidJson,
     SourceUnitNotFound,
+    UnsupportedIdentifierPrefix {
+        identifier: &'a str,
+        prefix: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        suggestion: Option<&'a str>,
+        accepted_prefixes: &'static [&'static str],
+        examples: &'static [&'static str],
+    },
     QueryFailed,
 }
 
 #[derive(serde::Serialize)]
 struct QueryFailure<'a> {
-    reason: QueryFailureReason,
+    #[serde(flatten)]
+    reason: QueryFailureReason<'a>,
     message: &'a str,
 }
 
 fn emit_query_failure(format: OutputFormat, error: &anyhow::Error) {
-    let reason = if error
+    let unsupported_prefix = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<inspection_commands::UnsupportedIdentifierPrefix>());
+    let reason = if let Some(failure) = unsupported_prefix {
+        QueryFailureReason::UnsupportedIdentifierPrefix {
+            identifier: &failure.identifier,
+            prefix: &failure.prefix,
+            suggestion: failure.suggestion.as_deref(),
+            accepted_prefixes: inspection_commands::ACCEPTED_IDENTIFIER_PREFIXES,
+            examples: inspection_commands::ACCEPTED_IDENTIFIER_EXAMPLES,
+        }
+    } else if error
         .chain()
         .any(|cause| cause.downcast_ref::<serde_json::Error>().is_some())
     {
@@ -647,6 +667,10 @@ fn verify_mixed_graph_command(
         DebundleCommand::InspectSource(args) if args.id.is_some() => {
             let graph = args.graph.as_deref().context("--id requires --graph")?;
             let modules = args.modules.as_deref().context("--id requires --modules")?;
+            inspection_commands::validate_query_id(
+                args.id.as_deref().expect("guarded by is_some"),
+                modules,
+            )?;
             verify_graph_compatibility_with_scope(
                 graph,
                 modules,

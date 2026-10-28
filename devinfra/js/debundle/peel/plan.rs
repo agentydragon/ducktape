@@ -1090,7 +1090,8 @@ fn apply_limit<T>(records: &mut Vec<T>, limit: usize) {
     }
 }
 
-fn apply_limit_with_metadata<T>(
+/// Truncate a report section and record the pre- and post-limit row counts.
+pub fn apply_limit_with_metadata<T>(
     records: &mut Vec<T>,
     limit: usize,
     sections: &mut BTreeMap<&'static str, LimitSectionReport>,

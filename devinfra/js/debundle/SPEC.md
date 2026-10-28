@@ -47,7 +47,9 @@ follow the selected output format. In `json` mode the CLI writes one object
 with a typed `reason` and the full actionable error chain in `message`; in
 `ndjson` mode it writes that object as one row. Both modes exit nonzero.
 Both modes retain the same diagnostic on stderr. Reason codes are `io`,
-`invalid_json`, `source_unit_not_found`, and `query_failed`. Graph compatibility
+`invalid_json`, `source_unit_not_found`, `unsupported_identifier_prefix`, and
+`query_failed`. Unsupported-prefix failures include the identifier, prefix,
+accepted forms, examples, and an available suggestion. Graph compatibility
 failures retain the existing `graph_compatibility` rejection payload. In `text`
 mode, runtime errors keep the existing stderr diagnostic and leave stdout
 without an error report.
@@ -126,6 +128,20 @@ Description reports include `module_proposals` and `module_proposal_diagnostics`
 only when proposal analysis runs. Their limits sections use the same field names.
 Proposals name their outgoing residual quotient-class dependencies with
 `edges_to_other_residual_classes` and `other_residual_classes_referenced`.
+
+`cluster <binding>` emits at most 20 incoming and 20 outgoing module neighbors
+by default. `--limit N` sets a positive cap for each direction; `--all` emits
+every neighbor and sets `limits.limit` to `0`. The
+`limits.sections.incoming_modules` and `outgoing_modules` entries record
+`total`, `emitted`, and `truncated` after the selected direction and reasons
+are applied. Text output names the same module paths and reports any truncated
+section.
+
+`describe` and `inspect-source --id` reject an unsupported identifier-like
+prefix before graph compatibility checks or graph loading. Accepted typed
+prefixes are `unit:`, `logical:`, `atomic:`, `diagnostic:`, `extend:`, and
+`auto_partition_`. Existing module paths are checked before rejecting an
+unknown colon prefix because colons are legal in module filenames.
 
 `describe --batch` accepts a nonempty JSON array of identifiers and returns the
 same per-selection reports as separate `describe` calls, in request order with

@@ -224,7 +224,10 @@ machine-readable in JSON modes. A `json` failure writes one object with a
 typed `reason` code and `message`; `ndjson` writes that same object as one row.
 The message contains the full actionable error chain, and the command exits
 nonzero while retaining the same diagnostic on stderr. Current reason codes are
-`io`, `invalid_json`, `source_unit_not_found`, and `query_failed`.
+`io`, `invalid_json`, `source_unit_not_found`,
+`unsupported_identifier_prefix`, and `query_failed`. Unsupported-prefix
+failures also include the identifier, prefix, accepted forms, examples, and a
+suggestion when one is available.
 
 Graph compatibility failures retain the existing `graph_compatibility`
 rejection object, including `mismatch.reason` and regeneration details. With
@@ -307,7 +310,11 @@ list. Use the minified form to disambiguate.
 `describe` and `inspect-source --id` take any ID kind and dispatch on shape:
 bindings (minified or readable), module paths (`runtime/plugins`) or
 unambiguous module filenames, module ids (`logical:7`), source-unit IDs
-(`unit:42`), atom ids (`atomic:N`), proposal ids, diagnostic ids.
+(`unit:42`), atom ids (`atomic:N`), proposal IDs (`extend:...` or
+`auto_partition_...`), and diagnostic IDs (`diagnostic:...`). An unknown
+identifier-like prefix such as `module:7` is rejected before graph loading or
+compatibility checks, with `logical:7` suggested for a module ID. An existing
+module path containing a colon is resolved as a path before this check.
 
 `describe` emits at most 20 rows in each report section by default. Use
 `--limit N` for a different positive per-section cap, or `--all` to return
@@ -325,6 +332,13 @@ reasons, using the `edge_kind` spellings from `dependency_graph.json`:
 `eager_use`, `lazy_use`, `hoisted_use`, `eager_rebind`, `lazy_rebind`,
 `deferred_rebind`, `sequenced`, `co_declaration`, or `local_effect`. Both
 filters are applied before totals and row limits.
+
+`cluster <binding>` also emits at most 20 incoming and 20 outgoing module
+neighbors by default. `--limit N` sets the positive cap for each direction;
+`--all` emits every neighbor and reports `limits.limit: 0`. Its
+`limits.sections.incoming_modules` and `outgoing_modules` entries report
+`total`, `emitted`, and `truncated` after `--direction` and repeated `--reason`
+filters.
 
 ## Validate-by-default (mutating commands)
 

@@ -18,6 +18,7 @@ use source_identity::SourceUnitOrdinal;
 use source_inspection::{PreparedSource, StatementRange, StatementRow};
 use spec_modules::{collect_module_files, module_path_from_file};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::path::PathBuf;
 
 /// Args for `debundle describe <id>`.
@@ -186,10 +187,56 @@ struct InspectedStatement {
     omitted_source_bytes: usize,
 }
 
+pub(super) const ACCEPTED_IDENTIFIER_PREFIXES: &[&str] = &[
+    "unit:",
+    "logical:",
+    "atomic:",
+    "diagnostic:",
+    "extend:",
+    "auto_partition_",
+];
+
+pub(super) const ACCEPTED_IDENTIFIER_EXAMPLES: &[&str] = &[
+    "unit:42",
+    "logical:7",
+    "atomic:3",
+    "diagnostic:example",
+    "extend:example",
+    "auto_partition_0007",
+];
+
+#[derive(Debug)]
+pub(super) struct UnsupportedIdentifierPrefix {
+    pub identifier: String,
+    pub prefix: String,
+    pub suggestion: Option<String>,
+}
+
+impl fmt::Display for UnsupportedIdentifierPrefix {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "unsupported identifier prefix {:?} in {:?}",
+            self.prefix, self.identifier
+        )?;
+        if let Some(suggestion) = &self.suggestion {
+            write!(formatter, "; use {suggestion:?} for a logical module id")?;
+        }
+        write!(
+            formatter,
+            "; accepted prefixes are {}",
+            ACCEPTED_IDENTIFIER_PREFIXES.join(", ")
+        )
+    }
+}
+
+impl std::error::Error for UnsupportedIdentifierPrefix {}
+
 /// Dispatch an `<id>` argument into the [`SelectionKind`] it names. Module
 /// paths and logical module ids resolve through the same dependency-graph/spec
 /// claim path as other structured IDs, so binding members and anonymous
-/// statements stay in sync.
+/// statements stay in sync. Unknown colon prefixes are rejected after checking
+/// for a real module path, since `:` is legal in Linux filenames.
 fn dispatch_id_selection(id: &str, modules_root: &std::path::Path) -> Result<SelectionKind> {
     // Prefix-based dispatch covers the structured ID kinds emitted by
     // the analysis crate.
@@ -215,8 +262,47 @@ fn dispatch_id_selection(id: &str, modules_root: &std::path::Path) -> Result<Sel
     if id.starts_with("auto_partition_") || id.starts_with("extend:") {
         return Ok(SelectionKind::Proposal(id.to_string()));
     }
+    if let Some((prefix, suffix)) = unsupported_typed_prefix(id) {
+        return Err(UnsupportedIdentifierPrefix {
+            identifier: id.to_string(),
+            prefix: prefix.to_string(),
+            suggestion: (prefix == "module" && !suffix.is_empty())
+                .then(|| format!("logical:{suffix}")),
+        }
+        .into());
+    }
     // Fall through: treat as a binding name (minified or readable).
     Ok(SelectionKind::Binding(id.to_string()))
+}
+
+fn unsupported_typed_prefix(id: &str) -> Option<(&str, &str)> {
+    let (prefix, suffix) = id.split_once(':')?;
+    let identifier_prefix = !prefix.is_empty()
+        && prefix.chars().all(|character| {
+            character.is_ascii_alphanumeric() || character == '_' || character == '-'
+        });
+    identifier_prefix.then_some((prefix, suffix))
+}
+
+pub(super) fn validate_query_id(id: &str, modules_root: &std::path::Path) -> Result<()> {
+    dispatch_id_selection(id, modules_root).map(|_| ())
+}
+
+fn describe_ids(args: &DescribeArgs) -> Result<Vec<String>> {
+    if let Some(path) = &args.batch_file {
+        let bytes = std::fs::read(path)
+            .with_context(|| format!("reading describe batch {}", path.display()))?;
+        let ids: Vec<String> = serde_json::from_slice(&bytes)
+            .with_context(|| format!("parsing describe batch {}", path.display()))?;
+        if ids.is_empty() {
+            bail!("describe --batch requires a nonempty JSON array of identifiers");
+        }
+        Ok(ids)
+    } else {
+        Ok(vec![
+            args.id.clone().expect("Clap requires an ID or --batch"),
+        ])
+    }
 }
 
 fn resolve_id_as_module_path(id: &str, modules_root: &std::path::Path) -> Result<Option<String>> {
@@ -251,18 +337,15 @@ pub(super) fn run_describe(args: DescribeArgs, roots: InspectionRoots) -> Result
     if args.limit == Some(0) {
         bail!("--limit must be greater than zero; use --all for exhaustive results");
     }
-    let ids = if let Some(path) = &args.batch_file {
-        let bytes = std::fs::read(path)
-            .with_context(|| format!("reading describe batch {}", path.display()))?;
-        let ids: Vec<String> = serde_json::from_slice(&bytes)
-            .with_context(|| format!("parsing describe batch {}", path.display()))?;
-        if ids.is_empty() {
-            bail!("describe --batch requires a nonempty JSON array of identifiers");
-        }
-        ids
-    } else {
-        vec![args.id.clone().expect("Clap requires an ID or --batch")]
-    };
+    let ids = describe_ids(&args)?;
+    let selections = ids
+        .iter()
+        .enumerate()
+        .map(|(index, id)| {
+            dispatch_id_selection(id, &args.common.modules_root)
+                .with_context(|| format!("describing item {} ({id:?})", index + 1))
+        })
+        .collect::<Result<Vec<_>>>()?;
     let mut session = ExplainSession::load(
         args.common.clone(),
         args.source_root.clone(),
@@ -282,25 +365,23 @@ pub(super) fn run_describe(args: DescribeArgs, roots: InspectionRoots) -> Result
     )?;
     // Finish the entire batch before emitting any result, including NDJSON.
     // A failed item must not leave an apparently successful partial document.
-    let results = ids
-        .iter()
+    let results = selections
+        .into_iter()
         .enumerate()
-        .map(|(index, id)| {
-            dispatch_id_selection(id, &args.common.modules_root)
-                .and_then(|selection| {
-                    session.explain(&ExplainArgs {
-                        selection,
-                        limit: if args.all {
-                            0
-                        } else {
-                            args.limit.unwrap_or(DEFAULT_DESCRIBE_LIMIT)
-                        },
-                        direction: args.direction,
-                        reasons: args.reasons.clone(),
-                        include_proposals: args.include_proposals,
-                    })
+        .map(|(index, selection)| {
+            session
+                .explain(&ExplainArgs {
+                    selection,
+                    limit: if args.all {
+                        0
+                    } else {
+                        args.limit.unwrap_or(DEFAULT_DESCRIBE_LIMIT)
+                    },
+                    direction: args.direction,
+                    reasons: args.reasons.clone(),
+                    include_proposals: args.include_proposals,
                 })
-                .with_context(|| format!("describing item {} ({id:?})", index + 1))
+                .with_context(|| format!("describing item {} ({:?})", index + 1, ids[index]))
         })
         .collect::<Result<Vec<_>>>()?;
     if args.batch_file.is_none() {
