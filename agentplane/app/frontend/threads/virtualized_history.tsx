@@ -96,6 +96,7 @@ export function VirtualizedHistory({
   const pointerScrolling = useRef(false);
   const captureNextScroll = useRef(false);
   const scrolledSinceInput = useRef(false);
+  const pendingScrollAdjustment = useRef(0);
   const touchY = useRef<number | null>(null);
   const restorationFrame = useRef<number | null>(null);
   const restoringAnchor = useRef<string | null>(null);
@@ -269,9 +270,21 @@ export function VirtualizedHistory({
       });
     },
   });
-  // ResizeObserver below preserves the first visible row explicitly. This is an
-  // instance hook in the pinned virtual-core version, rather than an option.
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
+  // During a gesture, preserve movement relative to the rows rather than a stale resting
+  // anchor. Apply the adjustment after the new height commits: scrolling before it can clamp
+  // against the old bottom. Other resizes use the reading/disclosure anchor below.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta) => {
+    const element = viewport.current;
+    if (
+      element &&
+      !atBottom.current &&
+      captureNextScroll.current &&
+      item.end <= element.scrollTop + pendingScrollAdjustment.current
+    ) {
+      pendingScrollAdjustment.current += delta;
+    }
+    return false;
+  };
   const expectUserScroll = () => {
     setStickyAnchorKey(null);
     if (readingAnchor.current?.target) {
@@ -329,6 +342,15 @@ export function VirtualizedHistory({
     },
     [rows]
   );
+  useLayoutEffect(() => {
+    const correction = pendingScrollAdjustment.current;
+    pendingScrollAdjustment.current = 0;
+    const element = viewport.current;
+    if (!element || correction === 0) return;
+    element.scrollTop += correction;
+    previousScrollTop.current = element.scrollTop;
+    if (readingAnchor.current) markThreadViewEvent({ kind: "restore", key: readingAnchor.current.key, correction });
+  });
   useLayoutEffect(() => {
     const anchor = readingAnchor.current;
     const element = viewport.current;

@@ -1023,6 +1023,92 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-resumed.png")
 
 
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "phone"])
+async def test_a_row_resizing_above_an_upward_scroll_keeps_the_readers_place(thread_browser: ThreadBrowser) -> None:
+    page = thread_browser.page
+    await thread_browser.start_replay()
+    latest = append_items(thread_browser, "scroll-resize", range(40))
+    await expect_projected_cursor(page, latest.cursor)
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await expect(history).to_have_attribute("data-layout-settled", "true", timeout=30_000)
+    await wheel(page, -200)
+    await expect(history).to_have_attribute("data-layout-settled", "true", timeout=30_000)
+    state = await history.evaluate_handle(
+        """area => {
+            const top = area.getBoundingClientRect().top;
+            const rows = [...area.querySelectorAll('[data-thread-anchor]')];
+            const above = rows.filter(row => row.getBoundingClientRect().bottom <= top);
+            const growing = above.at(-2);
+            const anchor = rows.find(row => row.getBoundingClientRect().bottom > top);
+            if (!growing || !anchor) throw new Error('the resize needs mounted rows above the reader');
+            const state = {
+                area, growing, anchor, top: anchor.getBoundingClientRect().top,
+                scrollTop: area.scrollTop, events: [],
+                ended: new Promise(resolve => area.addEventListener('scrollend', () => {
+                    state.events.push('scrollend'); resolve();
+                }, { once: true })),
+            };
+            return state;
+        }"""
+    )
+    initial_top = await state.evaluate("state => state.scrollTop")
+    bounds = await history.bounding_box()
+    assert bounds is not None
+    cdp = await page.context.new_cdp_session(page)
+    gesture = asyncio.create_task(
+        cdp.send(
+            "Input.synthesizeScrollGesture",
+            {
+                "x": bounds["x"] + bounds["width"] / 2,
+                "y": bounds["y"] + bounds["height"] / 2,
+                "gestureSourceType": "mouse",
+                "preventFling": True,
+                "speed": 60,
+                "yDistance": 120,
+            },
+        )
+    )
+    try:
+        await page.wait_for_function(
+            "initial => document.querySelector('[aria-label=\"Thread history\"]').scrollTop < initial", arg=initial_top
+        )
+        # A remounted row can replace its short loading body with a tall message mid-gesture.
+        await state.evaluate(
+            """state => {
+                const {area, growing} = state;
+                if (growing.getBoundingClientRect().bottom > area.getBoundingClientRect().top)
+                    throw new Error('the growing row must still be above the viewport');
+                const height = growing.getBoundingClientRect().height;
+                const observer = new ResizeObserver(() => {
+                    if (growing.getBoundingClientRect().height < height + 599) return;
+                    observer.disconnect();
+                    state.events.push('resized');
+                });
+                observer.observe(growing);
+                growing.style.minHeight = `${height + 600}px`;
+            }"""
+        )
+    finally:
+        await gesture
+        await cdp.detach()
+    await state.evaluate("state => state.ended")
+    await expect(history).to_have_attribute("data-layout-settled", "true", timeout=30_000)
+    outcome = await state.evaluate(
+        """state => ({
+            events: state.events,
+            connected: state.anchor.isConnected,
+            movement: state.anchor.getBoundingClientRect().top - state.top,
+        })"""
+    )
+    await state.dispose()
+    assert outcome["events"].index("resized") < outcome["events"].index("scrollend"), outcome
+    assert outcome["connected"], outcome
+    # Only the requested 120px scroll should move the line, irrespective of the 600px resize.
+    assert abs(outcome["movement"] - 120) <= 2, (
+        f"{outcome}; recent history decisions:\n{await thread_view_marks.recent(page, 60)}"
+    )
+
+
 async def test_small_upward_scroll_stays_detached_when_tail_streams(thread_browser: ThreadBrowser) -> None:
     """A streamed update during a slow, sub-slack mouse scroll must not reattach following."""
     page, source = thread_browser.page, thread_browser.source
