@@ -10,7 +10,9 @@ use super::value_model::{
 };
 use crate::analysis_inputs::NativeIntrinsic;
 use crate::facts::semantic_inference::{SemanticFact, SemanticFacts, SemanticKey};
-use crate::inference::{Inference, RuleContext, RuleSet};
+use crate::inference::{
+    CertificateContext, FactContext, GuardedContext, IterativeInference, IterativeRules,
+};
 use crate::reports::schema::{InferenceRule, InferenceUse};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -27,12 +29,12 @@ pub(super) enum CapturedPropertyDescriptor {
     Accessor { getter: Values, setter: Values },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct OwnPropertyNamesProjection {
     pub(super) names: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct OwnPropertyDescriptorProjection {
     pub(super) source_object: u32,
     /// ECMAScript own-key order, including canonical integer indices first.
@@ -77,7 +79,7 @@ impl OwnPropertyKey {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct PrefixState<'a> {
     source_object: u32,
     shape: &'a OwnPropertyShape,
@@ -85,7 +87,7 @@ struct PrefixState<'a> {
     properties: &'a BTreeMap<Option<String>, Values>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum OwnPropertyFact<'a> {
     SourceOrigin(u32),
     StaticShape(&'a OwnPropertyShape),
@@ -187,14 +189,11 @@ impl OwnPropertyRules<'_> {
     }
 }
 
-impl<'a> RuleSet for OwnPropertyRules<'a> {
-    type Key = OwnPropertyKey;
-    type Fact = OwnPropertyFact<'a>;
-
-    fn evaluate(
+impl<'a> OwnPropertyRules<'a> {
+    fn derive(
         &self,
         key: &OwnPropertyKey,
-        context: &mut RuleContext<'_, OwnPropertyKey, OwnPropertyFact<'a>>,
+        context: &mut impl CertificateContext<OwnPropertyKey, OwnPropertyFact<'a>>,
     ) -> Option<OwnPropertyFact<'a>> {
         match key {
             OwnPropertyKey::SourceOrigin(source_object) => {
@@ -250,12 +249,13 @@ impl<'a> RuleSet for OwnPropertyRules<'a> {
                 }))
             }
             OwnPropertyKey::Native(semantic_key) => {
-                if !matches!(
-                    context.import(self.semantic_facts.judgment(semantic_key)?),
-                    SemanticFact::Certificate
-                ) {
+                let judgment = self.semantic_facts.judgment(semantic_key)?;
+                if !matches!(judgment.value(), SemanticFact::Certificate) {
                     return None;
                 }
+                // The completed judgment is the trust boundary; its report is
+                // used only to expand the explanation attached to this bridge.
+                context.assume(judgment.dependencies());
                 let inference_use = self.semantic_facts.inference_use(semantic_key)?;
                 Some(OwnPropertyFact::Native(inference_use))
             }
@@ -265,6 +265,7 @@ impl<'a> RuleSet for OwnPropertyRules<'a> {
                 else {
                     return None;
                 };
+                let state = state.clone();
                 let OwnPropertyRequest::Names {
                     native_call_identity,
                 } = &self.request
@@ -291,6 +292,7 @@ impl<'a> RuleSet for OwnPropertyRules<'a> {
                 else {
                     return None;
                 };
+                let state = state.clone();
                 let OwnPropertyRequest::Descriptors {
                     native_call_identity,
                 } = &self.request
@@ -304,10 +306,29 @@ impl<'a> RuleSet for OwnPropertyRules<'a> {
                 context.require(OwnPropertyKey::Native(SemanticKey::NativeIntegrity(
                     NativeIntrinsic::Object,
                 )))?;
-                Self::descriptor_projection(*source_object, state)
+                Self::descriptor_projection(*source_object, &state)
                     .map(OwnPropertyFact::DescriptorProjection)
             }
         }
+    }
+}
+
+impl<'a> IterativeRules for OwnPropertyRules<'a> {
+    type Key = OwnPropertyKey;
+    type Fact = OwnPropertyFact<'a>;
+    type Rule = OwnPropertyKey;
+
+    fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
+        let mut guarded = GuardedContext::new(context);
+        let result = self.derive(rule, &mut guarded);
+        if let Some(fact) = guarded.finish(result) {
+            context.propose(rule.clone(), fact);
+        }
+    }
+
+    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        debug_assert_eq!(current, &contribution);
+        false
     }
 }
 
@@ -336,9 +357,33 @@ pub(super) fn infer_own_property_projection(
         semantic_facts,
         request,
     };
-    let mut inference = Inference::new(rules);
-    inference.query(&key)?;
-    let judgment = inference.get(&key)?;
+    let mut producers = BTreeSet::from([
+        OwnPropertyKey::SourceOrigin(source_object),
+        OwnPropertyKey::StaticShape(source_object),
+        OwnPropertyKey::PrefixState(source_object),
+        key.clone(),
+    ]);
+    match &rules.request {
+        OwnPropertyRequest::Ordinary => {}
+        OwnPropertyRequest::Names {
+            native_call_identity,
+        } => {
+            producers.insert(OwnPropertyKey::Native(native_call_identity.clone()));
+        }
+        OwnPropertyRequest::Descriptors {
+            native_call_identity,
+        } => {
+            producers.insert(OwnPropertyKey::Native(native_call_identity.clone()));
+            producers.insert(OwnPropertyKey::Native(SemanticKey::NativeIntegrity(
+                NativeIntrinsic::GlobalObject,
+            )));
+            producers.insert(OwnPropertyKey::Native(SemanticKey::NativeIntegrity(
+                NativeIntrinsic::Object,
+            )));
+        }
+    }
+    let facts = IterativeInference::new(rules).solve(producers);
+    let judgment = facts.get(&key)?;
     let conclusion = key.rule()?;
     let mut pending = vec![key.clone()];
     let mut visited = BTreeSet::new();
@@ -347,7 +392,7 @@ pub(super) fn infer_own_property_projection(
         if !visited.insert(premise.clone()) {
             continue;
         }
-        let premise_judgment = inference.get(&premise)?;
+        let premise_judgment = facts.get(&premise)?;
         if let Some(rule) = premise.rule() {
             derivation_rules.insert(rule);
         }
@@ -361,7 +406,8 @@ pub(super) fn infer_own_property_projection(
         derivation_rules,
         value_input_refs: judgment.dependencies().value_inputs.clone(),
     };
-    let projection = match (&key, inference.into_value(&key)?) {
+    let mut values = facts.into_values();
+    let projection = match (&key, values.remove(&key)?) {
         (OwnPropertyKey::PrefixState(_), OwnPropertyFact::PrefixState(state)) => {
             OwnPropertyProjection::Ordinary {
                 source_object: state.source_object,
@@ -387,10 +433,13 @@ mod tests {
         AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, ordered_own_property_names,
     };
     use super::{OwnPropertyProjection, OwnPropertyRequest, infer_own_property_projection};
-    use crate::facts::semantic_inference::SemanticFacts;
+    use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies, ValueInputRef};
+    use crate::facts::semantic_inference::{SemanticFacts, SemanticKey, SemanticRules};
     use crate::facts::value_flow::ValueOrigin;
     use crate::reports::schema::InferenceRule;
     use std::collections::{BTreeMap, BTreeSet};
+    use swc_common::SyntaxContext;
+    use swc_ecma_ast::Id;
 
     #[test]
     fn own_name_order_matches_ecmascript_integer_index_boundary() {
@@ -447,6 +496,68 @@ mod tests {
                 InferenceRule::OwnPropertyShape,
                 InferenceRule::OwnPropertyPrefixState,
             ])
+        );
+    }
+
+    #[test]
+    fn native_projection_imports_completed_judgment_provenance() {
+        let source_object = 7;
+        let source_values =
+            BTreeSet::from([AbstractValue::Origin(ValueOrigin::Object(source_object))]);
+        let shape = OwnPropertyShape {
+            properties: BTreeMap::from([("field".to_owned(), OwnPropertyDescriptorSyntax::Data)]),
+            creation_order: vec!["field".to_owned()],
+        };
+        let prefix_properties = BTreeMap::from([(
+            Some("field".to_owned()),
+            BTreeSet::from([AbstractValue::NonCallable]),
+        )]);
+        let native_call_identity = SemanticKey::NativeCallIdentity {
+            binding: Id::from(("Object".into(), SyntaxContext::empty())),
+            intrinsic: NativeIntrinsic::Object,
+            global_this_qualified: false,
+        };
+        let value_input = ValueInputRef {
+            defining_chunk: "native-census".to_owned(),
+            input_index: 3,
+        };
+        let semantic_facts = SemanticFacts::solve(SemanticRules {
+            native_census_complete: true,
+            native_dependencies: ProofDependencies {
+                value_inputs: BTreeSet::from([value_input.clone()]),
+            },
+            native_call_identity_candidates: BTreeSet::from([native_call_identity.clone()]),
+            ..SemanticRules::default()
+        });
+        assert!(semantic_facts.judgment(&native_call_identity).is_some());
+
+        let proof = infer_own_property_projection(
+            source_object,
+            &source_values,
+            &shape,
+            &prefix_properties,
+            false,
+            &semantic_facts,
+            OwnPropertyRequest::Names {
+                native_call_identity,
+            },
+        )
+        .expect("completed native and property certificates");
+
+        assert_eq!(
+            proof.inference_use.derivation_rules,
+            BTreeSet::from([
+                InferenceRule::NativeIntegrity,
+                InferenceRule::NativeCallIdentity,
+                InferenceRule::OwnPropertySourceOrigin,
+                InferenceRule::OwnPropertyShape,
+                InferenceRule::OwnPropertyPrefixState,
+                InferenceRule::OwnPropertyNamesProjection,
+            ])
+        );
+        assert_eq!(
+            proof.inference_use.value_input_refs,
+            BTreeSet::from([value_input])
         );
     }
 }

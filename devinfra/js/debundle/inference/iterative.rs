@@ -313,7 +313,7 @@ mod tests {
         assert!(waiting.get(&2).is_none());
         let complete = IterativeInference::new(Certificates).solve([0, 1]);
         assert_eq!(complete.get(&2).unwrap().value(), &BTreeSet::from([10]));
-        assert!(complete.get(&2).unwrap().premises().contains(&1));
+        assert_eq!(complete.get(&2).unwrap().premises(), &BTreeSet::from([1]));
     }
 
     #[test]
@@ -328,8 +328,16 @@ mod tests {
                 input_index: 0
             }])
         );
+        assert_eq!(result.premises(), &BTreeSet::from([2]));
         assert!(facts.evaluations() < 12);
         let reversed = IterativeInference::new(Rules).solve((0..4).rev());
+        for key in [2, 3] {
+            let first = facts.get(&key).unwrap();
+            let second = reversed.get(&key).unwrap();
+            assert_eq!(first.value(), second.value());
+            assert_eq!(first.dependencies(), second.dependencies());
+            assert_eq!(first.premises(), second.premises());
+        }
         assert_eq!(facts.into_values(), reversed.into_values());
     }
 
@@ -357,5 +365,6 @@ mod tests {
                 input_index: 0,
             }])
         );
+        assert_eq!(result.premises(), &BTreeSet::from([2]));
     }
 }
