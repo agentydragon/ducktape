@@ -57840,5 +57840,180 @@
       "decision": "Whether faster readiness remains correct across warm/cold starts and recovery, and whether exporter/import phase gains recur.",
       "completion": "Separate CI source acceptance from live deployment and stability. Do not mark staging rollout complete from merged source or hermetic tests."
     }
-  ]
+  ],
+  "vm_startup_trace_2026_10_28": {
+    "source_devel_commit": "93d06c5e933a5ec01901da81c1eea1aeeb4a8755",
+    "invocation": "35be7ff8-8ec0-4a30-932a-eb573fb384c5",
+    "invocation_url": "https://app.buildbuddy.io/invocation/35be7ff8-8ec0-4a30-932a-eb573fb384c5",
+    "target": "//agentplane/system_tests:test_vm_sandbox_vm",
+    "collection_window_utc": [
+      "2026-10-28T07:17:37Z",
+      "2026-10-28T07:26:29Z"
+    ],
+    "result": {
+      "cases_passed": 3,
+      "pytest_seconds": 479.9,
+      "test_action_execution_seconds": 522.197,
+      "fixture_stack_ready_seconds": 115.4
+    },
+    "observation_method": "Temporary observer patch watched six Kubernetes resource kinds and captured post-Ready snapshots; patch was restored after collection. A function-scoped watch fixture reused filenames in write mode, so retained continuous watch files cover only the final Codex OOM case. Separate snapshots, guest/launcher consoles and OTel spans cover all three cases and drive the timing table. No MCP-style client probe was inserted.",
+    "cases": [
+      {
+        "case": "Claude",
+        "sandbox_create_to_domain_started_seconds": 24.809,
+        "domain_started_to_runner_exec_seconds": 19.614,
+        "runner_exec_to_test_observed_ready_seconds": 3.007,
+        "sandbox_create_to_test_observed_ready_seconds": 47.43,
+        "test_ready_wait_seconds": 46.645,
+        "pod_scheduled_seconds": 7,
+        "pod_ready_seconds": 22,
+        "domain_started_to_test_observed_ready_seconds": 22.621,
+        "sandbox": "systest-vm-1"
+      },
+      {
+        "case": "Codex",
+        "sandbox_create_to_domain_started_seconds": 18.177,
+        "domain_started_to_runner_exec_seconds": 13.046,
+        "runner_exec_to_test_observed_ready_seconds": 3.512,
+        "sandbox_create_to_test_observed_ready_seconds": 34.735,
+        "test_ready_wait_seconds": 34.454,
+        "pod_scheduled_seconds": 4,
+        "pod_ready_seconds": 16,
+        "domain_started_to_test_observed_ready_seconds": 16.558,
+        "sandbox": "systest-vm-2"
+      },
+      {
+        "case": "Codex OOM",
+        "sandbox_create_to_domain_started_seconds": 18.653,
+        "domain_started_to_runner_exec_seconds": 12.87,
+        "runner_exec_to_test_observed_ready_seconds": 3.617,
+        "sandbox_create_to_test_observed_ready_seconds": 35.14,
+        "test_ready_wait_seconds": 34.566,
+        "pod_scheduled_seconds": 4,
+        "pod_ready_seconds": 17,
+        "domain_started_to_test_observed_ready_seconds": 16.487,
+        "sandbox": "systest-vm-codex-oom"
+      }
+    ],
+    "additional_observations": {
+      "serial_image_init_and_container_startup_seconds": "about 10-15",
+      "required_images_already_local": true,
+      "sandbox_ready_or_gateway_lease_to_test_poll_seconds": [
+        0.43,
+        1.735,
+        1.14
+      ],
+      "dynamic_state_pvc_provisioning_seconds": "3-4 from Provisioning to ProvisioningSucceeded",
+      "dynamic_state_pvc_provisioning_completed_before_pod_scheduled": true,
+      "continuous_resource_watch_files_retained_for": "Codex OOM case only; per-case snapshots, guest/launcher consoles and OTel spans retained for all three"
+    },
+    "limits": [
+      "One diagnostic invocation with three boots; not a matched performance pair or a fleet sample.",
+      "Temporary watch and post-Ready snapshot instrumentation was present; do not compare its action time with uninstrumented runs.",
+      "Kubernetes conditions and events resolve to whole seconds; launcher/test events have finer clocks.",
+      "The first kernel serial-log line can be buffered and is not an exact hardware kernel-entry clock.",
+      "Worker and image-snapshot state were not matched; no CI savings forecast follows.",
+      "Continuous resource-watch files were retained only for the final case because the temporary function-scoped fixture reused filenames in write mode; the first two case timings come from separate snapshots, guest/launcher consoles and OTel spans."
+    ],
+    "observer_patch_sha256": "73ef8aa6eeb22934b717a6cf7b10235617d660d1e902c4ef4af7fdd60d1beb5c",
+    "buildbuddy_invocation_status": "COMPLETE; success=true",
+    "buildbuddy_target_status": "PASSED",
+    "dynamic_state_pvc_event_interpretation": "Provisioning to ProvisioningSucceeded took 3-4 seconds; the succeeded event preceded PodScheduled."
+  },
+  "native_cli_perf_2026_10_28": {
+    "source_devel_commit": "93d06c5e933a5ec01901da81c1eea1aeeb4a8755",
+    "target": "//agentplane/system_tests:test_vm_sandbox_vm",
+    "collection_runs": [
+      {
+        "invocation": "be2788a2-4a27-4f0d-9174-ad5075408b56",
+        "invocation_url": "https://app.buildbuddy.io/invocation/be2788a2-4a27-4f0d-9174-ad5075408b56",
+        "start_utc": "2026-10-28T07:22:30.500Z",
+        "end_utc": "2026-10-28T07:31:39.333Z",
+        "result": "PASSED; Claude and Codex guest profile cases",
+        "profile_scope": "Whole-VM turn; in-guest perf report",
+        "sample_rate_hz": 49,
+        "lost_samples": 0,
+        "whole_turn_observations": {
+          "Claude": "clear_page_erms 7.36% of reported samples, with page-fault and page-cache-readahead stacks; whole-turn only",
+          "Codex": "13.25% idle samples plus runner scheduling and page-allocation samples; whole-turn only"
+        },
+        "guest_turn_samples": {
+          "Claude_guest": 2241,
+          "Codex_guest": 2642
+        }
+      },
+      {
+        "invocation": "5c6ce38b-0035-4b36-a576-deb5ddc8eeb2",
+        "invocation_url": "https://app.buildbuddy.io/invocation/5c6ce38b-0035-4b36-a576-deb5ddc8eeb2",
+        "start_utc": "2026-10-28T07:33:43.745Z",
+        "end_utc": "2026-10-28T07:41:50.773Z",
+        "result": "PASSED; Claude and Codex guest profile cases",
+        "profile_scope": "Raw guest perf.data exported and filtered to lifecycle event windows",
+        "sample_rate_hz": 49,
+        "lost_samples": 0,
+        "clock_alignment": "perf CLOCK_REALTIME matched guest Journal.appendEntry Event.At timestamps from time.Now().UTC()",
+        "windows": [
+          {
+            "case": "Claude",
+            "event_window": "initialize request to control_response",
+            "start_utc": "2026-10-28T07:39:09.712849396Z",
+            "end_utc": "2026-10-28T07:39:30.261842073Z",
+            "duration_seconds": 20.549,
+            "guest_samples": 993,
+            "process_samples": {
+              "Claude_and_Bun_threads": 841,
+              "user": 499,
+              "kernel": 342,
+              "swapper_idle": 39
+            }
+          },
+          {
+            "case": "Codex",
+            "event_window": "thread/start to thread/started",
+            "start_utc": "2026-10-28T07:41:05.395535505Z",
+            "end_utc": "2026-10-28T07:41:14.093160555Z",
+            "duration_seconds": 8.698,
+            "guest_samples": 426,
+            "process_samples": {
+              "app_server": 126,
+              "user": 74,
+              "kernel": 52,
+              "swapper_idle": 217
+            }
+          }
+        ],
+        "excluded_codex_interval": "The guest-clock window starts at thread/start and excludes the preceding roughly 10s host-turn-marker-to-thread/start interval; host/guest skew was not measured.",
+        "raw_profile_sha256": {
+          "claude": "ca6c20952f9ad9442cfe38d127377b56c108e7d062137bdeea914bc188a0796b",
+          "codex": "213c2d67507fa8b99a086841f0720d3ed927272e5dcabdeb5503f84845b119b4"
+        }
+      }
+    ],
+    "limits": [
+      "Sample counts are sampled guest events, not host CPU utilization.",
+      "Zero lost sample records does not guarantee uninterrupted wall-clock sampling under QEMU and host scheduling.",
+      "No reliable function-level attribution inside the startup windows: CLI binaries are stripped and exported frames do not include guest kernel symbols; whole-turn in-guest symbols cannot be assigned to those windows.",
+      "Host perf was denied with EACCES; in-guest perf worked.",
+      "No optimization or CI savings was demonstrated; Codex guest idle/wait attribution is the next bounded lead."
+    ]
+  },
+  "post_window_diagnostics": {
+    "report_cohort_source_devel_commit": "2ae990424df7481ead4b5a170ab502934e136a7d",
+    "diagnostic_source_devel_commit": "93d06c5e933a5ec01901da81c1eea1aeeb4a8755",
+    "vm_startup_trace_utc": [
+      "2026-10-28T07:17:37Z",
+      "2026-10-28T07:26:29Z"
+    ],
+    "native_cli_profile_runs_utc": [
+      [
+        "2026-10-28T07:22:30.500Z",
+        "2026-10-28T07:31:39.333Z"
+      ],
+      [
+        "2026-10-28T07:33:43.745Z",
+        "2026-10-28T07:41:50.773Z"
+      ]
+    ],
+    "scope": "Separate diagnostics collected after the natural fresh-CI cohort; no cohort refresh or causal fleet estimate."
+  }
 }

@@ -230,6 +230,11 @@
           reliability census, matched fleet speedup, live rollout, or agent
           receipt measurement is claimed.
         </p>
+        <p class="meta">
+          Separate VM startup and guest perf diagnostics ran later on source
+          <code>93d06c5e933a</code>. They clarify boot and CLI startup phases
+          but do not extend the fresh CI cohort or demonstrate a CI saving.
+        </p>
         <div class="metrics">
           <div class="metric">
             <strong>11 / 11</strong
@@ -259,6 +264,8 @@
           ><a href="#readiness-followup">Readiness</a
           ><a href="#journal-followup">Journal fix</a
           ><a href="#future-measurements">Future-report TODOs</a
+          ><a href="#vm-startup-trace">VM startup</a
+          ><a href="#cli-perf">Guest perf</a
           ><a href="#actions">Recommendations</a
           ><a href="#policy">Earlier pilot</a
           ><a href="#retained-findings">Retained findings</a
@@ -1722,6 +1729,183 @@
           checks. GitHub/worker clocks were not calibrated; no physical
           worker-stop time, actual hosted lease or recovered worker-seconds is
           measured. A missing acknowledgment is not a successful cancellation.
+        </p>
+      </section>
+      <section id="vm-startup-trace">
+        <h2>Three diagnostic boots separate domain start from Ready</h2>
+        <p>
+          One uncached run of
+          <code>//agentplane/system_tests:test_vm_sandbox_vm</code> passed all
+          three independent VM cases on source
+          <a
+            href="https://github.com/agentydragon/ducktape/commit/93d06c5e933a5ec01901da81c1eea1aeeb4a8755"
+            ><code>93d06c5e933a</code></a
+          >. The BuildBuddy invocation was
+          <a
+            href="https://app.buildbuddy.io/invocation/35be7ff8-8ec0-4a30-932a-eb573fb384c5"
+            ><code>35be7ff8</code></a
+          >. It took 522.197s of test-action execution; pytest reported 3 passed
+          in 479.90s, with the fixture stack Ready at 115.4s. A temporary
+          observer patch watched six resource kinds and captured post-Ready
+          snapshots, then was restored. Its function-scoped watch fixture reused
+          filenames in write mode, so only the final Codex OOM case has retained
+          continuous watch transitions. Per-case snapshots, guest/launcher
+          consoles and OTel spans cover all three cases and drive this timing
+          table. These timings describe that diagnostic run, not a matched
+          performance pair.
+        </p>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Three VM startup trace cases"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Case</th>
+                <th scope="col">Sandbox create → domain start</th>
+                <th scope="col">Domain start → runner exec</th>
+                <th scope="col">Runner exec → test observes Ready</th>
+                <th scope="col">Create → test observes Ready</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Claude</th>
+                <td class="num">24.809s</td>
+                <td class="num">19.614s</td>
+                <td class="num">3.007s</td>
+                <td class="num">47.430s</td>
+              </tr>
+              <tr>
+                <th scope="row">Codex</th>
+                <td class="num">18.177s</td>
+                <td class="num">13.046s</td>
+                <td class="num">3.512s</td>
+                <td class="num">34.735s</td>
+              </tr>
+              <tr>
+                <th scope="row">Codex OOM</th>
+                <td class="num">18.653s</td>
+                <td class="num">12.870s</td>
+                <td class="num">3.617s</td>
+                <td class="num">35.140s</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The launcher <code>DomainStarted</code> marker places two boots near
+          18s and the first near 25s. Domain start to the test-observed Sandbox
+          Ready span was 16.49s, 16.56s and 22.62s. Guest runner execution
+          occurred 12.9–19.6s after domain start, then the existing test
+          observed Ready 3.0–3.6s later. Dynamic-state PVC provisioning itself
+          took 3–4s from <code>Provisioning</code> to
+          <code>ProvisioningSucceeded</code>, completing before
+          <code>PodScheduled</code>. Pods reached Ready 16–22s after sandbox
+          creation. Serial image-init and container startup occupied about
+          10–15s even though the needed images were already local. These
+          observations point to VM launch and guest startup as the larger traced
+          phases in this run. They do not split the 80.39s VM-versus-MCP finish
+          gap measured on the separate <code>feb464de80</code> CI source.
+        </p>
+        <p>
+          Kubernetes condition and event timestamps resolve to whole seconds;
+          the launcher and test clocks are more precise. The test's Ready poll
+          observed the Sandbox condition 0.43s, 1.74s and 1.14s later; the
+          controller’s Sandbox Ready condition followed the Gateway Lease within
+          the same coarse one-second timestamp window. No extra MCP-style client
+          probe was inserted. The first kernel serial-log line can be buffered,
+          so it is not treated as hardware kernel entry. Three boots in one
+          instrumented run cannot forecast CI savings; image and snapshot states
+          were not matched. Keep the actual Gateway Lease and Sandbox Ready
+          conditions in any follow-up measurement.
+        </p>
+      </section>
+      <section id="cli-perf">
+        <h2>Guest perf narrows startup work to processes, not functions</h2>
+        <p>
+          Two guest-perf runs passed on source
+          <a
+            href="https://github.com/agentydragon/ducktape/commit/93d06c5e933a5ec01901da81c1eea1aeeb4a8755"
+            ><code>93d06c5e933a</code></a
+          >: a
+          <a
+            href="https://app.buildbuddy.io/invocation/be2788a2-4a27-4f0d-9174-ad5075408b56"
+            >whole-VM turn profile</a
+          >
+          and a
+          <a
+            href="https://app.buildbuddy.io/invocation/5c6ce38b-0035-4b36-a576-deb5ddc8eeb2"
+            >raw, timestamped profile</a
+          >. The first recorded 2,241 guest-wide samples in the Claude turn and
+          2,642 in the Codex turn at 49Hz, with zero reported loss. Its
+          whole-turn summaries show Claude-guest samples in
+          <code>clear_page_erms</code> (7.36% sample share) amid
+          page-fault/cache-readahead stacks, and Codex-guest samples with 13.25%
+          idle plus runner scheduling/page-allocation work. Those summaries
+          cover the whole VM turn; they do not attribute those frames to
+          initialization.
+        </p>
+        <div
+          class="table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Guest perf samples in native CLI startup windows"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">CLI window</th>
+                <th scope="col">Guest event window (UTC)</th>
+                <th scope="col">Duration</th>
+                <th scope="col">49Hz guest samples by process/mode</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Claude initialize → control response</th>
+                <td class="num">07:39:09.713–07:39:30.262</td>
+                <td class="num">20.549s</td>
+                <td>
+                  993 total; Claude/Bun 841 (499 user, 342 kernel); idle swapper
+                  39
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Codex thread/start → thread/started</th>
+                <td class="num">07:41:05.396–07:41:14.093</td>
+                <td class="num">8.698s</td>
+                <td>
+                  426 total; app-server 126 (74 user, 52 kernel); idle swapper
+                  217
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The windowed run aligned guest <code>perf CLOCK_REALTIME</code> with
+          guest journal markers recorded by <code>time.Now().UTC()</code>.
+          Claude's initialization window is mostly sampled in Claude/Bun
+          processes. Codex's window contains substantial guest idle samples; it
+          begins at native <code>thread/start</code> and excludes the preceding
+          roughly 10s between the test's host turn marker and that guest event.
+          That interval includes exec-server/app-server startup, but host/guest
+          clock skew was not measured. The next bounded lead is to trace Codex's
+          guest idle/wait during this same window; the samples do not identify
+          its cause or establish an optimization.
+        </p>
+        <p>
+          No reliable function-level startup attribution is available: the CLI
+          binaries are stripped and the exported frames lack guest kernel
+          symbols. Host <code>perf</code> was denied with <code>EACCES</code>;
+          in-guest perf worked. These are sampled guest events, not host CPU
+          utilization, and zero lost records does not guarantee uninterrupted
+          wall-clock sampling under QEMU and host scheduling. The whole-turn
+          kernel symbols above remain separate from these startup windows; no CI
+          savings follow from either profile.
         </p>
       </section>
       <section id="actions">
