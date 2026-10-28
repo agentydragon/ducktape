@@ -134,6 +134,30 @@ export { renderCard, importedValue };
 }
 
 #[test]
+fn validate_existing_binding_with_wrong_kind_counts_as_unmatched() {
+    let fixture = write_validate_fixture_spec(FixtureOpts::new(
+        "function present() { return 1; }\nexport { present };\n",
+        vec![logical_module(
+            "wrong_kind",
+            &[Member::renamed_with_kind(
+                "ExpectedClass",
+                "present",
+                Some("class_declaration"),
+            )],
+        )],
+    ));
+    let out = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
+    assert!(out.status.success(), "stderr={}", out.stderr);
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(report["counts"], json!({"no_match": 1}));
+    assert_eq!(
+        report["validation"],
+        json!({"success": false, "checked": 1, "matched": 0}),
+        "an existing name does not count as matched when its kind constraint fails"
+    );
+}
+
+#[test]
 fn validate_empty_selection_reports_zero_counts_in_every_format_and_mode() {
     let full_tree = write_validate_fixture_spec(FixtureOpts::new("const unused = 1;", Vec::new()));
     let json = run_spec_validate(&full_tree.spec_path, &["--format", "json"]);

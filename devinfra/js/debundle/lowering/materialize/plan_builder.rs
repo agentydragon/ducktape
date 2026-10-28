@@ -123,11 +123,10 @@ pub(super) struct ChunkPlanBuilder {
     /// known source binding spelling but whose ownership is claimed after chunk
     /// analysis through the global solver.
     deferred_binding_claims_by_name: HashMap<String, EntityRef>,
-    /// Deferred binding selector names that were duplicate claims during
-    /// request construction. Every member for such a binding stays out of the
-    /// solver program so the existing duplicate-claim report remains the
-    /// primary diagnostic.
-    duplicate_deferred_binding_names: BTreeSet<String>,
+    /// Later members whose deferred binding claim duplicated an earlier one.
+    /// Keep the original member in the solver so validation records its actual
+    /// selector result; only the duplicate member is excluded.
+    duplicate_deferred_binding_entities: BTreeSet<(String, String)>,
     /// Every selector outcome worth reporting. In keep-going mode a failed
     /// selector is left out of canonical ownership, so later modules in the
     /// chunk can still be checked; the chunk fails in `finalize` if any
@@ -145,7 +144,7 @@ impl ChunkPlanBuilder {
             unmatched_spec_claims: Vec::new(),
             catalogue_index_by_name: HashMap::new(),
             deferred_binding_claims_by_name: HashMap::new(),
-            duplicate_deferred_binding_names: BTreeSet::new(),
+            duplicate_deferred_binding_entities: BTreeSet::new(),
             outcomes: OutcomeSink::new(fail_fast, list_template_identifiers),
         }
     }
@@ -192,8 +191,8 @@ impl ChunkPlanBuilder {
                     self.outcomes.record(duplicate)?;
                     duplicate_bindings.insert(member.binding.clone());
                     if member.resolves_after_chunk_analysis() {
-                        self.duplicate_deferred_binding_names
-                            .insert(member.binding.clone());
+                        self.duplicate_deferred_binding_entities
+                            .insert((request.target_path.clone(), member.export_name.clone()));
                     }
                     continue;
                 }
@@ -216,8 +215,8 @@ impl ChunkPlanBuilder {
                         },
                     ))?;
                     duplicate_bindings.insert(member.binding.clone());
-                    self.duplicate_deferred_binding_names
-                        .insert(member.binding.clone());
+                    self.duplicate_deferred_binding_entities
+                        .insert((request.target_path.clone(), member.export_name.clone()));
                     continue;
                 }
             }
@@ -414,9 +413,10 @@ impl ChunkPlanBuilder {
                     .enumerate()
                     .filter(|(_, member)| {
                         member.resolves_after_chunk_analysis()
-                            && !self
-                                .duplicate_deferred_binding_names
-                                .contains(&member.binding)
+                            && !self.duplicate_deferred_binding_entities.contains(&(
+                                request.target_path.clone(),
+                                member.export_name.clone(),
+                            ))
                             && (!matches!(member.selector, MemberSelector::Binding(_))
                                 || declaration_by_name.contains_key(&top_level_id(
                                     &member.binding,
