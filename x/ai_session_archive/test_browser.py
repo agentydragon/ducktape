@@ -148,11 +148,11 @@ async def test_authenticated_browser_reads_archived_transcript(playwright_driver
             await session_list.get_by_role("link", name="Inspect conflicting Codex metadata").click()
             await expect(transcript).to_contain_text("Conflicting native session IDs")
             await expect(transcript).to_contain_text("Native session ID candidates: thread-child-a, thread-child-b")
-            await expect(transcript).to_contain_text("Conflicting Codex parent_thread_id values")
-            await expect(transcript).to_contain_text(
+            await expect(related).to_contain_text("Conflicting Codex parent_thread_id values")
+            await expect(related).to_contain_text(
                 "Conflicting native parent ID candidates: thread-parent-a, thread-parent-b"
             )
-            await expect(transcript).to_contain_text("Parent session could not be resolved to a captured session.")
+            await expect(related).to_contain_text("Parent session could not be resolved to a captured session.")
 
             await session_list.get_by_role("link", name="Review archived conversation", exact=False).click()
             await expect(transcript).to_contain_text("Latest transcript from the archived version.")
