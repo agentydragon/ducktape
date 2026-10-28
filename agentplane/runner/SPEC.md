@@ -221,8 +221,11 @@ budget for an isolated process purpose, while the parent aggregate remains autho
   then closes journals and releases state ownership. Close does not wait for ingress acknowledgement;
   if it supersedes Quiesce before that acknowledgement, the durable seals remain but the Runner can
   close while quiesce progress is still `FLUSHING`.
-- One in-memory COSI Runtime per Runner schedules lifecycle controllers and mirrors input, operation,
-  seal and ingress-acknowledgement facts. It owns no native handles or durable truth. The Session
+- One in-memory COSI Runtime per Runner schedules five controller roles: Runner, Session (including
+  one-shot setup), isolated executor, shared Codex app-server, and Sandbox bootstrap. Controllers own
+  lifecycle policy, including readiness probes, restart deadlines and dependency-ordered shutdown;
+  native operation hosts retain process handles and publish completion facts. The Runtime mirrors
+  input, operation, seal and ingress-acknowledgement facts. It owns no native handles or durable truth. The Session
   store, journal, persisted ingress acknowledgement and state-owner lock remain authoritative across
   restart. See [Runner lifecycle ownership](docs/lifecycle.md) for the controller/resource map and
   shutdown ordering.

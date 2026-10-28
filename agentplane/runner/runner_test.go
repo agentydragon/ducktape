@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/state"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
@@ -179,20 +181,54 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 		t.Fatal(err)
 	}
 	session := r.sessions["session-1"]
+	bootstrapScript := "unused test bootstrap"
+	r.config.Launch.Bootstrap = &bootstrapScript
+	setBootstrapRuntime := func(phase bootstrapPhase) error {
+		value := lifecycleResourceFor(bootstrapRuntimeType, "bootstrap", bootstrapRuntimeSpec{Phase: phase})
+		old, err := r.lifecycle.state.Get(r.ctx, value.Metadata())
+		if state.IsNotFoundError(err) {
+			return r.lifecycle.state.Create(r.ctx, value, state.WithCreateOwner(bootstrapControllerName))
+		}
+		if err != nil {
+			return err
+		}
+		value.metadata = old.Metadata().Copy()
+		return r.lifecycle.state.Update(r.ctx, value, state.WithUpdateOwner(bootstrapControllerName))
+	}
+	if err := setBootstrapRuntime(bootstrapRunning); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishLifecycle(r.lifecycle, bootstrapInputType, "bootstrap", bootstrapInputSpec{Requested: true, Demand: 1}); err != nil {
+		t.Fatal(err)
+	}
+	resetManualState := func() {
+		r.mu.Lock()
+		r.admissions = 0
+		r.mu.Unlock()
+		session.mu.Lock()
+		session.activeTurn = ""
+		session.pending = map[string]bool{}
+		session.setup = runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED
+		session.mu.Unlock()
+		session.wake()
+		if err := setSessionRuntimePhaseForTest(r, session, executionDormant); err != nil {
+			t.Errorf("restore session runtime: %v", err)
+		}
+		if err := setBootstrapRuntime(bootstrapSucceeded); err != nil {
+			t.Errorf("restore bootstrap runtime: %v", err)
+		}
+		if err := publishLifecycle(r.lifecycle, bootstrapInputType, "bootstrap", bootstrapInputSpec{}); err != nil {
+			t.Errorf("restore bootstrap input: %v", err)
+		}
+	}
+	defer resetManualState()
+
 	session.mu.Lock()
 	session.activeTurn = "turn-1"
 	session.pending["command-1"] = true
 	session.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
 	session.mu.Unlock()
 	setRuntimePhase(t, session, executionPreparing)
-	r.bootstrapMu.Lock()
-	r.initLog = &InitializationLog{events: []*runnerpb.InitializationEvent{{
-		Sequence: 1,
-		Observation: &runnerpb.InitializationEvent_Output{Output: &runnerpb.InitializationOutput{
-			Data: []byte("test-bootstrap-output"),
-		}},
-	}}}
-	r.bootstrapMu.Unlock()
 	r.mu.Lock()
 	r.admissions = 1
 	r.mu.Unlock()
@@ -217,18 +253,7 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 		t.Fatalf("busy facts = (%v, setups=%t, idleSince=%v), want (%v, true, nil)", got, facts.SetupsRunning, facts.IdleSince, want)
 	}
 
-	session.mu.Lock()
-	session.activeTurn = ""
-	session.pending = map[string]bool{}
-	session.setup = runnerpb.SetupState_SETUP_STATE_NOT_REQUIRED
-	session.mu.Unlock()
-	setRuntimePhase(t, session, executionDormant)
-	r.bootstrapMu.Lock()
-	r.initLog = nil
-	r.bootstrapMu.Unlock()
-	r.mu.Lock()
-	r.admissions = 0
-	r.mu.Unlock()
+	resetManualState()
 
 	facts, err = r.facts()
 	if err != nil {
@@ -237,6 +262,31 @@ func TestRunnerFactsExposeBusyReasonsAndReturnToIdle(t *testing.T) {
 	if len(facts.AutosuspendBlockers) != 0 || facts.SetupsRunning || facts.IdleSince == nil {
 		t.Fatalf("idle facts = (%v, setups=%t, idleSince=%v), want no blockers, false, and an idle timestamp", facts.AutosuspendBlockers, facts.SetupsRunning, facts.IdleSince)
 	}
+}
+
+func setSessionRuntimePhaseForTest(r *Runner, s *Session, phase executionPhase) error {
+	l := r.lifecycle
+	if l == nil {
+		return errors.New("runner lifecycle is not initialized")
+	}
+	current, found, err := lifecycleRead[sessionRuntimeSpec](r.ctx, l.state, sessionRuntimeType, s.id)
+	if err != nil {
+		return err
+	}
+	current.Phase = phase
+	s.mu.Lock()
+	current.ProcessID = s.processID
+	s.mu.Unlock()
+	value := lifecycleResourceFor(sessionRuntimeType, s.id, current)
+	if found {
+		old, err := l.state.Get(r.ctx, resource.NewMetadata(lifecycleNamespace, sessionRuntimeType, s.id, resource.VersionUndefined))
+		if err != nil {
+			return err
+		}
+		value.metadata = old.Metadata().Copy()
+		return l.state.Update(r.ctx, value, state.WithUpdateOwner(sessionControllerName))
+	}
+	return l.state.Create(r.ctx, value, state.WithCreateOwner(sessionControllerName))
 }
 
 func TestQuiesceDoesNotWaitForModelLookupOrCreateLateSession(t *testing.T) {

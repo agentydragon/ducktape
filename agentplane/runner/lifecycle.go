@@ -99,6 +99,7 @@ const (
 	stageDraining
 	stageHalting
 	stageStopping
+	stageFencing
 	stageSealing
 	stageFlushing
 	stageQuiesced
@@ -130,15 +131,19 @@ const (
 )
 
 type sessionRuntimeSpec struct {
-	Phase      executionPhase
-	Attempt    uint64
-	Resuming   bool
-	ProcessID  string
-	Generation uint64
+	Phase          executionPhase
+	Attempt        uint64
+	Resuming       bool
+	ProcessID      string
+	Generation     uint64
+	SetupAttempt   string
+	ProcessStopped bool
+	Error          string
 }
 type sessionInputSpec struct {
 	Demand            uint64
 	Cursor            uint64
+	SetupRequested    bool
 	Setup             runnerpb.SetupState
 	ActiveTurn        string
 	Pending           int
@@ -211,14 +216,12 @@ func operationDone(op *sessionOperation) bool {
 }
 
 type lifecycle struct {
-	runner      *Runner
-	state       state.State
-	engine      *cosiruntime.Runtime
-	done        chan struct{}
-	publishMu   sync.Mutex
-	operationMu sync.Mutex
-	stop        *sessionOperation
-	workers     sync.WaitGroup
+	runner    *Runner
+	state     state.State
+	engine    *cosiruntime.Runtime
+	done      chan struct{}
+	publishMu sync.Mutex
+	workers   sync.WaitGroup
 }
 
 func newLifecycle(r *Runner) (*lifecycle, error) {
@@ -234,6 +237,21 @@ func newLifecycle(r *Runner) (*lifecycle, error) {
 	if err := engine.RegisterQController(&sessionLifecycleController{l: l}); err != nil {
 		return nil, err
 	}
+	for _, c := range []controller.QController{&executorLifecycleController{l: l}, &codexLifecycleController{l: l}, &bootstrapLifecycleController{l: l}} {
+		if err := engine.RegisterQController(c); err != nil {
+			return nil, err
+		}
+	}
+	if err := publishLifecycle(l, executorInputType, "executor", executorInputSpec{}); err != nil {
+		return nil, err
+	}
+	if err := publishLifecycle(l, codexInputType, "codex", codexInputSpec{}); err != nil {
+		return nil, err
+	}
+	if err := publishLifecycle(l, bootstrapInputType, "bootstrap", bootstrapInputSpec{}); err != nil {
+		return nil, err
+	}
+
 	if err := publishLifecycle(l, runnerGoalType, "runner", runnerGoalSpec{}); err != nil {
 		return nil, err
 	}
@@ -284,13 +302,6 @@ func (l *lifecycle) setGoal(mode runnerMode, sealUID string) error {
 	}
 	retry := l.status().Error != ""
 	if mode == runnerRunning && goal.Mode != runnerRunning {
-		l.operationMu.Lock()
-		if l.stop != nil && !operationDone(l.stop) {
-			l.operationMu.Unlock()
-			return errors.New("previous incarnation is still stopping")
-		}
-		l.stop = nil
-		l.operationMu.Unlock()
 		// Drop old execution requests while admission is still closed. Recovery
 		// publishes fresh demand after eligible journals have reopened.
 		l.publishMu.Lock()
@@ -306,14 +317,15 @@ func (l *lifecycle) setGoal(mode runnerMode, sealUID string) error {
 				return err
 			}
 		}
-		l.publishMu.Unlock()
-	}
-	if retry {
-		l.operationMu.Lock()
-		if operationDone(l.stop) && l.stop.err != nil {
-			l.stop = nil
+		if err := publishLifecycle(l, codexInputType, "codex", codexInputSpec{}); err != nil {
+			l.publishMu.Unlock()
+			return err
 		}
-		l.operationMu.Unlock()
+		if err := publishLifecycle(l, executorInputType, "executor", executorInputSpec{}); err != nil {
+			l.publishMu.Unlock()
+			return err
+		}
+		l.publishMu.Unlock()
 	}
 	if goal.Mode != mode || goal.SealUID != sealUID || retry {
 		goal.Mode, goal.SealUID, goal.Generation = mode, sealUID, goal.Generation+1
@@ -353,6 +365,7 @@ func (l *lifecycle) publishSession(s *Session, demand bool) {
 		input.Demand++
 	}
 	s.mu.Lock()
+	input.SetupRequested = s.setupScript != nil
 	input.Setup, input.ActiveTurn, input.Pending, input.ProcessID = s.setup, s.activeTurn, len(s.pending), s.processID
 	input.ProcessRunning = s.process != nil && s.process.Running()
 	input.InspectionRunning = s.inspection != nil
@@ -452,6 +465,8 @@ func (*sessionLifecycleController) Settings() controller.QSettings {
 			{Namespace: lifecycleNamespace, Type: sessionInputType, Kind: controller.InputQPrimary},
 			{Namespace: lifecycleNamespace, Type: runnerGoalType, Kind: controller.InputQMapped},
 			{Namespace: lifecycleNamespace, Type: runnerRuntimeType, Kind: controller.InputQMapped},
+			{Namespace: lifecycleNamespace, Type: bootstrapRuntimeType, Kind: controller.InputQMapped},
+			{Namespace: lifecycleNamespace, Type: codexRuntimeType, Kind: controller.InputQMapped},
 			{Namespace: lifecycleNamespace, Type: operationResultType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: sessionRuntimeType, Kind: controller.OutputExclusive}},
@@ -514,7 +529,38 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 				c.l.forgetOperation(op)
 			}
 		}
-		current = sessionRuntimeSpec{Generation: goal.Generation}
+		current = sessionRuntimeSpec{Generation: goal.Generation, SetupAttempt: current.SetupAttempt}
+	} else if current.Generation != goal.Generation {
+		current.Generation = goal.Generation
+		current.Error = ""
+	}
+	if op, done := s.takeOperation(&s.setupJob); done {
+		c.l.forgetOperation(op)
+		if current.SetupAttempt == "" {
+			current.SetupAttempt = op.id
+		}
+		if op.err != nil {
+			current.Error = op.err.Error()
+			s.runner.fail(op.err)
+			if err := write(); err != nil {
+				return err
+			}
+			return op.err
+		}
+	}
+	if input.SetupRequested && current.SetupAttempt == "" {
+		s.mu.Lock()
+		script, job, setup := s.setupScript, s.setupJob, s.setup
+		s.mu.Unlock()
+		if script != nil && job == nil && setup == runnerpb.SetupState_SETUP_STATE_RUNNING {
+			s.startOperation(&s.setupJob, "setup", func(ctx context.Context) error { return s.runSetup(ctx, *script) })
+			s.mu.Lock()
+			current.SetupAttempt = s.setupJob.id
+			s.mu.Unlock()
+			if err := write(); err != nil {
+				return err
+			}
+		}
 	}
 	if op, done := s.takeOperation(&s.preparation); done {
 		c.l.forgetOperation(op)
@@ -606,6 +652,33 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 				}
 			}
 		}
+		if op, done := s.takeOperation(&s.stopping); done {
+			c.l.forgetOperation(op)
+			if op.err != nil {
+				current.Error = op.err.Error()
+				if err := write(); err != nil {
+					return err
+				}
+				return op.err
+			}
+			current.ProcessStopped = true
+		}
+		if current.Phase == executionHalted && outer.Stage >= stageStopping && !current.ProcessStopped {
+			s.mu.Lock()
+			shared := s.runner.codex != nil && s.record.Harness == runnerpb.Harness_HARNESS_CODEX
+			s.mu.Unlock()
+			if shared {
+				status, found, err := lifecycleRead[codexRuntimeSpec](ctx, r, codexRuntimeType, "codex")
+				if err != nil {
+					return err
+				}
+				if found && status.Phase == codexStopped {
+					current.ProcessStopped = true
+				}
+			} else {
+				s.startOperation(&s.stopping, "stop-process", s.stopProcess)
+			}
+		}
 		if op, done := s.takeOperation(&s.sealing); done {
 			c.l.forgetOperation(op)
 			if op.err != nil {
@@ -615,7 +688,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		s.mu.Lock()
 		inspected := s.inspection == nil && len(s.reconciliations) == 0
 		s.mu.Unlock()
-		if current.Phase == executionHalted && inspected && outer.Stage >= stageSealing && goal.SealUID != "" && s.journal.SealState() == nil {
+		if current.Phase == executionHalted && current.ProcessStopped && inspected && outer.Stage >= stageSealing && goal.SealUID != "" && s.journal.SealState() == nil {
 			s.startOperation(&s.sealing, "seal", func(ctx context.Context) error {
 				if err := s.sealJournal(ctx); err != nil {
 					return err
@@ -644,6 +717,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		resuming := s.record.NativeSessionID != nil && started
 		s.mu.Unlock()
 		current.Phase, current.Attempt, current.Resuming = executionPreparing, input.Demand, resuming
+		current.ProcessStopped = false
 		if err := write(); err != nil {
 			return err
 		}
@@ -714,7 +788,7 @@ type runnerLifecycleController struct{ l *lifecycle }
 func (*runnerLifecycleController) Name() string { return runnerControllerName }
 func (*runnerLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{runnerGoalType, runnerInputType, sessionInputType, sessionRuntimeType, operationResultType, journalSealType, ingressAckType} {
+	for _, kind := range []string{runnerGoalType, runnerInputType, sessionInputType, sessionRuntimeType, operationResultType, journalSealType, ingressAckType, executorRuntimeType, codexRuntimeType, bootstrapRuntimeType} {
 		inputs = append(inputs, controller.Input{Namespace: lifecycleNamespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -797,53 +871,51 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			return err
 		}
 	}
-	c.l.operationMu.Lock()
-	stop := c.l.stop
-	if stop == nil {
-		stop = &sessionOperation{id: uuid.NewString(), done: make(chan struct{})}
-		c.l.stop = stop
-		c.l.workers.Add(1)
-		go func() {
-			defer c.l.workers.Done()
-			var errs []error
-			for _, s := range sessions {
-				errs = append(errs, s.stopProcess(c.l.runner.ctx))
-			}
-			if c.l.runner.codex != nil {
-				errs = append(errs, c.l.runner.codex.stop(c.l.runner.ctx))
-			}
-			if c.l.runner.executor != nil {
-				errs = append(errs, c.l.runner.executor.stop(c.l.runner.ctx))
-			}
-			c.l.operationMu.Lock()
-			stop.err = errors.Join(errs...)
-			close(stop.done)
-			c.l.operationMu.Unlock()
-			c.l.runner.changed()
-		}()
-	}
-	finished := operationDone(stop)
-	stopErr := stop.err
-	c.l.operationMu.Unlock()
-	if !finished {
-		return write()
-	}
-	if stopErr != nil {
-		current.Error = stopErr.Error()
-		if err := write(); err != nil {
+	for _, s := range sessions {
+		runtime, _, err := lifecycleRead[sessionRuntimeSpec](ctx, r, sessionRuntimeType, s.id)
+		if err != nil {
 			return err
 		}
-		return stopErr
-	}
-	c.l.runner.bootstrapMu.Lock()
-	initDone := c.l.runner.initDone
-	c.l.runner.bootstrapMu.Unlock()
-	if initDone != nil {
-		select {
-		case <-initDone:
-		default:
+		if runtime.Error != "" {
+			current.Error = runtime.Error
 			return write()
 		}
+		if !runtime.ProcessStopped {
+			return write()
+		}
+	}
+	if c.l.runner.codex != nil {
+		runtime, found, err := lifecycleRead[codexRuntimeSpec](ctx, r, codexRuntimeType, "codex")
+		if err != nil {
+			return err
+		}
+		if runtime.StopError != "" {
+			current.Error = runtime.StopError
+			return write()
+		}
+		if !found || runtime.Phase != codexStopped {
+			return write()
+		}
+	}
+	if current.Stage < stageFencing {
+		current.Stage = stageFencing
+		return write()
+	}
+	if c.l.runner.executor != nil {
+		runtime, found, err := lifecycleRead[executorRuntimeSpec](ctx, r, executorRuntimeType, "executor")
+		if err != nil {
+			return err
+		}
+		if runtime.StopError != "" {
+			current.Error = runtime.StopError
+			return write()
+		}
+		if !found || runtime.Phase != executorStopped {
+			return write()
+		}
+	}
+	if !c.l.runner.bootstrapSettled() {
+		return write()
 	}
 	// Process exit can finish an outstanding inspection. Keep its journal and
 	// controller alive until the resulting observations have been committed.

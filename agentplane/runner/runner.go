@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -55,8 +55,7 @@ type Runner struct {
 	closeOnce   sync.Once
 	closeErr    error
 	initLog     *InitializationLog
-	initDone    chan struct{}
-	initErr     error
+	bootstrapOp *sessionOperation
 }
 
 const (
@@ -177,13 +176,8 @@ func (r *Runner) Startup(ctx context.Context) error {
 		}
 	}
 	if r.config.Launch.Bootstrap != nil {
-		if err := r.startBootstrap(); err != nil {
-			if status.Code(err) != codes.AlreadyExists {
-				return err
-			}
-			// Keep serving durable reservations; activation reports the conflicting
-			// bootstrap without executing it or abandoning admitted commands.
-			zap.L().Error("the Sandbox selected a different bootstrap script", zap.Error(err))
+		if err := r.requestBootstrap(); err != nil {
+			return err
 		}
 	}
 	r.changed()
@@ -263,10 +257,31 @@ func (r *Runner) resumeRecovered(s *Session) error {
 func (r *Runner) adoptIncarnation(ctx context.Context, uid string) error {
 	r.createMu.Lock()
 	defer r.createMu.Unlock()
+	// A replacement incarnation can reconnect while the old one is still
+	// draining. Finish its native effects and seals before resetting demand;
+	// ingress acknowledgement belongs to the old incarnation and need not wait.
+	for {
+		r.mu.Lock()
+		goal := r.lifecycle.goal()
+		if goal.Mode == runnerClosing {
+			r.mu.Unlock()
+			return errors.New("runner is closing")
+		}
+		previous, known := r.store.IncarnationUID()
+		progress := r.lifecycle.status()
+		if goal.Mode != runnerQuiescing || !known || previous == uid ||
+			(progress.Generation == goal.Generation && progress.Stage >= stageFlushing && progress.Error == "") {
+			break
+		}
+		r.mu.Unlock()
+		if err := r.lifecycle.wait(ctx, stageFlushing); err != nil {
+			return err
+		}
+	}
 	if err := r.store.AdoptIncarnation(uid); err != nil {
+		r.mu.Unlock()
 		return err
 	}
-	r.mu.Lock()
 	mode, sealUID := runnerRunning, ""
 	if r.store.Lameduck() {
 		mode, sealUID = runnerQuiescing, uid
@@ -380,130 +395,6 @@ func (r *Runner) runScript(ctx context.Context, script, cwd string, output func(
 	return code, errors.Join(writeErr, closeErr, waitErr, readers.Wait())
 }
 
-func (r *Runner) startBootstrap() error {
-	r.bootstrapMu.Lock()
-	defer r.bootstrapMu.Unlock()
-	if r.initDone != nil {
-		return nil
-	}
-	script := r.config.Launch.Bootstrap
-	if script == nil {
-		return nil
-	}
-	if len(*script) == 0 || len(*script) > 65536 {
-		return errors.New("bootstrap must contain 1..65536 UTF-8 bytes")
-	}
-	root := filepath.Join(r.config.StateDir, "initialization")
-	if err := makeDirectory(root); err != nil {
-		return err
-	}
-	digest := sha256.Sum256([]byte(*script))
-	metadata := struct {
-		SHA string `json:"script_sha256"`
-	}{hex.EncodeToString(digest[:])}
-	path := filepath.Join(root, "request.json")
-	raw, err := os.ReadFile(path)
-	selected := errors.Is(err, os.ErrNotExist)
-	if err != nil && !selected {
-		return err
-	}
-	if !selected {
-		var previous struct {
-			SHA string `json:"script_sha256"`
-		}
-		if err := DecodeStrict(raw, &previous); err != nil {
-			return err
-		}
-		if previous.SHA != metadata.SHA {
-			return status.Error(codes.AlreadyExists, "sandbox already selected a different bootstrap script")
-		}
-	} else {
-		encoded, err := json.Marshal(metadata)
-		if err != nil {
-			return err
-		}
-		if err := writeDurable(path, encoded); err != nil {
-			return err
-		}
-	}
-	log, err := OpenInitializationLog(filepath.Join(root, "events.jsonl"))
-	if err != nil {
-		return err
-	}
-	r.initLog = log
-	r.initDone = make(chan struct{})
-	if log.Ended() {
-		close(r.initDone)
-		return nil
-	}
-	if !selected {
-		if err := log.AppendInterrupted(1); err != nil {
-			return err
-		}
-		close(r.initDone)
-		return nil
-	}
-	go func() {
-		defer func() { close(r.initDone); r.changed() }()
-		cwd := r.config.InitializationCwd
-		if cwd == "" {
-			cwd = r.config.StateDir
-		}
-		code, err := r.runScript(r.ctx, *script, cwd, func(stdout bool, data []byte) error {
-			stream := runnerpb.InitializationStream_INITIALIZATION_STREAM_STDERR
-			if stdout {
-				stream = runnerpb.InitializationStream_INITIALIZATION_STREAM_STDOUT
-			}
-			return log.AppendOutput(1, stream, data)
-		})
-		if err == nil {
-			_, err = log.AppendResult(1, int32(code))
-		}
-		r.bootstrapMu.Lock()
-		r.initErr = err
-		r.bootstrapMu.Unlock()
-		if err != nil {
-			r.fail(err)
-		}
-	}()
-	r.changed()
-	return nil
-}
-
-func (r *Runner) bootstrap(ctx context.Context) error {
-	if r.config.Launch.Bootstrap == nil {
-		return nil
-	}
-	if err := r.startBootstrap(); err != nil {
-		return err
-	}
-	r.bootstrapMu.Lock()
-	done := r.initDone
-	r.bootstrapMu.Unlock()
-	select {
-	case <-done:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	r.bootstrapMu.Lock()
-	defer r.bootstrapMu.Unlock()
-	if r.initErr != nil {
-		return r.initErr
-	}
-	events := r.initLog.Since(r.initLog.LastSequence() - 1)
-	if len(events) != 1 {
-		return errors.New("bootstrap has no terminal outcome")
-	}
-	last := events[0]
-	if last.GetInterrupted() != nil {
-		return errors.New("the Sandbox bootstrap was interrupted and never runs again; use a new Sandbox")
-	}
-	if last.GetResult() == nil || last.GetResult().ExitCode != 0 {
-		return errors.New("the Sandbox bootstrap failed and never runs again; use a new Sandbox")
-	}
-	return nil
-}
-
 func writeDurable(path string, data []byte) error {
 	file, err := os.OpenFile(path+".tmp", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err != nil {
@@ -595,8 +486,11 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 		r.mu.Unlock()
 		return nil, status.Error(codes.Aborted, "this Sandbox is quiesced")
 	}
+	r.admissions++
 	err = r.store.Write(request.SessionId, record)
 	r.mu.Unlock()
+	r.changed()
+	defer func() { r.mu.Lock(); r.admissions--; r.mu.Unlock(); r.changed() }()
 	if err != nil {
 		return nil, rpcError(err)
 	}
@@ -605,13 +499,11 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 		return nil, rpcError(err)
 	}
 	if record.SetupScriptSHA256 != nil {
-		r.mu.Lock()
-		if !r.lifecycle.accepting() {
-			r.mu.Unlock()
-			return nil, status.Error(codes.Aborted, "this Sandbox is quiesced")
-		}
-		s.startSetup(request.GetSetupScript())
-		r.mu.Unlock()
+		script := request.GetSetupScript()
+		s.mu.Lock()
+		s.setupScript = &script
+		s.mu.Unlock()
+		s.wake()
 	}
 	r.changed()
 	return &runnerservicepb.OpenSessionResponse{Attached: s.attached()}, nil
@@ -764,22 +656,32 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 		}
 		blockers = append(blockers, sessionBlockers...)
 	}
-	r.bootstrapMu.Lock()
-	initLog := r.initLog
-	r.bootstrapMu.Unlock()
 	facts := &controlpb.RunnerFacts{SetupsRunning: setup}
-	if initLog != nil {
-		facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_RUNNING
-		if initLog.Ended() {
-			last := initLog.Since(initLog.LastSequence() - 1)[0]
-			facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_FAILED
-			if last.GetInterrupted() != nil {
-				facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_INTERRUPTED
-			} else if last.GetResult() != nil && last.GetResult().ExitCode == 0 {
-				facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_SUCCEEDED
+	if r.config.Launch.Bootstrap != nil {
+		input, requested, err := lifecycleRead[bootstrapInputSpec](r.ctx, r.lifecycle.state, bootstrapInputType, "bootstrap")
+		if err != nil {
+			return nil, err
+		}
+		if requested && input.Requested {
+			runtime, hasRuntime, err := lifecycleRead[bootstrapRuntimeSpec](r.ctx, r.lifecycle.state, bootstrapRuntimeType, "bootstrap")
+			if err != nil {
+				return nil, err
 			}
-		} else {
-			blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendBootstrap})
+			if !hasRuntime || runtime.Phase == bootstrapDormant || runtime.Phase == bootstrapRunning {
+				facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_RUNNING
+				blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendBootstrap})
+			} else {
+				switch runtime.Phase {
+				case bootstrapSucceeded:
+					facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_SUCCEEDED
+				case bootstrapFailed:
+					facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_FAILED
+				case bootstrapInterrupted:
+					facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_INTERRUPTED
+				default:
+					return nil, fmt.Errorf("unknown bootstrap phase %d", runtime.Phase)
+				}
+			}
 		}
 	}
 	r.mu.Lock()

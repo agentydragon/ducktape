@@ -20,10 +20,12 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 
 ## Layout
 
-- `runner.go` and `session.go`: durable Session reservations, admission, setup,
-  lazy native startup, command scheduling, recovery and quiesce.
-- `executor.go` and `executor_container.go`: isolated Codex tool execution, independent restart,
-  RPC health checks and container ownership fencing ([execution modes](docs/codex_executor.md)).
+- `lifecycle.go`, `executor_controller.go`, `codex_controller.go`, and `bootstrap.go`: the five
+  COSI controller roles and their observed lifecycle state ([ownership](docs/lifecycle.md)).
+- `runner.go` and `session.go`: durable Session reservations, admission, native operations,
+  journal recovery and quiesce entry points.
+- `executor.go` and `executor_container.go`: isolated Codex execution operations, RPC probes
+  and container ownership fencing ([execution modes](docs/codex_executor.md)).
 - `codex_server.go`: the Runner's one Codex app-server, its startup and exit, and the journaling of
   each frame in the Sessions that `codex/router.go` assigns it to.
 - `transport.go`: the outbound control tunnel and independent per-Session ingress

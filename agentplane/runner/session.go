@@ -92,7 +92,8 @@ type Session struct {
 	setup                                                  runnerpb.SetupState
 	launch                                                 runnerpb.LaunchOutcome
 	failure                                                *uint64
-	setupDone                                              chan struct{}
+	setupScript                                            *string
+	setupJob, stopping                                     *sessionOperation
 	readers                                                sync.WaitGroup
 	work                                                   sync.WaitGroup
 	pending                                                map[string]bool
@@ -436,19 +437,15 @@ func (s *Session) admit(ctx context.Context, command *commandpb.Command, lameduc
 }
 
 func (s *Session) ensureReady(ctx context.Context) error {
-	s.mu.Lock()
-	setupDone := s.setupDone
-	setup := s.setup
-	s.mu.Unlock()
-	if setupDone != nil {
-		select {
-		case <-setupDone:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+	if err := s.runner.lifecycle.waitFor(ctx, func() (bool, error) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.setup != runnerpb.SetupState_SETUP_STATE_RUNNING, nil
+	}); err != nil {
+		return err
 	}
 	s.mu.Lock()
-	setup = s.setup
+	setup := s.setup
 	s.mu.Unlock()
 	if s.executionClosed() {
 		return errors.New("the session is sealed")
@@ -1102,7 +1099,7 @@ func (s *Session) halt(ctx context.Context, reason stopReason) {
 	s.mu.Lock()
 	preparation := s.preparation
 	dispatching := s.dispatching
-	setupDone := s.setupDone
+	setupJob := s.setupJob
 	s.mu.Unlock()
 	s.admitMu.Unlock()
 	if preparation != nil {
@@ -1112,8 +1109,8 @@ func (s *Session) halt(ctx context.Context, reason stopReason) {
 	if dispatching != nil {
 		<-dispatching.done
 	}
-	if setupDone != nil {
-		<-setupDone
+	if setupJob != nil {
+		<-setupJob.done
 	}
 	s.mu.Lock()
 	controls := make([]*sessionOperation, 0, len(s.controlDispatches))
@@ -1221,47 +1218,39 @@ func (s *Session) autosuspendBlockers() []*sandboxpb.AutosuspendBlocker {
 	return blockers
 }
 
-func (s *Session) startSetup(script string) {
-	s.mu.Lock()
-	s.setupDone = make(chan struct{})
-	done := s.setupDone
-	s.mu.Unlock()
-	go func() {
-		defer func() {
-			close(done)
-			s.wake()
-			s.runner.changed()
-		}()
-		err := s.runner.bootstrap(s.runner.ctx)
+// runSetup performs one claimed script operation. The Session controller owns
+// whether it runs; cancellation of an admission or preparation cannot cancel it.
+func (s *Session) runSetup(ctx context.Context, script string) error {
+	err := s.runner.bootstrap(ctx)
+	if err == nil {
+		err = s.Emit(ctx, observation(&eventpb.SetupStarted{}), nil)
+	}
+	if err == nil {
+		cwd, e := s.runner.ensureWorkspace(ctx, s.Session().Cwd)
+		err = e
 		if err == nil {
-			err = s.Emit(s.runner.ctx, observation(&eventpb.SetupStarted{}), nil)
-		}
-		if err == nil {
-			cwd, e := s.runner.ensureWorkspace(s.runner.ctx, s.Session().Cwd)
-			err = e
-			if err == nil {
-				var code int
-				code, err = s.runner.runScript(s.runner.ctx, script, cwd, func(stdout bool, data []byte) error {
-					out := &eventpb.SetupOutput{}
-					if stdout {
-						out.Stream = &eventpb.SetupOutput_Stdout{Stdout: data}
-					} else {
-						out.Stream = &eventpb.SetupOutput_Stderr{Stderr: data}
-					}
-					return s.Emit(s.runner.ctx, observation(out), nil)
-				})
-				if err == nil {
-					err = s.Emit(s.runner.ctx, observation(&eventpb.SetupFinished{ExitCode: int32(code)}), nil)
+			var code int
+			code, err = s.runner.runScript(ctx, script, cwd, func(stdout bool, data []byte) error {
+				out := &eventpb.SetupOutput{}
+				if stdout {
+					out.Stream = &eventpb.SetupOutput_Stdout{Stdout: data}
+				} else {
+					out.Stream = &eventpb.SetupOutput_Stderr{Stderr: data}
 				}
+				return s.Emit(ctx, observation(out), nil)
+			})
+			if err == nil {
+				err = s.Emit(ctx, observation(&eventpb.SetupFinished{ExitCode: int32(code)}), nil)
 			}
 		}
-		if err != nil {
-			zap.L().Error("session setup interrupted", zap.String("session", s.id), zap.Error(err))
-			if e := s.Emit(s.runner.ctx, observation(&eventpb.SetupInterrupted{}), nil); e != nil {
-				s.runner.fail(e)
-			}
+	}
+	if err != nil {
+		zap.L().Error("session setup interrupted", zap.String("session", s.id), zap.Error(err))
+		if outcomeErr := s.Emit(ctx, observation(&eventpb.SetupInterrupted{}), nil); outcomeErr != nil {
+			return errors.Join(err, outcomeErr)
 		}
-	}()
+	}
+	return nil
 }
 
 func (s *Session) directory() string {

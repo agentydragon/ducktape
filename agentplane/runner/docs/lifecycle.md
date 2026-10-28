@@ -1,7 +1,6 @@
 # Runner lifecycle ownership
 
-This describes the current lifecycle implementation in `lifecycle.go`, `runner.go`, and
-`session.go`. COSI Runtime schedules in-process work; the existing Session store, journals, ingress
+This describes the lifecycle controllers and their native operation hosts in this package. COSI Runtime schedules in-process work; the existing Session store, journals, ingress
 acknowledgements, and state-owner lock remain the durable authorities.
 
 ## State and owners
@@ -17,12 +16,16 @@ connections, or other native state.
 | Runner runtime                           | Runner lifecycle controller                | Runner-wide stage and terminal controller error.                                                        |
 | Session input                            | Runner/Session host                        | Demand and snapshots of journal cursor, setup, process, active turn, and queued or running inspections. |
 | Session runtime                          | Session QController                        | Execution phase, attempt, resume flag, process incarnation, and goal generation.                        |
+| Executor input and runtime               | Executor host and Executor QController     | Demand, start/readiness/health deadlines, restart backoff, fencing and stop outcome.                    |
+| Codex input and runtime                  | Codex host and Codex QController           | Shared app-server demand, executor dependency deadline, process incarnation and stop outcome.           |
+| Bootstrap input and runtime              | Runner host and Bootstrap QController      | Accepted one-shot bootstrap demand and its running or terminal outcome.                                 |
 | Operation result                         | Runner/Session host                        | Wakes the owning controller when an asynchronous host operation completes.                              |
 | Journal seal and ingress acknowledgement | Runner/transport host                      | In-memory mirrors of the durable journal seal and persisted ingress acknowledgement.                    |
 | Native process and journal effects       | Runner, Session, Codex server, and journal | Startup, dispatch, interruption, process exit, inspection, sealing, and persistence.                    |
 
-The Runner controller is the exclusive writer of Runner runtime. The Session QController is the
-exclusive writer of Session runtime; it can reconcile up to 16 Sessions concurrently. The host
+There are five controller roles: Runner, Session, Executor, Codex app-server, and Sandbox bootstrap.
+Each exclusively writes its own runtime resource. The Session QController can reconcile up to 16
+Sessions concurrently; the other QControllers each reconcile one shared instance. The host
 publishes input changes and operation results, while stdout and transport workers remain independent
 so native replies and ingress acknowledgements can make progress while a controller is waiting.
 Operation slots stay owned until their result is consumed, preventing controller retries from
@@ -38,7 +41,7 @@ its in-memory state are discarded.
 ## Lifecycle transitions
 
 Runner goals are `Running`, `Quiescing`, and `Closing`. The Runner controller advances progress
-through `Running`, `Draining`, `Halting`, `Stopping`, `Sealing`, `Flushing`, and `Quiesced`, or to
+through `Running`, `Draining`, `Halting`, `Stopping`, `Fencing`, `Sealing`, `Flushing`, and `Quiesced`, or to
 `Closed` for orderly close. Session execution is tracked separately as `Dormant`, `Preparing`,
 `Ready`, `Stopping`, or `Halted`. One-shot setup remains its own durable state and is not inferred
 from execution readiness.
@@ -46,8 +49,24 @@ from execution readiness.
 New execution demand advances a dormant Session into one preparation attempt. Its operation records
 whether it is resuming and which process incarnation it prepares. The controller accepts completion
 only while the goal still permits execution and that process remains live. Dispatch and inspection
-also have Session-owned operation slots. Pending and in-flight inspection both block later ordinary
+also have Session-owned operation slots. The Session controller starts accepted setup exactly once
+and joins it during halt; the Bootstrap controller owns the Sandbox-wide one-shot script. Their
+waiters only observe completion and cannot cancel the accepted work. Pending and in-flight inspection both block later ordinary
 dispatch; inspection runs away from stdout so it can wait for native history replies.
+
+## Shared executor and Codex process
+
+The Executor controller starts the configured executor on demand, probes readiness, and schedules
+health checks and bounded restart backoff with COSI requeues. Failed probes are observations rather
+than terminal startup failures. Three consecutive health failures or a native exit cause fencing
+before a successor is allowed. A failed fence remains a barrier to a new process. Native process and
+container ownership helpers perform bounded operations; they do not run a second lifecycle policy loop.
+
+The Codex controller waits for an executor-ready observation before starting the one app-server.
+Concurrent Session requests share startup and its 30-second executor dependency deadline. Its host
+retains the initial Session for startup-frame journaling and records process exit only after both
+readers and every hosted Session's exit observations settle. Shutdown consumes the stop operation's
+result before reporting Stopped, including when the process pointer was already cleared by readers.
 
 ## Quiesce and close
 
@@ -61,8 +80,10 @@ finish before teardown begins.
 The Runner controller loads the durable Session inventory and asks each Session controller to
 halt. A Session cancels and joins preparation, joins command
 and control dispatch, interrupts an active turn, and waits up to 15 seconds for the turn to end.
-After every Session is halted, the Runner stops each Session-owned harness, stops the shared Codex
-app-server once, and stops the configured executor. It waits for any outstanding inspections after
+After every Session is halted, the Session controllers stop their dedicated harnesses and the Codex
+controller stops the shared app-server once. The Runner then advances to Fencing, allowing the
+Executor controller to fence the configured executor. Each stage advances from observed controller
+outcomes; there is no central shutdown worker. It waits for any outstanding inspections after
 process stop so process exit can resolve native RPC waiters and the resulting observations can be
 committed before sealing. Bootstrap also finishes before sealing or close can complete.
 
@@ -84,7 +105,10 @@ the journals remain sealed and durable, but the Runner can close while Quiesce i
 
 An ordinary `Close` without a Quiesce seal stops the processes but leaves journals reopenable. On a
 new authenticated incarnation, the host durably reopens journals sealed by a different incarnation
-before accepting work; the same-incarnation lameduck marker continues to reject it.
+before accepting work; the same-incarnation lameduck marker continues to reject it. If a replacement
+incarnation arrives while teardown is in progress, adoption waits for native cleanup and journal
+seals, then resets old execution demand before publishing Running. It does not wait for the previous
+incarnation's ingress acknowledgement.
 
 ## Validation and rollback
 

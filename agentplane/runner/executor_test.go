@@ -3,17 +3,24 @@ package runner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
-	"testing/synctest"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/coder/websocket"
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/state"
 )
+
+const executorTestTimeout = 10 * time.Second
 
 func TestExecutorProbeRequiresValidRPCAndBoundsUnresponsiveServer(t *testing.T) {
 	for _, test := range []struct {
@@ -73,118 +80,301 @@ func TestExecutorConfigurationRejectsPartialOrOverlappingIsolation(t *testing.T)
 		t.Fatal(err)
 	}
 	limits := ResourceLimits{CPUQuotaMicros: 100000, MemoryMaxBytes: 64 * 1024 * 1024, PidsMax: 32, ReadBPS: 1, WriteBPS: 1, ReadIOPS: 1, WriteIOPS: 1}
-	harness := &AgentCgroups{Root: "/test-cgroups/workloads", AggregateLimits: limits, ProcessLimits: limits}
-	executor := *harness
-	executor.Root = "/test-cgroups/executors"
-	if err := (CodexExecutorConfig{URL: endpoint, Isolation: &executor}).validate(harness); err != nil {
+	harnessGroups := &AgentCgroups{Root: "/test-cgroups/workloads", AggregateLimits: limits, ProcessLimits: limits}
+	executorGroups := *harnessGroups
+	executorGroups.Root = "/test-cgroups/executors"
+	if err := (CodexExecutorConfig{URL: endpoint, Isolation: &executorGroups}).validate(harnessGroups); err != nil {
 		t.Fatal(err)
 	}
-	invalid := executor
+	invalid := executorGroups
 	invalid.ProcessLimits.MemoryMaxBytes++
 	for _, config := range []CodexExecutorConfig{
 		{URL: endpoint},
 		{URL: endpoint, ContainerSocket: "relative"},
-		{URL: endpoint, ContainerSocket: "/run/test.sock", Isolation: harness},
-		{URL: endpoint, Isolation: harness},
+		{URL: endpoint, ContainerSocket: "/run/test.sock", Isolation: harnessGroups},
+		{URL: endpoint, Isolation: harnessGroups},
 		{URL: endpoint, Isolation: &AgentCgroups{Root: "/test-cgroups/workloads/executor"}},
 		{URL: endpoint, Isolation: &invalid},
 	} {
-		if err := config.validate(harness); err == nil {
+		if err := config.validate(harnessGroups); err == nil {
 			t.Fatalf("accepted %+v", config)
 		}
 	}
 }
 
-func TestStoppedExecutorCannotStart(t *testing.T) {
-	e := newCodexExecutor(nil, CodexExecutorConfig{})
-	if err := e.stop(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if err := e.ensure(context.Background()); err == nil {
-		t.Fatal("stopped executor restarted")
-	}
-	if err := e.stop(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := monitorExecutor(ctx, "", make(chan error)); !errors.Is(err, context.Canceled) {
-		t.Fatalf("monitor: %v", err)
+func TestExecutorEnsureReturnsTypedCompanionRefusal(t *testing.T) {
+	r := newExecutorLifecycleRunner(t, func(context.Context) (*executorInstance, error) {
+		return nil, executorRefusal{reason: "Codex binary is unavailable"}
+	}, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), executorTestTimeout)
+	defer cancel()
+	err := r.executor.ensure(ctx)
+	var refusal executorRefusal
+	if !errors.As(err, &refusal) || refusal.reason != "Codex binary is unavailable" {
+		t.Fatalf("ensure = %v (%T), want the typed companion refusal", err, err)
 	}
 }
 
-func TestExecutorMonitorToleratesTransientProbesAndResetsFailures(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		results := []error{context.DeadlineExceeded, context.DeadlineExceeded, nil, context.DeadlineExceeded, context.DeadlineExceeded, nil}
-		calls := 0
-		finished := make(chan error, 1)
+func TestExecutorConcurrentStartupPublishesOneProcessAndClosesThroughCOSI(t *testing.T) {
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var starts, stops atomic.Int32
+	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*executorInstance, error) {
+		starts.Add(1)
+		entered <- struct{}{}
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return newTestExecutorInstance(&stops), nil
+	}, func(context.Context) error { return nil })
+
+	results := make(chan error, 2)
+	for range 2 {
 		go func() {
-			finished <- monitorExecutorHealth(ctx, make(chan error), func(context.Context) error {
-				result := results[calls]
-				calls++
-				return result
-			})
+			ctx, cancel := context.WithTimeout(context.Background(), executorTestTimeout)
+			defer cancel()
+			results <- r.executor.ensure(ctx)
 		}()
-		synctest.Wait()
-		for range results {
-			time.Sleep(5 * time.Second)
-			synctest.Wait()
-			select {
-			case err := <-finished:
-				t.Fatalf("fenced a transient failure: %v", err)
-			default:
+	}
+	select {
+	case <-entered:
+	case <-time.After(executorTestTimeout):
+		t.Fatal("executor start operation did not begin")
+	}
+	close(release)
+	for range 2 {
+		select {
+		case err := <-results:
+			if err != nil {
+				t.Fatalf("concurrent ensure: %v", err)
 			}
+		case <-time.After(executorTestTimeout):
+			t.Fatal("concurrent ensure did not observe readiness")
 		}
-		if calls != len(results) {
-			t.Fatalf("probed %d times, want %d", calls, len(results))
-		}
-		cancel()
-		if err := <-finished; !errors.Is(err, context.Canceled) {
-			t.Fatalf("monitor cancellation: %v", err)
-		}
-	})
+	}
+	if got := starts.Load(); got != 1 {
+		t.Fatalf("started %d executor instances, want one", got)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("close through COSI: %v", err)
+	}
+	if got := stops.Load(); got != 1 {
+		t.Fatalf("fenced %d executor instances, want one", got)
+	}
+	if current := r.executor.runtimeState(); current.Phase != executorStopped || current.StopError != "" {
+		t.Fatalf("executor runtime after close = %+v, want a clean stopped state", current)
+	}
 }
 
-func TestExecutorMonitorFencesPersistentFailure(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		defer cancel()
-		calls := 0
-		err := monitorExecutorHealth(ctx, make(chan error), func(ctx context.Context) error {
-			calls++
-			<-ctx.Done()
-			return ctx.Err()
-		})
-		if !errors.Is(err, context.DeadlineExceeded) || calls != 3 {
-			t.Fatalf("monitor: calls=%d error=%v, want three failed bounded probes", calls, err)
+func TestExecutorHealthToleratesFailuresResetsAndFencesBeforeSuccessor(t *testing.T) {
+	var starts, stops atomic.Int32
+	var probes atomic.Int32
+	r := newExecutorLifecycleRunner(t, func(context.Context) (*executorInstance, error) {
+		starts.Add(1)
+		return newTestExecutorInstance(&stops), nil
+	}, func(context.Context) error {
+		switch probes.Add(1) {
+		case 1, 4, 8:
+			return nil
+		case 2, 3, 5, 6, 7:
+			return errors.New("temporary dispatcher timeout")
+		default:
+			return nil
 		}
 	})
+
+	if err := r.executor.request(); err != nil {
+		t.Fatal(err)
+	}
+	waitExecutor(t, r, func(current executorRuntimeSpec) bool { return current.Phase == executorReady }, "initial readiness")
+	for index, failures := range []uint8{1, 2, 0} {
+		forceExecutorProbe(t, r)
+		waitExecutor(t, r, func(current executorRuntimeSpec) bool {
+			return current.Phase == executorReady && current.ConsecutiveProbeFailures == failures && probes.Load() >= int32(index+2)
+		}, fmt.Sprintf("health failure count %d", failures))
+	}
+
+	for _, failures := range []uint8{1, 2, 3} {
+		forceExecutorProbe(t, r)
+		if failures < 3 {
+			waitExecutor(t, r, func(current executorRuntimeSpec) bool {
+				return current.Phase == executorReady && current.ConsecutiveProbeFailures == failures
+			}, fmt.Sprintf("persistent health failure count %d", failures))
+		} else {
+			waitExecutor(t, r, func(current executorRuntimeSpec) bool {
+				return current.Phase == executorRetrying && stops.Load() == 1
+			}, "third health failure to fence before retry")
+		}
+	}
+	if got := starts.Load(); got != 1 {
+		t.Fatalf("started successor before restart delay and fence completion: starts=%d stops=%d", got, stops.Load())
+	}
+	forceExecutorRetry(t, r)
+	waitExecutor(t, r, func(current executorRuntimeSpec) bool {
+		return current.Generation == 2 && current.Phase == executorReady && starts.Load() == 2 && stops.Load() == 1
+	}, "successor after completed fence")
 }
 
-func TestExecutorMonitorDoesNotDelayProcessExitForProbeGrace(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+func TestExecutorCloseCancelsConcurrentStartupWithoutRestart(t *testing.T) {
+	entered := make(chan struct{}, 1)
+	var starts, stops atomic.Int32
+	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*executorInstance, error) {
+		starts.Add(1)
+		entered <- struct{}{}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}, nil)
+
+	ensured := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), executorTestTimeout)
 		defer cancel()
-		done := make(chan error, 1)
-		finished := make(chan error, 1)
-		calls := 0
-		go func() {
-			finished <- monitorExecutorHealth(ctx, done, func(context.Context) error {
-				calls++
-				return context.DeadlineExceeded
-			})
-		}()
-		synctest.Wait()
-		time.Sleep(5 * time.Second)
-		synctest.Wait()
-		exited := errors.New("test executor exited")
-		done <- exited
-		if err := <-finished; !errors.Is(err, exited) || calls != 1 {
-			t.Fatalf("monitor: calls=%d error=%v, want immediate process exit", calls, err)
+		ensured <- r.executor.ensure(ctx)
+	}()
+	select {
+	case <-entered:
+	case <-time.After(executorTestTimeout):
+		t.Fatal("executor startup did not begin")
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- r.Close() }()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatalf("close during startup: %v", err)
+		}
+	case <-time.After(executorTestTimeout):
+		t.Fatal("close did not cancel and join executor startup")
+	}
+	if err := <-ensured; err == nil {
+		t.Fatal("ensure returned ready after close canceled startup")
+	}
+	if starts.Load() != 1 || stops.Load() != 0 {
+		t.Fatalf("startup/stop counts = %d/%d, want one canceled start and no instance to fence", starts.Load(), stops.Load())
+	}
+	if current := r.executor.runtimeState(); current.Phase != executorStopped || current.StopError != "" {
+		t.Fatalf("executor runtime after close = %+v, want clean stopped state", current)
+	}
+}
+
+func newExecutorLifecycleRunner(t *testing.T, start func(context.Context) (*executorInstance, error), probe func(context.Context) error) *Runner {
+	t.Helper()
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "executor-control.sock")
+	companionCtx, cancelCompanion := context.WithCancel(context.Background())
+	companionDone := make(chan error, 1)
+	go func() {
+		companionDone <- serveExecutorContainer(companionCtx, socket, filepath.Join(dir, "unused-codex"), "ws://127.0.0.1:4599")
+	}()
+	waitForSocket(t, socket)
+
+	config := Config{
+		StateDir: t.TempDir(),
+		Codex:    &harness.LaunchConfig{Binary: "/bin/false"},
+		CodexExecutor: &CodexExecutorConfig{
+			URL: "ws://127.0.0.1:4599", ContainerSocket: socket,
+		},
+	}
+	r, err := New(config)
+	if err != nil {
+		cancelCompanion()
+		t.Fatalf("create lifecycle Runner: %v", err)
+	}
+	r.executor.startEffect, r.executor.probeEffect = start, probe
+	if err := r.Startup(context.Background()); err != nil {
+		cancelCompanion()
+		t.Fatalf("start lifecycle Runner: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := r.Close(); err != nil {
+			t.Errorf("close executor test Runner: %v", err)
+		}
+		cancelCompanion()
+		select {
+		case err := <-companionDone:
+			if err != nil {
+				t.Errorf("stop executor test companion: %v", err)
+			}
+		case <-time.After(executorTestTimeout):
+			t.Error("executor test companion did not stop")
 		}
 	})
+	return r
+}
+
+func newTestExecutorInstance(stops *atomic.Int32) *executorInstance {
+	done := make(chan error, 1)
+	var once sync.Once
+	return &executorInstance{
+		done: done,
+		stop: func(context.Context) error {
+			stops.Add(1)
+			once.Do(func() { done <- errors.New("test executor was fenced") })
+			return nil
+		},
+	}
+}
+
+func forceExecutorProbe(t *testing.T, r *Runner) {
+	t.Helper()
+	current := r.executor.runtimeState()
+	if current.Phase != executorReady {
+		t.Fatalf("force probe while executor phase is %d", current.Phase)
+	}
+	current.NextProbe = time.Time{}
+	old, err := r.lifecycle.state.Get(r.ctx, resource.NewMetadata(lifecycleNamespace, executorRuntimeType, "executor", resource.VersionUndefined))
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := lifecycleResourceFor(executorRuntimeType, "executor", current)
+	value.metadata = old.Metadata().Copy()
+	if err := r.lifecycle.state.Update(r.ctx, value, state.WithUpdateOwner(executorControllerName)); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.executor.request(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func forceExecutorRetry(t *testing.T, r *Runner) {
+	t.Helper()
+	current := r.executor.runtimeState()
+	if current.Phase != executorRetrying {
+		t.Fatalf("force retry while executor phase is %d", current.Phase)
+	}
+	current.RetryAt = time.Time{}
+	old, err := r.lifecycle.state.Get(r.ctx, resource.NewMetadata(lifecycleNamespace, executorRuntimeType, "executor", resource.VersionUndefined))
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := lifecycleResourceFor(executorRuntimeType, "executor", current)
+	value.metadata = old.Metadata().Copy()
+	if err := r.lifecycle.state.Update(r.ctx, value, state.WithUpdateOwner(executorControllerName)); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.executor.request(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func waitExecutor(t *testing.T, r *Runner, predicate func(executorRuntimeSpec) bool, want string) executorRuntimeSpec {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), executorTestTimeout)
+	defer cancel()
+	for {
+		changed := r.changesSince()
+		current := r.executor.runtimeState()
+		if predicate(current) {
+			return current
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for %s: executor=%+v", want, current)
+		}
+	}
 }
 
 // A companion whose Codex binary cannot start serves a refusal instead of exiting: a generation that
@@ -212,7 +402,6 @@ func TestExecutorCompanionRefusesClaimAndKeepsServing(t *testing.T) {
 		}
 	}
 
-	// The generation survived both refusals: an idle companion still answers, unowned and unchanged.
 	_, status, err := executorControl(ctx, socket, executorControlRequest{Operation: "inspect"})
 	if err != nil {
 		t.Fatalf("inspect after refusals: %v", err)
@@ -223,35 +412,6 @@ func TestExecutorCompanionRefusesClaimAndKeepsServing(t *testing.T) {
 	cancel()
 	if err := <-served; err != nil {
 		t.Fatalf("companion after cancellation: %v", err)
-	}
-}
-
-// A refusal must reach a waiting Session as itself, not as the expiry of its startup deadline: the
-// companion will refuse every later claim the same way, so nothing is recovered by waiting.
-func TestExecutorEnsureReportsRefusalInsteadOfItsDeadline(t *testing.T) {
-	dir := t.TempDir()
-	socket := filepath.Join(dir, "control.sock")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() {
-		_ = serveExecutorContainer(ctx, socket, filepath.Join(dir, "absent-codex"), "ws://127.0.0.1:4599")
-	}()
-	waitForSocket(t, socket)
-
-	e := newCodexExecutor(&Runner{ctx: ctx}, CodexExecutorConfig{URL: "ws://127.0.0.1:4599", ContainerSocket: socket})
-	startup, cancelStartup := context.WithTimeout(ctx, time.Minute)
-	defer cancelStartup()
-	started := time.Now()
-	err := e.ensure(startup)
-	var refusal executorRefusal
-	if !errors.As(err, &refusal) {
-		t.Fatalf("ensure: %v (%T), want an executorRefusal", err, err)
-	}
-	if elapsed := time.Since(started); elapsed > 10*time.Second {
-		t.Errorf("ensure took %v to report a refusal, want it reported without waiting for the deadline", elapsed)
-	}
-	if err := e.stop(context.Background()); err != nil {
-		t.Fatalf("stop after refusal: %v", err)
 	}
 }
 

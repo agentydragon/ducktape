@@ -126,9 +126,12 @@ func TestCloseAfterQuiescePreservesSealAndWaitsForSetup(t *testing.T) {
 	r, s := lifecycleTestSession(t)
 	setupDone := make(chan struct{})
 	s.mu.Lock()
-	s.setupDone = setupDone
 	s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
 	s.mu.Unlock()
+	s.startOperation(&s.setupJob, "setup", func(ctx context.Context) error {
+		<-setupDone
+		return s.Emit(ctx, observation(&eventpb.SetupFinished{ExitCode: 0}), nil)
+	})
 	s.wake()
 	t.Cleanup(func() {
 		select {
@@ -297,4 +300,83 @@ func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testin
 			t.Fatal("expected the fixture's unconfigured harness to reject successor startup")
 		}
 	})
+}
+
+func TestNewIncarnationWaitsForTeardownBeforeResettingDemand(t *testing.T) {
+	r, s := lifecycleTestSession(t)
+	// These hosts are unconfigured, so old demand can be seeded without a
+	// native effect. Adoption must discard it even when the host is dormant.
+	l := r.lifecycle
+	l.publishMu.Lock()
+	err := publishLifecycle(l, codexInputType, "codex", codexInputSpec{Demand: 3})
+	if err == nil {
+		err = publishLifecycle(l, executorInputType, "executor", executorInputSpec{Demand: 4})
+	}
+	l.publishMu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	setupDone := make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-setupDone:
+		default:
+			close(setupDone)
+		}
+	})
+	s.mu.Lock()
+	s.setup = runnerpb.SetupState_SETUP_STATE_RUNNING
+	s.mu.Unlock()
+	s.startOperation(&s.setupJob, "setup", func(ctx context.Context) error {
+		<-setupDone
+		return s.Emit(ctx, observation(&eventpb.SetupFinished{ExitCode: 0}), nil)
+	})
+	s.wake()
+	if _, err := r.Quiesce(context.Background(), &runnerpb.QuiesceRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	waitLifecycle(t, r, func() bool {
+		return r.lifecycle.status().Stage == stageHalting && s.runtimeState().Phase == executionStopping
+	}, "halt waiting for setup")
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+	defer cancel()
+	adopted := make(chan error, 1)
+	go func() { adopted <- r.adoptIncarnation(ctx, "replacement-incarnation") }()
+	select {
+	case err := <-adopted:
+		t.Fatalf("adoption overtook accepted setup: %v", err)
+	default:
+	}
+	if r.lifecycle.goal().Mode != runnerQuiescing {
+		t.Fatal("new incarnation reopened execution during teardown")
+	}
+	close(setupDone)
+	select {
+	case err := <-adopted:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("new incarnation waited for ingress acknowledgement")
+	}
+	if seal := s.journal.SealState(); seal != nil {
+		t.Fatalf("new incarnation did not reopen old seal: %+v", seal)
+	}
+	if !r.lifecycle.accepting() {
+		t.Fatal("new incarnation did not reopen admission")
+	}
+	for kind, id := range map[string]string{codexInputType: "codex", executorInputType: "executor"} {
+		switch kind {
+		case codexInputType:
+			input, _, err := lifecycleRead[codexInputSpec](r.ctx, r.lifecycle.state, kind, id)
+			if err != nil || input.Demand != 0 {
+				t.Fatalf("Codex old demand survived adoption: %+v, %v", input, err)
+			}
+		case executorInputType:
+			input, _, err := lifecycleRead[executorInputSpec](r.ctx, r.lifecycle.state, kind, id)
+			if err != nil || input.Demand != 0 {
+				t.Fatalf("executor old demand survived adoption: %+v, %v", input, err)
+			}
+		}
+	}
 }

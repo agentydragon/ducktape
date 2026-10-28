@@ -69,78 +69,149 @@ func validateExecutorURL(value string) error {
 }
 
 type codexExecutor struct {
-	runner                  *Runner
-	config                  CodexExecutorConfig
-	mu                      sync.Mutex
-	started, stopped, ready bool
-	changed                 chan struct{}
-	done                    chan struct{}
-	cancel                  context.CancelFunc
-	stopErr                 error
-	// refused is the most recent refusal to start Codex, or nil. The companion survives one, so the
-	// restart loop keeps trying; this is what a caller whose deadline expired was actually waiting on.
-	refused error
+	runner *Runner
+	config CodexExecutorConfig
+	mu     sync.Mutex
+
+	instance           *executorInstance
+	instanceGeneration uint64
+	startOp            *sessionOperation
+	probeOp            *sessionOperation
+	fenceOp            *sessionOperation
+	startEffect        func(context.Context) (*executorInstance, error)
+	probeEffect        func(context.Context) error
 }
 
 func newCodexExecutor(r *Runner, config CodexExecutorConfig) *codexExecutor {
-	return &codexExecutor{runner: r, config: config, changed: make(chan struct{}), done: make(chan struct{})}
+	return &codexExecutor{runner: r, config: config}
 }
 
-func (e *codexExecutor) setReady(ready bool) {
+// request publishes demand under the Runner admission barrier. COSI converts
+// accepted demand into a process.
+func (e *codexExecutor) request() error {
+	e.runner.mu.Lock()
+	defer e.runner.mu.Unlock()
+
+	return e.requestLocked()
+}
+
+// requestLocked publishes demand while the caller holds Runner.mu, the
+// synchronous admission barrier shared with Close and Quiesce.
+func (e *codexExecutor) requestLocked() error {
+	l := e.runner.lifecycle
+	if l == nil {
+		return errors.New("Codex executor lifecycle is not initialized")
+	}
+	if !l.accepting() {
+		return errors.New("runner is not accepting new Codex executor demand")
+	}
+	l.publishMu.Lock()
+	defer l.publishMu.Unlock()
+	input, found, err := lifecycleRead[executorInputSpec](e.runner.ctx, l.state, executorInputType, "executor")
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("Codex executor input is not initialized")
+	}
+	input.Demand++
+	input.Revision++
+	return publishLifecycle(l, executorInputType, "executor", input)
+}
+
+func (e *codexExecutor) publishExit(generation uint64, err error) {
+	l := e.runner.lifecycle
+	if l == nil {
+		e.runner.fail(errors.New("Codex executor exited before lifecycle initialization"))
+		return
+	}
+	l.publishMu.Lock()
+	defer l.publishMu.Unlock()
+	input, found, readErr := lifecycleRead[executorInputSpec](e.runner.ctx, l.state, executorInputType, "executor")
+	if readErr != nil {
+		e.runner.fail(readErr)
+		return
+	}
+	if !found {
+		e.runner.fail(errors.New("Codex executor input disappeared"))
+		return
+	}
+	input.ExitGeneration = generation
+	if err != nil {
+		input.ExitError = err.Error()
+	}
+	input.Revision++
+	e.runner.fail(publishLifecycle(l, executorInputType, "executor", input))
+}
+
+func (e *codexExecutor) observe(instance *executorInstance, generation uint64) {
+	e.runner.lifecycle.workers.Add(1)
+	go func() {
+		defer e.runner.lifecycle.workers.Done()
+		err := <-instance.done
+		e.mu.Lock()
+		current := e.instance == instance && e.instanceGeneration == generation
+		e.mu.Unlock()
+		if current {
+			// The observer only publishes process-exit evidence. Reconciliation owns fencing
+			// and whether a successor is allowed.
+			e.publishExit(generation, err)
+		}
+	}()
+}
+
+func (e *codexExecutor) install(instance *executorInstance, generation uint64) {
 	e.mu.Lock()
-	e.ready = ready
-	close(e.changed)
-	e.changed = make(chan struct{})
+	e.instance, e.instanceGeneration = instance, generation
+	e.mu.Unlock()
+	e.observe(instance, generation)
+}
+
+func (e *codexExecutor) currentInstance() (*executorInstance, uint64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.instance, e.instanceGeneration
+}
+
+func (e *codexExecutor) clearInstance(instance *executorInstance) {
+	e.mu.Lock()
+	if e.instance == instance {
+		e.instance, e.instanceGeneration = nil, 0
+	}
 	e.mu.Unlock()
 }
 
-// setRefusal replaces a companion's refusal to start Codex, waking waiters, and reports whether the
-// new value opens an outage rather than repeating one already published. Clearing it (nil) ends the
-// outage: an attempt that got elsewhere supersedes the old reason.
-func (e *codexExecutor) setRefusal(refusal error) bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	first := refusal != nil && e.refused == nil
-	e.refused = refusal
-	close(e.changed)
-	e.changed = make(chan struct{})
-	return first
+// ensure publishes requested demand and observes the controller-owned status.
+func (e *codexExecutor) ensure(ctx context.Context) error {
+	if err := e.request(); err != nil {
+		return err
+	}
+	return e.runner.lifecycle.waitFor(ctx, func() (bool, error) {
+		current := e.runtimeState()
+		if current.Phase == executorReady {
+			return true, nil
+		}
+		if current.Refusal != "" {
+			return true, executorRefusal{reason: current.Refusal}
+		}
+		if current.Phase == executorStopped {
+			if current.Error != "" {
+				return true, errors.New(current.Error)
+			}
+			if e.runner.lifecycle.goal().Mode != runnerRunning {
+				return true, errors.New("Codex executor is stopped")
+			}
+		}
+		return false, nil
+	})
 }
 
-// ensure starts one restart loop for the lifetime of the Runner. It never
-// changes execution mode or replays a command after an executor is lost.
-func (e *codexExecutor) ensure(ctx context.Context) error {
-	e.mu.Lock()
-	if !e.started && !e.stopped {
-		lifetime, cancel := context.WithCancel(e.runner.ctx)
-		e.started, e.cancel = true, cancel
-		go e.run(lifetime)
+func (e *codexExecutor) runtimeState() executorRuntimeSpec {
+	current, _, err := lifecycleRead[executorRuntimeSpec](e.runner.ctx, e.runner.lifecycle.state, executorRuntimeType, "executor")
+	if err != nil {
+		e.runner.fail(err)
 	}
-	for {
-		if e.stopped {
-			e.mu.Unlock()
-			return errors.New("Codex executor is stopped")
-		}
-		if e.ready {
-			e.mu.Unlock()
-			return nil
-		}
-		if e.refused != nil {
-			refused := e.refused
-			e.mu.Unlock()
-			return refused
-		}
-		changed := e.changed
-		e.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-e.done:
-			return errors.New("Codex executor restart loop stopped")
-		case <-changed:
-		}
-		e.mu.Lock()
-	}
+	return current
 }
 
 type executorInstance struct {
@@ -190,117 +261,18 @@ func (e *codexExecutor) start(ctx context.Context) (*executorInstance, error) {
 	return &executorInstance{done: done, stop: func(ctx context.Context) error { return p.Stop(ctx, stopGrace) }}, nil
 }
 
-func (e *codexExecutor) run(ctx context.Context) {
-	defer close(e.done)
-	backoff := retry.WithCappedDuration(10*time.Second, retry.NewExponential(time.Second))
-	_ = retry.Do(ctx, backoff, func(ctx context.Context) error {
-		startCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		instance, err := e.start(startCtx)
-		if err == nil {
-			err = retry.Do(startCtx, retry.NewConstant(100*time.Millisecond), func(ctx context.Context) error {
-				select {
-				case err := <-instance.done:
-					return err
-				default:
-				}
-				probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-				defer cancel()
-				return retry.RetryableError(probeExecutor(probeCtx, e.config.URL))
-			})
-		}
-		cancel()
-		var refusal executorRefusal
-		if errors.As(err, &refusal) {
-			// The companion is serving and will answer the next claim too, so the loop keeps
-			// retrying at its backoff. Publish the reason for callers waiting on it, and name it
-			// once per outage rather than at every attempt.
-			if e.setRefusal(refusal) {
-				zap.L().Error("Codex executor refused to start", zap.Error(refusal))
-			}
-		} else {
-			e.setRefusal(nil)
-		}
-		if err == nil {
-			e.setReady(true)
-			zap.L().Info("Codex executor ready", zap.String("url", e.config.URL))
-			err = monitorExecutor(ctx, e.config.URL, instance.done)
-		}
-		e.setReady(false)
-		if instance != nil {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-			cleanupErr := instance.stop(cleanupCtx)
-			cancel()
-			if cleanupErr != nil {
-				// Fencing failure is fatal: do not serve a successor alongside old work.
-				e.mu.Lock()
-				e.stopErr = cleanupErr
-				e.mu.Unlock()
-				e.runner.fail(cleanupErr)
-				return cleanupErr
-			}
-		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		zap.L().Warn("Codex executor lost; restarting without replay", zap.Error(err))
-		return retry.RetryableError(err)
-	})
+func (e *codexExecutor) startProcess(ctx context.Context) (*executorInstance, error) {
+	if e.startEffect != nil {
+		return e.startEffect(ctx)
+	}
+	return e.start(ctx)
 }
 
-func monitorExecutor(ctx context.Context, endpoint string, done <-chan error) error {
-	return monitorExecutorHealth(ctx, done, func(ctx context.Context) error { return probeExecutor(ctx, endpoint) })
-}
-
-func monitorExecutorHealth(ctx context.Context, done <-chan error, probe func(context.Context) error) error {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	failures := 0
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case err := <-done:
-			return err
-		case <-ticker.C:
-			probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-			err := probe(probeCtx)
-			cancel()
-			if err == nil {
-				failures = 0
-				continue
-			}
-			failures++
-			// A tool memcg OOM can stall RPC briefly while the kernel selects its victim.
-			// Fencing on that first timeout would discard the surviving server's tool result.
-			zap.L().Warn("Codex executor health probe failed", zap.Int("consecutive_failures", failures), zap.Error(err))
-			if failures >= 3 {
-				return fmt.Errorf("executor failed %d consecutive health probes: %w", failures, err)
-			}
-		}
+func (e *codexExecutor) probe(ctx context.Context) error {
+	if e.probeEffect != nil {
+		return e.probeEffect(ctx)
 	}
-}
-
-func (e *codexExecutor) stop(ctx context.Context) error {
-	e.mu.Lock()
-	if !e.stopped {
-		e.stopped = true
-		close(e.changed)
-		e.changed = make(chan struct{})
-		if e.started {
-			e.cancel()
-		} else {
-			close(e.done)
-		}
-	}
-	e.mu.Unlock()
-	select {
-	case <-e.done:
-		e.mu.Lock()
-		defer e.mu.Unlock()
-		return e.stopErr
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return probeExecutor(ctx, e.config.URL)
 }
 
 // Probe the actual exec-server dispatcher, with a deadline on both handshake and
