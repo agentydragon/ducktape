@@ -118,6 +118,13 @@ func TestPID1ContainerContract(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		mixed, err := NewSubprocessSupervisor(owner).NewProcess(ProcessConfig{Command: []string{os.Args[0], "--pid1-proof-fast"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := mixed.Start(ctx); err == nil || !strings.Contains(err.Error(), "cannot be mixed") {
+			t.Fatalf("mixed subprocess wait owner was not rejected: %v", err)
+		}
 		if mode == "native-exit" {
 			t.Run("wait-ownership-and-orphan-reaping", func(t *testing.T) { provePID1Waits(t, ctx, supervisor) })
 		}
@@ -135,6 +142,11 @@ func TestPID1ContainerContract(t *testing.T) {
 	}
 	if err := p.Start(ctx); err != nil {
 		t.Fatal(err)
+	}
+	if os.Getenv("PID1_PROOF_BACKEND") == "subprocess" {
+		if _, err := NewPID1Supervisor(owner); err == nil || !strings.Contains(err.Error(), "subprocess supervisors own child waits") {
+			t.Fatalf("PID1 reaper displaced an active subprocess wait owner: %v", err)
+		}
 	}
 	readers := make(chan error, 2)
 	for _, stream := range []io.Reader{p.Stdout(), p.Stderr()} {

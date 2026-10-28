@@ -119,8 +119,11 @@ process cleanup and journal closure. `Stop` closes stdin and sends TERM, then KI
 budget; a canceled stop escalates and leaves the cleanup barrier owned. Native leader exit kills
 its remaining group. `Wait` completes only after the group disappears; a failed fence blocks the
 process finalizer. Escaped groups are contained by whole-container teardown, as with the subprocess
-backend. They can retain stdout/stderr pipes, so container shutdown must not wait indefinitely for
-their readers before reaching that boundary.
+backend. They can retain stdout/stderr pipes. The backend container fixture deliberately exits
+without joining those escaped readers. Actual Runner graceful shutdown still joins script and
+protocol readers; an escaped writer can hold it until the outer runtime's termination grace expires
+and SIGKILL ends the container. The production Runner container cases prove clean TERM and abrupt
+bootstrap death, not graceful TERM with escaped pipe holders.
 
 One process-wide reaper owns every PID1 native and adopted orphan. No PID1 native uses
 `exec.Cmd.Wait`. Start's exec handshake and registration share a mutex with reaping. Managed exits
