@@ -38,6 +38,13 @@ js_binary(
     visibility = ["//visibility:public"],
 )
 
+js_binary(
+    name = "json_schema_typescript_codegen",
+    data = ["//:node_modules/json-schema-to-typescript"],
+    entry_point = "json_schema_typescript_codegen.mjs",
+    visibility = ["//visibility:public"],
+)
+
 js_library(
     name = "schema_remote_fetch_guard",
     srcs = ["schema_remote_fetch_guard.mjs"],

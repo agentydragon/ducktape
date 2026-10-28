@@ -184,11 +184,19 @@ py_library(
     ],
 )
 
-# Prints the ToolCallRecord JSON Schema; the frontend's js_json_schema runs it to generate types.
+# Prints the ToolCallRecord JSON Schema for the frontend's declared schema artifact.
 py_binary(
     name = "export_tool_call_schema_bin",
     main_module = "haku.console.export_tool_call_schema",
     deps = [":export_tool_call_schema"],
+)
+
+genrule(
+    name = "tool_call_record_schema",
+    outs = ["tool_call_record.schema.json"],
+    cmd = "$(location :export_tool_call_schema_bin) > $@",
+    tools = [":export_tool_call_schema_bin"],
+    visibility = ["//haku/console/frontend:__pkg__"],
 )
 
 py_library(

@@ -1,8 +1,7 @@
 """Print the JSON Schema of the shared ``ToolCallRecord`` wire model to stdout.
 
-Driven by ``//haku/console/frontend:tool_call_record`` (``js_json_schema``). No Console route serves
-the record, so it is absent from the OpenAPI schema; the tool-call card and renderer previews take
-its type from here instead.
+Captured as ``//haku/console:tool_call_record_schema``. No Console route serves the record, so it
+is absent from the OpenAPI schema; the tool-call card and renderer previews take its type from here.
 """
 
 from __future__ import annotations

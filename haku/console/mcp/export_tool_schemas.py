@@ -391,7 +391,7 @@ async def export_mcp_tool_results_json() -> str:
 
 async def _main() -> None:
     # The same exporter serves both frontend catalogs: the arguments catalog by default, the
-    # results catalog with `--results`. `js_json_schema` invokes this binary with no other args.
+    # results catalog with `--results`; the owner package declares each output separately.
     match sys.argv[1:]:
         case ["--results"]:
             print(await export_mcp_tool_results_json(), end="")
