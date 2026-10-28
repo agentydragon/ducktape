@@ -23,8 +23,8 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 - `lifecycle_runtime.go`, `lifecycle_resources.go`, and `lifecycle_inputs.go`: Runner COSI runtime
   wiring, Runner-specific typed resources, host input publication, and the adapter that supplies
   admitted process owners and generations to `supervision.Host` ([ownership](docs/lifecycle.md)).
-- `runner_controller.go`, `session_controller.go`, `codex_app_server_controller.go`,
-  and `bootstrap/controller.go`: one lifecycle controller per owner.
+- `runner_controller.go` and `session_controller.go`: Runner-owned lifecycle controllers;
+  `bootstrap/controller.go` and `codexappserver/controller.go` own component lifecycles.
 - `operations.go`: owned asynchronous protocol/setup operations and completion routing.
 - `scripts/`: one-shot shell execution over supervised process streams. Each run samples
   `os.Environ` and overlays the configured harness environment; the caller owns operation admission
@@ -45,8 +45,9 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   Runner controller and independent component controllers use its typed readers and writers.
 - `executor/`: the PID-1 companion for Pod Codex execution, its Unix control protocol and reaper.
   `executor/cmd/` builds the standalone `agentplane-executor` binary.
-- `codex_app_server.go`: the Runner's one Codex app-server, its startup and exit, and the journaling of
-  each frame in the Sessions that `codex/router.go` assigns it to.
+- `codexappserver/`: the one shared Codex process, its COSI lifecycle resources and controller,
+  startup, protocol routing, reader drain, and process exit. `Session` supplies callbacks that
+  commit routed frame batches and exit observations to its journal.
 - `transport.go`: the outbound control tunnel and independent per-Session ingress
   pushes, including heartbeat, replay, acknowledgement and backpressure.
 - `journal/`: the Goose-managed SQLite schema, verbatim protobuf Event blobs, native request records

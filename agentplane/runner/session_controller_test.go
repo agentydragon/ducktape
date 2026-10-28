@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -42,7 +43,7 @@ func TestSessionControllerMapsAppServerRuntimeToCodexSessions(t *testing.T) {
 	}
 	c := &sessionLifecycleController{l: r.lifecycle}
 	ctx := context.Background()
-	input := reducedLifecycleMetadata{Pointer: resource.NewMetadata(runnerlifecycle.Namespace, codexAppServerRuntimeType, codexAppServerResourceID, resource.VersionUndefined)}
+	input := reducedLifecycleMetadata{Pointer: resource.NewMetadata(runnerlifecycle.Namespace, codexappserver.RuntimeType, codexappserver.ResourceID, resource.VersionUndefined)}
 	mapped, err := c.MapInput(ctx, nil, sessionControllerTestRuntime{state: r.lifecycle.state}, input)
 	if err != nil {
 		t.Fatal(err)

@@ -9,6 +9,7 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
@@ -54,7 +55,8 @@ type Session struct {
 	replies                                                []matchedReply
 
 	// codexAppServer is the shared app-server incarnation hosting this Codex Session's thread.
-	codexAppServer *codexAppServerProcess
+	codexAppServer  *codexappserver.Process
+	codexAttachment *codexappserver.Attachment
 }
 
 func newSession(r *Runner, id string, record *retained.Record, journal *journal.Journal) *Session {

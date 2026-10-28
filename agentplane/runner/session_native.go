@@ -14,6 +14,7 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/claude"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	harness "github.com/agentydragon/ducktape/agentplane/runner/harness"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
@@ -130,20 +131,20 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 	s.adapter = adapter
 	s.nativeStop = stopNone
 	s.mu.Unlock()
-	p, err := server.host(ctx, s)
+	attachment := s.appServerAttachment()
+	p, err := server.Host(ctx, attachment)
 	if err != nil {
 		return err
 	}
 	s.mu.Lock()
-	s.process = p.process
+	s.process = p.Process()
 	s.codexAppServer = p
-	s.processID = p.process.ID()
+	s.codexAttachment = attachment
+	s.processID = p.ID()
 	s.mu.Unlock()
-	server.handshakeMu.Lock()
-	err = s.prepare(ctx, adapter, p.process.PID())
-	server.handshakeMu.Unlock()
+	err = server.WithThreadHandshake(func() error { return s.prepare(ctx, adapter, p.PID()) })
 	if err != nil {
-		p.router.Release(s)
+		p.Release(attachment)
 		s.mu.Lock()
 		if s.codexAppServer == p {
 			s.process, s.codexAppServer, s.processID = nil, nil, ""
@@ -152,6 +153,37 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 		return fmt.Errorf("harness startup failed: %w", err)
 	}
 	return nil
+}
+
+func (s *Session) appServerAttachment() *codexappserver.Attachment {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.codexAttachment == nil {
+		s.codexAttachment = &codexappserver.Attachment{
+			ID: s.id,
+			Frames: func(ctx context.Context, lines [][]byte) error {
+				adapter := s.hostedAdapter()
+				if err := s.journal.WithBatch(ctx, func(ctx context.Context) error {
+					for _, line := range lines {
+						if err := s.receive(ctx, line, adapter); err != nil {
+							return err
+						}
+					}
+					return nil
+				}); err != nil {
+					return err
+				}
+				s.wake()
+				s.deliverReplies()
+				return nil
+			},
+			Stderr: func(ctx context.Context, text string) error {
+				return s.Emit(ctx, observation(&eventpb.HarnessStderr{Text: text}), nil)
+			},
+			End: s.harnessEnded,
+		}
+	}
+	return s.codexAttachment
 }
 
 // prepare starts or resumes the native conversation on a started harness and reconciles the turns a
@@ -357,6 +389,7 @@ func (s *Session) sendNative(ctx, journalCtx context.Context, frame json.RawMess
 	s.mu.Lock()
 	process := s.process
 	shared := s.codexAppServer
+	attachment := s.codexAttachment
 	target, _ := ctx.Value(interruptTargetKey{}).(string)
 	active := s.activeTurn
 	s.mu.Unlock()
@@ -367,7 +400,7 @@ func (s *Session) sendNative(ctx, journalCtx context.Context, frame json.RawMess
 		return errors.New("the harness is not running")
 	}
 	if shared != nil {
-		if err := shared.router.Sent(s, frame); err != nil {
+		if err := shared.RegisterSent(attachment, frame); err != nil {
 			return err
 		}
 	}

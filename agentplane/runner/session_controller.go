@@ -7,6 +7,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -25,7 +26,7 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 			{Namespace: runnerlifecycle.Namespace, Type: sessionInputType, Kind: controller.InputQPrimary},
 			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.DesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
-			{Namespace: runnerlifecycle.Namespace, Type: codexAppServerRuntimeType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: codexappserver.RuntimeType, Kind: controller.InputQMapped},
 			{Namespace: runnerlifecycle.Namespace, Type: operationResultType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: sessionRuntimeType, Kind: controller.OutputExclusive}},
@@ -47,7 +48,7 @@ func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger
 	}
 	result := make([]resource.Pointer, 0, rows.Len())
 	rows.ForEach(func(row *typed.Resource[sessionInputSpec, lifecycleExtension[sessionInputSpec]]) {
-		if ptr.Type() == codexAppServerRuntimeType && row.TypedSpec().Harness != runnerpb.Harness_HARNESS_CODEX {
+		if ptr.Type() == codexappserver.RuntimeType && row.TypedSpec().Harness != runnerpb.Harness_HARNESS_CODEX {
 			return
 		}
 		result = append(result, row.Metadata())
@@ -230,11 +231,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			shared := s.runner.codexAppServer != nil && s.record.Harness == runnerpb.Harness_HARNESS_CODEX
 			s.mu.Unlock()
 			if shared {
-				status, found, err := lifecycleRead[codexAppServerRuntimeSpec](ctx, r, codexAppServerResourceID)
+				status, found, err := codexappserver.ReadRuntime(ctx, r)
 				if err != nil {
 					return err
 				}
-				if found && status.Phase == codexAppServerStopped {
+				if found && status.Phase == codexappserver.Stopped {
 					current.ProcessStopped = true
 				}
 			} else {

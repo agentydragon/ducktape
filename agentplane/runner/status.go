@@ -74,7 +74,7 @@ func (r *Runner) GetStatus(_ context.Context, _ *runnerpb.GetStatusRequest) (*ru
 		s.mu.Unlock()
 	}
 	if r.codexAppServer != nil {
-		if process := r.codexAppServer.status(); process != nil {
+		if process := r.codexAppServer.Status(); process != nil {
 			result.Processes = append(result.Processes, process)
 		}
 	}

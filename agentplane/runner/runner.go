@@ -11,6 +11,7 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
@@ -41,7 +42,7 @@ type Runner struct {
 	loadMu              sync.Mutex
 	sessions            map[string]*Session
 	bootstrapHost       *bootstrap.Host
-	codexAppServer      *codexAppServer
+	codexAppServer      *codexappserver.Host
 	codexExecServer     *execserver.Host
 	changes             chan struct{}
 	fatal               chan error
@@ -132,9 +133,6 @@ func newRunner(config Config, adapters *execserver.Adapters) (*Runner, error) {
 		cancel()
 		_ = owner.Close()
 		return nil, err
-	}
-	if config.Codex != nil {
-		r.codexAppServer = newCodexAppServer(r, *config.Codex)
 	}
 	lifecycle, err := newLifecycle(r, adapters)
 	if err != nil {

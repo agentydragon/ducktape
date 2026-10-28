@@ -5,6 +5,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -17,7 +18,7 @@ type runnerLifecycleController struct{ l *lifecycle }
 func (*runnerLifecycleController) Name() string { return runnerControllerName }
 func (*runnerLifecycleController) Inputs() []controller.Input {
 	var inputs []controller.Input
-	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerInputType, sessionInputType, sessionRuntimeType, operationResultType, journalSealType, ingressAckType, execserver.RuntimeType, codexAppServerRuntimeType, bootstrap.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
+	for _, kind := range []string{runnerlifecycle.DesiredStateType, runnerInputType, sessionInputType, sessionRuntimeType, operationResultType, journalSealType, ingressAckType, execserver.RuntimeType, codexappserver.RuntimeType, bootstrap.RuntimeType, supervision.DesiredStateType, supervision.StatusType} {
 		inputs = append(inputs, controller.Input{Namespace: runnerlifecycle.Namespace, Type: kind, Kind: controller.InputWeak})
 	}
 	return inputs
@@ -116,7 +117,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		}
 	}
 	if c.l.runner.codexAppServer != nil {
-		runtime, found, err := lifecycleRead[codexAppServerRuntimeSpec](ctx, r, codexAppServerResourceID)
+		runtime, found, err := codexappserver.ReadRuntime(ctx, r)
 		if err != nil {
 			return err
 		}
@@ -124,7 +125,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 			current.Error = runtime.StopError
 			return write()
 		}
-		if !found || runtime.Phase != codexAppServerStopped {
+		if !found || runtime.Phase != codexappserver.Stopped {
 			return write()
 		}
 	}

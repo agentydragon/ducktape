@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -12,10 +11,9 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/runner/codex"
 	execserver "github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 )
@@ -42,7 +40,7 @@ func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 			defer cancel()
-			_, err := r.codexAppServer.host(ctx, nil)
+			_, err := r.codexAppServer.Host(ctx, nil)
 			results <- err
 		}()
 	}
@@ -51,8 +49,8 @@ func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
 	waitExecutor(t, r, func(current execserver.Runtime) bool {
 		return current.Phase == execserver.Retrying && strings.Contains(current.Error, "temporary executor startup failure")
 	}, "transient executor startup failure")
-	waitCodex(t, r, func(current codexAppServerRuntimeSpec) bool {
-		return current.Phase == codexAppServerInitializing && !current.ExecServerReadyDeadline.IsZero()
+	waitCodex(t, r, func(current codexappserver.Runtime) bool {
+		return current.Phase == codexappserver.Initializing && !current.ExecServerReadyDeadline.IsZero()
 	}, "Codex waiting for executor readiness")
 	startHostWaiter()
 	joined := waitCodexDemand(t, r, 2)
@@ -73,8 +71,8 @@ func TestCodexJoinedStartupSurvivesTransientExecutorFailure(t *testing.T) {
 	}
 	close(releaseRecovery)
 	waitExecutor(t, r, func(current execserver.Runtime) bool { return current.Phase == execserver.Ready }, "executor recovery")
-	failed := waitCodex(t, r, func(current codexAppServerRuntimeSpec) bool {
-		return current.Phase == codexAppServerStopped && current.Attempt >= 2 && current.Error != ""
+	failed := waitCodex(t, r, func(current codexappserver.Runtime) bool {
+		return current.Phase == codexappserver.Stopped && current.Attempt >= 2 && current.Error != ""
 	}, "shared Codex startup attempt")
 	if failed.Attempt != 2 {
 		t.Errorf("Codex consumed attempt %d, want the joined demand 2", failed.Attempt)
@@ -111,7 +109,7 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 			return nil, ctx.Err()
 		})
 
-		if _, err := r.codexAppServer.request(nil); err != nil {
+		if _, err := requestCodexAppServer(r); err != nil {
 			t.Fatalf("publish first Codex demand: %v", err)
 		}
 		synctest.Wait()
@@ -121,16 +119,16 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 			t.Fatal("executor startup did not begin")
 		}
 		initial := codexAppServerRuntime(t, r)
-		if initial.Phase != codexAppServerInitializing || initial.ExecServerReadyDeadline.IsZero() {
+		if initial.Phase != codexappserver.Initializing || initial.ExecServerReadyDeadline.IsZero() {
 			t.Fatalf("Codex initial dependency state = %+v, want a 30s executor wait", initial)
 		}
-		if remaining := initial.ExecServerReadyDeadline.Sub(time.Now()); remaining != codexAppServerDependencyBudget {
-			t.Fatalf("initial executor readiness budget = %s, want %s", remaining, codexAppServerDependencyBudget)
+		if remaining := initial.ExecServerReadyDeadline.Sub(time.Now()); remaining != 30*time.Second {
+			t.Fatalf("initial executor readiness budget = %s, want %s", remaining, 30*time.Second)
 		}
 
 		time.Sleep(10 * time.Second)
 		synctest.Wait()
-		if _, err := r.codexAppServer.request(nil); err != nil {
+		if _, err := requestCodexAppServer(r); err != nil {
 			t.Fatalf("publish joined Codex demand: %v", err)
 		}
 		synctest.Wait()
@@ -145,7 +143,7 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 		time.Sleep(20 * time.Second)
 		synctest.Wait()
 		expired := codexAppServerRuntime(t, r)
-		if expired.Phase != codexAppServerStopped || expired.Attempt != 2 || !strings.Contains(expired.Error, "within 30s") {
+		if expired.Phase != codexappserver.Stopped || expired.Attempt != 2 || !strings.Contains(expired.Error, "within 30s") {
 			t.Fatalf("Codex state at original 30s deadline = %+v, want demand 2 consumed", expired)
 		}
 		if !expired.ExecServerReadyDeadline.IsZero() {
@@ -155,152 +153,6 @@ func TestCodexExecutorReadinessDeadlineConsumesJoinedDemand(t *testing.T) {
 			t.Fatalf("close synctest Runner: %v", err)
 		}
 	})
-}
-
-func TestCodexFailedDrainBlocksRunnerFencing(t *testing.T) {
-	r := newCodexOnlyRunner(t, codexAppServerTestLaunch(t))
-	entered, release := make(chan struct{}), make(chan struct{})
-	var releaseOnce sync.Once
-	releaseStop := func() { releaseOnce.Do(func() { close(release) }) }
-	t.Cleanup(releaseStop)
-	stopFailure := errors.New("Codex app-server stop was rejected")
-	r.codexAppServer.mu.Lock()
-	r.codexAppServer.drainEffect = func(context.Context) error {
-		close(entered)
-		<-release
-		return stopFailure
-	}
-	r.codexAppServer.mu.Unlock()
-	if _, err := r.codexAppServer.request(nil); err != nil {
-		t.Fatalf("request Codex app-server: %v", err)
-	}
-	ready := waitCodex(t, r, func(current codexAppServerRuntimeSpec) bool {
-		return current.Phase == codexAppServerReady && current.ProcessID != ""
-	}, "Codex app-server initialization")
-	r.codexAppServer.mu.Lock()
-	server := r.codexAppServer.current
-	r.codexAppServer.mu.Unlock()
-	if server == nil || server.process.ID() != ready.ProcessID {
-		t.Fatalf("Codex app-server process = %+v, want runtime ID %q", server, ready.ProcessID)
-	}
-
-	closed := make(chan error, 1)
-	closeDone := make(chan struct{})
-	t.Cleanup(func() {
-		releaseStop()
-		timer := time.NewTimer(lifecycleTestTimeout)
-		defer timer.Stop()
-		select {
-		case <-closeDone:
-		case <-timer.C:
-			r.cancel()
-			<-closeDone
-		}
-	})
-	go func() {
-		defer close(closeDone)
-		closed <- r.Close()
-	}()
-	select {
-	case <-entered:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("COSI did not start the Codex drain operation")
-	}
-	waitLifecycle(t, r, func() bool { return r.lifecycle.status().Stage >= runnerlifecycle.Stopping }, "Runner stopping barrier")
-	if stage := r.lifecycle.status().Stage; stage >= runnerlifecycle.Fencing {
-		t.Fatalf("Runner crossed fencing while Codex drain was unresolved: stage=%d", stage)
-	}
-	select {
-	case err := <-closed:
-		t.Fatalf("Runner Close returned before Codex drain settled: %v", err)
-	default:
-	}
-
-	releaseStop()
-	if err := waitClose(t, closed); err == nil || !errors.Is(err, stopFailure) && !strings.Contains(err.Error(), stopFailure.Error()) {
-		t.Fatalf("Runner Close = %v, want Codex drain failure", err)
-	}
-	failed := waitCodex(t, r, func(current codexAppServerRuntimeSpec) bool {
-		return current.Phase == codexAppServerStopped && current.StopError != ""
-	}, "Codex drain failure")
-	if !strings.Contains(failed.StopError, stopFailure.Error()) {
-		t.Errorf("Codex StopError = %q, want %q", failed.StopError, stopFailure)
-	}
-	if stage := r.lifecycle.status().Stage; stage >= runnerlifecycle.Fencing {
-		t.Errorf("Runner crossed fencing after failed Codex drain: stage=%d", stage)
-	}
-	if err := server.process.Stop(context.Background()); err != nil {
-		t.Fatalf("stop COSI-owned process after failed app-server drain: %v", err)
-	}
-	select {
-	case <-server.ended:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("Codex app-server readers did not finish after managed process cleanup")
-	}
-	forceStopTestRunner(t, r)
-}
-
-func TestCodexExitSnapshotRejectsLateSessionAttachment(t *testing.T) {
-	r := newCodexOnlyRunner(t, harness.LaunchConfig{Binary: "/bin/false"})
-	owner := &Session{id: "already-hosted"}
-	late := &Session{id: "late-attachment"}
-	p := &codexAppServerProcess{
-		process: newManagedTestProcess(t, r),
-		router:  codex.NewRouter[*Session](),
-	}
-	p.router.Host(owner)
-	if !p.host(late) {
-		t.Fatal("live process rejected an attachment before exit cutover")
-	}
-
-	hosts := p.beginExit()
-	if p.host(&Session{id: "after-cutover"}) {
-		t.Fatal("Codex process accepted a Session after exit cutover")
-	}
-	if !containsSession(hosts, late) {
-		t.Errorf("exit snapshot omitted a Session attached before cutover: %v", sessionIDs(hosts))
-	}
-	if !containsSession(hosts, owner) {
-		t.Errorf("exit snapshot omitted the startup-frame owner: %v", sessionIDs(hosts))
-	}
-	if len(hosts) != 2 {
-		t.Errorf("exit snapshot hosts = %v, want only the two pre-cutover Sessions", sessionIDs(hosts))
-	}
-}
-
-func newCodexOnlyRunner(t *testing.T, launch harness.LaunchConfig) *Runner {
-	t.Helper()
-	r, err := New(Config{StateDir: t.TempDir(), Codex: &launch})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := r.store.AdoptIncarnation("codex-controller-test"); err != nil {
-		_ = r.owner.Close()
-		t.Fatal(err)
-	}
-	if err := r.Startup(context.Background()); err != nil {
-		_ = r.owner.Close()
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if r.closeErr == nil {
-			if err := r.Close(); err != nil {
-				t.Errorf("close Codex controller test Runner: %v", err)
-			}
-		}
-		forceStopTestRunner(t, r)
-	})
-	return r
-}
-
-func codexAppServerTestLaunch(t *testing.T) harness.LaunchConfig {
-	t.Helper()
-	binary := filepath.Join(t.TempDir(), "codex-app-server")
-	script := "#!/bin/sh\nIFS= read -r request\nprintf '%s\\n' '{\"id\":\"agentplane-initialize\",\"result\":{}}'\ncat >/dev/null\n"
-	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	return harness.LaunchConfig{Binary: binary, BaseURL: "https://codex.example.invalid/v1", Token: "codex-test-token"}
 }
 
 func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(context.Context) (*supervision.Instance, error)) *Runner {
@@ -323,7 +175,7 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 		sessions: map[string]*Session{}, changes: make(chan struct{}), fatal: make(chan error, 1),
 	}
 	// Configure every native host before lifecycle controllers or their goroutines exist.
-	r.codexAppServer = newCodexAppServer(r, codexConfig)
+	r.supervisor = supervision.NewSubprocessSupervisor(owner.File())
 	adapters := execserver.Adapters{Start: startEffect, Probe: func(context.Context) error { return nil }}
 	lifecycle, err := newLifecycle(r, &adapters)
 	if err != nil {
@@ -364,16 +216,16 @@ func forceStopTestRunner(t *testing.T, r *Runner) {
 	}
 }
 
-func codexAppServerRuntime(t *testing.T, r *Runner) codexAppServerRuntimeSpec {
+func codexAppServerRuntime(t *testing.T, r *Runner) codexappserver.Runtime {
 	t.Helper()
-	current, _, err := lifecycleRead[codexAppServerRuntimeSpec](r.ctx, r.lifecycle.state, codexAppServerResourceID)
+	current, _, err := codexappserver.ReadRuntime(r.ctx, r.lifecycle.state)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return current
 }
 
-func waitCodex(t *testing.T, r *Runner, predicate func(codexAppServerRuntimeSpec) bool, want string) codexAppServerRuntimeSpec {
+func waitCodex(t *testing.T, r *Runner, predicate func(codexappserver.Runtime) bool, want string) codexappserver.Runtime {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
@@ -393,7 +245,7 @@ func waitCodex(t *testing.T, r *Runner, predicate func(codexAppServerRuntimeSpec
 
 func codexAppServerDemand(t *testing.T, r *Runner) uint64 {
 	t.Helper()
-	input, found, err := lifecycleRead[codexAppServerInputSpec](r.ctx, r.lifecycle.state, codexAppServerResourceID)
+	input, found, err := codexappserver.ReadInput(r.ctx, r.lifecycle.state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,39 +282,12 @@ func updateLifecycleValueForTest[T lifecycleSpec[T]](t *testing.T, r *Runner, id
 	}
 }
 
-func containsSession(sessions []*Session, target *Session) bool {
-	for _, session := range sessions {
-		if session == target {
-			return true
-		}
-	}
-	return false
-}
-
-func sessionIDs(sessions []*Session) []string {
-	ids := make([]string, 0, len(sessions))
-	for _, session := range sessions {
-		ids = append(ids, session.id)
-	}
-	return ids
-}
-
-func newManagedTestProcess(t *testing.T, r *Runner) *supervision.ManagedProcess {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
-	defer cancel()
-	process, err := r.launchProcess(ctx, codexAppServerControllerName, r.supervisor, supervision.ProcessConfig{
-		Command: []string{"/bin/sleep", "60"},
+func requestCodexAppServer(r *Runner) (uint64, error) {
+	var demand uint64
+	err := r.admitCodexRequest(r.ctx, func(ctx context.Context) error {
+		var err error
+		demand, err = r.codexAppServer.RequestLocked(ctx, nil)
+		return err
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if process.Running() {
-			if err := process.Stop(context.Background()); err != nil {
-				t.Error(err)
-			}
-		}
-	})
-	return process
+	return demand, err
 }

@@ -1,4 +1,4 @@
-package runner
+package codexappserver
 
 import (
 	"context"
@@ -13,80 +13,46 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	codexAppServerInputType      = "CodexAppServerInputs.agentplane"
-	codexAppServerRuntimeType    = "CodexAppServerRuntimes.agentplane"
-	codexAppServerControllerName = "codex-app-server-lifecycle"
-	codexAppServerResourceID     = "codex-app-server"
-)
+const dependencyBudget = 30 * time.Second
 
-type codexAppServerInputSpec struct {
-	Demand         uint64
-	ExitGeneration uint64
-	ExitProcessID  string
-	ExitError      string
-}
+type LifecycleController struct{ host *Host }
 
-type codexAppServerPhase uint8
+func (*LifecycleController) Name() string { return ControllerName }
 
-const (
-	codexAppServerStopped codexAppServerPhase = iota
-	codexAppServerInitializing
-	codexAppServerReady
-	codexAppServerDraining
-)
-
-type codexAppServerRuntimeSpec struct {
-	Phase                   codexAppServerPhase
-	Generation              uint64
-	Attempt                 uint64
-	ExitGeneration          uint64
-	ExecServerReadyDeadline time.Time
-	ProcessID               string
-	Error                   string
-	StopError               string
-}
-
-const codexAppServerDependencyBudget = 30 * time.Second
-
-type codexAppServerLifecycleController struct {
-	l               *lifecycle
-	host            *codexAppServer
-	codexExecServer *execserver.Host
-}
-
-func (*codexAppServerLifecycleController) Name() string { return codexAppServerControllerName }
-
-func (*codexAppServerLifecycleController) Settings() controller.QSettings {
+func (*LifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
-			{Namespace: runnerlifecycle.Namespace, Type: codexAppServerInputType, Kind: controller.InputQPrimary},
+			{Namespace: runnerlifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
 			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.DesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
 			{Namespace: runnerlifecycle.Namespace, Type: execserver.RuntimeType, Kind: controller.InputQMapped},
-			{Namespace: runnerlifecycle.Namespace, Type: operationResultType, Kind: controller.InputQMapped},
+			{Namespace: runnerlifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
 		},
-		Outputs:     []controller.Output{{Type: codexAppServerRuntimeType, Kind: controller.OutputExclusive}},
+		Outputs:     []controller.Output{{Type: RuntimeType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
 	}
 }
 
-func (*codexAppServerLifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
-	if ptr.Type() == operationResultType {
-		result, found, err := lifecycleRead[operationResultSpec](ctx, r, ptr.ID())
-		if err != nil || !found || result.Session != "" || result.Controller != codexAppServerControllerName {
+func (*LifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
+	if ptr.Type() == OperationType {
+		_, found, err := componentRead[operationResult](ctx, r, ptr.ID())
+		if err != nil || !found {
 			return nil, err
 		}
 	}
-	return []resource.Pointer{resource.NewMetadata(runnerlifecycle.Namespace, codexAppServerInputType, codexAppServerResourceID, resource.VersionUndefined)}, nil
+	return []resource.Pointer{resource.NewMetadata(runnerlifecycle.Namespace, InputType, ResourceID, resource.VersionUndefined)}, nil
 }
 
-func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, _ resource.Pointer) error {
-	input, found, err := lifecycleRead[codexAppServerInputSpec](ctx, r, codexAppServerResourceID)
+func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, _ resource.Pointer) error {
+	// A Desired change must wake blocked attachments even when it leaves Runtime unchanged.
+	if c.host != nil {
+		c.host.notify()
+	}
+	input, found, err := ReadInput(ctx, r)
 	if err != nil || !found {
 		return err
 	}
-	current, _, err := lifecycleRead[codexAppServerRuntimeSpec](ctx, r, codexAppServerResourceID)
+	current, _, err := ReadRuntime(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -98,24 +64,24 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 	if err != nil {
 		return err
 	}
+	server := c.host
 	write := func() error {
-		changed, err := lifecycleWrite(ctx, r, codexAppServerResourceID, current)
-		if changed {
-			c.l.runner.changed()
+		changed, err := componentWrite(ctx, r, ResourceID, current)
+		if changed && server != nil {
+			server.observe()
 		}
 		return err
 	}
-	server := c.host
 	if server == nil {
-		current = codexAppServerRuntimeSpec{Phase: codexAppServerStopped}
+		current = Runtime{Phase: Stopped}
 		return write()
 	}
 
 	// Consume completed protocol initialization and drain operations before making any policy decision.
 	// Their slots stay owned until observed here, so these operations cannot overlap.
-	if op, done := c.l.takeHostOperation(&server.mu, &server.initializing); done {
+	if op, done := server.takeOperation(&server.initializing); done {
 		if op.err != nil {
-			current.Phase = codexAppServerStopped
+			current.Phase = Stopped
 			current.ProcessID = ""
 			current.Error = op.err.Error()
 			current.ExecServerReadyDeadline = time.Time{}
@@ -125,11 +91,11 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 			generation := server.initializationGeneration
 			server.initializingOwner = nil
 			server.initializingOwnerGeneration = 0
-			live := p != nil && p.process.Running()
+			live := p != nil && p.Running()
 			server.mu.Unlock()
 			if live && desiredState.Mode == runnerlifecycle.Running && generation == desiredState.Generation {
-				current.Phase = codexAppServerReady
-				current.ProcessID = p.process.ID()
+				current.Phase = Ready
+				current.ProcessID = p.ID()
 				current.Attempt = input.Demand
 				current.Error = ""
 				current.StopError = ""
@@ -137,17 +103,17 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 			} else if live {
 				// Initialization admitted under an older RunnerDesiredState may finish physically, but cannot
 				// publish readiness. Shutdown will drain it after every Session has halted.
-				current.Phase = codexAppServerInitializing
-				current.ProcessID = p.process.ID()
+				current.Phase = Initializing
+				current.ProcessID = p.ID()
 			} else {
-				current.Phase = codexAppServerStopped
+				current.Phase = Stopped
 				current.ProcessID = ""
 				current.Error = "Codex app-server exited before initialization completed"
 			}
 		}
 	}
-	if op, done := c.l.takeHostOperation(&server.mu, &server.draining); done {
-		current.Phase = codexAppServerStopped
+	if op, done := server.takeOperation(&server.draining); done {
+		current.Phase = Stopped
 		current.ProcessID = ""
 		current.StopError = ""
 		current.ExecServerReadyDeadline = time.Time{}
@@ -156,7 +122,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 		}
 	}
 	var initializing, draining *operation
-	var p *codexAppServerProcess
+	var p *Process
 	server.mu.Lock()
 	initializing = server.initializing
 	draining = server.draining
@@ -164,7 +130,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 	if input.ExitGeneration > current.ExitGeneration {
 		current.ExitGeneration = input.ExitGeneration
 		if current.ProcessID == input.ExitProcessID && initializing == nil && draining == nil {
-			current.Phase = codexAppServerStopped
+			current.Phase = Stopped
 			current.ProcessID = ""
 			current.Error = input.ExitError
 			if current.Error == "" {
@@ -191,7 +157,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 			current.Error = ""
 			current.StopError = ""
 			current.ExecServerReadyDeadline = time.Time{}
-			current.Phase = codexAppServerStopped
+			current.Phase = Stopped
 			current.ProcessID = ""
 		}
 	}
@@ -219,9 +185,9 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 			return write()
 		}
 		if draining != nil {
-			current.Phase = codexAppServerDraining
+			current.Phase = Draining
 			if p != nil {
-				current.ProcessID = p.process.ID()
+				current.ProcessID = p.ID()
 			}
 			return write()
 		}
@@ -232,17 +198,16 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 				server.initializingOwnerGeneration = 0
 			}
 			server.mu.Unlock()
-			current.Phase = codexAppServerStopped
+			current.Phase = Stopped
 			current.ProcessID = ""
 			return write()
 		}
-		current.Phase = codexAppServerDraining
-		current.ProcessID = p.process.ID()
+		current.Phase = Draining
+		current.ProcessID = p.ID()
 		if err := write(); err != nil {
 			return err
 		}
-		c.l.startHostOperation(&server.mu, &server.draining, codexAppServerControllerName, server.drainProcess)
-		return nil
+		return server.startOperation(&server.draining, server.drainProcess)
 	}
 
 	server.mu.Lock()
@@ -254,8 +219,8 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 		return write()
 	}
 	if p != nil {
-		if p.process.Running() {
-			if current.Phase == codexAppServerReady && current.ProcessID == p.process.ID() {
+		if p.Running() {
+			if current.Phase == Ready && current.ProcessID == p.ID() {
 				if current.Attempt < input.Demand {
 					current.Attempt = input.Demand
 				}
@@ -273,18 +238,18 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 		}
 	}
 	if input.Demand <= current.Attempt {
-		current.Phase = codexAppServerStopped
+		current.Phase = Stopped
 		current.ProcessID = ""
 		return write()
 	}
 
-	if c.codexExecServer != nil {
+	if server.deps.ExecServer != nil {
 		executor, found, err := execserver.ReadRuntime(ctx, r)
 		if err != nil {
 			return err
 		}
 		if found && executor.Refusal != "" {
-			current.Phase = codexAppServerStopped
+			current.Phase = Stopped
 			current.Attempt = input.Demand
 			current.Error = fmt.Sprintf("Codex exec-server startup refused: %s", executor.Refusal)
 			current.ProcessID = ""
@@ -292,7 +257,7 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 			return write()
 		}
 		if found && executor.StopError != "" {
-			current.Phase = codexAppServerStopped
+			current.Phase = Stopped
 			current.Attempt = input.Demand
 			current.Error = fmt.Sprintf("Codex exec-server stopped with error: %s", executor.StopError)
 			current.ProcessID = ""
@@ -301,30 +266,30 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 		}
 		now := time.Now()
 		if !current.ExecServerReadyDeadline.IsZero() && !now.Before(current.ExecServerReadyDeadline) {
-			current.Phase = codexAppServerStopped
+			current.Phase = Stopped
 			current.Attempt = input.Demand
-			current.Error = fmt.Sprintf("Codex exec-server did not become ready within %s", codexAppServerDependencyBudget)
+			current.Error = fmt.Sprintf("Codex exec-server did not become ready within %s", dependencyBudget)
 			current.ExecServerReadyDeadline = time.Time{}
 			return write()
 		}
 		if !found || executor.Phase != execserver.Ready {
 			current.Generation = desiredState.Generation
-			current.Phase = codexAppServerInitializing
+			current.Phase = Initializing
 			current.ProcessID = ""
 			if current.ExecServerReadyDeadline.IsZero() {
 				current.Error = ""
-				current.ExecServerReadyDeadline = now.Add(codexAppServerDependencyBudget)
+				current.ExecServerReadyDeadline = now.Add(dependencyBudget)
 				if err := write(); err != nil {
 					return err
 				}
-				return controller.NewRequeueError(nil, codexAppServerDependencyBudget)
+				return controller.NewRequeueError(nil, dependencyBudget)
 			}
 			return controller.NewRequeueError(nil, current.ExecServerReadyDeadline.Sub(now))
 		}
 		current.ExecServerReadyDeadline = time.Time{}
 	}
 
-	current.Phase = codexAppServerInitializing
+	current.Phase = Initializing
 	current.Generation = desiredState.Generation
 	current.Attempt = input.Demand
 	current.ExecServerReadyDeadline = time.Time{}
@@ -334,37 +299,28 @@ func (c *codexAppServerLifecycleController) Reconcile(ctx context.Context, _ *za
 		return err
 	}
 
-	// Runner.mu is the synchronous admission barrier shared with Close and Quiesce. The managed-process
-	// API honors cancellation when publishing process intent; this slot serializes the Codex initialization handshake.
-	c.l.runner.mu.Lock()
-	latest := c.l.desiredState()
-	if latest != desiredState || latest.Mode != runnerlifecycle.Running {
-		c.l.runner.mu.Unlock()
-		return nil
-	}
-	server.mu.Lock()
-	if server.initializing != nil || server.current != nil {
+	// The Runner's synchronous admission barrier fences initialization against Close and Quiesce.
+	return server.deps.Admission(ctx, desiredState, func(ctx context.Context) error {
+		server.mu.Lock()
+		if server.initializing != nil || server.current != nil {
+			server.mu.Unlock()
+			return nil
+		}
+		owner := server.initializingOwner
+		if server.initializingOwnerGeneration != desiredState.Generation {
+			owner = nil
+		}
+		server.initializationGeneration = desiredState.Generation
 		server.mu.Unlock()
-		c.l.runner.mu.Unlock()
+		if err := server.startOperation(&server.initializing, func(ctx context.Context) error {
+			return server.initialize(ctx, owner, desiredState.Generation)
+		}); err != nil {
+			return err
+		}
+		server.mu.Lock()
+		server.initializingOwner = nil
+		server.initializingOwnerGeneration = 0
+		server.mu.Unlock()
 		return nil
-	}
-	owner := server.initializingOwner
-	if server.initializingOwnerGeneration != latest.Generation {
-		owner = nil
-	}
-	server.initializingOwner = nil
-	server.initializingOwnerGeneration = 0
-	server.initializationGeneration = latest.Generation
-	server.mu.Unlock()
-	c.l.startHostOperation(&server.mu, &server.initializing, codexAppServerControllerName, func(ctx context.Context) error {
-		return server.initialize(ctx, owner)
 	})
-	c.l.runner.mu.Unlock()
-	return nil
 }
-
-func (codexAppServerInputSpec) resourceType() resource.Type             { return codexAppServerInputType }
-func (value codexAppServerInputSpec) DeepCopy() codexAppServerInputSpec { return value }
-
-func (codexAppServerRuntimeSpec) resourceType() resource.Type               { return codexAppServerRuntimeType }
-func (value codexAppServerRuntimeSpec) DeepCopy() codexAppServerRuntimeSpec { return value }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -70,6 +71,21 @@ func newLifecycle(r *Runner, adapters *execserver.Adapters) (*lifecycle, error) 
 			return nil, err
 		}
 	}
+	if r.config.Codex != nil {
+		appServer, err := codexappserver.NewHost(*r.config.Codex, codexappserver.Dependencies{
+			Context: r.ctx, State: l.state, Workers: &l.workers, Processes: l.processes,
+			Supervisor: r.supervisor, HarnessEnvironment: r.config.HarnessEnvironment,
+			StateDir: r.config.StateDir, RequestAdmission: r.admitCodexRequest,
+			Admission: r.admitLifecycleEffect, ExecServer: r.codexExecServer, OnError: r.fail, OnChange: r.changed,
+		})
+		if err != nil {
+			return nil, err
+		}
+		r.codexAppServer = appServer
+		if err := appServer.Initialize(r.ctx); err != nil {
+			return nil, err
+		}
+	}
 	if err := engine.RegisterController(&runnerLifecycleController{l: l}); err != nil {
 		return nil, err
 	}
@@ -80,18 +96,14 @@ func newLifecycle(r *Runner, adapters *execserver.Adapters) (*lifecycle, error) 
 	if r.codexExecServer != nil {
 		controllers = append(controllers, r.codexExecServer.Controller())
 	}
-	controllers = append(
-		controllers,
-		&codexAppServerLifecycleController{l: l, host: r.codexAppServer, codexExecServer: r.codexExecServer},
-		bootstrapHost.Controller(),
-	)
+	if r.codexAppServer != nil {
+		controllers = append(controllers, r.codexAppServer.Controller())
+	}
+	controllers = append(controllers, bootstrapHost.Controller())
 	for _, c := range controllers {
 		if err := engine.RegisterQController(c); err != nil {
 			return nil, err
 		}
-	}
-	if err := publishLifecycle(l, codexAppServerResourceID, codexAppServerInputSpec{}); err != nil {
-		return nil, err
 	}
 	if err := runnerlifecycle.PublishDesired(l.runner.ctx, l.state, runnerlifecycle.Desired{}); err != nil {
 		return nil, err
@@ -149,9 +161,11 @@ func (l *lifecycle) setDesiredState(mode runnerlifecycle.Mode, sealUID string) e
 				return err
 			}
 		}
-		if err := publishLifecycle(l, codexAppServerResourceID, codexAppServerInputSpec{}); err != nil {
-			l.publishMu.Unlock()
-			return err
+		if l.runner.codexAppServer != nil {
+			if err := l.runner.codexAppServer.ResetDemand(l.runner.ctx); err != nil {
+				l.publishMu.Unlock()
+				return err
+			}
 		}
 		l.publishMu.Unlock()
 		if l.runner.codexExecServer != nil {
@@ -175,6 +189,20 @@ func (r *Runner) admitLifecycleEffect(ctx context.Context, expected runnerlifecy
 	}
 	if !found || current != expected || current.Mode != runnerlifecycle.Running {
 		return nil
+	}
+	return effect(ctx)
+}
+
+func (r *Runner) admitCodexRequest(ctx context.Context, effect func(context.Context) error) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.lifecycle.accepting() {
+		return errors.New("runner is not accepting new Codex work")
+	}
+	if r.codexExecServer != nil {
+		if err := r.codexExecServer.RequestLocked(ctx); err != nil {
+			return err
+		}
 	}
 	return effect(ctx)
 }

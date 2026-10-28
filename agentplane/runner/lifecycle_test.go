@@ -503,17 +503,8 @@ func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testin
 	})
 }
 
-func TestNewIncarnationWaitsForTeardownBeforeResettingDemand(t *testing.T) {
+func TestNewIncarnationWaitsForTeardown(t *testing.T) {
 	r, s := lifecycleTestSession(t)
-	// The app-server host is unconfigured, so old demand can be seeded without
-	// a native effect. Adoption must discard it even while it is dormant.
-	l := r.lifecycle
-	l.publishMu.Lock()
-	err := publishLifecycle(l, codexAppServerResourceID, codexAppServerInputSpec{Demand: 3})
-	l.publishMu.Unlock()
-	if err != nil {
-		t.Fatal(err)
-	}
 	setupDone := make(chan struct{})
 	t.Cleanup(func() {
 		select {
@@ -562,10 +553,6 @@ func TestNewIncarnationWaitsForTeardownBeforeResettingDemand(t *testing.T) {
 	}
 	if !r.lifecycle.accepting() {
 		t.Fatal("new incarnation did not reopen admission")
-	}
-	input, _, err := lifecycleRead[codexAppServerInputSpec](r.ctx, r.lifecycle.state, codexAppServerResourceID)
-	if err != nil || input.Demand != 0 {
-		t.Fatalf("Codex old demand survived adoption: %+v, %v", input, err)
 	}
 }
 
