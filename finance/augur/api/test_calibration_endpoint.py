@@ -65,7 +65,7 @@ def test_calibration_info_endpoint(client: TestClient, augur_config: Config) -> 
     assert calibration["label"] == augur_config.calibration_catalog.label
 
 
-def test_run_calibration(client: TestClient) -> None:
+def test_run_calibration(client: TestClient, synthetic_evidence_dir: Path) -> None:
     response = client.post(
         "/api/calibration/run", json={"preset_id": "openai_pe", "horizon_months": 24, "rollouts": 16, "seed": 1701}
     )
@@ -120,7 +120,7 @@ def test_run_calibration(client: TestClient) -> None:
     assert all(value == 100.0 for value in month0["values"].values())
 
 
-def test_run_calibration_defaults_to_shared_preset(client: TestClient) -> None:
+def test_run_calibration_defaults_to_shared_preset(client: TestClient, synthetic_evidence_dir: Path) -> None:
     # Omitting `preset_id` resolves to the deployment's `default_model_id`
     # (the fixture pins `openai_pe`), and the response echoes the resolved preset.
     response = client.post("/api/calibration/run", json={"horizon_months": 24, "rollouts": 16, "seed": 1701})
@@ -133,7 +133,9 @@ def test_run_unknown_preset_is_400(client: TestClient) -> None:
     assert response.status_code == 400, response.text
 
 
-def test_run_calibration_without_sample_sanity_returns_empty_bands(client: TestClient) -> None:
+def test_run_calibration_without_sample_sanity_returns_empty_bands(
+    client: TestClient, synthetic_evidence_dir: Path
+) -> None:
     # The public fixture configures a `calibration_catalog` but no `sample_sanity_path`, so the
     # reasonableness-band feature is absent: the endpoint succeeds and returns an empty list.
     response = client.post("/api/calibration/run", json={"horizon_months": 24, "rollouts": 16, "seed": 1701})
@@ -161,7 +163,9 @@ def _config_with_sample_sanity(augur_config: Config, tmp_path: Path) -> Config:
     return augur_config.model_copy(update={"calibration_catalog": catalog})
 
 
-def test_run_calibration_includes_sample_sanity_bands(tmp_path: Path, augur_config: Config) -> None:
+def test_run_calibration_includes_sample_sanity_bands(
+    tmp_path: Path, augur_config: Config, synthetic_evidence_dir: Path
+) -> None:
     with _client_for(_config_with_sample_sanity(augur_config, tmp_path)) as client:
         response = client.post("/api/calibration/run", json={"horizon_months": 24, "rollouts": 16, "seed": 1701})
     assert response.status_code == 200, response.text

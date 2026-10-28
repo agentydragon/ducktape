@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 from urllib.parse import urlencode
 
 import pytest
@@ -487,7 +488,7 @@ async def test_product_distribution_failures(view: VisualPage, augur_server: str
     await _capture_page(view)
 
 
-async def test_calibration_page(view: VisualPage, augur_server: str) -> None:
+async def test_calibration_page(view: VisualPage, augur_server: str, synthetic_evidence_dir: Path) -> None:
     await view.page.goto(f"{augur_server}/product?tab=calibration", wait_until="domcontentloaded", timeout=60_000)
     await _wait_for_calibration_page(view.page)
     await _capture_page(view)
