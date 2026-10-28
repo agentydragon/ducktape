@@ -167,7 +167,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	s.mu.Lock()
 	operationStartFailed := s.operationStartFailed
 	s.mu.Unlock()
-	if operationStartFailed || current.Error != "" && desiredState.Mode == runnerlifecycle.Running {
+	if desiredState.Mode == runnerlifecycle.Running && (operationStartFailed || current.Error != "") {
 		return write()
 	}
 	// Reconciliation runs independently from halt, so native stdout can deliver its replies.

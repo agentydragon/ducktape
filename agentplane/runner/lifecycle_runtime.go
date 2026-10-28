@@ -30,11 +30,13 @@ type lifecycle struct {
 	processes *supervision.Host
 }
 
-func newLifecycle(r *Runner, adapters *codexexecserver.Adapters) (*lifecycle, error) {
+func newLifecycle(r *Runner, adapters *codexexecserver.Adapters, store state.State) (*lifecycle, error) {
 	if err := r.config.resolveSessionReconcileConcurrency(); err != nil {
 		return nil, err
 	}
-	store := state.WrapCore(namespaced.NewState(inmem.Build))
+	if store == nil {
+		store = state.WrapCore(namespaced.NewState(inmem.Build))
+	}
 	engine, err := cosiruntime.NewRuntime(store, zap.L().Named("lifecycle"))
 	if err != nil {
 		return nil, err

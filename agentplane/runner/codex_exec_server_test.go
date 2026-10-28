@@ -259,7 +259,7 @@ func newExecutorLifecycleRunner(t *testing.T, start func(context.Context) (*supe
 	if adapters.Probe == nil {
 		adapters.Probe = func(context.Context) error { return nil }
 	}
-	r, err := newRunner(config, &adapters)
+	r, err := newRunner(config, &adapters, nil)
 	if err != nil {
 		cancelCompanion()
 		t.Fatalf("create lifecycle Runner: %v", err)

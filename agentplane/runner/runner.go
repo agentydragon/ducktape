@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
+	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -51,10 +52,10 @@ type Runner struct {
 }
 
 func New(config Config) (*Runner, error) {
-	return newRunner(config, nil)
+	return newRunner(config, nil, nil)
 }
 
-func newRunner(config Config, adapters *codexexecserver.Adapters) (*Runner, error) {
+func newRunner(config Config, adapters *codexexecserver.Adapters, lifecycleState state.State) (*Runner, error) {
 	if err := config.resolveSessionReconcileConcurrency(); err != nil {
 		return nil, err
 	}
@@ -141,7 +142,7 @@ func newRunner(config Config, adapters *codexexecserver.Adapters) (*Runner, erro
 		_ = owner.Close()
 		return nil, err
 	}
-	lifecycle, err := newLifecycle(r, adapters)
+	lifecycle, err := newLifecycle(r, adapters, lifecycleState)
 	if err != nil {
 		cancel()
 		_ = owner.Close()

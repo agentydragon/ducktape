@@ -541,7 +541,7 @@ func TestNewIncarnationWaitsForTeardown(t *testing.T) {
 func TestLifecycleWatchStopsWithRunner(t *testing.T) {
 	runnerCtx, cancelRunner := context.WithCancel(context.Background())
 	defer cancelRunner()
-	l, err := newLifecycle(&Runner{ctx: runnerCtx}, nil)
+	l, err := newLifecycle(&Runner{ctx: runnerCtx}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -558,7 +558,7 @@ func TestLifecycleWatchWaitsForResourceCreation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		l, err := newLifecycle(&Runner{ctx: ctx}, nil)
+		l, err := newLifecycle(&Runner{ctx: ctx}, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

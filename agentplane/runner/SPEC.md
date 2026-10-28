@@ -242,7 +242,10 @@ budget remains authoritative across all of its native services.
   `Close` and `Quiesce` join the same lifecycle: Close preserves a seal UID already selected by
   Quiesce, and a Quiesce accepted during Close adds its seal UID without reopening the Runner. Close
   waits for setup/bootstrap, process stop, outstanding inspection writes and required journal seals,
-  then closes journals and releases state ownership. Close does not wait for ingress acknowledgement;
+  then closes journals and releases state ownership. A current-generation teardown error is surfaced
+  without reporting the Runner lifecycle complete, and state ownership stays held until native cleanup
+  is proven. A failed operation-start publication starts no work, but does not block a later teardown
+  generation from running cleanup. Close does not wait for ingress acknowledgement;
   if it supersedes Quiesce before that acknowledgement, the durable seals remain but the Runner can
   close while quiesce progress is still `FLUSHING`.
 - One in-memory COSI Runtime per Runner schedules five controller roles: Runner, Session (including

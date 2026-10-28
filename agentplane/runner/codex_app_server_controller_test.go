@@ -188,7 +188,7 @@ func newCodexSynctestRunner(t *testing.T, stateDir string, startEffect func(cont
 		t.Fatal(err)
 	}
 	adapters := codexexecserver.Adapters{Start: startEffect, Probe: func(context.Context) error { return nil }}
-	lifecycle, err := newLifecycle(r, &adapters)
+	lifecycle, err := newLifecycle(r, &adapters, nil)
 	if err != nil {
 		cancel()
 		_ = owner.Close()

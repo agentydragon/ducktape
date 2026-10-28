@@ -16,6 +16,12 @@ import (
 
 	bootstrapcomponent "github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
+	"github.com/agentydragon/ducktape/agentplane/runner/retained"
+	"github.com/agentydragon/ducktape/agentplane/runner/session"
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
@@ -139,6 +145,140 @@ func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
 	}
 	if !commandFailed || !launchFailed {
 		t.Fatalf("failed startup did not settle both work and launch: command=%t launch=%t", commandFailed, launchFailed)
+	}
+}
+
+type initialOperationFailureState struct {
+	state.State
+	once     sync.Once
+	failures atomic.Int32
+	failed   chan struct{}
+	err      error
+}
+
+func (s *initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
+	if value.Metadata().Type() == session.OperationType && s.failures.Add(-1) >= 0 {
+		s.once.Do(func() { close(s.failed) })
+		return s.err
+	}
+
+	return s.State.Modify(ctx, value, update, opts...)
+}
+
+func failedInitialOperationRunner(t *testing.T, operationFailures int32) (*Runner, *initialOperationFailureState, string) {
+	t.Helper()
+	proxy := modelConfigServer(t)
+	workspace := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "harness-launched")
+	binary := filepath.Join(t.TempDir(), "harness")
+	script := fmt.Sprintf("#!/bin/sh\ntouch %s\nexec sleep 1000\n", shellQuote(marker))
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("injected initial operation publication failure")
+	store := &initialOperationFailureState{
+		State:  state.WrapCore(namespaced.NewState(inmem.Build)),
+		failed: make(chan struct{}),
+		err:    failure,
+	}
+	store.failures.Store(operationFailures)
+	r, err := newRunner(lifecycleConfig(t, proxy.URL, workspace, nil, binary), nil, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.store.AdoptIncarnation("test-incarnation"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Startup(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		r.cancel()
+		<-r.lifecycle.done
+		r.lifecycle.workers.Wait()
+		if r.sessions != nil {
+			_ = r.sessions.Close()
+		}
+		_ = r.owner.Close()
+	})
+
+	if _, err := r.OpenSession(context.Background(), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.SubmitInput(context.Background(), &runnerservicepb.SubmitInputRequest{SessionId: "session-1", CommandId: "input-1", Text: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+	defer cancel()
+	select {
+	case <-store.failed:
+	case <-ctx.Done():
+		t.Fatal("initial operation publication was not attempted")
+	}
+	select {
+	case err := <-r.fatal:
+		if !strings.Contains(err.Error(), failure.Error()) {
+			t.Fatalf("Runner failure = %v, want publication failure", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("initial operation publication failure was not reported")
+	}
+	return r, store, marker
+}
+
+func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
+	r, _, marker := failedInitialOperationRunner(t, 1)
+
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- r.Close() }()
+	closeCtx, cancelClose := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelClose()
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("Close after initial publication failure: %v", err)
+		}
+	case <-closeCtx.Done():
+		r.cancel()
+		select {
+		case <-closeDone:
+		case <-time.After(time.Second):
+			t.Fatal("Close did not return after Runner cancellation")
+		}
+		t.Fatal("Close hung after initial operation publication failure")
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed initial operation launched the native harness: stat err=%v", err)
+	}
+}
+
+func TestCloseReportsTeardownOperationPublicationFailureAndRetainsOwner(t *testing.T) {
+	r, _, marker := failedInitialOperationRunner(t, 2)
+	closeCtx, cancelClose := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelClose()
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- r.Close() }()
+	select {
+	case err := <-closeDone:
+		if err == nil || !strings.Contains(err.Error(), "publish operation start") {
+			t.Fatalf("Close error after teardown publication failure = %v, want publication error", err)
+		}
+	case <-closeCtx.Done():
+		r.cancel()
+		select {
+		case <-closeDone:
+		case <-time.After(time.Second):
+			t.Fatal("Close did not return after Runner cancellation")
+		}
+		t.Fatal("Close hung after teardown operation publication failure")
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed initial operation launched the native harness: stat err=%v", err)
+	}
+	otherOwner, err := retained.OpenOwner(r.config.StateDir)
+	if err == nil {
+		_ = otherOwner.Close()
+		t.Fatal("Runner released the state owner although shutdown cleanup failed")
 	}
 }
 

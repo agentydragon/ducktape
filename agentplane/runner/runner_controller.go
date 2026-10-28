@@ -103,6 +103,22 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		if err != nil {
 			return err
 		}
+		// A failure from a prior execution generation is cleared by the Session
+		// controller as it observes the shutdown generation. Only surface errors
+		// that belong to this teardown; otherwise Close could race that reset.
+		if runtime.Generation == desiredState.Generation && runtime.Error != "" {
+			current.Error = runtime.Error
+			kind := runnerlifecycle.SessionHaltPending
+			if runtime.Phase == session.Halted {
+				kind = runnerlifecycle.SessionProcessPending
+			}
+			current.Blocker = runnerlifecycle.Blocker{
+				Kind: kind, ResourceType: session.RuntimeType,
+				Error: runtime.Error, ResourceID: s.ID(), ProcessID: runtime.ProcessID,
+				ResourcePresent: found,
+			}
+			return write()
+		}
 		if runtime.Phase != session.Halted {
 			resourceError := ""
 			if runtime.Generation == desiredState.Generation {
@@ -127,19 +143,6 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		runtime, found, err := session.ReadRuntime(ctx, r, s.ID())
 		if err != nil {
 			return err
-		}
-		if runtime.Error != "" {
-			current.Error = runtime.Error
-			resourceError := ""
-			if runtime.Generation == desiredState.Generation {
-				resourceError = runtime.Error
-			}
-			current.Blocker = runnerlifecycle.Blocker{
-				Kind: runnerlifecycle.SessionProcessPending, ResourceType: session.RuntimeType,
-				Error: resourceError, ResourceID: s.ID(), ProcessID: runtime.ProcessID,
-				ResourcePresent: found,
-			}
-			return write()
 		}
 		if !runtime.ProcessStopped {
 			current.Blocker = runnerlifecycle.Blocker{
