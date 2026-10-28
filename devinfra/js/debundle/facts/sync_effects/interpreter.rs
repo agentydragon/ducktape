@@ -835,7 +835,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.state
                 .inference_uses
                 .borrow_mut()
-                .insert(proof.inference_use.clone());
+                .insert(proof.inference_use());
         }
         Some(NativeCallResolution {
             returns: model.returns,
@@ -4185,18 +4185,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         }
         let input = self.ordinary_source_object(source)?;
-        let OwnPropertyProjection::Ordinary { source_object } = input.projection else {
+        let OwnPropertyProjection::Ordinary { source_object } = &input.projection else {
             return None;
         };
         self.state
             .inference_uses
             .borrow_mut()
-            .insert(input.inference_use);
+            .insert(input.inference_use());
         self.record_inference_use(
             NativeIntegrityGuard::NativeCallIdentity,
             summary.inference.clone(),
         );
-        Some(source_object)
+        Some(*source_object)
     }
 
     fn promote_foreign_record(&mut self, outcome: &mut Outcome) {
