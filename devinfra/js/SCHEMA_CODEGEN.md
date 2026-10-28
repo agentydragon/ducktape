@@ -1,5 +1,8 @@
 # TypeScript schema conversion
 
+The [repository pipeline map](../docs/schema_codegen.md) covers schema producers, intermediates,
+and consumers across languages.
+
 The `openapi_js_library` macro converts a declared OpenAPI JSON artifact into a TypeScript
 declaration file and packages it in a `js_library` under the requested target name. The schema owner
 produces the artifact; the converter does not invoke a backend exporter.

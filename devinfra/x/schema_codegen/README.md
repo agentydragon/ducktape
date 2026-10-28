@@ -1,14 +1,16 @@
 # Schema conversion spikes
 
 Small source models exercise real schema exporters, production conversion tools, generated
-bindings, and consumers. The TypeScript cases use the file-input rules documented in
+bindings, and consumers. The [repository pipeline map](../../docs/schema_codegen.md) describes
+the production paths. The TypeScript cases use the file-input rules documented in
 [SCHEMA_CODEGEN.md](../../js/SCHEMA_CODEGEN.md); generated documents and source files are Bazel
 outputs. The `openapi_js_library` and `json_schema_js_library` macros expose declarations through a
 `js_library` named by the macro call while preserving the raw `.d.ts` output label. Both default the
 raw file to `<name>.d.ts`. `json_schema_js_library` also exposes the original JSON and declared
 reference files at their producer paths, so consumers import JSON and types through one dependency.
-The TypeScript fixtures cover omitted outputs and explicit module-path overrides. `openapi_zod_ts_library` returns a compiled `ts_library` and preserves the generated
-source label, defaulting to `<name>.ts`. Application generators and wire contracts are unchanged.
+The TypeScript fixtures cover omitted outputs and explicit module-path overrides.
+`openapi_zod_ts_library` returns a compiled `ts_library` and preserves the generated source label,
+defaulting to `<name>.ts`.
 
 Run all cases, including lint and language checks on the explicitly selected library targets:
 
