@@ -1137,8 +1137,17 @@ fn validate_and_emit_reports<'a>(
             assignment_analysis.inputs().dependency_graph(),
         );
         let causes = render_atomic_group_cause_guidance(&assignment_report.atomic_group_conflicts);
+        let evidence = report_out_dir.map_or_else(String::new, |dir| {
+            format!(
+                " Full evidence written to {}; dependency graph written to {}.",
+                dir.join(chunk_id)
+                    .join(ATOMIC_GROUP_CONFLICTS_REPORT)
+                    .display(),
+                dir.join(chunk_id).join(DEPENDENCY_GRAPH_REPORT).display(),
+            )
+        });
         bail!(
-            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-group conflict(s) — the spec assigns members of one atomic group to different destination modules, forming a cycle in the module dependency graph that the constraining-edge SCC analysis says is unrealizable. Atomic groups come from `G_atomic` SCCs over the dependency graph (docs/design.md §\"Two classes of atom\"); every member must co-locate. {causes}Resolve by reconciling each group's claims into one destination. Full evidence written to reports/tree/{chunk_id}/atomic_group_conflicts.json; dependency graph written to reports/tree/{chunk_id}/dependency_graph.json. Summary:\n{summary}",
+            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-group conflict(s) — the spec assigns members of one atomic group to different destination modules, forming a cycle in the module dependency graph that the constraining-edge SCC analysis says is unrealizable. Atomic groups come from `G_atomic` SCCs over the dependency graph (docs/design.md §\"Two classes of atom\"); every member must co-locate. {causes}Resolve by reconciling each group's claims into one destination.{evidence} Summary:\n{summary}",
             n = assignment_report.atomic_group_conflicts.len(),
         );
     }
@@ -1154,8 +1163,15 @@ fn validate_and_emit_reports<'a>(
             write_chunk_report_json(report_out_dir, chunk_id, CYCLES_REPORT, &wire)?;
         }
         let summary = render_cycle_summary(&assignment_report.cycles);
+        let evidence = report_out_dir.map_or_else(String::new, |dir| {
+            format!(
+                " Full per-cycle evidence at {}; dependency graph at {}.",
+                dir.join(chunk_id).join(CYCLES_REPORT).display(),
+                dir.join(chunk_id).join(DEPENDENCY_GRAPH_REPORT).display(),
+            )
+        });
         bail!(
-            "materialize_logical_modules: chunk {chunk_id} — spec is unrealizable: {n} module-quotient SCC(s) with at-init / side-effect edges between members. Each SCC names the binding pairs whose split forced the cycle; co-locate them or break a back-edge. Full per-cycle evidence at reports/tree/{chunk_id}/cycles.json; dependency graph at reports/tree/{chunk_id}/dependency_graph.json. Summary:\n{summary}",
+            "materialize_logical_modules: chunk {chunk_id} — spec is unrealizable: {n} module-quotient SCC(s) with at-init / side-effect edges between members. Each SCC names the binding pairs whose split forced the cycle; co-locate them or break a back-edge.{evidence} Summary:\n{summary}",
             n = assignment_report.cycles.len(),
         );
     }

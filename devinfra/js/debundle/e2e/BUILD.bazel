@@ -12,6 +12,11 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "rejection_fixture_report_test")
 
+debundle_e2e_test(
+    name = "contract_audit_cli_test",
+    deps = ["@crates//:serde_json"],
+)
+
 # Characterizes limitations described in debug/2026_10_02_authoring_feedback.md.
 # Explicit invocation only: these are report reproducers, not desired behavior.
 debundle_e2e_test(

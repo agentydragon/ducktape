@@ -1024,6 +1024,7 @@ rust_library(
         "cli/binding.rs",
         "cli/bindings_commands.rs",
         "cli/comment.rs",
+        "cli/contract_audit.rs",
         "cli/edit_gate.rs",
         "cli/gate.rs",
         "cli/inspection_commands.rs",

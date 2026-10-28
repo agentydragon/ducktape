@@ -592,6 +592,36 @@ on retaining other chunk-local purity hints. These diagnostics do not change
 acceptance or edit the spec. Remove hints individually and revalidate. A missing
 entry is inconclusive. Probe scope: <docs/purity_soundness.md#redundant-purity-hints>.
 
+## Chunk-export contract audit
+
+`debundle spec audit-contracts` loads the current flat or tree spec and source,
+requires one exact `chunk_export_purity` policy key and a positive finite
+`--max-probes`, and runs the ordinary full dry-run acceptance pipeline. A
+failing baseline stops the audit before any removal verdict. Each selected
+contract is then removed alone from a fresh in-memory copy of the same
+authored spec and the full pipeline is recomputed, including vendor resolution,
+assignment, lowering, and final reconstruction validation. No saved graph is
+accepted as proof. The command writes no authored spec, emitted output, or
+probe graph. It compares complete captured input provenance between baseline
+and probes and verifies those files again before reporting. The JSON report
+includes `input_provenance_sha256` for the exact captured input set and engine.
+
+The target identity is typed: policy key, contract kind, export, optional
+member, and optional callback signature. A `source_markers` policy key remains
+a policy label, never a fabricated chunk ID. Filters `--kind`, `--export`,
+`--member`, and `--signature` select exact targets; signatures use the typed
+JSON object with `argument_count` and `callback_arguments`. Every selected
+target beyond the budget is reported as `budget_skipped`.
+
+`removable_under_remaining_assumptions` means only that the configured source,
+spec, and assignment still pass full acceptance after this one removal while
+all other author contracts and runtime assumptions remain. It does not prove
+the removed contract independently inferred or pure. Individually removable
+contracts are not necessarily jointly removable. `failed_full_acceptance`
+means the changed candidate failed the shared pipeline; it does not establish
+that the contract is semantically true or uniquely necessary. A failure before
+input capture is `inconclusive`. The audit does not apply removals.
+
 ## Source-anchored export policies
 
 `chunk_export_purity` normally keys contracts by the defining chunk ID.

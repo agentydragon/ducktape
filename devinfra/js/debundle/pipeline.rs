@@ -9,7 +9,7 @@ use artifact::ChunkId;
 use artifact::load_js_chunks;
 use artifact::reports::ChunkDecompositionOutput;
 use emit_harness::emit_browser_harness;
-use graph_provenance::{InputCapture, ProvenanceRoots};
+use graph_provenance::{GraphProvenance, InputCapture, ProvenanceRoots};
 use lowering::{
     MaterializeLogicalModulesOptions, MaterializeSpecInputs, ReportEmission,
     materialize_logical_modules, naturalize_cross_chunk_imports,
@@ -56,7 +56,7 @@ pub enum TransformSpecSource {
 }
 
 /// Command-line arguments for the debundle transform pipeline.
-#[derive(ClapArgs, Debug)]
+#[derive(ClapArgs, Debug, Clone)]
 pub struct TransformArgs {
     /// Path to a flat transform spec YAML. Pass exactly one of `--spec`
     /// / `--tree-config`.
@@ -179,6 +179,43 @@ pub fn collect_package_roots(
 }
 
 pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Result<()> {
+    run_transform_inner(cli, options, None, |_| Ok(()), false, None)
+}
+
+/// Recompute full acceptance with one in-memory author-contract edit. The
+/// authored spec is checked against `expected_spec` before editing. A probe
+/// cannot emit dependency graphs: their original-file provenance would be
+/// false for the edited contract and could be misused by graph-backed edits.
+/// The caller compares captured provenance across its baseline and probes.
+pub fn run_transform_probe(
+    cli: &TransformCli,
+    expected_spec: &TransformSpec,
+    edit: impl FnOnce(&mut TransformSpec) -> Result<()>,
+    provenance_out: &mut Option<GraphProvenance>,
+) -> Result<()> {
+    run_transform_inner(
+        cli,
+        TransformRunOptions {
+            dry_run: true,
+            keep_going: false,
+            report_dir_override: None,
+            list_template_identifiers: false,
+        },
+        Some(expected_spec),
+        edit,
+        true,
+        Some(provenance_out),
+    )
+}
+
+fn run_transform_inner(
+    cli: &TransformCli,
+    options: TransformRunOptions,
+    expected_spec: Option<&TransformSpec>,
+    edit: impl FnOnce(&mut TransformSpec) -> Result<()>,
+    suppress_reports: bool,
+    provenance_out: Option<&mut Option<GraphProvenance>>,
+) -> Result<()> {
     let (roots, modules_directory) = provenance_roots(cli)?;
     let generation_command = canonical_generation_command(cli, &options, &roots)?;
     let capture = InputCapture::start(roots, modules_directory, generation_command)?;
@@ -195,7 +232,14 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
             graph_provenance::read_bytes(path)?;
         }
     }
-    let spec = load_transform_spec_source(&cli.spec_source)?;
+    let mut spec = load_transform_spec_source(&cli.spec_source)?;
+    if let Some(expected) = expected_spec {
+        anyhow::ensure!(
+            serde_json::to_vec(&spec)? == serde_json::to_vec(expected)?,
+            "authored spec changed during contract audit"
+        );
+    }
+    edit(&mut spec)?;
     if let TransformSpecSource::Tree(tree) = &cli.spec_source {
         capture.set_tree_scope(&tree.config_path, graph_module_roots(&tree.config_path)?)?;
     }
@@ -237,6 +281,9 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         },
     )?;
     let graph_provenance = capture.finish()?;
+    if let Some(provenance_out) = provenance_out {
+        *provenance_out = Some(graph_provenance.clone());
+    }
     let write_vendor_outputs = swap_cfg.write && !options.dry_run;
 
     // Full swaps are an emission-set exclusion: the swapped chunks stay in
@@ -288,7 +335,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
                 // same reports/tree/<chunk>/ location a real run
                 // uses, so `debundle gate list/describe` works on
                 // the rejection that was just reported.
-                report_emission: match report_out_dir {
+                report_emission: match report_out_dir.filter(|_| !suppress_reports) {
                     Some(dir) if options.dry_run => ReportEmission::OnRejection(dir),
                     Some(dir) => ReportEmission::Full(dir),
                     None => ReportEmission::None,
@@ -541,7 +588,7 @@ fn canonical_generation_command(
     Ok(argv)
 }
 
-fn load_transform_spec_source(source: &TransformSpecSource) -> Result<TransformSpec> {
+pub fn load_transform_spec_source(source: &TransformSpecSource) -> Result<TransformSpec> {
     match source {
         TransformSpecSource::Flat { path } => read_flat_transform_spec(path),
         TransformSpecSource::Tree(options) => compile_spec_tree(options),

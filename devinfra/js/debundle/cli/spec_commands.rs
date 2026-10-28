@@ -1,4 +1,5 @@
 //! `spec` authoring commands: arguments, adapters, and output formats.
+use crate::contract_audit::{AuditContractsArgs, run as run_audit_contracts};
 use crate::validate::{ValidateArgs, run_validate_cmd};
 use crate::{emit_report, print_section};
 use anyhow::{Context, Result, bail};
@@ -99,6 +100,10 @@ enum SpecNsCommand {
     /// against one chunk, with the same resolve as `run`, but without the
     /// pipeline build — a fast preflight for sharding selector repairs.
     Validate(ValidateArgs),
+    /// Recompute full acceptance after removing one authored chunk-export
+    /// contract at a time, under all remaining assumptions.
+    #[command(name = "audit-contracts")]
+    AuditContracts(AuditContractsArgs),
 }
 
 /// Args for `debundle spec stats`. Source is the on-disk modules tree;
@@ -435,5 +440,6 @@ pub(super) fn run(args: SpecNs) -> Result<()> {
         SpecNsCommand::Validate(v) => {
             run_validate_cmd(v).context("running keep-going selector validation")
         }
+        SpecNsCommand::AuditContracts(a) => run_audit_contracts(a),
     }
 }

@@ -429,6 +429,30 @@ error severity. Warnings do not fail validation. Pass `--report-only` to keep
 the report but exit zero for selector errors, for example when collecting
 diagnostics across several chunks.
 
+To find authored chunk-export contracts that this exact assignment does not
+currently need, run a bounded fresh audit:
+
+```bash
+debundle spec audit-contracts --tree-config spec_config.yaml \
+  --tree-modules modules --tree-vendor-marks vendor_marks.yaml \
+  --out-root out --tree-source-root source \
+  --policy-key static/peer --max-probes 20 --format json
+```
+
+The command accepts the same flat `--spec` or tree inputs and package roots as
+`run`. Use `--kind`, `--export`, `--member`, and a typed JSON `--signature`
+(`{"argument_count":1,"callback_arguments":[0]}`) to narrow the target set.
+It starts with a passing full-pipeline baseline, then removes one target at a
+time in memory and recomputes full acceptance. Results beyond `--max-probes`
+are explicitly `budget_skipped`. `removable_under_remaining_assumptions` is
+conditional on every other authored contract and runtime premise, for this
+source and assignment only; it neither proves independent purity nor permits
+joint deletion of all passing targets. Failed probes report the acceptance
+error, and a setup failure is inconclusive. No removal is applied. Source
+marker keys are reported as policy labels. The probe produces no graph or
+output artifacts, since a graph for the edited in-memory spec could not
+honestly carry the original YAML's provenance.
+
 Every `spec validate` format includes a `validation` summary. JSON places it
 beside `counts` and `outcomes`; the final NDJSON `summary` line includes it;
 text prints `Selector validation: success|failed; checked=N, matched=M`.

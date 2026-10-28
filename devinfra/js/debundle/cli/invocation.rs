@@ -401,6 +401,9 @@ fn append_option_values(argv: &mut Vec<String>, flag: &str, values: &[String]) {
 fn classify_mode(command: &[String], arguments: &[ResolvedArgument]) -> InvocationMode {
     match command {
         [run] if run == "run" => InvocationMode::FreshPipeline,
+        [spec, audit] if spec == "spec" && audit == "audit-contracts" => {
+            InvocationMode::FreshPipeline
+        }
         [spec, validate] if spec == "spec" && validate == "validate" => {
             if ["modules_root", "source_file", "source_root", "chunk"]
                 .iter()
@@ -556,6 +559,11 @@ fn classify_write_scope(
             None
         })
     };
+    // Probe mode suppresses even rejection graphs: their authored-file
+    // provenance would not describe the in-memory contract edit.
+    if command == ["spec", "audit-contracts"] {
+        return scopes;
+    }
     if command == ["run"] {
         if flag_value(arguments, "dry_run") {
             scopes.push(WriteScope::ConditionalPipelineReports {
