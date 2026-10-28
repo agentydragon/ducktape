@@ -602,7 +602,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     thread = await event_logs.seed(SANDBOX, SESSION)
     await store.rename(thread, "Streamed thread")
     async with (
-        scripted_runner(source, sandbox, gateway_service, sandbox_control),
+        scripted_runner(source, sandbox, gateway_service, sandbox_control, tmp_path),
         source.ingesting(history),
         app_process(
             db_url,
