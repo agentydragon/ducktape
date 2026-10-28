@@ -13,7 +13,8 @@ use super::value_model::{
 };
 use crate::analysis_inputs::{
     AnalysisInputs, NamespaceWrapperSummary, NativeIntegrity, NativeIntrinsic as IntrinsicRoot,
-    ResolvedBindingValueInput, SelectedBindingValueInput, ValueInputEvidence, ValueInputRef,
+    ProofDependencies, ResolvedBindingValueInput, SelectedBindingValueInput, ValueInputEvidence,
+    ValueInputRef,
 };
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
@@ -7734,16 +7735,23 @@ fn returned_callback_factory(index: &ExecutionIndex, key: u32) -> bool {
 pub(crate) struct InferredReturnedRecord {
     pub facts: Arc<ReturnedRecordFacts>,
     pub inference: crate::reports::schema::InferenceUse,
+    pub dependencies: ProofDependencies,
 }
 
 pub(crate) struct InferredNamespaceWrapper {
     pub function_start: u32,
     pub inference: crate::reports::schema::InferenceUse,
+    pub dependencies: ProofDependencies,
+}
+
+pub(crate) struct InferredCallbackFactory {
+    pub function_start: u32,
+    pub dependencies: ProofDependencies,
 }
 
 pub(crate) struct InferredCallableCapabilities {
     pub map_integrity: bool,
-    pub callback_factories: BTreeMap<String, u32>,
+    pub callback_factories: BTreeMap<String, InferredCallbackFactory>,
     pub returned_records: BTreeMap<String, InferredReturnedRecord>,
     pub namespace_wrappers: BTreeMap<String, InferredNamespaceWrapper>,
 }
@@ -7888,8 +7896,8 @@ impl PreparedCallableCapabilities {
             .into_iter()
             .filter_map(|(local, key)| {
                 candidates
-                    .get(&key)
-                    .map(|arguments| (local, (key, arguments.clone())))
+                    .get(&key.function_start)
+                    .map(|arguments| (local, (key.function_start, arguments.clone())))
             })
             .collect()
     }
@@ -8157,7 +8165,8 @@ fn infer_returned_records(
                 function,
             };
             let semantic_facts = index.semantic_facts.as_ref()?;
-            let SemanticFact::ReturnedRecord(facts) = semantic_facts.fact(&key)? else {
+            let judgment = semantic_facts.judgment(&key)?;
+            let SemanticFact::ReturnedRecord(facts) = judgment.value() else {
                 return None;
             };
             Some((
@@ -8165,6 +8174,7 @@ fn infer_returned_records(
                 InferredReturnedRecord {
                     facts: Arc::clone(facts),
                     inference: semantic_facts.inference_use(&key)?,
+                    dependencies: judgment.dependencies().clone(),
                 },
             ))
         })
@@ -8175,7 +8185,7 @@ fn infer_returned_callback_factories(
     index: &ExecutionIndex,
     exported_locals: &BTreeSet<String>,
     semantic_facts: &SemanticFacts,
-) -> BTreeMap<String, u32> {
+) -> BTreeMap<String, InferredCallbackFactory> {
     index
         .hoisted_bindings
         .iter()
@@ -8196,15 +8206,21 @@ fn infer_returned_callback_factories(
             if !exported_locals.contains(binding.0.as_ref()) {
                 return None;
             }
-            let SemanticFact::CallbackFactory(function) =
-                semantic_facts.fact(&SemanticKey::CallbackFactory {
-                    binding: binding.clone(),
-                    function,
-                })?
-            else {
+            let key = SemanticKey::CallbackFactory {
+                binding: binding.clone(),
+                function,
+            };
+            let judgment = semantic_facts.judgment(&key)?;
+            let SemanticFact::CallbackFactory(function) = judgment.value() else {
                 return None;
             };
-            Some((binding.0.to_string(), *function))
+            Some((
+                binding.0.to_string(),
+                InferredCallbackFactory {
+                    function_start: *function,
+                    dependencies: judgment.dependencies().clone(),
+                },
+            ))
         })
         .collect()
 }
@@ -8225,7 +8241,8 @@ fn infer_namespace_wrappers(
                 binding: binding.clone(),
                 function,
             };
-            let SemanticFact::NamespaceWrapper(function) = semantic_facts.fact(&key)? else {
+            let judgment = semantic_facts.judgment(&key)?;
+            let SemanticFact::NamespaceWrapper(function) = judgment.value() else {
                 return None;
             };
             Some((
@@ -8233,6 +8250,7 @@ fn infer_namespace_wrappers(
                 InferredNamespaceWrapper {
                     function_start: *function,
                     inference: semantic_facts.inference_use(&key)?,
+                    dependencies: judgment.dependencies().clone(),
                 },
             ))
         })

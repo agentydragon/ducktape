@@ -404,6 +404,19 @@ struct CallableImportProjection {
     provider: CallableExportKey,
 }
 
+#[derive(Debug, Clone, Default)]
+struct CallableExportProof {
+    summary: CallableSummary,
+    dependencies: ProofDependencies,
+}
+
+impl CallableExportProof {
+    fn add(&mut self, summary: CallableSummary, dependencies: ProofDependencies) {
+        self.summary.merge(summary);
+        self.dependencies.extend(&dependencies);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum CallableProjectionRule {
     Export(CallableExportKey),
@@ -411,13 +424,13 @@ enum CallableProjectionRule {
 }
 
 struct CallableProjectionRules {
-    exports: BTreeMap<CallableExportKey, CallableSummary>,
+    exports: BTreeMap<CallableExportKey, CallableExportProof>,
     imports: Vec<CallableImportProjection>,
 }
 
 impl CallableProjectionRules {
     fn new(
-        exports: BTreeMap<CallableExportKey, CallableSummary>,
+        exports: BTreeMap<CallableExportKey, CallableExportProof>,
         modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     ) -> Self {
         let imports = modules
@@ -464,11 +477,11 @@ impl IterativeRules for CallableProjectionRules {
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         match rule {
             CallableProjectionRule::Export(key) => {
-                let Some(summary) = self.exports.get(key) else {
+                let Some(proof) = self.exports.get(key) else {
                     return;
                 };
-                context.assume(&callable_summary_dependencies(summary));
-                context.propose(CallableFactKey::Export(key.clone()), summary.clone());
+                context.assume(&proof.dependencies);
+                context.propose(CallableFactKey::Export(key.clone()), proof.summary.clone());
             }
             CallableProjectionRule::Import(projection) => {
                 let provider = CallableFactKey::Export(projection.provider.clone());
@@ -490,24 +503,9 @@ impl IterativeRules for CallableProjectionRules {
     }
 }
 
-fn callable_summary_dependencies(summary: &CallableSummary) -> ProofDependencies {
-    let mut dependencies = ProofDependencies::default();
-    if let Some(record) = &summary.returned_record {
-        dependencies
-            .value_inputs
-            .extend(record.inference.value_input_refs.iter().cloned());
-    }
-    if let Some(wrapper) = &summary.namespace_wrapper {
-        dependencies
-            .value_inputs
-            .extend(wrapper.inference.value_input_refs.iter().cloned());
-    }
-    dependencies
-}
-
 fn solve_callable_import_projections(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    exports: BTreeMap<CallableExportKey, CallableSummary>,
+    exports: BTreeMap<CallableExportKey, CallableExportProof>,
 ) -> BTreeMap<ModuleKey, BTreeMap<String, CallableSummary>> {
     let rules = CallableProjectionRules::new(exports, modules);
     let producers = rules.producers();
@@ -546,23 +544,28 @@ pub fn resolve_imported_callable_summaries(
             export: target.export.clone(),
         })
         .collect();
-    let mut export_summaries: BTreeMap<CallableExportKey, CallableSummary> = BTreeMap::new();
+    let mut export_summaries: BTreeMap<CallableExportKey, CallableExportProof> = BTreeMap::new();
     for (module, exports) in asserted {
         for export in exports {
             if modules
                 .get(module)
                 .is_some_and(|facts| facts.exports.contains_key(export))
             {
-                export_summaries.insert(
-                    CallableExportKey {
+                export_summaries
+                    .entry(CallableExportKey {
                         module: module.clone(),
                         export: export.clone(),
-                    },
-                    CallableSummary::callback_factory(CallbackFactoryEvidence::AuthorAssertion {
-                        defining_module: module.clone(),
-                        export: export.clone(),
-                    }),
-                );
+                    })
+                    .or_default()
+                    .add(
+                        CallableSummary::callback_factory(
+                            CallbackFactoryEvidence::AuthorAssertion {
+                                defining_module: module.clone(),
+                                export: export.clone(),
+                            },
+                        ),
+                        ProofDependencies::default(),
+                    );
             } else {
                 eprintln!(
                     "cross_module_purity: dangling callback_factory_exports assertion {module}:{export} — no such analyzed module export; ignoring"
@@ -647,7 +650,7 @@ pub fn resolve_imported_callable_summaries(
                     export: export.clone(),
                 })
                 .or_default()
-                .merge(summary);
+                .add(summary, ProofDependencies::default());
         }
     }
     // This projection is the source-only input to native branch refinement.
@@ -692,20 +695,18 @@ pub fn resolve_imported_callable_summaries(
             if !required.contains(&key) || export_summaries.contains_key(&key) {
                 continue;
             }
-            let Some(&function_start) = callback_factories.get(local) else {
+            let Some(factory) = callback_factories.get(local) else {
                 continue;
             };
-            export_summaries
-                .entry(key)
-                .or_default()
-                .merge(CallableSummary::callback_factory(
+            export_summaries.entry(key).or_default().add(
+                CallableSummary::callback_factory(
                     CallbackFactoryEvidence::InferredImmutableWrapper {
                         defining_module: module.clone(),
                         export: export.clone(),
                         local: local.clone(),
                         source_location: facts.source.as_ref().and_then(|(path, index)| {
                             let (line, column) =
-                                index.line_and_column_for_pos(BytePos(function_start))?;
+                                index.line_and_column_for_pos(BytePos(factory.function_start))?;
                             Some(SourceLocation {
                                 source_path: path.clone(),
                                 start_line: line,
@@ -714,7 +715,9 @@ pub fn resolve_imported_callable_summaries(
                             })
                         }),
                     },
-                ));
+                ),
+                factory.dependencies.clone(),
+            );
         }
     }
     let needs_map_integrity = inferred
@@ -751,10 +754,8 @@ pub fn resolve_imported_callable_summaries(
                 let Some(record) = records.get(local) else {
                     continue;
                 };
-                export_summaries
-                    .entry(key)
-                    .or_default()
-                    .merge(CallableSummary::returned_record(ReturnedRecordSummary {
+                export_summaries.entry(key).or_default().add(
+                    CallableSummary::returned_record(ReturnedRecordSummary {
                         defining_module: module.clone(),
                         export: export.clone(),
                         local: local.clone(),
@@ -770,7 +771,9 @@ pub fn resolve_imported_callable_summaries(
                             })
                             .collect(),
                         inference: record.inference.clone(),
-                    }));
+                    }),
+                    record.dependencies.clone(),
+                );
             }
         }
     }
@@ -796,18 +799,16 @@ pub fn resolve_imported_callable_summaries(
                     start_column: Some(column),
                 })
             });
-            export_summaries
-                .entry(key)
-                .or_default()
-                .merge(CallableSummary::namespace_wrapper(
-                    NamespaceWrapperSummary {
-                        defining_module: module.clone(),
-                        export: export.clone(),
-                        local: local.clone(),
-                        source_location,
-                        inference: wrapper.inference.clone(),
-                    },
-                ));
+            export_summaries.entry(key).or_default().add(
+                CallableSummary::namespace_wrapper(NamespaceWrapperSummary {
+                    defining_module: module.clone(),
+                    export: export.clone(),
+                    local: local.clone(),
+                    source_location,
+                    inference: wrapper.inference.clone(),
+                }),
+                wrapper.dependencies.clone(),
+            );
         }
     }
     let imported_callables = solve_callable_import_projections(modules, export_summaries);
@@ -1119,6 +1120,67 @@ mod tests {
                 input_index,
             }]),
         }
+    }
+
+    #[test]
+    fn callable_import_projection_preserves_typed_judgment_dependencies() {
+        let app = parse("import { build } from 'provider';");
+        let provider = parse("export function build() { return {}; }");
+        let modules = BTreeMap::from([
+            (
+                "app".to_string(),
+                facts(&app, &[("build", "provider", "build")], &[]),
+            ),
+            (
+                "provider".to_string(),
+                facts(&provider, &[], &[("build", "build")]),
+            ),
+        ]);
+        let reported_dependencies = ValueInputRef {
+            defining_chunk: "report-only.js".to_string(),
+            input_index: 99,
+        };
+        let summary = CallableSummary::returned_record(ReturnedRecordSummary {
+            defining_module: "provider".to_string(),
+            export: "build".to_string(),
+            local: "build".to_string(),
+            source_location: None,
+            members: Vec::new(),
+            inference: crate::reports::schema::InferenceUse {
+                conclusion: crate::reports::schema::InferenceRule::ReturnedRecord,
+                derivation_rules: BTreeSet::from([
+                    crate::reports::schema::InferenceRule::ReturnedRecord,
+                ]),
+                value_input_refs: BTreeSet::from([reported_dependencies]),
+            },
+        });
+        let trusted_dependencies = value_input_dependencies("provider-values.js", 0);
+        let mut export = CallableExportProof::default();
+        export.add(summary.clone(), trusted_dependencies.clone());
+        let exports = BTreeMap::from([(
+            CallableExportKey {
+                module: "provider".to_string(),
+                export: "build".to_string(),
+            },
+            export,
+        )]);
+        let rules = CallableProjectionRules::new(exports, &modules);
+        let producers = rules.producers();
+        let solved = IterativeInference::new(rules).solve(producers);
+
+        let import_key = CallableFactKey::Import(CallableImportKey {
+            module: "app".to_string(),
+            local: "build".to_string(),
+        });
+        let judgment = solved
+            .get(&import_key)
+            .expect("provider summary projects onto the resolved importer");
+        assert_eq!(judgment.value(), &summary);
+        assert_eq!(
+            judgment.dependencies(),
+            &trusted_dependencies,
+            "typed proof dependencies flow through the import; report references are projection-only"
+        );
     }
 
     #[test]
