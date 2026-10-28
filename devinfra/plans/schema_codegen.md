@@ -7,12 +7,13 @@ real generators and consumers.
 The inventory below and the whole-repository “before” map record the production state at immutable
 design-base commit [`6eb2ffc2131fff18eaedcbdcf12d23aa93187edf`](https://github.com/agentydragon/ducktape/commit/6eb2ffc2131fff18eaedcbdcf12d23aa93187edf).
 Links to the former macro files point to that baseline because those files are removed by the
-implementation. The “after” map describes the combined target state, including the direct named
-imports migrated in [PR #12418](https://github.com/agentydragon/ducktape/pull/12418). The file-input
-OpenAPI declarations landed in [#12477](https://github.com/agentydragon/ducktape/pull/12477). The
-remaining stack is OpenAPI Zod in [#12489](https://github.com/agentydragon/ducktape/pull/12489) →
-JSON Schema declarations in [#12484](https://github.com/agentydragon/ducktape/pull/12484) → this
-spike in [#12342](https://github.com/agentydragon/ducktape/pull/12342).
+implementation. The “after” map describes the implemented production state: direct named model
+imports in [#12418](https://github.com/agentydragon/ducktape/pull/12418), file-input OpenAPI
+declarations in [#12477](https://github.com/agentydragon/ducktape/pull/12477), compiled OpenAPI Zod
+libraries in [#12489](https://github.com/agentydragon/ducktape/pull/12489), and producer-owned JSON
+Schema libraries in [#12484](https://github.com/agentydragon/ducktape/pull/12484) have all landed.
+This standalone docs/spike PR adds the inventory and executable proofs against those production
+converters.
 
 ## Baseline inputs, outputs, and owners
 
@@ -326,11 +327,11 @@ The baseline also records independent runtime-validator and protobuf proposals. 
 uses the production paths and artifacts described below; it does not import behavior from those
 drafts or expand into native protobuf generation.
 
-## Proposed end state
+## Implemented end state
 
 ### Whole-repository state after
 
-This is the complete target state, with every native and owner-specific path retained. Purple boxes
+This is the implemented state, with every native and owner-specific path retained. Purple boxes
 mark file-input converters, explicit schema artifacts, named model exports, and ordinary compilation
 of generated Zod. The unchanged paths are repeated in full so this map stands on its own. It
 introduces no universal schema IR: OpenAPI 3, standalone JSON Schema, protobuf descriptors, Swagger
@@ -618,7 +619,7 @@ Expose separate targets for OpenAPI documents and standalone model/tool JSON Sch
 files need named Bazel outputs with visibility for their consumers, not `exports_files` declarations
 or a global schema registry. Publish schema artifacts only where independent consumers need them;
 keep exporter executable dependencies behind the owning target. Name the
-direction where relevant: request validation schema versus serialized response schema. Keep
+direction where relevant: request validation schema versus serialized response schema.
 Python/Pydantic and Go API definitions remain the sources of truth; the implementation adds no
 generated Pydantic-model layer.
 
@@ -777,11 +778,11 @@ and Python. No live RPC server, Kubernetes API, Google service, or LLM provider 
 
 The implementation burned down the proposed migration gates as follows:
 
-1. Landed OpenAPI declarations and their named `js_library` packaging in [#12477](https://github.com/agentydragon/ducktape/pull/12477).
-   The remaining stack places OpenAPI-to-Zod first in [#12489](https://github.com/agentydragon/ducktape/pull/12489),
-   JSON Schema declarations second in [#12484](https://github.com/agentydragon/ducktape/pull/12484), and the
-   implementation spike last in [#12342](https://github.com/agentydragon/ducktape/pull/12342). Declaration
-   macros preserve direct output-file labels; fixtures exercise source and generated single-file labels,
+1. Landed OpenAPI declarations and their named `js_library` packaging in [#12477](https://github.com/agentydragon/ducktape/pull/12477),
+   compiled OpenAPI Zod libraries in [#12489](https://github.com/agentydragon/ducktape/pull/12489), and
+   producer-owned JSON Schema libraries in [#12484](https://github.com/agentydragon/ducktape/pull/12484).
+   This standalone PR adds the proof matrix using those production converters. Declaration macros
+   preserve direct output-file labels; fixtures exercise source and generated single-file labels,
    cross-package schemas and configuration, declared relative references, and caller date settings.
 2. Migrated every production caller of the previous `js_openapi_schema`, `js_openapi_zod`, and
    `js_json_schema` macros to explicit owner schema artifacts and normal language packaging. The
@@ -800,7 +801,7 @@ The implementation burned down the proposed migration gates as follows:
 
 The implementation keeps the existing wire contracts and pinned generator versions. The selected
 production schema targets, owning renderer tests, frontend type/lint targets, and changed-file hooks
-are the acceptance gate; PR CI checks the published stacked revisions. Native protobuf/RPC,
+are the acceptance gate; PR CI checks the published revision against `devel`. Native protobuf/RPC,
 Swagger 2, Kubernetes, Discovery, provider/MCP owner paths, and unrelated runtime validators remain
 outside this migration.
 
@@ -824,7 +825,7 @@ installation for the spike.
 - [Hey API Zod plugin](https://heyapi.dev/openapi-ts/plugins/zod) documents generated Zod schemas;
   the fixture checks the repo's pinned version and caller-supplied date policy.
 - [Zod JSON Schema](https://zod.dev/json-schema) documents both directions. `z.fromJSONSchema` is
-  experimental; the proposed adapter is intentionally bounded by tested schema features and pins.
+  experimental; the runtime adapter is intentionally bounded by tested schema features and pins.
 - [`json-schema-to-typescript`](https://github.com/bcherny/json-schema-to-typescript) supplies
   model declarations, not runtime validators.
 - [Protobuf-ES](https://github.com/bufbuild/protobuf-es) supplies native message schemas, bindings,
