@@ -8,6 +8,9 @@ intra-Sandbox hardening reminder retained here at Rai's request.
 
 ## Current state and scheduling
 
+**Operator scheduling, 2026-10-27 PDT:** runner lifecycle implementation, the Go app port and the
+central Codex spike are assigned to other agents. Do not dispatch duplicate work on those tracks.
+
 Audit metadata consumers (`sandbox`, `harness`, `model`, `cwd`, summary/activity fields) before
 deleting useful UI projections. Squash Alembic only once the app schema settles.
 
@@ -245,7 +248,7 @@ freshness problem is independent of the broader missed-event recovery decision.
 ```mermaid
 flowchart LR
     GITHUB_MERGEABILITY_FRESHNESS[Ready: obtain fresh results after base-only changes]
-    GITHUB_NOTICE_RELIABILITY_DESIGN[Decision: eventual-state recovery vs agent fallback]
+    GITHUB_NOTICE_RELIABILITY_DESIGN[Decision: mechanism and budget for eventual state awareness]
     GITHUB_NOTIFICATION_RECOVERY[Blocked: selected reconciliation or reminder mechanism]
     GITHUB_SHEPHERD_GUIDANCE[Blocked: after the reliability decision; fallback-check wording]
     GITHUB_NOTICE_RELIABILITY_DESIGN --> GITHUB_NOTIFICATION_RECOVERY
@@ -280,26 +283,30 @@ calculation, or reporting prolonged uncertainty before implementing an alternati
 shipped proof/fence/error policies. This does not reopen waived broad outage/restart drills or select
 a general CI/comment/review replay mechanism.
 
-### `GITHUB_NOTICE_RELIABILITY_DESIGN` — delivery guarantee and fallback
+### `GITHUB_NOTICE_RELIABILITY_DESIGN` — eventual state awareness and recovery mechanism
 
-**Decision.** Review the gap and choose the guarantee needed for PR shepherding: eventual awareness
-of current head/check/review/merge state, or historical delivery of each event. Compare bounded
-service-side reconciliation using existing durable shared GitHub refresh state with explicit agent
-fallback checks, optionally scheduled reminders. Recommend the smallest reliable path with a stated
-staleness bound/cost. A webhook subscription is not proof no changes occurred when it stays silent.
+**Target selected by the operator, 2026-10-27 PDT; mechanism decision remains open.** Eligible active
+PR subscriptions should eventually learn current CI/check, review and merge state even when a
+webhook is missed. Associate CI/check observations with their PR head. Historical delivery of every
+event is not required; a state that changes and reverts between snapshots may be invisible.
+
+Compare bounded service-side reconciliation using existing durable shared GitHub refresh state
+with explicit agent fallback checks, optionally scheduled reminders. Recommend the smallest reliable
+path with a stated staleness target and API budget, including access failures and rate-limit backoff.
+A webhook subscription is not proof no changes occurred when it stays silent.
 Snapshot polling cannot reconstruct all intermediate events, and a cron reminder alone is not
 recovery if no active agent checks state. Define timer ownership, termination, unavailable-harness
 behavior and active-subscription eligibility; a reminder to poll without a runnable timer is not
 an eventual-delivery mechanism. Review service reconciliation, agent fallback or a combination
 with the operator before implementation. Persist observation coverage and inbox emission atomically
 or replay-safely; share normalization and refresh across overlapping subscriptions.
-A state that changes and reverts between snapshots may be invisible; historical comments/reviews
-may require paginated history. Preserve filters, creation boundaries and revocation, and state
-staleness targets and rate-limit/backoff visibility. Recovery has no inherent archive dependency.
+Preserve filters, creation boundaries and revocation, and expose observation freshness and
+rate-limit/backoff state. Recovery has no inherent archive dependency.
 
 ### `GITHUB_NOTIFICATION_RECOVERY` — implement the reviewed recovery contract
 
-**Blocked on the reliability decision.** If service reconciliation is selected, periodically compare
+**Blocked on the recovery mechanism and budget in `GITHUB_NOTICE_RELIABILITY_DESIGN`; the eventual
+CI/check/review/merge awareness target is selected.** If service reconciliation is selected, periodically compare
 eligible shared subjects with authoritative GitHub state and durably emit deduplicated observations
 for uncovered relevant changes. Reuse refresh leases, backoff and access checks; bound API load.
 Distinguish observed state from a received webhook; do not fabricate delivery IDs or promise replay
@@ -308,14 +315,14 @@ check/reminder mechanism and explicit limitations rather than just advising agen
 Add `CRON_NOTIFICATIONS` as a prerequisite only if that reviewed implementation actually needs it;
 a service refresh deadline need not introduce a general scheduler. Backend workers stay in-process.
 
-Test a suppressed webhook, duplicate webhook/reconciliation races, changed head/check state and
+Test suppressed webhooks for head/CI/check, review and merge state, duplicate webhook/reconciliation races and
 restart/checkpoint recovery with a controlled GitHub peer. Observe one eventual update for the
 promised scope, honest access/backoff state and no false claim of complete history. No live GitHub
 outage or exhaustive historical event matrix is required.
 
 ### `GITHUB_SHEPHERD_GUIDANCE` — explain monitoring limits and completion checks
 
-**Blocked on `GITHUB_NOTICE_RELIABILITY_DESIGN`; if agent reminders are chosen it also needs the frozen [`CRON_NOTIFICATIONS`](task_freezer.md#cron_notifications--scheduled-notifications-for-agents), which would first have to be promoted.** Agents are
+**Blocked on the recovery mechanism in `GITHUB_NOTICE_RELIABILITY_DESIGN`; if agent reminders are chosen it also needs the frozen [`CRON_NOTIFICATIONS`](task_freezer.md#cron_notifications--scheduled-notifications-for-agents), which would first have to be promoted.** Agents are
 asked not just to subscribe to GitHub while waiting (e.g. for CI) but to back the subscription with
 a fallback check after N minutes, in case the webhook never delivers. Treat notifications as prompts
 to inspect authoritative current PR state, not evidence that the latest head passed or that silence
