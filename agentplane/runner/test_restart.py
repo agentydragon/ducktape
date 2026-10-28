@@ -20,7 +20,7 @@ from agentplane.native.codex.testing import model_catalog
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.testing import events
-from agentplane.runner.testing.driver import RunnerDriver
+from agentplane.runner.testing.driver import RunnerDriver, runner_test_session_id
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.process_fixtures import RunnerProcess
 from agentplane.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
@@ -31,6 +31,7 @@ from agentplane.testing.scripted_model import Reasoning, ScriptedModel, ShellCal
 
 async def _wait_for_session_ready(driver: RunnerDriver, session_id: str) -> None:
     """Wait for startup recovery before attaching a follower with a status snapshot."""
+    session_id = runner_test_session_id(session_id)
     runner = await driver.gateway.control.runner()
     async with asyncio.timeout(60):
         while True:
@@ -408,8 +409,8 @@ async def test_runner_startup_keeps_unselected_sessions_dormant_and_resume_keeps
 
     await start_runner()
     summaries = {summary.session_id: summary for summary in await driver.list_sessions()}
-    assert summaries["pending-after-wake"].harness_state == runner_pb2.HARNESS_STATE_STOPPED
-    assert summaries["dormant-after-wake"].harness_state == runner_pb2.HARNESS_STATE_STOPPED
+    assert summaries[runner_test_session_id("pending-after-wake")].harness_state == runner_pb2.HARNESS_STATE_STOPPED
+    assert summaries[runner_test_session_id("dormant-after-wake")].harness_state == runner_pb2.HARNESS_STATE_STOPPED
 
     pending = await driver.attach("pending-after-wake", after_cursor=pending_cursor)
     assert pending.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
@@ -426,7 +427,7 @@ async def test_runner_startup_keeps_unselected_sessions_dormant_and_resume_keeps
     await model.reply(pending_request, Text("PENDING_RESUMED_OK"))
     await pending.until(events.turn_completed)
     summaries = {summary.session_id: summary for summary in await driver.list_sessions()}
-    assert summaries["dormant-after-wake"].harness_state == runner_pb2.HARNESS_STATE_STOPPED
+    assert summaries[runner_test_session_id("dormant-after-wake")].harness_state == runner_pb2.HARNESS_STATE_STOPPED
 
     # A dormant session stays stopped until the next durable command wakes it.
     dormant = await driver.attach("dormant-after-wake", after_cursor=dormant_cursor)
@@ -803,7 +804,7 @@ async def test_sigterm_stops_the_harness_cleanly_and_a_new_incarnation_resumes(
     await model.reply(seed, Text("SEED_OK"))
     await first.until(events.turn_completed)
     (running,) = await driver.list_sessions()
-    assert running.session_id == "sigterm-1"
+    assert running.session_id == first.attached.session_id
     assert running.harness_state == runner_pb2.HARNESS_STATE_RUNNING
     assert running.spec == first.attached.spec
     # Native frames after the turn's result may still be arriving.

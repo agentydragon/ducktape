@@ -7,6 +7,7 @@ import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Self
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import grpc
 import pytest
@@ -39,6 +40,15 @@ class SessionSealedError(StreamClosedError):
     def __init__(self, cursor: int) -> None:
         super().__init__(f"{cursor=}")
         self.cursor = cursor
+
+
+def runner_test_session_id(label: str) -> str:
+    """Map a readable test label to a stable UUID accepted by real History ingress."""
+    try:
+        UUID(label)
+    except ValueError:
+        return str(uuid5(NAMESPACE_URL, f"https://ducktape.test/runner-session/{label}"))
+    return label
 
 
 async def refusal(operation: Awaitable[object]) -> grpc.StatusCode:
@@ -229,6 +239,7 @@ class RunnerDriver:
         after_cursor: int = 0,
     ) -> SessionFollow:
         """Follow after `after_cursor`, durably reserving or confirming the session when given a spec."""
+        session_id = runner_test_session_id(session_id)
         if spec is None:
             summary = next((found for found in await self.list_sessions() if found.session_id == session_id), None)
             if summary is None:

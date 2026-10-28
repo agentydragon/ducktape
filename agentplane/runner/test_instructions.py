@@ -54,7 +54,7 @@ async def test_instructions_name_the_platform_the_sandbox_and_the_session_ahead_
     assert instructions.startswith(launches.PLATFORM_INSTRUCTIONS)
     assert instructions.endswith(INSTRUCTIONS)
     (destination,) = (json.loads(line) for line in instructions.splitlines() if line.startswith('{"destination_ref"'))
-    assert destination == {"destination_ref": launches.SANDBOX.model_dump(), "session_id": "destination-1"}
+    assert destination == {"destination_ref": launches.SANDBOX.model_dump(), "session_id": session.attached.session_id}
 
 
 async def test_reopening_a_session_with_its_own_spec_confirms_it(

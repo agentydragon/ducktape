@@ -71,8 +71,10 @@ async def test_codex_sessions_share_one_app_server_and_keep_their_own_turns_and_
         (output,) = request.tool_outputs
         (other,) = set(SESSION_IDS) - {session_id}
         # Each thread's tools see their own Session's destination and working directory.
-        assert output.contains(f'"session_id":"{session_id}"}}|{workspace / session_id}')
-        assert not output.contains(f'"session_id":"{other}"')
+        own_session_id = sessions[session_id].attached.session_id
+        other_session_id = sessions[other].attached.session_id
+        assert output.contains(f'"session_id":"{own_session_id}"}}|{workspace / session_id}')
+        assert not output.contains(f'"session_id":"{other_session_id}"')
         await model.reply(request, Text(f"TOOL_DONE {session_id}"))
 
     started_pids = set()
@@ -88,7 +90,7 @@ async def test_codex_sessions_share_one_app_server_and_keep_their_own_turns_and_
     (pid,) = started_pids
     process = await _codex_process(driver)
     assert process.pid == pid
-    assert set(process.assigned_session_ids) == set(SESSION_IDS)
+    assert set(process.assigned_session_ids) == {session.attached.session_id for session in sessions.values()}
 
 
 async def test_interrupting_one_codex_session_leaves_the_other_running(
@@ -146,7 +148,7 @@ async def test_a_shared_app_server_crash_loses_every_hosted_turn_and_each_sessio
         assert started[-1].event.harness_started.resumed
     resumed = await _codex_process(driver)
     assert resumed.process_id != crashed.process_id
-    assert set(resumed.assigned_session_ids) == set(SESSION_IDS)
+    assert set(resumed.assigned_session_ids) == {session.attached.session_id for session in sessions.values()}
 
 
 async def test_quiesce_interrupts_every_codex_session_before_the_shared_app_server_stops(
