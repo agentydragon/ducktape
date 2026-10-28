@@ -283,6 +283,7 @@ impl<'a, Key: Clone + Ord, Fact> RuleContext<'a, Key, Fact> {
     /// Call this only after the rule has established that the supplied premise
     /// is complete. Inferred facts use [`Self::require`] within this context or
     /// [`Self::import`] for a completed earlier context.
+    #[cfg(test)]
     pub fn assume(&mut self, dependencies: &ProofDependencies) {
         self.dependencies.extend(dependencies);
     }
