@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 use debundle_e2e_support::{
     FixtureOpts, GraphFixture, TreeFixture, debundler_path, run_fixture, run_tree_fixture,
@@ -20,6 +21,236 @@ fn assert_mismatch(fixture: &GraphFixture, expected: &str) -> serde_json::Value 
     assert_eq!(json["mismatch"]["reason"], expected);
     assert!(json["mismatch"]["regenerate_command"].is_array());
     json
+}
+
+struct AliasGraphFixture {
+    _root: TempDir,
+    source_root: std::path::PathBuf,
+    source_file: std::path::PathBuf,
+    modules: std::path::PathBuf,
+    graph: std::path::PathBuf,
+}
+
+impl AliasGraphFixture {
+    fn new() -> Self {
+        let root = TempDir::new().unwrap();
+        let source_root = root.path().join("snapshot");
+        let source_file = source_root.join("provider.js");
+        fs::create_dir_all(&source_root).unwrap();
+        fs::write(&source_file, "const value = 42;\nconsole.log(value);\n").unwrap();
+        fs::write(
+            root.path().join("js-files.txt"),
+            "provider.js\tvirtual/chunk.js\n",
+        )
+        .unwrap();
+
+        let modules = root.path().join("modules/provider");
+        fs::create_dir_all(&modules).unwrap();
+        fs::write(
+            modules.join("provider.yaml"),
+            "source_matches:\n  - match: 'const value = 42;'\n    bindings: [value]\n",
+        )
+        .unwrap();
+
+        let config = root.path().join("spec_config.yaml");
+        fs::write(
+            &config,
+            "main_chunk_id: provider\nmodule_roots:\n  provider: provider\ninputs:\n  root: snapshot\n  js_list_path: js-files.txt\nwrite_js_tree: true\nunassigned_mode:\n  provider: { kind: inline_in_entry }\n",
+        )
+        .unwrap();
+        let vendor_marks = root.path().join("vendor_marks.yaml");
+        fs::write(&vendor_marks, "vendor_marks: []\n").unwrap();
+        let out_root = root.path().join("out");
+        let output = Command::new(debundler_path())
+            .arg("run")
+            .arg("--tree-config")
+            .arg(&config)
+            .arg("--tree-modules")
+            .arg(root.path().join("modules"))
+            .arg("--tree-vendor-marks")
+            .arg(vendor_marks)
+            .arg("--tree-source-root")
+            .arg(root.path())
+            .arg("--out-root")
+            .arg(&out_root)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        Self {
+            graph: out_root.join("reports/tree/provider/dependency_graph.json"),
+            _root: root,
+            source_root,
+            source_file,
+            modules,
+        }
+    }
+
+    fn command(
+        &self,
+        args: &[&str],
+        selector_root: Option<&Path>,
+        graph_source_root: Option<&Path>,
+    ) -> std::process::Output {
+        let mut command = Command::new(debundler_path());
+        command
+            .args(args)
+            .arg("--graph")
+            .arg(&self.graph)
+            .arg("--modules")
+            .arg(&self.modules)
+            .args(["--format", "json"]);
+        if let Some(selector_root) = selector_root {
+            command.arg("--source-root").arg(selector_root);
+        }
+        if let Some(graph_source_root) = graph_source_root {
+            command.arg("--graph-source-root").arg(graph_source_root);
+        }
+        command.output().unwrap()
+    }
+}
+
+fn assert_success(output: &std::process::Output) {
+    assert!(
+        output.status.success(),
+        "status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        stderr(output)
+    );
+}
+
+fn query_json(output: &std::process::Output) -> serde_json::Value {
+    assert_success(output);
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+fn assert_graph_mismatch(output: &std::process::Output, expected: &str) {
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(output));
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["kind"], "graph_compatibility");
+    assert_eq!(json["mismatch"]["reason"], expected);
+}
+
+#[test]
+fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
+    let fixture = AliasGraphFixture::new();
+
+    // The authored source_match is resolved by coverage and proposal queries.
+    for output in [
+        fixture.command(&["coverage"], None, None),
+        fixture.command(&["coverage"], Some(&fixture.source_root), None),
+        fixture.command(&["modules", "propose"], Some(&fixture.source_root), None),
+    ] {
+        let report = query_json(&output);
+        assert!(report["rows"].as_array().is_some() || report["proposals"].as_array().is_some());
+    }
+    let coverage = query_json(&fixture.command(&["coverage"], None, None));
+    assert_eq!(
+        coverage["rows"][0]["requested_binding_ids"],
+        serde_json::json!(["value"])
+    );
+
+    let describe =
+        query_json(&fixture.command(&["describe", "value"], Some(&fixture.source_root), None));
+    assert_eq!(describe["source_unit_ids"], serde_json::json!(["unit:0"]));
+    let inspected = query_json(&fixture.command(&["inspect-source", "--id", "unit:0"], None, None));
+    assert!(
+        inspected["files"][0]["statements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|statement| statement["source"].as_str().unwrap().contains("value = 42"))
+    );
+}
+
+#[test]
+fn aliased_chunk_sources_keep_root_and_shadow_guards_during_relocation() {
+    let fixture = AliasGraphFixture::new();
+    let wrong_root = TempDir::new().unwrap();
+    fs::copy(&fixture.source_file, wrong_root.path().join("provider.js")).unwrap();
+    assert_graph_mismatch(
+        &fixture.command(&["coverage"], Some(wrong_root.path()), None),
+        "selector_source_root",
+    );
+    assert_graph_mismatch(
+        &fixture.command(&["coverage"], Some(&fixture.source_file), None),
+        "selector_source_root",
+    );
+
+    let logical_shadow = fixture.source_root.join("virtual/chunk.js");
+    fs::create_dir_all(logical_shadow.parent().unwrap()).unwrap();
+    fs::copy(&fixture.source_file, &logical_shadow).unwrap();
+    assert_graph_mismatch(
+        &fixture.command(&["coverage"], Some(&fixture.source_root), None),
+        "selector_source_root",
+    );
+    fs::remove_file(logical_shadow).unwrap();
+
+    let fallback_shadow = fixture.modules.parent().unwrap().join("virtual/chunk.js");
+    fs::create_dir_all(fallback_shadow.parent().unwrap()).unwrap();
+    fs::copy(&fixture.source_file, &fallback_shadow).unwrap();
+    assert_graph_mismatch(
+        &fixture.command(&["coverage"], None, None),
+        "selector_source_root",
+    );
+    fs::remove_file(fallback_shadow).unwrap();
+
+    let relocated_root = fixture._root.path().join("relocated-source");
+    fs::create_dir_all(relocated_root.join("snapshot")).unwrap();
+    fs::copy(
+        &fixture.source_file,
+        relocated_root.join("snapshot/provider.js"),
+    )
+    .unwrap();
+    fs::copy(
+        fixture._root.path().join("js-files.txt"),
+        relocated_root.join("js-files.txt"),
+    )
+    .unwrap();
+    fs::remove_file(&fixture.source_file).unwrap();
+    let relocated_coverage =
+        query_json(&fixture.command(&["coverage"], None, Some(&relocated_root)));
+    assert_eq!(
+        relocated_coverage["rows"][0]["requested_binding_ids"],
+        serde_json::json!(["value"])
+    );
+    let relocated_selector_root = relocated_root.join("snapshot");
+    let relocated_inspection = query_json(&fixture.command(
+        &["inspect-source", "--id", "unit:0"],
+        Some(&relocated_selector_root),
+        Some(&relocated_root),
+    ));
+    assert!(
+        relocated_inspection["files"][0]["statements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|statement| statement["source"].as_str().unwrap().contains("value = 42"))
+    );
+    let relocated_coverage_with_selector_root = query_json(&fixture.command(
+        &["coverage"],
+        Some(&relocated_selector_root),
+        Some(&relocated_root),
+    ));
+    assert_eq!(
+        relocated_coverage_with_selector_root["rows"][0]["requested_binding_ids"],
+        serde_json::json!(["value"])
+    );
+
+    fs::write(
+        relocated_root.join("snapshot/provider.js"),
+        "const value = 43;\nconsole.log(value);\n",
+    )
+    .unwrap();
+    assert_graph_mismatch(
+        &fixture.command(&["coverage"], None, Some(&relocated_root)),
+        "file",
+    );
 }
 
 #[test]

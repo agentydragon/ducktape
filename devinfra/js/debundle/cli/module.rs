@@ -28,6 +28,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
+use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
 use spec::LogicalModule;
 use spec_modules::{
@@ -223,14 +224,17 @@ impl DeleteSummary {
 ///   diagnostic the pipeline prints if `Verdict::Unrealizable`.
 /// * `--dry-run`: run the gate but do not modify any file.
 /// * `--no-verify`: skip the gate for a single merge; rejected with `--batch`.
-pub fn run_merge(merge: MergeArgs) -> Result<()> {
+pub fn run_merge(
+    merge: MergeArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
     if merge.edit.no_verify {
         eprintln!(
             "warning: --no-verify skips the realizability gate; the merge YAML splice will \
              not be re-checked for cross-module cycles."
         );
     }
-    let gate = merge.edit.gate()?;
+    let gate = merge.edit.gate(source_context)?;
     let is_batch = merge.batch.is_some();
     let modules_root = if is_batch {
         fs::canonicalize(&merge.edit.modules_root)?
@@ -634,7 +638,10 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
 /// error before any deletion is attempted; the operation is
 /// best-effort atomic (collect-then-remove) but cannot roll back a
 /// partial removal if the filesystem fails midway.
-pub fn run_delete(args: DeleteArgs) -> Result<()> {
+pub fn run_delete(
+    args: DeleteArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
     if args.edit.no_verify {
         eprintln!(
             "warning: --no-verify skips the realizability gate; the deletion will not be \
@@ -696,7 +703,7 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     let gate_outcome = if non_empty.is_empty() {
         GateOutcome::NotRequired
     } else {
-        let gate = args.edit.gate()?;
+        let gate = args.edit.gate(source_context)?;
         if let Err(err) = gate.check(&args.edit.modules_root, || {
             post_delete_spec(&args.edit.modules_root, &paths_abs)
         }) {

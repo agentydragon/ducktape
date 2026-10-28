@@ -1,9 +1,9 @@
 //! Graph/source inspection commands and their ID resolution and rendering.
-use crate::gate::InspectionRoots;
-use crate::{GraphCompatibilityScope, emit_report, verify_graph_header_compatibility};
+use crate::emit_report;
 use analysis::DepKind;
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
+use graph_provenance::VerifiedGraphSourceContext;
 use peel::plan::ExplainSession;
 use peel::propose::DEFAULT_SIZE_CAP_LINES;
 use peel::{
@@ -333,7 +333,10 @@ fn resolve_id_as_module_path(id: &str, modules_root: &std::path::Path) -> Result
     Ok(Some(first))
 }
 
-pub(super) fn run_describe(args: DescribeArgs, roots: InspectionRoots) -> Result<()> {
+pub(super) fn run_describe(
+    args: DescribeArgs,
+    source_context: Option<VerifiedGraphSourceContext>,
+) -> Result<()> {
     if args.limit == Some(0) {
         bail!("--limit must be greater than zero; use --all for exhaustive results");
     }
@@ -350,18 +353,7 @@ pub(super) fn run_describe(args: DescribeArgs, roots: InspectionRoots) -> Result
         args.common.clone(),
         args.source_root.clone(),
         args.size_cap_lines,
-    )?;
-    let graph = session.graph();
-    verify_graph_header_compatibility(
-        &args.common.dependency_graph_path,
-        &graph_provenance::GraphHeader {
-            chunk_id: graph.chunk_id.clone(),
-            provenance: graph.provenance.clone(),
-        },
-        &args.common.modules_root,
-        args.source_root.as_deref(),
-        &roots,
-        GraphCompatibilityScope::AuthoredModuleTree { tree_config: None },
+        source_context,
     )?;
     // Finish the entire batch before emitting any result, including NDJSON.
     // A failed item must not leave an apparently successful partial document.
@@ -415,7 +407,10 @@ pub(super) fn run_describe(args: DescribeArgs, roots: InspectionRoots) -> Result
     )
 }
 
-pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
+pub(super) fn run_inspect_source(
+    args: InspectSourceArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
     let mut report = InspectSourceReport {
         query: None,
         selected_source_unit_count: None,
@@ -429,15 +424,18 @@ pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
         let graph = args.graph.clone().context("--id requires --graph")?;
         let modules = args.modules.clone().context("--id requires --modules")?;
         let selection = dispatch_id_selection(id, &modules)?;
-        let selected = run_source_selection_report(&SourceSelectionArgs {
-            common: PeelCommonArgs {
-                dependency_graph_path: graph,
-                modules_root: modules,
+        let selected = run_source_selection_report(
+            &SourceSelectionArgs {
+                common: PeelCommonArgs {
+                    dependency_graph_path: graph,
+                    modules_root: modules,
+                },
+                selection,
+                size_cap_lines: args.size_cap_lines,
+                source_root: args.source_root.clone(),
             },
-            selection,
-            size_cap_lines: args.size_cap_lines,
-            source_root: args.source_root.clone(),
-        })?;
+            source_context,
+        )?;
         report.query = Some(selected.query);
         report.selected_source_unit_count = Some(selected.source_unit_ids.len());
         report.unknown_binding_ids = selected.unknown_binding_ids;
@@ -449,7 +447,22 @@ pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
                 .push(source_unit);
         }
         for (path, source_units) in by_file {
-            let source = PreparedSource::load(&path)?;
+            let source = if let Some(context) = source_context {
+                anyhow::ensure!(
+                    context.input_file() == std::path::Path::new(&path)
+                        && source_units
+                            .iter()
+                            .all(|unit| context.matches_source_path(&unit.source_path)),
+                    "selected source units do not match the verified graph source context"
+                );
+                PreparedSource::from_source(
+                    &path,
+                    context.source_path(),
+                    context.source().to_owned(),
+                )?
+            } else {
+                PreparedSource::load(&path)?
+            };
             let mut by_index: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
             let ordinals: Vec<_> = source_units
                 .iter()
@@ -918,8 +931,11 @@ pub(super) fn run_atoms(args: AtomicGroupsArgs) -> Result<()> {
     )
 }
 
-pub(super) fn run_coverage(args: PatchPlanArgs) -> Result<()> {
-    let report = run_patch_plan_report(&args)?;
+pub(super) fn run_coverage(
+    args: PatchPlanArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
+    let report = run_patch_plan_report(&args, source_context)?;
     emit_report(
         args.format,
         &report,
@@ -928,8 +944,11 @@ pub(super) fn run_coverage(args: PatchPlanArgs) -> Result<()> {
     )
 }
 
-pub(super) fn run_graph_summary(args: GraphSummaryArgs) -> Result<()> {
-    let report = run_graph_summary_report(&args)?;
+pub(super) fn run_graph_summary(
+    args: GraphSummaryArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
+    let report = run_graph_summary_report(&args, source_context)?;
     emit_report(
         args.format,
         &report,

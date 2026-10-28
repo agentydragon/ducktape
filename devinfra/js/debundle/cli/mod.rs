@@ -63,7 +63,7 @@ pub(crate) fn verify_graph_compatibility(
     graph_source_root: Option<&std::path::Path>,
     graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
     tree_config: Option<&std::path::Path>,
-) -> Result<()> {
+) -> Result<graph_provenance::VerifiedGraphSourceContext> {
     verify_graph_compatibility_with_scope(
         graph_path,
         modules_root,
@@ -83,7 +83,7 @@ fn verify_graph_compatibility_with_scope(
     graph_source_root: Option<&std::path::Path>,
     graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
     scope: GraphCompatibilityScope<'_>,
-) -> Result<()> {
+) -> Result<graph_provenance::VerifiedGraphSourceContext> {
     let graph = graph_provenance::read_graph_header(graph_path)?;
     verify_graph_header_compatibility(
         graph_path,
@@ -106,7 +106,7 @@ fn verify_graph_header_compatibility(
     selector_source_root: Option<&std::path::Path>,
     roots: &InspectionRoots,
     scope: GraphCompatibilityScope<'_>,
-) -> Result<()> {
+) -> Result<graph_provenance::VerifiedGraphSourceContext> {
     let (require_module_scope, tree_config) = match scope {
         GraphCompatibilityScope::AuthoredModuleTree { tree_config } => (true, tree_config),
         GraphCompatibilityScope::ExactSourceUnit => (false, None),
@@ -211,74 +211,78 @@ fn verify_graph_header_compatibility(
             }
         }
     }
-    provenance.verify(&current)?;
-    let source = provenance
-        .chunk_sources
-        .iter()
-        .find(|source| source.chunk_id == graph.chunk_id)
-        .with_context(|| {
-            format!(
-                "graph {} lacks source mapping for chunk {}",
-                graph_path.display(),
-                graph.chunk_id
+    let source_context = provenance.verify_chunk_source(&current, &graph.chunk_id)?;
+    let expected_path = graph_provenance::absolute(source_context.input_file())?;
+    let source_path = source_context.source_path().to_string_lossy();
+    let selector_candidate = if let Some(root) = selector_source_root {
+        let canonical_root = graph_provenance::absolute(root)?;
+        let logical_path = source_context.source_path();
+        let candidate = if !logical_path.is_absolute()
+            && graph_provenance::validate_relative_path(logical_path).is_ok()
+        {
+            Some(canonical_root.join(logical_path))
+        } else {
+            None
+        };
+        let root_contains_input =
+            canonical_root.is_dir() && expected_path.starts_with(&canonical_root);
+        let candidate_exists = match candidate.as_ref().map(std::fs::symlink_metadata) {
+            Some(Ok(_)) => true,
+            Some(Err(error)) if error.kind() != std::io::ErrorKind::NotFound => true,
+            _ => false,
+        };
+        let canonical_candidate = if candidate_exists {
+            candidate.as_ref().map(|candidate| {
+                graph_provenance::absolute(candidate).unwrap_or_else(|_| candidate.clone())
+            })
+        } else {
+            None
+        };
+        if !root_contains_input
+            || canonical_candidate
+                .as_ref()
+                .is_some_and(|candidate| candidate != &expected_path)
+        {
+            return Err(GraphMismatch::new(
+                GraphMismatchReason::SelectorSourceRoot {
+                    chunk_id: graph.chunk_id.clone(),
+                    expected: expected_path,
+                    actual: canonical_candidate.unwrap_or_else(|| {
+                        candidate
+                            .clone()
+                            .unwrap_or_else(|| canonical_root.join(logical_path))
+                    }),
+                },
+                regenerate_command.clone(),
+                Some(regenerate_cwd.clone()),
             )
-        })?;
-    let selector_path = if let Some(root) = selector_source_root {
-        graph_provenance::validate_relative_path(&source.source_path)?;
-        Some(root.join(&source.source_path))
+            .into());
+        }
+        candidate.filter(|_| candidate_exists)
     } else {
-        // Legacy source-backed selectors search fallback roots when no flag is
-        // supplied. If that search finds a file, it must be the analyzed one.
-        // If it finds none, a graph/spec-only query can still proceed; a later
-        // source-backed selector read will fail in the resolver as before.
-        anonymous_resolution::resolve_source_file(
-            &source.source_path.to_string_lossy(),
+        anonymous_resolution::find_source_file_candidate(
+            &source_path,
             None,
             graph_path,
             modules_root,
         )
-        .ok()
     };
-    if let Some(path) = selector_path {
-        let expected_path =
-            provenance.resolve(&source.input_file.root, &source.input_file.path, &current)?;
-        let canonical_expected = graph_provenance::absolute(&expected_path)?;
-        let canonical_actual = graph_provenance::absolute(&path)?;
-        if canonical_actual != canonical_expected {
+    if let Some(candidate) = selector_candidate {
+        let canonical_candidate = graph_provenance::absolute(&candidate)?;
+        if canonical_candidate != expected_path {
             return Err(GraphMismatch::new(
                 GraphMismatchReason::SelectorSourceRoot {
                     chunk_id: graph.chunk_id.clone(),
-                    expected: canonical_expected,
-                    actual: canonical_actual,
+                    expected: expected_path,
+                    actual: canonical_candidate,
                 },
-                regenerate_command.clone(),
-                Some(regenerate_cwd.clone()),
-            )
-            .into());
-        }
-        let actual = match std::fs::read(&path) {
-            Ok(bytes) => graph_provenance::sha256(&bytes),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => "missing".to_string(),
-            Err(error) => {
-                return Err(error)
-                    .with_context(|| format!("reading selector source {}", path.display()));
-            }
-        };
-        if actual != source.sha256 {
-            return Err(GraphMismatch::new(
-                GraphMismatchReason::SelectorSource {
-                    path,
-                    chunk_id: graph.chunk_id.clone(),
-                    expected: source.sha256.clone(),
-                    actual,
-                },
-                regenerate_command.clone(),
-                Some(regenerate_cwd.clone()),
+                regenerate_command,
+                Some(regenerate_cwd),
             )
             .into());
         }
     }
-    Ok(())
+    Ok(source_context)
 }
 
 #[derive(Debug, Parser)]
@@ -421,17 +425,20 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
         }
     }
     let graph_package_roots = pipeline::collect_package_roots(args.graph_package_roots)?;
-    if let Err(error) = verify_mixed_graph_command(
+    let source_context = match verify_mixed_graph_command(
         &args.command,
         args.spec_root.as_deref(),
         args.graph_source_root.as_deref(),
         &graph_package_roots,
     ) {
-        if top_level_query_format(&args.command).is_none() {
-            emit_graph_mismatch_json(command_output_format(&args.command), &error);
+        Ok(source_context) => source_context,
+        Err(error) => {
+            if top_level_query_format(&args.command).is_none() {
+                emit_graph_mismatch_json(command_output_format(&args.command), &error);
+            }
+            return Err(error);
         }
-        return Err(error);
-    }
+    };
     let writes_with_graph = match &args.command {
         DebundleCommand::Bindings(args) => args.writes_with_graph(),
         DebundleCommand::Modules(args) => args.writes_with_graph(),
@@ -456,20 +463,21 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
             }
             Ok(())
         }
-        DebundleCommand::Bindings(args) => bindings_commands::run(args),
-        DebundleCommand::Modules(args) => modules_commands::run(args),
+        DebundleCommand::Bindings(args) => bindings_commands::run(args, source_context.as_ref()),
+        DebundleCommand::Modules(args) => modules_commands::run(args, source_context.as_ref()),
         DebundleCommand::Atoms(args) => inspection_commands::run_atoms(args),
-        DebundleCommand::Coverage(args) => inspection_commands::run_coverage(args),
-        DebundleCommand::GraphSummary(args) => inspection_commands::run_graph_summary(args),
-        DebundleCommand::Describe(describe_args) => inspection_commands::run_describe(
-            describe_args,
-            InspectionRoots {
-                spec_root: args.spec_root.clone(),
-                graph_source_root: args.graph_source_root.clone(),
-                graph_package_roots: graph_package_roots.clone(),
-            },
-        ),
-        DebundleCommand::InspectSource(args) => inspection_commands::run_inspect_source(args),
+        DebundleCommand::Coverage(args) => {
+            inspection_commands::run_coverage(args, source_context.as_ref())
+        }
+        DebundleCommand::GraphSummary(args) => {
+            inspection_commands::run_graph_summary(args, source_context.as_ref())
+        }
+        DebundleCommand::Describe(describe_args) => {
+            inspection_commands::run_describe(describe_args, source_context)
+        }
+        DebundleCommand::InspectSource(args) => {
+            inspection_commands::run_inspect_source(args, source_context.as_ref())
+        }
         DebundleCommand::Scc(args) => run_scc(args),
         DebundleCommand::Cluster(args) => run_cluster(args),
         DebundleCommand::Spec(args) => spec_commands::run(args),
@@ -637,7 +645,7 @@ fn verify_mixed_graph_command(
     spec_root: Option<&std::path::Path>,
     graph_source_root: Option<&std::path::Path>,
     graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
-) -> Result<()> {
+) -> Result<Option<graph_provenance::VerifiedGraphSourceContext>> {
     match command {
         DebundleCommand::Bindings(args) => {
             args.verify_graph(spec_root, graph_source_root, graph_package_roots)
@@ -653,7 +661,8 @@ fn verify_mixed_graph_command(
             graph_source_root,
             graph_package_roots,
             None,
-        ),
+        )
+        .map(Some),
         DebundleCommand::GraphSummary(args) if args.include_proposals => {
             verify_graph_compatibility(
                 &args.common.dependency_graph_path,
@@ -664,7 +673,18 @@ fn verify_mixed_graph_command(
                 graph_package_roots,
                 None,
             )
+            .map(Some)
         }
+        DebundleCommand::Describe(args) => verify_graph_compatibility(
+            &args.common.dependency_graph_path,
+            &args.common.modules_root,
+            args.source_root.as_deref(),
+            spec_root,
+            graph_source_root,
+            graph_package_roots,
+            None,
+        )
+        .map(Some),
         DebundleCommand::InspectSource(args) if args.id.is_some() => {
             let graph = args.graph.as_deref().context("--id requires --graph")?;
             let modules = args.modules.as_deref().context("--id requires --modules")?;
@@ -685,8 +705,9 @@ fn verify_mixed_graph_command(
                     GraphCompatibilityScope::AuthoredModuleTree { tree_config: None }
                 },
             )
+            .map(Some)
         }
-        _ => Ok(()),
+        _ => Ok(None),
     }
 }
 

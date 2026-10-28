@@ -39,7 +39,19 @@ impl PreparedSource {
         let path = path.as_ref().to_path_buf();
         let source = std::fs::read_to_string(&path)
             .with_context(|| format!("reading source file {}", path.display()))?;
-        let parsed = parse_js_module_consuming(&path.display().to_string(), source)
+        Self::from_source(&path, &path, source)
+    }
+
+    /// Parse verified in-memory source while retaining its physical path for
+    /// reports and its logical path for parser/source-unit identity.
+    pub fn from_source(
+        physical_path: impl AsRef<Path>,
+        source_identity: impl AsRef<Path>,
+        source: impl Into<String>,
+    ) -> Result<Self> {
+        let path = physical_path.as_ref().to_path_buf();
+        let identity = source_identity.as_ref();
+        let parsed = parse_js_module_consuming(&identity.display().to_string(), source.into())
             .with_context(|| format!("parsing source file {}", path.display()))?;
         let source = parsed.source_text();
         let line_starts = std::iter::once(0)

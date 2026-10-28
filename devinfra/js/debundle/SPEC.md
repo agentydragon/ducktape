@@ -180,6 +180,18 @@ module claims. It skips the authored module-scope check, allowing flat-spec
 graphs, while retaining captured-input, engine, and source identity checks.
 Other graph-backed selections and edits require the authored scope.
 
+Each graph chunk maps a logical `source_path` to the physical `input_file`
+whose bytes were parsed. Selector resolution keeps the logical path as its
+parser identity and uses source bytes retained by graph verification. A
+logical alias may have no file at `--source-root/<source_path>`; the verified
+chunk mapping still identifies its input. When `--source-root` is supplied, it
+must contain the resolved physical input, and any existing logical-path
+candidate beneath that root must resolve to the same file. Equal content at
+another path does not satisfy this identity check. Relocate physical inputs
+with `--graph-source-root`, which maps each captured source-root-relative path
+under the new root. `--source-root` is only a selector lookup boundary and
+does not change that physical mapping.
+
 Description reports include `module_proposals` and `module_proposal_diagnostics`
 only when proposal analysis runs. Their limits sections use the same field names.
 Proposals name their outgoing residual quotient-class dependencies with

@@ -26,6 +26,7 @@ use analysis::{
     AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DepKind, DependencyEdgeReport,
     DependencyGraphReport, QuotientEdgeReport, SourceLocation, SourceUnitReport,
 };
+use graph_provenance::VerifiedGraphSourceContext;
 use spec_modules::{
     collect_module_files, default_binding_patches_path, load_binding_patch_members,
     module_path_from_file, read_module_claims, read_module_file,
@@ -507,12 +508,16 @@ pub fn print_ndjson_list<T: Serialize>(items: &[T], format: OutputFormat) -> Res
     Ok(true)
 }
 
-pub fn run_plan_work_report(args: &PlanWorkArgs) -> Result<PlanWorkReport> {
+pub fn run_plan_work_report(
+    args: &PlanWorkArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<PlanWorkReport> {
     let mut report = propose_from_files(&ProposalOptions {
         dependency_graph_path: args.common.dependency_graph_path.clone(),
         modules_root: args.common.modules_root.clone(),
         tree_config: args.tree_config.clone(),
         source_root: args.source_root.clone(),
+        source_context: source_context.cloned(),
         size_cap_lines: args.size_cap_lines,
     })?;
     let mut sections = BTreeMap::new();
@@ -575,7 +580,10 @@ pub fn run_atomic_groups_report(args: &AtomicGroupsArgs) -> Result<AtomicGroupsR
     })
 }
 
-pub fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
+pub fn run_patch_plan_report(
+    args: &PatchPlanArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<PatchPlanReport> {
     let graph = load_graph(&args.common.dependency_graph_path)?;
     let propose = if args.include_proposals {
         Some(propose_from_graph(
@@ -585,6 +593,7 @@ pub fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
                 modules_root: args.common.modules_root.clone(),
                 tree_config: None,
                 source_root: args.source_root.clone(),
+                source_context: source_context.cloned(),
                 size_cap_lines: DEFAULT_SIZE_CAP_LINES,
             },
         )?)
@@ -596,6 +605,7 @@ pub fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
         &args.common.dependency_graph_path,
         &args.common.modules_root,
         args.source_root.as_deref(),
+        source_context,
         propose.as_ref(),
     )?;
     rows.sort_by_key(|row| (row.status, row.path.clone()));
@@ -620,7 +630,10 @@ pub fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
     })
 }
 
-pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryReport> {
+pub fn run_graph_summary_report(
+    args: &GraphSummaryArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<GraphSummaryReport> {
     let graph = load_graph(&args.common.dependency_graph_path)?;
     let propose = if args.include_proposals {
         Some(propose_from_graph(
@@ -630,6 +643,7 @@ pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryR
                 modules_root: args.common.modules_root.clone(),
                 tree_config: None,
                 source_root: args.source_root.clone(),
+                source_context: source_context.cloned(),
                 size_cap_lines: args.size_cap_lines,
             },
         )?)
@@ -697,9 +711,16 @@ pub struct ExplainSession {
     graph: DependencyGraphReport,
     common: CommonArgs,
     source_root: Option<PathBuf>,
+    source_context: Option<VerifiedGraphSourceContext>,
     size_cap_lines: usize,
     binding_homes: Option<Vec<BindingHomeReport>>,
     proposals: Option<ProposalsReport>,
+}
+
+#[derive(Clone, Copy)]
+struct SourceLookup<'a> {
+    root: Option<&'a Path>,
+    verified: Option<&'a VerifiedGraphSourceContext>,
 }
 
 impl ExplainSession {
@@ -707,11 +728,13 @@ impl ExplainSession {
         common: CommonArgs,
         source_root: Option<PathBuf>,
         size_cap_lines: usize,
+        source_context: Option<VerifiedGraphSourceContext>,
     ) -> Result<Self> {
         Ok(Self {
             graph: load_graph(&common.dependency_graph_path)?,
             common,
             source_root,
+            source_context,
             size_cap_lines,
             binding_homes: None,
             proposals: None,
@@ -739,6 +762,7 @@ impl ExplainSession {
                     modules_root: self.common.modules_root.clone(),
                     tree_config: None,
                     source_root: self.source_root.clone(),
+                    source_context: self.source_context.clone(),
                     size_cap_lines: self.size_cap_lines,
                 },
             )?);
@@ -747,7 +771,10 @@ impl ExplainSession {
             args,
             &self.graph,
             &self.common,
-            self.source_root.as_deref(),
+            SourceLookup {
+                root: self.source_root.as_deref(),
+                verified: self.source_context.as_ref(),
+            },
             self.size_cap_lines,
             self.binding_homes.as_deref().expect("loaded above"),
             if needs_proposals {
@@ -763,7 +790,7 @@ fn explain_from_graph(
     args: &ExplainArgs,
     graph: &DependencyGraphReport,
     common: &CommonArgs,
-    source_root: Option<&Path>,
+    source_lookup: SourceLookup<'_>,
     size_cap_lines: usize,
     homes: &[BindingHomeReport],
     propose: Option<&ProposalsReport>,
@@ -779,7 +806,8 @@ fn explain_from_graph(
         graph,
         common,
         size_cap_lines,
-        source_root,
+        source_lookup.root,
+        source_lookup.verified,
         propose,
     )?;
     let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
@@ -1096,7 +1124,10 @@ fn edge_census_rows(edges: &[DependencyEdgeReport]) -> Vec<EdgeCensusRow> {
         .collect()
 }
 
-pub fn run_source_selection_report(args: &SourceSelectionArgs) -> Result<SourceSelectionReport> {
+pub fn run_source_selection_report(
+    args: &SourceSelectionArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<SourceSelectionReport> {
     let graph = load_graph(&args.common.dependency_graph_path)?;
     let selection = &args.selection;
     let query = query_report(selection);
@@ -1109,6 +1140,7 @@ pub fn run_source_selection_report(args: &SourceSelectionArgs) -> Result<SourceS
         &args.common,
         args.size_cap_lines,
         args.source_root.as_deref(),
+        source_context,
         None,
     )?;
     let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
@@ -1129,6 +1161,7 @@ pub fn run_source_selection_report(args: &SourceSelectionArgs) -> Result<SourceS
                     args.source_root.as_deref(),
                     &args.common.dependency_graph_path,
                     &args.common.modules_root,
+                    source_context,
                 )?
                 .display()
                 .to_string();
@@ -1289,6 +1322,7 @@ fn patch_plan_rows(
     dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
+    source_context: Option<&VerifiedGraphSourceContext>,
     propose: Option<&ProposalsReport>,
 ) -> Result<Vec<PatchPlanRow>> {
     let binding_to_source_units = binding_to_source_units(graph);
@@ -1307,6 +1341,7 @@ fn patch_plan_rows(
         dependency_graph_path,
         modules_root,
         source_root,
+        source_context,
         &patch_sets
             .iter()
             .map(|patch_set| SourceClaimSet {
@@ -1600,6 +1635,7 @@ fn resolve_source_unit_ids(
     common: &CommonArgs,
     size_cap_lines: usize,
     source_root: Option<&Path>,
+    source_context: Option<&VerifiedGraphSourceContext>,
     propose: Option<&ProposalsReport>,
 ) -> Result<ResolvedSelection> {
     let mut unknown_binding_ids: Vec<String> = Vec::new();
@@ -1615,8 +1651,13 @@ fn resolve_source_unit_ids(
             }
         }
         SelectionKind::ModulePath(module_path) => {
-            let (resolved, unknown) =
-                resolve_module_path_source_unit_ids(graph, common, source_root, module_path)?;
+            let (resolved, unknown) = resolve_module_path_source_unit_ids(
+                graph,
+                common,
+                source_root,
+                source_context,
+                module_path,
+            )?;
             unknown_binding_ids = unknown;
             resolved
         }
@@ -1653,6 +1694,7 @@ fn resolve_source_unit_ids(
                         modules_root: common.modules_root.clone(),
                         tree_config: None,
                         source_root: source_root.map(Path::to_path_buf),
+                        source_context: source_context.cloned(),
                         size_cap_lines,
                     },
                 )?;
@@ -1684,6 +1726,7 @@ fn resolve_source_unit_ids(
                         modules_root: common.modules_root.clone(),
                         tree_config: None,
                         source_root: source_root.map(Path::to_path_buf),
+                        source_context: source_context.cloned(),
                         size_cap_lines,
                     },
                 )?;
@@ -1717,6 +1760,7 @@ fn resolve_module_path_source_unit_ids(
     graph: &DependencyGraphReport,
     common: &CommonArgs,
     source_root: Option<&Path>,
+    source_context: Option<&VerifiedGraphSourceContext>,
     module_path: &str,
 ) -> Result<(Vec<String>, Vec<String>)> {
     let yaml_path = common.modules_root.join(format!("{module_path}.yaml"));
@@ -1752,6 +1796,7 @@ fn resolve_module_path_source_unit_ids(
         &common.dependency_graph_path,
         &common.modules_root,
         source_root,
+        source_context,
         &module_files
             .iter()
             .zip(&all_claims)

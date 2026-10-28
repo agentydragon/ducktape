@@ -58,6 +58,7 @@ use anonymous_resolution::{
     resolve_source_claims,
 };
 use anyhow::{Context, Result, bail};
+use graph_provenance::VerifiedGraphSourceContext;
 use serde::Serialize;
 use spec::{BindingSourceKind, MemberSelectorSpec, ModulePath};
 use spec_modules::{
@@ -91,11 +92,15 @@ pub struct GraphEditArgs {
 }
 
 impl GraphEditArgs {
-    pub fn gate(&self) -> Result<Gate<'_>> {
+    pub fn gate<'a>(
+        &'a self,
+        source_context: Option<&'a VerifiedGraphSourceContext>,
+    ) -> Result<Gate<'a>> {
         Gate::from_cli(
             self.no_verify,
             self.dependency_graph_path.as_deref(),
             self.source_root.as_deref(),
+            source_context,
         )
     }
 }
@@ -113,9 +118,17 @@ pub enum Gate<'a> {
         /// Root used to resolve relative `source_location.source_path`
         /// values when the gate resolves source-backed selectors.
         source_root: Option<&'a Path>,
+        /// The graph-preflighted physical source and retained input bytes.
+        source_context: Option<&'a VerifiedGraphSourceContext>,
     },
     /// `--no-verify`: skip all validation.
     Skip,
+}
+
+#[derive(Clone, Copy)]
+struct EditSourceLookup<'a> {
+    root: Option<&'a Path>,
+    verified: Option<&'a VerifiedGraphSourceContext>,
 }
 
 impl<'a> Gate<'a> {
@@ -125,12 +138,17 @@ impl<'a> Gate<'a> {
         no_verify: bool,
         graph: Option<&'a Path>,
         source_root: Option<&'a Path>,
+        source_context: Option<&'a VerifiedGraphSourceContext>,
     ) -> Result<Self> {
         if no_verify {
             return Ok(Self::Skip);
         }
         match graph {
-            Some(graph) => Ok(Self::Run { graph, source_root }),
+            Some(graph) => Ok(Self::Run {
+                graph,
+                source_root,
+                source_context,
+            }),
             None => bail!(
                 "realizability gate requires --graph (path to dependency_graph.json) or --no-verify"
             ),
@@ -171,10 +189,17 @@ impl<'a> Gate<'a> {
         expected: &[ExpectedResolvedMember],
     ) -> Result<()> {
         match self {
-            Self::Run { graph, source_root } => gate_post_edit_assignment_with_expected(
+            Self::Run {
+                graph,
+                source_root,
+                source_context,
+            } => gate_post_edit_assignment_with_expected(
                 graph,
                 modules_root,
-                *source_root,
+                EditSourceLookup {
+                    root: *source_root,
+                    verified: *source_context,
+                },
                 &post_spec()?,
                 expected,
                 None,
@@ -802,7 +827,10 @@ pub fn gate_post_edit_assignment(
     gate_post_edit_assignment_with_expected(
         dependency_graph_path,
         modules_root,
-        source_root,
+        EditSourceLookup {
+            root: source_root,
+            verified: None,
+        },
         post_spec,
         &[],
         None,
@@ -816,6 +844,7 @@ pub fn gate_post_edit_assignment_with_expected_source_unit_modules(
     dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
+    source_context: Option<&VerifiedGraphSourceContext>,
     post_spec: &PostEditSpec,
     expected_source_unit_modules: &SourceUnitModuleAssignments,
     scope: Option<&ModuleTreeScope>,
@@ -823,7 +852,10 @@ pub fn gate_post_edit_assignment_with_expected_source_unit_modules(
     gate_post_edit_assignment_with_expected(
         dependency_graph_path,
         modules_root,
-        source_root,
+        EditSourceLookup {
+            root: source_root,
+            verified: source_context,
+        },
         post_spec,
         &[],
         Some(expected_source_unit_modules),
@@ -834,7 +866,7 @@ pub fn gate_post_edit_assignment_with_expected_source_unit_modules(
 fn gate_post_edit_assignment_with_expected(
     dependency_graph_path: &Path,
     modules_root: &Path,
-    source_root: Option<&Path>,
+    source_lookup: EditSourceLookup<'_>,
     post_spec: &PostEditSpec,
     expected: &[ExpectedResolvedMember],
     expected_source_unit_modules: Option<&SourceUnitModuleAssignments>,
@@ -863,7 +895,8 @@ fn gate_post_edit_assignment_with_expected(
         &dependency_graph_report,
         dependency_graph_path,
         modules_root,
-        source_root,
+        source_lookup.root,
+        source_lookup.verified,
         &claim_sets,
     )?;
     let claim_projection =

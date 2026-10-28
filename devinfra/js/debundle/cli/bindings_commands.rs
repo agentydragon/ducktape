@@ -11,6 +11,7 @@ use crate::emit_report;
 use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
+use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
 use std::path::PathBuf;
 
@@ -45,14 +46,14 @@ impl BindingsNs {
         spec_root: Option<&std::path::Path>,
         graph_source_root: Option<&std::path::Path>,
         graph_package_roots: &std::collections::BTreeMap<String, PathBuf>,
-    ) -> Result<()> {
+    ) -> Result<Option<VerifiedGraphSourceContext>> {
         let edit = match &self.command {
             BindingsNsCommand::Assign(args) => &args.edit,
             BindingsNsCommand::Unassign(args) => &args.edit,
-            _ => return Ok(()),
+            _ => return Ok(None),
         };
         if let Some(graph) = &edit.dependency_graph_path {
-            crate::verify_graph_compatibility(
+            return crate::verify_graph_compatibility(
                 graph,
                 &edit.modules_root,
                 edit.source_root.as_deref(),
@@ -60,9 +61,10 @@ impl BindingsNs {
                 graph_source_root,
                 graph_package_roots,
                 None,
-            )?;
+            )
+            .map(Some);
         }
-        Ok(())
+        Ok(None)
     }
 }
 
@@ -301,7 +303,10 @@ fn run_bindings_rename_cmd(args: BindingsRenameArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_bindings_assign_cmd(args: BindingsAssignArgs) -> Result<()> {
+fn run_bindings_assign_cmd(
+    args: BindingsAssignArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
     use std::io::Read;
     let mut moves: Vec<Move> = Vec::new();
     for t in &args.triples {
@@ -320,7 +325,7 @@ fn run_bindings_assign_cmd(args: BindingsAssignArgs) -> Result<()> {
     // `GraphEditArgs::gate` is the shared "graph or no-verify" policy
     // every mutating verb uses; no verb can silently skip the
     // realizability gate.
-    let gate = args.edit.gate()?;
+    let gate = args.edit.gate(source_context)?;
     let out = match run_bindings_assign(&args.edit.modules_root, moves, args.edit.dry_run, gate) {
         Ok(out) => out,
         Err(err) => {
@@ -332,8 +337,11 @@ fn run_bindings_assign_cmd(args: BindingsAssignArgs) -> Result<()> {
     print_assign_outcome(&out, format)
 }
 
-fn run_bindings_unassign_cmd(args: BindingsUnassignArgs) -> Result<()> {
-    let gate = args.edit.gate()?;
+fn run_bindings_unassign_cmd(
+    args: BindingsUnassignArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
+    let gate = args.edit.gate(source_context)?;
     let out =
         match run_bindings_unassign(&args.edit.modules_root, args.syms, args.edit.dry_run, gate) {
             Ok(out) => out,
@@ -378,12 +386,15 @@ fn print_assign_outcome(out: &AssignOutcome, format: OutputFormat) -> Result<()>
     }
 }
 
-pub(super) fn run(args: BindingsNs) -> Result<()> {
+pub(super) fn run(
+    args: BindingsNs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
     match args.command {
         BindingsNsCommand::Comment(c) => run_binding_comment_cmd(c),
         BindingsNsCommand::List(l) => run_bindings_list_cmd(l),
         BindingsNsCommand::Rename(r) => run_bindings_rename_cmd(r),
-        BindingsNsCommand::Assign(a) => run_bindings_assign_cmd(a),
-        BindingsNsCommand::Unassign(u) => run_bindings_unassign_cmd(u),
+        BindingsNsCommand::Assign(a) => run_bindings_assign_cmd(a, source_context),
+        BindingsNsCommand::Unassign(u) => run_bindings_unassign_cmd(u, source_context),
     }
 }

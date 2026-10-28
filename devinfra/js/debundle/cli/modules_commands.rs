@@ -8,6 +8,7 @@ use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
 use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
+use graph_provenance::VerifiedGraphSourceContext;
 use peel::propose::{
     DEFAULT_SIZE_CAP_LINES, ModuleDecompositionCoarseningMode, ModuleDecompositionOptions,
     ModuleDecompositionReport, ModuleDecompositionStrategy, ProposalOptions,
@@ -57,7 +58,7 @@ impl ModulesNs {
         spec_root: Option<&std::path::Path>,
         graph_source_root: Option<&std::path::Path>,
         graph_package_roots: &std::collections::BTreeMap<String, PathBuf>,
-    ) -> Result<()> {
+    ) -> Result<Option<VerifiedGraphSourceContext>> {
         match &self.command {
             ModulesNsCommand::Merge(args) => verify_edit(
                 &args.edit,
@@ -79,7 +80,8 @@ impl ModulesNs {
                 graph_source_root,
                 graph_package_roots,
                 args.tree_config.as_deref(),
-            ),
+            )
+            .map(Some),
             ModulesNsCommand::Apply(args) => crate::verify_graph_compatibility(
                 &args.graph,
                 &args.modules_root,
@@ -88,7 +90,8 @@ impl ModulesNs {
                 graph_source_root,
                 graph_package_roots,
                 args.tree_config.as_deref(),
-            ),
+            )
+            .map(Some),
             ModulesNsCommand::Refine(args) => crate::verify_graph_compatibility(
                 &args.graph,
                 &args.modules_root,
@@ -97,7 +100,8 @@ impl ModulesNs {
                 graph_source_root,
                 graph_package_roots,
                 args.tree_config.as_deref(),
-            ),
+            )
+            .map(Some),
             ModulesNsCommand::Decompose(args) => crate::verify_graph_compatibility(
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,
@@ -106,8 +110,9 @@ impl ModulesNs {
                 graph_source_root,
                 graph_package_roots,
                 args.tree_config.as_deref(),
-            ),
-            _ => Ok(()),
+            )
+            .map(Some),
+            _ => Ok(None),
         }
     }
 }
@@ -117,9 +122,9 @@ fn verify_edit(
     spec_root: Option<&std::path::Path>,
     graph_source_root: Option<&std::path::Path>,
     graph_package_roots: &std::collections::BTreeMap<String, PathBuf>,
-) -> Result<()> {
+) -> Result<Option<VerifiedGraphSourceContext>> {
     if let Some(graph) = &edit.dependency_graph_path {
-        crate::verify_graph_compatibility(
+        return crate::verify_graph_compatibility(
             graph,
             &edit.modules_root,
             edit.source_root.as_deref(),
@@ -127,9 +132,10 @@ fn verify_edit(
             graph_source_root,
             graph_package_roots,
             None,
-        )?;
+        )
+        .map(Some);
     }
-    Ok(())
+    Ok(None)
 }
 
 #[derive(Debug, Subcommand)]
@@ -582,7 +588,10 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
     }
 }
 
-fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
+fn run_module_decompose(
+    args: ModuleDecomposeArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
     anyhow::ensure!(
         !args.include_residual || args.atomic,
         "--include-residual requires --atomic"
@@ -593,6 +602,7 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
             modules_root: args.common.modules_root,
             tree_config: args.tree_config,
             source_root: args.source_root,
+            source_context: source_context.cloned(),
             size_cap_lines: DEFAULT_SIZE_CAP_LINES,
         },
         ModuleDecompositionOptions {
@@ -626,7 +636,10 @@ fn run_module_decompose(args: ModuleDecomposeArgs) -> Result<()> {
     )
 }
 
-fn run_modules_refine(args: ModulesRefineArgs) -> Result<()> {
+fn run_modules_refine(
+    args: ModulesRefineArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
     let text = if args.batch == "-" {
         let mut text = String::new();
         std::io::stdin().read_to_string(&mut text)?;
@@ -640,6 +653,7 @@ fn run_modules_refine(args: ModulesRefineArgs) -> Result<()> {
         &args.modules_root,
         &args.graph,
         &args.source_root,
+        source_context,
         args.tree_config.as_deref(),
         assignments,
         args.dry_run,
@@ -699,13 +713,16 @@ fn render_plan_work_text(report: &peel::PlanWorkReport, out: &mut String) {
     }
 }
 
-pub(super) fn run(args: ModulesNs) -> Result<()> {
+pub(super) fn run(
+    args: ModulesNs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
     match args.command {
         ModulesNsCommand::Comment(c) => run_module_comment_cmd(c),
-        ModulesNsCommand::Merge(m) => run_merge(m),
-        ModulesNsCommand::Delete(d) => run_delete(d),
+        ModulesNsCommand::Merge(m) => run_merge(m, source_context),
+        ModulesNsCommand::Delete(d) => run_delete(d, source_context),
         ModulesNsCommand::Propose(p) => {
-            let report = run_plan_work_report(&p)?;
+            let report = run_plan_work_report(&p, source_context)?;
             emit_report(
                 p.format,
                 &report,
@@ -713,9 +730,9 @@ pub(super) fn run(args: ModulesNs) -> Result<()> {
                 "writing propose output",
             )
         }
-        ModulesNsCommand::Decompose(args) => run_module_decompose(args),
-        ModulesNsCommand::Apply(args) => run_modules_apply(args),
-        ModulesNsCommand::Refine(args) => run_modules_refine(args),
+        ModulesNsCommand::Decompose(args) => run_module_decompose(args, source_context),
+        ModulesNsCommand::Apply(args) => run_modules_apply(args, source_context),
+        ModulesNsCommand::Refine(args) => run_modules_refine(args, source_context),
         ModulesNsCommand::List(args) => run_modules_list(args),
     }
 }

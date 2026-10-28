@@ -54,6 +54,7 @@ use anonymous_resolution::{
     ResolvedSourceClaims, SourceClaimSet, addressable_anonymous_statement_source_unit_ids,
     resolve_source_claims,
 };
+use graph_provenance::VerifiedGraphSourceContext;
 use spec::{MemberSelectorSpec, ModulePath};
 use spec_modules::{
     ModuleClaims, collect_module_files, load_active_claims, module_claims, module_path_from_file,
@@ -82,6 +83,8 @@ pub struct ProposalOptions {
     /// Optional tree config that scopes active claims to the graph's chunk.
     pub tree_config: Option<PathBuf>,
     pub source_root: Option<PathBuf>,
+    /// Source bytes verified by graph preflight for the graph's chunk.
+    pub source_context: Option<VerifiedGraphSourceContext>,
     /// Hard ceiling (in summed source-line counts) per emitted
     /// proposal. Frontiers exceeding the cap appear as diagnostics.
     pub size_cap_lines: usize,
@@ -492,16 +495,18 @@ pub fn propose_from_graph(
     options: &ProposalOptions,
 ) -> Result<ProposalsReport> {
     let claims = active_claims_from_options(graph, options)?;
-    let addressable_anonymous_source_unit_ids = if options.source_root.is_some() {
-        Some(addressable_anonymous_statement_source_unit_ids(
-            graph,
-            &options.dependency_graph_path,
-            &options.modules_root,
-            options.source_root.as_deref(),
-        )?)
-    } else {
-        None
-    };
+    let addressable_anonymous_source_unit_ids =
+        if options.source_root.is_some() || options.source_context.is_some() {
+            Some(addressable_anonymous_statement_source_unit_ids(
+                graph,
+                &options.dependency_graph_path,
+                &options.modules_root,
+                options.source_root.as_deref(),
+                options.source_context.as_ref(),
+            )?)
+        } else {
+            None
+        };
     propose_with_context(
         graph,
         &claims,
@@ -1052,6 +1057,7 @@ fn resolve_decomposition_claims(
         &options.dependency_graph_path,
         &options.modules_root,
         Some(source_root),
+        options.source_context.as_ref(),
         &claim_sets,
     )?;
 

@@ -102,6 +102,44 @@ pub struct CurrentRoots {
     pub packages: BTreeMap<String, PathBuf>,
 }
 
+/// The source bytes and physical path verified for one graph's chunk.
+/// `source_path` remains the graph/selector identity; `input_file` is the
+/// physical file that supplied those bytes to analysis.
+#[derive(Debug, Clone)]
+pub struct VerifiedGraphSourceContext {
+    chunk_id: String,
+    source_path: PathBuf,
+    input_file: PathBuf,
+    sha256: String,
+    source: Arc<str>,
+}
+
+impl VerifiedGraphSourceContext {
+    pub fn chunk_id(&self) -> &str {
+        &self.chunk_id
+    }
+
+    pub fn source_path(&self) -> &Path {
+        &self.source_path
+    }
+
+    pub fn input_file(&self) -> &Path {
+        &self.input_file
+    }
+
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
+
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    pub fn matches_source_path(&self, source_path: &str) -> bool {
+        self.source_path == Path::new(source_path)
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct GraphMismatch {
     #[serde(flatten)]
@@ -741,6 +779,23 @@ impl GraphProvenance {
     }
 
     pub fn verify(&self, current: &CurrentRoots) -> Result<()> {
+        self.verify_with_source_context(current, None).map(|_| ())
+    }
+
+    pub fn verify_chunk_source(
+        &self,
+        current: &CurrentRoots,
+        chunk_id: &str,
+    ) -> Result<VerifiedGraphSourceContext> {
+        self.verify_with_source_context(current, Some(chunk_id))?
+            .context("verified graph source context was not requested")
+    }
+
+    fn verify_with_source_context(
+        &self,
+        current: &CurrentRoots,
+        chunk_id: Option<&str>,
+    ) -> Result<Option<VerifiedGraphSourceContext>> {
         let (regenerate_command, regenerate_cwd) = self.regeneration_recipe(current)?;
         let engine = engine_sha256()?;
         if engine != self.engine_sha256 {
@@ -754,6 +809,50 @@ impl GraphProvenance {
             )
             .into());
         }
+        let mut chunk_ids = std::collections::BTreeSet::new();
+        for source in &self.chunk_sources {
+            anyhow::ensure!(
+                chunk_ids.insert(source.chunk_id.as_str()),
+                "graph provenance has multiple source mappings for chunk {}",
+                source.chunk_id
+            );
+        }
+        let source = if let Some(chunk_id) = chunk_id {
+            let mut matches = self
+                .chunk_sources
+                .iter()
+                .filter(|source| source.chunk_id == chunk_id);
+            let source = matches.next().with_context(|| {
+                format!("graph provenance lacks source mapping for chunk {chunk_id}")
+            })?;
+            anyhow::ensure!(
+                matches.next().is_none(),
+                "graph provenance has multiple source mappings for chunk {chunk_id}"
+            );
+            let matching_files = self.files.iter().filter(|file| {
+                file.root == source.input_file.root && file.path == source.input_file.path
+            });
+            let mut matching_files = matching_files;
+            let input_file = matching_files.next().with_context(|| {
+                format!(
+                    "captured source input {} is missing from graph fingerprints",
+                    source.input_file.path.display()
+                )
+            })?;
+            anyhow::ensure!(
+                matching_files.next().is_none(),
+                "captured source input {} has multiple graph fingerprints",
+                source.input_file.path.display()
+            );
+            anyhow::ensure!(
+                input_file.sha256 == source.sha256,
+                "captured source digest differs from its graph input fingerprint for chunk {chunk_id}"
+            );
+            Some((source, input_file))
+        } else {
+            None
+        };
+        let mut verified_source_bytes = None;
         for membership in &self.yaml_memberships {
             let dir = self.resolve(&membership.root, &membership.directory, current)?;
             if !dir.is_dir() {
@@ -799,11 +898,18 @@ impl GraphProvenance {
         }
         for file in &self.files {
             let path = self.resolve(&file.root, &file.path, current)?;
-            let actual = match fs::read(&path) {
-                Ok(bytes) => sha256(&bytes),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => "missing".to_string(),
+            let (actual, contents) = match fs::read(&path) {
+                Ok(contents) => (sha256(&contents), Some(contents)),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    ("missing".to_string(), None)
+                }
                 Err(err) => return Err(err).with_context(|| format!("reading {}", path.display())),
             };
+            if source.is_some_and(|(source, _)| {
+                source.input_file.root == file.root && source.input_file.path == file.path
+            }) {
+                verified_source_bytes = contents;
+            }
             if actual != file.sha256 {
                 return Err(GraphMismatch::new(
                     GraphMismatchReason::File {
@@ -832,7 +938,30 @@ impl GraphProvenance {
                 .into());
             }
         }
-        Ok(())
+        let Some((source, _)) = source else {
+            return Ok(None);
+        };
+        let bytes = verified_source_bytes.with_context(|| {
+            format!(
+                "verified graph input did not retain source bytes for chunk {}",
+                source.chunk_id
+            )
+        })?;
+        anyhow::ensure!(
+            sha256(&bytes) == source.sha256,
+            "verified source bytes do not match chunk {} digest",
+            source.chunk_id
+        );
+        let input_file = self.resolve(&source.input_file.root, &source.input_file.path, current)?;
+        Ok(Some(VerifiedGraphSourceContext {
+            chunk_id: source.chunk_id.clone(),
+            source_path: source.source_path.clone(),
+            input_file: absolute(&input_file)?,
+            sha256: source.sha256.clone(),
+            source: Arc::from(
+                String::from_utf8(bytes).context("captured JavaScript source is not UTF-8")?,
+            ),
+        }))
     }
 }
 

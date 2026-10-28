@@ -1088,6 +1088,7 @@ pub fn run_source_unit_refine(
     modules_root: &Path,
     dependency_graph_path: &Path,
     source_root: &Path,
+    source_context: Option<&graph_provenance::VerifiedGraphSourceContext>,
     tree_config: Option<&Path>,
     assignments: Vec<SourceUnitAssignment>,
     dry_run: bool,
@@ -1115,6 +1116,7 @@ pub fn run_source_unit_refine(
         dependency_graph_path,
         modules_root,
         Some(source_root),
+        source_context,
         &claim_sets,
     )?;
     let claim_projection = project_source_unit_claims(&dependency_graph, &initial_spec, &resolved)?;
@@ -1440,6 +1442,7 @@ pub fn run_source_unit_refine(
         dependency_graph_path,
         modules_root,
         Some(source_root),
+        source_context,
         &post_spec,
         &expected_source_unit_modules,
         scope.as_ref(),

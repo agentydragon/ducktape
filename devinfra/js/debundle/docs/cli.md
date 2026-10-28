@@ -72,7 +72,7 @@ both are set.
 | ------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--graph <path>`                | `DEBUNDLE_GRAPH`             | `dependency_graph.json` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation. |
 | `--modules <dir>`               | `DEBUNDLE_MODULES`           | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                                 |
-| `--source-root <dir>`           | `DEBUNDLE_SOURCE_ROOT`       | Upstream snapshot root containing the original chunk bytes, used to resolve source-backed selectors and typed binding pins.                                      |
+| `--source-root <dir>`           | `DEBUNDLE_SOURCE_ROOT`       | Selector lookup root. It must contain the graph's verified physical input; an existing logical-path candidate must resolve to that same file. Missing alias paths use the captured chunk-to-input mapping. |
 | `--tree-config <file>`          | `DEBUNDLE_TREE_CONFIG`       | For graph-backed `modules` edits and queries, scope an app-level modules tree to the chunk named by `--graph`.                                                   |
 | `--spec-root <dir>`             | `DEBUNDLE_SPEC_ROOT`         | Current common root of the tree config, vendor marks and modules after relocation. Global flag; the flag wins over the env var.                                  |
 | `--graph-source-root <dir>`     | `DEBUNDLE_GRAPH_SOURCE_ROOT` | Current root of the analyzed input files after relocation. Distinct from `--source-root`, which resolves selector source paths. Global flag; the flag wins.      |
@@ -80,7 +80,19 @@ both are set.
 
 Graph-backed spec queries and edits compare the saved graph's engine and
 captured input bytes and YAML path membership with the current roots before
-using the graph. `--modules` must name the graph chunk's exact configured
+using the graph. The graph records both a logical chunk source path and the
+physical input file whose bytes were parsed. Source-backed selectors keep the
+logical path as their parser and graph identity while using the verified
+physical input bytes. This supports JS-list aliases such as
+`virtual/chunk.js` backed by `snapshot/provider.js` without accepting an
+unrelated same-byte copy. `--source-root` is a consistency boundary for
+selector lookup: the verified input must be inside it, and if the logical path
+exists there it must identify that exact input. It does not relocate graph
+inputs. Use `--graph-source-root` to explicitly relocate captured physical
+inputs, preserving each path relative to the recorded graph source root; the
+selector root, when supplied too, must contain the relocated input.
+
+`--modules` must name the graph chunk's exact configured
 subtree. Commands accepting `--tree-config` may name the full modules tree
 when that flag names the config captured by the graph. A changed source,
 YAML, config, dependency assumption, wrong chunk tree, or old graph without

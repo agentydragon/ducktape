@@ -176,6 +176,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":graph_provenance",
         ":js_ast",
         ":selector_outcome",
         ":selector_resolve",
@@ -809,6 +810,7 @@ rust_library(
         ":analysis",
         ":anonymous_resolution",
         ":gate",
+        ":graph_provenance",
         ":spec",
         ":spec_modules",
         ":spec_tree",

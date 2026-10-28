@@ -1,5 +1,6 @@
 //! Apply reviewed residual-source unit proposals without transient name-pinned YAML.
 
+use graph_provenance::VerifiedGraphSourceContext;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
@@ -103,7 +104,10 @@ struct ApplyOutcome {
     selector_reviews: Vec<SelectorReview>,
 }
 
-pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
+pub fn run_modules_apply(
+    args: ModulesApplyArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
     let json = if args.batch == "-" {
         let mut text = String::new();
         std::io::stdin().read_to_string(&mut text)?;
@@ -128,6 +132,7 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
             modules_root: args.modules_root.clone(),
             tree_config: args.tree_config.clone(),
             source_root: Some(args.source_root.clone()),
+            source_context: source_context.cloned(),
             size_cap_lines: args.size_cap_lines,
         },
     )?;
@@ -384,6 +389,7 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
     let gate = Gate::Run {
         graph: &args.graph,
         source_root: Some(&args.source_root),
+        source_context,
     };
     if let Err(err) = gate.check_expected(
         &args.modules_root,
