@@ -57,8 +57,8 @@ On source `9ab44ab64b`, one candidate run with the import reorder (code diff SHA
 `0b06e1f5188b98ac7031b58244a1f4122d41599326248482630a577d806179c0`, uploaded by `bbr`
 as a working-tree patch) and one unchanged control ran the same
 `test_vm_sandbox_vm` target with `--nocache_test_results`. Both passed all three cases.
-They used the same BuildBuddy worker identifier (`3242e16f-2267-4832-ba88-f18ce5ca6536`), but that
-does not establish the same Firecracker guest or starting containerd snapshot. The candidate ran first.
+They used the same observed BuildBuddy worker identifier, but that does not establish the same
+Firecracker guest or starting containerd snapshot. The candidate ran first.
 
 | Seconds after stack start              | Candidate [b262742f](https://app.buildbuddy.io/invocation/b262742f-68dd-40ba-9bf4-17d6333c984f) | Control [6afbeff6](https://app.buildbuddy.io/invocation/6afbeff6-c996-4682-9e8b-291c4ec9cdcf) |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------: | --------------------------------------------------------------------------------------------: |
