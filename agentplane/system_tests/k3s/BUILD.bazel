@@ -114,6 +114,14 @@ _IMAGES = {
     "sandbox_controller": "//agentplane/sandbox_controller:image",
 }
 
+# Only central-sampler scenarios carry this layout in their runfiles.
+oci_layout_rloc(
+    name = "central_sampler_layout",
+    testonly = True,
+    image = "//agentplane/x/central_sampler/cmd:service_image",
+    visibility = ["//agentplane/system_tests:__pkg__"],
+)
+
 [
     oci_layout_rloc(
         name = name + "_layout",

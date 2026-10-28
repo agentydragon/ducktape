@@ -4,6 +4,10 @@ Per-path detail for the [README system overview](../README.md#system-overview), 
 API arrows point caller to callee, labels like `response` or `replication` show data on that edge,
 dashed arrows are runner-initiated platform routes.
 
+The experimental central sampler runs as its own Pod and Service in the
+[k3s acceptance scenarios](../system_tests/README.md#central-sampler), with its own image and
+projected service-account credentials. It is not deployed by default.
+
 ## Session delivery
 
 ```mermaid

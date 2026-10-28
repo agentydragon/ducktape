@@ -24,6 +24,11 @@ Goose SQL baseline. Run with `--config PATH` to serve. Use a PostgreSQL URL (`po
 schema is created implicitly on server startup. Initialize a dedicated empty DB. Repeating
 initialization retains Session identities, conversation state, evidence and outbox.
 
+`//agentplane/x/central_sampler/cmd:service_image` packages the service and pinned code-mode host.
+The [k3s acceptance scenarios](../../system_tests/README.md#central-sampler) run that image in its
+own Pod, initialize its DB with an init container, and use projected service-account tokens for
+Gateway and History. They keep fixture mode's omission of delegated per-host cgroup limits.
+
 Server-owned configuration names the service, provider routes (endpoint, credential placeholder,
 model and reasoning-effort allowlists), TokenReview audience and allowed caller accounts,
 code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Gateway

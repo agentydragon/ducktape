@@ -1,6 +1,7 @@
 """Async model endpoints driven through typed request exchanges.
 
-The native harness sees an ordinary loopback HTTP endpoint.  Tests see only a
+The native harness sees an ordinary HTTP endpoint, bound to loopback by default.
+Pod clients can use a reachable node address through `bind_host`. Tests see only a
 parsed API request and an exchange that owns its response lifecycle; HTTP
 objects and sockets stay inside this module.
 """
@@ -217,7 +218,8 @@ class ModelExchange[RequestT: StreamableRequest]:
 class ModelEndpoint[RequestT: StreamableRequest]:
     """aiohttp lifecycle shared by concrete wire-shaped endpoint fixtures."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, bind_host: str = "127.0.0.1") -> None:
+        self._bind_host = bind_host
         self._pending: asyncio.Queue[ModelExchange[RequestT] | ModelRequestParseError] = asyncio.Queue()
         self._exchanges: list[ModelExchange[RequestT]] = []
         self._runner: web.AppRunner | None = None
@@ -235,7 +237,7 @@ class ModelEndpoint[RequestT: StreamableRequest]:
         app.router.add_post("/{tail:.*}", self.serve)
         self._runner = web.AppRunner(app, handler_cancellation=True)
         await self._runner.setup()
-        site = web.TCPSite(self._runner, "127.0.0.1", 0)
+        site = web.TCPSite(self._runner, self._bind_host, 0)
         await site.start()
         address = cast(tuple[str, int], self._runner.addresses[0])
         self._origin = f"http://{address[0]}:{address[1]}"

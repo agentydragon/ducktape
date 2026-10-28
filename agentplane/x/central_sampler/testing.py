@@ -4,7 +4,7 @@ import asyncio
 import json
 import subprocess
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Self, override
@@ -21,7 +21,7 @@ from agentplane.testing.go_process import go_process
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.x.central_sampler.testing_config import Provider, Settings
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
-from util.net import Listener, listen_tcp
+from util.net import listen_tcp
 
 METADATA = (("authorization", "Bearer test-token"),)
 
@@ -146,19 +146,11 @@ def open_request(cwd: Path) -> sampler_pb2.OpenSessionRequest:
 
 
 @asynccontextmanager
-async def go_sampler(
-    config: Settings,
-    kubeconfig: Path,
-    directory: Path,
-    *,
-    bind_host: str = "127.0.0.1",
-    advertised_host: str | None = None,
-    listener: Listener | None = None,
-) -> AsyncIterator[str]:
+async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> AsyncIterator[str]:
     """Run the same Go binary and initialization path used outside tests."""
     await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
     binary = get_required_path(own_repo_rlocation("agentplane/x/central_sampler/cmd/main_bin_/main_bin"))
-    with nullcontext(listener) if listener is not None else listen_tcp(bind_host) as bound:
+    with listen_tcp() as bound:
         fd = bound.socket.fileno()
         values = config.model_dump(mode="json")
         values["database_url"] = (
@@ -192,7 +184,7 @@ async def go_sampler(
             grace_s=10,
             pass_fds=(fd,),
         ):
-            yield f"{advertised_host or bound.host}:{bound.port}"
+            yield f"{bound.host}:{bound.port}"
 
 
 @asynccontextmanager

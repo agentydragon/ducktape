@@ -211,12 +211,15 @@ History reader must report the same Session and Sandbox UID and fold the complet
 reasoning, assistant, tool, and confirmed-input entities. The tool reads the file setup created, so
 the assertion requires both operations to reach the same executor workspace.
 
-The scenario runs the Go sampler binary on the test node with real PostgreSQL and Kubernetes
-TokenReview; it uses fixture mode, which omits delegated host cgroup limits. It does not cover an
-in-cluster sampler deployment or those host limits. Only this disposable stack's Gateway and
-History configuration is extended with the test sampler's address and ServiceAccount. The provider
-fixture is direct; LLM ingress routing is covered separately. Evidence, including the VM executor
-probe output and cgroup, is written to `test.outputs/central-sampler-k3s.json`.
+The scenario runs the sampler's own OCI image in a Pod with real PostgreSQL and Kubernetes
+TokenReview. An initialization container applies its schema; the serving container uses in-cluster
+Kubernetes credentials and its own projected Gateway and History tokens. Its Service routes the
+Dispatcher's calls, and gRPC health gates readiness. It uses fixture mode, which omits delegated
+per-host cgroup limits; those limits remain outside this scenario's coverage. Only this disposable
+stack's Gateway and History configuration is extended with the sampler's address and ServiceAccount.
+The scripted provider runs on the test node; LLM ingress routing is covered separately. Pod state,
+initialization/service logs and JS-host logs are retained in test outputs. The execution/History
+summary is written to `test.outputs/central-sampler-k3s.json`.
 
 ```bash
 bbr test //agentplane/system_tests:test_central_sampler

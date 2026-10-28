@@ -18,6 +18,7 @@ from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.central_sampler import MODEL, PROVIDER, SERVICE, CentralStack, central_stack
 from agentplane.system_tests.cluster import kubectl
 from agentplane.system_tests.conftest import POD_TEMPLATE, VM_TEMPLATE, VM_WORKING_DIRECTORY
+from agentplane.system_tests.k3s.stack import node_ip
 from agentplane.x.central_sampler import sampler_pb2
 from agentplane.x.central_sampler.testing import Endpoint
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -97,7 +98,10 @@ async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) 
     answer = "The executor returned prepared-on-executor."
     is_vm = template == VM_TEMPLATE
     vm_execution: dict[str, str | int] | None = None
-    async with Endpoint() as endpoint, central_stack(tmp_path, endpoint.origin, template=template) as deployed:
+    async with (
+        Endpoint(bind_host=node_ip()) as endpoint,
+        central_stack(tmp_path, endpoint.origin, template=template) as deployed,
+    ):
         opening = await deployed.dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(
                 session_id=session_id,

@@ -640,7 +640,6 @@ py_library(
 system_test(
     name = "test_central_sampler",
     srcs = ["test_central_sampler.py"],
-    data = ["@agentplane_codex_cli_linux_x64//:files"],
     k3s = "scripted",
     vm_sandboxes = "ci",
     deps = [
@@ -654,6 +653,7 @@ system_test(
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/system_tests/k3s:stack",
         "//agentplane/x/central_sampler:sampler_pb2",
         "//agentplane/x/central_sampler:testing",
         "//util/testing:undeclared_outputs",
@@ -667,6 +667,7 @@ system_test(
 py_library(
     name = "central_sampler",
     srcs = ["central_sampler.py"],
+    data = ["//agentplane/system_tests/k3s:central_sampler_layout"],
     deps = [
         ":cluster",
         ":conftest",
@@ -677,12 +678,8 @@ py_library(
         "//agentplane/history_service:settings",
         "//agentplane/runner_gateway:settings",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
-        "//agentplane/system_tests/k3s:stack",
         "//agentplane/x/central_sampler:sampler_pb2_grpc",
-        "//agentplane/x/central_sampler:testing",
         "//agentplane/x/central_sampler:testing_config",
-        "//util:net",
-        "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",

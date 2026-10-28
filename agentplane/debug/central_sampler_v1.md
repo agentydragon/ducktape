@@ -259,7 +259,9 @@ failed before sampler startup: the separate `test-central-sampler` identity Pod 
 runner layout from VM tests exposed this helper's hidden dependency. Earlier passing runs
 had the image available and did not establish that the VM test's image inputs were complete.
 
-The helper now uses the running app container's image, already imported for both Pod and VM
-stacks, and executes `/bin/sleep` from its Debian base. It keeps its own service account,
-waits for Pod readiness, and anchors the same UID-bound tokens; TokenReview coverage is
-unchanged. Ordinary VM tests still omit the Pod runner image.
+The fixture now runs the sampler itself in a Pod using its own OCI image. Its initialization
+container applies the schema; the serving container gets Kubernetes API, Gateway and History
+credentials from its own service account and projected token volumes. A Service and gRPC health
+probe make readiness and request routing part of the integration test. The node-host process and
+dummy identity Pod are removed. Ordinary VM tests still omit the Pod runner image. Fixture mode
+still omits delegated per-JS-host cgroups, so this does not validate that deployment boundary.

@@ -1,4 +1,8 @@
+load("@bazel_skylib//rules:select_file.bzl", "select_file")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -28,4 +32,60 @@ go_binary(
     name = "main_bin",
     embed = [":main_lib"],
     pure = "on",
+)
+
+pkg_files(
+    name = "binary_file",
+    srcs = [":main_bin"],
+    attributes = pkg_attributes(mode = "0755"),
+    prefix = "/usr/local/bin",
+    renames = {":main_bin": "central-sampler"},
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "binary_layer",
+    srcs = [":binary_file"],
+)
+
+select_file(
+    name = "code_mode_host_bin",
+    srcs = "@agentplane_codex_cli_linux_x64//:files",
+    subpath = "bin/codex-code-mode-host",
+)
+
+pkg_files(
+    name = "code_mode_host_file",
+    srcs = [":code_mode_host_bin"],
+    attributes = pkg_attributes(mode = "0755"),
+    prefix = "/usr/local/bin",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "code_mode_host_layer",
+    srcs = [":code_mode_host_file"],
+)
+
+pkg_tar(
+    name = "tmp_layer",
+    empty_dirs = ["tmp"],
+    mode = "1777",
+)
+
+oci_image(
+    name = "service_image",
+    base = "@distroless_static_debian13_linux_amd64",
+    entrypoint = ["/usr/local/bin/central-sampler"],
+    env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":binary_layer",
+        ":code_mode_host_layer",
+        ":tmp_layer",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+    workdir = "/",
 )
