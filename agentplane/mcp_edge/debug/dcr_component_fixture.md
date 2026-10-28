@@ -66,5 +66,33 @@ target. Ordinary SDK-helper edits can select it without selecting k3s. Edge/imag
 edits and broad CI triggers can still select the system tests. Keeping the current
 helper in both targets would add cost without establishing this dependency boundary.
 
-The initial timing probe alone does not establish affected-target selection or the
-combined component/smoke cost; those require validation of the promoted split.
+## Promoted split validation
+
+At published source `b9cd7d42880e546844becf59dc2180f93089e0cb`, a
+[fresh RBE run](https://app.buildbuddy.io/invocation/5079d3b3-bc77-4ade-802b-db9479de899a)
+passed the component (24.2s), independent k3s smoke (73.1s), and existing auth-server
+suite (11.9s), plus explicit lint/type aspects for `authserver:{dcr,sdk_dcr_client}`
+and `system_tests:test_dcr_lib`. The smoke reports 52.3s to stack readiness and
+58.96s inside pytest.
+
+Review found the reused auth-server fixture still used legacy Action Service
+migrations. Source `afbd523cba2f47d9741f1a707cd5c847b85c799c` switches that fixture
+to the MCP edge's own production migrations. A
+[fresh RBE run](https://app.buildbuddy.io/invocation/d00691d8-b291-4036-bce2-0d1716bc9e15)
+passed both the SDK test (29.9s) and existing auth-server suite (10.7s) against that
+schema. No deployed service behavior changed.
+
+The [selection probe](https://app.buildbuddy.io/invocation/946d7b3e-5072-40ef-a3ab-e16183475d2a)
+on `afbd523cba` generated baseline hashes, changed only the helper's client-name
+literal, generated new hashes, and ran CI's real `bazel-diff get-impacted-targets`
+plus source/manual filters. Its selected test set was exactly
+`//agentplane/mcp_edge/authserver:sdk_dcr_test`; the k3s smoke was absent. A separate
+reverse-dependency query confirmed that production `authserver:clients.go` reaches
+both targets. The runner retained both hash files, affected-label files, and
+`result.json`; its log contains the full executed probe script and result.
+
+These are test-action observations, not end-to-end feedback or fleet savings. A
+full fresh sweep still pays for the k3s smoke and adds roughly 25–30 action-seconds
+for the component; their parallel wall time is not their summed action time.
+The benefit is avoiding k3s for helper-only work. Natural CI should confirm how
+often that narrower selection occurs before attributing an aggregate speedup.
