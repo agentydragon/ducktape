@@ -15,6 +15,8 @@ plans and evidence live here:
   diagnostic workflows.
 - <plans/module_proposals.md> — proposal metadata and granularity follow-ups.
 - <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
+- <plans/native_receiver_identity.md> — native receiver certificates and their
+  descriptor, alias, method-receiver and initialization proof obligations.
 - <ARCHITECTURE_BACKLOG.md> — unrelated deferred integrity and test/spec items.
 - `perf/` — measured performance notes. Update from real
   profiles before major matcher/index rewrites.

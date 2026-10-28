@@ -140,6 +140,35 @@ fn replaced_methods_and_accessor_entries_keep_real_effects() {
 }
 
 #[test]
+fn borrowed_public_method_can_publish_a_native_receiver() {
+    assert_early_iteration_rejected(
+        "class Publisher { install() { globalThis.slot = this; } } const publisher = new Publisher();",
+        &[
+            "publisher.install.call(Array.prototype);",
+            "globalThis.slot.forEach = function(callback) { observed = later; };",
+        ],
+        "entries.forEach(() => {})",
+        "",
+        &["Publisher", "publisher"],
+    );
+}
+
+#[test]
+fn fresh_global_rhs_does_not_prove_what_a_slot_read_returns() {
+    assert_early_iteration_rejected(
+        "",
+        &[
+            "Object.defineProperty(globalThis, 'slot', { configurable: true, get() { return Array.prototype; }, set(value) {} });",
+            "globalThis.slot = {};",
+            "globalThis.slot.forEach = function(callback) { observed = later; };",
+        ],
+        "entries.forEach(() => {})",
+        "",
+        &[],
+    );
+}
+
+#[test]
 fn array_species_mutation_through_source_and_result_aliases_stays_conservative() {
     assert_early_iteration_rejected(
         "",
