@@ -267,6 +267,23 @@ bindings (minified or readable), module paths (`runtime/plugins`) or
 unambiguous module filenames, module ids (`logical:7`), source-unit IDs
 (`unit:42`), atom ids (`atomic:N`), proposal ids, diagnostic ids.
 
+`describe` emits at most 20 rows in each report section by default. Use
+`--limit N` for a different positive per-section cap, or `--all` to return
+every matching row; `--all` conflicts with `--limit`, and `--limit 0` directs
+you to use `--all`. Its `limits.sections` object records `total`, `emitted`,
+and `truncated` after filtering; `limits.limit` is the cap, or `0` with
+`--all`. The selected binding/source-unit/group/proposal/diagnostic row comes
+first in its matching section so it remains available under a small limit.
+
+`--direction incoming|outgoing|both` selects edge direction relative to the
+query and defaults to `both`. It filters dependency, atomic-group, and
+module-quotient edges; neighbor source units are derived from the remaining
+dependency edges. Repeat `--reason KIND` to retain any of several dependency
+reasons, using the `edge_kind` spellings from `dependency_graph.json`:
+`eager_use`, `lazy_use`, `hoisted_use`, `eager_rebind`, `lazy_rebind`,
+`deferred_rebind`, `sequenced`, `co_declaration`, or `local_effect`. Both
+filters are applied before totals and row limits.
+
 ## Validate-by-default (mutating commands)
 
 Every command that modifies the spec runs validation **by default** before

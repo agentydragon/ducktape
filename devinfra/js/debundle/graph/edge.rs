@@ -247,6 +247,7 @@ impl EdgeReason {
     Deserialize,
     strum::IntoStaticStr,
     strum::Display,
+    strum::EnumString,
     strum::EnumMessage,
 )]
 #[cfg_attr(test, derive(strum::EnumIter))]

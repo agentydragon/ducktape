@@ -1,13 +1,14 @@
 //! Graph/source inspection commands and their ID resolution and rendering.
 use crate::emit_report;
+use analysis::DepKind;
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
 use peel::propose::DEFAULT_SIZE_CAP_LINES;
 use peel::{
-    AtomicGroupsArgs, CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat,
-    PatchPlanArgs, SelectionKind, SourceSelectionArgs, run_atomic_groups_report,
-    run_explain_report, run_graph_summary_report, run_patch_plan_report,
-    run_source_selection_report,
+    AtomicGroupsArgs, CommonArgs as PeelCommonArgs, DEFAULT_DESCRIBE_LIMIT, ExplainArgs,
+    ExplainDirection, GraphSummaryArgs, OutputFormat, PatchPlanArgs, SelectionKind,
+    SourceSelectionArgs, run_atomic_groups_report, run_explain_report, run_graph_summary_report,
+    run_patch_plan_report, run_source_selection_report,
 };
 use selector_codemod::source_input::resolve_chunk_source_file;
 use serde::Serialize;
@@ -35,9 +36,21 @@ pub(super) struct DescribeArgs {
     #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
     pub size_cap_lines: usize,
 
-    /// Maximum number of rows to emit per report section. Zero means unlimited.
-    #[arg(long, default_value_t = 0)]
-    pub limit: usize,
+    /// Maximum number of rows per report section (default 20; use --all for exhaustive results).
+    #[arg(long, conflicts_with = "all")]
+    pub limit: Option<usize>,
+
+    /// Emit every matching row. Conflicts with --limit.
+    #[arg(long)]
+    pub all: bool,
+
+    /// Which dependency-graph edge directions to show.
+    #[arg(long, value_enum, default_value = "both")]
+    pub direction: ExplainDirection,
+
+    /// Keep edges with this dependency reason; repeat to include several reasons.
+    #[arg(long = "reason", value_name = "REASON")]
+    pub reasons: Vec<DepKind>,
 
     /// Also run the module proposer to annotate matching proposals and
     /// diagnostics. This is intentionally opt-in because it is expensive on
@@ -223,13 +236,22 @@ fn resolve_id_as_module_path(id: &str, modules_root: &std::path::Path) -> Result
 }
 
 pub(super) fn run_describe(args: DescribeArgs) -> Result<()> {
+    if args.limit == Some(0) {
+        bail!("--limit must be greater than zero; use --all for exhaustive results");
+    }
     let selection = dispatch_id_selection(&args.id, &args.common.modules_root)?;
     let inner = ExplainArgs {
         common: args.common,
         selection,
         size_cap_lines: args.size_cap_lines,
         source_root: args.source_root,
-        limit: args.limit,
+        limit: if args.all {
+            0
+        } else {
+            args.limit.unwrap_or(DEFAULT_DESCRIBE_LIMIT)
+        },
+        direction: args.direction,
+        reasons: args.reasons,
         include_proposals: args.include_proposals,
     };
     let report = run_explain_report(&inner)?;
@@ -679,6 +701,16 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
         report.incoming_edges.len(),
         report.outgoing_edges.len()
     ));
+    if let Some(limits) = &report.limits {
+        for (section, limit) in &limits.sections {
+            if limit.truncated {
+                out.push_str(&format!(
+                    "  showing {} of {} rows in {section}; use --all for the rest\n",
+                    limit.emitted, limit.total
+                ));
+            }
+        }
+    }
 }
 
 pub(super) fn run_atoms(args: AtomicGroupsArgs) -> Result<()> {

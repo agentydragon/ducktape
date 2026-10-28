@@ -529,6 +529,161 @@ fn describe_limit_truncates_each_section_and_reports_its_total() {
     assert!(sections.get("owners").is_none());
 }
 
+fn high_degree_describe_fixture() -> GraphFixture {
+    let mut source = String::from("const selected = 0;\n");
+    for index in 0..25 {
+        source.push_str(&format!("const reader_{index:02} = selected;\n"));
+    }
+    GraphFixture::new(&source, &[])
+}
+
+#[test]
+fn describe_bounds_each_section_and_keeps_query_targets_under_limits() {
+    let fixture = high_degree_describe_fixture();
+
+    let default = fixture.json(&["describe", "selected"]);
+    assert_eq!(default["incoming_edges"].as_array().unwrap().len(), 20);
+    assert_eq!(
+        default["neighbor_source_units"].as_array().unwrap().len(),
+        20
+    );
+    assert_eq!(default["limits"]["limit"], 20);
+    for section in ["incoming_edges", "neighbor_source_units"] {
+        assert_eq!(
+            default["limits"]["sections"][section],
+            json!({"total": 25, "emitted": 20, "truncated": true}),
+            "{section}"
+        );
+    }
+
+    let custom = fixture.json(&["describe", "selected", "--limit", "3"]);
+    assert_eq!(custom["incoming_edges"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        custom["limits"]["sections"]["incoming_edges"],
+        json!({"total": 25, "emitted": 3, "truncated": true})
+    );
+
+    let exhaustive = fixture.json(&["describe", "selected", "--all"]);
+    assert_eq!(exhaustive["incoming_edges"].as_array().unwrap().len(), 25);
+    assert_eq!(exhaustive["limits"]["limit"], 0);
+    assert_eq!(
+        exhaustive["limits"]["sections"]["incoming_edges"],
+        json!({"total": 25, "emitted": 25, "truncated": false})
+    );
+
+    let selected_binding = fixture.json(&["describe", "reader_24", "--limit", "1"]);
+    assert_eq!(selected_binding["bindings"][0]["binding"], "reader_24");
+    let selected_source = fixture.json(&["describe", "unit:25", "--limit", "1"]);
+    assert_eq!(selected_source["source_unit_ids"], json!(["unit:25"]));
+    assert_eq!(selected_source["source_units"][0]["id"], "unit:25");
+}
+
+#[test]
+fn describe_filters_direction_and_typed_reasons_before_limit_counts() {
+    let fixture = GraphFixture::new(
+        "const dependency = 1;\nconst selected = dependency;\nfunction deferred() { return selected; }\nconst eager = selected;\n",
+        &[],
+    );
+
+    let incoming_eager = fixture.json(&[
+        "describe",
+        "selected",
+        "--direction",
+        "incoming",
+        "--reason",
+        "eager_use",
+        "--limit",
+        "1",
+    ]);
+    assert_eq!(
+        incoming_eager["incoming_edges"].as_array().unwrap().len(),
+        1
+    );
+    assert!(
+        incoming_eager["outgoing_edges"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        incoming_eager["incoming_edges"][0]["edge_kind"],
+        "eager_use"
+    );
+    assert_eq!(
+        incoming_eager["limits"]["sections"]["incoming_edges"],
+        json!({"total": 1, "emitted": 1, "truncated": false})
+    );
+
+    let incoming_lazy = fixture.json(&[
+        "describe",
+        "selected",
+        "--direction",
+        "incoming",
+        "--reason",
+        "lazy_use",
+    ]);
+    assert_eq!(incoming_lazy["incoming_edges"].as_array().unwrap().len(), 1);
+    assert_eq!(incoming_lazy["incoming_edges"][0]["edge_kind"], "lazy_use");
+    assert_eq!(
+        incoming_lazy["neighbor_source_units"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let repeatable_reasons = fixture.json(&[
+        "describe",
+        "selected",
+        "--direction",
+        "incoming",
+        "--reason",
+        "lazy_use",
+        "--reason",
+        "eager_use",
+        "--limit",
+        "1",
+    ]);
+    assert_eq!(
+        repeatable_reasons["incoming_edges"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        repeatable_reasons["limits"]["sections"]["incoming_edges"],
+        json!({"total": 2, "emitted": 1, "truncated": true})
+    );
+
+    let outgoing = fixture.json(&[
+        "describe",
+        "selected",
+        "--direction",
+        "outgoing",
+        "--reason",
+        "eager_use",
+    ]);
+    assert!(outgoing["incoming_edges"].as_array().unwrap().is_empty());
+    assert_eq!(outgoing["outgoing_edges"].as_array().unwrap().len(), 1);
+    assert_eq!(outgoing["outgoing_edges"][0]["edge_kind"], "eager_use");
+}
+
+#[test]
+fn describe_requires_all_instead_of_a_zero_limit_and_rejects_limit_with_all() {
+    let fixture = fixture();
+    let zero = fixture.command(&["describe", "ZZ", "--limit", "0"]);
+    assert!(!zero.status.success());
+    assert!(
+        String::from_utf8_lossy(&zero.stderr)
+            .contains("--limit must be greater than zero; use --all")
+    );
+
+    let conflicting = fixture.command(&["describe", "ZZ", "--all", "--limit", "1"]);
+    assert!(!conflicting.status.success());
+    assert!(String::from_utf8_lossy(&conflicting.stderr).contains("cannot be used with"));
+}
+
 #[test]
 fn inspect_source_context_is_clamped_to_the_source_file() {
     let fixture = patched_fixture();
