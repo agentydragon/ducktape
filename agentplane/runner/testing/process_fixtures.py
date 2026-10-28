@@ -122,7 +122,7 @@ async def start_runner(
         )
         runner = RunnerProcess(process)
         started.append(runner)
-        await gateway.control.wait_connected(connections + 1)
+        await gateway.control.wait_ready(connections + 1)
         return runner
 
     yield start

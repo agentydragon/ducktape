@@ -45,11 +45,23 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
         self.incarnation_uid = "test-incarnation"
         self._runner: runner_service_pb2_grpc.RunnerAsyncStub | None = None
         self._connected = asyncio.Condition()
+        self._ready_connection = 0
 
     async def wait_connected(self, connections: int) -> None:
         """Until the runner holds a connection and has opened at least `connections` in all."""
         async with asyncio.timeout(30), self._connected:
             await self._connected.wait_for(lambda: self.connections >= connections and self._runner is not None)
+
+    async def wait_ready(self, connections: int) -> None:
+        """Until the newest connection publishes facts after adopting its incarnation."""
+        async with asyncio.timeout(30), self._connected:
+            await self._connected.wait_for(
+                lambda: (
+                    self.connections >= connections
+                    and self._runner is not None
+                    and self._ready_connection == self.connections
+                )
+            )
 
     async def wait_for_facts(self, expected: runner_control_pb2.RunnerFacts) -> None:
         """Until a heartbeat has carried `expected` in every fact but `idle_since`."""
@@ -71,8 +83,8 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
             )
 
     async def runner(self) -> runner_service_pb2_grpc.RunnerAsyncStub:
-        """The runner's service through its newest connection, once it has one."""
-        await self.wait_connected(1)
+        """The runner's service through its newest connection, after incarnation adoption."""
+        await self.wait_ready(1)
         assert self._runner is not None
         return self._runner
 
@@ -120,12 +132,17 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
                                 async with self.facts_published:
                                     self.facts.append(frame.heartbeat.facts)
                                     self.facts_published.notify_all()
+                                async with self._connected:
+                                    if self._runner is runner:
+                                        self._ready_connection = self.connections
+                                        self._connected.notify_all()
                             await send(runner_control_pb2.ServiceFrame(heartbeat=runner_control_pb2.Heartbeat()))
                         case "reply":
                             tunnel.answer(frame.reply)
             finally:
                 if self._runner is runner:
                     self._runner = None
+                    self._ready_connection = 0
 
 
 class IngressStore(runner_ingress_pb2_grpc.RunnerIngressServicer):

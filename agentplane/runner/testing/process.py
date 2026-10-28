@@ -69,7 +69,7 @@ class RunningRunner:
             )
         if self.control_endpoint != self.gateway.endpoint:
             return  # The real Gateway's fixture owns its authenticated readiness probe.
-        connected = asyncio.create_task(self.gateway.control.wait_connected(connections + 1))
+        connected = asyncio.create_task(self.gateway.control.wait_ready(connections + 1))
         exited = asyncio.create_task(self.process.wait())
         try:
             done, _ = await asyncio.wait((connected, exited), return_when=asyncio.FIRST_COMPLETED)
