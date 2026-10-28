@@ -264,11 +264,14 @@ while the service correctly stays `UNKNOWN` and retries. A request with `Cache-C
 returned the same stale result. A later diagnostic GraphQL read returned `UNKNOWN`, and a head
 change followed; the subsequent conflict notice does not prove base-only recovery.
 
-Investigate GitHub's invalidation/recalculation behavior with an unchanged head/current base pair.
-Compare supported REST and GraphQL reads in a bounded fixture without conflating stale PR base
-metadata, HTTP revalidation, and background computation. Establish whether a supported read can
-obtain the current result without modifying the PR. A negative remains GitHub-reported without
-proof of the evaluated pair; neither elapsed time nor current-ref reads supply that proof.
+**TODO: test whether GraphQL obtains a fresh result sooner than REST.** Use controlled disposable
+fixtures, advance only the base, and keep the PR head unchanged throughout polling. Compare
+`mergeable`, `potentialMergeCommit` and its parents, and the actual base ref; record settling time
+and request cost, including no improvement. Do not push a new head, retarget or reopen the PR, or
+compute a merge locally during this comparison. The previous GraphQL read was followed by a head
+change, so it did not establish whether GraphQL alone would settle. A negative remains
+GitHub-reported without proof of the evaluated pair; neither elapsed time nor current-ref reads
+supply that proof.
 
 Exit: establish and validate a supported way to obtain the current result after a base-only change,
 with actual refs, request cost and detection timing recorded. If no bounded mechanism is available,
