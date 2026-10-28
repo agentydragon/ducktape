@@ -5,6 +5,7 @@ use super::super::property_inference::OwnPropertyProof;
 use super::super::value_model::{CapturedContext, Context, ValueExpr, Values};
 use super::Call;
 use super::interpreter::{ExecutionInputs, ExecutionState, Executor, Outcome, OwnPropertyQuery};
+use super::runtime_callbacks::{self, CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::statement_facts::SynchronousCalls;
@@ -53,6 +54,7 @@ enum OperationKind {
     Call,
     OwnProperty,
     Heap,
+    Callbacks,
 }
 
 pub(super) enum RuntimeOperation {
@@ -74,12 +76,14 @@ pub(super) enum RuntimeOperation {
         captures: Context,
         outcome: Box<Outcome>,
     },
+    Callbacks(CallbackOperation),
 }
 
 pub(super) enum RuntimeValue {
     Heap(HeapResult),
     Values(Values),
     Outcome(Box<Outcome>),
+    Callbacks(CallbackResult),
 }
 
 struct RuntimeRequest {
@@ -147,6 +151,7 @@ impl RuntimeQueries<'_, '_> {
             RuntimeOperation::Evaluate { .. } => OperationKind::Evaluate,
             RuntimeOperation::Invoke { .. } => OperationKind::Invoke,
             RuntimeOperation::Call { .. } => OperationKind::Call,
+            RuntimeOperation::Callbacks(_) => OperationKind::Callbacks,
         };
         let point = self.child_point(kind);
         let mut context = self.context.borrow_mut();
@@ -299,14 +304,15 @@ impl RuntimeRules<'_, '_> {
         else {
             return;
         };
+        let RuntimeRequest { state, operation } = *request;
         let queries = RuntimeQueries {
             inputs: self.inputs,
             point: point.clone(),
             next_child: Cell::new(0),
             context: RefCell::new(context),
         };
-        let mut executor = Executor::new(self.inputs, request.state, queries);
-        let value = match request.operation {
+        let mut executor = Executor::new(self.inputs, state, queries);
+        let value = match operation {
             RuntimeOperation::Heap(operation) => {
                 RuntimeValue::Heap(operation.execute(&mut executor))
             }
@@ -338,6 +344,9 @@ impl RuntimeRules<'_, '_> {
             } => {
                 executor.execute_call_transfer(&call, &environment, &captures, &mut outcome);
                 RuntimeValue::Outcome(outcome)
+            }
+            RuntimeOperation::Callbacks(operation) => {
+                RuntimeValue::Callbacks(runtime_callbacks::dispatch(&mut executor, operation))
             }
         };
         let state = executor.into_state();

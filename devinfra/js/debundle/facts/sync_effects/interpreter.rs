@@ -5,6 +5,7 @@ use super::super::value_model::{
     Context, DenseArray, FrozenNamespaceProof, ValueExpr, Values,
 };
 use super::native_calls::{CallInputs, CallReturn, NativeCallModel};
+use super::runtime_callbacks::{CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_inference::{RuntimeOperation, RuntimeQueries, RuntimeValue};
 use super::{
@@ -357,6 +358,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .request(std::mem::take(&mut self.state), operation);
         self.state = result.state;
         result.value
+    }
+
+    fn request_callback_operation(&mut self, operation: CallbackOperation) -> CallbackResult {
+        let result = self.request(RuntimeOperation::Callbacks(operation));
+        let RuntimeValue::Callbacks(result) = result else {
+            unreachable!("callback operations produce callback results");
+        };
+        result
     }
 
     /// The abstract callback-factory value also represents namespace members
@@ -3555,6 +3564,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn promote_raw_callbacks(&mut self, values: &Values, outcome: &mut Outcome) {
+        let outcome = std::mem::take(outcome);
+        let result = self.request_callback_operation(CallbackOperation::PromoteRaw {
+            values: values.clone(),
+            outcome: Box::new(outcome),
+        });
+        let CallbackResult::Outcome(result) = result else {
+            unreachable!("raw callback promotion returns its updated outcome");
+        };
+        *outcome = *result;
+    }
+
+    pub(super) fn promote_raw_callbacks_transfer(
+        &mut self,
+        values: &Values,
+        outcome: &mut Outcome,
+    ) {
         let effect_owner = self.state.current_top_owner.unwrap();
         let mut owners = BTreeSet::new();
         for callback in self.callback_values(values) {
@@ -3637,6 +3662,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn promote_deferred_callbacks(&mut self, captured: &Values, outcome: &mut Outcome) {
+        let outcome = std::mem::take(outcome);
+        let result = self.request_callback_operation(CallbackOperation::PromoteDeferred {
+            captured: captured.clone(),
+            outcome: Box::new(outcome),
+        });
+        let CallbackResult::Outcome(result) = result else {
+            unreachable!("deferred callback promotion returns its updated outcome");
+        };
+        *outcome = *result;
+    }
+
+    pub(super) fn promote_deferred_callbacks_transfer(
+        &mut self,
+        captured: &Values,
+        outcome: &mut Outcome,
+    ) {
         let effect_owner = self.state.current_top_owner.unwrap();
         let mut roots = BTreeSet::new();
         for callback in self.callback_values(captured) {
@@ -3679,6 +3720,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn promote_returned_callbacks(&mut self, returned: &Values) {
+        let result = self.request_callback_operation(CallbackOperation::PromoteReturned {
+            returned: returned.clone(),
+        });
+        let CallbackResult::Completed = result else {
+            unreachable!("returned callback promotion has no value result");
+        };
+    }
+
+    pub(super) fn promote_returned_callbacks_transfer(&mut self, returned: &Values) {
         let callbacks: Values = self
             .callback_values(returned)
             .into_iter()
@@ -3932,6 +3982,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         no_sync_arguments: bool,
         outcome: &mut Outcome,
     ) {
+        let outcome = std::mem::take(outcome);
+        let result = self.request_callback_operation(CallbackOperation::InvokePossible {
+            arguments: args.to_vec(),
+            no_sync_arguments,
+            outcome: Box::new(outcome),
+        });
+        let CallbackResult::Outcome(result) = result else {
+            unreachable!("possible callback invocation returns its updated outcome");
+        };
+        *outcome = *result;
+    }
+
+    pub(super) fn invoke_possible_callbacks_transfer(
+        &mut self,
+        args: &[Values],
+        no_sync_arguments: bool,
+        outcome: &mut Outcome,
+    ) {
         let mut callbacks = self.state.global_escaped_callbacks.clone();
         callbacks.extend(self.available_export_callbacks());
         // A callback-argument exemption does not certify foreign getters or
@@ -4082,6 +4150,26 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn bounded_invocation_fallback(
+        &mut self,
+        owner: SourceUnitOrdinal,
+        args: &[Values],
+        captured: &Context,
+        reason: ExecutionPrecisionLossReason,
+    ) -> Outcome {
+        let result =
+            self.request_callback_operation(CallbackOperation::BoundedInvocationFallback {
+                owner,
+                arguments: args.to_vec(),
+                captured: captured.clone(),
+                reason,
+            });
+        let CallbackResult::Outcome(result) = result else {
+            unreachable!("bounded callback fallback returns an outcome");
+        };
+        *result
+    }
+
+    pub(super) fn bounded_invocation_fallback_transfer(
         &mut self,
         owner: SourceUnitOrdinal,
         args: &[Values],

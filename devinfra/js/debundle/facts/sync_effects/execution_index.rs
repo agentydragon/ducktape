@@ -8290,5 +8290,8 @@ mod runtime_heap;
 #[path = "runtime_inference.rs"]
 mod runtime_inference;
 
+#[path = "runtime_callbacks.rs"]
+mod runtime_callbacks;
+
 #[path = "native_calls.rs"]
 mod native_calls;
