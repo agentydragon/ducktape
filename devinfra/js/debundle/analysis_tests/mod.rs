@@ -39,7 +39,7 @@ fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
 
 fn build_dependency_graph(
     facts: &[StatementFacts],
-) -> Result<DependencyGraph, DuplicateTopLevelDeclaration> {
+) -> Result<DependencyGraph, DependencyGraphBuildError> {
     build_dependency_graph_with(facts, DependencyGraphOptions::default())
 }
 
@@ -1163,11 +1163,11 @@ fn repeated_declaration_is_refused_unless_every_site_is_var() {
     ] {
         assert_eq!(
             build_dependency_graph(&analyze_facts(&parse(source))).unwrap_err(),
-            DuplicateTopLevelDeclaration {
+            DependencyGraphBuildError::DuplicateTopLevelDeclaration(DuplicateTopLevelDeclaration {
                 binding: "pick".into(),
                 first: SourceUnitOrdinal(0),
                 second: SourceUnitOrdinal(1),
-            },
+            },),
             "{source}"
         );
     }

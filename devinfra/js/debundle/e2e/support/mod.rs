@@ -32,8 +32,9 @@ use serde_json::Value;
 /// Re-exported so test files can reference the spec enums behind
 /// `Member::with_purity` / `Member::with_effect` without a direct `spec` dep.
 pub use spec::{
-    ExecutionRuntime, HostNoReentry, HostNoReentryOperation, HostNoReentryRuntime,
-    InitializerPurity, MemberEffect, MemberPurity, VendorLevel, VendorMark,
+    CapturedValueContract, CapturedValueKind, ExecutionRuntime, HostNoReentry,
+    HostNoReentryOperation, HostNoReentryRuntime, InitializerPurity, MemberEffect, MemberPurity,
+    ValueInputContract, VendorLevel, VendorMark,
 };
 
 use std::collections::BTreeSet;

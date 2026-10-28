@@ -161,6 +161,10 @@ pub struct ReturnedRecordUseReport {
     pub lexical_statement_ordinal: SourceUnitOrdinal,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
+    /// Author-conditioned native-integrity inputs used by the defining
+    /// returned-record certificate.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub native_integrity_value_inputs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -269,6 +273,12 @@ pub struct NativeMutationWitness {
     /// Native premises invalidating the property-key refinement, if any.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub invalidated_key_dependencies: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    /// Author-conditioned captured-value facts consumed by this receiver
+    /// refinement, including refinements whose resulting affected roots are empty.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub value_input_refs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub value_input_evidence: Vec<crate::analysis_inputs::ValueInputEvidence>,
     /// The original write remains visible when source argument evidence proves
     /// its containing branch unreachable in every covered activation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -354,6 +364,7 @@ pub enum NativeIntegrityGuard {
     OrdinaryObjectPrototype,
     ArrayIntrinsics,
     HostPromiseResolve,
+    NativeCallIdentity,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -396,6 +407,14 @@ pub struct NativePrototypePropertyCheck {
     pub blocking_mutation_count: usize,
 }
 
+/// A successful native guard whose conclusion depends on one or more
+/// author-conditioned receiver refinements in the whole-program census.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct NativeIntegrityUse {
+    pub guard: NativeIntegrityGuard,
+    pub value_input_refs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
+}
+
 /// Completeness of the existing synchronous-effect inference, independent of purity.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SynchronousExecutionReport {
@@ -404,6 +423,9 @@ pub struct SynchronousExecutionReport {
     pub native_integrity_checks: Vec<NativeIntegrityCheck>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_prototype_property_checks: Vec<NativePrototypePropertyCheck>,
+    /// Successful native guards that consumed author-conditioned census facts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_integrity_uses: Vec<NativeIntegrityUse>,
     pub complete: bool,
     pub precision_losses: Vec<ExecutionPrecisionLoss>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

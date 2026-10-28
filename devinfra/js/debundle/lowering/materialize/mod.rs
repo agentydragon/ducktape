@@ -408,7 +408,7 @@ pub(super) fn finish_logical_chunk(
     let chunk_top_level_mark = runtime_ast.top_level_mark;
     // Fetched before hints assembly: `local_property_effects` selects
     // the facts pass's local-effect policy, which travels in the hints.
-    let dependency_graph_options = chunk_analysis_options
+    let mut dependency_graph_options = chunk_analysis_options
         .get(chunk_id)
         .cloned()
         .unwrap_or_default();
@@ -435,6 +435,11 @@ pub(super) fn finish_logical_chunk(
             native_integrity: cross_module_purities.native_integrity.clone(),
             ..AnalysisInputs::default()
         };
+        inputs.assumptions.captured_value_inputs = cross_module_purities
+            .value_inputs
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
         inputs.assumptions.host_no_reentry = host_no_reentry.cloned();
         inputs.imported_purities = cross_module_purities
             .bindings
@@ -568,6 +573,10 @@ pub(super) fn finish_logical_chunk(
         inputs.assumptions.non_reentrant_global_membership = dependency_graph_options
             .non_reentrant_global_membership
             .clone();
+        // Source inputs were already resolved and validated in the whole-
+        // program prepared execution index. Pure graph construction has no
+        // parser/source context and must not silently consume this spec field.
+        dependency_graph_options.value_inputs.clear();
         inputs
     };
     // Chunk analysis: hint-sensitive facts, dependency graph, and structural

@@ -7,10 +7,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use source_identity::SourceUnitOrdinal;
+use swc_common::Span;
+use swc_ecma_ast::Id;
 
 use crate::purity::Purity;
 use crate::reports::schema::SourceLocation;
-use spec::BuiltinGlobalRoot;
+use spec::{BuiltinGlobalRoot, CapturedValueKind, SourceMatchClaim};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum KnownEffect {
@@ -64,6 +67,10 @@ pub struct ReturnedRecordSummary {
     pub local: String,
     pub source_location: Option<SourceLocation>,
     pub members: Vec<DeferredRecordMember>,
+    /// Native-integrity inputs consumed to admit the Map/collection protocol
+    /// premise used by this inferred record shape.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub native_integrity_value_inputs: BTreeSet<ValueInputRef>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -164,18 +171,77 @@ pub enum NativeIntrinsic {
     WeakSet,
 }
 
-/// Source-derived whole-program native integrity. This is an inferred premise,
-/// never an author assertion or a serialized spec option.
+/// Stable reference to one exact author input in one provider chunk.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ValueInputRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
+/// Evidence retained for an author-conditioned value refinement. The physical
+/// input path and digest identify the bytes consumed by the parser; they do not
+/// establish the external runtime premise recorded by the author.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ValueInputEvidence {
+    pub reference: ValueInputRef,
+    pub spec_location: String,
+    pub source_match: SourceMatchClaim,
+    pub value_kind: CapturedValueKind,
+    pub source_path: String,
+    pub parser_input_file: String,
+    pub audited_source_sha256: String,
+    pub selected_binding: String,
+    pub declaration_location: Option<SourceLocation>,
+    pub initializer_location: Option<SourceLocation>,
+    pub expected_export: Option<String>,
+    pub note: Option<String>,
+}
+
+/// Resolved author input for one canonical source binding. Spans and `Id` are
+/// session-local; serialized evidence uses the stable source locations above.
+#[derive(Debug, Clone)]
+pub struct ResolvedBindingValueInput {
+    pub evidence: ValueInputEvidence,
+    pub binding: Id,
+    pub declaration_span: Span,
+    pub initializer_span: Span,
+    pub initializer_ordinal: SourceUnitOrdinal,
+}
+
+/// A value input after the canonical selector engine has selected one exact
+/// top-level source unit. The prepared execution index resolves this name to
+/// its canonical SWC `Id` and validates all declaration/write facts.
+#[derive(Debug, Clone)]
+pub struct SelectedBindingValueInput {
+    pub evidence: ValueInputEvidence,
+    pub selected_binding: String,
+    /// Original parsed module-body item selected by `selector_resolve`. The
+    /// canonical execution index maps this span to its split source unit and
+    /// validates the declaration and complete write summary.
+    pub selected_statement_span: Span,
+}
+
+/// Resolved whole-program native integrity, derived from source facts and any
+/// explicitly recorded author input dependencies. This is never a serialized
+/// spec assertion.
 #[derive(Debug, Clone, Default)]
 pub struct NativeIntegrity {
     pub mutated: BTreeSet<NativeIntrinsic>,
     pub prototype_mutations: Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,
     pub witnesses: Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
     pub certificates: Arc<Vec<crate::reports::schema::NativeReceiverCertificate>>,
+    /// Validated inputs by stable reference. Consumers report a dependency only
+    /// when a receiver refinement was actually used.
+    pub value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,
+    pub consumed_value_inputs: BTreeSet<ValueInputRef>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisAssumptions {
+    /// Source-resolved author inputs for captured provider bindings. These are
+    /// keyed by canonical IDs from the prepared entry AST and are distinct from
+    /// inferred source facts and all purity/callback contracts.
+    pub captured_value_inputs: Vec<ResolvedBindingValueInput>,
     /// Version-scoped author assertion for exact host operations.
     pub host_no_reentry: Option<spec::HostNoReentry>,
     /// Exact author-certified browser-global slots whose stored capabilities
@@ -248,6 +314,9 @@ pub struct AnalysisAssumptions {
 pub struct AnalysisInputs {
     pub native_integrity: Option<NativeIntegrity>,
     pub assumptions: AnalysisAssumptions,
+    /// Source-match results awaiting canonical binding/write-index validation
+    /// in the whole-program prepared analysis.
+    pub selected_value_inputs: Vec<SelectedBindingValueInput>,
     pub local_effect_policy: LocalEffectPolicy,
     /// Cross-module purity verdicts for this chunk's imported function
     /// bindings, keyed by local binding name. Produced by the program-level

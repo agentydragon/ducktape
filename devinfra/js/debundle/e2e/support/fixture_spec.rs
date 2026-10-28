@@ -702,6 +702,8 @@ pub struct FixtureOpts<'a> {
     /// `chunk_export_purity` entries as `(defining chunk_id, assertion)`,
     /// built via [`ChunkExportPurityBuilder`]. Default empty.
     pub chunk_export_purity: &'a [(&'a str, spec::ChunkExportPurity)],
+    /// Author-conditioned captured-value inputs keyed by their defining chunk.
+    pub value_inputs: Vec<(String, Vec<spec::ValueInputContract>)>,
     /// Additional vendor marks keyed by chunk ID, for report and rewrite cases.
     pub vendor_marks: &'a [(&'a str, spec::VendorMark)],
     /// Keep only `chunk_id` in the materialization artifact while retaining
@@ -736,6 +738,7 @@ impl<'a> FixtureOpts<'a> {
             source_paths: &[],
             extra_chunk_logical_modules: &[],
             chunk_export_purity: &[],
+            value_inputs: Vec::new(),
             vendor_marks: &[],
             prune_other_chunks: false,
         }
@@ -767,6 +770,16 @@ impl<'a> FixtureOpts<'a> {
         entries: &'a [(&'a str, spec::ChunkExportPurity)],
     ) -> Self {
         self.chunk_export_purity = entries;
+        self
+    }
+
+    /// Attach source-bound value inputs to one analyzed provider chunk.
+    pub fn with_value_inputs(
+        mut self,
+        chunk: impl Into<String>,
+        inputs: Vec<spec::ValueInputContract>,
+    ) -> Self {
+        self.value_inputs.push((chunk.into(), inputs));
         self
     }
 
@@ -1061,7 +1074,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
             unassigned_mode_catchall_file(None),
         );
     }
-    let chunk_analysis_options = if opts.dataflow_aware_s_chain
+    let mut chunk_analysis_options = if opts.dataflow_aware_s_chain
         || opts.trusted_dataflow_summaries
         || opts.local_property_effects
         || !opts.deferred_global_publications.is_empty()
@@ -1071,6 +1084,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         BTreeMap::from([(
             chunk_id.to_string(),
             DependencyGraphOptions {
+                value_inputs: Vec::new(),
                 dataflow_aware_s_chain: opts.dataflow_aware_s_chain,
                 trusted_dataflow_summaries: opts.trusted_dataflow_summaries,
                 local_property_effects: opts.local_property_effects,
@@ -1116,6 +1130,12 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
     } else {
         BTreeMap::new()
     };
+    for (chunk, value_inputs) in &opts.value_inputs {
+        chunk_analysis_options
+            .entry(chunk.clone())
+            .or_insert_with(DependencyGraphOptions::default)
+            .value_inputs = value_inputs.clone();
+    }
 
     let chunk_export_purity: BTreeMap<String, spec::ChunkExportPurity> = opts
         .chunk_export_purity

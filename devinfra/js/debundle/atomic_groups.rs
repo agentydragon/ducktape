@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::facts::StatementFacts;
 use crate::graph::{
-    DepKind, DependencyGraph, DependencyGraphOptions, DuplicateTopLevelDeclaration, SourceUnitId,
+    DepKind, DependencyGraph, DependencyGraphBuildError, DependencyGraphOptions, SourceUnitId,
     build_dependency_graph_with,
 };
 
@@ -67,7 +67,7 @@ pub struct DependencyGraphAndAtomicGroups {
 pub fn compute_dependency_graph_and_atomic_groups_with(
     facts: &[StatementFacts],
     options: DependencyGraphOptions,
-) -> Result<DependencyGraphAndAtomicGroups, DuplicateTopLevelDeclaration> {
+) -> Result<DependencyGraphAndAtomicGroups, DependencyGraphBuildError> {
     let dependency_graph = build_dependency_graph_with(facts, options)?;
     let atomic_groups = compute_atomic_groups(&dependency_graph);
     Ok(DependencyGraphAndAtomicGroups {

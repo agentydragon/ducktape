@@ -27,7 +27,8 @@ mod quotient;
 mod tests;
 
 pub use build::{
-    DependencyGraphOptions, DuplicateTopLevelDeclaration, build_dependency_graph_with,
+    DependencyGraphBuildError, DependencyGraphOptions, DuplicateTopLevelDeclaration,
+    build_dependency_graph_with,
 };
 pub use dependency_graph::{
     DependencyGraph, SourceUnit, SourceUnitClass, SourceUnitId, UnresolvedDependencyEdgeEndpoint,

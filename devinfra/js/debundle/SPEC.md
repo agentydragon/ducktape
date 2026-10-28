@@ -820,6 +820,72 @@ selects local certificates or those relevant to evaluated failed native roots,
 with the usual per-section row limits. Other native writes still contribute to
 the unchanged whole-program integrity fixed point. No author contract is added.
 
+## Captured ordinary-object values
+
+`chunk_analysis_options.<defining chunk>.value_inputs` can attach a typed
+`ordinary_object` value premise to one provider binding:
+
+```yaml
+chunk_analysis_options:
+  static/peer:
+    value_inputs:
+      - source_match:
+          match: "var captured = globalThis.runtimeSettings.state;"
+          bindings: [captured]
+        value:
+          kind: ordinary_object
+        audited_source_sha256: "<64 hex characters for the parser input>"
+```
+
+`source_match` must resolve through the canonical selector engine to exactly
+one declared placeholder binding. `audited_source_sha256` must match the exact
+bytes recorded as the provider's parser input, including when the graph was
+freshly recaptured. `expected_export`, when present, must name a direct export
+of that exact local binding. The provider must be loaded, non-excluded and in
+the existing analyzed static-import closure. It may remain unmaterialized; this
+option does not select it as an emission root or change output ownership.
+
+The author audits that the successful initializer's direct value is an ordinary
+non-Proxy object whose identity differs from the actual global object and every
+native constructor, prototype or object identity represented by the census.
+This says nothing about purity, reentry, throws, allocation freshness,
+properties, descendant identities or object lifetime. The object may have a
+native prototype, contain native values or expose getters and callbacks. Its
+initializer and all reads, effects, callback calls, throws and ordering remain
+in the ordinary analysis.
+
+The current source-derived boundary accepts only a top-level simple binding
+initialized by an opaque binding-rooted member read. The canonical declaration
+and write index must establish one declaration and no possible reassignment,
+update, repeated declaration, destructuring write, loop write, deferred write
+or dynamic-scope contamination. A recognized global or native identity
+contradicts the contract and fails; unsupported initializer categories are
+rejected rather than interpreted as values. Stable aliases are propagated only
+when the existing index proves their availability and write stability.
+
+A mutation through the direct captured value discharges only that receiver's
+prior `unknown_global_value` possibility. The census still emits an author-
+conditioned witness, including when its affected-root set is empty. A member or
+descendant of the captured object remains `unknown_global_value`, including
+computed, symbol and `constructor` paths. Calls or construction involving a
+captured value are widened only when the existing value facts show that input
+is involved. A local callable whose canonical return summary contains only the
+selected binding is recognized as returning an opaque descendant, so its call
+result keeps the `unknown_global_value` barrier. Other captured-return shapes
+are rejected as unsupported. This is an intra-chunk direct-return case, not a
+general return or cross-module alias analysis. A write through a descendant
+therefore retains the usual global/native barrier, and recognized native writes
+elsewhere in the analyzed program remain effective.
+
+The census records each input reference actually consumed by a receiver
+refinement. Those dependencies flow into successful native guards, native-call
+identity uses and inferred imported returned-record certificates and uses.
+Native Set-iteration and local-class field proofs that require a native premise
+stay conservative while such dependencies are present; source-only local-class
+proofs with no native field premise remain available. The source digest binds
+the input to parsed bytes, but it does not establish the external runtime audit,
+code outside the analyzed prefix, or host behavior.
+
 ## Ordinary own descriptor inspection
 
 A guarded direct `Object.getOwnPropertyDescriptors` call on an exact ordinary

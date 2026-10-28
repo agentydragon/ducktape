@@ -401,12 +401,16 @@ pub fn materialize_logical_modules(
     let cross_module_purities = cross_module::collect_cross_module_imported_purities(
         &artifact,
         &artifact_indexes,
-        chunk_export_purity,
+        cross_module::CrossModuleAnalysisOptions {
+            chunk_export_purity,
+            chunk_analysis_options,
+            graph_provenance: options.graph_provenance.as_ref(),
+        },
         &declared_pure_new,
         &full_swap_chunk_ids,
         &vendor_affected_chunk_ids,
         Some(&cross_module_chunk_closure),
-    );
+    )?;
     let chunk_results = GLOBALS
         .with(|globals| {
             claimed

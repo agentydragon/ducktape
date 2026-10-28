@@ -40,6 +40,35 @@ impl fmt::Display for DuplicateTopLevelDeclaration {
 
 impl std::error::Error for DuplicateTopLevelDeclaration {}
 
+/// Graph construction is intentionally source-free. Captured value inputs
+/// must be resolved by the prepared whole-program AST/index pipeline before
+/// callers extract StatementFacts and build this graph.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DependencyGraphBuildError {
+    DuplicateTopLevelDeclaration(DuplicateTopLevelDeclaration),
+    UnresolvedValueInputs { count: usize },
+}
+
+impl fmt::Display for DependencyGraphBuildError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DuplicateTopLevelDeclaration(error) => error.fmt(f),
+            Self::UnresolvedValueInputs { count } => write!(
+                f,
+                "cannot build a dependency graph with {count} unresolved captured value input(s); resolve them against the exact provider source first"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for DependencyGraphBuildError {}
+
+impl From<DuplicateTopLevelDeclaration> for DependencyGraphBuildError {
+    fn from(error: DuplicateTopLevelDeclaration) -> Self {
+        Self::DuplicateTopLevelDeclaration(error)
+    }
+}
+
 /// Build the fine dependency graph from per-statement facts under the
 /// per-chunk [`DependencyGraphOptions`]. Pure IR construction: no module
 /// assignment, no quotient. Module-level dependencies are derived later
@@ -51,7 +80,12 @@ impl std::error::Error for DuplicateTopLevelDeclaration {}
 pub fn build_dependency_graph_with(
     facts: &[StatementFacts],
     options: DependencyGraphOptions,
-) -> Result<DependencyGraph, DuplicateTopLevelDeclaration> {
+) -> Result<DependencyGraph, DependencyGraphBuildError> {
+    if !options.value_inputs.is_empty() {
+        return Err(DependencyGraphBuildError::UnresolvedValueInputs {
+            count: options.value_inputs.len(),
+        });
+    }
     let mut declaration_sites = BTreeMap::<Id, Vec<SourceUnitId>>::new();
     let mut nodes = Vec::<SourceUnit>::with_capacity(facts.len());
     for stmt in facts {
@@ -77,6 +111,7 @@ pub fn build_dependency_graph_with(
                     native_prototype_property_checks: calls
                         .native_prototype_property_checks
                         .clone(),
+                    native_integrity_uses: calls.native_integrity_uses.clone(),
                     precision_losses: calls.precision_losses.clone(),
                     callback_factory_uses: Vec::new(),
                     returned_record_uses: Vec::new(),
@@ -124,7 +159,8 @@ pub fn build_dependency_graph_with(
                         binding: binding.0.clone(),
                         first: SourceUnitOrdinal(sites[0].0),
                         second: SourceUnitOrdinal(sites[1].0),
-                    });
+                    }
+                    .into());
                 }
             }
             shared_vars.insert(binding.clone());

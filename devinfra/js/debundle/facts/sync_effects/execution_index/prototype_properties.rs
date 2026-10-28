@@ -19,12 +19,35 @@ fn identity_property(property: &str) -> bool {
     matches!(property, "__proto__" | "constructor" | "prototype")
 }
 
-fn contained_roots(
+// This census uses source-only aliases. Captured value assertions must not
+// discharge a source-only prototype absence obligation.
+fn prototype_intrinsic_roots(
     value: &ValueExpr,
-    aliases: &BTreeMap<Id, IntrinsicRoots>,
+    aliases: &BTreeMap<Id, NativeReceiverRoots>,
     index: &ExecutionIndex,
 ) -> IntrinsicRoots {
-    let mut roots = intrinsic_roots(value, aliases, &index.global_object_names);
+    intrinsic_roots(
+        value,
+        aliases,
+        &index.global_object_names,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .into_iter()
+    .filter_map(|root| match root {
+        NativeReceiverRoot::Intrinsic(root) => Some(root),
+        NativeReceiverRoot::OrdinaryDirect { .. }
+        | NativeReceiverRoot::OrdinaryDescendant { .. } => None,
+    })
+    .collect()
+}
+
+fn contained_roots(
+    value: &ValueExpr,
+    aliases: &BTreeMap<Id, NativeReceiverRoots>,
+    index: &ExecutionIndex,
+) -> IntrinsicRoots {
+    let mut roots = prototype_intrinsic_roots(value, aliases, index);
     match value {
         ValueExpr::ObjectLiteral(_, properties) => {
             for (_, value) in properties {
@@ -38,10 +61,10 @@ fn contained_roots(
                 .into_iter()
                 .flatten()
             {
-                roots.extend(intrinsic_roots(
+                roots.extend(prototype_intrinsic_roots(
                     &ValueExpr::Binding(id.clone()),
                     aliases,
-                    &index.global_object_names,
+                    index,
                 ));
             }
         }
@@ -55,10 +78,10 @@ fn contained_roots(
                             .into_iter()
                             .flatten()
                         {
-                            roots.extend(intrinsic_roots(
+                            roots.extend(prototype_intrinsic_roots(
                                 &ValueExpr::Binding(id.clone()),
                                 aliases,
-                                &index.global_object_names,
+                                index,
                             ));
                         }
                     }
@@ -100,7 +123,7 @@ fn contained_roots(
 impl ExecutionIndex {
     pub(super) fn collect_prototype_mutations(
         &self,
-        aliases: &BTreeMap<Id, IntrinsicRoots>,
+        aliases: &BTreeMap<Id, NativeReceiverRoots>,
         assignments: &[&(Id, ValueExpr)],
         declared: &BTreeSet<Id>,
     ) -> Vec<NativePrototypeMutation> {
@@ -126,7 +149,7 @@ impl ExecutionIndex {
                 let roots = contained_roots(&value, &capabilities, self);
                 let entry = capabilities.entry(id).or_default();
                 let before = entry.len();
-                entry.extend(roots);
+                entry.extend(roots.into_iter().map(NativeReceiverRoot::Intrinsic));
                 changed |= entry.len() != before;
             }
             if !changed {
@@ -208,7 +231,7 @@ impl ExecutionIndex {
             // even inside a deferred closure or an unindexed accessor body.
             if let ValueExpr::Member(base, Some(property), _) = &call.callee
                 && identity_property(property)
-                && intrinsic_roots(base, aliases, &self.global_object_names).is_empty()
+                && prototype_intrinsic_roots(base, aliases, self).is_empty()
             {
                 mutations.push(mutation(
                     call.owner,

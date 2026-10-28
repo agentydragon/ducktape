@@ -32,6 +32,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use anyhow::{Result, bail};
 use js_ast::SourceLineIndex;
 use swc_common::{BytePos, Span};
 use swc_ecma_ast::ModuleItem;
@@ -39,7 +40,7 @@ use swc_ecma_ast::ModuleItem;
 use crate::SourceLocation;
 use crate::analysis_inputs::{
     CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments, DeferredRecordMember,
-    NativeIntegrity, ReturnedRecordSummary,
+    NativeIntegrity, ResolvedBindingValueInput, ReturnedRecordSummary, SelectedBindingValueInput,
 };
 use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
@@ -332,12 +333,14 @@ pub fn resolve_imported_purities(
 pub struct ResolvedCallableSummaries {
     pub imported_callables: BTreeMap<ModuleKey, BTreeMap<String, CallableSummary>>,
     pub native_integrity: Option<NativeIntegrity>,
+    pub value_inputs: BTreeMap<ModuleKey, Vec<ResolvedBindingValueInput>>,
 }
 
 pub fn resolve_imported_callable_summaries(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
-) -> ResolvedCallableSummaries {
+    selected_value_inputs: &BTreeMap<ModuleKey, Vec<SelectedBindingValueInput>>,
+) -> Result<ResolvedCallableSummaries> {
     let required: BTreeSet<_> = modules
         .values()
         .flat_map(|facts| facts.imports.values())
@@ -364,24 +367,44 @@ pub fn resolve_imported_callable_summaries(
             }
         }
     }
-    let mut prepared: BTreeMap<_, _> = modules
-        .iter()
-        .map(|(module, facts)| {
-            let locals = facts
-                .exports
-                .iter()
-                .filter(|(export, _)| required.contains(&(module.clone(), (*export).clone())))
-                .map(|(_, local)| local.clone())
-                .collect();
-            let views = top_level_item_views(facts.body);
-            let mut prepared =
-                crate::facts::sync_effects::execution_index::prepare_callable_capabilities(
-                    &views, locals,
-                );
-            prepared.locate_native_writes(module, facts.source.as_ref());
-            (module, prepared)
-        })
-        .collect();
+    let mut prepared = BTreeMap::new();
+    let mut resolved_value_inputs = BTreeMap::new();
+    for (module, facts) in modules {
+        let locals = facts
+            .exports
+            .iter()
+            .filter(|(export, _)| required.contains(&(module.clone(), (*export).clone())))
+            .map(|(_, local)| local.clone())
+            .collect();
+        let views = top_level_item_views(facts.body);
+        let mut prepared_module =
+            crate::facts::sync_effects::execution_index::prepare_callable_capabilities(
+                &views,
+                locals,
+                selected_value_inputs
+                    .get(module)
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+        if !prepared_module.value_input_errors().is_empty() {
+            bail!(
+                "invalid captured value input for provider {module}: {}",
+                prepared_module.value_input_errors().join("; ")
+            );
+        }
+        prepared_module.locate_value_inputs(facts.source.as_ref());
+        let module_inputs = prepared_module.resolved_value_inputs();
+        if !module_inputs.is_empty() && facts.source.is_none() {
+            bail!(
+                "captured value input for provider {module} has no retained parser source locations"
+            );
+        }
+        if !module_inputs.is_empty() {
+            resolved_value_inputs.insert(module.clone(), module_inputs);
+        }
+        prepared_module.locate_native_writes(module, facts.source.as_ref());
+        prepared.insert(module, prepared_module);
+    }
     // Argument/entry coverage is structural and independent of the native
     // integrity that it can refine. Author timing assertions cannot supply it.
     for (module, facts) in modules {
@@ -520,6 +543,9 @@ pub fn resolve_imported_callable_summaries(
                                 captures: captures.clone(),
                             })
                             .collect(),
+                        native_integrity_value_inputs: native_integrity
+                            .consumed_value_inputs
+                            .clone(),
                     }));
             }
         }
@@ -531,10 +557,11 @@ pub fn resolve_imported_callable_summaries(
             (module.clone(), bindings)
         })
         .collect();
-    ResolvedCallableSummaries {
+    Ok(ResolvedCallableSummaries {
         imported_callables,
         native_integrity: Some(native_integrity),
-    }
+        value_inputs: resolved_value_inputs,
+    })
 }
 
 fn project_callable_summaries(
@@ -993,7 +1020,9 @@ mod tests {
             ("lib".to_string(), BTreeSet::from(["audited".to_string()])),
             ("vendor".to_string(), BTreeSet::from(["wrap".to_string()])),
         ]);
-        let resolved = resolve_imported_callable_summaries(&modules, &asserted).imported_callables;
+        let resolved = resolve_imported_callable_summaries(&modules, &asserted, &BTreeMap::new())
+            .unwrap()
+            .imported_callables;
         assert_eq!(
             resolved["app"]["localWrap"].callback_factory_evidence(),
             &BTreeSet::from([CallbackFactoryEvidence::InferredImmutableWrapper {

@@ -342,6 +342,11 @@ impl<'de> Deserialize<'de> for RetainedCallbackSignature {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DependencyGraphOptions {
+    /// Author-conditioned value facts for exact top-level provider bindings.
+    /// These are resolved by the whole-program source analysis before graph
+    /// construction and never select emission roots.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub value_inputs: Vec<ValueInputContract>,
     /// Author-certified browser-global data slots whose writes publish a
     /// callback only for use after synchronous chunk initialization. The
     /// slot must be an ordinary inert own data property, or an absent slot
@@ -429,6 +434,35 @@ pub struct DependencyGraphOptions {
     /// classification regardless of this flag.
     #[serde(default)]
     pub local_property_effects: bool,
+}
+
+/// A source-bound value premise attached to one exact provider chunk.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ValueInputContract {
+    /// Structural selector for exactly one declared local binding.
+    pub source_match: SourceMatchClaim,
+    pub value: CapturedValueContract,
+    /// SHA-256 of the parser input bytes recorded for this provider entry.
+    pub audited_source_sha256: String,
+    /// Optional direct export name that must resolve to the selected local cell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_export: Option<String>,
+    /// YAML-only author rationale. It does not strengthen the premise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CapturedValueContract {
+    pub kind: CapturedValueKind,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum CapturedValueKind {
+    OrdinaryObject,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]

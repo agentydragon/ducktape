@@ -5,9 +5,13 @@
 //! through calls to imported functions instead of bailing `unknown_call`.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use analysis::analysis_inputs::{CallableSummary, NativeIntegrity};
+use analysis::analysis_inputs::{
+    CallableSummary, NativeIntegrity, ResolvedBindingValueInput, SelectedBindingValueInput,
+    ValueInputEvidence, ValueInputRef,
+};
 use analysis::cross_module_purity::{
     ModulePurityFacts, ResolvedImport, resolve_asserted_callback_factory_members,
     resolve_asserted_fluent_bindings, resolve_asserted_inline_callback_factories,
@@ -20,13 +24,18 @@ use analysis::cross_module_purity::{
     resolve_imported_purities,
 };
 use analysis::purity::Purity;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 use artifact::reports::{ExportAliasRecord, ImportRecord, ImportSpecifierKind};
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId};
+use graph_provenance::{CurrentRoots, GraphProvenance};
 use js_ast::ParsedJsModule;
 use program_analysis::analyze_program_shallow;
-use spec::ChunkExportPurity;
-use swc_ecma_ast::{Decl, ModuleDecl, ModuleItem, Pat};
+use selector_outcome::Outcome as SelectorOutcome;
+use selector_resolve::{Chunk as SelectorChunk, EntityIndex};
+use source_match::source_match_claim_member_selectors;
+use spec::{ChunkExportPurity, DependencyGraphOptions};
+use swc_common::Spanned;
+use swc_ecma_ast::{Decl, Module, ModuleDecl, ModuleItem, Pat};
 
 /// Binding names introduced by an exported declaration (`export function`/
 /// `export const`/`export class`), whose export name equals the local name.
@@ -79,6 +88,8 @@ pub(super) struct CrossModulePurities {
     pub(super) imported_callables: BTreeMap<String, BTreeMap<String, CallableSummary>>,
     /// Source-derived native mutation census shared by every analyzed chunk.
     pub(super) native_integrity: Option<NativeIntegrity>,
+    /// Source-resolved author inputs for the provider's own local analysis.
+    pub(super) value_inputs: BTreeMap<String, Vec<ResolvedBindingValueInput>>,
     pub(super) inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) retained_callback_factories:
@@ -171,15 +182,26 @@ fn resolved_target_is_entry(
 /// is replaced by the upstream package at serve time, so verdicts
 /// derived from the bundle copy would assert purity about code that is
 /// never emitted. Imports of such chunks stay `unknown_call`.
+pub(super) struct CrossModuleAnalysisOptions<'a> {
+    pub(super) chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
+    pub(super) chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
+    pub(super) graph_provenance: Option<&'a GraphProvenance>,
+}
+
 pub(super) fn collect_cross_module_imported_purities(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
-    chunk_export_purity: &BTreeMap<String, ChunkExportPurity>,
+    options: CrossModuleAnalysisOptions<'_>,
     declared_pure_new_bindings: &BTreeMap<String, BTreeSet<String>>,
     excluded_chunks: &BTreeSet<ChunkId>,
     primitive_opaque_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
-) -> CrossModulePurities {
+) -> Result<CrossModulePurities> {
+    let CrossModuleAnalysisOptions {
+        chunk_export_purity,
+        chunk_analysis_options,
+        graph_provenance,
+    } = options;
     // Pass 1: re-parse entries stored as raw source so every chunk's body is
     // analyzable. Parse failures only warn — the pass is an analysis
     // refinement, and an unparseable chunk degrades to today's conservative
@@ -439,6 +461,14 @@ pub(super) fn collect_cross_module_imported_purities(
             }
         }
     }
+    let value_inputs = resolve_value_inputs(
+        artifact,
+        &modules,
+        chunk_analysis_options,
+        graph_provenance,
+        excluded_chunks,
+        chunk_filter,
+    )?;
     let asserted_pure: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
         .iter()
         .filter(|(_, assertion)| !assertion.pure_exports.is_empty())
@@ -535,8 +565,8 @@ pub(super) fn collect_cross_module_imported_purities(
         }
     }
     let callable_summaries =
-        resolve_imported_callable_summaries(&modules, &asserted_callback_factories);
-    CrossModulePurities {
+        resolve_imported_callable_summaries(&modules, &asserted_callback_factories, &value_inputs)?;
+    Ok(CrossModulePurities {
         no_reentry_callback_exports: resolve_asserted_no_reentry_callbacks(
             &modules,
             &chunk_export_purity
@@ -608,6 +638,7 @@ pub(super) fn collect_cross_module_imported_purities(
         constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
         imported_callables: callable_summaries.imported_callables,
         native_integrity: callable_summaries.native_integrity,
+        value_inputs: callable_summaries.value_inputs,
         inline_callback_factories: resolve_asserted_inline_callback_factories(
             &modules,
             &asserted_inline_callback_factories,
@@ -632,7 +663,202 @@ pub(super) fn collect_cross_module_imported_purities(
             &modules,
             &asserted_no_reentry_exports,
         ),
+    })
+}
+
+fn resolve_value_inputs(
+    artifact: &ChunkBundle,
+    modules: &BTreeMap<String, ModulePurityFacts<'_>>,
+    options: &BTreeMap<String, DependencyGraphOptions>,
+    graph_provenance: Option<&GraphProvenance>,
+    excluded_chunks: &BTreeSet<ChunkId>,
+    chunk_filter: Option<&BTreeSet<ChunkId>>,
+) -> Result<BTreeMap<String, Vec<SelectedBindingValueInput>>> {
+    let mut resolved = BTreeMap::new();
+    for (chunk_name, options) in options {
+        if options.value_inputs.is_empty() {
+            continue;
+        }
+        let chunk = artifact
+            .chunks
+            .iter()
+            .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
+            .with_context(|| {
+                format!(
+                    "chunk_analysis_options.{chunk_name}.value_inputs names no loaded provider chunk"
+                )
+            })?;
+        ensure!(
+            !excluded_chunks.contains(&chunk.chunk_id),
+            "chunk_analysis_options.{chunk_name}.value_inputs cannot target a fully swapped or excluded provider"
+        );
+        ensure!(
+            chunk_allowed(chunk.chunk_id, chunk_filter),
+            "chunk_analysis_options.{chunk_name}.value_inputs provider is outside the existing analyzed import closure"
+        );
+        let facts = modules.get(chunk_name).with_context(|| {
+            format!(
+                "chunk_analysis_options.{chunk_name}.value_inputs provider entry is unavailable to whole-program analysis"
+            )
+        })?;
+        let entry_file = &chunk.analysis.entry_file;
+        ensure!(
+            chunk.js.get_file(entry_file).is_some(),
+            "provider {chunk_name} is missing its analyzed entry file {entry_file}"
+        );
+        let provenance = graph_provenance
+            .context("captured value inputs require explicit graph parser-input provenance")?;
+        let source = provenance
+            .chunk_sources
+            .iter()
+            .find(|source| source.chunk_id == *chunk_name)
+            .with_context(|| {
+                format!(
+                    "chunk_analysis_options.{chunk_name}.value_inputs requires explicit graph parser-input provenance"
+                )
+            })?;
+        let spec_path = value_input_spec_path(provenance)?;
+        let module = Module {
+            span: Default::default(),
+            body: facts.body.to_vec(),
+            shebang: None,
+        };
+        // Build the canonical structural index once for this provider. Each
+        // authored input below contributes only a selector claim against it.
+        let structural = analysis::facts::analyze_chunk_structural(&module, None, |_| None);
+        let selector_chunk = SelectorChunk::new(chunk_name, &module, structural);
+        let mut chunk_inputs = Vec::with_capacity(options.value_inputs.len());
+        for (input_index, contract) in options.value_inputs.iter().enumerate() {
+            ensure!(
+                contract.audited_source_sha256.len() == 64
+                    && contract
+                        .audited_source_sha256
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit()),
+                "chunk_analysis_options.{chunk_name}.value_inputs[{input_index}].audited_source_sha256 must be a 64-character SHA-256 digest"
+            );
+            ensure!(
+                contract.audited_source_sha256 == source.sha256,
+                "chunk_analysis_options.{chunk_name}.value_inputs[{input_index}] has stale audited_source_sha256: expected parser input {}, found {}",
+                source.sha256,
+                contract.audited_source_sha256
+            );
+            ensure!(
+                contract.source_match.bindings.len() == 1,
+                "chunk_analysis_options.{chunk_name}.value_inputs[{input_index}].source_match must select exactly one declared binding"
+            );
+            let spec::SourceMatchBinding::Local(local) = &contract.source_match.bindings[0] else {
+                bail!(
+                    "chunk_analysis_options.{chunk_name}.value_inputs[{input_index}].source_match does not accept detailed name/rename payloads"
+                );
+            };
+            let request_id =
+                format!("chunk_analysis_options.{chunk_name}.value_inputs[{input_index}]");
+            let mut selectors =
+                source_match_claim_member_selectors(&request_id, &contract.source_match)?;
+            ensure!(
+                selectors.len() == 1,
+                "{request_id}.source_match did not produce one selector"
+            );
+            let selector = selectors.pop().expect("one selector was checked");
+            ensure!(
+                selector
+                    .parsed_selector
+                    .declared_binding_names()
+                    .iter()
+                    .any(|name| name == local),
+                "{request_id}.source_match binding `{local}` must be declared by its pattern; free-reference selection is unsupported"
+            );
+            let selector_module = spec_resolution::spec_module(
+                format!("value_input_{input_index}"),
+                vec![spec_resolution::member_from_source_match(
+                    selector.export_name,
+                    selector.parsed_selector,
+                )],
+                Vec::new(),
+            );
+            let resolution = selector_chunk.resolve(&[selector_module])?;
+            let outcome = resolution
+                .outcome(0, EntityIndex::Member(0))
+                .with_context(|| {
+                    format!("{request_id}.source_match produced no selector outcome")
+                })?;
+            let (body_index, selected_binding) = match &outcome.outcome {
+                SelectorOutcome::Resolved {
+                    body_index,
+                    binding: Some(binding),
+                    ..
+                } => (*body_index, binding.clone()),
+                other => bail!(
+                    "{request_id}.source_match must select exactly one declared binding; selector result: {other:?}"
+                ),
+            };
+            if let Some(export_name) = &contract.expected_export {
+                ensure!(
+                    facts
+                        .exports
+                        .get(export_name)
+                        .is_some_and(|resolved_local| resolved_local == &selected_binding)
+                        && !facts.imports.contains_key(&selected_binding),
+                    "{request_id}.expected_export `{export_name}` does not resolve directly to selected local `{selected_binding}` in provider {chunk_name}"
+                );
+            }
+            let selected_statement_span = facts
+                .body
+                .get(body_index)
+                .with_context(|| {
+                    format!("{request_id}.source_match selected a missing module item")
+                })?
+                .span();
+            let parser_input_file = provenance.resolve(
+                &source.input_file.root,
+                &source.input_file.path,
+                &CurrentRoots::default(),
+            )?;
+            let reference = ValueInputRef {
+                defining_chunk: chunk_name.clone(),
+                input_index,
+            };
+            let evidence = ValueInputEvidence {
+                reference,
+                spec_location: format!("{}:{request_id}", spec_path.display()),
+                source_match: contract.source_match.clone(),
+                value_kind: contract.value.kind,
+                source_path: source.source_path.to_string_lossy().into_owned(),
+                parser_input_file: parser_input_file.to_string_lossy().into_owned(),
+                audited_source_sha256: contract.audited_source_sha256.clone(),
+                selected_binding: selected_binding.clone(),
+                declaration_location: None,
+                initializer_location: None,
+                expected_export: contract.expected_export.clone(),
+                note: contract.note.clone(),
+            };
+            chunk_inputs.push(SelectedBindingValueInput {
+                evidence,
+                selected_binding,
+                selected_statement_span,
+            });
+        }
+        resolved.insert(chunk_name.clone(), chunk_inputs);
     }
+    Ok(resolved)
+}
+
+/// Return the original authored flat-spec or tree-config path recorded when
+/// the graph was captured. Flat specs do not populate `config_path`; their
+/// canonical `--spec` argument is retained in the provenance generation
+/// command and is already the source of truth for replay.
+fn value_input_spec_path(provenance: &GraphProvenance) -> Result<PathBuf> {
+    if let Some(config_path) = &provenance.config_path {
+        return Ok(provenance.roots.spec.join(config_path));
+    }
+    let spec_arg = provenance
+        .generation_command
+        .iter()
+        .position(|argument| argument == "--spec")
+        .and_then(|index| provenance.generation_command.get(index + 1))
+        .context("graph provenance has no recorded flat spec path for value input evidence")?;
+    Ok(PathBuf::from(spec_arg))
 }
 
 #[cfg(test)]
@@ -826,12 +1052,17 @@ export function callWrap(f) { return wrap(f); }\n",
             let facts = collect_cross_module_imported_purities(
                 &artifact,
                 &indexes,
-                &BTreeMap::new(),
+                CrossModuleAnalysisOptions {
+                    chunk_export_purity: &BTreeMap::new(),
+                    chunk_analysis_options: &BTreeMap::new(),
+                    graph_provenance: None,
+                },
                 &BTreeMap::new(),
                 &BTreeSet::new(),
                 &BTreeSet::new(),
                 None,
-            );
+            )
+            .expect("cross-module analysis succeeds");
 
             let app_primitives = facts
                 .primitives
@@ -876,12 +1107,17 @@ export function callWrap(f) { return wrap(f); }\n",
             let facts = collect_cross_module_imported_purities(
                 &artifact,
                 &indexes,
-                &assertions,
+                CrossModuleAnalysisOptions {
+                    chunk_export_purity: &assertions,
+                    chunk_analysis_options: &BTreeMap::new(),
+                    graph_provenance: None,
+                },
                 &BTreeMap::new(),
                 &BTreeSet::new(),
                 &BTreeSet::new(),
                 None,
-            );
+            )
+            .expect("cross-module analysis succeeds");
 
             assert!(
                 facts

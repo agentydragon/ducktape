@@ -236,6 +236,10 @@ fn build_source_unit_nodes_and_edges(
                         summary_ref: format!("imported_callable:{}", proof_use.imported_local),
                         kind: proof_use.kind, lexical_statement_ordinal: proof_use.lexical_statement_ordinal,
                         source_location: proof_use.source_location.clone(),
+                        native_integrity_value_inputs: proof_use
+                            .evidence
+                            .native_integrity_value_inputs
+                            .clone(),
                     }
                 }).collect();
                 report

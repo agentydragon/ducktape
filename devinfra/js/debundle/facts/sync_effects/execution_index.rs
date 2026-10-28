@@ -9,7 +9,10 @@ use super::value_model::{
     FromEntriesMappedProof, NamespaceValueFacts, ValueExpr, infer_namespace_aliases,
     object_data_property_name, static_prop, static_property_name,
 };
-use crate::analysis_inputs::{AnalysisInputs, NativeIntegrity, NativeIntrinsic as IntrinsicRoot};
+use crate::analysis_inputs::{
+    AnalysisInputs, NativeIntegrity, NativeIntrinsic as IntrinsicRoot, ResolvedBindingValueInput,
+    SelectedBindingValueInput, ValueInputEvidence, ValueInputRef,
+};
 use crate::facts::LocalClassConstructionProof;
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
@@ -1266,6 +1269,49 @@ fn returned_function_span(expr: &Expr) -> Option<Span> {
 
 type IntrinsicRoots = BTreeSet<IntrinsicRoot>;
 
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+enum NativeReceiverRoot {
+    Intrinsic(IntrinsicRoot),
+    OrdinaryDirect {
+        reference: ValueInputRef,
+        available_after: SourceUnitOrdinal,
+    },
+    OrdinaryDescendant {
+        reference: ValueInputRef,
+        available_after: SourceUnitOrdinal,
+    },
+}
+
+type NativeReceiverRoots = BTreeSet<NativeReceiverRoot>;
+
+#[derive(Debug, Clone)]
+struct BindingDeclarationWrite {
+    owner: SourceUnitOrdinal,
+    binding_span: Span,
+    initializer_span: Option<Span>,
+    initializer: Option<ValueExpr>,
+    direct_top_level: bool,
+    simple_identifier: bool,
+}
+
+fn span_contains(outer: Span, inner: Span) -> bool {
+    outer.lo.0 <= inner.lo.0 && inner.hi.0 <= outer.hi.0
+}
+
+/// First milestone accepts only a source-local opaque slot/member read. This
+/// is a value-shape boundary, not a purity/effect check: the member access is
+/// still interpreted normally for calls, getters, throws, and ordering.
+fn is_opaque_member_slot(value: &ValueExpr) -> bool {
+    match value {
+        ValueExpr::Member(base, ..) => match base.as_ref() {
+            ValueExpr::Binding(_) => true,
+            ValueExpr::Member(..) => is_opaque_member_slot(base),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 /// The named native binding a write on a proved global object can replace.
 /// Reading an unrelated global slot instead yields an unknown value identity.
 fn named_global_intrinsic(property: &str) -> Option<IntrinsicRoot> {
@@ -1327,9 +1373,66 @@ fn locate_receiver_certificate(
     }
 }
 
+struct ReceiverRootProjection {
+    prior_roots: IntrinsicRoots,
+    effective_roots: IntrinsicRoots,
+    affected_roots: IntrinsicRoots,
+    value_input_refs: BTreeSet<ValueInputRef>,
+}
+
+fn project_receiver_roots(
+    roots: &NativeReceiverRoots,
+    owner: SourceUnitOrdinal,
+) -> ReceiverRootProjection {
+    let mut prior_roots = IntrinsicRoots::new();
+    let mut effective_roots = IntrinsicRoots::new();
+    let mut value_input_refs = BTreeSet::new();
+    for root in roots {
+        match root {
+            NativeReceiverRoot::Intrinsic(root) => {
+                prior_roots.insert(*root);
+                effective_roots.insert(*root);
+            }
+            NativeReceiverRoot::OrdinaryDirect {
+                reference,
+                available_after,
+            } if owner > *available_after => {
+                // The input discharges this prior unknown-global possibility
+                // only for the exact captured receiver, preserving the fact
+                // dependency even when the resulting mutation roots are empty.
+                prior_roots.insert(IntrinsicRoot::UnknownGlobalValue);
+                value_input_refs.insert(reference.clone());
+            }
+            NativeReceiverRoot::OrdinaryDirect { .. } => {
+                // The initializer or stable copy has not completed at this
+                // observation. Preserve the prior opaque behavior.
+                prior_roots.insert(IntrinsicRoot::UnknownGlobalValue);
+                effective_roots.insert(IntrinsicRoot::UnknownGlobalValue);
+            }
+            NativeReceiverRoot::OrdinaryDescendant {
+                reference,
+                available_after,
+            } => {
+                prior_roots.insert(IntrinsicRoot::UnknownGlobalValue);
+                effective_roots.insert(IntrinsicRoot::UnknownGlobalValue);
+                if owner > *available_after {
+                    value_input_refs.insert(reference.clone());
+                }
+            }
+        }
+    }
+    let affected_roots = native_mutation_roots(effective_roots.clone());
+    ReceiverRootProjection {
+        prior_roots,
+        effective_roots,
+        affected_roots,
+        value_input_refs,
+    }
+}
+
 fn receiver_uses_intrinsic_alias(
     value: &ValueExpr,
-    aliases: &BTreeMap<Id, IntrinsicRoots>,
+    aliases: &BTreeMap<Id, NativeReceiverRoots>,
 ) -> bool {
     match value {
         ValueExpr::Binding(id) => aliases.contains_key(id),
@@ -1343,91 +1446,206 @@ fn receiver_uses_intrinsic_alias(
 
 fn intrinsic_roots(
     value: &ValueExpr,
-    roots: &BTreeMap<Id, IntrinsicRoots>,
+    roots: &BTreeMap<Id, NativeReceiverRoots>,
     globals: &BTreeSet<&str>,
-) -> IntrinsicRoots {
+    ordinary_inputs: &BTreeMap<Id, (ValueInputRef, SourceUnitOrdinal)>,
+    callable_return_inputs: &BTreeMap<Id, BTreeSet<(ValueInputRef, SourceUnitOrdinal)>>,
+) -> NativeReceiverRoots {
+    let intrinsic = |root| NativeReceiverRoot::Intrinsic(root);
     match value {
+        ValueExpr::Binding(id) if ordinary_inputs.contains_key(id) => {
+            let (reference, available_after) = &ordinary_inputs[id];
+            BTreeSet::from([NativeReceiverRoot::OrdinaryDirect {
+                reference: reference.clone(),
+                available_after: *available_after,
+            }])
+        }
         ValueExpr::Binding(id) if id.0.as_ref() == "Error" => {
-            BTreeSet::from([IntrinsicRoot::Error])
+            BTreeSet::from([intrinsic(IntrinsicRoot::Error)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Object" => {
-            BTreeSet::from([IntrinsicRoot::Object])
+            BTreeSet::from([intrinsic(IntrinsicRoot::Object)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Array" => {
-            BTreeSet::from([IntrinsicRoot::Array])
+            BTreeSet::from([intrinsic(IntrinsicRoot::Array)])
         }
-        ValueExpr::Binding(id) if id.0.as_ref() == "Math" => BTreeSet::from([IntrinsicRoot::Math]),
+        ValueExpr::Binding(id) if id.0.as_ref() == "Math" => {
+            BTreeSet::from([intrinsic(IntrinsicRoot::Math)])
+        }
         ValueExpr::Binding(id) if id.0.as_ref() == "RegExp" => {
-            BTreeSet::from([IntrinsicRoot::RegExp])
+            BTreeSet::from([intrinsic(IntrinsicRoot::RegExp)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Symbol" => {
-            BTreeSet::from([IntrinsicRoot::Symbol])
+            BTreeSet::from([intrinsic(IntrinsicRoot::Symbol)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Promise" => {
-            BTreeSet::from([IntrinsicRoot::Promise])
+            BTreeSet::from([intrinsic(IntrinsicRoot::Promise)])
         }
-        ValueExpr::Binding(id) if id.0.as_ref() == "Map" => BTreeSet::from([IntrinsicRoot::Map]),
-        ValueExpr::Binding(id) if id.0.as_ref() == "Set" => BTreeSet::from([IntrinsicRoot::Set]),
+        ValueExpr::Binding(id) if id.0.as_ref() == "Map" => {
+            BTreeSet::from([intrinsic(IntrinsicRoot::Map)])
+        }
+        ValueExpr::Binding(id) if id.0.as_ref() == "Set" => {
+            BTreeSet::from([intrinsic(IntrinsicRoot::Set)])
+        }
         ValueExpr::Binding(id) if id.0.as_ref() == "WeakMap" => {
-            BTreeSet::from([IntrinsicRoot::WeakMap])
+            BTreeSet::from([intrinsic(IntrinsicRoot::WeakMap)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "WeakSet" => {
-            BTreeSet::from([IntrinsicRoot::WeakSet])
+            BTreeSet::from([intrinsic(IntrinsicRoot::WeakSet)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "FinalizationRegistry" => {
-            BTreeSet::from([IntrinsicRoot::FinalizationRegistry])
+            BTreeSet::from([intrinsic(IntrinsicRoot::FinalizationRegistry)])
         }
         ValueExpr::Binding(id) if globals.contains(id.0.as_ref()) => {
-            BTreeSet::from([IntrinsicRoot::GlobalObject])
+            BTreeSet::from([intrinsic(IntrinsicRoot::GlobalObject)])
         }
         ValueExpr::Binding(id) => roots.get(id).cloned().unwrap_or_default(),
         ValueExpr::Alternatives(options) => {
-            options
-                .iter()
-                .fold(IntrinsicRoots::new(), |mut combined, option| {
-                    combined.extend(intrinsic_roots(option, roots, globals));
-                    combined
-                })
+            let mut combined = NativeReceiverRoots::new();
+            let mut unknown_arm = false;
+            let mut ordinary_refs = BTreeSet::new();
+            for option in options {
+                let option_roots = intrinsic_roots(
+                    option,
+                    roots,
+                    globals,
+                    ordinary_inputs,
+                    callable_return_inputs,
+                );
+                ordinary_refs.extend(option_roots.iter().filter_map(|root| match root {
+                    NativeReceiverRoot::OrdinaryDirect {
+                        reference,
+                        available_after,
+                    }
+                    | NativeReceiverRoot::OrdinaryDescendant {
+                        reference,
+                        available_after,
+                    } => Some((reference.clone(), *available_after)),
+                    NativeReceiverRoot::Intrinsic(_) => None,
+                }));
+                if option_roots.is_empty()
+                    && !matches!(
+                        option,
+                        ValueExpr::Undefined | ValueExpr::NonCallable | ValueExpr::Primitive(_)
+                    )
+                {
+                    unknown_arm = true;
+                }
+                combined.extend(option_roots);
+            }
+            if unknown_arm {
+                for (reference, available_after) in ordinary_refs {
+                    combined.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+                    combined.insert(NativeReceiverRoot::OrdinaryDescendant {
+                        reference,
+                        available_after,
+                    });
+                }
+            }
+            combined
         }
         ValueExpr::Member(base, property, _) => {
-            let base_roots = intrinsic_roots(base, roots, globals);
-            let mut out = IntrinsicRoots::new();
+            let base_roots = intrinsic_roots(
+                base,
+                roots,
+                globals,
+                ordinary_inputs,
+                callable_return_inputs,
+            );
+            let mut out = NativeReceiverRoots::new();
             for root in base_roots {
                 match root {
-                    IntrinsicRoot::GlobalObject => {
-                        out.insert(
+                    NativeReceiverRoot::OrdinaryDirect {
+                        reference,
+                        available_after,
+                    }
+                    | NativeReceiverRoot::OrdinaryDescendant {
+                        reference,
+                        available_after,
+                    } => {
+                        out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+                        out.insert(NativeReceiverRoot::OrdinaryDescendant {
+                            reference,
+                            available_after,
+                        });
+                    }
+                    NativeReceiverRoot::Intrinsic(IntrinsicRoot::GlobalObject) => {
+                        out.insert(intrinsic(
                             property
                                 .as_deref()
                                 .and_then(named_global_intrinsic)
                                 .unwrap_or(IntrinsicRoot::UnknownGlobalValue),
-                        );
+                        ));
                     }
-                    IntrinsicRoot::UnknownGlobalValue => {
-                        out.insert(IntrinsicRoot::UnknownGlobalValue);
+                    NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue) => {
+                        out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
                     }
-                    // A member of a builtin constructor remains rooted in that
-                    // constructor: Array.prototype.map, Array[Symbol.species],
-                    // and Object.fromEntries are mutations of their respective
-                    // intrinsic families.
-                    IntrinsicRoot::Error
-                    | IntrinsicRoot::Object
-                    | IntrinsicRoot::Array
-                    | IntrinsicRoot::Math
-                    | IntrinsicRoot::RegExp
-                    | IntrinsicRoot::Symbol
-                    | IntrinsicRoot::Promise
-                    | IntrinsicRoot::Map
-                    | IntrinsicRoot::Set
-                    | IntrinsicRoot::WeakMap
-                    | IntrinsicRoot::WeakSet
-                    | IntrinsicRoot::FinalizationRegistry => {
-                        out.insert(root);
+                    NativeReceiverRoot::Intrinsic(root) => {
+                        // A member of a builtin constructor remains rooted in that
+                        // constructor: Array.prototype.map and Object.fromEntries
+                        // are mutations of their respective intrinsic families.
+                        out.insert(intrinsic(root));
                     }
                 }
             }
             out
         }
-        _ => IntrinsicRoots::new(),
+        ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
+            let mut input_roots = NativeReceiverRoots::new();
+            let mut ordinary_refs = BTreeSet::new();
+            for value in std::iter::once(callee.as_ref()).chain(args) {
+                let value_roots = intrinsic_roots(
+                    value,
+                    roots,
+                    globals,
+                    ordinary_inputs,
+                    callable_return_inputs,
+                );
+                ordinary_refs.extend(value_roots.iter().filter_map(|root| match root {
+                    NativeReceiverRoot::OrdinaryDirect {
+                        reference,
+                        available_after,
+                    }
+                    | NativeReceiverRoot::OrdinaryDescendant {
+                        reference,
+                        available_after,
+                    } => Some((reference.clone(), *available_after)),
+                    NativeReceiverRoot::Intrinsic(_) => None,
+                }));
+                input_roots.extend(value_roots);
+            }
+            if let ValueExpr::Binding(binding) = callee.as_ref()
+                && let Some(references) = callable_return_inputs.get(binding)
+            {
+                ordinary_refs.extend(references.iter().cloned());
+                input_roots.extend(references.iter().cloned().map(
+                    |(reference, available_after)| NativeReceiverRoot::OrdinaryDescendant {
+                        reference,
+                        available_after,
+                    },
+                ));
+            }
+            // Preserve baseline opaque call/construct behavior unless an
+            // author input participates. Native constructor aliases and
+            // instances do not inherit their constructor's identity.
+            if ordinary_refs.is_empty() {
+                return NativeReceiverRoots::new();
+            }
+            let mut out = input_roots;
+            out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+            out.extend(
+                ordinary_refs
+                    .into_iter()
+                    .map(
+                        |(reference, available_after)| NativeReceiverRoot::OrdinaryDescendant {
+                            reference,
+                            available_after,
+                        },
+                    ),
+            );
+            out
+        }
+        _ => NativeReceiverRoots::new(),
     }
 }
 
@@ -1625,6 +1843,8 @@ pub(crate) fn resolve_native_integrity<'a>(
         let mut witness = write.witness.clone();
         if witness.unreachable_branch.is_some() {
             witness.affected_roots.clear();
+            witness.value_input_refs.clear();
+            witness.value_input_evidence.clear();
             witnesses.push(witness);
             continue;
         }
@@ -1644,9 +1864,24 @@ pub(crate) fn resolve_native_integrity<'a>(
                     .insert(IntrinsicRoot::GlobalObject);
             }
         }
-        if !witness.affected_roots.is_empty() {
+        if !witness.affected_roots.is_empty() || !witness.value_input_refs.is_empty() {
             witnesses.push(witness);
         }
+    }
+    let mut consumed_value_inputs = BTreeSet::new();
+    let mut value_input_evidence = BTreeMap::new();
+    for witness in &witnesses {
+        if witness.unreachable_branch.is_some() {
+            continue;
+        }
+        consumed_value_inputs.extend(witness.value_input_refs.iter().cloned());
+        value_input_evidence.extend(
+            witness
+                .value_input_evidence
+                .iter()
+                .cloned()
+                .map(|evidence| (evidence.reference.clone(), evidence)),
+        );
     }
     NativeIntegrity {
         prototype_mutations: Arc::new(
@@ -1677,6 +1912,8 @@ pub(crate) fn resolve_native_integrity<'a>(
                 .flat_map(|census| census.certificates.iter().cloned())
                 .collect(),
         ),
+        value_input_evidence,
+        consumed_value_inputs,
     }
 }
 
@@ -2257,6 +2494,13 @@ struct ExecutionIndex {
     property_key_assignments: BTreeMap<Id, Vec<PropertyKeyExpr>>,
     property_key_declarations: BTreeSet<Id>,
     native_write_census: NativeWriteCensus,
+    binding_declaration_writes: BTreeMap<Id, Vec<BindingDeclarationWrite>>,
+    direct_top_level_var_declaration: bool,
+    ordinary_input_refs: BTreeMap<Id, (ValueInputRef, SourceUnitOrdinal)>,
+    value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,
+    resolved_value_inputs: Vec<ResolvedBindingValueInput>,
+    value_input_errors: Vec<String>,
+    native_integrity_value_input_refs: BTreeSet<ValueInputRef>,
     destructuring_source: Option<ValueExpr>,
     destructuring_member_writes: Vec<DestructuringMemberWrite>,
     setter_owners: BTreeMap<Option<String>, BTreeSet<SourceUnitOrdinal>>,
@@ -2383,6 +2627,13 @@ impl Default for ExecutionIndex {
             property_key_assignments: BTreeMap::new(),
             property_key_declarations: BTreeSet::new(),
             native_write_census: NativeWriteCensus::default(),
+            binding_declaration_writes: BTreeMap::new(),
+            direct_top_level_var_declaration: false,
+            ordinary_input_refs: BTreeMap::new(),
+            value_input_evidence: BTreeMap::new(),
+            resolved_value_inputs: Vec::new(),
+            value_input_errors: Vec::new(),
+            native_integrity_value_input_refs: BTreeSet::new(),
             destructuring_source: None,
             destructuring_member_writes: Vec::new(),
             setter_owners: BTreeMap::new(),
@@ -2450,6 +2701,362 @@ impl Default for ExecutionIndex {
 }
 
 impl ExecutionIndex {
+    fn validate_value_inputs(
+        &mut self,
+        selected: &[SelectedBindingValueInput],
+        resolved: &[ResolvedBindingValueInput],
+        raw_aliases: &BTreeMap<Id, NativeReceiverRoots>,
+    ) {
+        for input in selected {
+            let request = &input.evidence.spec_location;
+            if !self.dynamic_scope_owners.is_empty() {
+                self.value_input_errors.push(format!(
+                    "{request} cannot refine `{}` because provider analysis contains dynamic-scope contamination",
+                    input.selected_binding
+                ));
+                continue;
+            }
+            let candidates: Vec<_> = self
+                .binding_declaration_writes
+                .iter()
+                .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
+                .flat_map(|(binding, writes)| {
+                    writes.iter().filter_map(move |write| {
+                        (write.simple_identifier
+                            && write.direct_top_level
+                            && span_contains(input.selected_statement_span, write.binding_span))
+                        .then_some((binding.clone(), write.clone()))
+                    })
+                })
+                .collect();
+            let [(binding, declaration)] = candidates.as_slice() else {
+                self.value_input_errors.push(format!(
+                    "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
+                    input.selected_binding,
+                    candidates.len()
+                ));
+                continue;
+            };
+            let binding = (*binding).clone();
+            let declaration = (*declaration).clone();
+            if self
+                .binding_declaration_writes
+                .get(&binding)
+                .is_none_or(|writes| writes.len() != 1)
+            {
+                self.value_input_errors.push(format!(
+                    "{request} cannot refine `{}` because its canonical binding has repeated or pattern declaration sites",
+                    input.selected_binding
+                ));
+                continue;
+            }
+            if self
+                .property_key_assignments
+                .get(&binding)
+                .is_none_or(|writes| writes.len() != 1)
+            {
+                self.value_input_errors.push(format!(
+                    "{request} cannot refine `{}` because the canonical write index found a possible reassignment, update, destructuring write, or deferred write",
+                    input.selected_binding
+                ));
+                continue;
+            }
+            let Some(initializer) = declaration.initializer.as_ref() else {
+                self.value_input_errors.push(format!(
+                    "{request} cannot refine `{}` because the selected declaration has no initializer",
+                    input.selected_binding
+                ));
+                continue;
+            };
+            let check_known_identity =
+                matches!(initializer, ValueExpr::Binding(_) | ValueExpr::Member(..));
+            if check_known_identity {
+                let roots = intrinsic_roots(
+                    initializer,
+                    raw_aliases,
+                    &self.global_object_names,
+                    &BTreeMap::new(),
+                    &BTreeMap::new(),
+                );
+                let contradictions: BTreeSet<_> = roots
+                    .iter()
+                    .filter_map(|root| match root {
+                        NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue) => None,
+                        NativeReceiverRoot::Intrinsic(root) => Some(*root),
+                        NativeReceiverRoot::OrdinaryDirect { .. }
+                        | NativeReceiverRoot::OrdinaryDescendant { .. } => None,
+                    })
+                    .collect();
+                if !contradictions.is_empty() {
+                    self.value_input_errors.push(format!(
+                        "{request} contradicts recognized native/global identity for `{}`: {contradictions:?}",
+                        input.selected_binding
+                    ));
+                    continue;
+                }
+            }
+            if !is_opaque_member_slot(initializer) {
+                self.value_input_errors.push(format!(
+                    "{request} uses an unsupported initializer category for `{}`; this version accepts only opaque binding-rooted member reads",
+                    input.selected_binding
+                ));
+                continue;
+            }
+            let raw_roots = intrinsic_roots(
+                initializer,
+                raw_aliases,
+                &self.global_object_names,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            );
+            if !raw_roots.iter().any(|root| {
+                matches!(
+                    root,
+                    NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
+                )
+            }) {
+                self.value_input_errors.push(format!(
+                    "{request} cannot refine `{}` because source-only analysis did not establish an existing unknown-global receiver root",
+                    input.selected_binding
+                ));
+                continue;
+            }
+            if self
+                .callables
+                .values()
+                .any(|callable| {
+                    callable.reads.contains(&binding)
+                        && !callable.returns.is_empty()
+                        && !callable.returns.iter().all(
+                            |value| matches!(value, ValueExpr::Binding(returned) if returned == &binding),
+                        )
+                })
+            {
+                self.value_input_errors.push(format!(
+                    "{request} cannot refine `{}` because a local callable that captures it returns a possibly derived value; only direct same-binding returns are supported",
+                    input.selected_binding
+                ));
+                continue;
+            }
+            if self.ordinary_input_refs.contains_key(&binding) {
+                self.value_input_errors.push(format!(
+                    "{request} duplicates a value input for canonical binding `{}`",
+                    input.selected_binding
+                ));
+                continue;
+            }
+            let Some(initializer_span) = declaration.initializer_span else {
+                self.value_input_errors.push(format!(
+                    "{request} cannot refine `{}` because its initializer has no source span",
+                    input.selected_binding
+                ));
+                continue;
+            };
+            let mut evidence = input.evidence.clone();
+            evidence.selected_binding = input.selected_binding.clone();
+            self.ordinary_input_refs.insert(
+                binding.clone(),
+                (evidence.reference.clone(), declaration.owner),
+            );
+            self.value_input_evidence
+                .insert(evidence.reference.clone(), evidence.clone());
+            self.resolved_value_inputs.push(ResolvedBindingValueInput {
+                evidence,
+                binding,
+                declaration_span: declaration.binding_span,
+                initializer_span,
+                initializer_ordinal: declaration.owner,
+            });
+        }
+        for input in resolved {
+            let request = &input.evidence.spec_location;
+            if !self.dynamic_scope_owners.is_empty() {
+                self.value_input_errors.push(format!(
+                    "{request} cannot refine `{}` because provider analysis contains dynamic-scope contamination",
+                    input.evidence.selected_binding
+                ));
+                continue;
+            }
+            let Some(writes) = self.binding_declaration_writes.get(&input.binding) else {
+                self.value_input_errors.push(format!(
+                    "{request} no longer resolves to one canonical declaration in this prepared AST"
+                ));
+                continue;
+            };
+            let [declaration] = writes.as_slice() else {
+                self.value_input_errors.push(format!(
+                    "{request} no longer resolves to one canonical declaration in this prepared AST"
+                ));
+                continue;
+            };
+            if !declaration.direct_top_level
+                || !declaration.simple_identifier
+                || declaration.binding_span != input.declaration_span
+                || declaration.initializer_span != Some(input.initializer_span)
+                || declaration.owner != input.initializer_ordinal
+                || input.binding.0.as_ref() != input.evidence.selected_binding
+                || self
+                    .property_key_assignments
+                    .get(&input.binding)
+                    .is_none_or(|writes| writes.len() != 1)
+            {
+                self.value_input_errors.push(format!(
+                    "{request} no longer identifies the same stable simple top-level binding and complete write summary"
+                ));
+                continue;
+            }
+            let Some(initializer) = declaration.initializer.as_ref() else {
+                self.value_input_errors.push(format!(
+                    "{request} no longer has the source initializer used by the value input"
+                ));
+                continue;
+            };
+            if !is_opaque_member_slot(initializer) {
+                self.value_input_errors.push(format!(
+                    "{request} now uses an unsupported initializer category; expected a binding-rooted opaque member read"
+                ));
+                continue;
+            }
+            let roots = intrinsic_roots(
+                initializer,
+                raw_aliases,
+                &self.global_object_names,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            );
+            let contradiction = roots.iter().any(|root| {
+                matches!(
+                    root,
+                    NativeReceiverRoot::Intrinsic(root)
+                        if *root != IntrinsicRoot::UnknownGlobalValue
+                )
+            });
+            if contradiction {
+                self.value_input_errors.push(format!(
+                    "{request} contradicts a recognized native/global initializer in this prepared AST"
+                ));
+                continue;
+            }
+            if !roots.iter().any(|root| {
+                matches!(
+                    root,
+                    NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
+                )
+            }) {
+                self.value_input_errors.push(format!(
+                    "{request} cannot refine this binding because source-only analysis did not establish an existing unknown-global receiver root"
+                ));
+                continue;
+            }
+            if self.callables.values().any(|callable| {
+                callable.reads.contains(&input.binding)
+                    && !callable.returns.is_empty()
+                    && !callable.returns.iter().all(|value| {
+                        matches!(value, ValueExpr::Binding(returned) if returned == &input.binding)
+                    })
+            }) {
+                self.value_input_errors.push(format!(
+                    "{request} cannot refine `{}` because a local callable that captures it returns a possibly derived value; only direct same-binding returns are supported",
+                    input.evidence.selected_binding
+                ));
+                continue;
+            }
+            if self.ordinary_input_refs.contains_key(&input.binding) {
+                self.value_input_errors.push(format!(
+                    "{request} duplicates a captured value input for canonical binding `{}`",
+                    input.evidence.selected_binding
+                ));
+                continue;
+            }
+            self.ordinary_input_refs.insert(
+                input.binding.clone(),
+                (input.evidence.reference.clone(), input.initializer_ordinal),
+            );
+            self.value_input_evidence
+                .insert(input.evidence.reference.clone(), input.evidence.clone());
+            self.resolved_value_inputs.push(input.clone());
+        }
+    }
+
+    /// Map exact local callable return summaries through hoisted declarations
+    /// and, when prepared, canonical value-flow aliases. A returned captured
+    /// binding stays an opaque descendant at the call site; this does not infer
+    /// arbitrary return shapes.
+    fn callable_return_value_inputs(
+        &self,
+        flow: Option<&ChunkValueFlow>,
+    ) -> BTreeMap<Id, BTreeSet<(ValueInputRef, SourceUnitOrdinal)>> {
+        let mut call_targets = BTreeMap::<Id, BTreeSet<(ValueInputRef, SourceUnitOrdinal)>>::new();
+        for input in &self.resolved_value_inputs {
+            for (binding, function) in &self.hoisted_bindings {
+                if self.callables.get(function).is_some_and(|callable| {
+                    !callable.returns.is_empty()
+                        && callable.returns.iter().all(
+                            |value| matches!(value, ValueExpr::Binding(returned) if returned == &input.binding),
+                        )
+                }) {
+                    call_targets
+                        .entry(binding.clone())
+                        .or_default()
+                        .insert((
+                            input.evidence.reference.clone(),
+                            input.initializer_ordinal,
+                        ));
+                }
+            }
+            if let Some(flow) = flow {
+                for (function, callable) in &self.callables {
+                    if callable.returns.is_empty()
+                        || !callable.returns.iter().all(
+                            |value| matches!(value, ValueExpr::Binding(returned) if returned == &input.binding),
+                        )
+                    {
+                        continue;
+                    }
+                    let function_origin = ValueOrigin::Function(*function);
+                    for binding in &self.property_key_declarations {
+                        if flow
+                            .values_of_binding(binding)
+                            .into_iter()
+                            .eq([function_origin])
+                        {
+                            call_targets.entry(binding.clone()).or_default().insert((
+                                input.evidence.reference.clone(),
+                                input.initializer_ordinal,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        call_targets
+    }
+
+    fn stable_top_level_copy_owner(
+        &self,
+        binding: &Id,
+        initializer: &ValueExpr,
+    ) -> Option<SourceUnitOrdinal> {
+        if !matches!(initializer, ValueExpr::Binding(_))
+            || self
+                .property_key_assignments
+                .get(binding)
+                .is_none_or(|writes| writes.len() != 1)
+        {
+            return None;
+        }
+        let [declaration] = self.binding_declaration_writes.get(binding)?.as_slice() else {
+            return None;
+        };
+        let same_direct_binding = matches!(
+            (declaration.initializer.as_ref(), initializer),
+            (Some(ValueExpr::Binding(declared)), ValueExpr::Binding(candidate))
+                if declared == candidate
+        );
+        (declaration.direct_top_level && declaration.simple_identifier && same_direct_binding)
+            .then_some(declaration.owner)
+    }
+
     fn collect(
         body: &[TopLevelItemView<'_>],
         hints: &AnalysisInputs,
@@ -2499,6 +3106,11 @@ impl ExecutionIndex {
             host_promise_resolve: host_operations.is_some_and(|operations| {
                 operations.contains(&HostNoReentryOperation::PromiseResolve)
             }),
+            native_integrity_value_input_refs: hints
+                .native_integrity
+                .as_ref()
+                .map(|integrity| integrity.consumed_value_inputs.clone())
+                .unwrap_or_default(),
             ..Self::default()
         };
         let mut fresh_steps = Vec::with_capacity(body.len());
@@ -2574,6 +3186,14 @@ impl ExecutionIndex {
                     discarded_synchronous_iife(item.as_module_item());
             }
             index.owner = SourceUnitOrdinal(ordinal);
+            index.direct_top_level_var_declaration = matches!(
+                item.as_module_item(),
+                ModuleItem::Stmt(Stmt::Decl(Decl::Var(_)))
+                    | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                        decl: Decl::Var(_),
+                        ..
+                    }))
+            );
             index.past_await = false;
             index.may_skip_await_depth = 0;
             index.conditional_depth = 0;
@@ -2717,6 +3337,7 @@ impl ExecutionIndex {
                 }
             }
             item.as_module_item().visit_with(&mut index);
+            index.direct_top_level_var_declaration = false;
         }
         for (offset, proof) in index.array_iterations.values_mut().enumerate() {
             proof.result = u32::try_from(offset)
@@ -2733,7 +3354,7 @@ impl ExecutionIndex {
                 reads.extend(callable.reads.iter().cloned());
             }
         }
-        let namespace_assignments = index
+        let owned_namespace_assignments = index
             .top_assignments
             .iter()
             .flatten()
@@ -2743,7 +3364,9 @@ impl ExecutionIndex {
                     .values()
                     .flat_map(|callable| callable.local_assignments.iter()),
             )
+            .cloned()
             .collect::<Vec<_>>();
+        let namespace_assignments = owned_namespace_assignments.iter().collect::<Vec<_>>();
         let namespace_value_facts = NamespaceValueFacts::from_assignments(
             index.class_values.clone(),
             fresh_steps
@@ -2755,17 +3378,22 @@ impl ExecutionIndex {
                 .collect(),
             &namespace_assignments,
         );
-        // Track aliases to the built-in objects used by narrow construction
-        // proofs. A value may retain multiple roots (for example, a
-        // conditional alias of Object and Array), so merge sets rather than
-        // imposing an arbitrary ordering on them.
-        let mut intrinsic_aliases = BTreeMap::<Id, IntrinsicRoots>::new();
+        // Track aliases to native and explicitly captured ordinary values in
+        // one receiver domain. The first pass is source-only and is used to
+        // reject recognized contradictions before any author input is seeded.
+        let mut raw_intrinsic_aliases = BTreeMap::<Id, NativeReceiverRoots>::new();
         loop {
             let mut changed = false;
             for (id, value) in &namespace_assignments {
-                let found = intrinsic_roots(value, &intrinsic_aliases, &index.global_object_names);
+                let found = intrinsic_roots(
+                    value,
+                    &raw_intrinsic_aliases,
+                    &index.global_object_names,
+                    &BTreeMap::new(),
+                    &BTreeMap::new(),
+                );
                 if !found.is_empty() {
-                    let roots = intrinsic_aliases.entry((*id).clone()).or_default();
+                    let roots = raw_intrinsic_aliases.entry((*id).clone()).or_default();
                     let before = roots.len();
                     roots.extend(found);
                     changed |= roots.len() != before;
@@ -2773,6 +3401,109 @@ impl ExecutionIndex {
             }
             if !changed {
                 break;
+            }
+        }
+        index.validate_value_inputs(
+            &hints.selected_value_inputs,
+            &hints.assumptions.captured_value_inputs,
+            &raw_intrinsic_aliases,
+        );
+        let callable_return_inputs = index.callable_return_value_inputs(flow);
+        let mut intrinsic_aliases = raw_intrinsic_aliases.clone();
+        if !index.resolved_value_inputs.is_empty() {
+            intrinsic_aliases.clear();
+            for resolved in &index.resolved_value_inputs {
+                intrinsic_aliases.insert(
+                    resolved.binding.clone(),
+                    BTreeSet::from([NativeReceiverRoot::OrdinaryDirect {
+                        reference: resolved.evidence.reference.clone(),
+                        available_after: resolved.initializer_ordinal,
+                    }]),
+                );
+            }
+            loop {
+                let mut changed = false;
+                for (id, value) in &namespace_assignments {
+                    if index.ordinary_input_refs.contains_key(id) {
+                        continue;
+                    }
+                    let mut found = intrinsic_roots(
+                        value,
+                        &intrinsic_aliases,
+                        &index.global_object_names,
+                        &index.ordinary_input_refs,
+                        &callable_return_inputs,
+                    );
+                    if found.is_empty() {
+                        continue;
+                    }
+                    let stable_copy_owner = index.stable_top_level_copy_owner(id, value);
+                    let ordinary_refs: BTreeSet<_> = found
+                        .iter()
+                        .filter_map(|root| match root {
+                            NativeReceiverRoot::OrdinaryDirect {
+                                reference,
+                                available_after,
+                            }
+                            | NativeReceiverRoot::OrdinaryDescendant {
+                                reference,
+                                available_after,
+                            } => Some((reference.clone(), *available_after)),
+                            NativeReceiverRoot::Intrinsic(_) => None,
+                        })
+                        .collect();
+                    if let Some(copy_owner) = stable_copy_owner {
+                        found = found
+                            .into_iter()
+                            .map(|root| match root {
+                                NativeReceiverRoot::OrdinaryDirect {
+                                    reference,
+                                    available_after,
+                                } if copy_owner > available_after => {
+                                    NativeReceiverRoot::OrdinaryDirect {
+                                        reference,
+                                        available_after: copy_owner,
+                                    }
+                                }
+                                NativeReceiverRoot::OrdinaryDirect { .. } => {
+                                    NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
+                                }
+                                NativeReceiverRoot::OrdinaryDescendant {
+                                    reference,
+                                    available_after,
+                                } if copy_owner > available_after => {
+                                    NativeReceiverRoot::OrdinaryDescendant {
+                                        reference,
+                                        available_after,
+                                    }
+                                }
+                                NativeReceiverRoot::OrdinaryDescendant { .. } => {
+                                    NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
+                                }
+                                other => other,
+                            })
+                            .collect();
+                    } else if !ordinary_refs.is_empty() {
+                        for (reference, available_after) in ordinary_refs {
+                            found.insert(NativeReceiverRoot::Intrinsic(
+                                IntrinsicRoot::UnknownGlobalValue,
+                            ));
+                            found.insert(NativeReceiverRoot::OrdinaryDescendant {
+                                reference,
+                                available_after,
+                            });
+                        }
+                    }
+                    if !found.is_empty() {
+                        let roots = intrinsic_aliases.entry((*id).clone()).or_default();
+                        let before = roots.len();
+                        roots.extend(found);
+                        changed |= roots.len() != before;
+                    }
+                }
+                if !changed {
+                    break;
+                }
             }
         }
         let mut mutated_intrinsics = IntrinsicRoots::new();
@@ -2843,6 +3574,8 @@ impl ExecutionIndex {
                         through_local_alias: false,
                         affected_roots: BTreeSet::from([root]),
                         invalidated_key_dependencies: BTreeSet::new(),
+                        value_input_refs: BTreeSet::new(),
+                        value_input_evidence: Vec::new(),
                         unreachable_branch: None,
                         span: body[owner.0].as_module_item().span(),
                     });
@@ -2863,12 +3596,24 @@ impl ExecutionIndex {
             .cloned()
             .collect();
         for write in &index.intrinsic_writes {
-            let roots = intrinsic_roots(
+            let receiver_roots = intrinsic_roots(
                 &write.receiver,
                 &intrinsic_aliases,
                 &index.global_object_names,
+                &index.ordinary_input_refs,
+                &callable_return_inputs,
             );
-            if !roots.is_empty()
+            let projection = project_receiver_roots(&receiver_roots, write.owner);
+            let input_evidence = projection
+                .value_input_refs
+                .iter()
+                .filter_map(|reference| index.value_input_evidence.get(reference).cloned())
+                .collect();
+            let roots = projection.effective_roots.clone();
+            // Receiver identity certificates are source-only. Do not let an
+            // author-conditioned direct or descendant fact discharge them.
+            if projection.value_input_refs.is_empty()
+                && !roots.is_empty()
                 && index.dynamic_scope_owners.is_empty()
                 && let Some(proof) = index.receiver_identity.receiver(
                     write.receiver_callable,
@@ -2924,18 +3669,20 @@ impl ExecutionIndex {
                 statement_ordinal: write.owner,
                 source_location: None,
                 operation: write.operation,
-                receiver_roots: roots.clone(),
+                receiver_roots: projection.prior_roots,
                 through_local_alias: receiver_uses_intrinsic_alias(
                     &write.receiver,
                     &intrinsic_aliases,
                 ),
-                affected_roots: native_mutation_roots(roots.clone()),
+                affected_roots: projection.affected_roots,
                 invalidated_key_dependencies: BTreeSet::new(),
+                value_input_refs: projection.value_input_refs,
+                value_input_evidence: input_evidence,
                 unreachable_branch: None,
                 span: write.span,
             };
             let Some(key) = &write.key else {
-                if !witness.affected_roots.is_empty() {
+                if !witness.affected_roots.is_empty() || !witness.value_input_refs.is_empty() {
                     Arc::make_mut(&mut index.native_write_census.witnesses).push(witness);
                 }
                 index
@@ -2976,7 +3723,7 @@ impl ExecutionIndex {
         }
         index.native_write_census.prototype_mutations =
             Arc::new(index.collect_prototype_mutations(
-                &intrinsic_aliases,
+                &raw_intrinsic_aliases,
                 &namespace_assignments,
                 &declared,
             ));
@@ -3667,7 +4414,11 @@ impl ExecutionIndex {
     }
 
     fn set_iterable_intrinsics_are_unmodified(&self) -> bool {
-        self.collection_intrinsic_is_unmodified("Set")
+        // This premise feeds purity classification before a runtime proof-use
+        // record can be emitted. Keep it source-only while author-conditioned
+        // NativeIntegrity inputs are present.
+        self.native_integrity_value_input_refs.is_empty()
+            && self.collection_intrinsic_is_unmodified("Set")
             && !self.mutated_intrinsic_roots.contains(&IntrinsicRoot::Array)
     }
 
@@ -4954,7 +5705,23 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
+        let initializer = declarator
+            .init
+            .as_ref()
+            .map(|value| ValueExpr::from_expr(value));
+        let direct_top_level = self.direct_top_level_var_declaration && self.current.is_none();
         if let Pat::Ident(binding) = &declarator.name {
+            self.binding_declaration_writes
+                .entry(binding.id.to_id())
+                .or_default()
+                .push(BindingDeclarationWrite {
+                    owner: self.owner,
+                    binding_span: binding.id.span,
+                    initializer_span: declarator.init.as_ref().map(|value| value.span()),
+                    initializer: initializer.clone(),
+                    direct_top_level,
+                    simple_identifier: true,
+                });
             self.property_key_assignments
                 .entry(binding.id.to_id())
                 .or_default()
@@ -4966,10 +5733,22 @@ impl Visit for ExecutionIndex {
                             PropertyKeyExpr::from_expr(value)
                         }),
                 );
-        } else if declarator.init.is_some() {
+        } else {
             let mut bindings = Vec::new();
-            collect_pattern_assignments(&declarator.name, &ValueExpr::Unknown, &mut bindings);
+            let pattern_value = initializer.clone().unwrap_or(ValueExpr::Unknown);
+            collect_pattern_assignments(&declarator.name, &pattern_value, &mut bindings);
             for (id, _) in bindings {
+                self.binding_declaration_writes
+                    .entry(id.clone())
+                    .or_default()
+                    .push(BindingDeclarationWrite {
+                        owner: self.owner,
+                        binding_span: declarator.name.span(),
+                        initializer_span: declarator.init.as_ref().map(|value| value.span()),
+                        initializer: initializer.clone(),
+                        direct_top_level,
+                        simple_identifier: false,
+                    });
                 self.property_key_assignments
                     .entry(id)
                     .or_default()
@@ -6011,9 +6790,57 @@ pub(crate) struct InferredCallableCapabilities {
 pub(crate) struct PreparedCallableCapabilities {
     index: ExecutionIndex,
     exported_locals: BTreeSet<String>,
+    flow: Option<ChunkValueFlow>,
 }
 
 impl PreparedCallableCapabilities {
+    pub(crate) fn value_input_errors(&self) -> &[String] {
+        &self.index.value_input_errors
+    }
+
+    pub(crate) fn resolved_value_inputs(&self) -> Vec<ResolvedBindingValueInput> {
+        self.index.resolved_value_inputs.clone()
+    }
+
+    pub(crate) fn locate_value_inputs(
+        &mut self,
+        source: Option<&(String, js_ast::SourceLineIndex)>,
+    ) {
+        let locate = |span: Span| {
+            let (path, index) = source?;
+            let (start_line, end_line, start_column) =
+                index.line_range_and_start_column_for_span(span)?;
+            Some(crate::reports::schema::SourceLocation {
+                source_path: path.clone(),
+                start_line,
+                end_line,
+                start_column: Some(start_column),
+            })
+        };
+        for input in &mut self.index.resolved_value_inputs {
+            input.evidence.declaration_location = locate(input.declaration_span);
+            input.evidence.initializer_location = locate(input.initializer_span);
+            self.index
+                .value_input_evidence
+                .insert(input.evidence.reference.clone(), input.evidence.clone());
+        }
+        for witness in Arc::make_mut(&mut self.index.native_write_census.witnesses) {
+            witness.value_input_evidence = witness
+                .value_input_refs
+                .iter()
+                .filter_map(|reference| self.index.value_input_evidence.get(reference).cloned())
+                .collect();
+        }
+        for write in &mut self.index.native_write_census.conditional {
+            write.witness.value_input_evidence = write
+                .witness
+                .value_input_refs
+                .iter()
+                .filter_map(|reference| self.index.value_input_evidence.get(reference).cloned())
+                .collect();
+        }
+    }
+
     pub(crate) fn locate_native_writes(
         &mut self,
         chunk_id: &str,
@@ -6101,16 +6928,22 @@ impl PreparedCallableCapabilities {
 pub(crate) fn prepare_callable_capabilities(
     body: &[TopLevelItemView<'_>],
     exported_locals: BTreeSet<String>,
+    selected_value_inputs: Vec<SelectedBindingValueInput>,
 ) -> PreparedCallableCapabilities {
+    let flow = (!selected_value_inputs.is_empty()).then(|| ChunkValueFlow::analyze(body));
     PreparedCallableCapabilities {
         index: ExecutionIndex::collect(
             body,
-            &AnalysisInputs::default(),
-            None,
+            &AnalysisInputs {
+                selected_value_inputs,
+                ..AnalysisInputs::default()
+            },
+            flow.as_ref(),
             &BTreeSet::new(),
             &LocalClassConstructionProof::default(),
         ),
         exported_locals,
+        flow,
     }
 }
 
@@ -6123,6 +6956,7 @@ pub(crate) fn infer_callable_capabilities(
     let PreparedCallableCapabilities {
         mut index,
         exported_locals,
+        flow: prepared_flow,
     } = prepared;
     index.mutated_intrinsic_roots = integrity.mutated.clone();
     let mut result = InferredCallableCapabilities {
@@ -6141,7 +6975,7 @@ pub(crate) fn infer_callable_capabilities(
         matches!(value, ValueExpr::Origin(ValueOrigin::Function(key)) if callback_candidate(id, *key))
     });
     if has_candidate {
-        let flow = ChunkValueFlow::analyze(body);
+        let flow = prepared_flow.unwrap_or_else(|| ChunkValueFlow::analyze(body));
         let shadowed = crate::facts::compute_shadowed_globals(body);
         result.callback_factories =
             infer_returned_callback_factories(&index, &flow, &exported_locals);
