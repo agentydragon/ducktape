@@ -14,7 +14,6 @@ desktop use a separate setup workflow; see the [current environment guide](https
 ## Files
 
 - `setup.sh`: unified script with `--mode=install|maintenance`
-- `codex_cloud_agent_configuration_plan.md`: detailed research/plan doc collected for Cloud behavior, hooks, and rollout strategy
 
 ## Codex Cloud (Legacy) environment configuration
 
@@ -32,14 +31,20 @@ Codex Cloud behavior (per OpenAI docs):
 
 For this repo:
 
-- Put `SOPS_AGE_KEY` in **Environment variables** if the agent itself must run `sops`.
 - `setup.sh` decrypts the BuildBuddy key from
   `cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml` when
   `SOPS_AGE_KEY` is available.
+- `setup.sh` currently persists any supplied `SOPS_AGE_KEY` in the
+  mode-0600 `~/.codex/agent_env.sh`, which the agent shell sources. Treat the
+  key as available to agent tasks regardless of whether Codex supplied it as
+  an environment variable or a setup-only secret.
+- Use `SOPS_AGE_KEY` only when that runtime exposure is intended. If setup
+  needs the key but agent tasks must not receive it, the script must first be
+  changed and verified not to persist it.
 
-If `SOPS_AGE_KEY` is present during setup, `setup.sh` appends exports to
-`~/.bashrc` and ensures `~/.bash_profile` sources `~/.bashrc`, so both
-interactive and login shell sessions inherit it without duplicate exports.
+If `SOPS_AGE_KEY` is present during setup, `setup.sh` writes it to the agent
+environment file and makes `~/.bashrc` and `~/.bash_profile` source that file,
+so interactive and login shell sessions inherit it.
 
 This is intentional: Codex Cloud docs state setup runs in a separate Bash
 session and recommend `~/.bashrc` for persistence into the agent phase.
@@ -79,14 +84,19 @@ pre-commit hooks, then validates `bb` / `bbr` availability.
    - This setup remains independent of hooks unless legacy behavior is tested.
 
 2. **SOPS key handling trade-off**
-   - `SOPS_AGE_KEY` in environment variables makes runtime decryption possible but is less restrictive than setup-only secrets.
-   - If you do not need runtime decryption, prefer keeping key material setup-only.
+   - `setup.sh` persists `SOPS_AGE_KEY` into the agent environment whenever it
+     is present, so supplying it as a setup-only secret does not keep it
+     setup-only.
+   - Keep the key unset until runtime exposure is intended, or change and test
+     the script's persistence behavior before using a setup-only secret.
    - BuildBuddy setup now depends on being able to decrypt
      `cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml`.
 
 3. **Nix bootstrap cost**
    - First-run setup may be slow; cached-container resume mitigates this.
-   - If setup exceeds practical time limits, fall back to non-Nix Stage A tooling.
+   - If setup exceeds practical time limits, measure the bottleneck and decide
+     whether a non-Nix fallback is needed; the current script does not provide
+     one.
 
 4. **Cloud image assumptions**
    - Scripts assume Linux x86_64 and that Codex agent Bash sessions execute shell startup files.

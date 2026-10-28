@@ -104,97 +104,55 @@ References:
 - `nix/home/codex/default.nix`
 - `devinfra/setup_buildbuddy.sh`
 
-## 4) Practical configuration plan for Codex Cloud (Legacy) in this repo
+## 4) Remaining rollout work
 
-Goal: make Codex Cloud behave as close as feasible to our canonical Nix/devshell workflows, while remaining robust when hooks are unavailable.
+`setup.sh` now implements the bootstrap and maintenance actions that were
+previously proposed here: Nix and the `.#devtools` profile, BuildBuddy setup,
+agent shell configuration, and cached-environment refresh. The [README](README.md)
+is the source of truth for those behaviors and the operator commands. This plan
+tracks only configuration and verification that still require a real Cloud
+environment.
 
-## 4.1 Baseline environment shape (recommended)
+### Verify the installed tool profile
 
-1. **Codex Cloud environment image**: use OpenAI universal image.
-2. **Setup script**: perform deterministic bootstrap for this repo:
-   - install/enable required tooling available in Cloud context
-   - run BuildBuddy bootstrap (`devinfra/setup_buildbuddy.sh`) when key present
-   - run quick sanity checks (`bb --version`, `bbr --help`, `python --version`, etc.)
-3. **Maintenance script**: lightweight idempotent refresh for cached containers:
-   - `git fetch --all --prune`
-   - validity checks for bb auth / remote availability
-4. **Environment variables** (non-secret):
-   - repo-level defaults (`CI=1`, optionally `CODEX_AGENT=1`)
-   - any stable non-sensitive flags
-5. **Secrets / decryption inputs**:
-   - no direct `BUILDBUDDY_API_KEY` environment injection required
-   - `SOPS_AGE_KEY` available so setup/maintenance can decrypt
-     `cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml`
-   - any additional tokens needed only to install/private-fetch during setup
-6. **Internet policy**:
-   - start with allowlist mode, minimum domains required for setup/package fetch + repo infra endpoints.
+- [ ] Run the setup and maintenance modes in fresh and resumed legacy Cloud
+      environments. Confirm the agent shell loads the generated environment and
+      BuildBuddy-backed `bbr` commands can reach the configured service.
+- [ ] Confirm whether the installed `.#devtools` profile provides the tool and
+      environment parity this repository needs. The script does not run `nix
+develop`; test that path only if the profile leaves a concrete gap, and
+      measure setup time before making it the default.
+- [ ] Measure fresh setup time and cache-resume behavior against the current
+      environment limits; document any recovery steps needed after a failed setup.
 
-## 4.2 Agent behavior controls
+### Complete environment configuration
 
-- Keep authoritative repository guidance in `AGENTS.md`.
-- Maintain deterministic command recipes in AGENTS over implicit hook behavior.
+- [ ] Configure the legacy environment with the setup and maintenance commands
+      documented in the README.
+- [ ] Provide `SOPS_AGE_KEY` as a runtime environment variable only when agent
+      tasks may access it. The script currently persists any supplied key into
+      the agent environment file, even when it arrived as a setup-only secret.
+      If setup needs the key without runtime access, change and verify that
+      persistence behavior before configuring the secret.
+- [ ] Decide whether tasks need repo-level environment defaults such as
+      `CI=1` or `CODEX_AGENT=1`; configure only values required by actual tools.
+- [ ] Restrict outbound internet access to the domains required by the setup
+      script and repository workflows, then verify the configured BuildBuddy and
+      package services from a real task.
+- [ ] Record the environment cache reset procedure for a failed or incompatible
+      setup state.
+- [ ] Keep hook support optional; do not make repo correctness depend on it.
 
-Reasoning: AGENTS.md behavior in Cloud is documented; hooks behavior in Cloud is not.
-
-## 4.3 Hooks strategy (pending verification)
-
-Because Cloud hook execution is not explicitly documented:
-
-- Do **not** make Cloud correctness depend on `.codex/hooks.json`.
-- If desired, add an experiment suite:
-  1. commit a minimal project `.codex/hooks.json` with observable side effects,
-  2. run a no-op Cloud task,
-  3. inspect filesystem/log artifacts for hook execution,
-  4. repeat across fresh + cached container runs.
-- If hooks execute reliably, treat as optional acceleration only; keep setup+AGENTS as source of truth.
-
-## 4.4 Nix/devshell and SOPS in Cloud: practical path
-
-"Ideal" parity with local Nix devshell is desirable, but in managed Cloud containers this should be staged:
-
-### Stage A (now): tool parity without full Nix activation
-
-- Install/use repo tooling directly in setup script (bb/bbr/python/pre-commit/etc.) sufficient for agent tasks.
-- Use Bazel + RBE as the execution substrate.
-- Keep bootstrap fast to preserve container cache value.
-
-### Stage B (optional): partial Nix enablement
-
-- If Cloud image/runtime permits, install Nix in setup and pre-build needed profile/packages.
-- Cache warm-up costs may be significant; verify payoff against 12h cache behavior.
-
-### Stage C (advanced): canonical devshell parity
-
-- Attempt `nix develop` style parity only if setup-time and reliability are acceptable.
-- If this path becomes canonical, codify strict smoke tests in setup and maintenance scripts.
-
-### SOPS specifics
-
-- Provide `SOPS_AGE_KEY` via environment configuration so setup/maintenance and
-  agent tasks can decrypt as needed.
-- Use SOPS decryption of encrypted files under repo paths (for example the
-  BuildBuddy key) rather than duplicating raw secret values into environment
-  config fields.
-- Ensure decryption paths respect repository-relative creation rules.
-
-## 5) Reachable knobs checklist (Cloud-first)
-
-Use this as the operator checklist for Codex Cloud environment config:
-
-- [ ] Setup script configured and idempotent
-- [ ] Maintenance script configured and idempotent
-- [ ] Required non-secret env vars declared
-- [ ] SOPS decryption inputs declared (for encrypted repo-managed secrets)
-- [ ] Internet policy set to least privilege needed
-- [ ] Cache reset procedure documented for bad state
-- [ ] Hook support experimentally verified (optional; do not block rollout)
-
-## 6) Open questions / follow-up research
+## 5) Open questions / follow-up research
 
 1. Does Codex Cloud (Legacy) execute project `.codex/hooks.json` in delegated tasks?
 2. If yes, are all hook events supported in Cloud, or only a subset?
 3. Are hook side effects persisted in cached container resumes exactly once or per resumed session?
 4. What are current setup script timeout and resource ceilings by plan tier?
+
+To test hook behavior, use a minimal project hook with an observable side
+effect, run no-op tasks in fresh and resumed legacy environments, and inspect
+the resulting files or logs. Keep hooks optional even if they run reliably.
 
 Until (1)-(2) are verified, this repo should treat hooks as non-authoritative
 for legacy Cloud tasks. Current Cloud orchestration's local-hook restriction is
