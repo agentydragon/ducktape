@@ -23,17 +23,37 @@
      """
      file_inputs = [ctx.attr._workaround_17660]
  
-@@ -201,6 +210,9 @@
+@@ -192,14 +201,18 @@
+         return []
+ 
+     files_to_lint = filter_srcs(ctx.rule)
++    report_name = _MNEMONIC + ("Typed" if ctx.attr._use_tsconfig else "")
+     if ctx.attr._options[LintOptionsInfo].fix:
+-        outputs, info = patch_and_output_files(_MNEMONIC, target, ctx)
++        outputs, info = patch_and_output_files(report_name, target, ctx)
+     else:
+-        outputs, info = output_files(_MNEMONIC, target, ctx)
++        outputs, info = output_files(report_name, target, ctx)
+ 
+     # https://www.npmjs.com/package/chalk#chalklevel
      # 2: Force 256 color support even when a tty isn't detected
      color_env = {"FORCE_COLOR": "2"} if ctx.attr._options[LintOptionsInfo].color else {}
- 
++
 +    if ctx.attr._use_tsconfig and hasattr(ctx.rule.attr, "tsconfig"):
 +        color_env["BAZEL_ESLINT_TSCONFIG"] = ctx.rule.files.tsconfig[0].short_path
-+
+ 
      if len(files_to_lint) == 0:
          noop_lint_action(ctx, outputs)
-         return [info]
-@@ -229,7 +241,7 @@
+@@ -219,7 +232,7 @@
+     )
+ 
+     # TODO(alex): if we run with --fix, this will report the issues that were fixed. Does a machine reader want to know about them?
+-    raw_machine_report = ctx.actions.declare_file(OUTFILE_FORMAT.format(label = target.label.name, mnemonic = _MNEMONIC, suffix = "raw_machine_report"))
++    raw_machine_report = ctx.actions.declare_file(OUTFILE_FORMAT.format(label = target.label.name, mnemonic = report_name, suffix = "raw_machine_report"))
+     eslint_action(ctx, ctx.executable, files_to_lint, raw_machine_report, outputs.machine.exit_code, format = ctx.attr._compact_formatter, target = target, args = ctx.attr._args)
+ 
+     # We could probably use https://www.npmjs.com/package/@microsoft/eslint-formatter-sarif instead.
+@@ -229,7 +242,7 @@
  
      return [info]
  
@@ -42,7 +62,7 @@
      """A factory function to create a linter aspect.
  
      Args:
-@@ -242,6 +254,8 @@
+@@ -242,6 +255,8 @@
          configs: label(s) of the eslint config file(s)
          rule_kinds: which [kinds](https://bazel.build/query/language#kind) of rules should be visited by the aspect
          args: additional command-line arguments to pass to eslint
@@ -51,7 +71,7 @@
      """
  
      # syntax-sugar: allow a single config file in addition to a list
-@@ -281,6 +295,7 @@
+@@ -281,6 +296,7 @@
              "_rule_kinds": attr.string_list(
                  default = rule_kinds,
              ),

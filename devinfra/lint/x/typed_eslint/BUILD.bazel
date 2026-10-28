@@ -19,6 +19,6 @@ eslint_bin.eslint_binary(
     data = [":config"],
     fixed_args = [
         "--config",
-        "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath :eslint.config.mjs)",
+        "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath :config)",
     ],
 )
