@@ -11,8 +11,9 @@ import {
   PointElement,
   Tooltip,
 } from "chart.js";
+import type { AllowanceView, SpendTransactionsView } from "./api/schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
-import type { Allowance, EstimatePeriodId, TransactionsView } from "./types";
+import type { EstimatePeriodId } from "./types";
 
 Chart.register(
   BarController,
@@ -66,8 +67,8 @@ export function SpendingHistoryChart({
   periodId,
   onPeriodChange,
 }: {
-  transactions: TransactionsView | null;
-  allowance: Allowance;
+  transactions: SpendTransactionsView | null;
+  allowance: AllowanceView;
   loading: boolean;
   error: string | null;
   periodId: EstimatePeriodId;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { DeploymentInfo } from "./client";
+import type { DeploymentInfo } from "./api/schema";
 import { deploymentVersions, settingsTabFromSearch } from "./settings_panel";
 
 function deployment(server: string | null, frontend: string | null): DeploymentInfo {

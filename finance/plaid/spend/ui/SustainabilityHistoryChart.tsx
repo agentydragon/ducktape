@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Checkbox, Group, Paper, Stack, Switch, Text, Title } from "@mantine/core";
 import { CategoryScale, Chart, LinearScale, LineController, LineElement, PointElement, Tooltip } from "chart.js";
 
+import type { SustainabilityView } from "./api/schema";
 import { money } from "./spend_display";
-import type { SustainabilityHistory, SustainabilityView } from "./types";
+import type { SustainabilityHistory } from "./types";
 
 const WINDOW_COLORS: Record<number, string> = {
   7: "#6741D9",

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { UnstyledButton } from "@mantine/core";
+import type { FileTreeNode } from "../lib/api/schema";
 import { ChevronDown, ChevronRight, Folder, FolderOpen } from "../lib/icons";
-import type { FileTreeNode } from "../lib/api/client";
 import { getFileIcon } from "../lib/fileTypes";
 
 interface Props {

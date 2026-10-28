@@ -1,16 +1,16 @@
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 
-import type { components } from "../api/schema";
+import type {
+  ArchivedObservationEntry,
+  EvidencePage,
+  NativeFramePage,
+  ObservationPage,
+  ThreadScopeResponse,
+  ThreadView,
+} from "../api/schema";
 import { api, displayableError, fetchWithLogin, ok } from "../client";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 
-export type ThreadView = components["schemas"]["ThreadView"];
-export type ThreadScope = components["schemas"]["ThreadScopeResponse"];
-export type ThreadEntityView = components["schemas"]["ThreadEntityView"];
-export type EvidencePage = components["schemas"]["EvidencePage"];
-export type NativeFramePage = components["schemas"]["NativeFramePage"];
-export type ObservationPage = components["schemas"]["ObservationPage"];
-export type ArchivedObservationEntry = components["schemas"]["ArchivedObservationEntry"];
 export async function threadObservationEntry(
   threadId: string,
   cursor: string,
@@ -233,12 +233,12 @@ export async function interruptTurn(threadId: string, commandId: string, turnId:
  * The epoch a thread's shapes are pinned to. A long poll: the server holds the read until the
  * thread has a fold, and answers null if it still has none when the hold runs out.
  */
-export async function threadScope(threadId: string, signal?: AbortSignal): Promise<ThreadScope | null> {
+export async function threadScope(threadId: string, signal?: AbortSignal): Promise<ThreadScopeResponse | null> {
   const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/scope`, window.location.href);
   const response = await fetchWithLogin(url, { signal });
   if (response.status === 204) return null;
   if (!response.ok) throw new Error(`Thread scope failed with ${response.status}`);
-  return (await response.json()) as ThreadScope;
+  return (await response.json()) as ThreadScopeResponse;
 }
 
 export async function getThread(threadId: string): Promise<ThreadView> {

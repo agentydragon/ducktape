@@ -1,7 +1,8 @@
 import { useState, type JSX } from "react";
 import { Alert, Anchor, Button, Code, Group, List, Paper, Stack, Text, Textarea, Title } from "@mantine/core";
 
-import { finishPairing, startPairing, type SyncStatus } from "./api";
+import type { SyncStatus } from "./api/schema";
+import { finishPairing, startPairing } from "./api";
 import { sentence } from "./status";
 
 type Props = {

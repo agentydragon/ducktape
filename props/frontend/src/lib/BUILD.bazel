@@ -98,7 +98,9 @@ ts_library(
     name = "types",
     srcs = ["types.ts"],
     tsconfig = "//props/frontend:tsconfig",
-    deps = [":schema"],
+    deps = [
+        ":schema",
+    ],
 )
 
 ts_library(
@@ -117,6 +119,7 @@ ts_library(
     srcs = ["formatters.ts"],
     tsconfig = "//props/frontend:tsconfig",
     deps = [
+        ":schema",
         ":types",
         "//props/frontend:node_modules/date-fns",
     ],
@@ -126,7 +129,10 @@ ts_library(
     name = "status",
     srcs = ["status.ts"],
     tsconfig = "//props/frontend:tsconfig",
-    deps = [":client"],
+    deps = [
+        ":client",
+        ":schema",
+    ],
 )
 
 ts_library(
@@ -226,6 +232,7 @@ ts_library(
     tsconfig = "//props/frontend:tsconfig",
     deps = [
         ":client",
+        ":schema",
         "//props/frontend:node_modules/@types/react",
         "//props/frontend:node_modules/react",
         "//props/frontend:node_modules/react-router",

@@ -1,5 +1,21 @@
 import createClient from "openapi-fetch";
-import type { paths, components } from "./schema";
+import type {
+  AgentRunDetail,
+  AgentRunStatus,
+  AgentType,
+  ClustersListResponse,
+  CriticRunSpecifics,
+  ExampleKind,
+  FileContentResponse,
+  FileTreeResponse,
+  GraderRunSpecifics,
+  RunSortDirection,
+  RunSortKey,
+  SnapshotDetailResponse,
+  Split,
+  ValidationRunRequest,
+  paths,
+} from "./schema";
 import { getToken, onAuthFailed } from "$lib/stores/token";
 
 // Create typed API client (types from Bazel: //props/frontend/src/lib:schema).
@@ -47,16 +63,6 @@ async function authedFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return resp.json();
 }
 
-// Re-export generated types
-export type DefinitionInfo = components["schemas"]["DefinitionInfo"];
-export type ActiveRunInfo = components["schemas"]["ActiveRunInfo"];
-export type ValidationRunRequest = components["schemas"]["ValidationRunRequest"];
-export type ValidationRunResponse = components["schemas"]["ValidationRunResponse"];
-export type CriticRunSpecifics = components["schemas"]["CriticRunSpecifics"];
-export type GraderRunSpecifics = components["schemas"]["GraderRunSpecifics"];
-export type OtherRunSpecifics = components["schemas"]["OtherRunSpecifics"];
-export type AgentRunDetail = components["schemas"]["AgentRunDetail"];
-
 // Type guards for AgentRunDetail discriminated union
 export function isCriticRun(run: AgentRunDetail): run is AgentRunDetail & { details: CriticRunSpecifics } {
   return "agent_type" in run.details && run.details.agent_type === "critic";
@@ -65,30 +71,6 @@ export function isCriticRun(run: AgentRunDetail): run is AgentRunDetail & { deta
 export function isGraderRun(run: AgentRunDetail): run is AgentRunDetail & { details: GraderRunSpecifics } {
   return "agent_type" in run.details && run.details.agent_type === "grader";
 }
-
-export type AgentRunStatus = components["schemas"]["AgentRunStatus"];
-export type RunSortKey = components["schemas"]["RunSortKey"];
-export type RunSortDirection = components["schemas"]["RunSortDirection"];
-export type JobInfo = components["schemas"]["JobInfo"];
-export type JobsResponse = components["schemas"]["JobsResponse"];
-export type AgentType = components["schemas"]["AgentType"];
-export type RunInfo = components["schemas"]["RunInfo"];
-export type RunGradingSummary = components["schemas"]["RunGradingSummary"];
-export type RunsListResponse = components["schemas"]["RunsListResponse"];
-export type CriticTypeConfig = components["schemas"]["CriticTypeConfig"];
-export type GraderTypeConfig = components["schemas"]["GraderTypeConfig"];
-export type FreeformTypeConfig = components["schemas"]["FreeformTypeConfig"];
-export type CriticDevOptimizeTypeConfig = components["schemas"]["CriticDevOptimizeTypeConfig"];
-export type CriticDevImproveTypeConfig = components["schemas"]["CriticDevImproveTypeConfig"];
-export type WholeSnapshotExample = components["schemas"]["WholeSnapshotExample-Output"];
-export type SingleFileSetExample = components["schemas"]["SingleFileSetExample-Output"];
-export type Split = components["schemas"]["Split"];
-export type ExampleKind = components["schemas"]["ExampleKind"];
-export type ChildRunInfo = components["schemas"]["ChildRunInfo"];
-export type GraderRunInfo = components["schemas"]["GraderRunInfo"];
-export type GradingEdgeInfo = components["schemas"]["GradingEdgeInfo"];
-export type TpTarget = components["schemas"]["TpTarget"];
-export type FpTarget = components["schemas"]["FpTarget"];
 
 // Enum value arrays for UI dropdowns (must match schema definitions)
 export const AGENT_RUN_STATUS_VALUES: AgentRunStatus[] = [
@@ -179,10 +161,6 @@ export async function fetchRuns(filters?: RunsFilters) {
 }
 
 // Fetch definition detail with per-example stats
-export type DefinitionDetailResponse = components["schemas"]["DefinitionDetailResponse"];
-export type ExampleStats = components["schemas"]["ExampleStats"];
-export type LLMCostStats = components["schemas"]["LLMCostStats"];
-
 export async function fetchDefinitionDetail(definitionId: string) {
   const { data, error } = await api.GET("/api/stats/definitions/{image_digest}", {
     params: { path: { image_digest: definitionId } },
@@ -192,9 +170,6 @@ export async function fetchDefinitionDetail(definitionId: string) {
 }
 
 // Fetch example detail with per-definition stats
-export type ExampleDetailResponse = components["schemas"]["ExampleDetailResponse"];
-export type DefinitionStatsForExample = components["schemas"]["DefinitionStatsForExample"];
-
 export async function fetchExampleDetail(snapshotSlug: string, exampleKind: ExampleKind, filesHash: string | null) {
   const { data, error } = await api.GET("/api/stats/examples", {
     params: {
@@ -210,26 +185,9 @@ export async function fetchExampleDetail(snapshotSlug: string, exampleKind: Exam
 }
 
 // --- Overview ---
-export type OverviewResponse = components["schemas"]["OverviewResponse"];
-
 // --- Ground truth snapshots ---
-export type SnapshotsResponse = components["schemas"]["SnapshotsListResponse"];
-export type SnapshotSummary = components["schemas"]["SnapshotSummary"];
-export type SnapshotDetailResponse = components["schemas"]["SnapshotDetailResponse"];
-export type TpInfo = components["schemas"]["TpInfo"];
-export type FpInfo = components["schemas"]["FpInfo"];
-export type OccurrenceInfo = components["schemas"]["OccurrenceInfo"];
-export type ReportedIssueInfo = components["schemas"]["ReportedIssueInfo"];
-export type ReportedIssueOccurrenceInfo = components["schemas"]["ReportedIssueOccurrenceInfo"];
-export type LocationAnchor = components["schemas"]["LocationAnchor"];
-
 // LLM request types
-export type LLMRequestInfo = components["schemas"]["LLMRequestInfo"];
-export type LLMRequestsResponse = components["schemas"]["LLMRequestsResponse"];
-
 // Container logs (from Loki)
-export type RunLogsResponse = components["schemas"]["RunLogsResponse"];
-
 export async function fetchSnapshots() {
   const { data, error } = await api.GET("/api/gt/snapshots");
   if (error) throw new Error(extractErrorMessage(error, "Failed to fetch snapshots"));
@@ -250,9 +208,6 @@ export async function fetchSnapshotDetail(
 }
 
 // File tree types (autogenerated from OpenAPI schema)
-export type FileTreeNode = components["schemas"]["FileTreeNode"];
-export type FileTreeResponse = components["schemas"]["FileTreeResponse"];
-export type FileContentResponse = components["schemas"]["FileContentResponse"];
 export type FileContentsResponse = {
   files: FileContentResponse[];
   missing: string[];
@@ -303,17 +258,11 @@ export async function fetchRunLogs(runId: string, signal?: AbortSignal) {
 }
 
 // --- Clusters ---
-export type ClusterMemberResponse = components["schemas"]["ClusterMemberResponse"];
-export type ClusterResponse = components["schemas"]["ClusterResponse"];
-export type ClustersListResponse = components["schemas"]["ClustersListResponse"];
-
 export async function fetchSnapshotClusters(snapshotSlug: string): Promise<ClustersListResponse> {
   return authedFetch(`/api/gt/snapshots/${snapshotSlug}/clusters`);
 }
 
 // --- Model metadata ---
-
-export type ModelMetadataInfo = components["schemas"]["ModelMetadataInfo"];
 
 export async function fetchModelMetadata() {
   const { data, error } = await api.GET("/api/model_metadata");
@@ -322,13 +271,6 @@ export async function fetchModelMetadata() {
 }
 
 // --- Stats: occurrence stats, distributions, coverage ---
-
-export type OccurrenceStatsRow = components["schemas"]["OccurrenceStatsRow"];
-export type OccurrenceStatsResponse = components["schemas"]["OccurrenceStatsResponse"];
-export type CoverageResponse = components["schemas"]["CoverageResponse"];
-export type CoverageExample = components["schemas"]["CoverageExample"];
-export type CoverageDefinition = components["schemas"]["CoverageDefinition"];
-export type CoverageCell = components["schemas"]["CoverageCell"];
 
 export async function fetchOccurrenceStats(snapshotSlug?: string, split?: Split) {
   const { data, error } = await api.GET("/api/stats/occurrences", {

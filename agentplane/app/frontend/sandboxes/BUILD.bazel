@@ -26,6 +26,7 @@ ts_library(
     srcs = ["lifecycle.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        "//agentplane/app/frontend:schema",
         ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -55,6 +56,7 @@ ts_library(
     srcs = ["idle_suspend.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        "//agentplane/app/frontend:schema",
         ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -68,6 +70,7 @@ ts_library(
     srcs = ["wake_on_send.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        "//agentplane/app/frontend:schema",
         ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -81,6 +84,7 @@ ts_library(
     srcs = ["sandbox_status_view.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        "//agentplane/app/frontend:schema",
         ":client",
         ":idle_suspend",
         ":lifecycle",
@@ -104,6 +108,7 @@ ts_library(
     srcs = ["list.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        "//agentplane/app/frontend:schema",
         ":client",
         ":idle_suspend",
         ":lifecycle",
@@ -132,6 +137,7 @@ ts_library(
     srcs = ["decision_groups.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        "//agentplane/app/frontend:schema",
         ":client",
         "//agentplane/app/frontend:client",
     ],
@@ -141,6 +147,7 @@ agentplane_vitest_test(
     name = "decision_groups_test",
     srcs = ["decision_groups.test.ts"],
     deps = [
+        "//agentplane/app/frontend:schema",
         ":client",
         ":decision_groups",
         "//:node_modules/vitest",
@@ -153,6 +160,7 @@ ts_library(
     srcs = ["egress.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        "//agentplane/app/frontend:schema",
         ":client",
         ":decision_groups",
         ":live",
@@ -173,6 +181,7 @@ ts_library(
     srcs = ["policy_bindings.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        "//agentplane/app/frontend:schema",
         ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -216,6 +225,7 @@ ts_library(
     srcs = ["sandbox_page.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        "//agentplane/app/frontend:schema",
         ":client",
         ":egress",
         ":lifecycle",
@@ -252,6 +262,7 @@ agentplane_vitest_test(
     name = "sandbox_page_test",
     srcs = ["sandbox_page.test.tsx"],
     deps = [
+        "//agentplane/app/frontend:schema",
         ":client",
         ":live",
         ":sandbox_page",
@@ -277,6 +288,7 @@ agentplane_vitest_test(
     name = "list_test",
     srcs = ["list.test.tsx"],
     deps = [
+        "//agentplane/app/frontend:schema",
         ":client",
         ":list",
         "//:node_modules/@mantine/core",

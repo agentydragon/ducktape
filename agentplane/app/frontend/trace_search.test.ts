@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 
-import { traceSearchUrl, type TraceSearchSettings } from "./trace_search";
+import type { TraceSearchSettings } from "./api/schema";
+import { traceSearchUrl } from "./trace_search";
 
 const settings: TraceSearchSettings = {
   grafana_base_url: "https://grafana.example.test/observability/",

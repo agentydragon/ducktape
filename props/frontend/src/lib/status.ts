@@ -1,5 +1,6 @@
+import type { AgentRunStatus } from "./api/schema";
+
 // Shared status utilities for agent runs
-import type { AgentRunStatus } from "./api/client";
 
 // Re-export for convenience
 export type { AgentRunStatus };

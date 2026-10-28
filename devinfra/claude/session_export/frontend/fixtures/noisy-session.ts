@@ -1,4 +1,4 @@
-import type { SessionEvent, SessionSummary } from "../api";
+import type { Event, SessionSummary } from "../api/schema";
 
 // Synthetic, shape-matched to a hook-heavy session: about half hooks, one fifth
 // assistant records, one eighth user/tool results, and the rest control traffic.
@@ -17,8 +17,8 @@ export const longCommandActivityTitle =
 export const longCommandActivityDetail =
   "Synthetic command activity completed successfully.\nThe browser checks passed and the HTML report is ready.";
 
-function makeEvents(includeLongCommandActivity = false): SessionEvent[] {
-  const events: SessionEvent[] = [];
+function makeEvents(includeLongCommandActivity = false): Event[] {
+  const events: Event[] = [];
   function add(
     event_type: string,
     payload: Record<string, unknown>,
@@ -172,8 +172,8 @@ function makeEvents(includeLongCommandActivity = false): SessionEvent[] {
   return events;
 }
 
-export const noisySessionEvents: SessionEvent[] = makeEvents();
-export const longCommandActivitySessionEvents: SessionEvent[] = makeEvents(true);
+export const noisySessionEvents: Event[] = makeEvents();
+export const longCommandActivitySessionEvents: Event[] = makeEvents(true);
 
 export const narrationSession: SessionSummary = {
   id: "session_fixture_narration_visibility",
@@ -189,7 +189,7 @@ const syntheticNarrationSignature = btoa(
   String.fromCharCode(0x12, 0x0d, 0x0a, 0x0b, 0x42, 0x09, 0x6e, 0x61, 0x72, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e)
 );
 
-export const narrationSessionEvents: SessionEvent[] = [
+export const narrationSessionEvents: Event[] = [
   {
     event_id: "00000000-0000-4000-8000-000000000801",
     sequence_num: "801",

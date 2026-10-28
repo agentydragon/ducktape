@@ -4,7 +4,7 @@
  */
 
 import { formatDistanceToNow } from "date-fns";
-import type { StatsWithCI } from "./types";
+import type { StatsWithCI } from "./api/schema";
 
 // --- Percentage formatting ---
 

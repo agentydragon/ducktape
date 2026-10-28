@@ -1,4 +1,4 @@
-import type { components } from "../api/schema";
+import type { CallerGrantView } from "../api/schema";
 
 export interface CallerServiceAccount {
   namespace: string;
@@ -39,5 +39,4 @@ export type Connection = {
   bound_caller: CallerServiceAccount | null;
 };
 
-export type CallerGrantView = components["schemas"]["CallerGrantView"];
 export type CallerGrantReader = (account: CallerServiceAccount, signal: AbortSignal) => Promise<CallerGrantView>;

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
+import type { NewSandboxDefaults, SandboxPresetView, SandboxView } from "../api/schema";
 import { TEST_REASONING_EFFORTS, testModelCatalog } from "../testing/model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -7,7 +8,6 @@ import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { api } from "../client";
-import { type NewSandboxDefaults, type SandboxPresetView, type SandboxView } from "./client";
 import { SandboxList } from "./list";
 import { deletable, SuspendResume } from "./lifecycle";
 import { sandboxSummary } from "../sandbox_status";

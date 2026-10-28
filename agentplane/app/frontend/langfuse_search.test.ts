@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 
-import { langfuseSandboxTraceUrl, type LangfuseSearchSettings } from "./langfuse_search";
+import type { LangfuseSearchSettings } from "./api/schema";
+import { langfuseSandboxTraceUrl } from "./langfuse_search";
 import { LANGFUSE_SEARCH_SETTINGS } from "./testing/langfuse_search";
 
 const settings: LangfuseSearchSettings = {

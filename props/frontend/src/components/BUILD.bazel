@@ -155,6 +155,7 @@ ts_library(
         "//props/frontend:node_modules/react",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:icons",
+        "//props/frontend/src/lib:schema",
     ],
 )
 
@@ -169,6 +170,7 @@ ts_library(
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:fileTypes",
         "//props/frontend/src/lib:icons",
+        "//props/frontend/src/lib:schema",
     ],
 )
 
@@ -183,6 +185,7 @@ ts_library(
         "//props/frontend/src/lib:CritiqueIssueLink",
         "//props/frontend/src/lib:OccurrenceLink",
         "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:schema",
     ],
 )
 
@@ -200,6 +203,7 @@ ts_library(
         "//props/frontend/src/lib:colors",
         "//props/frontend/src/lib:formatters",
         "//props/frontend/src/lib:icons",
+        "//props/frontend/src/lib:schema",
     ],
 )
 
@@ -217,6 +221,7 @@ ts_library(
         "//props/frontend/src/lib:fileTypes",
         "//props/frontend/src/lib:highlighting",
         "//props/frontend/src/lib:icons",
+        "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:types",
     ],
 )
@@ -236,6 +241,7 @@ ts_library(
         "//props/frontend/src/lib:colors",
         "//props/frontend/src/lib:formatters",
         "//props/frontend/src/lib:runModalContext",
+        "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:types",
     ],
 )
@@ -256,6 +262,7 @@ ts_library(
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:colors",
         "//props/frontend/src/lib:formatters",
+        "//props/frontend/src/lib:schema",
     ],
 )
 
@@ -273,6 +280,7 @@ ts_library(
         "//props/frontend/src/lib:RunIdLink",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:formatters",
+        "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:status",
         "//props/frontend/src/lib:toast",
         "//props/frontend/src/lib:types",
@@ -296,6 +304,7 @@ ts_library(
         "//props/frontend/src/lib:ExampleLink",
         "//props/frontend/src/lib:RunIdLink",
         "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:status",
         "//props/frontend/src/lib:toast",
     ],
@@ -314,6 +323,7 @@ props_vitest_test(
         "//:node_modules/vitest",
         "//props/frontend:node_modules/react-router",
         "//props/frontend/src/lib:client",
+        "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:toast",
     ],
 )
@@ -329,6 +339,7 @@ ts_library(
         "//props/frontend:node_modules/react-router",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:formatters",
+        "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:toast",
         "//props/frontend/src/lib:types",
     ],

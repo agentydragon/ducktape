@@ -1,5 +1,5 @@
 /** Presentation of Kubernetes' raw Sandbox and Pod status objects. */
-import type { SandboxView } from "./sandboxes/client";
+import type { SandboxView } from "./api/schema";
 import { durationLabel } from "./format_time";
 import type { SandboxStatusKind } from "./status_mark";
 

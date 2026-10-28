@@ -8,8 +8,8 @@
 
 import { type JSX } from "react";
 
+import type { AllQuotasView } from "./api/schema";
 import { QuotaBoard } from "./board";
-import type { QuotasView } from "./quotas";
 
 export function Dashboard({
   quotas,
@@ -18,7 +18,7 @@ export function Dashboard({
   connecting,
   onRefresh,
 }: {
-  quotas: QuotasView | null;
+  quotas: AllQuotasView | null;
   now: number;
   error: string | null;
   connecting: boolean;

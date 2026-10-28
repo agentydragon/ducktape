@@ -1,11 +1,11 @@
-import type { SessionEvent } from "./api";
+import type { Event } from "./api/schema";
 import { isNarrationSignature } from "./narration";
 
 type JsonObject = Record<string, unknown>;
 
 type TranscriptBase = {
   id: string;
-  events: SessionEvent[];
+  events: Event[];
 };
 
 export type TranscriptMessage = TranscriptBase & {
@@ -71,7 +71,7 @@ export type TranscriptToolCall = {
   policyDenied?: boolean;
   status: TranscriptToolStatus;
   tasks: TranscriptActivity[];
-  events: SessionEvent[];
+  events: Event[];
 };
 
 export type TranscriptToolRun = TranscriptBase & {
@@ -149,12 +149,12 @@ export type TranscriptItem =
 
 /** Claude Web consumes message-shaped records; Ducktape persists an API envelope. */
 export type AdaptedSessionEvent = {
-  sourceEvent: SessionEvent;
+  sourceEvent: Event;
   type: string;
   payload: JsonObject;
 };
 
-export function adaptSessionEvent(event: SessionEvent): AdaptedSessionEvent {
+export function adaptSessionEvent(event: Event): AdaptedSessionEvent {
   const payload = object(event.payload) ?? {};
   const sourceType = string(payload.type) ?? event.event_type;
   const type = sourceType === "user_message" ? "user" : sourceType === "assistant_message" ? "assistant" : sourceType;
@@ -276,11 +276,11 @@ function readFilePreview(
   return { path, contents };
 }
 
-function eventId(event: SessionEvent): string {
+function eventId(event: Event): string {
   return event.event_id || event.sequence_num;
 }
 
-function sequenceOrder(left: SessionEvent, right: SessionEvent): number {
+function sequenceOrder(left: Event, right: Event): number {
   try {
     const a = BigInt(left.sequence_num);
     const b = BigInt(right.sequence_num);
@@ -423,7 +423,7 @@ const STANDALONE_TOOLS = new Set([
   "SendUserFile",
 ]);
 
-function addEvent(events: SessionEvent[], event: SessionEvent): void {
+function addEvent(events: Event[], event: Event): void {
   if (!events.some((previous) => previous.event_id === event.event_id)) events.push(event);
 }
 
@@ -450,7 +450,7 @@ function sendToolMessage(tool: TranscriptToolCall): string | null {
  * extracted Claude Web fold boundary while keeping Ducktape's original events
  * attached for inspection.
  */
-export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
+export function foldSessionEvents(events: Event[]): TranscriptItem[] {
   const ordered = [...events].sort(sequenceOrder).map(adaptSessionEvent);
   const items: TranscriptItem[] = [];
   const toolsById = new Map<string, { call: TranscriptToolCall; run: TranscriptToolRun }>();
@@ -458,15 +458,15 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     string,
     { activity: TranscriptActivity; tool?: TranscriptToolCall; run?: TranscriptToolRun }
   >();
-  const deniedTools = new Map<string, SessionEvent[]>();
+  const deniedTools = new Map<string, Event[]>();
   const pendingSubagentActivity = new Map<string, TranscriptSubagentActivity>();
   const countedSubagentEvents = new Set<string>();
   const suppressedTaskIds = new Set<string>();
   const peerHoldsByMessageUuid = new Map<string, TranscriptPeerHold>();
   const peerMessagesByUuid = new Map<string, TranscriptPeerMessage>();
-  const pendingPeerLifecycleEvents = new Map<string, SessionEvent[]>();
+  const pendingPeerLifecycleEvents = new Map<string, Event[]>();
   const eventItemIndices = new Map<string, number>();
-  const nextEventItemId = (event: SessionEvent, kind: string): string => {
+  const nextEventItemId = (event: Event, kind: string): string => {
     const key = eventId(event);
     const index = eventItemIndices.get(key) ?? 0;
     eventItemIndices.set(key, index + 1);
@@ -476,7 +476,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
   const addMessage = (
     role: "user" | "assistant",
     text: string,
-    event: SessionEvent,
+    event: Event,
     originToolUseId?: string,
     parentToolUseId?: string
   ): void => {
@@ -504,7 +504,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     });
   };
 
-  const addPeerMessage = (payload: JsonObject, event: SessionEvent): boolean => {
+  const addPeerMessage = (payload: JsonObject, event: Event): boolean => {
     const origin = object(payload.origin);
     if (origin?.kind !== "peer") return false;
     const from = safePeerLabel(origin.from);
@@ -542,7 +542,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     return true;
   };
 
-  const foldPeerHold = (payload: JsonObject, event: SessionEvent): boolean => {
+  const foldPeerHold = (payload: JsonObject, event: Event): boolean => {
     if (payload.type !== "system" || payload.subtype !== "peer_message_hold") return false;
     const hold = decodePeerHold(payload);
     if (hold === null) return true;
@@ -600,7 +600,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     return true;
   };
 
-  const accumulateSubagentActivity = (parentToolUseId: string, payload: JsonObject, event: SessionEvent): void => {
+  const accumulateSubagentActivity = (parentToolUseId: string, payload: JsonObject, event: Event): void => {
     const eventKey = eventId(event);
     if (countedSubagentEvents.has(eventKey)) return;
     const message = object(payload.message);
@@ -630,7 +630,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     toolUseId: string | null,
     result: TranscriptToolResultContent,
     failed: boolean,
-    event: SessionEvent
+    event: Event
   ): void => {
     const match = toolUseId === null ? undefined : toolsById.get(toolUseId);
     if (match !== undefined) {
@@ -672,7 +672,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     if (toolUseId !== null) toolsById.set(toolUseId, { call, run });
   };
 
-  const attachToolUseResult = (toolUseId: string, result: JsonObject, event: SessionEvent): void => {
+  const attachToolUseResult = (toolUseId: string, result: JsonObject, event: Event): void => {
     const match = toolsById.get(toolUseId);
     if (match === undefined) return;
     match.call.toolUseResult = result;
@@ -680,7 +680,7 @@ export function foldSessionEvents(events: SessionEvent[]): TranscriptItem[] {
     addEvent(match.run.events, event);
   };
 
-  const addActivity = (event: SessionEvent, payload: JsonObject, subtype: string): void => {
+  const addActivity = (event: Event, payload: JsonObject, subtype: string): void => {
     const taskId = string(payload.task_id) ?? eventId(event);
     if (payload.skip_transcript === true || payload.ambient === true || suppressedTaskIds.has(taskId)) {
       suppressedTaskIds.add(taskId);

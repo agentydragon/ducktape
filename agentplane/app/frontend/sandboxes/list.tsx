@@ -15,15 +15,15 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
+import type { NewSandbox, NewSandboxDefaults, SandboxPresetView, SandboxView, SandboxesSnapshot } from "../api/schema";
 import { IconDotsVertical } from "../icons";
 import { type JSX, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { api, displayableError } from "../client";
-import { type NewSandbox, type NewSandboxDefaults, type SandboxPresetView, type SandboxView } from "./client";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
-import { liveSandboxesUrl, type SandboxesSnapshot } from "./live";
+import { liveSandboxesUrl } from "./live";
 import { useLive } from "../live";
 import { MarkGlyph } from "../mark_glyph";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";

@@ -1,9 +1,10 @@
 import { ActionIcon, Button, Group, Stack, Text } from "@mantine/core";
+import type { EvidencePage, NativeFramePage } from "../api/schema";
 import { IconZoomCode } from "../icons";
 import { type CSSProperties, type JSX, type MouseEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { displayableError } from "../client";
-import { threadEvidence, threadNativeFrames, type EvidencePage, type NativeFramePage } from "./client";
+import { threadEvidence, threadNativeFrames } from "./client";
 import { DisclosureBody } from "../disclosure";
 import { JsonView } from "../json_view";
 import { ChronologicalDebugIcon } from "./chronological_debug";

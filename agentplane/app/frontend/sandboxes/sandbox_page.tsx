@@ -1,3 +1,4 @@
+import type { SandboxSnapshot, SandboxView, ThreadView } from "../api/schema";
 import { NotificationStatus } from "../notification_status";
 import {
   ActionIcon,
@@ -18,13 +19,13 @@ import { type JSX, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { api, displayableError, HttpError } from "../client";
-import { findThread, getThread, type ThreadView } from "../threads/client";
-import { getSessionOpening, openSession, type SandboxView } from "./client";
+import { findThread, getThread } from "../threads/client";
+import { getSessionOpening, openSession } from "./client";
 import { ActionPolicySection } from "../actions/policy";
 import { EgressLog } from "./egress";
 import { MarkGlyph } from "../mark_glyph";
 import { ConfirmDelete, deletable, DELETE_NEEDS_SUSPENDED, SuspendResume } from "./lifecycle";
-import { liveSandboxUrl, type SandboxSnapshot } from "./live";
+import { liveSandboxUrl } from "./live";
 import { useLive } from "../live";
 import { PolicyBindingsSection } from "./policy_bindings";
 import { SandboxConsole } from "./sandbox_console";

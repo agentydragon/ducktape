@@ -1,6 +1,4 @@
-import type { components } from "./api/schema";
-
-export type LangfuseSearchSettings = components["schemas"]["LangfuseSearchSettings"];
+import type { LangfuseSearchSettings } from "./api/schema";
 
 export type LangfuseSandbox = { namespace: string; serviceAccount: string };
 

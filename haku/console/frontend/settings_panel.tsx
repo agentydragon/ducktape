@@ -1,15 +1,9 @@
 import { Badge, Button, Group, Loader, Select, Stack, Table, Tabs, Text } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState, type ReactNode } from "react";
 
+import type { AgentView, DeploymentInfo } from "./api/schema";
 import { useAsyncResource, type AsyncResource } from "./async_resource";
-import {
-  fetchDeploymentInfo,
-  displayableError,
-  listAgents,
-  updateAgentAccessProfile,
-  type AgentView,
-  type DeploymentInfo,
-} from "./client";
+import { fetchDeploymentInfo, displayableError, listAgents, updateAgentAccessProfile } from "./client";
 import { ExternalLink } from "./link";
 import { POLL_REFRESH_INTERVAL_MS } from "./periodic_refresh";
 import { shortDate } from "./time";

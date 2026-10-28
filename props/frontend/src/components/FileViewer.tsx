@@ -2,19 +2,20 @@ import { Fragment, useMemo, useState } from "react";
 
 import { Button } from "@mantine/core";
 
-import IssueComment from "./IssueComment";
-import { CheckCircle, ChevronDown, ChevronRight, MessageSquare, XCircle } from "../lib/icons";
 import type {
   FileContentResponse,
   FpInfo,
   GradingEdgeInfo,
+  LocationAnchor,
   ReportedIssueInfo,
   ReportedIssueOccurrenceInfo,
   TpInfo,
-} from "../lib/api/client";
+} from "../lib/api/schema";
+import IssueComment from "./IssueComment";
+import { CheckCircle, ChevronDown, ChevronRight, MessageSquare, XCircle } from "../lib/icons";
 import { detectLanguage } from "../lib/fileTypes";
 import { highlightLines } from "../lib/highlighting";
-import type { IssueMarker, LocationAnchor } from "../lib/types";
+import type { IssueMarker } from "../lib/types";
 
 interface Props {
   file: FileContentResponse;

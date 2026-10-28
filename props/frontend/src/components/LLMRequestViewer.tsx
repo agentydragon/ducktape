@@ -1,5 +1,5 @@
+import type { LLMRequestInfo } from "../lib/api/schema";
 import { ChevronDown, ChevronRight } from "../lib/icons";
-import type { LLMRequestInfo } from "../lib/api/client";
 import LLMRequestSection from "./LLMRequestSection";
 import LLMResponseSection from "./LLMResponseSection";
 import JsonCode from "./JsonCode";

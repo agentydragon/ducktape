@@ -1,18 +1,6 @@
-// Re-export types from generated schema (Bazel: //props/frontend/src/lib:schema)
-import type { components } from "./api/schema";
-
-export type OverviewResponse = components["schemas"]["OverviewResponse"];
-export type DefinitionRow = components["schemas"]["DefinitionRow"];
-export type SplitScopeStats = components["schemas"]["SplitScopeStats"];
-export type StatsWithCI = components["schemas"]["StatsWithCI"];
-export type Split = components["schemas"]["Split"];
-export type ExampleKind = components["schemas"]["ExampleKind"];
-export type AgentRunStatus = components["schemas"]["AgentRunStatus"];
+import type { ExampleKind, GradingEdgeInfo, LocationAnchor, Split } from "./api/schema";
 
 // Composed types from backend schema for file viewers
-export type LocationAnchor = components["schemas"]["LocationAnchor"];
-export type GradingEdgeInfo = components["schemas"]["GradingEdgeInfo"];
-
 /**
  * Unified marker for issues displayed in FileViewer.
  * Combines parent issue info (id, rationale) with occurrence-level locations.

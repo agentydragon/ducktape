@@ -5,16 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import {
-  fetchLLMRequests,
-  fetchRun,
-  fetchRunLogs,
-  fetchSnapshotDetail,
-  fetchSnapshotFiles,
-  type AgentRunDetail,
-  type LLMRequestInfo,
-  type SnapshotDetailResponse,
-} from "../lib/api/client";
+import type { AgentRunDetail, LLMRequestInfo, SnapshotDetailResponse } from "../lib/api/schema";
+import { fetchLLMRequests, fetchRun, fetchRunLogs, fetchSnapshotDetail, fetchSnapshotFiles } from "../lib/api/client";
 import { toast } from "../lib/toast";
 import RunDetail from "./RunDetail";
 

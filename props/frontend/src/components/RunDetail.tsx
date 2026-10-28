@@ -1,5 +1,17 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@mantine/core";
+import type {
+  AgentRunDetail,
+  CriticDevImproveTypeConfig,
+  CriticDevOptimizeTypeConfig,
+  CriticTypeConfig,
+  FileContentResponse,
+  GraderTypeConfig,
+  GradingEdgeInfo,
+  LLMRequestInfo,
+  ReportedIssueInfo,
+  SnapshotDetailResponse,
+} from "../lib/api/schema";
 import { toast } from "../lib/toast";
 import BackButton from "./BackButton";
 import Breadcrumb from "./Breadcrumb";
@@ -10,16 +22,6 @@ import {
   fetchSnapshotFiles,
   fetchLLMRequests,
   fetchRunLogs,
-  type AgentRunDetail,
-  type CriticTypeConfig,
-  type GraderTypeConfig,
-  type CriticDevImproveTypeConfig,
-  type CriticDevOptimizeTypeConfig,
-  type SnapshotDetailResponse,
-  type FileContentResponse,
-  type GradingEdgeInfo,
-  type ReportedIssueInfo,
-  type LLMRequestInfo,
   isCriticRun,
   isGraderRun,
 } from "../lib/api/client";

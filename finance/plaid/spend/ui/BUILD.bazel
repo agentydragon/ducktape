@@ -103,6 +103,7 @@ ts_library(
     srcs = ["SpendingHistoryChart.tsx"],
     tsconfig = ":tsconfig",
     deps = [
+        ":schema",
         ":types",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -117,6 +118,7 @@ ts_library(
     srcs = ["SustainabilityHistoryChart.tsx"],
     tsconfig = ":tsconfig",
     deps = [
+        ":schema",
         ":spend_display",
         ":types",
         "//:node_modules/@mantine/core",
@@ -132,6 +134,7 @@ ts_library(
     tsconfig = ":tsconfig",
     deps = [
         ":rule_display",
+        ":schema",
         ":spend_display",
         ":types",
         "//:node_modules/@mantine/core",
@@ -147,6 +150,7 @@ ts_library(
     tsconfig = ":tsconfig",
     deps = [
         ":SpendingHistoryChart",
+        ":schema",
         ":spend_display",
         ":types",
         "//:node_modules/@mantine/core",
@@ -165,6 +169,7 @@ ts_library(
     tsconfig = ":tsconfig",
     deps = [
         ":rule_display",
+        ":schema",
         ":spend_display",
         ":types",
         "//:node_modules/@mantine/core",
@@ -181,6 +186,7 @@ ts_library(
     tsconfig = ":tsconfig",
     deps = [
         ":SustainabilityHistoryChart",
+        ":schema",
         ":spend_display",
         ":types",
         "//:node_modules/@mantine/core",
@@ -195,6 +201,7 @@ ts_library(
     srcs = ["use_spend_data.ts"],
     tsconfig = ":tsconfig",
     deps = [
+        ":schema",
         ":types",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -205,6 +212,7 @@ spend_vitest_test(
     name = "use_spend_data_test",
     srcs = ["use_spend_data.test.tsx"],
     deps = [
+        ":schema",
         ":types",
         ":use_spend_data",
         "//:node_modules/@types/react",

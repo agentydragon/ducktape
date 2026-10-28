@@ -1,3 +1,5 @@
+import type { ExtraSpend, FetchSuccess, PaidCredits, ProviderView, QuotaWindow } from "./api/schema";
+
 /**
  * The `/v1/quotas` payload and the one reading of it every surface performs.
  *
@@ -9,16 +11,7 @@
  * nothing — the same resolution `aiquota/render/human.py` and the GNOME popup make.
  */
 
-import type { components } from "./api/schema";
-
-export type QuotasView = components["schemas"]["AllQuotasView"];
-export type ProviderView = components["schemas"]["ProviderView"];
-export type QuotaWindow = components["schemas"]["QuotaWindow"];
-export type ExtraSpend = components["schemas"]["ExtraSpend"];
-export type PaidCredits = components["schemas"]["PaidCredits"];
-export type PrepaidBalance = NonNullable<components["schemas"]["FetchSuccess"]["prepaid_balance"]>;
-export type BurnStatus = components["schemas"]["BurnStatus"];
-
+export type PrepaidBalance = NonNullable<FetchSuccess["prepaid_balance"]>;
 export type EffectiveQuota = {
   windows: QuotaWindow[];
   extraSpend: ExtraSpend | null;
@@ -70,7 +63,7 @@ export function isShortWindow(window: QuotaWindow, windows: QuotaWindow[]): bool
   return window.window_seconds < Math.max(...windows.map((candidate) => candidate.window_seconds));
 }
 
-function shown(result: components["schemas"]["FetchSuccess"]): Omit<EffectiveQuota, "staleSince" | "error"> {
+function shown(result: FetchSuccess): Omit<EffectiveQuota, "staleSince" | "error"> {
   return {
     windows: (result.windows ?? []).filter((window) => window.display),
     extraSpend: result.extra_spend ?? null,

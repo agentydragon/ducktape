@@ -1,8 +1,9 @@
 import { type JSX } from "react";
 import { Group } from "@mantine/core";
 
+import type { ThreadView } from "../api/schema";
 import { displayableError } from "../client";
-import { renameThread, type ThreadView } from "./client";
+import { renameThread } from "./client";
 import { InlineName } from "../inline_name";
 import "./thread_title.css";
 

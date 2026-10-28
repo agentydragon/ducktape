@@ -92,6 +92,7 @@ ts_library(
     deps = [
         ":format",
         ":quotas",
+        ":schema",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//aiquota/shared:presentation",
@@ -107,6 +108,7 @@ ts_library(
         ":board",
         ":format",
         ":quotas",
+        ":schema",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -120,6 +122,7 @@ ts_library(
     deps = [
         ":dashboard",
         ":quotas",
+        ":schema",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -216,6 +219,7 @@ aiquota_vitest_test(
     isolated_typecheck = True,
     deps = [
         ":quotas",
+        ":schema",
         "//:node_modules/vitest",
     ],
 )
@@ -259,6 +263,7 @@ ts_library(
         ":fixtures",
         ":page_css",
         ":quotas",
+        ":schema",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type JSX } from "react";
 import { Alert, Button, Container, Group, Stack, Text, Title } from "@mantine/core";
 
-import { ApiError, getStatus, syncNow, type SyncStatus } from "./api";
+import type { SyncStatus } from "./api/schema";
+import { ApiError, getStatus, syncNow } from "./api";
 import { Overview } from "./overview";
 import { Pairing } from "./pairing";
 import { SessionViewer } from "./viewer";

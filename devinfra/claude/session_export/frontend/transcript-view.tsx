@@ -20,8 +20,8 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 
+import type { Event, SessionSummary } from "./api/schema";
 import { Markdown } from "../../../../util/frontend/markdown";
-import type { SessionEvent, SessionSummary } from "./api";
 import { EventInspector } from "./event-inspector";
 import { groupToolActivity, toolGroupSummary, type ToolGroup } from "./tool-groups";
 import { buildEventTimeline, EventTimelineStrip } from "./event-timeline";
@@ -850,7 +850,7 @@ export function TranscriptView({
 }: {
   selectedSession: SessionSummary;
   selectedId: string;
-  events: SessionEvent[];
+  events: Event[];
   loadingEvents: boolean;
   eventError: string | null;
   hasMoreEvents: boolean;

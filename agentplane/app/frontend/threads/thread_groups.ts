@@ -1,9 +1,9 @@
+import type { SandboxView, ThreadView } from "../api/schema";
+
 /**
  * A flat newest-first Thread list folded into Sandbox groups, including Sandboxes without
  * Threads. A missing Sandbox still has a group for its retained Thread history.
  */
-import type { SandboxView } from "../sandboxes/client";
-import type { ThreadView } from "./client";
 
 export interface ThreadGroup {
   sandboxName: string;

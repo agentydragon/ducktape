@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { Table } from "@mantine/core";
-import type { DefinitionRow, SplitScopeStats, Split, ExampleKind } from "../../lib/types";
+import type { DefinitionRow, ExampleKind, Split, SplitScopeStats } from "../../lib/api/schema";
 import { formatStatsWithCI, formatAge } from "../../lib/formatters";
 import { recallColorClass } from "../../lib/colors";
 import DefinitionIdLink from "../../lib/DefinitionIdLink";

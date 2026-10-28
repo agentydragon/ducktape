@@ -16,14 +16,10 @@ import {
   Tooltip,
 } from "@mantine/core";
 
+import type { SustainabilityDashboard, SustainabilityView } from "./api/schema";
 import { money, time } from "./spend_display";
 import { SustainabilityHistoryChart } from "./SustainabilityHistoryChart";
-import type {
-  SustainabilityDashboard,
-  SustainabilityPortfolio,
-  SustainabilitySource,
-  SustainabilityView,
-} from "./types";
+import type { SustainabilityPortfolio, SustainabilitySource } from "./types";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 
 type AccountCoverage = NonNullable<SustainabilityView["account_coverage"]>[number];

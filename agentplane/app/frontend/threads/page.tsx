@@ -1,10 +1,11 @@
 import { Box, Group, Stack, Text } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
+import type { SandboxView, ThreadView } from "../api/schema";
 import { displayableError } from "../client";
-import { getThread, type ThreadView } from "./client";
+import { getThread } from "./client";
 import { harnessLabel } from "../model_catalog";
-import { resumeSandbox, type SandboxView } from "../sandboxes/client";
+import { resumeSandbox } from "../sandboxes/client";
 import { useRequiredSandboxesLive } from "../sandboxes/live";
 import { useRequiredThreadsLive } from "./live";
 import { ChronologicalDebugProvider } from "./chronological_debug";

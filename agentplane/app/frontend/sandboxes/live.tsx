@@ -1,11 +1,7 @@
 import { createContext, type JSX, type ReactNode, useContext } from "react";
 
-import type { components } from "../api/schema";
+import type { SandboxesSnapshot } from "../api/schema";
 import { useLive, type Live } from "../live";
-
-export type SandboxesSnapshot = components["schemas"]["SandboxesSnapshot"];
-export type SandboxSnapshot = components["schemas"]["SandboxSnapshot"];
-export type DecisionsSnapshot = components["schemas"]["DecisionsSnapshot"];
 
 export function liveSandboxesUrl(): string {
   return "/live/sandboxes";

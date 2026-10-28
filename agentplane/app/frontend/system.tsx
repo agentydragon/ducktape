@@ -1,13 +1,11 @@
 import { Badge, Stack, Table, Text, Title } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import type { components } from "./api/schema";
+import type { ComponentStatus } from "./api/schema";
 import { api, displayableError, ok } from "./client";
 import { TimeAgo } from "./time_ago";
 import { TopbarTitle } from "./topbar";
 import "./system.css";
-
-export type ComponentStatus = components["schemas"]["ComponentStatus"];
 
 const REFRESH_SECONDS = 15;
 
