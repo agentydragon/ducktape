@@ -16,15 +16,14 @@ alias(
     actual = "//agentplane/runner/cmd:agentplane-runner",
 )
 
-# The runner, its Pod executor companion and the `agentplane` CLI, in one image that a Pod mounts as
-# an image volume (`bin/`) and a runner VM attaches as a KubeVirt containerDisk (`disk/runner.img`,
-# an erofs of the same `bin/`).
+# The runner, its Pod executor mode and the `agentplane` CLI, in one image that a Pod mounts as an
+# image volume (`bin/`) and a runner VM attaches as a KubeVirt containerDisk (`disk/runner.img`, an
+# erofs of the same `bin/`).
 pkg_tar(
     name = "disk_bin",
     srcs = [
         "//agentplane/cli:agentplane",
         "//agentplane/runner/cmd:agentplane-runner",
-        "//agentplane/runner/executor/cmd:agentplane-executor",
     ],
     mode = "0755",
     package_dir = "/bin",
@@ -395,7 +394,7 @@ py_test(
     size = "medium",
     srcs = ["test_executor_container.py"],
     data = [
-        "//agentplane/runner/executor/cmd:agentplane-executor",  # keep: the PID-1 production companion
+        "//agentplane/runner/cmd:agentplane-runner",  # keep: the PID-1 production executor mode
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned Codex executor
     ],
     env = {"DOCKER_HOST": "tcp://127.0.0.1:2375"},
@@ -529,6 +528,7 @@ go_library(
         "//agentplane/runner/codexexecserver",
         "//agentplane/runner/control",
         "//agentplane/runner/cosi",
+        "//agentplane/runner/executor",
         "//agentplane/runner/harness",
         "//agentplane/runner/ingress",
         "//agentplane/runner/journal",

@@ -1,7 +1,7 @@
 # Agentplane runner
 
 A statically linked Go executable that runs the native harnesses of its sessions, a Claude Code process per session
-and one shared Codex app-server for its Codex sessions, and exposes both through one protocol, over the control stream and Event ingress it dials. Pod Codex tools can run in the standalone `agentplane-executor` companion. The contract is in <SPEC.md>; the wire definition is
+and one shared Codex app-server for its Codex sessions, and exposes both through one protocol, over the control stream and Event ingress it dials. Pod Codex tools can run in `agentplane-runner executor` mode in a separate companion container. The contract is in <SPEC.md>; the wire definition is
 [`agentplane/proto/runner.proto`](../proto/runner.proto).
 
 The deployment renders `platform_instructions.j2` with concrete service URLs; the runner appends
@@ -47,8 +47,7 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
 - `operation/`: the shared one-shot operation lifecycle for slot ownership, cancellation, publication
   ordering and worker joins. Session, bootstrap and Codex app-server retain their typed COSI result
   publication and deletion adapters.
-- `executor/`: the PID-1 companion for Pod Codex execution, its Unix control protocol and reaper.
-  `executor/cmd/` builds the standalone `agentplane-executor` binary.
+- `executor/`: the PID-1 companion mode for Pod Codex execution, its Unix control protocol and reaper.
 - `codexappserver/`: the one shared Codex process, its COSI lifecycle resources and controller,
   startup, protocol routing, reader drain, and process exit. `Session` supplies callbacks that
   commit routed frame batches and exit observations to its journal.
@@ -82,20 +81,20 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   Native argument payloads remain as received; runner-constructed projections use standard
   JSON encoding rather than reproducing the former Python runner's formatting.
 - `config.go`, `guest.go` and `cli.go`: explicit child environment and launch
-  configuration. `cmd/main.go` dispatches internal process modes before service startup.
+  configuration. `cmd/main.go` dispatches the executor and other private process modes before
+  Runner, COSI and telemetry startup.
   Pods and VMs invoke the same executable with explicit `--config` and `--launch-file` arguments. The [Runner configuration inventory](CONFIGURATION.md)
   documents the public flags, configuration sources and VM paths for Pod and VM deployments.
 
-The production build targets are `//agentplane/runner/cmd:agentplane-runner` and
-`//agentplane/runner/executor/cmd:agentplane-executor`, shipped together in
-`//agentplane/runner:disk_image`. The runner includes its supervisor and SQLite; the companion is
-independent of the Runner runtime and SQLite. The native Claude/Codex executables, workspace tools
-and CA certificates are supplied by the runtime image.
+The production executable is `//agentplane/runner/cmd:agentplane-runner`, shipped with the `agentplane`
+CLI in `//agentplane/runner:disk_image`. The runner and executor modes share the same executable;
+executor mode returns before Runner, COSI and telemetry startup. The native Claude/Codex executables,
+workspace tools and CA certificates are supplied by the runtime image.
 
 ## Codex executor container
 
 Runner Pods can run Codex command execution through a companion container in the same Pod. The runner
-retains the Codex app-server and journals; the companion runs as PID 1 and supervises
+retains the Codex app-server and journals; `agentplane-runner executor` runs as PID 1 and supervises
 `codex exec-server` in its private container PID namespace. The runner claims the companion over a Unix socket before Codex
 starts and fences it before replacing a lost process. A companion exit or failed health probe lets
 Kubernetes restart that container with a fresh PID namespace; the runner never replays an in-flight

@@ -36,8 +36,8 @@ Process resources contain lifecycle values; launch callbacks and native handles 
 registry. Teardown cancellation joins an in-flight start and fences any instance it returns before
 releasing the finalizer. A completed attempt never relaunches during reconciliation.
 Runner checks every remaining process intent before sealing or closing, so a failed fence cannot
-be hidden by a protocol reader reporting the leader's exit. The standalone Pod executor still
-supervises its own container-local child; Runner owns it through the container-ownership adapter.
+be hidden by a protocol reader reporting the leader's exit. The Pod executor mode still supervises
+its own container-local child; Runner owns it through the container-ownership adapter.
 
 ## VM services
 

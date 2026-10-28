@@ -6,6 +6,7 @@ go_library(
     name = "executor",
     srcs = ["main.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/executor",
+    visibility = ["//agentplane/runner:__pkg__"],
     deps = [
         "//agentplane/runner/executor/control",
         "@com_github_google_uuid//:uuid",

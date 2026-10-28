@@ -67,12 +67,12 @@ _LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
 # Shared by the Runner configuration, its container volumeMount, and the
 # SandboxTemplate's state volume -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
-# The runner disk image's `bin/` (//agentplane/runner:disk_image): the runner, executor companion
-# and `agentplane` command, mounted read-only the way the VM guest mounts the same image's erofs.
+# The runner disk image's `bin/` (//agentplane/runner:disk_image): the runner, its executor mode and
+# `agentplane` command, mounted read-only the way the VM guest mounts the same image's erofs.
 # The container's command is the runner here, not the tools image's entrypoint.
 _RUNNER_VOLUME_NAME = "runner"
 _RUNNER_DIR = "/run/agentplane/runner"
-_EXECUTOR_BINARY = f"{_RUNNER_DIR}/bin/agentplane-executor"
+_RUNNER_BINARY = f"{_RUNNER_DIR}/bin/agentplane-runner"
 _STATE_DIR = "/state"
 _WORKSPACE_VOLUME_NAME = "workspace"
 _WORKSPACE_DIR = f"{_STATE_DIR}/workspaces"
@@ -361,8 +361,9 @@ class RunnerTemplate(Construct):
         return k8s.Container(
             name=_EXECUTOR_CONTAINER_NAME,
             image=f"{self.image}:{_PLACEHOLDER_TAG}",
-            command=[_EXECUTOR_BINARY],
+            command=[_RUNNER_BINARY],
             args=[
+                "executor",
                 "--socket",
                 _EXECUTOR_SOCKET,
                 "--listen",
@@ -439,7 +440,7 @@ class RunnerTemplate(Construct):
         return k8s.Container(
             name="runner",
             image=f"{self.image}:{_PLACEHOLDER_TAG}",
-            command=[f"{_RUNNER_DIR}/bin/agentplane-runner"],
+            command=[_RUNNER_BINARY],
             args=["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE],
             # The runner works in absolute paths. This is for a command exec'd in: the sandbox
             # Actions' `runner` boxes start there unless the caller names a directory.

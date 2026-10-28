@@ -30,7 +30,7 @@ import (
 // Returning to main exits that namespace, letting the runtime kill even children
 // that escaped their process group. This mode never runs as an ordinary VM child.
 func Main(args []string) int {
-	flags := flag.NewFlagSet("agentplane-executor", flag.ContinueOnError)
+	flags := flag.NewFlagSet("agentplane-runner executor", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	socket := flags.String("socket", "", "local ownership socket")
 	listen := flags.String("listen", "", "Codex WebSocket endpoint")

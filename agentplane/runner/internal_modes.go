@@ -5,22 +5,26 @@ import (
 	"os"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/runner/executor"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/agentydragon/ducktape/agentplane/runner/workspace"
 )
 
 const (
+	executorMode             = "executor"
 	vmResourcePropertiesMode = "--vm-resource-properties"
 	stopGrace                = 5 * time.Second
 )
 
-// InternalMode dispatches the private child modes before the runner starts its service.
+// InternalMode dispatches private process modes before the runner starts its service.
 // args excludes argv[0].
 func InternalMode(args []string) (handled bool, exitCode int) {
 	if len(args) == 0 {
 		return false, 0
 	}
 	switch args[0] {
+	case executorMode:
+		return true, executor.Main(args[1:])
 	case supervision.SupervisorMode:
 		return true, supervision.SupervisorMain(args[1:])
 	case workspace.HelperMode:
