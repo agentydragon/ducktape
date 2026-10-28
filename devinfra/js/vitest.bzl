@@ -14,8 +14,8 @@ in the package that no `vitest_test` in it lists in `srcs`. `glob` stops at pack
 so each package holding specs calls it; nothing checks that one that does not has no specs.
 """
 
-load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load(":ts_library.bzl", "ts_library")
