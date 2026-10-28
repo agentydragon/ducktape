@@ -1003,6 +1003,9 @@ Go loops on one quiesce path before selecting controller infrastructure. Produce
 deterministic Bazel evidence and an adopt/reject recommendation covering resource ownership,
 asynchronous effects, durable admission/sealing, restart and integration cost. Scope and exit:
 [trial plan](runner_lifecycle.md#runner_cosi_trial--evaluate-cosi-on-a-bounded-shutdown-path).
+The [concrete mapping](runner_lifecycle_design.md#proposed-resource-and-controller-mapping) uses
+one runtime per Runner and follows goal -> Session cleanup -> seal -> exact acknowledgement,
+retaining the existing startup/command path during the trial.
 Adoption is not selected. This does not block state-model review or runtime-independent shutdown
 work; review the trial's recommendation before framework-specific implementation.
 

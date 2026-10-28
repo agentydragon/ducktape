@@ -195,6 +195,82 @@ existing journal/store facts after restart; the journal remains authoritative fo
 and uncertain native effects. Resource ownership/finalizers do not replace the atomic admission,
 exact-turn write or exact seal-acknowledgement boundaries.
 
+#### Proposed resource and controller mapping
+
+Run one in-memory COSI runtime per Runner. Use existing Session IDs and incarnation/operation
+identities as resource keys. The lifecycle enums live in resource specs; COSI's own metadata
+teardown phase describes resource cleanup, not native conversation readiness.
+
+| Resource                | Sole publisher              | Contents                                                                             |
+| ----------------------- | --------------------------- | ------------------------------------------------------------------------------------ |
+| `RunnerGoal`            | RPC/admission boundary      | Accepted running/quiescing/closing intent and incarnation identity                   |
+| `SessionFacts`          | Journal/setup projection    | Setup outcome, active-turn summary, pending-work watermark and failure evidence      |
+| `SessionRuntime`        | Session controller          | Execution phase, attached process incarnation and current preparation/stop operation |
+| `NativeOperationResult` | Process/adapter host        | Result of an identified start, stop or native inspection operation                   |
+| `JournalSeal`           | Journal projection          | Actual sealed incarnation and cursor                                                 |
+| `IngressAck`            | Ingress transport           | History's acknowledged cursor and seal                                               |
+| `RunnerStatus`          | Runner lifecycle controller | Draining/flushing/quiesced, busy reasons and idle transition                         |
+
+Sandbox bootstrap completion is an analogous singleton input. `SessionFacts` summarizes committed
+work; command payloads, dispatch evidence and full history stay in the journal. Publishers bridge
+existing sources into COSI, with one writer per resource; changing a projection is not a second
+command admission or an independent source of truth.
+
+The Runner lifecycle controller watches the goal, Session progress, bootstrap, process completion
+and archive facts, then publishes aggregate status. Try one registered Session `QController`
+keyed by Session ID, rather than registering a controller for every Session. It prepares/halts
+Sessions using the goal, setup/journal facts and operation results; different Sessions can progress
+concurrently. Whether native inspection needs its own controller or remains owned by Session work
+scheduling is an evaluation question, not a prerequisite for the shutdown trial.
+
+Process handles, adapters, cancellation and stdout readers remain in the process/adapter host.
+Controllers claim identified operations there and return instead of blocking on handshake or
+inspection. The host publishes results that wake the appropriate Session. Reconciliation of the
+same claimed operation rejoins it; it does not start another process or repeat a native command.
+Validate attachment/operation identity before applying a result. After restart, the in-memory
+registry cannot prove an old effect absent: recover from journal/native evidence first.
+
+```mermaid
+flowchart LR
+    B[RPC and durable admission barrier] --> G[RunnerGoal]
+    G --> S[Session controller]
+    F[SessionFacts] --> S
+    S --> H[Process and adapter host]
+    H --> O[NativeOperationResult]
+    O --> S
+    S --> R[SessionRuntime]
+    G --> C[Runner lifecycle controller]
+    R --> C
+    J[JournalSeal] --> C
+    A[IngressAck] --> C
+    C --> T[RunnerStatus]
+```
+
+For Quiesce, the mapping must preserve this sequence:
+
+1. The synchronous admission boundary checks the idle token, persists closure and publishes
+   `RunnerGoal=Quiescing`. It remains authoritative while resource projections catch up.
+2. Session controllers prevent new preparation, let running setup finish, halt turns and settle
+   required native inspection; bootstrap also finishes before drain completes.
+3. The process owner stops Claude processes individually and the shared Codex server once all its
+   hosted Sessions have halted. Completion observations advance Session progress.
+4. Each journal seals after its final writes. Once drain has completed and all seals are observed,
+   the Runner controller publishes `FLUSHING`.
+5. Ingress publishes acknowledgement of the exact sealed incarnation/cursor. Only after every
+   required acknowledgement does the Runner controller publish `QUIESCED`.
+
+Try finalizers on temporary runtime/attachment resources to express cleanup obligations. A
+finalizer prevents losing an attachment before its native work is stopped; it is removed only
+after the corresponding observed cleanup completes. It never authorizes deleting the durable
+Session, native conversation or workspace, and does not substitute for checking seal/ack facts.
+Keep the COSI runtime and ingress/reply workers alive until required cleanup completes.
+
+Durable admission and exact-turn interruption keep their existing synchronous atomic boundaries;
+neither waits for a Session controller or authorizes execution from a lagging resource snapshot.
+Native effect execution also remains guarded by durable dispatch/recovery evidence. The first
+prototype implements only goal -> Session cleanup -> seal -> acknowledgement, keeping existing
+startup and normal command scheduling behind those boundaries.
+
 Compare whether COSI reduces custom scheduling/ownership bookkeeping while preserving asynchronous
 native I/O, shutdown ordering and recovery. Controller retries must reread durable operation
 evidence rather than repeat a possibly completed native effect. Record integration cost, including

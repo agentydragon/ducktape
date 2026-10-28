@@ -26,8 +26,19 @@ reviewed transition boundaries. Rebase overlapping edits rather than invent sequ
 
 Prototype one runner quiesce path with [COSI Runtime](https://github.com/cosi-project/runtime),
 using in-memory resources for intent/progress and existing journal/store facts for durable truth.
-Keep process handles and native effects behind owned operations. Compare the prototype with
-extending the current loops against the same lifecycle contract; do not start a general migration.
+Use the [resource/controller mapping](runner_lifecycle_design.md#proposed-resource-and-controller-mapping):
+one runtime per Runner, a singleton lifecycle controller, and one registered Session `QController`
+keyed by Session ID. Bridge journal/setup facts, operation results, seals and ingress acknowledgements
+through their sole publishers. Keep process handles/native effects in the existing host and
+retain synchronous admission and exact-turn guards.
+
+Implement only `RunnerGoal=Quiescing` -> Session cleanup -> journal seal -> exact ingress
+acknowledgement, with the existing startup and normal command scheduler behind those boundaries.
+Try finalizers on temporary runtime/attachment resources without deleting durable Session data.
+Keep reply and ingress workers alive through cleanup, and rejoin already claimed operations on
+controller retry. Compare with extending the current loops against the same contract; do not
+start a general migration. Leave the separate native-inspection-controller choice to the trial's
+findings.
 
 Deliver a scoped spike with a runnable Bazel check, its exact results and a short adopt/reject
 comparison. Demonstrate with deterministic operation barriers that:
