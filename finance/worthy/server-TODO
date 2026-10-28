@@ -1,4 +1,3 @@
-bazel build github.com/agentydragon/worthy/worthy
-bazel build :index.html
-cat ../bazel-bin/worthy/index.html > index.html
-./worthy -command=server
+The `server` command is still unimplemented (`main.rs` panics for `Command::Server`).
+The previous Go target and `:index.html` target no longer exist; keep this TODO
+until the server has an implementation and current run instructions.
