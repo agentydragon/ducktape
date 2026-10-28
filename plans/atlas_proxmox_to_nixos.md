@@ -1,11 +1,8 @@
 # Atlas: Proxmox → NixOS Migration Delta
 
 Written 2026-04-19 and **not started since**: `atlas` still runs Proxmox
-(<../cluster/README.md> node table), `ansible/atlas.yaml` still configures it, and
-The former shared `cluster/terraform.tf` template was not an active Terraform root;
-the active cluster infrastructure lives under `cluster/terraform/main/`. The delta
-analysis below is the value here — it is what would otherwise be re-derived — not a
-scheduled piece of work. The friction it exists to remove is still real and still
+(<../cluster/README.md> node table), and `ansible/atlas.yaml` still configures it.
+The delta analysis below is not scheduled work. The friction it would remove is
 recorded elsewhere:
 <../nix/TODO.md> has to special-case atlas for `services.google-drive` because it is
 not NixOS.
@@ -69,14 +66,6 @@ Would need to point at whatever replacement web UI is chosen (cockpit, or remove
 | LXC containers                    | None running                                     |
 | PVE SDN                           | Not configured                                   |
 | Corosync                          | Single node                                      |
-| Proxmox CSI driver                | Already removed — see below                      |
-
-The Proxmox CSI driver (`csi.proxmox.sinextra.dev`) and its `proxmox-csi-retain`
-StorageClass were the one item on the original loss list that has since been dealt
-with, and for reasons unrelated to this migration: the per-node volume-attachment cap
-forced the move to OpenEBS LVM in July 2026. See
-<../cluster/docs/lessons_learned/2026_07_16_disable_proxmox_csi.md>. Nothing depends
-on the PVE API for storage any more.
 
 ## Direct equivalents (no migration work beyond NixOS config)
 
