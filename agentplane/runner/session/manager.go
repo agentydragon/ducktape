@@ -215,7 +215,10 @@ func (m *Manager) Reopen(ctx context.Context, s *Session) error {
 	if err != nil {
 		return err
 	}
-	writeAck := reopening && ack == nil || mayReopen && ack != nil && ack.Sealed && s.journal.SealState() == nil
+	writeAck := (reopening && ack == nil) || (ack != nil && ack.Sealed && s.journal.SealState() == nil)
+	if writeAck && ack != nil && ack.Cursor > s.journal.LastCursor() {
+		return fmt.Errorf("sealed acknowledgement cursor %d exceeds unsealed journal cursor %d", ack.Cursor, s.journal.LastCursor())
+	}
 	if writeAck && ack == nil {
 		ack = &retained.Acknowledgement{}
 	}

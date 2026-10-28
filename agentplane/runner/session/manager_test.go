@@ -313,6 +313,9 @@ func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T
 	if err := store.WriteAcknowledgement("reopen-session", sealedAck); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.EnterLameduck(); err != nil {
+		t.Fatal(err)
+	}
 
 	s, err := m.Load(ctx, "reopen-session")
 	if err != nil {
@@ -344,6 +347,17 @@ func TestReopenRetryClearsSealedAcknowledgementAfterJournalReopened(t *testing.T
 	}
 	if reopened != 1 || interrupted != 1 || s.journal.SealState() != nil {
 		t.Fatalf("reopen evidence: events=%v, seal=%+v", entries, s.journal.SealState())
+	}
+	badAck := retained.Acknowledgement{Cursor: s.journal.LastCursor() + 1, Sealed: true}
+	if err := store.WriteAcknowledgement("reopen-session", badAck); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Reopen(ctx, s); err == nil {
+		t.Fatal("reopen accepted sealed acknowledgement beyond the durable journal cursor")
+	}
+	ack, err = store.ReadAcknowledgement("reopen-session")
+	if err != nil || ack == nil || *ack != badAck {
+		t.Fatalf("mismatched acknowledgement = %+v, err=%v; want preserved mismatch", ack, err)
 	}
 }
 
