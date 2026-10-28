@@ -8,7 +8,7 @@ use super::callable_inference::{CallableInferenceInputs, ReturnedRecordFacts};
 use super::local_class_construction::LocalClassConstructionShapes;
 use super::set_iterables::SetIterableShapes;
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
-use crate::inference::{Inference, InferenceStatus, RuleContext, RuleSet};
+use crate::inference::{Inference, InferenceStatus, Judgment, RuleContext, RuleSet};
 use crate::reports::schema::{InferenceRule, InferenceUse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -249,6 +249,13 @@ impl SemanticFacts {
 
     pub(crate) fn fact(&self, key: &SemanticKey) -> Option<&SemanticFact> {
         self.inference.get(key).map(|judgment| judgment.value())
+    }
+
+    pub(crate) fn judgment(
+        &self,
+        key: &SemanticKey,
+    ) -> Option<&Judgment<SemanticKey, SemanticFact>> {
+        self.inference.get(key)
     }
 
     pub(crate) fn dependencies(&self, key: &SemanticKey) -> Option<&ProofDependencies> {

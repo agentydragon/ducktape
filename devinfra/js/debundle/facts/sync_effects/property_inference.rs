@@ -255,13 +255,12 @@ impl<'a> RuleSet for OwnPropertyRules<'a> {
             }
             OwnPropertyKey::Native(semantic_key) => {
                 if !matches!(
-                    self.semantic_facts.fact(semantic_key)?,
+                    context.import(self.semantic_facts.judgment(semantic_key)?),
                     SemanticFact::Certificate
                 ) {
                     return None;
                 }
                 let inference_use = self.semantic_facts.inference_use(semantic_key)?;
-                context.assume(self.semantic_facts.dependencies(semantic_key)?);
                 Some(OwnPropertyFact::Native(inference_use))
             }
             OwnPropertyKey::NamesProjection(source_object) => {

@@ -253,11 +253,22 @@ impl<'a, Key: Clone + Ord, Fact> RuleContext<'a, Key, Fact> {
         Some(judgment.value())
     }
 
+    /// Borrows a proved premise from an earlier immutable context and inherits
+    /// its dependencies. A local bridge rule must retain that external proof's
+    /// identity for explanations; its consumers require the bridge's key.
+    pub fn import<'b, OtherKey, OtherFact>(
+        &mut self,
+        premise: &'b Judgment<OtherKey, OtherFact>,
+    ) -> &'b OtherFact {
+        self.dependencies.extend(premise.dependencies());
+        premise.value()
+    }
+
     /// Adds dependencies from a completed author or runtime premise.
     ///
     /// Call this only after the rule has established that the supplied premise
-    /// is complete. Inferred source facts should be read through [`Self::require`]
-    /// so their direct keys and transitive dependencies are retained together.
+    /// is complete. Inferred facts use [`Self::require`] within this context or
+    /// [`Self::import`] for a completed earlier context.
     pub fn assume(&mut self, dependencies: &ProofDependencies) {
         self.dependencies.extend(dependencies);
     }
@@ -368,6 +379,20 @@ mod tests {
 
     struct TextRules;
 
+    struct ImportedRules<'a> {
+        left: &'a Judgment<Key, i32>,
+        right: &'a Judgment<Key, i32>,
+    }
+
+    impl RuleSet for ImportedRules<'_> {
+        type Key = Key;
+        type Fact = i32;
+
+        fn evaluate(&self, key: &Key, context: &mut RuleContext<'_, Key, i32>) -> Option<i32> {
+            (*key == Key::A).then(|| *context.import(self.left) + *context.import(self.right))
+        }
+    }
+
     impl RuleSet for TextRules {
         type Key = Key;
         type Fact = TextFact;
@@ -413,6 +438,34 @@ mod tests {
             rules.add(Key::C, &[], 3);
         }
         rules
+    }
+
+    #[test]
+    fn importing_completed_judgments_unions_dependencies_without_rebuilding_them() {
+        let mut rules = Rules::new(std::iter::empty::<(Key, Rule)>());
+        rules.add(Key::B, &[], 2);
+        rules.add(Key::C, &[], 3);
+        rules.set_assumptions(Key::B, dependency("left", 1));
+        rules.set_assumptions(Key::C, dependency("right", 2));
+        let mut source = Inference::new(rules);
+        source.query(&Key::B);
+        source.query(&Key::C);
+        assert!(source.get(&Key::Unknown).is_none());
+
+        let mut imported = Inference::new(ImportedRules {
+            left: source.get(&Key::B).unwrap(),
+            right: source.get(&Key::C).unwrap(),
+        });
+        let judgment = imported.query(&Key::A).unwrap();
+        assert_eq!(judgment.value(), &5);
+        assert_eq!(
+            judgment.dependencies().value_inputs,
+            dependency("left", 1)
+                .value_inputs
+                .union(&dependency("right", 2).value_inputs)
+                .cloned()
+                .collect()
+        );
     }
 
     #[test]
