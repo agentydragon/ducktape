@@ -123,6 +123,7 @@ py_library(
         ":ingest",
         ":models",
         ":restic",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -183,6 +184,18 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_cli",
+    srcs = ["test_cli.py"],
+    deps = [
+        ":cli",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 

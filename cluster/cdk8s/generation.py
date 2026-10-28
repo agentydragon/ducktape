@@ -20,6 +20,7 @@ from cluster.cdk8s.flux import (
     Json6902Patch,
     PatchFile,
     RenderedDirectory,
+    SecretGeneratorArgs,
     artifact_directories,
     kustomize_kustomization,
 )
@@ -140,6 +141,7 @@ def write_directory(
     components: Sequence[str] = (),
     generator_options: GeneratorOptions | None = None,
     config_map_generator: Sequence[ConfigMapArgs] = (),
+    secret_generator: Sequence[SecretGeneratorArgs] = (),
     configurations: Sequence[str] = (),
     patch_charts: Sequence[Callable[[App], Chart]] = (),
     json6902_patches: Sequence[Json6902Patch] = (),
@@ -151,16 +153,19 @@ def write_directory(
     the directory's other files, then `remote_resources`: URLs kustomize fetches at build time,
     such as an upstream release manifest. `patch_charts` are synthesized into
     `patches.k8s.yaml` beside it and listed as strategic-merge patches, before
-    `json6902_patches`. `namespace`, `components`, `generator_options`, `config_map_generator`
-    and `configurations` are `kustomize_kustomization`'s; `unhardened_pods` and
+    `json6902_patches`. `namespace`, `components`, `generator_options`, `config_map_generator`,
+    `secret_generator` and `configurations` are `kustomize_kustomization`'s; `unhardened_pods` and
     `unpinned_https_egress` are `write_app`'s fleet-rule waivers.
 
     For a directory whose `kustomization.yaml` the generator owns: under `GENERATED_ROOT`, or
     under `HAND_WRITTEN_ROOT` beside the hand-written files it names (a `.sops.yaml` sibling,
     an `image-pins` Component, a generated ConfigMap's source file).
     One keeping a hand-written `kustomization.yaml` uses `write_charts`. The returned
-    directory's `decryption` is set exactly when a sibling is SOPS ciphertext. Every copy of
-    `artifact` after the first must be a Component `components` names: the `image-pins`
+    directory's `decryption` is set when a sibling is SOPS ciphertext or a `secret_generator`
+    reads a `.sops.yaml` file. Secret generators first package the encrypted file contents into
+    a Kubernetes Secret; Flux's SOPS decryption then decrypts those generated Secret values
+    after the Kustomize build and before applying resources. Every copied directory of
+    `artifact` after the first must be a Component `components` name: the `image-pins`
     directory a `GENERATED_ROOT` directory includes across the roots
     (cluster/docs/cdk8s_remainder.md § Mixed-directory layout).
     """
@@ -196,16 +201,26 @@ def write_directory(
             components=components,
             generator_options=generator_options,
             config_map_generator=config_map_generator,
+            secret_generator=secret_generator,
             configurations=configurations,
             patches=[*patch_files, *json6902_patches],
         ),
     )
-    return RenderedDirectory(artifact=artifact, decryption=sops_decryption(siblings))
+    return RenderedDirectory(
+        artifact=artifact, decryption=sops_decryption(siblings, secret_generators=secret_generator)
+    )
 
 
-def sops_decryption(resources: Sequence[str]) -> KustomizationSpecDecryption | None:
-    """Return the Flux decryption block when a directory lists an encrypted Secret."""
-    if not any(resource.endswith(".sops.yaml") for resource in resources):
+def sops_decryption(
+    resources: Sequence[str], *, secret_generators: Sequence[SecretGeneratorArgs] = ()
+) -> KustomizationSpecDecryption | None:
+    """Return the Flux decryption block for SOPS resource siblings or generator input files."""
+    encrypted_generator = any(
+        file.rsplit("=", maxsplit=1)[-1].endswith(".sops.yaml")
+        for generator in secret_generators
+        for file in generator.files
+    )
+    if not any(resource.endswith(".sops.yaml") for resource in resources) and not encrypted_generator:
         return None
     return SOPS_DECRYPTION
 

@@ -338,6 +338,8 @@ spec:
                 - /.claude
                 - --codex-root
                 - /.codex
+                - --credentials-file
+                - /run/session-backup/session-backup.yaml
               env:
                 - name: DATABASE_URL
                   valueFrom:
@@ -346,18 +348,6 @@ spec:
                       name: session-archive-db-app
                 - name: RESTIC_REPOSITORY
                   value: rest:http://session-backup.session-backup.svc:8000/wyrm2
-                - name: RESTIC_REST_USERNAME
-                  valueFrom:
-                    secretKeyRef:
-                      key: restic_rest_username_wyrm2
-                      name: session-backup-rest-server-auth
-                - name: RESTIC_REST_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      key: restic_rest_password_wyrm2
-                      name: session-backup-rest-server-auth
-                - name: RESTIC_PASSWORD_FILE
-                  value: /run/restic/password
                 - name: RESTIC_CACHE_DIR
                   value: /tmp/restic-cache
               image: git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset
@@ -377,8 +367,8 @@ spec:
                     - ALL
                 readOnlyRootFilesystem: false
               volumeMounts:
-                - mountPath: /run/restic
-                  name: wyrm2-restic-password
+                - mountPath: /run/session-backup
+                  name: restic-credentials
                   readOnly: true
           imagePullSecrets:
             - name: forgejo-images-creds
@@ -414,13 +404,13 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           volumes:
-            - name: wyrm2-restic-password
+            - name: restic-credentials
               secret:
                 defaultMode: 288
                 items:
-                  - key: restic_password
-                    path: password
-                secretName: session-backup-rest-server-auth
+                  - key: session-backup.yaml
+                    path: session-backup.yaml
+                secretName: session-backup-importer-credentials
   schedule: 2,17,32,47 * * * *
   successfulJobsHistoryLimit: 1
 ---
@@ -458,6 +448,8 @@ spec:
                 - /.claude
                 - --codex-root
                 - /.codex
+                - --credentials-file
+                - /run/session-backup/session-backup.yaml
               env:
                 - name: DATABASE_URL
                   valueFrom:
@@ -466,18 +458,6 @@ spec:
                       name: session-archive-db-app
                 - name: RESTIC_REPOSITORY
                   value: rest:http://session-backup.session-backup.svc:8000/rugged
-                - name: RESTIC_REST_USERNAME
-                  valueFrom:
-                    secretKeyRef:
-                      key: restic_rest_username_rugged
-                      name: session-backup-rest-server-auth
-                - name: RESTIC_REST_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      key: restic_rest_password_rugged
-                      name: session-backup-rest-server-auth
-                - name: RESTIC_PASSWORD_FILE
-                  value: /run/restic/password
                 - name: RESTIC_CACHE_DIR
                   value: /tmp/restic-cache
               image: git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset
@@ -497,8 +477,8 @@ spec:
                     - ALL
                 readOnlyRootFilesystem: false
               volumeMounts:
-                - mountPath: /run/restic
-                  name: rugged-restic-password
+                - mountPath: /run/session-backup
+                  name: restic-credentials
                   readOnly: true
           imagePullSecrets:
             - name: forgejo-images-creds
@@ -534,13 +514,13 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           volumes:
-            - name: rugged-restic-password
+            - name: restic-credentials
               secret:
                 defaultMode: 288
                 items:
-                  - key: restic_password
-                    path: password
-                secretName: session-backup-rest-server-auth
+                  - key: session-backup.yaml
+                    path: session-backup.yaml
+                secretName: session-backup-importer-credentials
   schedule: 7,22,37,52 * * * *
   successfulJobsHistoryLimit: 1
 ---
@@ -578,6 +558,8 @@ spec:
                 - /.claude
                 - --codex-root
                 - /.codex
+                - --credentials-file
+                - /run/session-backup/session-backup.yaml
               env:
                 - name: DATABASE_URL
                   valueFrom:
@@ -586,18 +568,6 @@ spec:
                       name: session-archive-db-app
                 - name: RESTIC_REPOSITORY
                   value: rest:http://session-backup.session-backup.svc:8000/iguana
-                - name: RESTIC_REST_USERNAME
-                  valueFrom:
-                    secretKeyRef:
-                      key: restic_rest_username_iguana
-                      name: session-backup-rest-server-auth
-                - name: RESTIC_REST_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      key: restic_rest_password_iguana
-                      name: session-backup-rest-server-auth
-                - name: RESTIC_PASSWORD_FILE
-                  value: /run/restic/password
                 - name: RESTIC_CACHE_DIR
                   value: /tmp/restic-cache
               image: git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset
@@ -617,8 +587,8 @@ spec:
                     - ALL
                 readOnlyRootFilesystem: false
               volumeMounts:
-                - mountPath: /run/restic
-                  name: iguana-restic-password
+                - mountPath: /run/session-backup
+                  name: restic-credentials
                   readOnly: true
           imagePullSecrets:
             - name: forgejo-images-creds
@@ -654,13 +624,13 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           volumes:
-            - name: iguana-restic-password
+            - name: restic-credentials
               secret:
                 defaultMode: 288
                 items:
-                  - key: restic_password
-                    path: password
-                secretName: session-backup-rest-server-auth
+                  - key: session-backup.yaml
+                    path: session-backup.yaml
+                secretName: session-backup-importer-credentials
   schedule: 12,27,42,57 * * * *
   successfulJobsHistoryLimit: 1
 ---

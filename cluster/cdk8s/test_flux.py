@@ -1,3 +1,4 @@
+import base64
 import subprocess
 from pathlib import Path
 
@@ -23,6 +24,8 @@ from cluster.cdk8s.flux import (
     ConfigMapArgs,
     GeneratorOptions,
     RenderedDirectory,
+    SecretGeneratorArgs,
+    artifact_directories,
     artifact_directory,
     flux_kustomization,
     kustomizations_chart,
@@ -77,23 +80,62 @@ def test_artifact_directory_is_the_first_copy_of_an_artifact_with_bases() -> Non
     assert artifact_directory(artifact("test-app", "test/app", "test/base")) == "test/app"
 
 
+def test_artifact_maps_one_source_file_into_its_consumer_directory() -> None:
+    result = artifact("test-app", "test/app", files={"secrets/shared/test.yaml": "test/app/test.sops.yaml"})
+    assert artifact_directories(result) == ["test/app"]
+    assert artifact_directory(result) == "test/app"
+    assert [(copy.from_, copy.to) for copy in result.copy] == [
+        ("@repo/test/app/**", "@artifact/test/app/"),
+        ("@repo/secrets/shared/test.yaml", "@artifact/test/app/test.sops.yaml"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("source", "destination"),
+    [
+        ("secrets/shared/*.yaml", "test/app/test.sops.yaml"),
+        ("secrets/../public.yaml", "test/app/test.sops.yaml"),
+        ("secrets/shared/test.yaml", "test/app/../outside.yaml"),
+    ],
+)
+def test_artifact_rejects_file_copy_path_traversal(source: str, destination: str) -> None:
+    with pytest.raises(ValueError, match=r"repository file path|file destination"):
+        artifact("test-app", "test/app", files={source: destination})
+
+
 @pytest.mark.parametrize(
     "copy",
     [
         ArtifactGeneratorSpecArtifactsCopy(from_="@repo/test/app/**", to="@artifact/test/other/"),
         ArtifactGeneratorSpecArtifactsCopy(from_="@repo/test/app/*.yaml", to="@artifact/test/app/"),
         ArtifactGeneratorSpecArtifactsCopy(from_="@repo/test/app/**", to="@artifact/test/app/", exclude=["*.md"]),
+        ArtifactGeneratorSpecArtifactsCopy(from_="@repo/secrets/../test.yaml", to="@artifact/test/app/test.sops.yaml"),
+        ArtifactGeneratorSpecArtifactsCopy(from_="@repo/secrets/test.yaml", to="@artifact/test/app/../outside.yaml"),
     ],
 )
 def test_artifact_directory_refuses_a_partial_or_moved_copy(copy: ArtifactGeneratorSpecArtifactsCopy) -> None:
-    # Only the whole-directory guard names the offending `copy.from_`; the "copies nothing" error does not.
-    with pytest.raises(ValueError, match=r"copy\.from_="):
+    # The helper reports the offending first copy; the "copies nothing" error does not.
+    with pytest.raises(ValueError, match=r"first\.from_="):
         artifact_directory(ArtifactGeneratorSpecArtifacts(name="test-app", origin_revision="@repo", copy=[copy]))
+
+
+@pytest.mark.parametrize("directory", ["../outside", "test/app/../outside", "test/*.yaml"])
+def test_artifact_rejects_unsafe_directory_paths(directory: str) -> None:
+    with pytest.raises(ValueError, match="artifact directory paths"):
+        artifact("test-app", directory)
 
 
 def test_generator_entry_without_a_namespace_raises() -> None:
     with pytest.raises(ValueError, match="unplaced="):
         kustomize_kustomization(resources=[], config_map_generator=[ConfigMapArgs(name="test-config", namespace=None)])
+
+
+def test_secret_generator_without_a_namespace_raises() -> None:
+    with pytest.raises(ValueError, match="secretGenerator entries"):
+        kustomize_kustomization(
+            resources=[],
+            secret_generator=[SecretGeneratorArgs(name="test-secret", namespace=None, files=["credentials.yaml"])],
+        )
 
 
 @pytest.mark.parametrize(
@@ -208,6 +250,75 @@ def test_file_backed_config_map_omits_literals() -> None:
         resources=[], config_map_generator=[ConfigMapArgs(name="test-config", namespace="test-ns", files=["file.conf"])]
     )
     assert rendered["configMapGenerator"] == [{"name": "test-config", "namespace": "test-ns", "files": ["file.conf"]}]
+
+
+def test_secret_generator_builds_encrypted_payload_for_flux_post_build_decryption(tmp_path: Path) -> None:
+    # This synthetic payload stands in for the encrypted YAML at the exact path the
+    # ArtifactGenerator copy places in the archive artifact. Kustomize packages it into Secret
+    # data unchanged; the generated Flux Kustomization then decrypts that value after build.
+    # This test never reads or prints the real encrypted credentials file.
+    source_name = "session-backup.sops.yaml"
+    source_content = "synthetic encrypted YAML payload\n"
+    (tmp_path / source_name).write_text(source_content)
+    (tmp_path / "workload.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "apiVersion": "batch/v1",
+                "kind": "CronJob",
+                "metadata": {"name": "import", "namespace": "session-backup"},
+                "spec": {
+                    "schedule": "0 * * * *",
+                    "jobTemplate": {
+                        "spec": {
+                            "template": {
+                                "spec": {
+                                    "containers": [{"name": "import", "image": "example.invalid/importer"}],
+                                    "restartPolicy": "Never",
+                                    "volumes": [
+                                        {
+                                            "name": "credentials",
+                                            "secret": {"secretName": "session-backup-importer-credentials"},
+                                        }
+                                    ],
+                                }
+                            }
+                        }
+                    },
+                },
+            }
+        )
+    )
+    (tmp_path / "kustomization.yaml").write_text(
+        yaml.safe_dump(
+            kustomize_kustomization(
+                resources=["workload.yaml"],
+                secret_generator=[
+                    SecretGeneratorArgs(
+                        name="session-backup-importer-credentials",
+                        namespace="session-backup",
+                        files=[f"session-backup.yaml={source_name}"],
+                    )
+                ],
+            )
+        )
+    )
+
+    result = subprocess.run(
+        [str(get_required_path("multitool/tools/kustomize/kustomize")), "build", str(tmp_path)],
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr.decode()
+    documents = {document["kind"]: document for document in yaml.safe_load_all(result.stdout)}
+    secret = documents["Secret"]
+    cron_job = documents["CronJob"]
+    assert secret["kind"] == "Secret"
+    assert secret["metadata"]["name"].startswith("session-backup-importer-credentials-")
+    assert secret["metadata"]["namespace"] == "session-backup"
+    assert list(secret["data"]) == ["session-backup.yaml"]
+    assert base64.b64decode(secret["data"]["session-backup.yaml"]).decode() == source_content
+    [volume] = cron_job["spec"]["jobTemplate"]["spec"]["template"]["spec"]["volumes"]
+    assert volume["secret"]["secretName"] == secret["metadata"]["name"]
 
 
 def test_empty_config_map_data_serializes_as_empty_literals() -> None:

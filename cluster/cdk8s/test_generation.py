@@ -9,9 +9,11 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting  # pytest auto-collects cl
 
 from cluster.cdk8s.artifact_generators import artifact
 from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
     GeneratorOptions,
     Json6902Patch,
     PatchTarget,
+    SecretGeneratorArgs,
     artifact_directory,
     flux_kustomization,
     kustomizations_chart,
@@ -67,6 +69,31 @@ def test_flux_decrypts_exactly_when_a_sibling_is_sops(tmp_path: Path, siblings: 
     flux_kustomization(chart, "test-app", write_directory(tmp_path, _ARTIFACT, _chart("first"), siblings=siblings))
     (rendered,) = Cdk8sTesting.synth(chart)
     assert ("decryption" in rendered["spec"]) is decrypted
+
+
+def test_sops_secret_generator_enables_flux_decryption_and_keeps_yaml_key(tmp_path: Path) -> None:
+    directory = write_directory(
+        tmp_path,
+        _ARTIFACT,
+        _chart("first"),
+        namespace="test-ns",
+        secret_generator=[
+            SecretGeneratorArgs(name="test-secret", namespace="test-ns", files=["credentials.yaml=source.sops.yaml"])
+        ],
+    )
+
+    kustomization = yaml.safe_load((tmp_path / "test/app/kustomization.yaml").read_text())
+    assert directory.decryption == SOPS_DECRYPTION
+    assert kustomization["secretGenerator"] == [
+        {"name": "test-secret", "namespace": "test-ns", "files": ["credentials.yaml=source.sops.yaml"]}
+    ]
+
+    chart = kustomizations_chart(Cdk8sTesting.app())
+    flux_kustomization(chart, "test-app", directory)
+    (rendered,) = Cdk8sTesting.synth(chart)
+    assert rendered["spec"]["decryption"]["provider"] == "sops"
+    assert SOPS_DECRYPTION.secret_ref is not None
+    assert rendered["spec"]["decryption"]["secretRef"]["name"] == SOPS_DECRYPTION.secret_ref.name
 
 
 def test_writer_refuses_an_artifact_with_shared_bases(tmp_path: Path) -> None:

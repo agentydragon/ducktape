@@ -27,8 +27,7 @@ _WEB_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-web:unset"
 _IMPORTER_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset"
 _MIGRATOR_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-migrator:unset"
 _OIDC = SecretRef(namespace=NAMESPACE, name="ai-session-archive-oidc")
-_RESTIC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name=session_backup.REST_SERVER_AUTH_SECRET)
-_RESTIC_PASSWORD_PATH = "/run/restic/password"
+_RESTIC_CREDENTIALS_PATH = session_backup.IMPORTER_CREDENTIALS_PATH
 _WEB_PORT = 8080
 _WEB_LABELS = {"app.kubernetes.io/name": NAME}
 _WEB = ServiceRef(name=NAME, port=Port(name="http", number=_WEB_PORT), pods=Pods(NAMESPACE, tuple(_WEB_LABELS.items())))
@@ -184,20 +183,20 @@ def _web(chart: Chart) -> None:
     )
 
 
-def _restic_password_volume(host: str) -> k8s.Volume:
+def _restic_credentials_volume() -> k8s.Volume:
     return k8s.Volume(
-        name=f"{host}-restic-password",
+        name="restic-credentials",
         secret=k8s.SecretVolumeSource(
-            secret_name=session_backup.REST_SERVER_AUTH_SECRET,
+            secret_name=session_backup.IMPORTER_CREDENTIALS_SECRET,
             default_mode=0o440,
-            items=[k8s.KeyToPath(key="restic_password", path="password")],
+            items=[k8s.KeyToPath(key="session-backup.yaml", path="session-backup.yaml")],
         ),
     )
 
 
 def _importer_job(chart: Chart, host: str, display_name: str, schedule: str) -> k8s.KubeCronJob:
     labels = {**_IMPORTER_LABELS, "app.kubernetes.io/instance": host}
-    password_volume = _restic_password_volume(host)
+    credentials_volume = _restic_credentials_volume()
     job = k8s.KubeCronJob(
         chart,
         f"import-{host}-cronjob",
@@ -245,19 +244,14 @@ def _importer_job(chart: Chart, host: str, display_name: str, schedule: str) -> 
                                         _CLAUDE_ROOT,
                                         "--codex-root",
                                         _CODEX_ROOT,
+                                        "--credentials-file",
+                                        _RESTIC_CREDENTIALS_PATH,
                                     ],
                                     env=[
                                         DATABASE.app_secret.key("uri").env_var("DATABASE_URL"),
                                         k8s.EnvVar(
                                             name="RESTIC_REPOSITORY", value=f"rest:{session_backup.SERVER.url}/{host}"
                                         ),
-                                        _RESTIC_CREDENTIALS.key(f"restic_rest_username_{host}").env_var(
-                                            "RESTIC_REST_USERNAME"
-                                        ),
-                                        _RESTIC_CREDENTIALS.key(f"restic_rest_password_{host}").env_var(
-                                            "RESTIC_REST_PASSWORD"
-                                        ),
-                                        k8s.EnvVar(name="RESTIC_PASSWORD_FILE", value=_RESTIC_PASSWORD_PATH),
                                         k8s.EnvVar(name="RESTIC_CACHE_DIR", value="/tmp/restic-cache"),
                                     ],
                                     resources=k8s.ResourceRequirements(
@@ -272,14 +266,16 @@ def _importer_job(chart: Chart, host: str, display_name: str, schedule: str) -> 
                                     ),
                                     volume_mounts=[
                                         k8s.VolumeMount(
-                                            name=password_volume.name, mount_path="/run/restic", read_only=True
+                                            name=credentials_volume.name,
+                                            mount_path="/run/session-backup",
+                                            read_only=True,
                                         )
                                     ],
                                     # The Aspect launcher materializes its runtime venv under runfiles at startup.
                                     security_context=k8s.SecurityContext(read_only_root_filesystem=False),
                                 )
                             ],
-                            volumes=[password_volume],
+                            volumes=[credentials_volume],
                         ),
                     ),
                 )

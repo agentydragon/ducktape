@@ -118,6 +118,14 @@ filegroup(
     visibility = ["//cluster/validation:__pkg__"],
 )
 
+# The archive manifest test checks that this existing encrypted source is present in the checkout
+# and is mapped to the exact file path consumed by its Kustomize secretGenerator.
+filegroup(
+    name = "session_backup_sops_source",
+    srcs = ["secrets/shared/session-backup.yaml"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+)
+
 # Root conftest.py for shared pytest configuration
 # Tests can depend on this for pytest-asyncio auto mode and common markers
 py_library(

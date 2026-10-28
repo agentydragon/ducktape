@@ -162,6 +162,11 @@ def chart(app: App) -> Chart:
             f"{HAND_WRITTEN_ROOT}/",
             f"{GENERATED_ROOT}/",
             f"{PARKED_ROOT}/",
+            # sparseCheckout accepts directories, so this brings the encrypted shared-credential
+            # subtree into the source artifact. ai-session-archive's ArtifactGenerator still
+            # copies only session-backup.yaml into its own Kustomize directory; omitting this
+            # source would make that exact-file copy fail.
+            "secrets/shared/",
             "agentplane/crds/manifests/",
             "cluster/charts/browsertrix/",
             "loom/wayback/deploy/",

@@ -4,3 +4,8 @@ resources:
   - ai-session-archive.k8s.yaml
 components:
   - ../../k8s/ai-session-archive-image-pins
+secretGenerator:
+  - name: session-backup-importer-credentials
+    namespace: session-backup
+    files:
+      - session-backup.yaml=session-backup.sops.yaml

@@ -645,6 +645,38 @@ def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(
     )
 
 
+def test_session_archive_credentials_source_reaches_its_secret_generator(
+    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]], checkout: Path
+) -> None:
+    credentials_source = "secrets/shared/session-backup.yaml"
+    assert (checkout / credentials_source).is_file(), "the encrypted credentials source must be in the source checkout"
+
+    documents = _generated_documents(generated, parsed_yaml_documents)
+    generator = next(
+        document
+        for document in documents
+        if document.get("kind") == "ArtifactGenerator" and document["metadata"].get("name") == "ducktape-artifacts"
+    )
+    archive_artifact = next(item for item in generator["spec"]["artifacts"] if item["name"] == "ai-session-archive")
+    copies = archive_artifact["copy"]
+    assert {(copy["from"], copy["to"]) for copy in copies} >= {
+        ("@repo/cluster/generated/ai-session-archive/**", "@artifact/cluster/generated/ai-session-archive/"),
+        (
+            "@repo/secrets/shared/session-backup.yaml",
+            "@artifact/cluster/generated/ai-session-archive/session-backup.sops.yaml",
+        ),
+    }
+
+    kustomization = yaml.safe_load((generated / "cluster/generated/ai-session-archive/kustomization.yaml").read_text())
+    assert kustomization["secretGenerator"] == [
+        {
+            "name": "session-backup-importer-credentials",
+            "namespace": "session-backup",
+            "files": ["session-backup.yaml=session-backup.sops.yaml"],
+        }
+    ]
+
+
 def test_no_image_automation_markers(generated: Path) -> None:
     # cdk8s can't emit YAML comments, so this should be unreachable -- but if it ever did,
     # Flux's image-automation bot would silently fight the generator for ownership of the

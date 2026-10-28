@@ -140,13 +140,13 @@ database does not depend on replaying Restic snapshots as its only recovery path
 The importers use the workstation's existing REST credentials and the shared Restic encryption
 password for snapshot inventory, diff, file listing, and extraction against the append-only
 server. Those credentials are not read-only: the server permits appends, but rejects pruning and
-deletion. The Kubernetes Secret
-`session-backup-rest-server-auth` must contain `restic_rest_username_<host>`,
-`restic_rest_password_<host>`, and `restic_password` alongside `.htpasswd`. Those values must
-come from the canonical workstation SOPS source `secrets/shared/session-backup.yaml`; do not
-create another credential copy. This deployment references the existing Secret and does not
-provide the pending source-to-Secret mapping, so importer pods require that prerequisite before
-they can start successfully.
+deletion. The archive ArtifactGenerator copies the encrypted `secrets/shared/session-backup.yaml`
+file into its own Kustomize directory. Kustomize's `secretGenerator` packages those encrypted file
+contents under the `session-backup.yaml` Secret key; Flux then decrypts that generated Secret
+value after the Kustomize build and before applying it. Each importer reads only the three keys
+for its machine from the mounted file. Restic receives those values in its child process
+environment; the importer does not log them. The separate `session-backup-rest-server-auth` Secret
+continues to hold only `.htpasswd` for the Rest Server.
 
 The deployment's SSO provider creates and reflects `ai-session-archive-oidc` into this namespace.
 Its Authentik application policy and the API's numeric subject check both restrict access to the

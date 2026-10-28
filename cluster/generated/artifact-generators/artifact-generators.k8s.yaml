@@ -410,6 +410,8 @@ spec:
           to: "@artifact/cluster/generated/ai-session-archive/"
         - from: "@repo/cluster/k8s/ai-session-archive-image-pins/**"
           to: "@artifact/cluster/k8s/ai-session-archive-image-pins/"
+        - from: "@repo/secrets/shared/session-backup.yaml"
+          to: "@artifact/cluster/generated/ai-session-archive/session-backup.sops.yaml"
       name: ai-session-archive
       originRevision: "@repo"
     - copy:

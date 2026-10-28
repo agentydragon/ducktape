@@ -17,6 +17,12 @@ bb run //x/ai_session_archive:ingest_cli -- \
 
 `DATABASE_URL` is read only from the environment so credentials do not appear in process arguments. Archive roots must be configured explicitly with `--claude-root` / `--codex-root` or `CLAUDE_ARCHIVE_ROOT` / `CODEX_ARCHIVE_ROOT`. These absolute paths must match file-node paths returned by `restic ls`; the importer does not infer them from its own home directory or harness environment. Repeat the root flags to map additional roots. The CLI runs the repository's pinned Restic binary from Bazel runfiles. Restic reads its normal environment settings; use `RESTIC_PASSWORD_FILE` for the repository password.
 
+Deployments that mount the canonical session-backup YAML source may pass it with
+`--credentials-file`. The importer selects the REST username, REST password and repository
+password for `--machine-id`, and passes those values to the Restic child process. This mode cannot
+be combined with `RESTIC_REST_USERNAME`, `RESTIC_REST_PASSWORD`, `RESTIC_PASSWORD` or
+`RESTIC_PASSWORD_FILE` in the importer environment.
+
 Before the first import, create or upgrade the schema with the versioned migration runner:
 
 ```sh

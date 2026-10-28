@@ -1852,6 +1852,7 @@ py_test(
     # the whole generated root, which the test holds closed. cluster_all_files' glob stops at
     # sub-package boundaries.
     data = [
+        "//:session_backup_sops_source",
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
         "//cluster:parked_generated_manifests",

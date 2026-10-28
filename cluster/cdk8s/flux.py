@@ -65,24 +65,52 @@ def artifact_directories(artifact: ArtifactGeneratorSpecArtifacts) -> list[str]:
     Kustomization directory; later ones are shared bases and Components that Kustomization
     references.
 
-    Raises on any shape `artifact_generators.artifact` does not build -- no copies, or a copy
-    that is not one whole directory copied to the same path -- since the Kustomization's `path`
-    would otherwise silently point at the wrong directory.
+    Raises on any shape `artifact_generators.artifact` does not build -- no copies, a directory
+    not copied to the same path, or a file copy outside the first directory -- since the
+    Kustomization's `path` would otherwise silently point at the wrong directory.
     """
-    directories = []
-    for copy in artifact.copy:
+    copies = artifact.copy
+    if not copies:
+        raise ValueError(f"{artifact.name=} copies nothing")
+    first = copies[0]
+    first_directory = first.to.removeprefix("@artifact/").removesuffix("/")
+    if (
+        not first_directory
+        or any(part in {"", ".", ".."} for part in first_directory.split("/"))
+        or first.to != f"@artifact/{first_directory}/"
+        or first.from_ != f"@repo/{first_directory}/**"
+        or first.exclude is not None
+        or first.strategy is not None
+    ):
+        raise ValueError(f"{artifact.name=}: not a whole-directory copy: {first.from_=} {first.to=}")
+
+    directories = [first_directory]
+    for copy in copies[1:]:
         directory = copy.to.removeprefix("@artifact/").removesuffix("/")
         if (
-            not directory
-            or copy.to != f"@artifact/{directory}/"
-            or copy.from_ != f"@repo/{directory}/**"
+            directory
+            and not any(part in {"", ".", ".."} for part in directory.split("/"))
+            and copy.to == f"@artifact/{directory}/"
+            and copy.from_ == f"@repo/{directory}/**"
+            and copy.exclude is None
+            and copy.strategy is None
+        ):
+            directories.append(directory)
+            continue
+        if (
+            not copy.from_.startswith("@repo/")
+            or any(character in copy.from_ for character in "*?[]{}")
+            or any(part in {"", ".", ".."} for part in copy.from_.removeprefix("@repo/").split("/"))
+            or any(character in copy.to for character in "*?[]{}")
+            or not copy.to.startswith(f"@artifact/{first_directory}/")
+            or copy.to.endswith("/")
+            or any(part in {"", ".", ".."} for part in copy.to.removeprefix("@artifact/").split("/"))
             or copy.exclude is not None
             or copy.strategy is not None
         ):
-            raise ValueError(f"{artifact.name=}: not a whole-directory copy: {copy.from_=} {copy.to=}")
-        directories.append(directory)
-    if not directories:
-        raise ValueError(f"{artifact.name=} copies nothing")
+            raise ValueError(
+                f"{artifact.name=}: not a whole-directory or in-directory file copy: {copy.from_=} {copy.to=}"
+            )
     return directories
 
 
@@ -290,6 +318,19 @@ class ConfigMapArgs(BaseModel):
         return literals
 
 
+class SecretGeneratorArgs(BaseModel):
+    """One `secretGenerator`; each file path is relative to the Kustomization directory."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    name: str
+    namespace: str | None = Field(
+        description="None only where the Kustomization's own `namespace` covers the generated Secret."
+    )
+    files: list[str]
+    options: GeneratorOptions | None = None
+
+
 class PatchFile(BaseModel):
     """A `patches` entry naming a strategic-merge patch file beside the `kustomization.yaml`;
     each object in it names the object it patches."""
@@ -326,6 +367,7 @@ class _KustomizeKustomization(BaseModel):
     )
     generator_options: GeneratorOptions | None = None
     config_map_generator: list[ConfigMapArgs] | None = None
+    secret_generator: list[SecretGeneratorArgs] | None = None
     configurations: list[str] | None = Field(
         default=None, description="Transformer configuration files, relative to the directory."
     )
@@ -339,6 +381,7 @@ def kustomize_kustomization(
     components: Sequence[str] = (),
     generator_options: GeneratorOptions | None = None,
     config_map_generator: Sequence[ConfigMapArgs] = (),
+    secret_generator: Sequence[SecretGeneratorArgs] = (),
     configurations: Sequence[str] = (),
     patches: Sequence[PatchFile | Json6902Patch] = (),
     namespaced_by_overlay: bool = False,
@@ -359,12 +402,16 @@ def kustomize_kustomization(
     unplaced = [entry.name for entry in config_map_generator if not entry.namespace]
     if unplaced and not namespace and not namespaced_by_overlay:
         raise ValueError(f"configMapGenerator entries {unplaced=} have no namespace, nor does the Kustomization")
+    unplaced = [entry.name for entry in secret_generator if not entry.namespace]
+    if unplaced and not namespace and not namespaced_by_overlay:
+        raise ValueError(f"secretGenerator entries {unplaced=} have no namespace, nor does the Kustomization")
     manifest = _KustomizeKustomization(
         namespace=namespace,
         resources=resources,
         components=list(components) if components else None,
         generator_options=generator_options,
         config_map_generator=list(config_map_generator) if config_map_generator else None,
+        secret_generator=list(secret_generator) if secret_generator else None,
         configurations=list(configurations) if configurations else None,
         patches=list(patches) if patches else None,
     )

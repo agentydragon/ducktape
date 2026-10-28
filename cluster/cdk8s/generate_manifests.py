@@ -121,6 +121,7 @@ from cluster.cdk8s.external_secrets import (
     operator as external_secrets_operator,
 )
 from cluster.cdk8s.fleet_rules import add_fleet_rules
+from cluster.cdk8s.flux import SecretGeneratorArgs
 from cluster.cdk8s.flux_grafana_secrets import flux_grafana_secrets
 from cluster.cdk8s.flux_image_automation_ghcr import image_automation as flux_image_automation_ghcr
 from cluster.cdk8s.flux_webhook import chart as flux_webhook_chart
@@ -1526,7 +1527,16 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, flux_image_automation_forgejo_artifact, forgejo_image_automation.chart),
         flux_image_automation_ghcr_kustomization,
     )
-    session_archive_artifact = artifact("ai-session-archive", session_archive.OUTPUT_DIR, session_archive.PINS_DIR)
+    session_archive_artifact = artifact(
+        "ai-session-archive",
+        session_archive.OUTPUT_DIR,
+        session_archive.PINS_DIR,
+        files={
+            "secrets/shared/session-backup.yaml": (
+                f"{session_archive.OUTPUT_DIR}/{session_backup.IMPORTER_CREDENTIALS_SOURCE}"
+            )
+        },
+    )
     session_archive.archive(
         flux_chart,
         write_directory(
@@ -1534,6 +1544,13 @@ def generate_manifests(root: Path) -> None:
             session_archive_artifact,
             session_archive.chart,
             components=[posixpath.relpath(session_archive.PINS_DIR, session_archive.OUTPUT_DIR)],
+            secret_generator=[
+                SecretGeneratorArgs(
+                    name=session_backup.IMPORTER_CREDENTIALS_SECRET,
+                    namespace=session_backup.NAMESPACE,
+                    files=[f"session-backup.yaml={session_backup.IMPORTER_CREDENTIALS_SOURCE}"],
+                )
+            ],
         ),
         session_backup_kustomization,
         cnpg_kustomization,
