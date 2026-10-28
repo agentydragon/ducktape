@@ -52,11 +52,21 @@ py_library(
         ":portfolio",
         ":portfolio_models",
         ":reconciliation_views",
+        ":statement_queries",
         ":sustainability",
         "//finance/plaid/db:models",
         "@pypi//anyio",
         "@pypi//asyncpg",
         "@pypi//babel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "statement_queries",
+    srcs = ["statement_queries.py"],
+    deps = [
+        "//finance/plaid/db:models",
         "@pypi//sqlalchemy",
     ],
 )
