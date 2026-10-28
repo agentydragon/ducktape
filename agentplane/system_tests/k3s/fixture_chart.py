@@ -455,8 +455,6 @@ def build_chart(
         control_service=control,
         # The hermetic k3s fixture has no Alloy collector behind the telemetry sidecar route.
         disable_otel_sdk=True,
-        # Readiness may probe immediately; liveness keeps the production startup grace and cadence.
-        fast_executor_readiness=True,
     )
     sandbox_controller.SandboxController(
         chart,

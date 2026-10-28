@@ -213,7 +213,6 @@ class RunnerSandbox(Construct):
         control_service: ServiceRef | None = None,
         session_reconcile_concurrency: int | None = None,
         disable_otel_sdk: bool = False,
-        fast_executor_readiness: bool = False,
     ) -> None:
         super().__init__(scope, id)
         if vm_workspace_storage_class is not None:
@@ -240,7 +239,6 @@ class RunnerSandbox(Construct):
             egress_api_service=egress_api_service,
             session_reconcile_concurrency=session_reconcile_concurrency,
             disable_otel_sdk=disable_otel_sdk,
-            fast_executor_readiness=fast_executor_readiness,
         )
         if env.vm_sandboxes:
             launcher_relay.LauncherRelayPolicy(
@@ -314,7 +312,6 @@ class RunnerTemplate(Construct):
         egress_api_service: ServiceRef | None = None,
         session_reconcile_concurrency: int | None = None,
         disable_otel_sdk: bool = False,
-        fast_executor_readiness: bool = False,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
@@ -332,7 +329,6 @@ class RunnerTemplate(Construct):
         self.control_service = control_service
         self.session_reconcile_concurrency = session_reconcile_concurrency
         self.disable_otel_sdk = disable_otel_sdk
-        self.fast_executor_readiness = fast_executor_readiness
         self.agent_cli_env = agent_cli_environment(service_urls(env, egress_api_service=egress_api_service))
         if not env.isolated_codex_executor and executor_resources is not None:
             raise ValueError("executor_resources cannot be set when isolated Codex execution is disabled")
@@ -359,11 +355,8 @@ class RunnerTemplate(Construct):
         liveness_probe = k8s.Probe(
             http_get=health_get, initial_delay_seconds=5, period_seconds=5, timeout_seconds=2, failure_threshold=1
         )
-        readiness_probe = (
-            k8s.Probe(http_get=health_get, period_seconds=2, timeout_seconds=2, failure_threshold=1)
-            if self.fast_executor_readiness
-            else liveness_probe
-        )
+        # Readiness can check immediately without restarting a container that is still starting.
+        readiness_probe = k8s.Probe(http_get=health_get, period_seconds=2, timeout_seconds=2, failure_threshold=1)
         return k8s.Container(
             name=_EXECUTOR_CONTAINER_NAME,
             image=f"{self.image}:{_PLACEHOLDER_TAG}",

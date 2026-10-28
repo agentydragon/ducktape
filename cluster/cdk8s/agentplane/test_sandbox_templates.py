@@ -112,7 +112,12 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
         "failureThreshold": 1,
     }
     assert executor["livenessProbe"] == health
-    assert executor["readinessProbe"] == health
+    assert executor["readinessProbe"] == {
+        "httpGet": {"path": "/healthz", "port": 4502},
+        "periodSeconds": 2,
+        "timeoutSeconds": 2,
+        "failureThreshold": 1,
+    }
     assert executor["image"] == runner["image"]
     assert executor["workingDir"] == runner["workingDir"] == "/state"
 

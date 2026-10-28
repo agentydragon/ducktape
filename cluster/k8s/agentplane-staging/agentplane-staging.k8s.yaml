@@ -4167,8 +4167,7 @@ spec:
             httpGet:
               path: /healthz
               port: 4502
-            initialDelaySeconds: 5
-            periodSeconds: 5
+            periodSeconds: 2
             timeoutSeconds: 2
           resources:
             limits:
