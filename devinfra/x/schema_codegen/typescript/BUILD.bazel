@@ -95,6 +95,7 @@ openapi_zod_ts_library(
 
 json_schema_js_library(
     name = "external_json_schema_types",
+    out = "api/external_json_schema_types.d.ts",
     schema = "//devinfra/x/schema_codegen/typescript/fixtures:standalone_artifact",
     schema_files = ["//devinfra/x/schema_codegen/typescript/fixtures:external_model_artifact"],
 )
@@ -240,17 +241,9 @@ genrule(
     tools = [":export_standalone_bin"],
 )
 
-# The wrapper publishes declarations as the `standalone_types` module consumed below.
 json_schema_js_library(
-    name = "standalone_types_declarations",
-    out = "standalone_types.d.ts",
-    schema = ":standalone.schema.json",
-)
-
-js_library(
     name = "standalone_types",
-    srcs = [":standalone_schema_json"],
-    deps = [":standalone_types_declarations"],
+    schema = ":standalone.schema.json",
 )
 
 ts_library(

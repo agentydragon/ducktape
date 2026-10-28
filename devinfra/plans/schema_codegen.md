@@ -345,9 +345,10 @@ plain-JS validation consumers use Zod modules emitted by normal TypeScript compi
 
 The OpenAPI and JSON Schema declaration macros expose a `js_library` named by the macro call and keep
 the raw `.d.ts` addressable by its output label, defaulting to `<name>.d.ts`; `out` selects another
-module path when a consumer needs one. Runtime packages bundle original schema JSON and generated
-declarations in a `js_library`: SSH exposes this beside its exporter, while Haku keeps its wrapper in
-the frontend package.
+module path when a consumer needs one. A JSON Schema macro target publishes the original schema,
+declared local-reference files, and generated declarations through `JsInfo` at their owner paths.
+SSH and Haku place these targets beside their schema exporters, and frontend adapters import the
+producer-owned JSON modules and generated types directly.
 `openapi_zod_ts_library` returns a compiled `ts_library`; the macro call supplies the shared
 tsconfig and runtime dependencies, while its raw `.ts` output remains addressable by file label.
 
@@ -383,27 +384,30 @@ flowchart LR
     zod_compile["B: ts_library / tsc<br/>inside macro; named target is compiled library"]:::proposed
     zod_modules["Compiled Zod outputs<br/>.js + .d.ts"]:::artifact
     zod_validation["Runtime request / response validation<br/>Augur and Study Casino<br/>TS and plain-JS consumers"]:::consumer
-    model_types["Model / catalog .d.ts<br/>raw :out file label"]:::artifact
-    model_types_library["Named js_library from the macro<br/>JsInfo.transitive_types"]:::proposed
+    model_types["Generated model .d.ts<br/>raw :out file label"]:::artifact
+    tool_types["Generated tool .d.ts<br/>raw :out file label"]:::artifact
+    model_types_library["Named json_schema_js_library target<br/>model JSON + declarations<br/>JsInfo.transitive_types"]:::proposed
+    tool_schema_library["Named json_schema_js_library target<br/>tool JSON + declarations<br/>SSH and Haku producer packages"]:::proposed
     typed_models["Frontend wire / renderer model types<br/>checked with ts_library / tsc"]:::consumer
     http_clients["Typed HTTP clients<br/>openapi-fetch and operation types"]:::consumer
     json_runtime["R: ordinary TS adapter<br/>z.fromJSONSchema"]:::converter
     runtime_zod["Runtime Zod schema objects"]:::artifact
     tool_consumers["Haku tool previews and validation<br/>SSH action rendering"]:::consumer
-    tool_package["B: js_library schema package<br/>JSON srcs + declaration deps<br/>SSH: producer; Haku: frontend"]:::proposed
     zod_gen --> zod_ts
     zod_ts --> zod_compile
     zod_compile --> zod_modules
     zod_modules -->|"import / safeParse"| zod_validation
     json_typegen --> model_types
     model_types --> model_types_library
+    model_json --> model_types_library
+    json_typegen --> tool_types
+    tool_types --> tool_schema_library
+    tool_json --> tool_schema_library
     model_types_library -->|"type-only imports"| typed_models
     api_types_library -->|"paths / operations"| http_clients
     api_types_library -->|"direct named imports; no alias module"| typed_models
-    tool_json -->|"SSH producer package; Haku frontend package"| tool_package
-    model_types_library -->|"deps"| tool_package
-    tool_package -->|"JSON imports + types via deps"| json_runtime
-    model_json -->|"where runtime validation is needed"| json_runtime
+    tool_schema_library -->|"direct JSON + type imports"| json_runtime
+    model_types_library -->|"when runtime validation is needed"| json_runtime
     json_runtime --> runtime_zod
     runtime_zod -->|"safeParse at tested boundary"| tool_consumers
   end
@@ -635,8 +639,8 @@ declared relative external references, and imported config helper inputs.
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | OpenAPI 3.0/3.1 → API declarations     | `openapi_js_library(name, schema, out=None)`, pinned `openapi-typescript`, named root exports                             | `.d.ts` defaults to `<name>.d.ts`; raw label remains addressable, and `name` exposes declarations to `ts_library` consumers                                |
 | OpenAPI 3.0/3.1 → Zod implementation   | `openapi_zod_ts_library(name, schema, config, tsconfig, deps, out=None)`, using pinned `@hey-api/openapi-ts` Zod 4 plugin | Named compiled `ts_library`; raw `.ts` defaults to `<name>.ts`, remains addressable, and `out` selects another source path; JS consumers import emitted JS |
-| JSON Schema → model declarations       | `json_schema_js_library(name, schema, out=None)`, pinned `json-schema-to-typescript`                                      | `.d.ts` defaults to `<name>.d.ts`; raw label remains addressable, and `name` exposes declarations to `ts_library` consumers                                |
-| JSON Schema → runtime Zod              | Retained JSON plus a normal TS adapter using pinned `z.fromJSONSchema`                                                    | Runtime validator; generated declarations supply static model types. Keep any assertion joining those two artifacts at one tested boundary                 |
+| JSON Schema → model declarations       | `json_schema_js_library(name, schema, out=None)`, pinned `json-schema-to-typescript`                                      | `.d.ts` defaults to `<name>.d.ts`; raw label remains addressable, and `name` exposes source JSON, declared references, and declarations to TS consumers    |
+| JSON Schema → runtime Zod              | Producer's named JSON Schema library plus a normal TS adapter using pinned `z.fromJSONSchema`                             | Runtime validator; generated declarations supply static model types. Keep any assertion joining those two artifacts at one tested boundary                 |
 | Zod → JSON Schema                      | A component-owned JS exporter using `z.toJSONSchema`, invoked with `js_run_binary`                                        | Explicitly targeted Draft 2020-12 JSON; choose input/output direction and fail on unrepresentable features                                                 |
 | Protobuf → language bindings           | `proto_library`/`ProtoInfo` plus language-specific `protoc` rules/plugins                                                 | Protobuf-ES JS/declarations, Go, Python/stubs, Rust prost; retain native runtime descriptors and codecs                                                    |
 | Protobuf → RPC service/gateway code    | Existing Go gRPC/gateway compilers and typed Python gRPC macro                                                            | Go/Python service code and Go HTTP gateway; normal libraries and consumers                                                                                 |
@@ -725,7 +729,7 @@ wire distinctions, rather than generated-source spelling or generator implementa
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | API declarations and Zod   | Pydantic/FastAPI fixture and generated cross-package schemas/config → production OpenAPI/JSON Schema converters → typed TS and plain JS | Direct named model imports; declared relative schema/config references; operation-map typing; Pydantic names; runtime valid/invalid response parsing, discriminators, missing/null, and caller date policy |
 | Production reference guard | OpenAPI and JSON Schema documents with remote refs, plus local file inputs with absolute `$id` → all three production launchers         | Remote-reference conversions fail with zero loopback HTTP requests; local files do not fetch                                                                                                               |
-| Model/tool JSON Schema     | Pydantic fixture → standalone JSON Schema → declarations plus retained JSON → runtime Zod                                               | TS consumer type checking; producer payload acceptance and malformed payload rejection                                                                                                                     |
+| Model/tool JSON Schema     | Pydantic fixture → standalone JSON Schema → named library with schema JSON + declarations → runtime Zod                                 | TS consumer type checking; producer payload acceptance and malformed payload rejection                                                                                                                     |
 | Reverse schema publication | Zod source → Draft 2020-12 JSON Schema → Python validator                                                                               | Node export/import succeeds; independent Python validation of accepted and rejected values                                                                                                                 |
 | Native protobuf            | Two imported proto files → JS/declarations, Go, Python; common proto → Rust prost → consumers                                           | TS, Go, Python, and Rust checks; producer/consumer JSON interoperability; int64, Timestamp, enum, oneof, optional presence                                                                                 |
 | Native services            | Same annotated proto → Go/Python gRPC service bindings and Go gateway → consumers                                                       | Typed Python stub construction; Go fake-connection invocation; gateway compile coverage                                                                                                                    |

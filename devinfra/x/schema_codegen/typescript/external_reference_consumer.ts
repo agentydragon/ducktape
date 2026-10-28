@@ -1,5 +1,5 @@
 import type { paths } from "./api/external_openapi_types";
-import type { ExternalResult } from "./external_json_schema_types";
+import type { ExternalResult } from "./api/external_json_schema_types";
 import { zExternalResult } from "./external_openapi_zod";
 
 type OpenApiResult = paths["/fixture"]["get"]["responses"][200]["content"]["application/json"];
