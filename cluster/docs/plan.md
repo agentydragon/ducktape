@@ -28,16 +28,18 @@ editing a route.
 ## Next Actions
 
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
-      SeaweedFS-backed PVC holding non-regeneratable state). Currently
-      only `grocy-{sf,vallejo}` and `tana-mcp` have volsync backups; the
-      Forgejo loss above was survivable only because nothing had been
-      pushed yet, not because we had a backup. Destination choice is
-      non-trivial: `seaweedfs-ovh`→`seaweedfs-ovh` doesn't protect against
+      SeaweedFS-backed PVC holding non-regeneratable state). Only
+      `grocy-{sf,vallejo}` and `tana-mcp` use the PVC-to-PVC `rsyncTLS` backup
+      pattern; Home Assistant also has a Restic `ReplicationSource` to SeaweedFS.
+      That does not cover Forgejo's shared storage. The Forgejo loss above was
+      survivable only because nothing had been pushed yet, not because we had a
+      backup. Destination choice is non-trivial: `seaweedfs-ovh`→`seaweedfs-ovh`
+      doesn't protect against
       the failure mode we just hit (defeats the grocy/tana pattern when
-      the primary is already on SeaweedFS), and `local-path-proxmox` is
-      currently unavailable because Proxmox is down. Likely needs real
-      off-cluster object storage (B2 / R2 / OVH Object Storage) — overlaps
-      with the observability-backend decision below.
+      the primary is already on SeaweedFS). `local-path-proxmox` was unavailable
+      during that incident; reassess it against the current Piraeus storage
+      design. Off-cluster object storage (B2 / R2 / OVH Object Storage) remains
+      an option and overlaps with the observability-backend decision below.
 - [ ] **Convert PVC backups to snapshot/retention, not Direct rsync.**
       Current `grocy-{sf,vallejo}` and `tana-mcp` volsync configs use
       `copyMethod: Direct` rsync into a single destination PVC. When the
