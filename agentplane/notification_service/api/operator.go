@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
@@ -68,7 +69,7 @@ func (o *NotificationsOperator) WatchSandboxNotifications(
 	if request.GetName() == "" || request.GetUid() == "" {
 		return failure(ctx, invalidRequest("name and uid are required"))
 	}
-	ref := store.DestinationRef{Namespace: request.GetNamespace(), Name: request.GetName(), UID: request.GetUid()}
+	ref := model.DestinationRef{Namespace: request.GetNamespace(), Name: request.GetName(), UID: request.GetUid()}
 	return follow(ctx, o.watcher, stream, func(ctx context.Context) (reading[operatorpb.WatchSandboxNotificationsResponse], error) {
 		current, err := o.store.SandboxStatus(ctx, ref, o.debounce)
 		if err != nil {

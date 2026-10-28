@@ -3,11 +3,11 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -27,19 +27,6 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// GitHubRepository is a repository by the numeric ID that survives a rename, with the name last seen for it.
-type GitHubRepository struct {
-	ID   int64
-	Name string
-}
-
-// GitHubHeadRevision is a commit that a subject has been seen at, in the repository holding it, which for a
-// pull request may be a fork.
-type GitHubHeadRevision struct {
-	Repository GitHubRepository
-	SHA        string
-}
-
 // GitHubAccessKey names one installation's access to one repository, which is shared by every subscription
 // that reads the repository through it.
 type GitHubAccessKey struct {
@@ -56,32 +43,32 @@ type GitHubSubjectKey struct {
 	Key          string
 }
 
-// NewGitHubSubjectKey is the key of a subject of the repository, or ErrInvalid if the subject breaks the bounds
+// NewGitHubSubjectKey is the key of a subject of the repository, or model.ErrInvalid if the subject breaks the bounds
 // a subscription's does.
-func NewGitHubSubjectKey(repositoryID int64, subject GitHubSubject) (GitHubSubjectKey, error) {
+func NewGitHubSubjectKey(repositoryID int64, subject model.GitHubSubject) (GitHubSubjectKey, error) {
 	switch subject := subject.(type) {
-	case PullRequestSubject:
+	case model.PullRequestSubject:
 		if subject.Number <= 0 {
-			return GitHubSubjectKey{}, invalid("pull request number must be positive")
+			return GitHubSubjectKey{}, model.Invalid("pull request number must be positive")
 		}
 		return GitHubSubjectKey{RepositoryID: repositoryID, Kind: "pull_request", Key: strconv.FormatInt(subject.Number, 10)}, nil
-	case IssueSubject:
+	case model.IssueSubject:
 		if subject.Number <= 0 {
-			return GitHubSubjectKey{}, invalid("issue number must be positive")
+			return GitHubSubjectKey{}, model.Invalid("issue number must be positive")
 		}
 		return GitHubSubjectKey{RepositoryID: repositoryID, Kind: "issue", Key: strconv.FormatInt(subject.Number, 10)}, nil
-	case BranchSubject:
-		if err := checkText("branch name", subject.Name, 1, 255); err != nil {
+	case model.BranchSubject:
+		if err := model.CheckText("branch name", subject.Name, 1, 255); err != nil {
 			return GitHubSubjectKey{}, err
 		}
 		return GitHubSubjectKey{RepositoryID: repositoryID, Kind: "branch", Key: subject.Name}, nil
-	case CommitSubject:
-		if !shaPattern.MatchString(subject.SHA) {
-			return GitHubSubjectKey{}, invalid("commit SHA must be 40 lowercase hexadecimal characters")
+	case model.CommitSubject:
+		if !model.IsCommitSHA(subject.SHA) {
+			return GitHubSubjectKey{}, model.Invalid("commit SHA must be 40 lowercase hexadecimal characters")
 		}
 		return GitHubSubjectKey{RepositoryID: repositoryID, Kind: "commit", Key: subject.SHA}, nil
 	default:
-		return GitHubSubjectKey{}, invalid("subject must be a pull request, issue, branch or commit")
+		return GitHubSubjectKey{}, model.Invalid("subject must be a pull request, issue, branch or commit")
 	}
 }
 
@@ -214,7 +201,7 @@ func fencesValid(ctx context.Context, q querier, fences []GitHubAccessFence) (bo
 }
 
 // addRevisions records the revisions as seen for the subject, with the repositories holding them.
-func addRevisions(ctx context.Context, tx *sql.Tx, key GitHubSubjectKey, revisions []GitHubHeadRevision) error {
+func addRevisions(ctx context.Context, tx *sql.Tx, key GitHubSubjectKey, revisions []model.GitHubHeadRevision) error {
 	for _, revision := range revisions {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO github_repository (repository_id, full_name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -389,248 +376,6 @@ func leased(ctx context.Context, tx *sql.Tx, lease GitHubRefreshLease) (refreshR
 		return refreshRow{}, &RefreshDeferredError{Until: at}
 	}
 	return row, nil
-}
-
-// GitHubSuccess is what a refresh learned.
-type GitHubSuccess struct {
-	// PullRequest is the mergeability observation made in the same read as its head revision.
-	PullRequest *GitHubPullRequestObservation
-	// Fences are the grants the result was read under. If any no longer holds, nothing is recorded.
-	Fences []GitHubAccessFence
-	// Revisions are the commits a subject was seen at, for a subject refresh.
-	Revisions []GitHubHeadRevision
-	// RepositoryName is the repository's current name, for an access refresh that read it.
-	RepositoryName *string
-	// These are nil when their endpoint was not read and nonnil (including empty) on a successful endpoint read.
-	CheckRuns      []GitHubCheckRun
-	CommitStatuses []GitHubCommitStatus
-	// Reviews is nil when review history was not read and nonnil when it was read successfully, including empty.
-	Reviews []GitHubReviewObservation
-}
-
-// Succeed records a refresh and releases the lease. It fails with *RefreshDeferredError, recording nothing,
-// if the lease or a fence no longer holds.
-func (g *GitHubState) Succeed(ctx context.Context, lease GitHubRefreshLease, success GitHubSuccess) error {
-	return g.store.transaction(ctx, func(tx *sql.Tx) error {
-		if err := githubLock(ctx, tx); err != nil {
-			return err
-		}
-		if _, err := leased(ctx, tx, lease); err != nil {
-			return err
-		}
-		valid, err := fencesValid(ctx, tx, success.Fences)
-		if err != nil {
-			return err
-		}
-		if !valid {
-			return &RefreshDeferredError{Until: now()}
-		}
-		if commit, ok := lease.Key.(GitHubCommitRefreshKey); ok {
-			if commit.Event == EventCheckRun && (success.CheckRuns == nil || success.CommitStatuses != nil || success.Reviews != nil) {
-				return errors.New("a check-run refresh success must include only the check-run result")
-			}
-			if commit.Event == EventStatus && (success.CommitStatuses == nil || success.CheckRuns != nil || success.Reviews != nil) {
-				return errors.New("a status refresh success must include only the commit-status result")
-			}
-			baseFence := false
-			for _, fence := range success.Fences {
-				if fence.Key.AppID == commit.AppID && fence.Key.InstallationID == commit.InstallationID &&
-					fence.Key.RepositoryID == commit.Subject.RepositoryID {
-					baseFence = true
-					break
-				}
-			}
-			if !baseFence {
-				return errors.New("a commit observation refresh requires its pull request repository access fence")
-			}
-			if len(success.Revisions) != 0 || success.PullRequest != nil || success.RepositoryName != nil {
-				return errors.New("a commit observation refresh cannot record another GitHub refresh result")
-			}
-			parentGeneration, headSHA, err := githubCommitParent(ctx, tx, commit)
-			if err != nil {
-				return err
-			}
-			if lease.SubjectGeneration == nil || parentGeneration != *lease.SubjectGeneration || headSHA != lease.HeadSHA {
-				return &RefreshDeferredError{Until: now()}
-			}
-			at := now()
-			table, where, args := lease.Key.row()
-			successPlaceholder := len(args) + 1
-			query := fmt.Sprintf("UPDATE %s SET last_success_at = $%d, error_kind = NULL, error = NULL, "+
-				"error_since = NULL, error_observed_at = NULL, claim = NULL, claim_until = NULL, next_attempt = NULL WHERE %s",
-				table, successPlaceholder, where)
-			updateArgs := append(append([]any(nil), args...), at)
-			if _, err := tx.ExecContext(ctx, query, updateArgs...); err != nil {
-				return err
-			}
-			changed := false
-			observe := func(repositoryID int64, sha string, record func(int64) (bool, error)) error {
-				if sha != headSHA {
-					return &RefreshDeferredError{Until: now()}
-				}
-				var installationID int64
-				for _, fence := range success.Fences {
-					if fence.Key.AppID == commit.AppID && fence.Key.RepositoryID == repositoryID {
-						installationID = fence.Key.InstallationID
-						if repositoryID == commit.Subject.RepositoryID && installationID == commit.InstallationID {
-							break
-						}
-					}
-				}
-				if installationID == 0 {
-					return errors.New("commit observation repository has no matching access fence")
-				}
-				var current bool
-				if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
-					SELECT 1 FROM github_subject_revision r JOIN github_pull_request p
-						ON p.repository_id = r.repository_id AND p.number::text = r.subject_key
-					WHERE r.repository_id = $1 AND r.kind = 'pull_request' AND r.subject_key = $2
-						AND r.head_repository_id = $3 AND r.sha = $4 AND p.head_sha = $4)`,
-					commit.Subject.RepositoryID, commit.Subject.Key, repositoryID, sha).Scan(&current); err != nil {
-					return err
-				}
-				if !current {
-					return &RefreshDeferredError{Until: now()}
-				}
-				didChange, err := record(installationID)
-				if err != nil {
-					return err
-				}
-				changed = changed || didChange
-				return nil
-			}
-			if commit.Event == EventCheckRun {
-				for _, run := range success.CheckRuns {
-					if err := observe(run.RepositoryID, run.HeadSHA, func(installationID int64) (bool, error) {
-						return observeGitHubCheckRun(ctx, tx, commit.AppID, installationID, run, at)
-					}); err != nil {
-						return err
-					}
-				}
-			} else {
-				for _, status := range success.CommitStatuses {
-					if err := observe(status.RepositoryID, status.SHA, func(installationID int64) (bool, error) {
-						return observeGitHubCommitStatus(ctx, tx, commit.AppID, installationID, status, at)
-					}); err != nil {
-						return err
-					}
-				}
-			}
-			if changed {
-				if err := wakeGitHubInboxes(ctx, tx, commit.AppID); err != nil {
-					return err
-				}
-				return notify(ctx, tx)
-			}
-			return nil
-		}
-		if review, ok := lease.Key.(GitHubReviewRefreshKey); ok {
-			if success.Reviews == nil || success.CheckRuns != nil || success.CommitStatuses != nil {
-				return errors.New("a review refresh success must distinguish an empty observation from no review read")
-			}
-			baseFence := false
-			for _, fence := range success.Fences {
-				if fence.Key.AppID == review.AppID && fence.Key.InstallationID == review.InstallationID &&
-					fence.Key.RepositoryID == review.Subject.RepositoryID {
-					baseFence = true
-					break
-				}
-			}
-			if !baseFence {
-				return errors.New("a review refresh requires its pull request repository access fence")
-			}
-			if len(success.Revisions) != 0 || success.PullRequest != nil || success.RepositoryName != nil ||
-				success.CheckRuns != nil || success.CommitStatuses != nil {
-				return errors.New("a review refresh cannot record another GitHub refresh result")
-			}
-			parentGeneration, exists, err := githubReviewParent(ctx, tx, review)
-			if err != nil {
-				return err
-			}
-			if !exists || lease.SubjectGeneration == nil || parentGeneration != *lease.SubjectGeneration {
-				return &RefreshDeferredError{Until: now()}
-			}
-			at := now()
-			changed := false
-			for _, observation := range success.Reviews {
-				didChange, err := observeGitHubPRReview(ctx, tx, review.AppID, review.InstallationID,
-					review.Subject.RepositoryID, mustPRNumber(review.Subject), observation, at)
-				if err != nil {
-					return err
-				}
-				changed = changed || didChange
-			}
-			if changed {
-				if err := invalidateOtherGitHubReviewRefreshes(ctx, tx, review.AppID, review.InstallationID,
-					review.Subject.RepositoryID, mustPRNumber(review.Subject)); err != nil {
-					return err
-				}
-			}
-			table, where, args := lease.Key.row()
-			settledArgs := append(append([]any(nil), args...), at)
-			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET last_success_at = $%d, error_kind = NULL,
-				error = NULL, error_since = NULL, error_observed_at = NULL, next_attempt = NULL,
-				claim = NULL, claim_until = NULL WHERE %s`, table, len(args)+1, where), settledArgs...); err != nil {
-				return err
-			}
-			if changed {
-				if err := wakeGitHubInboxes(ctx, tx, review.AppID); err != nil {
-					return err
-				}
-				return notify(ctx, tx)
-			}
-			return nil
-		}
-		if success.CheckRuns != nil || success.CommitStatuses != nil || success.Reviews != nil {
-			return errors.New("commit observations and reviews require their matching refresh")
-		}
-		table, where, args := lease.Key.row()
-		if len(success.Revisions) > 0 {
-			subject, ok := lease.Key.(GitHubSubjectKey)
-			if !ok {
-				return errors.New("revisions can only be recorded by a subject refresh")
-			}
-			if err := addRevisions(ctx, tx, subject, success.Revisions); err != nil {
-				return err
-			}
-		}
-		at := now()
-		successPlaceholder := len(args) + 1
-		settled := fmt.Sprintf(`last_success_at = $%d, error_kind = NULL, error = NULL, error_since = NULL,
-			error_observed_at = NULL, claim = NULL, claim_until = NULL, next_attempt = NULL`, successPlaceholder)
-		settledArgs := append(append([]any(nil), args...), at)
-		if subject, ok := lease.Key.(GitHubSubjectKey); ok {
-			if _, err := tx.ExecContext(ctx, "UPDATE "+table+" SET "+settled+" WHERE "+where, settledArgs...); err != nil {
-				return err
-			}
-			if success.PullRequest != nil {
-				return g.store.observePullRequest(ctx, tx, subject, success, at)
-			}
-			return nil
-		}
-		if lease.InstallationGeneration == nil {
-			return errors.New("an access lease holds the installation generation it was claimed under")
-		}
-		if success.RepositoryName != nil {
-			result, err := tx.ExecContext(ctx, `UPDATE github_repository SET full_name = $2 WHERE repository_id = $1`,
-				args[2], *success.RepositoryName)
-			if err != nil {
-				return err
-			}
-			if updated, err := result.RowsAffected(); err != nil || updated != 1 {
-				return fmt.Errorf("github_repository %v: %d rows renamed: %w", args[2], updated, err)
-			}
-		}
-		checkedPlaceholder := successPlaceholder + 1
-		validUntilPlaceholder := checkedPlaceholder + 1
-		installationGenerationPlaceholder := validUntilPlaceholder + 1
-		query := fmt.Sprintf("UPDATE %s SET %s, checked_at = $%d, valid_until = $%d, "+
-			"validated_installation_generation = $%d WHERE %s", table, settled, checkedPlaceholder,
-			validUntilPlaceholder, installationGenerationPlaceholder, where)
-		settledArgs = append(settledArgs, at, at.Add(g.freshness), *lease.InstallationGeneration)
-		_, err = tx.ExecContext(ctx, query, settledArgs...)
-		return err
-	})
 }
 
 // Fail records a failed refresh and releases the lease, and returns when the row may be refreshed again. An

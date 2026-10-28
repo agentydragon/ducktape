@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
 )
 
@@ -74,7 +75,7 @@ func TestWritesThatChangeWhatWorkersFollowWakeThemAndOthersDoNot(t *testing.T) {
 	})
 	check("reading", false, func() { f.read(t, subscription.InboxID, 0) })
 	check("appending an event", false, func() {
-		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, ActionsEvent{RequestID: creation.Source.(ActionsSource).RequestID, Sequence: 1}, `{}`)
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}, `{}`)
 	})
 	check("acknowledging", true, func() { f.acknowledge(t, subscription.InboxID, 1) })
 	check("renewing", true, func() { f.renew(t, subscription.ID, 1, 7) })

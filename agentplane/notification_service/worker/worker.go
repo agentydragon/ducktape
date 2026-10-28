@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/google/uuid"
 )
@@ -285,9 +286,9 @@ func (w *Worker) readSource(ctx context.Context, claim store.Claim) error {
 
 func (w *Worker) reconcile(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
 	switch due.Source.(type) {
-	case store.ActionsSource:
+	case model.ActionsSource:
 		return w.Actions.Reconcile(ctx, claim, due)
-	case store.GitHubSource:
+	case model.GitHubSource:
 		if w.GitHub == nil {
 			return &ProviderError{Kind: store.FailureUnavailable, Message: "GitHub provider is disabled"}
 		}

@@ -6,7 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/github/client"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -58,18 +59,18 @@ func failure(ctx context.Context, err error) error {
 	var (
 		refused      admissionRefused
 		quota        *store.QuotaError
-		limited      *github.RateLimitedError
+		limited      *client.RateLimitedError
 		providerErr  *worker.ProviderError
-		notInstalled *github.NotInstalledError
-		suspended    *github.SuspendedError
-		access       *github.AccessError
-		changed      *github.SourceChangedError
+		notInstalled *client.NotInstalledError
+		suspended    *client.SuspendedError
+		access       *client.AccessError
+		changed      *client.SourceChangedError
 		dependency   *unavailableError
 	)
 	switch {
 	case errors.As(err, &refused):
 		return refused.err
-	case errors.Is(err, store.ErrInvalid):
+	case errors.Is(err, model.ErrInvalid):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, errSandboxMissing), errors.Is(err, errNoSession),
 		errors.Is(err, errSessionUnrecorded):
@@ -114,7 +115,7 @@ func failure(ctx context.Context, err error) error {
 }
 
 // rateLimited is a GitHub rate limit: unavailable, and when to ask again.
-func rateLimited(ctx context.Context, limited *github.RateLimitedError) error {
+func rateLimited(ctx context.Context, limited *client.RateLimitedError) error {
 	answer := status.New(codes.Unavailable, "GitHub temporarily unavailable")
 	withDetail, err := answer.WithDetails(&errdetails.RetryInfo{
 		RetryDelay: durationpb.New(time.Duration(limited.RetrySeconds) * time.Second),

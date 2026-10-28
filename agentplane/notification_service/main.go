@@ -25,6 +25,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/docs"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
+	githubclient "github.com/agentydragon/ducktape/agentplane/notification_service/github/client" // Distinguish GitHub transport from the Kubernetes client.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
 	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
@@ -43,9 +44,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -207,7 +210,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, listener net.Listener) 
 	var githubSource worker.Provider
 	var webhookHandler http.Handler
 	if c.githubEnabled() {
-		githubClient, err := github.New(c.GitHub)
+		githubClient, err := githubclient.New(c.GitHub)
 		if err != nil {
 			return err
 		}

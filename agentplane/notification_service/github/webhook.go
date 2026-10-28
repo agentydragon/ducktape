@@ -10,10 +10,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/github/client"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/google/go-github/v88/github"
 	"github.com/google/uuid"
-
-	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 )
 
 var (
@@ -141,7 +142,7 @@ func (o object) list(name, path string) ([]object, error) {
 	return objects, nil
 }
 
-func parseRepository(o object, path string) (*store.GitHubRepository, error) {
+func parseRepository(o object, path string) (*model.GitHubRepository, error) {
 	if o == nil {
 		return nil, nil
 	}
@@ -153,16 +154,16 @@ func parseRepository(o object, path string) (*store.GitHubRepository, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(name) > maxRepositoryNameLength || !repositoryName.MatchString(name) {
+	if !model.IsRepositoryName(name) {
 		return nil, invalidPayload("%s.full_name is not owner/name", path)
 	}
-	return &store.GitHubRepository{ID: id, Name: name}, nil
+	return &model.GitHubRepository{ID: id, Name: name}, nil
 }
 
 // envelope is what every delivery carries.
 type envelope struct {
 	installationID int64
-	repository     *store.GitHubRepository
+	repository     *model.GitHubRepository
 	action         *string
 }
 
@@ -202,9 +203,9 @@ func parseEnvelope(body object) (envelope, error) {
 type correlation struct {
 	// sha is the commit the event is about.
 	sha      *string
-	subjects []store.GitHubSubject
+	subjects []model.GitHubSubject
 	// head is where a pull request's head commit lives, which for a fork is not the repository of the event.
-	head *store.GitHubRepository
+	head *model.GitHubRepository
 }
 
 // A correlator reads the part of a body that its event adds to the envelope, which GitHub names in a header, not
@@ -214,19 +215,19 @@ type correlator func(body object) (correlation, error)
 // correlators are the events this service takes, with how each is read. The installation events carry the
 // envelope alone.
 var correlators = map[string]correlator{
-	string(store.EventPullRequest):              pullRequestEvent,
-	string(store.EventPullRequestReview):        pullRequestEvent,
-	string(store.EventPullRequestReviewComment): pullRequestEvent,
-	string(store.EventIssueComment):             issueEvent,
-	string(store.EventIssues):                   issueEvent,
-	string(store.EventCheckRun):                 checkEvent("check_run"),
-	string(store.EventCheckSuite):               checkEvent("check_suite"),
-	string(store.EventWorkflowRun):              workflowRunEvent,
-	string(store.EventWorkflowJob):              workflowJobEvent,
-	string(store.EventStatus):                   statusEvent,
-	string(store.EventPush):                     pushEvent,
-	string(store.EventCreate):                   refEvent,
-	string(store.EventDelete):                   refEvent,
+	string(model.EventPullRequest):              pullRequestEvent,
+	string(model.EventPullRequestReview):        pullRequestEvent,
+	string(model.EventPullRequestReviewComment): pullRequestEvent,
+	string(model.EventIssueComment):             issueEvent,
+	string(model.EventIssues):                   issueEvent,
+	string(model.EventCheckRun):                 checkEvent("check_run"),
+	string(model.EventCheckSuite):               checkEvent("check_suite"),
+	string(model.EventWorkflowRun):              workflowRunEvent,
+	string(model.EventWorkflowJob):              workflowJobEvent,
+	string(model.EventStatus):                   statusEvent,
+	string(model.EventPush):                     pushEvent,
+	string(model.EventCreate):                   refEvent,
+	string(model.EventDelete):                   refEvent,
 	"installation":                              func(object) (correlation, error) { return correlation{}, nil },
 	"installation_repositories":                 func(object) (correlation, error) { return correlation{}, nil },
 }
@@ -256,7 +257,7 @@ func pullRequestEvent(body object) (correlation, error) {
 	if err != nil {
 		return correlation{}, err
 	}
-	return correlation{sha: &sha, subjects: []store.GitHubSubject{store.PullRequestSubject{Number: number}}, head: headRepository}, nil
+	return correlation{sha: &sha, subjects: []model.GitHubSubject{model.PullRequestSubject{Number: number}}, head: headRepository}, nil
 }
 
 func issueEvent(body object) (correlation, error) {
@@ -274,24 +275,24 @@ func issueEvent(body object) (correlation, error) {
 		return correlation{}, err
 	}
 	if pullRequest != nil {
-		return correlation{subjects: []store.GitHubSubject{store.PullRequestSubject{Number: number}}}, nil
+		return correlation{subjects: []model.GitHubSubject{model.PullRequestSubject{Number: number}}}, nil
 	}
-	return correlation{subjects: []store.GitHubSubject{store.IssueSubject{Number: number}}}, nil
+	return correlation{subjects: []model.GitHubSubject{model.IssueSubject{Number: number}}}, nil
 }
 
 // pullRequests are the pull requests a check or workflow run lists.
-func pullRequests(check object, path string) ([]store.GitHubSubject, error) {
+func pullRequests(check object, path string) ([]model.GitHubSubject, error) {
 	listed, err := check.list("pull_requests", path)
 	if err != nil {
 		return nil, err
 	}
-	subjects := make([]store.GitHubSubject, len(listed))
+	subjects := make([]model.GitHubSubject, len(listed))
 	for i, pullRequest := range listed {
 		number, err := pullRequest.integer("number", fmt.Sprintf("%s.pull_requests[%d]", path, i))
 		if err != nil {
 			return nil, err
 		}
-		subjects[i] = store.PullRequestSubject{Number: number}
+		subjects[i] = model.PullRequestSubject{Number: number}
 	}
 	return subjects, nil
 }
@@ -329,7 +330,7 @@ func workflowRunEvent(body object) (correlation, error) {
 		return correlation{}, err
 	}
 	if branch != nil {
-		subjects = append(subjects, store.BranchSubject{Name: *branch})
+		subjects = append(subjects, model.BranchSubject{Name: *branch})
 	}
 	return correlation{sha: &sha, subjects: subjects}, nil
 }
@@ -349,7 +350,7 @@ func workflowJobEvent(body object) (correlation, error) {
 	}
 	found := correlation{sha: &sha}
 	if branch != nil {
-		found.subjects = []store.GitHubSubject{store.BranchSubject{Name: *branch}}
+		found.subjects = []model.GitHubSubject{model.BranchSubject{Name: *branch}}
 	}
 	return found, nil
 }
@@ -369,7 +370,7 @@ func statusEvent(body object) (correlation, error) {
 		if err != nil {
 			return correlation{}, err
 		}
-		found.subjects = append(found.subjects, store.BranchSubject{Name: name})
+		found.subjects = append(found.subjects, model.BranchSubject{Name: name})
 	}
 	return found, nil
 }
@@ -393,7 +394,7 @@ func pushEvent(body object) (correlation, error) {
 	if !isBranch {
 		return correlation{}, nil
 	}
-	found := correlation{subjects: []store.GitHubSubject{store.BranchSubject{Name: name}}}
+	found := correlation{subjects: []model.GitHubSubject{model.BranchSubject{Name: name}}}
 	if after != zeroSHA {
 		found.sha = &after
 	}
@@ -411,7 +412,7 @@ func refEvent(body object) (correlation, error) {
 	}
 	switch refType {
 	case "branch":
-		return correlation{subjects: []store.GitHubSubject{store.BranchSubject{Name: ref}}}, nil
+		return correlation{subjects: []model.GitHubSubject{model.BranchSubject{Name: ref}}}, nil
 	case "tag":
 		return correlation{}, nil
 	default:
@@ -471,14 +472,14 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 		ingest.Subjects = append(ingest.Subjects, key)
 	}
 	if common.repository != nil && found.sha != nil {
-		ingest.Revisions = append(ingest.Revisions, store.GitHubHeadRevision{Repository: *common.repository, SHA: *found.sha})
+		ingest.Revisions = append(ingest.Revisions, model.GitHubHeadRevision{Repository: *common.repository, SHA: *found.sha})
 		if found.head != nil {
-			ingest.Revisions = append(ingest.Revisions, store.GitHubHeadRevision{Repository: *found.head, SHA: *found.sha})
+			ingest.Revisions = append(ingest.Revisions, model.GitHubHeadRevision{Repository: *found.head, SHA: *found.sha})
 		}
 	}
 	if common.repository != nil && found.sha != nil {
 		switch event {
-		case string(store.EventCheckRun):
+		case string(model.EventCheckRun):
 			checkRun, err := webhookCheckRun(body, common.action, *found.sha)
 			if err != nil {
 				return store.GitHubIngest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
@@ -487,7 +488,7 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 				checkRun.RepositoryID = common.repository.ID
 				ingest.CheckRun = checkRun
 			}
-		case string(store.EventStatus):
+		case string(model.EventStatus):
 			commitStatus, err := webhookCommitStatus(body, *found.sha)
 			if err != nil {
 				return store.GitHubIngest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
@@ -508,7 +509,7 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 
 // A check webhook may carry only correlation fields. Preserve those as raw activity; complete state
 // observations share normalization with polling so the same change has one durable identity.
-func webhookCheckRun(body object, action *string, sha string) (*store.GitHubCheckRun, error) {
+func webhookCheckRun(body object, action *string, sha string) (*model.GitHubCheckRun, error) {
 	if action == nil || (*action != "created" && *action != "in_progress" && *action != "completed") {
 		return nil, nil
 	}
@@ -524,7 +525,7 @@ func webhookCheckRun(body object, action *string, sha string) (*store.GitHubChec
 	if err := json.Unmarshal(body["check_run"], &run); err != nil {
 		return nil, err
 	}
-	observation, err := checkRunObservation(&run, sha)
+	observation, err := client.CheckRunObservation(&run, sha)
 	if err != nil {
 		return nil, err
 	}
@@ -533,7 +534,7 @@ func webhookCheckRun(body object, action *string, sha string) (*store.GitHubChec
 }
 
 // A status webhook may carry only correlation fields. Preserve those as raw activity.
-func webhookCommitStatus(body object, sha string) (*store.GitHubCommitStatus, error) {
+func webhookCommitStatus(body object, sha string) (*model.GitHubCommitStatus, error) {
 	if body.present("id") == nil || body.present("context") == nil || body.present("state") == nil {
 		return nil, nil
 	}
@@ -545,7 +546,7 @@ func webhookCommitStatus(body object, sha string) (*store.GitHubCommitStatus, er
 	if err := json.Unmarshal(raw, &status); err != nil {
 		return nil, err
 	}
-	observation, err := statusObservation(&status, sha)
+	observation, err := client.CommitStatusObservation(&status, sha)
 	if err != nil {
 		return nil, err
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"google.golang.org/protobuf/proto"
 )
@@ -15,8 +16,8 @@ import (
 func TestDestinationKeysAreThosePythonComputes(t *testing.T) {
 	for _, vector := range loadGolden(t).DestinationKeys {
 		t.Run(vector.Name, func(t *testing.T) {
-			if got := DestinationKey(vector.DestinationRef, vector.SessionID); got != vector.Key {
-				t.Errorf("DestinationKey = %s, want %s", got, vector.Key)
+			if got := model.DestinationKey(vector.DestinationRef, vector.SessionID); got != vector.Key {
+				t.Errorf("model.DestinationKey = %s, want %s", got, vector.Key)
 			}
 		})
 	}
@@ -25,7 +26,7 @@ func TestDestinationKeysAreThosePythonComputes(t *testing.T) {
 func TestCreationsAreReadAndWrittenAsPythonDoes(t *testing.T) {
 	for _, vector := range loadGolden(t).Subscriptions {
 		t.Run(vector.Name, func(t *testing.T) {
-			var sent, stored Subscribe
+			var sent, stored model.Subscribe
 			if err := decode(vector.Input, &sent); err != nil {
 				t.Fatalf("decoding the input: %v", err)
 			}
@@ -57,12 +58,12 @@ func TestCreationsAreReadAndWrittenAsPythonDoes(t *testing.T) {
 func TestCreationsPythonRefusesAreRefused(t *testing.T) {
 	for _, vector := range loadGolden(t).InvalidSubscriptions {
 		t.Run(vector.Name, func(t *testing.T) {
-			var creation Subscribe
+			var creation model.Subscribe
 			err := decode(vector.Input, &creation)
 			if err == nil {
 				err = creation.Validate()
-				if err != nil && !errors.Is(err, ErrInvalid) {
-					t.Errorf("Validate error %v is not ErrInvalid", err)
+				if err != nil && !errors.Is(err, model.ErrInvalid) {
+					t.Errorf("Validate error %v is not model.ErrInvalid", err)
 				}
 			}
 			if err == nil {
@@ -75,7 +76,7 @@ func TestCreationsPythonRefusesAreRefused(t *testing.T) {
 func TestCreationsAreTheSameWhereThePythonCheckSaysSo(t *testing.T) {
 	for _, vector := range loadGolden(t).Comparisons {
 		t.Run(vector.Name, func(t *testing.T) {
-			var a, b Subscribe
+			var a, b model.Subscribe
 			if err := errors.Join(decode(vector.A, &a), decode(vector.B, &b)); err != nil {
 				t.Fatal(err)
 			}
@@ -125,7 +126,7 @@ func TestActionActorDecoderKeepsExplicitNullCompatibility(t *testing.T) {
 		{
 			name: "caller with null operator fields",
 			json: `{"account":{"namespace":"test-namespace","name":"test-caller"},"issuer":null,"subject":null}`,
-			want: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: ServiceAccount{Namespace: "test-namespace", Name: "test-caller"}.Proto()}},
+			want: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: serviceAccountProto(model.ServiceAccount{Namespace: "test-namespace", Name: "test-caller"})}},
 		},
 		{
 			name: "operator with null account",
@@ -200,7 +201,7 @@ func TestRunnerEntriesSerializeAsPythonDoes(t *testing.T) {
 func TestEventsAreReadAndWrittenAsPythonDoes(t *testing.T) {
 	for _, vector := range loadGolden(t).Events {
 		t.Run(vector.Name, func(t *testing.T) {
-			event, err := DecodeEventIdentity(vector.Event)
+			event, err := model.DecodeEventIdentity(vector.Event)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -216,7 +217,7 @@ func TestEventsAreReadAndWrittenAsPythonDoes(t *testing.T) {
 func TestSubjectKeysAreThosePythonIndexes(t *testing.T) {
 	for _, vector := range loadGolden(t).SubjectKeys {
 		t.Run(vector.Kind, func(t *testing.T) {
-			subject, err := decodeSubject(vector.Subject)
+			subject, err := model.DecodeGitHubSubject(vector.Subject)
 			if err != nil {
 				t.Fatal(err)
 			}

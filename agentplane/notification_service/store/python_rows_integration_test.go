@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
 )
@@ -16,14 +17,14 @@ import (
 // These tests write rows the way the retired Python service did, from the golden vectors it produced, and hold the
 // store to finding and reading them: the store takes over a database that Python filled.
 
-func (f fixture) insertInbox(t *testing.T, key string, ref DestinationRef, sessionID string) uuid.UUID {
+func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef, sessionID string) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
 	f.insertInboxAs(t, id, key, ref, sessionID)
 	return id
 }
 
-func (f fixture) insertInboxAs(t *testing.T, id uuid.UUID, key string, ref DestinationRef, sessionID string) {
+func (f fixture) insertInboxAs(t *testing.T, id uuid.UUID, key string, ref model.DestinationRef, sessionID string) {
 	t.Helper()
 	destination, err := json.Marshal(ref)
 	if err != nil {
@@ -127,22 +128,22 @@ func TestSubscriptionsPythonCreatedAreReadAndFoundByTheirKey(t *testing.T) {
 	for _, vector := range loadGolden(t).Subscriptions {
 		t.Run(vector.Name, func(t *testing.T) {
 			f := newFixture(t, defaultQuotas())
-			var sent Subscribe
+			var sent model.Subscribe
 			if err := decode(vector.Input, &sent); err != nil {
 				t.Fatal(err)
 			}
-			inboxID := f.insertInbox(t, DestinationKey(sent.DestinationRef, sent.SessionID), sent.DestinationRef, sent.SessionID)
+			inboxID := f.insertInbox(t, model.DestinationKey(sent.DestinationRef, sent.SessionID), sent.DestinationRef, sent.SessionID)
 			id := f.insertSubscription(t, inboxID, vector.Stored)
 
 			read := f.get(t, id)
 			if read.InboxID != inboxID || read.IdempotencyKey != sent.IdempotencyKey || read.Version != 1 || read.Cancelled ||
-				!sourcesEqual(read.Source, sent.Source) {
+				!model.SourcesEqual(read.Source, sent.Source) {
 				t.Errorf("read %+v, want a subscription following %+v", read, sent.Source)
 			}
 			// The shared state Python wrote for a GitHub subscription is what its status reports: the one grant it is
 			// bound through, not yet validated, and the subject.
 			var access *GitHubAccessKey
-			if _, github := sent.Source.(GitHubSource); github {
+			if _, github := sent.Source.(model.GitHubSource); github {
 				status := read.GitHub
 				if status == nil || len(status.Access) != 1 || status.Access[0].CurrentlyValid ||
 					status.Access[0].Key.AppID != 1 || status.Access[0].Key.InstallationID != 2 ||
@@ -184,7 +185,7 @@ func TestEntriesPythonWroteAreReadAndNotAppendedAgain(t *testing.T) {
 		t.Fatalf("%d entries, want %d", len(page.Entries), len(vectors))
 	}
 	for i, vector := range vectors {
-		event, err := DecodeEventIdentity(vector.Event)
+		event, err := model.DecodeEventIdentity(vector.Event)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -235,7 +236,7 @@ func (f fixture) insertPythonInbox(t *testing.T) (inboxID uuid.UUID, acknowledge
 	t.Helper()
 	inboxID, acknowledged, through, text = goldenNotice(t, pythonNotice)
 	ref := body("first").DestinationRef
-	f.insertInboxAs(t, inboxID, DestinationKey(ref, "test-session"), ref, "test-session")
+	f.insertInboxAs(t, inboxID, model.DestinationKey(ref, "test-session"), ref, "test-session")
 	f.exec(t, `UPDATE inbox SET last_cursor = $2, acknowledged = $3 WHERE id = $1`, inboxID, through, acknowledged)
 	return inboxID, acknowledged, through, text
 }

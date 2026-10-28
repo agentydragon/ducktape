@@ -4,12 +4,14 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 func TestTheSharedStateAReconcileReadsIsReadAsItWasWritten(t *testing.T) {
 	g := newGitHubFixture(t)
 	ctx := t.Context()
-	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 
 	name, err := g.state.RepositoryName(ctx, g.repository)
 	if err != nil || name != testRepositoryName {
@@ -37,8 +39,8 @@ func TestTheSharedStateAReconcileReadsIsReadAsItWasWritten(t *testing.T) {
 func TestOnlyTheGrantsOnRepositoriesHoldingARevisionOfTheSubjectAreRevisionGrants(t *testing.T) {
 	g := newGitHubFixture(t)
 	ctx := t.Context()
-	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
-	other := g.follow(t, g.source(PullRequestSubject{Number: 8}), "another-pr")
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	other := g.follow(t, g.source(model.PullRequestSubject{Number: 8}), "another-pr")
 	fork := g.fork(1)
 	key := g.grant(t, g.installation+1, fork)
 	// The grant is a no-op the second time.
@@ -52,9 +54,9 @@ func TestOnlyTheGrantsOnRepositoriesHoldingARevisionOfTheSubjectAreRevisionGrant
 
 	grants, err := g.state.RevisionGrants(ctx, g.app, sub.Subject)
 	requireEqual(t, []any{len(grants), err}, []any{0, error(nil)})
-	g.addRevisions(t, sub.Subject, GitHubHeadRevision{Repository: fork, SHA: commitA})
+	g.addRevisions(t, sub.Subject, model.GitHubHeadRevision{Repository: fork, SHA: commitA})
 	// The subject's own repository holds its revisions too, and its grant is the base access, not a fork's.
-	g.addRevisions(t, sub.Subject, GitHubHeadRevision{Repository: GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
+	g.addRevisions(t, sub.Subject, model.GitHubHeadRevision{Repository: model.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
 
 	grants, err = g.state.RevisionGrants(ctx, g.app, sub.Subject)
 	requireEqual(t, []any{grants, err}, []any{[]GitHubAccessKey{key}, error(nil)})

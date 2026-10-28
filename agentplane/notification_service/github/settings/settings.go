@@ -1,4 +1,4 @@
-package github
+package settings
 
 import (
 	"errors"
@@ -93,7 +93,7 @@ func validateAPIURL(raw string) error {
 	return nil
 }
 
-// requestTimeout saturates a huge setting instead of overflowing time.Duration.
-func (s Settings) requestTimeout() time.Duration {
+// RequestTimeout saturates a huge setting instead of overflowing time.Duration.
+func (s Settings) RequestTimeout() time.Duration {
 	return time.Duration(min(s.RequestTimeoutSeconds, math.MaxInt32) * float64(time.Second))
 }

@@ -11,9 +11,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go"
+	"github.com/google/uuid"
 )
 
 // WorkChannel is the NOTIFY channel that tells workers inbox work was committed.
@@ -22,7 +22,7 @@ const WorkChannel = "agentplane_notification_work"
 // Quotas bound what one owner, inbox or subscription set may hold. The service's config holds them under its
 // `quotas` key, named by the mapstructure tags.
 type Quotas struct {
-	// InboxesPerAccount is the most inboxes one owning ServiceAccount retains for one Sandbox incarnation.
+	// InboxesPerAccount is the most inboxes one owning model.ServiceAccount retains for one Sandbox incarnation.
 	InboxesPerAccount int `mapstructure:"inboxes_per_account"`
 	// ActiveSubscriptionsPerInbox is the most subscriptions of an inbox that are neither cancelled nor expired.
 	ActiveSubscriptionsPerInbox int `mapstructure:"active_subscriptions_per_inbox"`
@@ -35,10 +35,10 @@ type Quotas struct {
 }
 
 // Owner is whom an inbox and its subscriptions belong to: the account, as the Sandbox incarnation the inbox was
-// opened for. A Sandbox runs as the ServiceAccount of its own name, so a Sandbox recreated under a deleted one's
+// opened for. A Sandbox runs as the model.ServiceAccount of its own name, so a Sandbox recreated under a deleted one's
 // name is the same account but another incarnation, and the deleted one's inboxes are not its own.
 type Owner struct {
-	Account    ServiceAccount
+	Account    model.ServiceAccount
 	SandboxUID string
 }
 
@@ -76,7 +76,7 @@ type QuotaError struct {
 func (e *QuotaError) Error() string {
 	switch e.Quota {
 	case InboxesPerAccount:
-		return fmt.Sprintf("%d inboxes per owning ServiceAccount", e.Limit)
+		return fmt.Sprintf("%d inboxes per owning model.ServiceAccount", e.Limit)
 	case ActiveSubscriptionsPerInbox:
 		return fmt.Sprintf("%d active subscriptions per inbox", e.Limit)
 	case UnacknowledgedMessagesPerSender:

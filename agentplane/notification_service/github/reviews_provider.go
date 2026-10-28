@@ -6,15 +6,16 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 )
 
-func reviewsSelected(source store.GitHubSource) bool {
-	if _, ok := source.Subject.(store.PullRequestSubject); !ok {
+func reviewsSelected(source model.GitHubSource) bool {
+	if _, ok := source.Subject.(model.PullRequestSubject); !ok {
 		return false
 	}
 	for _, filter := range source.Filters() {
-		if filter.Event == store.EventPullRequestReview {
+		if filter.Event == model.EventPullRequestReview {
 			return true
 		}
 	}
@@ -45,7 +46,7 @@ func (p *Provider) refreshReviews(ctx context.Context, subject store.GitHubSubje
 		if err != nil {
 			err = p.refreshFailed(ctx, *lease, err)
 		} else {
-			err = p.state.Succeed(ctx, *lease, store.GitHubSuccess{Fences: []store.GitHubAccessFence{fence}, Reviews: reviews})
+			err = p.state.CompleteReviews(ctx, *lease, []store.GitHubAccessFence{fence}, reviews)
 		}
 		if errors.As(err, &deferred) {
 			return deferred.Until, nil

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -66,23 +67,23 @@ func (k GitHubReviewRefreshKey) row() (string, string, []any) {
 
 func (k GitHubReviewRefreshKey) validate() error {
 	if k.AppID <= 0 || k.InstallationID <= 0 || k.Subject.RepositoryID <= 0 || k.Subject.Kind != "pull_request" {
-		return invalid("review refresh must name an App, installation and pull request")
+		return model.Invalid("review refresh must name an App, installation and pull request")
 	}
 	number, err := strconv.ParseInt(k.Subject.Key, 10, 64)
 	if err != nil || number <= 0 {
-		return invalid("review refresh must name a positive pull request number")
+		return model.Invalid("review refresh must name a positive pull request number")
 	}
 	return nil
 }
 
 type githubPRStatePayload struct {
 	PullRequestNumber int64 `json:"pullRequestNumber"`
-	GitHubReviewObservation
+	model.GitHubReviewObservation
 	ObservedAt time.Time `json:"observedAt"`
 }
 
 type githubPRLifecyclePayload struct {
-	GitHubPRLifecycleObservation
+	model.GitHubPRLifecycleObservation
 	ObservedAt time.Time `json:"observedAt"`
 }
 
@@ -133,66 +134,11 @@ func invalidateOtherGitHubReviewRefreshes(ctx context.Context, tx *sql.Tx, appID
 	return err
 }
 
-func normalizeGitHubReview(review GitHubReviewObservation) (GitHubReviewObservation, error) {
-	if review.ID <= 0 || review.Reviewer.ID <= 0 {
-		return GitHubReviewObservation{}, invalid("review observation must name a review and reviewer above 0")
-	}
-	if err := checkText("reviewer login", review.Reviewer.Login, 1, 255); err != nil {
-		return GitHubReviewObservation{}, err
-	}
-	if !shaPattern.MatchString(review.CommitSHA) {
-		return GitHubReviewObservation{}, invalid("review observation commit SHA is invalid")
-	}
-	if err := checkText("review body", review.Body, 0, 65536); err != nil {
-		return GitHubReviewObservation{}, err
-	}
-	if err := checkText("review HTML URL", review.HTMLURL, 0, 4096); err != nil {
-		return GitHubReviewObservation{}, err
-	}
-	var expectedAction string
-	switch review.State {
-	case ReviewApproved, ReviewChangesRequested, ReviewCommented:
-		expectedAction = "submitted"
-	case ReviewDismissed:
-		expectedAction = "dismissed"
-	default:
-		return GitHubReviewObservation{}, invalid("review observation state is invalid")
-	}
-	if review.Action == nil {
-		review.Action = &expectedAction
-	} else if *review.Action != "submitted" && *review.Action != "dismissed" && *review.Action != "edited" {
-		return GitHubReviewObservation{}, invalid("review observation action is invalid")
-	}
-	if review.SubmittedAt != nil {
-		value := review.SubmittedAt.UTC().Truncate(time.Microsecond)
-		review.SubmittedAt = &value
-	}
-	return review, nil
-}
-
-func normalizeGitHubPRLifecycle(observation GitHubPRLifecycleObservation) (GitHubPRLifecycleObservation, error) {
-	if observation.PullRequestNumber <= 0 || !shaPattern.MatchString(observation.HeadSHA) {
-		return GitHubPRLifecycleObservation{}, invalid("pull request lifecycle must name a positive PR and commit SHA")
-	}
-	switch observation.State {
-	case GitHubPullRequestOpen, GitHubPullRequestClosed, GitHubPullRequestMerged:
-	default:
-		return GitHubPRLifecycleObservation{}, invalid("pull request lifecycle state is invalid")
-	}
-	if err := checkText("pull request base ref", observation.BaseRef, 1, 255); err != nil {
-		return GitHubPRLifecycleObservation{}, err
-	}
-	if observation.Action != nil && !actionPattern.MatchString(*observation.Action) {
-		return GitHubPRLifecycleObservation{}, invalid("pull request lifecycle action is invalid")
-	}
-	return observation, nil
-}
-
 // observeGitHubPRState stores one review or lifecycle fact and appends a transition only when the normalized
 // state changes. Descriptive URL/login and observed timestamps do not make an otherwise identical webhook and
 // REST observation distinct. Current payload is never rewritten under an existing event identity.
 func observeGitHubPRState(ctx context.Context, tx *sql.Tx, appID, installationID, repositoryID int64,
-	pullRequestNumber, entityID int64, event EventName, payload any,
+	pullRequestNumber, entityID int64, event model.EventName, payload any,
 ) (bool, error) {
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -210,8 +156,8 @@ func observeGitHubPRState(ctx context.Context, tx *sql.Tx, appID, installationID
 		return false, err
 	}
 	found := err == nil
-	if found && event == EventPullRequestReview && previousState == string(ReviewDismissed) &&
-		payload.(githubPRStatePayload).State != ReviewDismissed {
+	if found && event == model.EventPullRequestReview && previousState == string(model.ReviewDismissed) &&
+		payload.(githubPRStatePayload).State != model.ReviewDismissed {
 		return false, nil
 	}
 	if found && sameState {
@@ -233,8 +179,8 @@ func observeGitHubPRState(ctx context.Context, tx *sql.Tx, appID, installationID
 	return true, err
 }
 
-func prStateCanonicalExpressions(event EventName) (string, string) {
-	if event == EventPullRequest {
+func prStateCanonicalExpressions(event model.EventName) (string, string) {
+	if event == model.EventPullRequest {
 		return "jsonb_strip_nulls(payload - 'observedAt' - 'action')", "jsonb_strip_nulls($7::jsonb - 'observedAt' - 'action')"
 	}
 	return "jsonb_strip_nulls((payload #- '{reviewer,login}') - 'observedAt' - 'htmlUrl' - 'submittedAt' - 'action' - 'body')",
@@ -242,7 +188,7 @@ func prStateCanonicalExpressions(event EventName) (string, string) {
 }
 
 func githubPRStateCurrentAction(ctx context.Context, tx *sql.Tx, appID, installationID, repositoryID,
-	pullRequestNumber, entityID int64, event EventName, payload any,
+	pullRequestNumber, entityID int64, event model.EventName, payload any,
 ) (bool, sql.NullString, error) {
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -262,29 +208,29 @@ func githubPRStateCurrentAction(ctx context.Context, tx *sql.Tx, appID, installa
 }
 
 func observeGitHubPRReview(ctx context.Context, tx *sql.Tx, appID, installationID, repositoryID,
-	pullRequestNumber int64, review GitHubReviewObservation, at time.Time,
+	pullRequestNumber int64, review model.GitHubReviewObservation, at time.Time,
 ) (bool, error) {
 	var err error
-	review, err = normalizeGitHubReview(review)
+	review, err = model.NormalizeGitHubReview(review)
 	if err != nil {
 		return false, err
 	}
 	changed, err := observeGitHubPRState(ctx, tx, appID, installationID, repositoryID, pullRequestNumber,
-		review.ID, EventPullRequestReview,
+		review.ID, model.EventPullRequestReview,
 		githubPRStatePayload{PullRequestNumber: pullRequestNumber, GitHubReviewObservation: review, ObservedAt: at})
 	return changed, err
 }
 
 func observeGitHubPRLifecycle(ctx context.Context, tx *sql.Tx, appID, installationID, repositoryID int64,
-	observation GitHubPRLifecycleObservation, at time.Time,
+	observation model.GitHubPRLifecycleObservation, at time.Time,
 ) (bool, error) {
 	var err error
-	observation, err = normalizeGitHubPRLifecycle(observation)
+	observation, err = model.NormalizeGitHubPRLifecycle(observation)
 	if err != nil {
 		return false, err
 	}
 	payload := githubPRLifecyclePayload{GitHubPRLifecycleObservation: observation, ObservedAt: at}
-	if observation.State == GitHubPullRequestOpen && observation.Action == nil {
+	if observation.State == model.GitHubPullRequestOpen && observation.Action == nil {
 		var exists bool
 		err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM github_pr_state_current
 			WHERE app_id = $1 AND installation_id = $2 AND repository_id = $3 AND pull_request_number = $4
@@ -306,7 +252,7 @@ func observeGitHubPRLifecycle(ctx context.Context, tx *sql.Tx, appID, installati
 		}
 	}
 	changed, err := observeGitHubPRState(ctx, tx, appID, installationID, repositoryID, observation.PullRequestNumber,
-		observation.PullRequestNumber, EventPullRequest, payload)
+		observation.PullRequestNumber, model.EventPullRequest, payload)
 	if err != nil || !changed {
 		return changed, err
 	}
@@ -326,10 +272,10 @@ func mustPRNumber(subject GitHubSubjectKey) int64 {
 	return number
 }
 
-func prStateFilterClause(alias string, filters []EventFilter, args *argList) string {
+func prStateFilterClause(alias string, filters []model.EventFilter, args *argList) string {
 	selected := make([]string, 0, len(filters))
 	for _, filter := range filters {
-		if filter.Event != EventPullRequest && filter.Event != EventPullRequestReview {
+		if filter.Event != model.EventPullRequest && filter.Event != model.EventPullRequestReview {
 			continue
 		}
 		part := alias + ".event = " + args.add(string(filter.Event))
@@ -348,11 +294,11 @@ func prStateFilterClause(alias string, filters []EventFilter, args *argList) str
 	return "(" + strings.Join(selected, " OR ") + ")"
 }
 
-func prStateFilters(source GitHubSource) []EventFilter {
+func prStateFilters(source model.GitHubSource) []model.EventFilter {
 	filters := source.Filters()
-	selected := make([]EventFilter, 0, len(filters))
+	selected := make([]model.EventFilter, 0, len(filters))
 	for _, filter := range filters {
-		if filter.Event == EventPullRequest || filter.Event == EventPullRequestReview {
+		if filter.Event == model.EventPullRequest || filter.Event == model.EventPullRequestReview {
 			selected = append(selected, filter)
 		}
 	}
@@ -360,7 +306,7 @@ func prStateFilters(source GitHubSource) []EventFilter {
 }
 
 func snapshotGitHubPRState(ctx context.Context, tx *sql.Tx, subscriptionID uuid.UUID, appID, installationID int64,
-	subject GitHubSubjectKey, filters []EventFilter,
+	subject GitHubSubjectKey, filters []model.EventFilter,
 ) error {
 	if subject.Kind != "pull_request" {
 		return nil
@@ -393,11 +339,11 @@ func (s *Store) recordGitHubPRState(ctx context.Context, tx *sql.Tx, inboxID uui
 		recording.SubscriptionID).Scan(&creation, &after); err != nil {
 		return 0, false, err
 	}
-	var body Subscribe
+	var body model.Subscribe
 	if err := decode(creation, &body); err != nil {
 		return 0, false, err
 	}
-	source, ok := body.Source.(GitHubSource)
+	source, ok := body.Source.(model.GitHubSource)
 	if !ok {
 		return 0, false, errors.New("PR state recording needs a GitHub subscription")
 	}
@@ -422,7 +368,7 @@ func (s *Store) recordGitHubPRState(ctx context.Context, tx *sql.Tx, inboxID uui
 	}
 	type item struct {
 		app, installation, repository int64
-		event                         EventName
+		event                         model.EventName
 		sequence                      int64
 		payload                       json.RawMessage
 	}
@@ -444,7 +390,7 @@ func (s *Store) recordGitHubPRState(ctx context.Context, tx *sql.Tx, inboxID uui
 	}
 	count := 0
 	for _, value := range snapshots {
-		identity := GitHubObservationEvent{AppID: value.app, RepositoryID: value.repository, Event: value.event, Sequence: value.sequence}
+		identity := model.GitHubObservationEvent{AppID: value.app, RepositoryID: value.repository, Event: value.event, Sequence: value.sequence}
 		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, identity, value.payload); err != nil {
 			return 0, false, fmt.Errorf("append PR state snapshot: %w", err)
 		}
@@ -497,7 +443,7 @@ func (s *Store) recordGitHubPRState(ctx context.Context, tx *sql.Tx, inboxID uui
 		events = events[:remaining]
 	}
 	for _, value := range events {
-		identity := GitHubObservationEvent{AppID: value.app, RepositoryID: value.repository, Event: value.event, Sequence: value.sequence}
+		identity := model.GitHubObservationEvent{AppID: value.app, RepositoryID: value.repository, Event: value.event, Sequence: value.sequence}
 		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, identity, value.payload); err != nil {
 			return 0, false, fmt.Errorf("append PR state event: %w", err)
 		}

@@ -17,10 +17,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/google/uuid"
-
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/github/settings"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	"github.com/google/uuid"
 )
 
 const (
@@ -52,7 +52,7 @@ type Handler struct {
 }
 
 // New is the handler for the App that settings name. The settings are validated by their owner.
-func New(settings github.Settings, database *store.Store) *Handler {
+func New(settings settings.Settings, database *store.Store) *Handler {
 	return &Handler{
 		appID:        settings.AppID,
 		secret:       []byte(settings.WebhookSecret),

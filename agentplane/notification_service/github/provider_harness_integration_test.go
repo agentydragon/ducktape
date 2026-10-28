@@ -13,12 +13,14 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/google/uuid"
-	_ "github.com/lib/pq"
-
+	"github.com/agentydragon/ducktape/agentplane/notification_service/github/settings"
+	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/github/testing" // Shared fake API server; avoids colliding with Go testing.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	"github.com/google/uuid"
+	_ "github.com/lib/pq"
 )
 
 var database *postgres.Database
@@ -104,7 +106,7 @@ func (w *world) serve(rw http.ResponseWriter, r *http.Request, path string) bool
 		if fork {
 			repository = fmt.Sprintf(`{"id": %d, "full_name": "fork/repo"}`, forkRepository)
 		}
-		reply(http.StatusOK, fmt.Sprintf(`{"number": %s, "state": "open", "merged": false, "base": {"ref": "main", "sha": %q}, "mergeable": true, "merge_commit_sha": %q, "head": {"sha": %q, "repo": %s}}`, last, base, testMergeCommitSHA, head, repository))
+		reply(http.StatusOK, fmt.Sprintf(`{"number": %s, "state": "open", "merged": false, "base": {"ref": "main", "sha": %q}, "mergeable": true, "merge_commit_sha": %q, "head": {"sha": %q, "repo": %s}}`, last, base, fixture.MergeCommitSHA, head, repository))
 	case strings.Contains(path, "/issues/"):
 		reply(http.StatusOK, fmt.Sprintf(`{"number": %s}`, last))
 	case path == "/repos/owner/repo/git/ref/heads/main":
@@ -119,8 +121,8 @@ func (w *world) serve(rw http.ResponseWriter, r *http.Request, path string) bool
 		} else {
 			reply(http.StatusOK, fmt.Sprintf(`{"object": {"sha": %q}}`, head))
 		}
-	case path == "/repos/owner/repo/git/commits/"+testMergeCommitSHA:
-		reply(http.StatusOK, fmt.Sprintf(`{"sha": %q, "parents": [{"sha": %q}, {"sha": %q}]}`, testMergeCommitSHA, base, head))
+	case path == "/repos/owner/repo/git/commits/"+fixture.MergeCommitSHA:
+		reply(http.StatusOK, fmt.Sprintf(`{"sha": %q, "parents": [{"sha": %q}, {"sha": %q}]}`, fixture.MergeCommitSHA, base, head))
 	case strings.HasSuffix(path, "/check-runs"):
 		reply(http.StatusOK, `{"total_count": 0, "check_runs": []}`)
 	case strings.HasSuffix(path, "/status"):
@@ -135,20 +137,20 @@ func (w *world) serve(rw http.ResponseWriter, r *http.Request, path string) bool
 }
 
 var (
-	testOwner       = store.ServiceAccount{Namespace: "test", Name: "owner"}
-	testDestination = store.DestinationRef{Namespace: "test", Name: "sandbox", UID: "uid"}
+	testOwner       = model.ServiceAccount{Namespace: "test", Name: "owner"}
+	testDestination = model.DestinationRef{Namespace: "test", Name: "sandbox", UID: "uid"}
 	// testIncarnation is testOwner as the Sandbox testDestination names.
 	testIncarnation = store.Owner{Account: testOwner, SandboxUID: testDestination.UID}
 	// baseAccess is the access to the repository the tests follow.
-	baseAccess = store.GitHubAccessKey{AppID: testAppID, InstallationID: baseInstallation, RepositoryID: baseRepository}
-	forkAccess = store.GitHubAccessKey{AppID: testAppID, InstallationID: forkInstallation, RepositoryID: forkRepository}
+	baseAccess = store.GitHubAccessKey{AppID: fixture.AppID, InstallationID: baseInstallation, RepositoryID: baseRepository}
+	forkAccess = store.GitHubAccessKey{AppID: fixture.AppID, InstallationID: forkInstallation, RepositoryID: forkRepository}
 )
 
 // harness is a Provider over real PostgreSQL and the world.
 type harness struct {
 	t        *testing.T
 	db       *sql.DB
-	fake     *fakeGitHub
+	fake     *fixture.FakeGitHub
 	world    *world
 	store    *store.Store
 	provider *Provider
@@ -162,8 +164,8 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	h := &harness{t: t, db: db, fake: newFake(t), world: &world{t: t, head: testSHA, base: testBaseSHA}}
-	h.fake.handler = h.world.serve
+	h := &harness{t: t, db: db, fake: fixture.NewFake(t), world: &world{t: t, head: fixture.SHA, base: fixture.BaseSHA}}
+	h.fake.Handler = h.world.serve
 	h.exec(`TRUNCATE inbox, github_installation, github_repository, github_delivery CASCADE`)
 	h.restart()
 	return h
@@ -173,8 +175,8 @@ func newHarness(t *testing.T) *harness {
 func (h *harness) restart() {
 	h.t.Helper()
 	h.store = store.New(h.db, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
-	settings := DefaultSettings()
-	settings.AppID = testAppID
+	settings := settings.DefaultSettings()
+	settings.AppID = fixture.AppID
 	h.provider = NewProvider(newTestClient(h.t, h.fake), h.store, settings)
 }
 
@@ -203,21 +205,21 @@ func (h *harness) text(query string, args ...any) string {
 	return value
 }
 
-func pullRequestSource(number int64, events ...store.EventFilter) store.GitHubSource {
-	source := store.GitHubSource{Repository: baseRepositoryName, Subject: store.PullRequestSubject{Number: number}}
+func pullRequestSource(number int64, events ...model.EventFilter) model.GitHubSource {
+	source := model.GitHubSource{Repository: baseRepositoryName, Subject: model.PullRequestSubject{Number: number}}
 	if len(events) > 0 {
 		source.Events = events
 	}
 	return source
 }
 
-func (h *harness) follow(source store.GitHubSource, key string) store.Subscription {
+func (h *harness) follow(source model.GitHubSource, key string) store.Subscription {
 	h.t.Helper()
 	access, err := h.provider.Authorize(h.t.Context(), source)
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	subscription, err := h.store.Subscribe(h.t.Context(), testOwner, store.Subscribe{
+	subscription, err := h.store.Subscribe(h.t.Context(), testOwner, model.Subscribe{
 		DestinationRef: testDestination, SessionID: "session", IdempotencyKey: key, Source: source, LifetimeDays: 7,
 	}, &access)
 	if err != nil {
@@ -232,7 +234,7 @@ func (h *harness) deliver(event string, payload map[string]any) error {
 	if err != nil {
 		return err
 	}
-	ingest, err := ParseDelivery(testAppID, event, uuid.New(), raw)
+	ingest, err := ParseDelivery(fixture.AppID, event, uuid.New(), raw)
 	if err != nil {
 		return err
 	}

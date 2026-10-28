@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -23,10 +24,10 @@ var ErrNoInbox = errors.New("the Session has no inbox yet")
 
 // Message is a message a workload sends to a Session's inbox.
 type Message struct {
-	Sender ServiceAccount
-	// Recipient owns the inbox: the ServiceAccount the destination Sandbox runs as.
-	Recipient      ServiceAccount
-	DestinationRef DestinationRef
+	Sender model.ServiceAccount
+	// Recipient owns the inbox: the model.ServiceAccount the destination Sandbox runs as.
+	Recipient      model.ServiceAccount
+	DestinationRef model.DestinationRef
 	SessionID      string
 	// IdempotencyKey is unique per sender and inbox: an identical retry answers with the message it sent.
 	IdempotencyKey string
@@ -39,24 +40,24 @@ type Message struct {
 // empty, for the Sandbox of that name as it is now.
 func (m Message) Validate(limit int) error {
 	if err := errors.Join(
-		checkText("destination_ref.namespace", m.DestinationRef.Namespace, 1, 63),
-		checkText("destination_ref.name", m.DestinationRef.Name, 1, 63),
-		checkText("destination_ref.uid", m.DestinationRef.UID, 0, 128),
-		checkText("session_id", m.SessionID, 1, 200),
-		checkText("idempotency_key", m.IdempotencyKey, 1, 200),
+		model.CheckText("destination_ref.namespace", m.DestinationRef.Namespace, 1, 63),
+		model.CheckText("destination_ref.name", m.DestinationRef.Name, 1, 63),
+		model.CheckText("destination_ref.uid", m.DestinationRef.UID, 0, 128),
+		model.CheckText("session_id", m.SessionID, 1, 200),
+		model.CheckText("idempotency_key", m.IdempotencyKey, 1, 200),
 	); err != nil {
 		return err
 	}
 	if m.FromSession != nil {
-		if err := checkText("from_session", *m.FromSession, 1, 200); err != nil {
+		if err := model.CheckText("from_session", *m.FromSession, 1, 200); err != nil {
 			return err
 		}
 	}
 	if !utf8.ValidString(m.Body) {
-		return invalid("body is not valid UTF-8")
+		return model.Invalid("body is not valid UTF-8")
 	}
 	if len(m.Body) < 1 || len(m.Body) > limit {
-		return invalid("body must be 1 to %d UTF-8 bytes", limit)
+		return model.Invalid("body must be 1 to %d UTF-8 bytes", limit)
 	}
 	return nil
 }
@@ -73,7 +74,7 @@ func (m Message) payload() ([]byte, error) {
 // past it, never the inbox's cursors or other entries.
 type SentMessage struct {
 	ID             uuid.UUID
-	DestinationRef DestinationRef
+	DestinationRef model.DestinationRef
 	SessionID      string
 	IdempotencyKey string
 	AcceptedAt     time.Time
@@ -87,7 +88,7 @@ type SentMessage struct {
 
 // OpenInbox creates the recipient's inbox for a Session if it has none, within the recipient's inbox quota. The
 // caller has confirmed that the Session runs in the destination Sandbox.
-func (s *Store) OpenInbox(ctx context.Context, recipient ServiceAccount, ref DestinationRef, sessionID string) error {
+func (s *Store) OpenInbox(ctx context.Context, recipient model.ServiceAccount, ref model.DestinationRef, sessionID string) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		_, err := s.ensureInbox(ctx, tx, recipient, ref, sessionID)
 		return err
@@ -109,7 +110,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		inbox, err := scanInbox(tx.QueryRowContext(ctx,
 			`SELECT `+inboxColumns+` FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_key = $3 FOR UPDATE`,
-			message.Recipient.Namespace, message.Recipient.Name, DestinationKey(message.DestinationRef, message.SessionID)))
+			message.Recipient.Namespace, message.Recipient.Name, model.DestinationKey(message.DestinationRef, message.SessionID)))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNoInbox
 		}
@@ -145,7 +146,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 			return &QuotaError{Quota: UnacknowledgedMessagesPerSender, Limit: s.quotas.UnacknowledgedMessagesPerSender}
 		}
 		id = uuid.New()
-		identity, err := json.Marshal(MessageEvent{MessageID: id, Sender: message.Sender})
+		identity, err := json.Marshal(model.MessageEvent{MessageID: id, Sender: message.Sender})
 		if err != nil {
 			return err
 		}
@@ -178,7 +179,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 
 // SentMessage returns a message the sender sent. Another sender's message, an unknown ID and a message whose
 // inbox was purged are all ErrNotFound.
-func (s *Store) SentMessage(ctx context.Context, sender ServiceAccount, id uuid.UUID) (SentMessage, error) {
+func (s *Store) SentMessage(ctx context.Context, sender model.ServiceAccount, id uuid.UUID) (SentMessage, error) {
 	var sent SentMessage
 	err := s.transaction(ctx, func(tx *sql.Tx) (err error) {
 		sent, err = sentMessage(ctx, tx, sender, id)
@@ -187,7 +188,7 @@ func (s *Store) SentMessage(ctx context.Context, sender ServiceAccount, id uuid.
 	return sent, err
 }
 
-func sentMessage(ctx context.Context, tx *sql.Tx, sender ServiceAccount, id uuid.UUID) (SentMessage, error) {
+func sentMessage(ctx context.Context, tx *sql.Tx, sender model.ServiceAccount, id uuid.UUID) (SentMessage, error) {
 	sent := SentMessage{ID: id}
 	var destination []byte
 	err := tx.QueryRowContext(ctx, `

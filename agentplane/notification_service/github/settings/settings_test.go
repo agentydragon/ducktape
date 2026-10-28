@@ -1,4 +1,4 @@
-package github
+package settings
 
 import (
 	"math"
@@ -35,8 +35,8 @@ func TestSettingsAcceptTheirDefaultsAndBounds(t *testing.T) {
 			if err := settings.Validate(); err != nil {
 				t.Error(err)
 			}
-			if settings.requestTimeout() <= 0 {
-				t.Errorf("request timeout %s", settings.requestTimeout())
+			if settings.RequestTimeout() <= 0 {
+				t.Errorf("request timeout %s", settings.RequestTimeout())
 			}
 		})
 	}

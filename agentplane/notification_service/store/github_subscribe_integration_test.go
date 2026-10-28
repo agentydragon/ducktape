@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -18,19 +19,19 @@ func requireConstraint(t *testing.T, err error, code pq.ErrorCode, constraint st
 	}
 }
 
-func (g githubFixture) creation(source GitHubSource, key string) Subscribe {
-	return Subscribe{DestinationRef: g.destination, SessionID: "test-session", IdempotencyKey: key, Source: source, LifetimeDays: 7}
+func (g githubFixture) creation(source model.GitHubSource, key string) model.Subscribe {
+	return model.Subscribe{DestinationRef: g.destination, SessionID: "test-session", IdempotencyKey: key, Source: source, LifetimeDays: 7}
 }
 
 func TestAGitHubSubscriptionIsBoundToTheAccessItWasAuthorizedUnder(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	github := body("github")
-	github.Source = GitHubSource{Repository: "owner/repository", Subject: PullRequestSubject{Number: 1}}
+	github.Source = model.GitHubSource{Repository: "owner/repository", Subject: model.PullRequestSubject{Number: 1}}
 	access := GitHubAccessKey{AppID: 1, InstallationID: 2, RepositoryID: 3}
 	invalidAccess := []GitHubAccessKey{{InstallationID: 2, RepositoryID: 3}, {AppID: 1, RepositoryID: 3}, {AppID: 1, InstallationID: 2}}
 	for _, bad := range invalidAccess {
-		if _, err := f.Subscribe(t.Context(), f.owner, github, &bad); !errors.Is(err, ErrInvalid) {
-			t.Errorf("access %+v: error = %v, want ErrInvalid", bad, err)
+		if _, err := f.Subscribe(t.Context(), f.owner, github, &bad); !errors.Is(err, model.ErrInvalid) {
+			t.Errorf("access %+v: error = %v, want model.ErrInvalid", bad, err)
 		}
 	}
 	if _, err := f.Subscribe(t.Context(), f.owner, github, nil); err == nil {
@@ -50,9 +51,9 @@ func TestAGitHubSubscriptionIsBoundToTheAccessItWasAuthorizedUnder(t *testing.T)
 
 func TestSubscriptionsShareTheRowsOfTheirGrantAndSubject(t *testing.T) {
 	g := newGitHubFixture(t)
-	first := g.follow(t, g.source(PullRequestSubject{Number: 7}), "first")
-	second := g.follow(t, g.source(PullRequestSubject{Number: 7}), "overlap")
-	other := g.follow(t, g.source(PullRequestSubject{Number: 8}), "another-pr")
+	first := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "first")
+	second := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "overlap")
+	other := g.follow(t, g.source(model.PullRequestSubject{Number: 8}), "another-pr")
 	if first.ID == second.ID {
 		t.Fatal("two keys named one subscription")
 	}
@@ -100,7 +101,7 @@ func TestAGitHubSubscriptionStartsAtTheNewestDelivery(t *testing.T) {
 	g.deliver(t, "issues", onIssue(7))
 	latest := g.deliver(t, "issues", onIssue(7))
 	_, position := g.storedDelivery(t, g.app, latest.DeliveryID)
-	subscription := g.follow(t, g.source(IssueSubject{Number: 7}), "follow")
+	subscription := g.follow(t, g.source(model.IssueSubject{Number: 7}), "follow")
 
 	var start int64
 	if err := g.db.QueryRowContext(t.Context(), `SELECT github_start_position FROM subscription WHERE id = $1`, subscription.ID).Scan(&start); err != nil {
@@ -113,7 +114,7 @@ func TestAGitHubSubscriptionStartsAtTheNewestDelivery(t *testing.T) {
 
 func TestGitHubSubscriptionStateIsSourceSpecific(t *testing.T) {
 	g := newGitHubFixture(t)
-	subscription := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	subscription := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	for _, column := range []string{"actions_after_sequence = 0", "github_start_position = NULL", "github_app_id = NULL"} {
 		_, err := g.db.ExecContext(t.Context(), `UPDATE subscription SET `+column+` WHERE id = $1`, subscription.ID)
 		requireConstraint(t, err, "23514", "subscription_source_state")
@@ -123,9 +124,9 @@ func TestGitHubSubscriptionStateIsSourceSpecific(t *testing.T) {
 func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T) {
 	g := newGitHubFixture(t)
 	created := g.creation(g.source(
-		PullRequestSubject{Number: 7},
-		EventFilter{Event: EventIssueComment, Actions: []string{"created", "edited"}},
-		EventFilter{Event: EventCheckRun, Actions: []string{"completed"}},
+		model.PullRequestSubject{Number: 7},
+		model.EventFilter{Event: model.EventIssueComment, Actions: []string{"created", "edited"}},
+		model.EventFilter{Event: model.EventCheckRun, Actions: []string{"completed"}},
 	), "follow")
 	original, err := g.Subscribe(t.Context(), g.owner, created, ptr(g.access()))
 	if err != nil {
@@ -134,10 +135,10 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 
 	reordered := created
 	reordered.Source = g.source(
-		PullRequestSubject{Number: 7},
-		EventFilter{Event: EventCheckRun, Actions: []string{"completed", "completed"}},
-		EventFilter{Event: EventIssueComment, Actions: []string{"edited", "created", "edited"}},
-		EventFilter{Event: EventCheckRun, Actions: []string{"completed"}},
+		model.PullRequestSubject{Number: 7},
+		model.EventFilter{Event: model.EventCheckRun, Actions: []string{"completed", "completed"}},
+		model.EventFilter{Event: model.EventIssueComment, Actions: []string{"edited", "created", "edited"}},
+		model.EventFilter{Event: model.EventCheckRun, Actions: []string{"completed"}},
 	)
 	replayed, err := g.Subscribe(t.Context(), g.owner, reordered, ptr(g.access()))
 	if err != nil {
@@ -158,9 +159,9 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 
 	changed := created
 	changed.Source = g.source(
-		PullRequestSubject{Number: 7},
-		EventFilter{Event: EventIssueComment, Actions: []string{"deleted"}},
-		EventFilter{Event: EventCheckRun, Actions: []string{"completed"}},
+		model.PullRequestSubject{Number: 7},
+		model.EventFilter{Event: model.EventIssueComment, Actions: []string{"deleted"}},
+		model.EventFilter{Event: model.EventCheckRun, Actions: []string{"completed"}},
 	)
 	if _, err := g.Subscribe(t.Context(), g.owner, changed, ptr(g.access())); !errors.Is(err, ErrIdempotencyKeyReused) {
 		t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
@@ -169,12 +170,12 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 
 func TestADueSubscriptionCarriesTheGitHubAccessItWasAuthorizedUnder(t *testing.T) {
 	g := newGitHubFixture(t)
-	subscription := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	subscription := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	claim := g.claimInbox(t, g.inbox)
 
 	due, err := g.Source(t.Context(), claim)
 	if err != nil || due == nil {
-		t.Fatalf("Source = %+v, %v; want the subscription", due, err)
+		t.Fatalf("model.Source = %+v, %v; want the subscription", due, err)
 	}
 	requireEqual(t, due.ID, subscription.ID)
 	requireEqual(t, due.GitHubAccess, ptr(g.access()))
@@ -185,7 +186,7 @@ func TestADueSubscriptionCarriesTheGitHubAccessItWasAuthorizedUnder(t *testing.T
 
 	g.deliver(t, "issues", onIssue(8))
 	if due, err = g.Source(t.Context(), claim); err != nil || due == nil || due.Generation != 1 {
-		t.Fatalf("Source after ingress = %+v, %v; want generation 1", due, err)
+		t.Fatalf("model.Source after ingress = %+v, %v; want generation 1", due, err)
 	}
 
 	actions := g.subscribe(t, body("actions"))
@@ -193,6 +194,6 @@ func TestADueSubscriptionCarriesTheGitHubAccessItWasAuthorizedUnder(t *testing.T
 	g.exec(t, `UPDATE subscription SET cancelled = true WHERE id = $1`, subscription.ID)
 	actionsClaim := g.claimInbox(t, actions.InboxID)
 	if due, err = g.Source(t.Context(), actionsClaim); err != nil || due == nil || due.GitHubAccess != nil || due.ActionsAfterSequence == nil {
-		t.Fatalf("Source of an Actions subscription = %+v, %v", due, err)
+		t.Fatalf("model.Source of an Actions subscription = %+v, %v", due, err)
 	}
 }

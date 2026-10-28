@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 // ErrActionHistoryGap is a read of an Action request's events that skips a sequence the subscription has not
@@ -38,16 +39,19 @@ func decodeActionActor(data json.RawMessage) (*action_servicepb.Principal, error
 		return nil, nil
 	}
 	var wire struct {
-		Account *ServiceAccount `json:"account"`
-		Issuer  *string         `json:"issuer"`
-		Subject *string         `json:"subject"`
+		Account *actionActorAccount `json:"account"`
+		Issuer  *string             `json:"issuer"`
+		Subject *string             `json:"subject"`
 	}
 	if err := decode(data, &wire); err != nil {
 		return nil, err
 	}
 	switch {
 	case wire.Account != nil && wire.Issuer == nil && wire.Subject == nil:
-		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: wire.Account.Proto()}}, nil
+		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: serviceAccountProto(model.ServiceAccount{
+			Namespace: wire.Account.Namespace,
+			Name:      wire.Account.Name,
+		})}}, nil
 	case wire.Account == nil && wire.Issuer != nil && wire.Subject != nil && *wire.Issuer != "" && *wire.Subject != "":
 		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: *wire.Issuer, Subject: *wire.Subject}}}, nil
 	default:
@@ -118,7 +122,7 @@ func (e ActionEvent) MarshalJSON() ([]byte, error) {
 // as it is. Otherwise the read counts as a success: the failure shown on the subscription clears, and the
 // request is read again in five seconds.
 func (s *Store) RecordActionEvents(ctx context.Context, claim Claim, due DueSubscription, events []ActionEvent) error {
-	source, ok := due.Source.(ActionsSource)
+	source, ok := due.Source.(model.ActionsSource)
 	if !ok {
 		return fmt.Errorf("subscription %s does not follow an Action request", due.ID)
 	}
@@ -152,7 +156,7 @@ func (s *Store) RecordActionEvents(ctx context.Context, claim Claim, due DueSubs
 			if err != nil {
 				return err
 			}
-			identity := ActionsEvent{RequestID: source.RequestID, Sequence: event.Sequence}
+			identity := model.ActionsEvent{RequestID: source.RequestID, Sequence: event.Sequence}
 			if err := s.AppendEvent(ctx, tx, held.ID, due.ID, identity, payload); err != nil {
 				return err
 			}

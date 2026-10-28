@@ -218,10 +218,10 @@ The configured endpoint receives App JWTs and installation tokens: only use trus
 and use fixture credentials for local mock services. These are deployment-owned settings,
 not subscription-controlled destinations, and do not alter egress authorization.
 
-`github.Client` in `github/client.go` owns the configured endpoint, App JWTs, the installation-token cache and
+`client.Client` in [`github/client`](github/client/client.go) owns the configured endpoint, App JWTs, the installation-token cache and
 typed REST resource methods. The notification provider owns webhook verification, durable access/subject
 observations, leases, backoff scheduling and matching. Client calls surface rate limits immediately; they do not
-sleep/retry inside a lease. `github.New` validates the settings and the App private key and makes no request.
+sleep/retry inside a lease. `client.New` validates the settings and the App private key and makes no request.
 
 ## GitHub webhook troubleshooting
 

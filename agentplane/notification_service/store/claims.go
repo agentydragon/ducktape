@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -26,7 +27,7 @@ type Claim struct {
 	// Inbox is the inbox as it was when claimed. Its counters move on, so anything that matters is read again
 	// by a fenced call.
 	Inbox
-	Owner ServiceAccount
+	Owner model.ServiceAccount
 	lease uuid.UUID
 	// staleCheckAt is the deadline of the recheck of an unavailable destination, as it was when claimed.
 	staleCheckAt *time.Time
@@ -250,7 +251,7 @@ type DueSubscription struct {
 	Generation int64
 }
 
-// Source returns the claimed inbox's subscription whose source has waited longest past its due time, or nil.
+// model.Source returns the claimed inbox's subscription whose source has waited longest past its due time, or nil.
 // Cancelled and expired subscriptions are never due.
 func (s *Store) Source(ctx context.Context, claim Claim) (*DueSubscription, error) {
 	var afterSequence, app, installation, repository sql.NullInt64

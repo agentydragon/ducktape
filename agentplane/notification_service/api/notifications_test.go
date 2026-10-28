@@ -8,7 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/github/client"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/google/uuid"
@@ -62,7 +63,7 @@ func TestCreateSubscriptionFollowsAnActionRequestAndAnAgentFindsItsInbox(t *test
 	}
 	// The Action Service was asked, as the caller, whether it may follow the request.
 	source := request.GetSource().GetActions()
-	want := actionsCall{owner: store.ServiceAccount{Namespace: testNamespace, Name: sandboxName}, requestID: uuid.MustParse(source.GetRequestId())}
+	want := actionsCall{owner: model.ServiceAccount{Namespace: testNamespace, Name: sandboxName}, requestID: uuid.MustParse(source.GetRequestId())}
 	if got := server.actions.asked(); len(got) != 1 || got[0] != want {
 		t.Errorf("Action Service asked %v, want %v", got, want)
 	}
@@ -223,7 +224,7 @@ func TestCreateSubscriptionFollowsAGitHubSubjectUnderTheAccessItWasAuthorizedWit
 		t.Errorf("access = %v", access)
 	}
 	sources := server.github.authorized()
-	if len(sources) != 1 || sources[0].Repository != "test-owner/test-repo" || sources[0].Subject != (store.PullRequestSubject{Number: 7}) {
+	if len(sources) != 1 || sources[0].Repository != "test-owner/test-repo" || sources[0].Subject != (model.PullRequestSubject{Number: 7}) {
 		t.Errorf("GitHub was asked to authorize %v", sources)
 	}
 }
@@ -244,13 +245,13 @@ func TestCreateSubscriptionMapsWhatGitHubRefusesToStatusCodes(t *testing.T) {
 		err  error
 		want codes.Code
 	}{
-		{"access lost", &github.AccessError{StatusCode: 403}, codes.PermissionDenied},
-		{"installation missing", &github.NotInstalledError{AccessError: github.AccessError{StatusCode: 404}}, codes.PermissionDenied},
-		{"installation suspended", &github.SuspendedError{AccessError: github.AccessError{StatusCode: 403}}, codes.PermissionDenied},
-		{"repository changed", &github.SourceChangedError{Reason: "the repository was renamed"}, codes.PermissionDenied},
-		{"rate limited", &github.RateLimitedError{StatusCode: 429, RetrySeconds: 42}, codes.Unavailable},
-		{"unexpected status", &github.StatusError{StatusCode: 502}, codes.Unavailable},
-		{"no response", &github.TransportError{Err: errors.New("dial github-secret-host")}, codes.Unavailable},
+		{"access lost", &client.AccessError{StatusCode: 403}, codes.PermissionDenied},
+		{"installation missing", &client.NotInstalledError{AccessError: client.AccessError{StatusCode: 404}}, codes.PermissionDenied},
+		{"installation suspended", &client.SuspendedError{AccessError: client.AccessError{StatusCode: 403}}, codes.PermissionDenied},
+		{"repository changed", &client.SourceChangedError{Reason: "the repository was renamed"}, codes.PermissionDenied},
+		{"rate limited", &client.RateLimitedError{StatusCode: 429, RetrySeconds: 42}, codes.Unavailable},
+		{"unexpected status", &client.StatusError{StatusCode: 502}, codes.Unavailable},
+		{"no response", &client.TransportError{Err: errors.New("dial github-secret-host")}, codes.Unavailable},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -267,7 +268,7 @@ func TestCreateSubscriptionMapsWhatGitHubRefusesToStatusCodes(t *testing.T) {
 					retry = info
 				}
 			}
-			limited := &github.RateLimitedError{}
+			limited := &client.RateLimitedError{}
 			if errors.As(c.err, &limited) {
 				if retry.GetRetryDelay().AsDuration() != 42*time.Second {
 					t.Errorf("retry delay = %v, want 42s", retry.GetRetryDelay().AsDuration())

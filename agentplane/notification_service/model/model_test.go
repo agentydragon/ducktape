@@ -1,4 +1,4 @@
-package store
+package model
 
 import (
 	"encoding/json"
@@ -29,6 +29,22 @@ func TestAMessageIdentityIsReadBackWithItsSender(t *testing.T) {
 	} {
 		if _, err := DecodeEventIdentity([]byte(stored)); err == nil {
 			t.Errorf("%s: decoded", name)
+		}
+	}
+}
+
+func TestIsCommitSHA(t *testing.T) {
+	for _, test := range []struct {
+		sha  string
+		want bool
+	}{
+		{sha: strings.Repeat("a", 40), want: true},
+		{sha: strings.ToUpper(strings.Repeat("a", 40))},
+		{sha: strings.Repeat("g", 40)},
+		{sha: strings.Repeat("a", 39)},
+	} {
+		if got := IsCommitSHA(test.sha); got != test.want {
+			t.Errorf("IsCommitSHA(%q) = %v, want %v", test.sha, got, test.want)
 		}
 	}
 }
@@ -221,16 +237,23 @@ func TestGitHubCommitObservationSelectionIsPROnlyAndRespectsCheckRunPolicy(t *te
 		}
 	}
 	defaultPR := GitHubSource{Repository: "owner/repo", Subject: PullRequestSubject{Number: 1}}
-	if !defaultPR.CheckRunObservationsSelected() || !commitObservationSelection(defaultPR).CompletedCheckRunsOnly ||
+	if !defaultPR.CheckRunObservationsSelected() || !defaultPR.CommitObservationSelection().CompletedCheckRunsOnly ||
 		!defaultPR.CommitStatusObservationsSelected() {
 		t.Error("default PR source should select completed checks and commit statuses")
 	}
 	unfiltered := GitHubSource{Repository: "owner/repo", Subject: PullRequestSubject{Number: 1}, Events: []EventFilter{{Event: EventCheckRun}}}
-	if !unfiltered.CheckRunObservationsSelected() || commitObservationSelection(unfiltered).CompletedCheckRunsOnly {
+	if !unfiltered.CheckRunObservationsSelected() || unfiltered.CommitObservationSelection().CompletedCheckRunsOnly {
 		t.Error("unfiltered check-run PR source should select all native check-run states")
 	}
 	actionOnly := GitHubSource{Repository: "owner/repo", Subject: PullRequestSubject{Number: 1}, Events: []EventFilter{{Event: EventCheckRun, Actions: []string{"created"}}}}
 	if actionOnly.CheckRunObservationsSelected() {
 		t.Error("action-filtered check-run PR source should select raw actions only")
+	}
+}
+
+func requireEqual[T comparable](t *testing.T, got, want T) {
+	t.Helper()
+	if got != want {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }

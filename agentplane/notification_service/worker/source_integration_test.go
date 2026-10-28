@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
@@ -268,9 +269,9 @@ func (h *harness) awaitQueryWaitingForARow(t *testing.T) {
 func (h *harness) insertGitHubSubscription(t *testing.T, inboxID uuid.UUID) uuid.UUID {
 	t.Helper()
 	repository := "owner/repository-" + uuid.NewString()
-	creation, err := json.Marshal(store.Subscribe{
+	creation, err := json.Marshal(model.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: "github",
-		Source: store.GitHubSource{Repository: repository, Subject: store.PullRequestSubject{Number: 1}}, LifetimeDays: 7,
+		Source: model.GitHubSource{Repository: repository, Subject: model.PullRequestSubject{Number: 1}}, LifetimeDays: 7,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -312,7 +313,7 @@ func TestGitHubSubscriptionsAreReadByTheGitHubProvider(t *testing.T) {
 				if len(provider.calls) != 1 {
 					t.Fatalf("%d GitHub reads, want 1", len(provider.calls))
 				}
-				if _, ok := provider.calls[0].Source.(store.GitHubSource); !ok || provider.calls[0].ID != github {
+				if _, ok := provider.calls[0].Source.(model.GitHubSource); !ok || provider.calls[0].ID != github {
 					t.Errorf("read %+v, want the GitHub subscription", provider.calls[0].Subscription)
 				}
 				return

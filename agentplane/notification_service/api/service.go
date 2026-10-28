@@ -11,8 +11,8 @@ import (
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
@@ -30,7 +30,7 @@ type Runner interface {
 // Actions reads the next page of an Action request's events after a sequence, if the account submitted the
 // request. A subscription is refused when it cannot, so a caller cannot follow another account's requests.
 type Actions interface {
-	Events(ctx context.Context, owner store.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error)
+	Events(ctx context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error)
 }
 
 // SessionHistory reads the Sandbox the History Service recorded as writing a Session.
@@ -39,12 +39,10 @@ type SessionHistory interface {
 }
 
 // GitHub authorizes a GitHub source: it returns the access the service's GitHub App reads the source under, or
-// the client's typed errors (package github) when it cannot.
+// the client's typed errors (package github/client) when it cannot.
 type GitHub interface {
-	Authorize(ctx context.Context, source store.GitHubSource) (store.GitHubAccessKey, error)
+	Authorize(ctx context.Context, source model.GitHubSource) (store.GitHubAccessKey, error)
 }
-
-var _ GitHub = (*github.Provider)(nil)
 
 // Options are what the servicers read and whom they admit.
 type Options struct {

@@ -134,6 +134,8 @@ go_library(
         "//agentplane/notification_service/api",
         "//agentplane/notification_service/docs",
         "//agentplane/notification_service/github",
+        "//agentplane/notification_service/github/client",
+        "//agentplane/notification_service/github/settings",
         "//agentplane/notification_service/inboxaccess",
         "//agentplane/notification_service/store",
         "//agentplane/notification_service/webhook",
@@ -190,7 +192,9 @@ go_test(
         "workers_test.go",
     ],
     embed = [":main_lib"],
-    deps = ["//agentplane/testing/agentdocs"],
+    deps = [
+        "//agentplane/testing/agentdocs",
+    ],
 )
 
 go_test(

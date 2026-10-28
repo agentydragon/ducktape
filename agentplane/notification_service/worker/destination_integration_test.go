@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -92,9 +93,9 @@ func TestStaleDestinationRetiresTheInboxAfterThePersistedRecheck(t *testing.T) {
 				requireEqual(t, len(page.Entries), 3)
 				requireEqual(t, page.Notice != nil, prepareNotice)
 				h.requireNoneDue(t)
-				_, err := h.store.Subscribe(t.Context(), testOwner, store.Subscribe{
+				_, err := h.store.Subscribe(t.Context(), testOwner, model.Subscribe{
 					DestinationRef: destination(), SessionID: testSession, IdempotencyKey: "new",
-					Source: store.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
+					Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
 				}, nil)
 				if !errors.Is(err, store.ErrInboxRetired) {
 					t.Errorf("Subscribe = %v, want ErrInboxRetired", err)
@@ -177,9 +178,9 @@ func TestAFailedFirstLookupDoesNotStartStaleConfirmation(t *testing.T) {
 
 func TestADestinationOutsideTheServedNamespaceIsRejectedWithoutALookup(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
-	subscription, err := h.store.Subscribe(t.Context(), testOwner, store.Subscribe{
-		DestinationRef: store.DestinationRef{Namespace: "elsewhere", Name: testSandbox, UID: testSandboxUID},
-		SessionID:      testSession, IdempotencyKey: "first", Source: store.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
+	subscription, err := h.store.Subscribe(t.Context(), testOwner, model.Subscribe{
+		DestinationRef: model.DestinationRef{Namespace: "elsewhere", Name: testSandbox, UID: testSandboxUID},
+		SessionID:      testSession, IdempotencyKey: "first", Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)

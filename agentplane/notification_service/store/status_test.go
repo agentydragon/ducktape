@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -82,78 +83,78 @@ func TestEntriesAreSummarizedByTheirLifecycleFieldsOnly(t *testing.T) {
 	longer := strings.Repeat("é", maxSummaryField+1)
 	for _, c := range []struct {
 		name    string
-		event   EventIdentity
+		event   model.EventIdentity
 		payload string
 		// want is exactly what an operator is shown, which the CLI prints as it is.
 		want string
 	}{
 		{
 			"an Action with its state",
-			ActionsEvent{RequestID: request, Sequence: 3},
+			model.ActionsEvent{RequestID: request, Sequence: 3},
 			`{"state": "decision_pending"}`,
 			"Action 5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60 · event 3 · decision_pending",
 		},
 		{
 			"an Action without a state",
-			ActionsEvent{RequestID: request, Sequence: 3},
+			model.ActionsEvent{RequestID: request, Sequence: 3},
 			`{}`,
 			"Action 5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60 · event 3",
 		},
 		{
 			"an Action whose state is not text",
-			ActionsEvent{RequestID: request, Sequence: 3},
+			model.ActionsEvent{RequestID: request, Sequence: 3},
 			`{"state": 7}`,
 			"Action 5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60 · event 3",
 		},
 		{
 			"an Action state is cut by characters",
-			ActionsEvent{RequestID: request, Sequence: 3},
+			model.ActionsEvent{RequestID: request, Sequence: 3},
 			`{"state": "` + longer + `"}`,
 			"Action 5b0a6c51-8d7e-4f0a-9d2b-7c3e1f4a2b60 · event 3 · " + strings.Repeat("é", maxSummaryField),
 		},
-		{"a GitHub event without an action", GitHubEvent{Event: EventPush}, `{"ref": "refs/heads/secret"}`, "GitHub push"},
-		{"a GitHub event with an action", GitHubEvent{Event: EventPullRequest, Action: ptr("opened")}, `{}`, "GitHub pull_request · opened"},
-		{"a GitHub event with an empty action", GitHubEvent{Event: EventPullRequest, Action: ptr("")}, `{}`, "GitHub pull_request"},
+		{"a GitHub event without an action", model.GitHubEvent{Event: model.EventPush}, `{"ref": "refs/heads/secret"}`, "GitHub push"},
+		{"a GitHub event with an action", model.GitHubEvent{Event: model.EventPullRequest, Action: ptr("opened")}, `{}`, "GitHub pull_request · opened"},
+		{"a GitHub event with an empty action", model.GitHubEvent{Event: model.EventPullRequest, Action: ptr("")}, `{}`, "GitHub pull_request"},
 		{
 			"a GitHub action is cut by characters",
-			GitHubEvent{Event: EventIssues, Action: ptr(longer)},
+			model.GitHubEvent{Event: model.EventIssues, Action: ptr(longer)},
 			`{}`,
 			"GitHub issues · " + strings.Repeat("é", maxSummaryField),
 		},
 		{
 			"an Agentplane mergeability observation shows its pull request and sequence",
-			GitHubMergeabilityEvent{AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Sequence: 3},
+			model.GitHubMergeabilityEvent{AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Sequence: 3},
 			`{"mergeable": false, "headSha": "private"}`,
 			"GitHub PR #7 mergeability · sequence 3",
 		},
 		{
 			"an initial mergeability snapshot shows its pull request and version",
-			GitHubMergeabilitySnapshotEvent{AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Version: 4},
+			model.GitHubMergeabilitySnapshotEvent{AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Version: 4},
 			`{"mergeability": "CONFLICTING"}`,
 			"GitHub PR #7 mergeability snapshot · version 4",
 		},
 		{
 			"a check run's conclusion",
-			GitHubEvent{Event: EventCheckRun, Action: ptr("completed")},
+			model.GitHubEvent{Event: model.EventCheckRun, Action: ptr("completed")},
 			`{"check_run": {"conclusion": "failure", "output": "private"}}`,
 			"GitHub check_run · completed · failure",
 		},
 		{
 			"a workflow run's conclusion",
-			GitHubEvent{Event: EventWorkflowRun, Action: ptr("completed")},
+			model.GitHubEvent{Event: model.EventWorkflowRun, Action: ptr("completed")},
 			`{"workflow_run": {"conclusion": "success"}}`,
 			"GitHub workflow_run · completed · success",
 		},
-		{"a conclusion that is not text", GitHubEvent{Event: EventCheckRun}, `{"check_run": {"conclusion": null}}`, "GitHub check_run"},
+		{"a conclusion that is not text", model.GitHubEvent{Event: model.EventCheckRun}, `{"check_run": {"conclusion": null}}`, "GitHub check_run"},
 		{
 			"a conclusion of an event that has none shown",
-			GitHubEvent{Event: EventCheckSuite},
+			model.GitHubEvent{Event: model.EventCheckSuite},
 			`{"check_suite": {"conclusion": "success"}}`,
 			"GitHub check_suite",
 		},
 		{
 			"a message by its sender, never its body",
-			MessageEvent{MessageID: request, Sender: ServiceAccount{Namespace: "test-namespace", Name: "test-sender"}},
+			model.MessageEvent{MessageID: request, Sender: model.ServiceAccount{Namespace: "test-namespace", Name: "test-sender"}},
 			`{"body": "private", "from_session": "test-session"}`,
 			"Message from test-namespace/test-sender",
 		},
@@ -170,13 +171,13 @@ func TestEntriesAreSummarizedByTheirLifecycleFieldsOnly(t *testing.T) {
 }
 
 func TestAnEntrySaysWhichKindOfSourceItCameFrom(t *testing.T) {
-	for event, want := range map[EventIdentity]EntryProvider{
-		ActionsEvent{RequestID: uuid.New(), Sequence: 1}:                  EntryFromActions,
-		GitHubEvent{Event: EventPush}:                                     EntryFromGitHub,
-		GitHubObservationEvent{Event: EventCheckRun, Sequence: 1}:         EntryFromGitHub,
-		GitHubMergeabilityEvent{PullRequestNumber: 7, Sequence: 1}:        EntryFromGitHub,
-		GitHubMergeabilitySnapshotEvent{PullRequestNumber: 7, Version: 1}: EntryFromGitHub,
-		MessageEvent{MessageID: uuid.New()}:                               EntryFromMessage,
+	for event, want := range map[model.EventIdentity]EntryProvider{
+		model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}:                  EntryFromActions,
+		model.GitHubEvent{Event: model.EventPush}:                               EntryFromGitHub,
+		model.GitHubObservationEvent{Event: model.EventCheckRun, Sequence: 1}:   EntryFromGitHub,
+		model.GitHubMergeabilityEvent{PullRequestNumber: 7, Sequence: 1}:        EntryFromGitHub,
+		model.GitHubMergeabilitySnapshotEvent{PullRequestNumber: 7, Version: 1}: EntryFromGitHub,
+		model.MessageEvent{MessageID: uuid.New()}:                               EntryFromMessage,
 	} {
 		got, err := summarize(1, event, []byte(`{}`), time.Time{})
 		if err != nil {
@@ -187,7 +188,7 @@ func TestAnEntrySaysWhichKindOfSourceItCameFrom(t *testing.T) {
 }
 
 func TestAPayloadThatIsNotJSONFailsTheSummary(t *testing.T) {
-	if _, err := summarize(4, ActionsEvent{RequestID: uuid.New(), Sequence: 1}, []byte(`not json`), time.Time{}); err == nil {
+	if _, err := summarize(4, model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}, []byte(`not json`), time.Time{}); err == nil {
 		t.Fatal("summarize accepted a payload that is not JSON")
 	}
 }

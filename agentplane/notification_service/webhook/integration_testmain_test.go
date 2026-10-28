@@ -4,10 +4,9 @@ import (
 	"os"
 	"testing"
 
-	_ "github.com/lib/pq"
-
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	_ "github.com/lib/pq"
 )
 
 var integrationDatabase *postgres.Database

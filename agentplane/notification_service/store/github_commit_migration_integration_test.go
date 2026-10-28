@@ -11,6 +11,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/google/uuid"
 	"github.com/pressly/goose/v3"
@@ -24,20 +25,20 @@ func TestGitHubCommitMigrationCopiesLegacyFactsAndRefreshes(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	base := 1<<41 + rand.Int64N(1<<40)
-	ref := DestinationRef{Namespace: "test-namespace", Name: "migration-sandbox", UID: testSandboxUID}
+	ref := model.DestinationRef{Namespace: "test-namespace", Name: "migration-sandbox", UID: testSandboxUID}
 	f := fixture{Store: New(db, defaultQuotas()), db: db, owner: newOwner(), sandboxUID: testSandboxUID}
 	g := githubFixture{
 		fixture: f, app: base, installation: base + 1, repository: base + 2,
 		destination: ref,
-		inbox:       f.insertInbox(t, DestinationKey(ref, "migration-session"), ref, "migration-session"),
+		inbox:       f.insertInbox(t, model.DestinationKey(ref, "migration-session"), ref, "migration-session"),
 		state:       NewGitHubState(f.Store, testFreshness),
 	}
-	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "migration-subscription")
-	g.observePullRequest(t, sub, GitHubPullRequestObservation{
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "migration-subscription")
+	g.observePullRequest(t, sub, model.GitHubPullRequestObservation{
 		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-		State: GitHubPullRequestOpen, Mergeability: GitHubMergeabilityUnknown,
+		State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeabilityUnknown,
 	})
-	legacyDelivery := g.deliver(t, string(EventCheckRun), withAction("completed"), onPullRequest(7), atCommit(commitA))
+	legacyDelivery := g.deliver(t, string(model.EventCheckRun), withAction("completed"), onPullRequest(7), atCommit(commitA))
 
 	provider := notificationMigrationProvider(t, db)
 	if _, err := provider.DownTo(t.Context(), 6); err != nil {
@@ -54,8 +55,8 @@ func TestGitHubCommitMigrationCopiesLegacyFactsAndRefreshes(t *testing.T) {
 		name     string
 		payload  []byte
 	}{
-		{37, string(EventCheckRun), checkPayload},
-		{39, string(EventStatus), statusPayload},
+		{37, string(model.EventCheckRun), checkPayload},
+		{39, string(model.EventStatus), statusPayload},
 	} {
 		if _, err := db.ExecContext(t.Context(), `INSERT INTO github_ci_event
 			(sequence, app_id, installation_id, repository_id, head_sha, event, payload, created_at)
@@ -70,9 +71,9 @@ func TestGitHubCommitMigrationCopiesLegacyFactsAndRefreshes(t *testing.T) {
 		event    string
 		payload  []byte
 	}{
-		{"303", 38, string(EventCheckRun), checkPayload},
-		{"302", 45, string(EventCheckRun), otherAppCheckPayload},
-		{"ci/unit", 46, string(EventStatus), statusPayload},
+		{"303", 38, string(model.EventCheckRun), checkPayload},
+		{"302", 45, string(model.EventCheckRun), otherAppCheckPayload},
+		{"ci/unit", 46, string(model.EventStatus), statusPayload},
 	} {
 		if _, err := db.ExecContext(t.Context(), `INSERT INTO github_ci_current
 			(app_id, installation_id, repository_id, head_sha, event, entity_key, last_sequence, payload)
@@ -114,8 +115,8 @@ func TestGitHubCommitMigrationCopiesLegacyFactsAndRefreshes(t *testing.T) {
 		event string
 		seq   int64
 	}{
-		{string(EventCheckRun), 37},
-		{string(EventStatus), 39},
+		{string(model.EventCheckRun), 37},
+		{string(model.EventStatus), 39},
 	} {
 		var oldPayload, newPayload []byte
 		if err := db.QueryRowContext(t.Context(), `SELECT payload FROM github_ci_event WHERE sequence = $1`, identity.seq).Scan(&oldPayload); err != nil {
@@ -137,9 +138,9 @@ func TestGitHubCommitMigrationCopiesLegacyFactsAndRefreshes(t *testing.T) {
 		seq     int64
 		payload []byte
 	}{
-		{string(EventCheckRun), "303", 38, checkPayload},
-		{string(EventCheckRun), "302", 45, otherAppCheckPayload},
-		{string(EventStatus), "ci/unit", 46, statusPayload},
+		{string(model.EventCheckRun), "303", 38, checkPayload},
+		{string(model.EventCheckRun), "302", 45, otherAppCheckPayload},
+		{string(model.EventStatus), "ci/unit", 46, statusPayload},
 	} {
 		var oldPayload, newPayload []byte
 		if err := db.QueryRowContext(t.Context(), `SELECT payload FROM github_ci_current
@@ -198,7 +199,7 @@ func TestGitHubCommitMigrationCopiesLegacyFactsAndRefreshes(t *testing.T) {
 		t.Errorf("event count after identical native observations = %d, want two original identities", got)
 	}
 
-	newRun := checkRunObservation(g, commitA, CheckRunQueued, "")
+	newRun := checkRunObservation(g, commitA, model.CheckRunQueued, "")
 	newRun.ID = 999
 	tx, err := db.BeginTx(t.Context(), nil)
 	if err != nil {
@@ -285,14 +286,14 @@ func jsonEqual(left, right []byte) bool {
 func observeNativeCheckAndStatusAgain(t *testing.T, db *sql.DB, g githubFixture) bool {
 	t.Helper()
 	completed := "success"
-	run := GitHubCheckRun{
+	run := model.GitHubCheckRun{
 		RepositoryID: g.repository, HeadSHA: commitA, ID: 303,
-		AppID: 202, Name: "unit", Status: CheckRunCompleted, Conclusion: &completed,
+		AppID: 202, Name: "unit", Status: model.CheckRunCompleted, Conclusion: &completed,
 		DetailsURL: "https://checks.example/new-details",
 	}
-	status := GitHubCommitStatus{
+	status := model.GitHubCommitStatus{
 		RepositoryID: g.repository, SHA: commitA, ID: 51,
-		Context: "ci/unit", State: CommitStatusSuccess,
+		Context: "ci/unit", State: model.CommitStatusSuccess,
 		TargetURL: "https://statuses.example/new-details",
 	}
 	tx, err := db.BeginTx(t.Context(), nil)

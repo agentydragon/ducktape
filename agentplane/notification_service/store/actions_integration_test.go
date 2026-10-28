@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -45,7 +46,7 @@ func (f fixture) requireEntries(t *testing.T, inboxID, requestID uuid.UUID, sequ
 	page := f.read(t, inboxID, 0)
 	var got []int64
 	for i, entry := range page.Entries {
-		event, ok := entry.Event.(ActionsEvent)
+		event, ok := entry.Event.(model.ActionsEvent)
 		if !ok || event.RequestID != requestID {
 			t.Fatalf("entry %d is %+v, want an event of request %s", entry.Cursor, entry.Event, requestID)
 		}
@@ -78,14 +79,14 @@ func (f fixture) actionsAfterSequence(t *testing.T, id uuid.UUID) int64 {
 func TestRecordActionEventsAppendsTheNewEventsAndMovesTheSubscriptionOn(t *testing.T) {
 	f := newClaimFixture(t)
 	subscription := f.subscribe(t, body("first"))
-	request := subscription.Source.(ActionsSource).RequestID
+	request := subscription.Source.(model.ActionsSource).RequestID
 	claim := f.claim(t)
 	due := f.source(t, claim)
 	if due == nil {
 		t.Fatal("the new subscription is not due")
 	}
 	events := eventsThrough(1, 3)
-	events[2].Actor = &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: ServiceAccount{Namespace: "test-namespace", Name: "test-sandbox"}.Proto()}}
+	events[2].Actor = &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: serviceAccountProto(model.ServiceAccount{Namespace: "test-namespace", Name: "test-sandbox"})}}
 
 	before := time.Now()
 	if err := f.RecordActionEvents(t.Context(), claim, *due, events); err != nil {
@@ -122,7 +123,7 @@ func TestRecordActionEventsAppendsTheNewEventsAndMovesTheSubscriptionOn(t *testi
 func TestRecordActionEventsRecordsEachEventOnce(t *testing.T) {
 	f := newClaimFixture(t)
 	subscription := f.subscribe(t, body("first"))
-	request := subscription.Source.(ActionsSource).RequestID
+	request := subscription.Source.(model.ActionsSource).RequestID
 	claim := f.claim(t)
 
 	f.mustRecord(t, claim, subscription, eventsThrough(1, 3))
@@ -139,7 +140,7 @@ func TestRecordActionEventsRecordsEachEventOnce(t *testing.T) {
 func TestRecordActionEventsRefusesAGapAndRecordsNothingOfTheRead(t *testing.T) {
 	f := newClaimFixture(t)
 	subscription := f.subscribe(t, body("first"))
-	request := subscription.Source.(ActionsSource).RequestID
+	request := subscription.Source.(model.ActionsSource).RequestID
 	claim := f.claim(t)
 	f.mustRecord(t, claim, subscription, eventsThrough(1, 2))
 	if err := f.SourceFailed(t.Context(), claim, f.get(t, subscription.ID), FailureUnavailable, "HTTP 503", time.Minute); err != nil {
@@ -184,7 +185,7 @@ func TestRecordActionEventsLeavesASubscriptionThatChangedSinceItWasRead(t *testi
 
 			f.mustRecord(t, claim, subscription, eventsThrough(1, 3))
 
-			f.requireEntries(t, subscription.InboxID, subscription.Source.(ActionsSource).RequestID)
+			f.requireEntries(t, subscription.InboxID, subscription.Source.(model.ActionsSource).RequestID)
 			requireEqual(t, f.actionsAfterSequence(t, subscription.ID), int64(0))
 			requireEqual(t, f.get(t, subscription.ID).LastSuccessAt, (*time.Time)(nil))
 			requireEqual(t, f.nextAttempt(t, subscription.ID), stored)
@@ -215,7 +216,7 @@ func TestRecordActionEventsIsFencedOnTheClaim(t *testing.T) {
 			if err := f.record(claim, subscription, eventsThrough(1, 2)); !errors.Is(err, ErrClaimLost) {
 				t.Fatalf("error = %v, want ErrClaimLost", err)
 			}
-			f.requireEntries(t, subscription.InboxID, subscription.Source.(ActionsSource).RequestID)
+			f.requireEntries(t, subscription.InboxID, subscription.Source.(model.ActionsSource).RequestID)
 			requireEqual(t, f.actionsAfterSequence(t, subscription.ID), int64(0))
 		})
 	}
@@ -227,7 +228,7 @@ func TestRecordActionEventsNeedsNoCapacityToReplayAndStopsAtTheEntryQuota(t *tes
 	f := newFixture(t, quotas)
 	f.exec(t, `TRUNCATE inbox CASCADE`)
 	subscription := f.subscribe(t, body("first"))
-	request := subscription.Source.(ActionsSource).RequestID
+	request := subscription.Source.(model.ActionsSource).RequestID
 	claim := f.claim(t)
 
 	f.mustRecord(t, claim, subscription, eventsThrough(1, 2))
@@ -273,7 +274,7 @@ func TestOverlappingSubscriptionsOfARequestShareItsEntries(t *testing.T) {
 	f.mustRecord(t, claim, first, eventsThrough(1, 3))
 	f.mustRecord(t, claim, second, eventsThrough(1, 3))
 
-	f.requireEntries(t, first.InboxID, first.Source.(ActionsSource).RequestID, 1, 2, 3)
+	f.requireEntries(t, first.InboxID, first.Source.(model.ActionsSource).RequestID, 1, 2, 3)
 	page := f.read(t, first.InboxID, 0)
 	for _, entry := range page.Entries {
 		requireEqual(t, len(entry.SubscriptionIDs), 2)
@@ -305,9 +306,9 @@ func TestConcurrentSourcesOfAnInboxCommitOnePrefix(t *testing.T) {
 	requests := map[uuid.UUID]bool{}
 	for i, entry := range page.Entries {
 		requireEqual(t, entry.Cursor, int64(i+1))
-		requests[entry.Event.(ActionsEvent).RequestID] = true
+		requests[entry.Event.(model.ActionsEvent).RequestID] = true
 	}
 	requireEqual(t, requests, map[uuid.UUID]bool{
-		first.Source.(ActionsSource).RequestID: true, second.Source.(ActionsSource).RequestID: true,
+		first.Source.(model.ActionsSource).RequestID: true, second.Source.(model.ActionsSource).RequestID: true,
 	})
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
 )
@@ -28,7 +29,7 @@ func newClaimFixture(t *testing.T) fixture {
 }
 
 // sessionBody is a creation for a Session of its own, which makes an inbox of its own.
-func sessionBody(key, sessionID string) Subscribe {
+func sessionBody(key, sessionID string) model.Subscribe {
 	creation := body(key)
 	creation.SessionID = sessionID
 	return creation
@@ -37,9 +38,9 @@ func sessionBody(key, sessionID string) Subscribe {
 // addEvents commits events first through last of the subscription's Action request.
 func (f fixture) addEvents(t *testing.T, subscription Subscription, first, last int64) {
 	t.Helper()
-	request := subscription.Source.(ActionsSource).RequestID
+	request := subscription.Source.(model.ActionsSource).RequestID
 	for sequence := first; sequence <= last; sequence++ {
-		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, ActionsEvent{RequestID: request, Sequence: sequence}, `{}`)
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, model.ActionsEvent{RequestID: request, Sequence: sequence}, `{}`)
 	}
 }
 
@@ -387,7 +388,7 @@ func TestSourceIsTheDueSubscriptionThatHasWaitedLongest(t *testing.T) {
 	f := newClaimFixture(t)
 	newer := f.subscribe(t, body("newer"))
 	creation := body("older")
-	creation.Source = ActionsSource{RequestID: uuid.New(), AfterSequence: 7}
+	creation.Source = model.ActionsSource{RequestID: uuid.New(), AfterSequence: 7}
 	older := f.subscribe(t, creation)
 	later := f.subscribe(t, body("later"))
 	cancelled := f.subscribe(t, body("cancelled"))

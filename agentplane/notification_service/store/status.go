@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -149,43 +150,43 @@ type EntrySummary struct {
 
 // summarize describes an entry from its event identity and the few lifecycle fields of its payload that are
 // safe to show: never the content a source delivered.
-func summarize(cursor int64, event EventIdentity, payload []byte, createdAt time.Time) (EntrySummary, error) {
+func summarize(cursor int64, event model.EventIdentity, payload []byte, createdAt time.Time) (EntrySummary, error) {
 	var fields map[string]any
 	if err := json.Unmarshal(payload, &fields); err != nil {
 		return EntrySummary{}, fmt.Errorf("entry %d payload: %w", cursor, err)
 	}
 	summary := EntrySummary{Cursor: cursor, CreatedAt: createdAt.UTC()}
 	switch event := event.(type) {
-	case ActionsEvent:
+	case model.ActionsEvent:
 		summary.Provider = EntryFromActions
 		summary.Summary = fmt.Sprintf("Action %s · event %d", event.RequestID, event.Sequence)
 		// Action state is a provider-owned lifecycle value, not arbitrary result content.
 		if state, ok := fields["state"].(string); ok {
 			summary.Summary += " · " + truncate(state)
 		}
-	case GitHubEvent:
+	case model.GitHubEvent:
 		summary.Provider = EntryFromGitHub
 		summary.Summary = "GitHub " + string(event.Event)
 		if event.Action != nil && *event.Action != "" {
 			summary.Summary += " · " + truncate(*event.Action)
 		}
-		if event.Event == EventCheckRun || event.Event == EventWorkflowRun {
+		if event.Event == model.EventCheckRun || event.Event == model.EventWorkflowRun {
 			if check, ok := fields[string(event.Event)].(map[string]any); ok {
 				if conclusion, ok := check["conclusion"].(string); ok {
 					summary.Summary += " · " + truncate(conclusion)
 				}
 			}
 		}
-	case GitHubObservationEvent:
+	case model.GitHubObservationEvent:
 		summary.Provider = EntryFromGitHub
 		summary.Summary = fmt.Sprintf("GitHub %s observation · sequence %d", event.Event, event.Sequence)
-	case GitHubMergeabilityEvent:
+	case model.GitHubMergeabilityEvent:
 		summary.Provider = EntryFromGitHub
 		summary.Summary = fmt.Sprintf("GitHub PR #%d mergeability · sequence %d", event.PullRequestNumber, event.Sequence)
-	case GitHubMergeabilitySnapshotEvent:
+	case model.GitHubMergeabilitySnapshotEvent:
 		summary.Provider = EntryFromGitHub
 		summary.Summary = fmt.Sprintf("GitHub PR #%d mergeability snapshot · version %d", event.PullRequestNumber, event.Version)
-	case MessageEvent:
+	case model.MessageEvent:
 		// Who sent it is what the service authenticated; the body is never shown.
 		summary.Provider = EntryFromMessage
 		summary.Summary = fmt.Sprintf("Message from %s/%s", event.Sender.Namespace, event.Sender.Name)
@@ -234,7 +235,7 @@ type SandboxNotificationStatus struct {
 
 // SandboxStatus reads the inboxes whose destination is exactly `ref`, retired ones included, at most 1000 in
 // Session order. A Sandbox with the same name and another UID has none. Reading changes nothing.
-func (s *Store) SandboxStatus(ctx context.Context, ref DestinationRef, debounce Debounce) (SandboxNotificationStatus, error) {
+func (s *Store) SandboxStatus(ctx context.Context, ref model.DestinationRef, debounce Debounce) (SandboxNotificationStatus, error) {
 	var status SandboxNotificationStatus
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		status.ObservedAt = now()
@@ -335,7 +336,7 @@ func pendingEntrySummaries(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, a
 		if err := rows.Scan(&cursor, &event, &payload, &createdAt); err != nil {
 			return nil, err
 		}
-		identity, err := DecodeEventIdentity(event)
+		identity, err := model.DecodeEventIdentity(event)
 		if err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inboxID, cursor, err)
 		}
@@ -373,14 +374,14 @@ type SessionNoticeStates struct {
 
 // SessionNoticeStates reads the live inboxes of the named Sessions in `namespace`, whoever owns them, in
 // Session order. Reading changes nothing: only an agent's acknowledgement moves what counts as acknowledged.
-// More than MaxNoticeStateSessions distinct Sessions fail with ErrInvalid.
+// More than MaxNoticeStateSessions distinct Sessions fail with model.ErrInvalid.
 func (s *Store) SessionNoticeStates(ctx context.Context, namespace string, sessionIDs []string, debounce Debounce) (SessionNoticeStates, error) {
 	// Never nil, so that it is a JSON array whatever the caller passes.
 	distinct := append([]string{}, sessionIDs...)
 	slices.Sort(distinct)
 	distinct = slices.Compact(distinct)
 	if len(distinct) > MaxNoticeStateSessions {
-		return SessionNoticeStates{}, invalid("at most %d Sessions per read", MaxNoticeStateSessions)
+		return SessionNoticeStates{}, model.Invalid("at most %d Sessions per read", MaxNoticeStateSessions)
 	}
 	wanted, err := json.Marshal(distinct)
 	if err != nil {

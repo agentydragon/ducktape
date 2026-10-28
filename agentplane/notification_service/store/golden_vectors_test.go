@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -27,10 +28,10 @@ var goldenJSON []byte
 
 type golden struct {
 	DestinationKeys []struct {
-		Name           string         `json:"name"`
-		DestinationRef DestinationRef `json:"destination_ref"`
-		SessionID      string         `json:"session_id"`
-		Key            string         `json:"key"`
+		Name           string               `json:"name"`
+		DestinationRef model.DestinationRef `json:"destination_ref"`
+		SessionID      string               `json:"session_id"`
+		Key            string               `json:"key"`
 	} `json:"destination_keys"`
 	// Subscriptions are valid creations: Input is what a caller sends, Stored the JSON Python writes for it.
 	Subscriptions []struct {
@@ -144,14 +145,14 @@ func (d goldenDelivery) ingest(t *testing.T) GitHubIngest {
 		Event: d.Ingest.Event, Digest: digest, Payload: d.Ingest.Payload, Action: d.Ingest.Action, HeadSHA: d.Ingest.HeadSHA,
 	}
 	if d.Ingest.RepositoryID != nil {
-		ingest.Repository = &GitHubRepository{ID: *d.Ingest.RepositoryID, Name: *d.Ingest.RepositoryName}
+		ingest.Repository = &model.GitHubRepository{ID: *d.Ingest.RepositoryID, Name: *d.Ingest.RepositoryName}
 	}
 	for _, subject := range d.Ingest.Subjects {
 		ingest.Subjects = append(ingest.Subjects, GitHubSubjectKey{RepositoryID: subject.RepositoryID, Kind: subject.Kind, Key: subject.SubjectKey})
 	}
 	for _, revision := range d.Ingest.Revisions {
-		ingest.Revisions = append(ingest.Revisions, GitHubHeadRevision{
-			Repository: GitHubRepository{ID: revision.RepositoryID, Name: revision.RepositoryName}, SHA: revision.SHA,
+		ingest.Revisions = append(ingest.Revisions, model.GitHubHeadRevision{
+			Repository: model.GitHubRepository{ID: revision.RepositoryID, Name: revision.RepositoryName}, SHA: revision.SHA,
 		})
 	}
 	return ingest

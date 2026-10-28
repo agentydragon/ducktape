@@ -4,6 +4,22 @@ Client-visible behavior belongs in the [API reference](api.md); deployment and r
 belong in the [service README](../README.md). The store owns durable decisions and the worker
 coordinates source reads and notice delivery. The integration app is only a client.
 
+## Package boundaries
+
+`model` owns subscription definitions, source-event identities, GitHub facts, selection rules and their
+JSON encoding. It has no database, transport or worker dependency. `store` owns PostgreSQL transactions,
+claims, refresh leases and durable recording; it consumes these types without defining their vocabulary.
+
+`github/client` owns authenticated REST reads, pagination, response normalization and typed request
+errors. It depends on `model` and the shared `github/settings`, not on persistence or scheduling.
+The parent `github` package reconciles subscriptions and normalizes webhook deliveries; `webhook`
+verifies signatures and handles HTTP ingress. `github/testing` provides the shared fake API used by
+client and provider tests. The `worker` package schedules inbox work and delivers notices.
+
+Access, subject, check-run, commit-status and review reads have distinct store completion methods.
+Each validates its lease and access fences in the same transaction as its observations and wakeups.
+Inbox recording retains its existing transaction boundary for deduplication, entries and checkpoints.
+
 ## Storage and scheduling
 
 The service owns a PostgreSQL database and role on the shared cluster. Its image-coupled Goose

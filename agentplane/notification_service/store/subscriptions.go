@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -45,7 +46,7 @@ type SourceFailure struct {
 type Subscription struct {
 	ID             uuid.UUID
 	InboxID        uuid.UUID
-	Source         Source
+	Source         model.Source
 	IdempotencyKey string
 	// Version changes whenever the subscription does.
 	Version       int64
@@ -76,7 +77,7 @@ func scanSubscription(row rowScanner, viewedAt time.Time, extra ...any) (Subscri
 	}, extra...)...); err != nil {
 		return Subscription{}, err
 	}
-	var body Subscribe
+	var body model.Subscribe
 	if err := decode(creation, &body); err != nil {
 		return Subscription{}, fmt.Errorf("subscription %s creation: %w", subscription.ID, err)
 	}
@@ -147,26 +148,26 @@ type sourceBinding struct {
 
 // checkAccess requires the access a source needs: a GitHub subscription is bound to the repository access it was
 // authorized under, and no other source has any.
-func checkAccess(source Source, access *GitHubAccessKey) error {
-	_, github := source.(GitHubSource)
+func checkAccess(source model.Source, access *GitHubAccessKey) error {
+	_, github := source.(model.GitHubSource)
 	switch {
 	case !github && access != nil:
 		return errors.New("only a GitHub subscription is bound to GitHub access")
 	case github && access == nil:
 		return errors.New("a GitHub subscription is bound to the access it was authorized under")
 	case github && (access.AppID <= 0 || access.InstallationID <= 0 || access.RepositoryID <= 0):
-		return invalid("GitHub access names an App, installation and repository above 0")
+		return model.Invalid("GitHub access names an App, installation and repository above 0")
 	}
 	return nil
 }
 
 // bindSource is where subscribing meets a source kind. A GitHub subscription also creates, unless they exist, the
 // shared rows it reads through: its installation, repository, grant and subject. The caller holds the GitHub lock.
-func bindSource(ctx context.Context, tx *sql.Tx, source Source, access *GitHubAccessKey) (sourceBinding, error) {
+func bindSource(ctx context.Context, tx *sql.Tx, source model.Source, access *GitHubAccessKey) (sourceBinding, error) {
 	switch source := source.(type) {
-	case ActionsSource:
+	case model.ActionsSource:
 		return sourceBinding{actionsAfterSequence: sql.NullInt64{Int64: source.AfterSequence, Valid: true}}, nil
-	case GitHubSource:
+	case model.GitHubSource:
 		subject, err := NewGitHubSubjectKey(access.RepositoryID, source.Subject)
 		if err != nil {
 			return sourceBinding{}, err
@@ -202,17 +203,17 @@ func bindSource(ctx context.Context, tx *sql.Tx, source Source, access *GitHubAc
 			githubSubjectKey:           sql.NullString{String: subject.Key, Valid: true},
 		}, nil
 	default:
-		return sourceBinding{}, invalid("source must be an Action request or a GitHub subject")
+		return sourceBinding{}, model.Invalid("source must be an Action request or a GitHub subject")
 	}
 }
 
-// Subscribe creates the owner's subscription, and the Session's inbox with the first one. A creation whose
+// model.Subscribe creates the owner's subscription, and the Session's inbox with the first one. A creation whose
 // idempotency key the inbox already holds returns that subscription, cancelled or not, if it was created with
 // the same arguments, and fails with ErrIdempotencyKeyReused if not.
 //
 // access is the repository access a GitHub subscription was authorized under, which the caller has just read from
 // GitHub, and nil for any other source. A replay of a creation returns the subscription it made and writes no rows.
-func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscribe, access *GitHubAccessKey) (Subscription, error) {
+func (s *Store) Subscribe(ctx context.Context, owner model.ServiceAccount, body model.Subscribe, access *GitHubAccessKey) (Subscription, error) {
 	if err := body.Validate(); err != nil {
 		return Subscription{}, err
 	}
@@ -225,7 +226,7 @@ func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscr
 	}
 	var subscription Subscription
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
-		if _, github := body.Source.(GitHubSource); github {
+		if _, github := body.Source.(model.GitHubSource); github {
 			// Lock order: the GitHub lock, then the inbox.
 			if err := githubLock(ctx, tx); err != nil {
 				return err
@@ -241,7 +242,7 @@ func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscr
 		err = tx.QueryRowContext(ctx, `SELECT id, creation FROM subscription WHERE inbox_id = $1 AND idempotency_key = $2`,
 			inbox.ID, body.IdempotencyKey).Scan(&existingID, &existing)
 		if err == nil {
-			var previous Subscribe
+			var previous model.Subscribe
 			if err := decode(existing, &previous); err != nil {
 				return fmt.Errorf("subscription %s creation: %w", existingID, err)
 			}
@@ -273,13 +274,13 @@ func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscr
 			binding.githubPRStateAfterSequence, expiry(written, body.LifetimeDays), written); err != nil {
 			return err
 		}
-		if _, ok := body.Source.(GitHubSource); ok {
+		if _, ok := body.Source.(model.GitHubSource); ok {
 			if _, err := tx.ExecContext(ctx, `UPDATE subscription
 				SET github_mergeability_after_sequence = (SELECT coalesce(max(sequence), 0) FROM github_mergeability_event)
 				WHERE id = $1`, id); err != nil {
 				return err
 			}
-			if source, ok := body.Source.(GitHubSource); ok && binding.githubSubjectKind.String == "pull_request" {
+			if source, ok := body.Source.(model.GitHubSource); ok && binding.githubSubjectKind.String == "pull_request" {
 				subject, err := NewGitHubSubjectKey(access.RepositoryID, source.Subject)
 				if err != nil {
 					return err
@@ -376,10 +377,10 @@ func lockSubscription(ctx context.Context, tx *sql.Tx, owner Owner, id uuid.UUID
 // slot, subject to the same quota as creating one.
 func (s *Store) Renew(ctx context.Context, owner Owner, id uuid.UUID, version, lifetimeDays int64) (Subscription, error) {
 	if version < 1 {
-		return Subscription{}, invalid("version must be at least 1")
+		return Subscription{}, model.Invalid("version must be at least 1")
 	}
 	if lifetimeDays < 1 || lifetimeDays > 30 {
-		return Subscription{}, invalid("lifetime_days must be 1 to 30")
+		return Subscription{}, model.Invalid("lifetime_days must be 1 to 30")
 	}
 	var renewed Subscription
 	err := s.transaction(ctx, func(tx *sql.Tx) error {

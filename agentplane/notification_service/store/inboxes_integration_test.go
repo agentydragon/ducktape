@@ -8,18 +8,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
-func actionsEvents(request uuid.UUID, count int) []ActionsEvent {
-	events := make([]ActionsEvent, count)
+func actionsEvents(request uuid.UUID, count int) []model.ActionsEvent {
+	events := make([]model.ActionsEvent, count)
 	for i := range events {
-		events[i] = ActionsEvent{RequestID: request, Sequence: int64(i + 1)}
+		events[i] = model.ActionsEvent{RequestID: request, Sequence: int64(i + 1)}
 	}
 	return events
 }
 
-func payloadOf(event ActionsEvent) string {
+func payloadOf(event model.ActionsEvent) string {
 	return fmt.Sprintf(`{"sequence": %d, "state": "decision_pending"}`, event.Sequence)
 }
 
@@ -32,7 +33,7 @@ func TestOverlappingSubscriptionsCommitOnePrefixAndReadDoesNotAcknowledge(t *tes
 	if a.InboxID != b.InboxID {
 		t.Fatal("the subscriptions of one Session landed in two inboxes")
 	}
-	events := actionsEvents(first.Source.(ActionsSource).RequestID, 3)
+	events := actionsEvents(first.Source.(model.ActionsSource).RequestID, 3)
 	for _, event := range events {
 		f.mustAppendEvent(t, a.InboxID, a.ID, event, payloadOf(event))
 	}
@@ -48,7 +49,7 @@ func TestOverlappingSubscriptionsCommitOnePrefixAndReadDoesNotAcknowledge(t *tes
 	matched := []uuid.UUID{a.ID, b.ID}
 	slices.SortFunc(matched, func(x, y uuid.UUID) int { return slices.Compare(x[:], y[:]) })
 	for i, entry := range page.Entries {
-		if entry.Cursor != int64(i+1) || entry.Event != EventIdentity(events[i]) || !slices.Equal(entry.SubscriptionIDs, matched) {
+		if entry.Cursor != int64(i+1) || entry.Event != model.EventIdentity(events[i]) || !slices.Equal(entry.SubscriptionIDs, matched) {
 			t.Fatalf("entry %d = %+v", i, entry)
 		}
 		sameJSON(t, entry.Payload, []byte(payloadOf(events[i])))
@@ -78,18 +79,18 @@ func TestReadIsBoundedAndOwned(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	subscription := f.subscribe(t, body("first"))
 	for _, limit := range []int{0, 129} {
-		if _, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, 0, limit); !errors.Is(err, ErrInvalid) {
-			t.Fatalf("limit %d: error = %v, want ErrInvalid", limit, err)
+		if _, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, 0, limit); !errors.Is(err, model.ErrInvalid) {
+			t.Fatalf("limit %d: error = %v, want model.ErrInvalid", limit, err)
 		}
 	}
-	if _, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, -1, 128); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("error = %v, want ErrInvalid", err)
+	if _, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, -1, 128); !errors.Is(err, model.ErrInvalid) {
+		t.Fatalf("error = %v, want model.ErrInvalid", err)
 	}
 	if _, err := f.Read(t.Context(), f.incarnation(), uuid.New(), 0, 128); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("error = %v, want ErrNotFound", err)
 	}
-	if _, err := f.Acknowledge(t.Context(), f.incarnation(), subscription.InboxID, -1); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("error = %v, want ErrInvalid", err)
+	if _, err := f.Acknowledge(t.Context(), f.incarnation(), subscription.InboxID, -1); !errors.Is(err, model.ErrInvalid) {
+		t.Fatalf("error = %v, want model.ErrInvalid", err)
 	}
 	page := f.read(t, subscription.InboxID, 0)
 	if len(page.Entries) != 0 || page.Notice != nil || page.Inbox.ID != subscription.InboxID {
@@ -116,14 +117,14 @@ func TestConcurrentSourcesAllocateOneCommittedPrefix(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	first := f.subscribe(t, body("first"))
 	second := f.subscribe(t, body("another-action"))
-	requests := []uuid.UUID{first.Source.(ActionsSource).RequestID, second.Source.(ActionsSource).RequestID}
+	requests := []uuid.UUID{first.Source.(model.ActionsSource).RequestID, second.Source.(model.ActionsSource).RequestID}
 
 	var wg sync.WaitGroup
 	for i, subscription := range []Subscription{first, second} {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			event := ActionsEvent{RequestID: requests[i], Sequence: 1}
+			event := model.ActionsEvent{RequestID: requests[i], Sequence: 1}
 			if err := f.appendEvent(subscription.InboxID, subscription.ID, event, `{}`); err != nil {
 				t.Error(err)
 			}
@@ -136,7 +137,7 @@ func TestConcurrentSourcesAllocateOneCommittedPrefix(t *testing.T) {
 	}
 	followed := map[uuid.UUID]bool{}
 	for _, entry := range page.Entries {
-		followed[entry.Event.(ActionsEvent).RequestID] = true
+		followed[entry.Event.(model.ActionsEvent).RequestID] = true
 	}
 	if !followed[requests[0]] || !followed[requests[1]] {
 		t.Fatalf("entries followed %v, want %v", followed, requests)
@@ -147,7 +148,7 @@ func TestRetirementStopsWorkWithoutErasingEntries(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	creation := body("first")
 	subscription := f.subscribe(t, creation)
-	event := ActionsEvent{RequestID: creation.Source.(ActionsSource).RequestID, Sequence: 1}
+	event := model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 
 	if err := f.Retire(t.Context(), Owner{Account: newOwner(), SandboxUID: testSandboxUID}, subscription.InboxID); !errors.Is(err, ErrNotFound) {
@@ -216,7 +217,7 @@ func TestRetentionGapIsVisibleAndReplayKeepsTheTombstone(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	creation := body("first")
 	subscription := f.subscribe(t, creation)
-	events := actionsEvents(creation.Source.(ActionsSource).RequestID, 3)
+	events := actionsEvents(creation.Source.(model.ActionsSource).RequestID, 3)
 	for _, event := range events {
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 	}
@@ -246,7 +247,7 @@ func TestPayloadsExpireOnlyUpToTheFirstEntryYoungerThanThirtyDays(t *testing.T) 
 	f := newFixture(t, defaultQuotas())
 	creation := body("first")
 	subscription := f.subscribe(t, creation)
-	events := actionsEvents(creation.Source.(ActionsSource).RequestID, 4)
+	events := actionsEvents(creation.Source.(model.ActionsSource).RequestID, 4)
 	for _, event := range events {
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 	}
@@ -267,8 +268,8 @@ func TestInboxesRetiredLongAgoAreDeletedWithTheirRows(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	creation := body("first")
 	subscription := f.subscribe(t, creation)
-	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, ActionsEvent{RequestID: creation.Source.(ActionsSource).RequestID, Sequence: 1}, `{}`)
-	recent := f.subscribe(t, func() Subscribe { other := creation; other.SessionID = "recently-retired"; return other }())
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}, `{}`)
+	recent := f.subscribe(t, func() model.Subscribe { other := creation; other.SessionID = "recently-retired"; return other }())
 
 	for _, inboxID := range []uuid.UUID{subscription.InboxID, recent.InboxID} {
 		if err := f.Retire(t.Context(), f.incarnation(), inboxID); err != nil {

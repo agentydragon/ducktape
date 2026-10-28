@@ -16,6 +16,7 @@ import (
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
@@ -34,7 +35,7 @@ const (
 )
 
 // testOwner owns the inboxes: a Sandbox runs as the ServiceAccount of its own name.
-var testOwner = store.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
+var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation is testOwner as the Sandbox the destinations name.
 var testIncarnation = store.Owner{Account: testOwner, SandboxUID: testSandboxUID}
@@ -188,11 +189,11 @@ func (f fixture) client(t *testing.T, timeoutSeconds float64) actionpb.ActionSer
 
 func (f fixture) subscribe(t *testing.T) store.Subscription {
 	t.Helper()
-	subscription, err := f.store.Subscribe(t.Context(), testOwner, store.Subscribe{
-		DestinationRef: store.DestinationRef{Namespace: testNamespace, Name: testSandbox, UID: testSandboxUID},
+	subscription, err := f.store.Subscribe(t.Context(), testOwner, model.Subscribe{
+		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: testSandbox, UID: testSandboxUID},
 		SessionID:      "test-session",
 		IdempotencyKey: "test-key",
-		Source:         store.ActionsSource{RequestID: uuid.New()},
+		Source:         model.ActionsSource{RequestID: uuid.New()},
 		LifetimeDays:   7,
 	}, nil)
 	if err != nil {
@@ -261,7 +262,7 @@ func requireFailure(t *testing.T, err error, kind store.SourceFailureKind, messa
 func TestReconcileRecordsTheEventsOfTheCallersRequest(t *testing.T) {
 	f := newFixture(t)
 	subscription := f.subscribe(t)
-	requestID := subscription.Source.(store.ActionsSource).RequestID
+	requestID := subscription.Source.(model.ActionsSource).RequestID
 	f.service.set(func(s *fakeActionService) { s.eventCount = 3 })
 	claim := f.claim(t)
 
@@ -275,7 +276,7 @@ func TestReconcileRecordsTheEventsOfTheCallersRequest(t *testing.T) {
 	}
 	for i, entry := range entries {
 		sequence := int64(i + 1)
-		if !reflect.DeepEqual(entry.Event, store.ActionsEvent{RequestID: requestID, Sequence: sequence}) {
+		if !reflect.DeepEqual(entry.Event, model.ActionsEvent{RequestID: requestID, Sequence: sequence}) {
 			t.Errorf("entry %d is %+v", sequence, entry.Event)
 		}
 		if got, want := string(entry.Payload), wireEvent(sequence); !sameJSON(t, got, want) {
@@ -382,7 +383,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 		t.Errorf("events call = %+v", call)
 	}
 
-	_, err = f.source.Events(t.Context(), store.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, request, 0)
+	_, err = f.source.Events(t.Context(), model.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, request, 0)
 	requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
 }
 

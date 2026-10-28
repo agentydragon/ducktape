@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -15,7 +16,7 @@ import (
 // committed. A cursor is an entry's position, from 1.
 type Inbox struct {
 	ID             uuid.UUID
-	DestinationRef DestinationRef
+	DestinationRef model.DestinationRef
 	SessionID      string
 	// LastCursor is the cursor of the newest committed entry, or 0.
 	LastCursor int64
@@ -32,7 +33,7 @@ type Inbox struct {
 // Entry is one event delivered to an inbox.
 type Entry struct {
 	Cursor int64
-	Event  EventIdentity
+	Event  model.EventIdentity
 	// Payload is the provider's JSON object for the event.
 	Payload json.RawMessage
 	// SubscriptionIDs are the subscriptions the event matched, in ID order.
@@ -100,9 +101,9 @@ func owned(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, owner Owner, lock
 }
 
 // ensureInbox is the owner's inbox for a destination Session, created if absent and returned locked for update.
-func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner ServiceAccount, ref DestinationRef, sessionID string) (Inbox, error) {
+func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner model.ServiceAccount, ref model.DestinationRef, sessionID string) (Inbox, error) {
 	written := now()
-	key := DestinationKey(ref, sessionID)
+	key := model.DestinationKey(ref, sessionID)
 	// Serialize only creation for an owner, to enforce the total destination quota.
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, owner.Namespace+"/"+owner.Name); err != nil {
 		return Inbox{}, err
@@ -174,10 +175,10 @@ func (s *Store) ListInboxes(ctx context.Context, owner Owner) ([]Inbox, error) {
 // snapshot. Reading acknowledges nothing.
 func (s *Store) Read(ctx context.Context, owner Owner, inboxID uuid.UUID, after int64, limit int) (InboxPage, error) {
 	if after < 0 {
-		return InboxPage{}, invalid("after_cursor must not be negative")
+		return InboxPage{}, model.Invalid("after_cursor must not be negative")
 	}
 	if limit < 1 || limit > 128 {
-		return InboxPage{}, invalid("limit must be 1 to 128")
+		return InboxPage{}, model.Invalid("limit must be 1 to 128")
 	}
 	var page InboxPage
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
@@ -213,7 +214,7 @@ func entriesAfter(ctx context.Context, tx *sql.Tx, inbox Inbox, after int64, lim
 		if err := rows.Scan(&entry.Cursor, &event, &payload); err != nil {
 			return nil, err
 		}
-		if entry.Event, err = DecodeEventIdentity(event); err != nil {
+		if entry.Event, err = model.DecodeEventIdentity(event); err != nil {
 			return nil, fmt.Errorf("inbox %s entry %d event: %w", inbox.ID, entry.Cursor, err)
 		}
 		if payload == nil {
@@ -276,7 +277,7 @@ func latestNotice(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID) (*Notice, 
 // inbox's last entry fails with ErrCursorOutOfRange.
 func (s *Store) Acknowledge(ctx context.Context, owner Owner, inboxID uuid.UUID, through int64) (Inbox, error) {
 	if through < 0 {
-		return Inbox{}, invalid("through_cursor must not be negative")
+		return Inbox{}, model.Invalid("through_cursor must not be negative")
 	}
 	var acknowledged Inbox
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
@@ -323,7 +324,7 @@ func (s *Store) Retire(ctx context.Context, owner Owner, inboxID uuid.UUID) erro
 // AppendEvent records an event of a subscription in its inbox: the inbox's entry for the event, appended at
 // the next cursor unless it already holds one, and the subscription's match with it. The caller holds the
 // inbox's row locked for update in tx.
-func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscriptionID uuid.UUID, event EventIdentity, payload json.RawMessage) error {
+func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscriptionID uuid.UUID, event model.EventIdentity, payload json.RawMessage) error {
 	identity, err := json.Marshal(event)
 	if err != nil {
 		return err

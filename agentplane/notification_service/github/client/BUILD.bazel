@@ -1,0 +1,47 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "client",
+    srcs = [
+        "check_runs.go",
+        "client.go",
+        "commit_statuses.go",
+        "errors.go",
+        "pull_requests.go",
+        "ratelimit.go",
+        "repositories.go",
+        "resource_page.go",
+        "reviews.go",
+        "subjects.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/github/client",
+    visibility = ["//agentplane/notification_service:__subpackages__"],
+    deps = [
+        "//agentplane/notification_service/github/settings",
+        "//agentplane/notification_service/model",
+        "//agentplane/observability",
+        "@com_github_bradleyfalzon_ghinstallation_v2//:ghinstallation",
+        "@com_github_google_go_github_v88//github",
+    ],
+)
+
+go_test(
+    name = "client_test",
+    srcs = [
+        "check_runs_test.go",
+        "client_fixture_test.go",
+        "client_test.go",
+        "commit_statuses_test.go",
+        "page_test_helpers_test.go",
+        "ratelimit_test.go",
+        "reviews_test.go",
+    ],
+    embed = [":client"],
+    deps = [
+        "//agentplane/notification_service/github/settings",
+        "//agentplane/notification_service/github/testing",
+        "//agentplane/notification_service/model",
+        "@com_github_google_go_github_v88//github",
+        "@com_github_google_uuid//:uuid",
+    ],
+)

@@ -7,26 +7,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
 var statusDebounce = Debounce{Quiet: time.Minute, MaxWait: 2 * time.Minute}
 
 // uniqueSandbox is a destination no other test uses: operator reads cover every owner's inboxes.
-func uniqueSandbox() DestinationRef {
-	return DestinationRef{Namespace: "test-namespace", Name: "sandbox-" + uuid.NewString(), UID: "uid-" + uuid.NewString()}
+func uniqueSandbox() model.DestinationRef {
+	return model.DestinationRef{Namespace: "test-namespace", Name: "sandbox-" + uuid.NewString(), UID: "uid-" + uuid.NewString()}
 }
 
 func uniqueSession() string { return "session-" + uuid.NewString() }
 
-func (f fixture) subscribeIn(t *testing.T, key, sessionID string, ref DestinationRef) Subscription {
+func (f fixture) subscribeIn(t *testing.T, key, sessionID string, ref model.DestinationRef) Subscription {
 	t.Helper()
 	creation := sessionBody(key, sessionID)
 	creation.DestinationRef = ref
 	return f.subscribe(t, creation)
 }
 
-func (f fixture) sandboxStatus(t *testing.T, ref DestinationRef) SandboxNotificationStatus {
+func (f fixture) sandboxStatus(t *testing.T, ref model.DestinationRef) SandboxNotificationStatus {
 	t.Helper()
 	status, err := f.SandboxStatus(t.Context(), ref, statusDebounce)
 	if err != nil {
@@ -35,7 +36,7 @@ func (f fixture) sandboxStatus(t *testing.T, ref DestinationRef) SandboxNotifica
 	return status
 }
 
-func (f fixture) onlyInbox(t *testing.T, ref DestinationRef) InboxStatus {
+func (f fixture) onlyInbox(t *testing.T, ref model.DestinationRef) InboxStatus {
 	t.Helper()
 	status := f.sandboxStatus(t, ref)
 	if len(status.Inboxes) != 1 {
@@ -101,7 +102,7 @@ func TestSandboxStatusIsPinnedToTheSandboxIncarnationAndListsEveryOwnersInboxes(
 	}
 
 	// Another incarnation of the Sandbox, or another Sandbox, has none of them.
-	for name, changed := range map[string]DestinationRef{
+	for name, changed := range map[string]model.DestinationRef{
 		"another UID":       {Namespace: ref.Namespace, Name: ref.Name, UID: "another-uid"},
 		"another name":      {Namespace: ref.Namespace, Name: "another-sandbox", UID: ref.UID},
 		"another namespace": {Namespace: "another-namespace", Name: ref.Name, UID: ref.UID},
@@ -117,9 +118,9 @@ func TestSandboxStatusSummarizesWhatAwaitsAcknowledgementWithoutItsContent(t *te
 	ref := uniqueSandbox()
 	f.sandboxUID = ref.UID
 	subscription := f.subscribeIn(t, "first", uniqueSession(), ref)
-	request := subscription.Source.(ActionsSource).RequestID
+	request := subscription.Source.(model.ActionsSource).RequestID
 	for sequence := int64(1); sequence <= 3; sequence++ {
-		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, ActionsEvent{RequestID: request, Sequence: sequence},
+		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, model.ActionsEvent{RequestID: request, Sequence: sequence},
 			fmt.Sprintf(`{"sequence": %d, "state": "decision_pending", "result": "private"}`, sequence))
 	}
 	summaries := func(cursors ...int64) []EntrySummary {
@@ -371,7 +372,7 @@ func TestSessionNoticeStatesReadAtMostAFixedNumberOfDistinctSessions(t *testing.
 
 	_, err := f.SessionNoticeStates(t.Context(), "test-namespace", append(sessions, "one-too-many"), statusDebounce)
 
-	if !errors.Is(err, ErrInvalid) {
-		t.Fatalf("error = %v, want ErrInvalid", err)
+	if !errors.Is(err, model.ErrInvalid) {
+		t.Fatalf("error = %v, want model.ErrInvalid", err)
 	}
 }

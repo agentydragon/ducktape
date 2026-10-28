@@ -1,4 +1,4 @@
-package github
+package client
 
 import (
 	"errors"
@@ -72,13 +72,13 @@ func (e *TransportError) Error() string { return fmt.Sprintf("GitHub request fai
 
 func (e *TransportError) Unwrap() error { return e.Err }
 
-// invalidResponseError is a successful response whose body lacks, or mangles, a field the client needs.
-type invalidResponseError struct {
-	reason string
+// InvalidResponseError is a successful response whose body lacks, or mangles, a field the client needs.
+type InvalidResponseError struct {
+	Reason string
 }
 
-func (e *invalidResponseError) Error() string {
-	return "GitHub returned an invalid response: " + e.reason
+func (e *InvalidResponseError) Error() string {
+	return "GitHub returned an invalid response: " + e.Reason
 }
 
 // errMissing is a tolerated 404; the calls that allow one turn it into their own answer.

@@ -19,11 +19,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-
-	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/github/settings"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/go/wakeups"
+	"github.com/google/uuid"
 )
 
 const (
@@ -35,8 +34,8 @@ const (
 	awaitBound = 30 * time.Second
 )
 
-func testSettings() github.Settings {
-	settings := github.DefaultSettings()
+func testSettings() settings.Settings {
+	settings := settings.DefaultSettings()
 	settings.AppID = testAppID
 	settings.PrivateKey = "unused-private-key"
 	settings.WebhookSecret = testSecret
@@ -54,7 +53,7 @@ func openDatabase(t *testing.T, url string) *sql.DB {
 	return db
 }
 
-func newHandler(db *sql.DB, configure func(*github.Settings)) *Handler {
+func newHandler(db *sql.DB, configure func(*settings.Settings)) *Handler {
 	settings := testSettings()
 	if configure != nil {
 		configure(&settings)
@@ -79,7 +78,7 @@ type route struct {
 	db  *sql.DB
 }
 
-func newRoute(t *testing.T, configure func(*github.Settings)) route {
+func newRoute(t *testing.T, configure func(*settings.Settings)) route {
 	t.Helper()
 	db := openDatabase(t, integrationDatabase.URL)
 	handler := newHandler(db, configure)
@@ -504,7 +503,7 @@ func (d delivery) postStreamed(t *testing.T, url string) (*io.PipeWriter, <-chan
 
 func TestSaturatedReplicaRefusesInsteadOfQueueingAndFreesTheSlotAfterwards(t *testing.T) {
 	db := openDatabase(t, integrationDatabase.URL)
-	handler := newHandler(db, func(s *github.Settings) { s.WebhookConcurrency = 1 })
+	handler := newHandler(db, func(s *settings.Settings) { s.WebhookConcurrency = 1 })
 	started := make(chan struct{})
 	var once sync.Once
 	url := serve(t, http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {

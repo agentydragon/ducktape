@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/github/settings"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
@@ -46,7 +46,7 @@ type config struct {
 	HistoryService        peer          `mapstructure:"history_service"`
 	SessionDispatcher     peer          `mapstructure:"session_dispatcher"`
 	// GitHub is on when any of its settings is set.
-	GitHub github.Settings `mapstructure:"github"`
+	GitHub settings.Settings `mapstructure:"github"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
 	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
 	// WatchLeaseSeconds is how long a watch stream lasts before planned renewal.
@@ -135,7 +135,7 @@ func defaultConfig() config {
 		// A delivery reads a page of a Session's entries, which can be large.
 		HistoryService:        peer{RequestTimeoutSeconds: 20},
 		SessionDispatcher:     peer{RequestTimeoutSeconds: 15},
-		GitHub:                github.DefaultSettings(),
+		GitHub:                settings.DefaultSettings(),
 		RequestTimeoutSeconds: 15, WatchLeaseSeconds: 300,
 		MessageBodyLimitBytes: 32 * 1024,
 		// A wedged watch then refuses sends within three minutes; a healthy one costs a re-watch a minute.
@@ -184,7 +184,7 @@ func loadConfig() (config, error) {
 
 // githubEnabled is whether any GitHub setting differs from its default. The settings without a default are the
 // App's ID and secrets, so a block that sets nothing else is not one.
-func (c *config) githubEnabled() bool { return c.GitHub != github.DefaultSettings() }
+func (c *config) githubEnabled() bool { return c.GitHub != settings.DefaultSettings() }
 
 func (c *config) validate() error {
 	for _, required := range []struct{ name, value string }{

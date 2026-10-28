@@ -4,12 +4,14 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 func TestAMessageIsRefusedOutsideItsBounds(t *testing.T) {
 	const limit = 8
 	valid := Message{
-		DestinationRef: DestinationRef{Namespace: "test-namespace", Name: "test-sandbox"},
+		DestinationRef: model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox"},
 		SessionID:      "test-session", IdempotencyKey: "test-key", Body: "12345678",
 	}
 	if err := valid.Validate(limit); err != nil {
@@ -31,8 +33,8 @@ func TestAMessageIsRefusedOutsideItsBounds(t *testing.T) {
 	} {
 		message := valid
 		change(&message)
-		if err := message.Validate(limit); !errors.Is(err, ErrInvalid) {
-			t.Errorf("%s: error = %v, want ErrInvalid", name, err)
+		if err := message.Validate(limit); !errors.Is(err, model.ErrInvalid) {
+			t.Errorf("%s: error = %v, want model.ErrInvalid", name, err)
 		}
 	}
 }

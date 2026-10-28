@@ -14,6 +14,7 @@ import (
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -33,7 +34,7 @@ const (
 )
 
 // testOwner owns the inboxes: a Sandbox runs as the ServiceAccount of its own name.
-var testOwner = store.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
+var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation is testOwner as the Sandbox the destinations name.
 var testIncarnation = store.Owner{Account: testOwner, SandboxUID: testSandboxUID}
@@ -278,15 +279,15 @@ func (h *harness) step(t *testing.T) {
 	}
 }
 
-func destination() store.DestinationRef {
-	return store.DestinationRef{Namespace: testNamespace, Name: testSandbox, UID: testSandboxUID}
+func destination() model.DestinationRef {
+	return model.DestinationRef{Namespace: testNamespace, Name: testSandbox, UID: testSandboxUID}
 }
 
 func (h *harness) subscribeTo(t *testing.T, key string, request uuid.UUID) store.Subscription {
 	t.Helper()
-	subscription, err := h.store.Subscribe(t.Context(), testOwner, store.Subscribe{
+	subscription, err := h.store.Subscribe(t.Context(), testOwner, model.Subscribe{
 		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: key,
-		Source: store.ActionsSource{RequestID: request}, LifetimeDays: 7,
+		Source: model.ActionsSource{RequestID: request}, LifetimeDays: 7,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -309,7 +310,7 @@ func (h *harness) postponeSources(t *testing.T) {
 // does.
 func (h *harness) addEvents(t *testing.T, subscription store.Subscription, first, last int64) {
 	t.Helper()
-	request := subscription.Source.(store.ActionsSource).RequestID
+	request := subscription.Source.(model.ActionsSource).RequestID
 	for sequence := first; sequence <= last; sequence++ {
 		tx, err := h.db.BeginTx(t.Context(), nil)
 		if err != nil {
@@ -319,7 +320,7 @@ func (h *harness) addEvents(t *testing.T, subscription store.Subscription, first
 			t.Fatal(err)
 		}
 		if err := h.store.AppendEvent(t.Context(), tx, subscription.InboxID, subscription.ID,
-			store.ActionsEvent{RequestID: request, Sequence: sequence}, json.RawMessage(`{}`)); err != nil {
+			model.ActionsEvent{RequestID: request, Sequence: sequence}, json.RawMessage(`{}`)); err != nil {
 			t.Fatal(err)
 		}
 		if err := tx.Commit(); err != nil {

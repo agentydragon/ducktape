@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -226,7 +227,7 @@ func TestInstallationEventsInvalidateWhatWasLearnedUnderTheInstallation(t *testi
 	for _, event := range []string{"installation", "installation_repositories"} {
 		t.Run(event, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 			g.refreshSubject(t, sub.Subject, g.validate(t, g.access()))
 			// A refresh in flight holds a lease on each.
 			g.exec(t, `UPDATE github_repository_access SET claim = gen_random_uuid(), claim_until = now() + interval '30 seconds' WHERE app_id = $1`, g.app)
@@ -259,7 +260,7 @@ func TestInstallationEventStopsALeaseInFlightFromRecording(t *testing.T) {
 	for _, event := range []string{"installation", "installation_repositories"} {
 		t.Run(event, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 			access, err := g.state.Acquire(t.Context(), g.access())
 			if err != nil || access == nil {
 				t.Fatalf("lease = %v, %v", access, err)
@@ -273,7 +274,7 @@ func TestInstallationEventStopsALeaseInFlightFromRecording(t *testing.T) {
 
 			for name, lease := range map[string]*GitHubRefreshLease{"access": access, "subject": subject} {
 				var deferred *RefreshDeferredError
-				if err := g.state.Succeed(t.Context(), *lease, GitHubSuccess{}); !errors.As(err, &deferred) {
+				if err := completeEmptyRefresh(t.Context(), g.state, *lease); !errors.As(err, &deferred) {
 					t.Errorf("recording the %s refresh = %v, want it deferred", name, err)
 				}
 			}
@@ -284,7 +285,7 @@ func TestInstallationEventStopsALeaseInFlightFromRecording(t *testing.T) {
 			if err != nil || replacement == nil {
 				t.Fatalf("replacement lease = %v, %v", replacement, err)
 			}
-			if err := g.state.Succeed(t.Context(), *replacement, GitHubSuccess{}); err != nil {
+			if err := completeEmptyRefresh(t.Context(), g.state, *replacement); err != nil {
 				t.Fatal(err)
 			}
 			if again, err := g.state.Acquire(t.Context(), g.access()); err != nil || again != nil {
@@ -315,7 +316,7 @@ func (g githubFixture) wakeState(t *testing.T, sub githubSubscription) wakeState
 
 func TestIngestMakesTheAppsActiveSourcesDueAndLeavesOthersAlone(t *testing.T) {
 	g := newGitHubFixture(t)
-	source := g.source(PullRequestSubject{Number: 7})
+	source := g.source(model.PullRequestSubject{Number: 7})
 	idle := g.follow(t, source, "idle")
 	backedOff := g.followIn(t, otherDestination("backed-off"), source, "backed-off")
 	cancelled := g.followIn(t, otherDestination("cancelled"), source, "cancelled")
@@ -371,8 +372,8 @@ func TestIngestMakesTheAppsActiveSourcesDueAndLeavesOthersAlone(t *testing.T) {
 
 // otherDestination is another destination of the fixture's owner, for a subscription that must not share the
 // fixture's inbox.
-func otherDestination(name string) DestinationRef {
-	return DestinationRef{Namespace: "test-namespace", Name: name, UID: "test-uid"}
+func otherDestination(name string) model.DestinationRef {
+	return model.DestinationRef{Namespace: "test-namespace", Name: name, UID: "test-uid"}
 }
 
 func TestIngestWakesWorkersOnlyForADeliveryItStores(t *testing.T) {
@@ -488,7 +489,7 @@ func TestDeliveriesPythonStoredAreRecognisedAsRedeliveries(t *testing.T) {
 
 func TestGitHubRetentionDeletesReceiptsAndLinksButPreservesInboxCopies(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	delivered := g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("copied"))
 	claim := g.claimInbox(t, g.inbox)
 	if err := g.record(t, claim, g.prepare(t, sub)); err != nil {

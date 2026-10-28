@@ -14,6 +14,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/worker",
     deps = [
         "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/notification_service/model",
         "//agentplane/notification_service/store",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
@@ -48,6 +49,7 @@ go_test(
     deps = [
         "//agentplane/history_service:history_service_go_proto",
         "//agentplane/notification_service/migrations",
+        "//agentplane/notification_service/model",
         "//agentplane/notification_service/store",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",

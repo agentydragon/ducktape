@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	operatorpb "github.com/agentydragon/ducktape/agentplane/notification_service/notifications_operatorpb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
@@ -29,6 +30,7 @@ import (
 	"google.golang.org/grpc/status"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -111,7 +113,7 @@ func (r *fakeRunner) questions() []sandboxreader.Identity {
 }
 
 type actionsCall struct {
-	owner         store.ServiceAccount
+	owner         model.ServiceAccount
 	requestID     uuid.UUID
 	afterSequence int64
 }
@@ -123,7 +125,7 @@ type fakeActions struct {
 	calls []actionsCall
 }
 
-func (a *fakeActions) Events(_ context.Context, owner store.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
+func (a *fakeActions) Events(_ context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.calls = append(a.calls, actionsCall{owner: owner, requestID: requestID, afterSequence: afterSequence})
@@ -147,10 +149,10 @@ type fakeGitHub struct {
 	mu      sync.Mutex
 	access  store.GitHubAccessKey
 	err     error
-	sources []store.GitHubSource
+	sources []model.GitHubSource
 }
 
-func (g *fakeGitHub) Authorize(_ context.Context, source store.GitHubSource) (store.GitHubAccessKey, error) {
+func (g *fakeGitHub) Authorize(_ context.Context, source model.GitHubSource) (store.GitHubAccessKey, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.sources = append(g.sources, source)
@@ -163,10 +165,10 @@ func (g *fakeGitHub) failWith(err error) {
 	g.err = err
 }
 
-func (g *fakeGitHub) authorized() []store.GitHubSource {
+func (g *fakeGitHub) authorized() []model.GitHubSource {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return append([]store.GitHubSource(nil), g.sources...)
+	return append([]model.GitHubSource(nil), g.sources...)
 }
 
 // fakeHistory holds the Sandbox that wrote each Session.

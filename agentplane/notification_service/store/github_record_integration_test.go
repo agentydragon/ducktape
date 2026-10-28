@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -43,7 +44,7 @@ func (g githubFixture) claimHolder(t *testing.T) uuid.NullUUID {
 
 func TestRecordingAPageDeliversItAndSchedulesTheNextLook(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 	// A failure from an earlier attempt ends with the next success.
 	g.exec(t, `
@@ -97,7 +98,7 @@ func TestRecordingDoesNothingForASubscriptionThatMovedOn(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 			g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 			claim := g.claimInbox(t, g.inbox)
 			step := g.prepare(t, sub)
@@ -128,7 +129,7 @@ func TestRecordingNeedsTheClaimOfTheInbox(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 			g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 			claim := g.claimInbox(t, g.inbox)
 			step := g.prepare(t, sub)
@@ -149,7 +150,7 @@ func TestIngressAfterTheSnapshotLeavesTheSubscriptionDueAtOnce(t *testing.T) {
 	for name, deliverBefore := range map[string]bool{"a page with a match": true, "an empty page": false} {
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 			if deliverBefore {
 				g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("first"))
 			}
@@ -202,7 +203,7 @@ func TestAPageReadUnderAFenceThatNoLongerHoldsIsNotRecorded(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 			g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 			claim := g.claimInbox(t, g.inbox)
 			step := g.prepare(t, sub)
@@ -251,7 +252,7 @@ func (g githubFixture) expireAccessWhenAppended(t *testing.T) {
 
 func TestAGrantExpiringWhileAPageIsAppendedRollsTheWholePageBack(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("first"))
 	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("second"))
 	claim := g.claimInbox(t, g.inbox)
@@ -278,7 +279,7 @@ func TestAGrantExpiringWhileAPageIsAppendedRollsTheWholePageBack(t *testing.T) {
 func TestRecordingWakesWorkersOnlyWhenItChangesWhatTheyFollow(t *testing.T) {
 	g := newGitHubFixture(t)
 	check := observeWakeups(t, g.fixture)
-	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 	claim := g.claimInbox(t, g.inbox)
 	step := g.prepare(t, sub)
@@ -323,13 +324,13 @@ func TestDeliveriesPythonAlreadyRecordedAreNotRecordedAgain(t *testing.T) {
 				t.Fatal(err)
 			}
 			// The subject is one the event can be followed on.
-			var subject GitHubSubject = PullRequestSubject{Number: 7}
+			var subject model.GitHubSubject = model.PullRequestSubject{Number: 7}
 			about := onPullRequest(7)
 			switch {
-			case EventName(event) == EventIssues:
-				subject, about = IssueSubject{Number: 7}, onIssue(7)
-			case slices.Contains(refEvents, EventName(event)):
-				subject, about = BranchSubject{Name: "main"}, onBranch("main")
+			case model.EventName(event) == model.EventIssues:
+				subject, about = model.IssueSubject{Number: 7}, onIssue(7)
+			case slices.Contains(model.GitHubReferenceEvents(), model.EventName(event)):
+				subject, about = model.BranchSubject{Name: "main"}, onBranch("main")
 			}
 			options := func(label string) []deliveryOption {
 				options := []deliveryOption{about, labelled(label)}
@@ -340,7 +341,7 @@ func TestDeliveriesPythonAlreadyRecordedAreNotRecordedAgain(t *testing.T) {
 			}
 
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(subject, EventFilter{Event: EventName(event)}), "follow")
+			sub := g.follow(t, g.source(subject, model.EventFilter{Event: model.EventName(event)}), "follow")
 			delivery := g.deliver(t, event, options("recorded by Python")...)
 			// The entry Python wrote for this delivery: its identity with the ids this delivery has, the rest as Python
 			// wrote it.

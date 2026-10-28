@@ -10,38 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
 // GitHubDeliveryPageSize is how many deliveries one GitHubDeliveries call returns at most. A full page means
 // there may be more.
 const GitHubDeliveryPageSize = 128
-
-// Filters is the event filters a source selects with: the ones it names, or its subject's defaults.
-func (s GitHubSource) Filters() []EventFilter {
-	if s.Events != nil {
-		return s.Events
-	}
-	if _, ok := s.Subject.(IssueSubject); ok {
-		return unfiltered(issueEvents)
-	}
-	filters := []EventFilter{{Event: EventStatus}, {Event: EventCheckRun, Actions: []string{"completed"}}}
-	switch s.Subject.(type) {
-	case PullRequestSubject:
-		filters = append(filters, unfiltered(prEvents)...)
-	case BranchSubject:
-		filters = append(filters, unfiltered(refEvents)...)
-	}
-	return filters
-}
-
-func unfiltered(events []EventName) []EventFilter {
-	filters := make([]EventFilter, len(events))
-	for i, event := range events {
-		filters[i] = EventFilter{Event: event}
-	}
-	return filters
-}
 
 // GitHubMatch is what decides which stored deliveries a GitHub subscription is owed.
 type GitHubMatch struct {
@@ -50,7 +25,7 @@ type GitHubMatch struct {
 	AppID          int64
 	// Subject is the subject followed, in the repository the subscription is bound to.
 	Subject GitHubSubjectKey
-	Filters []EventFilter
+	Filters []model.EventFilter
 	// Observation selection controls raw suppression for native commit events. Explicit check-run action filters
 	// keep matching raw webhook actions and do not select generated check-run facts.
 	ObserveCheckRuns      bool
@@ -63,7 +38,7 @@ type GitHubMatch struct {
 // GitHubDelivery is a stored delivery that matched, with the identity of its entry.
 type GitHubDelivery struct {
 	Position int64
-	Event    GitHubEvent
+	Event    model.GitHubEvent
 	Payload  json.RawMessage
 }
 
@@ -101,9 +76,9 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 		}
 		if match.Subject.Kind == "pull_request" {
 			switch filter.Event {
-			case EventPullRequestReview:
+			case model.EventPullRequestReview:
 				selected[i] += " AND NOT d.pr_normalized"
-			case EventPullRequest:
+			case model.EventPullRequest:
 				if filter.Actions == nil {
 					selected[i] += " AND NOT d.pr_normalized"
 				} else {
@@ -113,8 +88,8 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 		}
 		selected[i] += ")"
 	}
-	ci := make([]string, len(ciEvents))
-	for i, event := range ciEvents {
+	ci := make([]string, len(model.GitHubCIEvents()))
+	for i, event := range model.GitHubCIEvents() {
 		ci[i] = args.add(string(event))
 	}
 	repository, kind, key := args.add(match.Subject.RepositoryID), args.add(match.Subject.Kind), args.add(match.Subject.Key)
@@ -173,7 +148,7 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 			&delivery.Event.RepositoryID, &event, &action, &payload); err != nil {
 			return nil, err
 		}
-		delivery.Event.Event = EventName(event)
+		delivery.Event.Event = model.EventName(event)
 		if action.Valid {
 			delivery.Event.Action = &action.String
 		}

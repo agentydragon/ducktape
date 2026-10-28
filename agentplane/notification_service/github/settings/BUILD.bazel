@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "settings",
+    srcs = ["settings.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/github/settings",
+    visibility = ["//agentplane/notification_service:__subpackages__"],
+    deps = [
+    ],
+)
+
+go_test(
+    name = "settings_test",
+    srcs = ["settings_test.go"],
+    embed = [":settings"],
+    deps = [
+        "@com_github_spf13_viper//:viper",
+    ],
+)

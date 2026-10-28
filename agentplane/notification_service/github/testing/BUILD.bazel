@@ -1,0 +1,12 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "testing",
+    testonly = True,
+    srcs = ["fake.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/github/testing",
+    visibility = ["//agentplane/notification_service:__subpackages__"],
+    deps = [
+        "//agentplane/notification_service/github/settings",
+    ],
+)

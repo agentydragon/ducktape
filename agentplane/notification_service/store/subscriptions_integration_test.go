@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -34,7 +35,7 @@ func TestOnlyActiveSubscriptionsConsumeInboxQuota(t *testing.T) {
 				quotas.ActiveSubscriptionsPerInbox = limit
 				f := newFixture(t, quotas)
 				base := body("slot-0")
-				keyed := func(key string) Subscribe {
+				keyed := func(key string) model.Subscribe {
 					creation := base
 					creation.IdempotencyKey = key
 					return creation
@@ -156,8 +157,10 @@ func TestConfiguredInboxAndEntryQuotas(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	request := first.Source.(ActionsSource).RequestID
-	event := func(sequence int64) EventIdentity { return ActionsEvent{RequestID: request, Sequence: sequence} }
+	request := first.Source.(model.ActionsSource).RequestID
+	event := func(sequence int64) model.EventIdentity {
+		return model.ActionsEvent{RequestID: request, Sequence: sequence}
+	}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(1), `{}`)
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event(2), `{}`)
 	// A replay of events the inbox holds needs no capacity.
@@ -204,10 +207,10 @@ func TestOwnerIdempotenceCancelAndVersion(t *testing.T) {
 		t.Fatalf("other = %+v", other)
 	}
 	otherRequest := first
-	otherRequest.Source = ActionsSource{RequestID: uuid.New()}
+	otherRequest.Source = model.ActionsSource{RequestID: uuid.New()}
 	afterSequence := first
-	afterSequence.Source = ActionsSource{RequestID: first.Source.(ActionsSource).RequestID, AfterSequence: 1}
-	for _, creation := range []Subscribe{otherRequest, afterSequence} {
+	afterSequence.Source = model.ActionsSource{RequestID: first.Source.(model.ActionsSource).RequestID, AfterSequence: 1}
+	for _, creation := range []model.Subscribe{otherRequest, afterSequence} {
 		if _, err := f.Subscribe(t.Context(), f.owner, creation, nil); !errors.Is(err, ErrIdempotencyKeyReused) {
 			t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
 		}
@@ -280,22 +283,22 @@ func TestSubscriptionsAreListedInPagesInIDOrder(t *testing.T) {
 func TestACreationBeyondItsBoundsIsRefused(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	creation := body("")
-	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("error = %v, want ErrInvalid", err)
+	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil); !errors.Is(err, model.ErrInvalid) {
+		t.Fatalf("error = %v, want model.ErrInvalid", err)
 	}
 	creation = body("lifetime")
 	creation.LifetimeDays = 31
-	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("error = %v, want ErrInvalid", err)
+	if _, err := f.Subscribe(t.Context(), f.owner, creation, nil); !errors.Is(err, model.ErrInvalid) {
+		t.Fatalf("error = %v, want model.ErrInvalid", err)
 	}
 	subscription := f.subscribe(t, body("renewed"))
 	for _, lifetimeDays := range []int64{0, 31} {
-		if _, err := f.Renew(t.Context(), f.incarnation(), subscription.ID, 1, lifetimeDays); !errors.Is(err, ErrInvalid) {
-			t.Fatalf("lifetime %d: error = %v, want ErrInvalid", lifetimeDays, err)
+		if _, err := f.Renew(t.Context(), f.incarnation(), subscription.ID, 1, lifetimeDays); !errors.Is(err, model.ErrInvalid) {
+			t.Fatalf("lifetime %d: error = %v, want model.ErrInvalid", lifetimeDays, err)
 		}
 	}
-	if _, err := f.Renew(t.Context(), f.incarnation(), subscription.ID, 0, 7); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("error = %v, want ErrInvalid", err)
+	if _, err := f.Renew(t.Context(), f.incarnation(), subscription.ID, 0, 7); !errors.Is(err, model.ErrInvalid) {
+		t.Fatalf("error = %v, want model.ErrInvalid", err)
 	}
 }
 

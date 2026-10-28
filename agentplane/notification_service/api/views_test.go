@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -23,9 +24,9 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	github := parsed.(store.GitHubSource)
-	if err := (store.Subscribe{
-		DestinationRef: store.DestinationRef{Namespace: "test-ns", Name: "test-sandbox", UID: "test-uid"},
+	github := parsed.(model.GitHubSource)
+	if err := (model.Subscribe{
+		DestinationRef: model.DestinationRef{Namespace: "test-ns", Name: "test-sandbox", UID: "test-uid"},
 		SessionID:      "test-session", IdempotencyKey: "mergeability", Source: github, LifetimeDays: 1,
 	}).Validate(); err != nil {
 		t.Fatalf("selector was refused: %v", err)
@@ -38,7 +39,7 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 		t.Errorf("source view = %v, want %v", view, requestSource)
 	}
 
-	identity, err := eventIdentityView(store.GitHubMergeabilityEvent{
+	identity, err := eventIdentityView(model.GitHubMergeabilityEvent{
 		AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Sequence: 3,
 	})
 	if err != nil {
@@ -54,7 +55,7 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 		t.Errorf("identity view = %v, want %v", identity, want)
 	}
 
-	snapshot, err := eventIdentityView(store.GitHubMergeabilitySnapshotEvent{
+	snapshot, err := eventIdentityView(model.GitHubMergeabilitySnapshotEvent{
 		AppID: 11, RepositoryID: 22, PullRequestNumber: 7, Version: 4,
 	})
 	if err != nil {
@@ -77,8 +78,8 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 }
 
 func TestGitHubObservationIdentityViewRoundTrips(t *testing.T) {
-	for _, event := range []store.EventName{store.EventCheckRun, store.EventStatus, store.EventPullRequestReview, store.EventPullRequest} {
-		identity, err := eventIdentityView(store.GitHubObservationEvent{
+	for _, event := range []model.EventName{model.EventCheckRun, model.EventStatus, model.EventPullRequestReview, model.EventPullRequest} {
+		identity, err := eventIdentityView(model.GitHubObservationEvent{
 			AppID: 11, RepositoryID: 22, Event: event, Sequence: 3,
 		})
 		if err != nil {
@@ -108,8 +109,8 @@ func TestGitHubObservationIdentityViewRoundTrips(t *testing.T) {
 			t.Errorf("protojson round trip = %v, want %v", &decoded, identity)
 		}
 	}
-	if _, err := eventIdentityView(store.GitHubObservationEvent{
-		AppID: 11, RepositoryID: 22, Event: store.EventIssues, Sequence: 4,
+	if _, err := eventIdentityView(model.GitHubObservationEvent{
+		AppID: 11, RepositoryID: 22, Event: model.EventIssues, Sequence: 4,
 	}); err == nil {
 		t.Fatal("view accepted an unsupported observation event")
 	}

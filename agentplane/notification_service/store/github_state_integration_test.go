@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/lib/pq"
 )
 
@@ -35,7 +36,7 @@ func TestRefreshOfASharedRowIsSingleFlight(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 			row := key(g, sub)
 
 			var wg sync.WaitGroup
@@ -67,7 +68,7 @@ func TestRefreshOfASharedRowIsSingleFlight(t *testing.T) {
 
 func TestExpiredLeaseIsTakenOverAndTheOldHolderRecordsNothing(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	key := g.access()
 
 	old, err := g.state.Acquire(t.Context(), key)
@@ -84,7 +85,7 @@ func TestExpiredLeaseIsTakenOverAndTheOldHolderRecordsNothing(t *testing.T) {
 	if err != nil || lease == nil {
 		t.Fatalf("lease after the first expired = %v, %v", lease, err)
 	}
-	requireDeferred(t, g.state.Succeed(t.Context(), *old, GitHubSuccess{}))
+	requireDeferred(t, completeEmptyRefresh(t.Context(), g.state, *old))
 	_, err = g.state.Fail(t.Context(), *old, FailureUnavailable, "stale failure", time.Minute)
 	requireDeferred(t, err)
 	if status := g.status(t, sub); status.Access[0].Failure != nil || status.Access[0].CurrentlyValid {
@@ -133,7 +134,7 @@ func TestExpiredLeaseIsTakenOverAndTheOldHolderRecordsNothing(t *testing.T) {
 	if err != nil || lease == nil {
 		t.Fatalf("lease after the third backoff = %v, %v", lease, err)
 	}
-	if err := g.state.Succeed(t.Context(), *lease, GitHubSuccess{}); err != nil {
+	if err := completeEmptyRefresh(t.Context(), g.state, *lease); err != nil {
 		t.Fatal(err)
 	}
 	healed := g.status(t, sub).Access[0]
@@ -168,7 +169,7 @@ func requireDeferredAcquire(t *testing.T, g githubFixture, key GitHubRefreshKey)
 
 func TestFreshRowsAreNotLeasedUntilTheyAreStale(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	base := g.validate(t, g.access())
 	g.refreshSubject(t, sub.Subject, base)
 
@@ -188,7 +189,7 @@ func TestFreshRowsAreNotLeasedUntilTheyAreStale(t *testing.T) {
 
 func TestSubjectRefreshIsNotRecordedUnderAGrantThatMovedOn(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	base := g.validate(t, g.access())
 	lease, err := g.state.Acquire(t.Context(), sub.Subject)
 	if err != nil || lease == nil {
@@ -198,15 +199,12 @@ func TestSubjectRefreshIsNotRecordedUnderAGrantThatMovedOn(t *testing.T) {
 	g.deliver(t, "installation", withAction("suspend"))
 
 	// The subject's lease died with the installation's event, and the fence it read under is no longer good.
-	requireDeferred(t, g.state.Succeed(t.Context(), *lease, GitHubSuccess{Fences: []GitHubAccessFence{base}}))
+	requireDeferred(t, g.state.CompleteSubject(t.Context(), *lease, []GitHubAccessFence{base}, GitHubSubjectObservation{}))
 	lease, err = g.state.Acquire(t.Context(), sub.Subject)
 	if err != nil || lease == nil {
 		t.Fatalf("lease = %v, %v", lease, err)
 	}
-	requireDeferred(t, g.state.Succeed(t.Context(), *lease, GitHubSuccess{
-		Fences:    []GitHubAccessFence{base},
-		Revisions: []GitHubHeadRevision{{Repository: GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA}},
-	}))
+	requireDeferred(t, g.state.CompleteSubject(t.Context(), *lease, []GitHubAccessFence{base}, GitHubSubjectObservation{Revisions: []model.GitHubHeadRevision{{Repository: model.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA}}}))
 	if got := g.count(t, `SELECT count(*) FROM github_subject_revision WHERE repository_id = $1`, g.repository); got != 0 {
 		t.Errorf("%d revisions recorded under a stale fence, want none", got)
 	}
@@ -214,13 +212,13 @@ func TestSubjectRefreshIsNotRecordedUnderAGrantThatMovedOn(t *testing.T) {
 
 func TestSuccessfulAccessRefreshRenamesTheRepository(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	lease, err := g.state.Acquire(t.Context(), g.access())
 	if err != nil || lease == nil {
 		t.Fatalf("lease = %v, %v", lease, err)
 	}
 	renamed := "test-owner/renamed"
-	if err := g.state.Succeed(t.Context(), *lease, GitHubSuccess{RepositoryName: &renamed}); err != nil {
+	if err := g.state.CompleteAccess(t.Context(), *lease, &renamed); err != nil {
 		t.Fatal(err)
 	}
 
@@ -228,7 +226,7 @@ func TestSuccessfulAccessRefreshRenamesTheRepository(t *testing.T) {
 		t.Errorf("repository named %q, want %q", name, renamed)
 	}
 	// The repository subscribed to is the numeric one: the name it was asked for is what was stored.
-	if source := g.get(t, sub.ID).Source.(GitHubSource); source.Repository != testRepositoryName {
+	if source := g.get(t, sub.ID).Source.(model.GitHubSource); source.Repository != testRepositoryName {
 		t.Errorf("subscription follows %q, want the name it was created with", source.Repository)
 	}
 	if !g.status(t, sub).Access[0].CurrentlyValid {
@@ -238,7 +236,7 @@ func TestSuccessfulAccessRefreshRenamesTheRepository(t *testing.T) {
 
 func TestSharedFailureFieldsAreConstrained(t *testing.T) {
 	g := newGitHubFixture(t)
-	g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	for _, row := range []struct {
 		table, where string
 		arg          int64
@@ -263,7 +261,7 @@ func TestSharedFailureFieldsAreConstrained(t *testing.T) {
 
 func TestSharedFailuresAreProjectedWithoutBeingCopiedIntoSubscriptions(t *testing.T) {
 	g := newGitHubFixture(t)
-	source := g.source(PullRequestSubject{Number: 7})
+	source := g.source(model.PullRequestSubject{Number: 7})
 	first, second := g.follow(t, source, "first"), g.follow(t, source, "second")
 	lease, err := g.state.Acquire(t.Context(), g.access())
 	if err != nil || lease == nil {
@@ -304,7 +302,7 @@ func TestSharedFailuresAreProjectedWithoutBeingCopiedIntoSubscriptions(t *testin
 
 func TestStatusNamesTheGrantsAHeadInAForkAdds(t *testing.T) {
 	g := newGitHubFixture(t)
-	sub := g.follow(t, g.source(PullRequestSubject{Number: 7}), "follow")
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	status := g.status(t, sub)
 	if len(status.Access) != 1 || status.Access[0].Key != g.access() || status.Subject.Key != sub.Subject {
 		t.Fatalf("status = %+v, want the repository's grant and the subject", status)
@@ -317,7 +315,7 @@ func TestStatusNamesTheGrantsAHeadInAForkAdds(t *testing.T) {
 	fork := g.grant(t, g.installation+1, forkRepository)
 	// A grant on a repository that holds no revision of the subject is not the subject's.
 	g.grant(t, g.installation+2, g.fork(2000))
-	g.addRevisions(t, sub.Subject, GitHubHeadRevision{Repository: forkRepository, SHA: commitA})
+	g.addRevisions(t, sub.Subject, model.GitHubHeadRevision{Repository: forkRepository, SHA: commitA})
 	g.validate(t, g.access())
 	forkLease, err := g.state.Acquire(t.Context(), fork)
 	if err != nil || forkLease == nil {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -21,13 +22,13 @@ func (s *Notifications) SendMessage(ctx context.Context, request *notificationsp
 
 // sendMessage accepts the message once the sender's current grants allow it to the Sandbox the destination names
 // now. Revoking a grant later never withdraws it.
-func (s *Notifications) sendMessage(ctx context.Context, sender store.ServiceAccount, request *notificationspb.SendMessageRequest) (*notificationspb.SendMessageResponse, error) {
+func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAccount, request *notificationspb.SendMessageRequest) (*notificationspb.SendMessageResponse, error) {
 	if request.GetDestinationRef() == nil {
 		return nil, invalidRequest("destination_ref is required")
 	}
 	message := store.Message{
 		Sender: sender,
-		DestinationRef: store.DestinationRef{
+		DestinationRef: model.DestinationRef{
 			Namespace: request.GetDestinationRef().GetNamespace(), Name: request.GetDestinationRef().GetName(),
 			UID: request.GetDestinationRef().GetUid(),
 		},
@@ -50,7 +51,7 @@ func (s *Notifications) sendMessage(ctx context.Context, sender store.ServiceAcc
 	sandbox := view.Identity
 	message.DestinationRef.UID = sandbox.UID
 	// A Sandbox runs as the ServiceAccount of its own name.
-	message.Recipient = store.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}
+	message.Recipient = model.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}
 	sent, err := s.store.Send(ctx, message)
 	if errors.Is(err, store.ErrNoInbox) {
 		if err := s.confirmSession(ctx, sandbox, message.SessionID); err != nil {
@@ -90,7 +91,7 @@ func (s *Notifications) GetMessage(ctx context.Context, request *notificationspb
 	return serve(ctx, s, request, s.getMessage)
 }
 
-func (s *Notifications) getMessage(ctx context.Context, sender store.ServiceAccount, request *notificationspb.GetMessageRequest) (*notificationspb.GetMessageResponse, error) {
+func (s *Notifications) getMessage(ctx context.Context, sender model.ServiceAccount, request *notificationspb.GetMessageRequest) (*notificationspb.GetMessageResponse, error) {
 	id, err := parseID("message_id", request.GetMessageId())
 	if err != nil {
 		return nil, err

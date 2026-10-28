@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -14,22 +15,22 @@ func prStateObservationEntries(t *testing.T, entries []Entry) []Entry {
 	t.Helper()
 	var observations []Entry
 	for _, entry := range entries {
-		if event, ok := entry.Event.(GitHubObservationEvent); ok &&
-			(event.Event == EventPullRequest || event.Event == EventPullRequestReview) {
+		if event, ok := entry.Event.(model.GitHubObservationEvent); ok &&
+			(event.Event == model.EventPullRequest || event.Event == model.EventPullRequestReview) {
 			observations = append(observations, entry)
 		}
 	}
 	return observations
 }
 
-func testPRReview(id int64, state GitHubReviewState, sha string) GitHubReviewObservation {
-	return GitHubReviewObservation{
-		ID: id, Reviewer: GitHubReviewer{ID: 41, Login: "reviewer"}, State: state,
+func testPRReview(id int64, state model.GitHubReviewState, sha string) model.GitHubReviewObservation {
+	return model.GitHubReviewObservation{
+		ID: id, Reviewer: model.GitHubReviewer{ID: 41, Login: "reviewer"}, State: state,
 		CommitSHA: sha, Body: "review body", HTMLURL: "https://github.com/test-owner/test-repo/pull/7#pullrequestreview-" + fmt.Sprint(id),
 	}
 }
 
-func (g githubFixture) pollReviews(t *testing.T, subject GitHubSubjectKey, reviews []GitHubReviewObservation) {
+func (g githubFixture) pollReviews(t *testing.T, subject GitHubSubjectKey, reviews []model.GitHubReviewObservation) {
 	t.Helper()
 	key := GitHubReviewRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: subject}
 	lease, err := g.state.Acquire(t.Context(), key)
@@ -49,25 +50,23 @@ func (g githubFixture) pollReviews(t *testing.T, subject GitHubSubjectKey, revie
 	if lease == nil {
 		t.Fatal("review refresh did not acquire after its durable deadline was advanced")
 	}
-	if err := g.state.Succeed(t.Context(), *lease, GitHubSuccess{
-		Fences: []GitHubAccessFence{g.validate(t, g.access())}, Reviews: reviews,
-	}); err != nil {
+	if err := g.state.CompleteReviews(t.Context(), *lease, []GitHubAccessFence{g.validate(t, g.access())}, reviews); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func reviewDelivery(g githubFixture, number int64, observation GitHubReviewObservation, action string) GitHubIngest {
+func reviewDelivery(g githubFixture, number int64, observation model.GitHubReviewObservation, action string) GitHubIngest {
 	observation.Action = &action
-	ingest := g.delivery(string(EventPullRequestReview), withAction(action), onPullRequest(number))
+	ingest := g.delivery(string(model.EventPullRequestReview), withAction(action), onPullRequest(number))
 	ingest.Review = &GitHubPRReviewObservation{PullRequestNumber: number, Review: observation}
 	return ingest
 }
 
-func lifecycleDelivery(g githubFixture, number int64, state GitHubPullRequestState, head, baseRef, action string) GitHubIngest {
-	observation := GitHubPRLifecycleObservation{
+func lifecycleDelivery(g githubFixture, number int64, state model.GitHubPullRequestState, head, baseRef, action string) GitHubIngest {
+	observation := model.GitHubPRLifecycleObservation{
 		PullRequestNumber: number, State: state, HeadSHA: head, BaseRef: baseRef, Action: &action,
 	}
-	ingest := g.delivery(string(EventPullRequest), withAction(action), onPullRequest(number))
+	ingest := g.delivery(string(model.EventPullRequest), withAction(action), onPullRequest(number))
 	ingest.Lifecycle = &observation
 	return ingest
 }
@@ -89,20 +88,20 @@ func TestGitHubPRReviewPollAndWebhookDeduplicateInEitherOrderAndSnapshotLateSubs
 		}
 		t.Run(name, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			source := g.source(PullRequestSubject{Number: 7}, EventFilter{Event: EventPullRequestReview})
+			source := g.source(model.PullRequestSubject{Number: 7}, model.EventFilter{Event: model.EventPullRequestReview})
 			first := g.follow(t, source, "review-first")
 			second := g.follow(t, source, "review-second")
-			g.observePullRequest(t, first, GitHubPullRequestObservation{
+			g.observePullRequest(t, first, model.GitHubPullRequestObservation{
 				BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-				State: GitHubPullRequestOpen, Mergeability: GitHubMergeabilityUnknown,
+				State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeabilityUnknown,
 			})
 
-			review := testPRReview(7001, ReviewApproved, commitB) // A review may refer to an older head.
+			review := testPRReview(7001, model.ReviewApproved, commitB) // A review may refer to an older head.
 			if webhookFirst {
 				g.ingest(t, reviewDelivery(g, 7, review, "submitted"))
-				g.pollReviews(t, first.Subject, []GitHubReviewObservation{review})
+				g.pollReviews(t, first.Subject, []model.GitHubReviewObservation{review})
 			} else {
-				g.pollReviews(t, first.Subject, []GitHubReviewObservation{review})
+				g.pollReviews(t, first.Subject, []model.GitHubReviewObservation{review})
 				g.ingest(t, reviewDelivery(g, 7, review, "submitted"))
 			}
 
@@ -118,11 +117,11 @@ func TestGitHubPRReviewPollAndWebhookDeduplicateInEitherOrderAndSnapshotLateSubs
 			if !hasSubscription(entries[0], first.ID) || !hasSubscription(entries[0], second.ID) {
 				t.Errorf("shared observation subscriptions = %v, want both subscribers", entries[0].SubscriptionIDs)
 			}
-			var payload GitHubReviewObservation
+			var payload model.GitHubReviewObservation
 			if err := json.Unmarshal(entries[0].Payload, &payload); err != nil {
 				t.Fatal(err)
 			}
-			if payload.ID != review.ID || payload.CommitSHA != commitB || payload.State != ReviewApproved {
+			if payload.ID != review.ID || payload.CommitSHA != commitB || payload.State != model.ReviewApproved {
 				t.Errorf("review observation = %+v, want review on its original commit", payload)
 			}
 			if got := g.count(t, `SELECT count(*) FROM subscription_match m JOIN entry e
@@ -139,8 +138,8 @@ func TestGitHubPRReviewPollAndWebhookDeduplicateInEitherOrderAndSnapshotLateSubs
 			if len(lateEntries) != 1 {
 				t.Fatalf("late current review snapshot = %d, want one", len(lateEntries))
 			}
-			if got, want := lateEntries[0].Event.(GitHubObservationEvent).Sequence,
-				entries[0].Event.(GitHubObservationEvent).Sequence; got != want {
+			if got, want := lateEntries[0].Event.(model.GitHubObservationEvent).Sequence,
+				entries[0].Event.(model.GitHubObservationEvent).Sequence; got != want {
 				t.Errorf("late snapshot sequence = %d, want current sequence %d", got, want)
 			}
 		})
@@ -149,29 +148,29 @@ func TestGitHubPRReviewPollAndWebhookDeduplicateInEitherOrderAndSnapshotLateSubs
 
 func TestGitHubPRReviewDismissalTransitionsAndActionFilters(t *testing.T) {
 	g := newGitHubFixture(t)
-	submittedSource := g.source(PullRequestSubject{Number: 7}, EventFilter{
-		Event: EventPullRequestReview, Actions: []string{"submitted"},
+	submittedSource := g.source(model.PullRequestSubject{Number: 7}, model.EventFilter{
+		Event: model.EventPullRequestReview, Actions: []string{"submitted"},
 	})
-	dismissedSource := g.source(PullRequestSubject{Number: 7}, EventFilter{
-		Event: EventPullRequestReview, Actions: []string{"dismissed"},
+	dismissedSource := g.source(model.PullRequestSubject{Number: 7}, model.EventFilter{
+		Event: model.EventPullRequestReview, Actions: []string{"dismissed"},
 	})
 	submitted := g.follow(t, submittedSource, "submitted-review")
 	dismissed := g.follow(t, dismissedSource, "dismissed-review")
-	g.observePullRequest(t, submitted, GitHubPullRequestObservation{
+	g.observePullRequest(t, submitted, model.GitHubPullRequestObservation{
 		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-		State: GitHubPullRequestOpen, Mergeability: GitHubMergeabilityUnknown,
+		State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeabilityUnknown,
 	})
 
-	approved := testPRReview(7002, ReviewApproved, commitB)
-	g.pollReviews(t, submitted.Subject, []GitHubReviewObservation{approved})
+	approved := testPRReview(7002, model.ReviewApproved, commitB)
+	g.pollReviews(t, submitted.Subject, []model.GitHubReviewObservation{approved})
 	g.reconcileSubscription(t, submitted)
 	g.reconcileSubscription(t, dismissed)
 	if got := len(prStateObservationEntries(t, g.read(t, g.inbox, 0).Entries)); got != 1 {
 		t.Fatalf("submitted-only review observations after approval = %d, want one", got)
 	}
 
-	dismissal := testPRReview(7002, ReviewDismissed, commitB)
-	g.pollReviews(t, submitted.Subject, []GitHubReviewObservation{dismissal})
+	dismissal := testPRReview(7002, model.ReviewDismissed, commitB)
+	g.pollReviews(t, submitted.Subject, []model.GitHubReviewObservation{dismissal})
 	g.reconcileSubscription(t, submitted)
 	g.reconcileSubscription(t, dismissed)
 	entries := prStateObservationEntries(t, g.read(t, g.inbox, 0).Entries)
@@ -180,16 +179,16 @@ func TestGitHubPRReviewDismissalTransitionsAndActionFilters(t *testing.T) {
 	}
 	var dismissedCount, submittedCount int
 	for _, entry := range entries {
-		var review GitHubReviewObservation
+		var review model.GitHubReviewObservation
 		if err := json.Unmarshal(entry.Payload, &review); err != nil {
 			t.Fatal(err)
 		}
-		if review.State == ReviewDismissed {
+		if review.State == model.ReviewDismissed {
 			dismissedCount++
 			if !hasSubscription(entry, dismissed.ID) || hasSubscription(entry, submitted.ID) {
 				t.Errorf("dismissed transition subscriptions = %v, want dismissed-only", entry.SubscriptionIDs)
 			}
-		} else if review.State == ReviewApproved {
+		} else if review.State == model.ReviewApproved {
 			submittedCount++
 			if !hasSubscription(entry, submitted.ID) || hasSubscription(entry, dismissed.ID) {
 				t.Errorf("submitted transition subscriptions = %v, want submitted-only", entry.SubscriptionIDs)
@@ -205,54 +204,54 @@ func TestGitHubPRReviewDismissalTransitionsAndActionFilters(t *testing.T) {
 
 	lateDestination := g.destination
 	lateDestination.Name = "dismissed-review-current"
-	late := g.followIn(t, lateDestination, g.source(PullRequestSubject{Number: 7},
-		EventFilter{Event: EventPullRequestReview}), "dismissed-current")
+	late := g.followIn(t, lateDestination, g.source(model.PullRequestSubject{Number: 7},
+		model.EventFilter{Event: model.EventPullRequestReview}), "dismissed-current")
 	g.reconcileSubscription(t, late)
 	lateEntries := prStateObservationEntries(t, g.read(t, late.InboxID, 0).Entries)
 	if len(lateEntries) != 1 {
 		t.Fatalf("late review current snapshot = %d, want one current fact", len(lateEntries))
 	}
-	var current GitHubReviewObservation
+	var current model.GitHubReviewObservation
 	if err := json.Unmarshal(lateEntries[0].Payload, &current); err != nil {
 		t.Fatal(err)
 	}
-	if current.State != ReviewDismissed || current.CommitSHA != commitB {
+	if current.State != model.ReviewDismissed || current.CommitSHA != commitB {
 		t.Errorf("late current review = %+v, want dismissed review on original commit", current)
 	}
 }
 
 func TestGitHubPRLifecyclePollRecoveryPreservesRealActions(t *testing.T) {
 	g := newGitHubFixture(t)
-	closedSource := g.source(PullRequestSubject{Number: 7}, EventFilter{
-		Event: EventPullRequest, Actions: []string{"closed"},
+	closedSource := g.source(model.PullRequestSubject{Number: 7}, model.EventFilter{
+		Event: model.EventPullRequest, Actions: []string{"closed"},
 	})
 	closedDestination := g.destination
 	closedDestination.Name = "closed-pr"
 	closed := g.followIn(t, closedDestination, closedSource, "closed-pr")
-	g.observePullRequest(t, closed, GitHubPullRequestObservation{
+	g.observePullRequest(t, closed, model.GitHubPullRequestObservation{
 		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-		State: GitHubPullRequestOpen, Mergeability: GitHubMergeabilityUnknown,
+		State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeabilityUnknown,
 	})
 	if got := g.count(t, `SELECT count(*) FROM github_pr_state_event WHERE repository_id = $1 AND pull_request_number = 7`, g.repository); got != 0 {
 		t.Fatalf("initial API OPEN state emitted %d lifecycle events, want quiet baseline", got)
 	}
 
 	// The poll catches a close whose webhook was missed and infers the action from the prior OPEN state.
-	g.observePullRequest(t, closed, GitHubPullRequestObservation{
+	g.observePullRequest(t, closed, model.GitHubPullRequestObservation{
 		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-		State: GitHubPullRequestClosed, Mergeability: GitHubMergeabilityUnknown,
+		State: model.GitHubPullRequestClosed, Mergeability: model.GitHubMergeabilityUnknown,
 	})
-	g.ingest(t, lifecycleDelivery(g, 7, GitHubPullRequestClosed, commitA, "main", "closed"))
+	g.ingest(t, lifecycleDelivery(g, 7, model.GitHubPullRequestClosed, commitA, "main", "closed"))
 	g.reconcileSubscription(t, closed)
 	closedEntries := prStateObservationEntries(t, g.read(t, closed.InboxID, 0).Entries)
 	if len(closedEntries) != 1 {
 		t.Fatalf("recovered closed lifecycle entries = %d, want one", len(closedEntries))
 	}
-	var closedPayload GitHubPRLifecycleObservation
+	var closedPayload model.GitHubPRLifecycleObservation
 	if err := json.Unmarshal(closedEntries[0].Payload, &closedPayload); err != nil {
 		t.Fatal(err)
 	}
-	if closedPayload.State != GitHubPullRequestClosed || closedPayload.Action == nil || *closedPayload.Action != "closed" {
+	if closedPayload.State != model.GitHubPullRequestClosed || closedPayload.Action == nil || *closedPayload.Action != "closed" {
 		t.Errorf("recovered lifecycle payload = %+v, want closed action", closedPayload)
 	}
 	if got := g.count(t, `SELECT count(*) FROM subscription_match m JOIN entry e
@@ -263,17 +262,17 @@ func TestGitHubPRLifecyclePollRecoveryPreservesRealActions(t *testing.T) {
 
 	// A same-state reopened webhook after an initial OPEN baseline is not represented by a transition,
 	// so its real action remains available to an action-filtered subscriber.
-	reopenedSource := g.source(PullRequestSubject{Number: 8}, EventFilter{
-		Event: EventPullRequest, Actions: []string{"reopened"},
+	reopenedSource := g.source(model.PullRequestSubject{Number: 8}, model.EventFilter{
+		Event: model.EventPullRequest, Actions: []string{"reopened"},
 	})
 	reopenedDestination := g.destination
 	reopenedDestination.Name = "reopened-pr"
 	reopened := g.followIn(t, reopenedDestination, reopenedSource, "reopened-pr")
-	g.observePullRequest(t, reopened, GitHubPullRequestObservation{
+	g.observePullRequest(t, reopened, model.GitHubPullRequestObservation{
 		BaseRef: "main", HeadSHA: commitC, BaseSHA: commitB,
-		State: GitHubPullRequestOpen, Mergeability: GitHubMergeabilityUnknown,
+		State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeabilityUnknown,
 	})
-	g.ingest(t, lifecycleDelivery(g, 8, GitHubPullRequestOpen, commitC, "main", "reopened"))
+	g.ingest(t, lifecycleDelivery(g, 8, model.GitHubPullRequestOpen, commitC, "main", "reopened"))
 	g.reconcileSubscription(t, reopened)
 	if got := len(prStateObservationEntries(t, g.read(t, reopened.InboxID, 0).Entries)); got != 0 {
 		t.Errorf("same-state reopened generated observations = %d, want zero", got)
@@ -293,9 +292,9 @@ func TestGitHubReviewLeaseIsFencedByPRChangeAndInstallationRevocation(t *testing
 		{
 			name: "pull request lifecycle change",
 			act: func(t *testing.T, g githubFixture, sub githubSubscription) {
-				g.observePullRequest(t, sub, GitHubPullRequestObservation{
+				g.observePullRequest(t, sub, model.GitHubPullRequestObservation{
 					BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-					State: GitHubPullRequestClosed, Mergeability: GitHubMergeabilityUnknown,
+					State: model.GitHubPullRequestClosed, Mergeability: model.GitHubMergeabilityUnknown,
 				})
 			},
 		},
@@ -308,10 +307,10 @@ func TestGitHubReviewLeaseIsFencedByPRChangeAndInstallationRevocation(t *testing
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			g := newGitHubFixture(t)
-			sub := g.follow(t, g.source(PullRequestSubject{Number: 7}, EventFilter{Event: EventPullRequestReview}), "fenced-reviews")
-			g.observePullRequest(t, sub, GitHubPullRequestObservation{
+			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}, model.EventFilter{Event: model.EventPullRequestReview}), "fenced-reviews")
+			g.observePullRequest(t, sub, model.GitHubPullRequestObservation{
 				BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-				State: GitHubPullRequestOpen, Mergeability: GitHubMergeabilityUnknown,
+				State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeabilityUnknown,
 			})
 			key := GitHubReviewRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: sub.Subject}
 			lease, err := g.state.Acquire(t.Context(), key)
@@ -319,10 +318,7 @@ func TestGitHubReviewLeaseIsFencedByPRChangeAndInstallationRevocation(t *testing
 				t.Fatalf("review lease = %v, %v", lease, err)
 			}
 			test.act(t, g, sub)
-			err = g.state.Succeed(t.Context(), *lease, GitHubSuccess{
-				Fences:  []GitHubAccessFence{g.validate(t, g.access())},
-				Reviews: []GitHubReviewObservation{testPRReview(7003, ReviewApproved, commitB)},
-			})
+			err = g.state.CompleteReviews(t.Context(), *lease, []GitHubAccessFence{g.validate(t, g.access())}, []model.GitHubReviewObservation{testPRReview(7003, model.ReviewApproved, commitB)})
 			var deferred *RefreshDeferredError
 			if !errors.As(err, &deferred) {
 				t.Fatalf("stale review success error = %v, want deferred write fence", err)
@@ -338,19 +334,19 @@ func TestGitHubReviewLeaseIsFencedByPRChangeAndInstallationRevocation(t *testing
 
 func TestGitHubPRStateRetentionKeepsCurrentAndInboxCopies(t *testing.T) {
 	g := newGitHubFixture(t)
-	source := g.source(PullRequestSubject{Number: 7}, EventFilter{Event: EventPullRequestReview})
+	source := g.source(model.PullRequestSubject{Number: 7}, model.EventFilter{Event: model.EventPullRequestReview})
 	sub := g.follow(t, source, "retained-review")
-	g.observePullRequest(t, sub, GitHubPullRequestObservation{
+	g.observePullRequest(t, sub, model.GitHubPullRequestObservation{
 		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
-		State: GitHubPullRequestOpen, Mergeability: GitHubMergeabilityUnknown,
+		State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeabilityUnknown,
 	})
-	g.pollReviews(t, sub.Subject, []GitHubReviewObservation{testPRReview(7004, ReviewCommented, commitB)})
+	g.pollReviews(t, sub.Subject, []model.GitHubReviewObservation{testPRReview(7004, model.ReviewCommented, commitB)})
 	g.reconcileSubscription(t, sub)
 	before := prStateObservationEntries(t, g.read(t, sub.InboxID, 0).Entries)
 	if len(before) != 1 {
 		t.Fatalf("pre-retention inbox observations = %d, want one", len(before))
 	}
-	sequence := before[0].Event.(GitHubObservationEvent).Sequence
+	sequence := before[0].Event.(model.GitHubObservationEvent).Sequence
 	if err := g.CleanupGitHubDeliveries(t.Context(), now().Add(24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +369,7 @@ func TestGitHubPRStateRetentionKeepsCurrentAndInboxCopies(t *testing.T) {
 	late := g.followIn(t, lateDestination, source, "late-after-retention")
 	g.reconcileSubscription(t, late)
 	lateEntries := prStateObservationEntries(t, g.read(t, late.InboxID, 0).Entries)
-	if len(lateEntries) != 1 || lateEntries[0].Event.(GitHubObservationEvent).Sequence != sequence {
+	if len(lateEntries) != 1 || lateEntries[0].Event.(model.GitHubObservationEvent).Sequence != sequence {
 		t.Errorf("late post-retention snapshots = %+v, want current identity sequence %d", lateEntries, sequence)
 	}
 }

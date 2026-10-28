@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"google.golang.org/grpc/codes"
@@ -20,7 +21,7 @@ func TestFailureAnswersEachTypedErrorWithTheStatusCodeTheProtoNames(t *testing.T
 		err  error
 		want codes.Code
 	}{
-		{"invalid request", fmt.Errorf("%w: limit must be 1 to 128", store.ErrInvalid), codes.InvalidArgument},
+		{"invalid request", fmt.Errorf("%w: limit must be 1 to 128", model.ErrInvalid), codes.InvalidArgument},
 		{"missing or foreign resource", store.ErrNotFound, codes.NotFound},
 		{"wrapped missing resource", fmt.Errorf("renew: %w", store.ErrNotFound), codes.NotFound},
 		{"destination Sandbox", errSandboxMissing, codes.NotFound},

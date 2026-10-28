@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -34,7 +35,7 @@ func defaultQuotas() Quotas {
 type fixture struct {
 	*Store
 	db         *sql.DB
-	owner      ServiceAccount
+	owner      model.ServiceAccount
 	sandboxUID string
 }
 
@@ -48,8 +49,8 @@ func newFixture(t *testing.T, quotas Quotas) fixture {
 	return fixture{Store: New(db, quotas), db: db, owner: newOwner(), sandboxUID: testSandboxUID}
 }
 
-func newOwner() ServiceAccount {
-	return ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
+func newOwner() model.ServiceAccount {
+	return model.ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
 }
 
 // testSandboxUID is the Sandbox incarnation body's destination names.
@@ -62,17 +63,17 @@ func (f fixture) incarnation() Owner {
 
 // body is a creation following one Action request, for the fixture's one Session. Copies keep the request and
 // change what they set.
-func body(key string) Subscribe {
-	return Subscribe{
-		DestinationRef: DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID},
+func body(key string) model.Subscribe {
+	return model.Subscribe{
+		DestinationRef: model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID},
 		SessionID:      "test-session",
 		IdempotencyKey: key,
-		Source:         ActionsSource{RequestID: uuid.New()},
+		Source:         model.ActionsSource{RequestID: uuid.New()},
 		LifetimeDays:   7,
 	}
 }
 
-func (f fixture) subscribe(t *testing.T, creation Subscribe) Subscription {
+func (f fixture) subscribe(t *testing.T, creation model.Subscribe) Subscription {
 	t.Helper()
 	subscription, err := f.Subscribe(t.Context(), f.owner, creation, nil)
 	if err != nil {
@@ -127,7 +128,7 @@ func (f fixture) acknowledge(t *testing.T, inboxID uuid.UUID, through int64) Inb
 }
 
 // appendEvent commits one event of a subscription to its inbox, as a source worker does: with the inbox locked.
-func (f fixture) appendEvent(inboxID, subscriptionID uuid.UUID, event EventIdentity, payload string) error {
+func (f fixture) appendEvent(inboxID, subscriptionID uuid.UUID, event model.EventIdentity, payload string) error {
 	ctx := context.Background()
 	return f.transaction(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM inbox WHERE id = $1 FOR UPDATE`, inboxID); err != nil {
@@ -137,7 +138,7 @@ func (f fixture) appendEvent(inboxID, subscriptionID uuid.UUID, event EventIdent
 	})
 }
 
-func (f fixture) mustAppendEvent(t *testing.T, inboxID, subscriptionID uuid.UUID, event EventIdentity, payload string) {
+func (f fixture) mustAppendEvent(t *testing.T, inboxID, subscriptionID uuid.UUID, event model.EventIdentity, payload string) {
 	t.Helper()
 	if err := f.appendEvent(inboxID, subscriptionID, event, payload); err != nil {
 		t.Fatal(err)

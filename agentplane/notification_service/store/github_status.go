@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 // GitHubRefreshStatus is the refresh state of a shared row, which every subscription reading through it sees.
@@ -72,7 +74,7 @@ func (row refreshRow) status() (GitHubRefreshStatus, error) {
 
 // loadGitHubStatus fills the status of a GitHub subscription, and leaves any other untouched.
 func loadGitHubStatus(ctx context.Context, q querier, subscription *Subscription) error {
-	if _, ok := subscription.Source.(GitHubSource); !ok {
+	if _, ok := subscription.Source.(model.GitHubSource); !ok {
 		return nil
 	}
 	var app, installation, repository int64
@@ -140,7 +142,7 @@ func loadGitHubStatus(ctx context.Context, q querier, subscription *Subscription
 		return err
 	}
 	if subject.Kind == "pull_request" {
-		for _, event := range []EventName{EventCheckRun, EventStatus} {
+		for _, event := range []model.EventName{model.EventCheckRun, model.EventStatus} {
 			row, err := loadRefresh(ctx, q, GitHubCommitRefreshKey{
 				AppID: app, InstallationID: installation, Subject: subject, Event: event,
 			})
@@ -152,7 +154,7 @@ func loadGitHubStatus(ctx context.Context, q querier, subscription *Subscription
 				if err != nil {
 					return err
 				}
-				if event == EventCheckRun {
+				if event == model.EventCheckRun {
 					status.CheckRuns = &refresh
 				} else {
 					status.CommitStatuses = &refresh

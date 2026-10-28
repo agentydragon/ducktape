@@ -6,18 +6,20 @@ import (
 	"net/http"
 	"testing"
 
+	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/github/testing" // Shared fake API server; avoids colliding with Go testing.
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 )
 
 const reviewsPath = "/repos/owner/repo/pulls/7/reviews"
 
 func reviewList(state string) string {
-	return fmt.Sprintf(`[{"id":31,"user":{"id":101,"login":"reviewer"},"state":%q,"commit_id":%q,"submitted_at":"2026-10-27T01:02:03Z","body":"review","html_url":"https://github.example.test/reviews/31"}]`, state, testBaseSHA)
+	return fmt.Sprintf(`[{"id":31,"user":{"id":101,"login":"reviewer"},"state":%q,"commit_id":%q,"submitted_at":"2026-10-27T01:02:03Z","body":"review","html_url":"https://github.example.test/reviews/31"}]`, state, fixture.BaseSHA)
 }
 
 func TestReviewsRepairAMissedWebhookAfterRestartAndShareTheRead(t *testing.T) {
 	h := newHarness(t)
-	source := pullRequestSource(7, store.EventFilter{Event: store.EventPullRequestReview})
+	source := pullRequestSource(7, model.EventFilter{Event: model.EventPullRequestReview})
 	first := h.follow(source, "first")
 	second := h.follow(source, "second")
 	claim := h.claim()
@@ -25,7 +27,7 @@ func TestReviewsRepairAMissedWebhookAfterRestartAndShareTheRead(t *testing.T) {
 	if entries := h.page(first.InboxID).Entries; len(entries) != 0 {
 		t.Fatalf("initial entries = %d, want no reviews", len(entries))
 	}
-	h.fake.respond(reviewsPath, http.StatusOK, nil, reviewList("APPROVED"))
+	h.fake.Respond(reviewsPath, http.StatusOK, nil, reviewList("APPROVED"))
 	h.exec(`UPDATE github_review_refresh SET last_success_at = now() - interval '20 minutes'`)
 	h.exec(`UPDATE subscription SET next_attempt = now()`)
 	h.restart()
@@ -34,22 +36,22 @@ func TestReviewsRepairAMissedWebhookAfterRestartAndShareTheRead(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("entries = %d, want one recovered review", len(entries))
 	}
-	event, ok := entries[0].Event.(store.GitHubObservationEvent)
-	if !ok || event.Event != store.EventPullRequestReview || event.Sequence <= 0 {
+	event, ok := entries[0].Event.(model.GitHubObservationEvent)
+	if !ok || event.Event != model.EventPullRequestReview || event.Sequence <= 0 {
 		t.Fatalf("identity = %#v, want review observation", entries[0].Event)
 	}
 	requireEqual(t, entries[0].SubscriptionIDs, sortedIDs(first.ID, second.ID))
-	var review store.GitHubReviewObservation
+	var review model.GitHubReviewObservation
 	if err := json.Unmarshal(entries[0].Payload, &review); err != nil {
 		t.Fatal(err)
 	}
-	if review.ID != 31 || review.Reviewer.ID != 101 || review.State != store.ReviewApproved || review.CommitSHA != testBaseSHA {
+	if review.ID != 31 || review.Reviewer.ID != 101 || review.State != model.ReviewApproved || review.CommitSHA != fixture.BaseSHA {
 		t.Fatalf("review = %+v, want original review identity and evaluated older commit", review)
 	}
-	if got := h.fake.count(reviewsPath); got != 2 {
+	if got := h.fake.Count(reviewsPath); got != 2 {
 		t.Fatalf("review reads = %d, want initial plus one shared refresh", got)
 	}
-	h.fake.respond(reviewsPath, http.StatusOK, nil, reviewList("DISMISSED"))
+	h.fake.Respond(reviewsPath, http.StatusOK, nil, reviewList("DISMISSED"))
 	h.exec(`UPDATE github_review_refresh SET last_success_at = now() - interval '20 minutes'`)
 	h.exec(`UPDATE subscription SET next_attempt = now()`)
 	h.reconcileAll(claim)
@@ -61,8 +63,8 @@ func TestReviewsRepairAMissedWebhookAfterRestartAndShareTheRead(t *testing.T) {
 func TestReviewPermissionFailureDoesNotBlockCommentsOrCommitResources(t *testing.T) {
 	h := newHarness(t)
 	subscription := h.follow(pullRequestSource(7), "follow")
-	h.fake.respond(reviewsPath, http.StatusForbidden, nil, `{"message":"Resource not accessible by integration"}`)
-	h.fake.respond(checkRunsPath, http.StatusOK, nil, completedCheckRun(31))
+	h.fake.Respond(reviewsPath, http.StatusForbidden, nil, `{"message":"Resource not accessible by integration"}`)
+	h.fake.Respond(checkRunsPath, http.StatusOK, nil, completedCheckRun(31))
 	h.ingest("issue_comment", comment(7))
 	h.reconcileAll(h.claim())
 	if got := len(h.page(subscription.InboxID).Entries); got != 2 {
@@ -79,14 +81,14 @@ func TestReviewPermissionFailureDoesNotBlockCommentsOrCommitResources(t *testing
 
 func TestLifecycleRepairsMissedCloseAndReopenWithActionFilters(t *testing.T) {
 	h := newHarness(t)
-	subscription := h.follow(pullRequestSource(7, store.EventFilter{Event: store.EventPullRequest, Actions: []string{"closed", "reopened"}}), "lifecycle")
+	subscription := h.follow(pullRequestSource(7, model.EventFilter{Event: model.EventPullRequest, Actions: []string{"closed", "reopened"}}), "lifecycle")
 	claim := h.claim()
 	h.reconcileAll(claim)
 	if got := len(h.page(subscription.InboxID).Entries); got != 0 {
 		t.Fatalf("initial OPEN emitted %d entries, want quiet baseline", got)
 	}
 	for i, state := range []string{"closed", "open"} {
-		h.fake.respond("/repos/owner/repo/pulls/7", http.StatusOK, nil, fmt.Sprintf(`{"number":7,"state":%q,"merged":false,"base":{"ref":"main","sha":%q},"mergeable":null,"head":{"sha":%q,"repo":{"id":100,"full_name":"owner/repo"}}}`, state, testBaseSHA, testSHA))
+		h.fake.Respond("/repos/owner/repo/pulls/7", http.StatusOK, nil, fmt.Sprintf(`{"number":7,"state":%q,"merged":false,"base":{"ref":"main","sha":%q},"mergeable":null,"head":{"sha":%q,"repo":{"id":100,"full_name":"owner/repo"}}}`, state, fixture.BaseSHA, fixture.SHA))
 		h.exec(`UPDATE github_subject SET last_success_at = now() - interval '20 minutes', next_attempt = NULL`)
 		h.exec(`UPDATE subscription SET next_attempt = now()`)
 		h.restart()
@@ -95,7 +97,7 @@ func TestLifecycleRepairsMissedCloseAndReopenWithActionFilters(t *testing.T) {
 		if len(entries) != i+1 {
 			t.Fatalf("after %s: entries = %d, want %d", state, len(entries), i+1)
 		}
-		if event, ok := entries[i].Event.(store.GitHubObservationEvent); !ok || event.Event != store.EventPullRequest {
+		if event, ok := entries[i].Event.(model.GitHubObservationEvent); !ok || event.Event != model.EventPullRequest {
 			t.Fatalf("lifecycle identity = %#v", entries[i].Event)
 		}
 	}
@@ -103,10 +105,10 @@ func TestLifecycleRepairsMissedCloseAndReopenWithActionFilters(t *testing.T) {
 
 func TestMergedLifecycleRepairDeduplicatesALateWebhook(t *testing.T) {
 	h := newHarness(t)
-	subscription := h.follow(pullRequestSource(7, store.EventFilter{Event: store.EventPullRequest}), "lifecycle")
+	subscription := h.follow(pullRequestSource(7, model.EventFilter{Event: model.EventPullRequest}), "lifecycle")
 	claim := h.claim()
 	h.reconcileAll(claim)
-	h.fake.respond("/repos/owner/repo/pulls/7", http.StatusOK, nil, fmt.Sprintf(`{"number":7,"state":"closed","merged":true,"base":{"ref":"main","sha":%q},"mergeable":null,"head":{"sha":%q,"repo":{"id":100,"full_name":"owner/repo"}}}`, testBaseSHA, testSHA))
+	h.fake.Respond("/repos/owner/repo/pulls/7", http.StatusOK, nil, fmt.Sprintf(`{"number":7,"state":"closed","merged":true,"base":{"ref":"main","sha":%q},"mergeable":null,"head":{"sha":%q,"repo":{"id":100,"full_name":"owner/repo"}}}`, fixture.BaseSHA, fixture.SHA))
 	h.exec(`UPDATE github_subject SET last_success_at = now() - interval '20 minutes', next_attempt = NULL`)
 	h.exec(`UPDATE subscription SET next_attempt = now()`)
 	h.restart()
@@ -115,11 +117,11 @@ func TestMergedLifecycleRepairDeduplicatesALateWebhook(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("entries = %d, want recovered merge", len(entries))
 	}
-	var lifecycle store.GitHubPRLifecycleObservation
+	var lifecycle model.GitHubPRLifecycleObservation
 	if err := json.Unmarshal(entries[0].Payload, &lifecycle); err != nil {
 		t.Fatal(err)
 	}
-	if lifecycle.State != store.GitHubPullRequestMerged || lifecycle.Action == nil || *lifecycle.Action != "closed" {
+	if lifecycle.State != model.GitHubPullRequestMerged || lifecycle.Action == nil || *lifecycle.Action != "closed" {
 		t.Fatalf("lifecycle = %+v, want MERGED with closed action", lifecycle)
 	}
 	h.ingest("pull_request", map[string]any{
@@ -127,7 +129,7 @@ func TestMergedLifecycleRepairDeduplicatesALateWebhook(t *testing.T) {
 		"repository": repositoryPayload(baseRepository, baseRepositoryName),
 		"pull_request": map[string]any{
 			"number": 7, "state": "closed", "merged": true,
-			"head": map[string]any{"sha": testSHA}, "base": map[string]any{"ref": "main"},
+			"head": map[string]any{"sha": fixture.SHA}, "base": map[string]any{"ref": "main"},
 		},
 	})
 	h.reconcileAll(claim)

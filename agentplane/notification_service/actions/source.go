@@ -11,6 +11,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
@@ -40,7 +41,7 @@ var _ worker.Provider = (*Source)(nil)
 //
 // The subscription servicer calls it when a subscription is created and shows an access denied failure as
 // PERMISSION_DENIED: authorization precedes persistence even when replay starts after the last event.
-func (s *Source) Events(ctx context.Context, owner store.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
+func (s *Source) Events(ctx context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]store.ActionEvent, error) {
 	request, err := s.Service.GetActionRequest(ctx, &action_servicepb.GetActionRequestRequest{RequestId: requestID.String()})
 	if err != nil {
 		return nil, rpcFailure(ctx, err)
@@ -80,7 +81,7 @@ func (s *Source) Events(ctx context.Context, owner store.ServiceAccount, request
 // Reconcile reads the next page of events of the subscription's Action request, and records the ones it has not
 // recorded yet, so a long log takes several reads.
 func (s *Source) Reconcile(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
-	request, ok := due.Source.(store.ActionsSource)
+	request, ok := due.Source.(model.ActionsSource)
 	if !ok || due.ActionsAfterSequence == nil {
 		return fmt.Errorf("subscription %s is not an Actions subscription", due.ID)
 	}
@@ -95,11 +96,11 @@ func (s *Source) Reconcile(ctx context.Context, claim store.Claim, due store.Due
 	return err
 }
 
-func serviceAccount(account *sandboxespb.ServiceAccount) (store.ServiceAccount, error) {
+func serviceAccount(account *sandboxespb.ServiceAccount) (model.ServiceAccount, error) {
 	if account == nil || account.GetNamespace() == "" || account.GetName() == "" {
-		return store.ServiceAccount{}, validationFailure()
+		return model.ServiceAccount{}, validationFailure()
 	}
-	return store.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}, nil
+	return model.ServiceAccount{Namespace: account.GetNamespace(), Name: account.GetName()}, nil
 }
 
 func actionEvent(event *action_servicepb.ActionEvent) (store.ActionEvent, error) {

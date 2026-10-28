@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 )
 
@@ -46,14 +47,12 @@ func storedActionState(state action_servicepb.ActionState) (string, bool) {
 
 var errInvalidActionActor = errors.New("invalid Action actor")
 
-func (a ServiceAccount) validate() error {
-	if a.Namespace == "" || a.Name == "" {
-		return errors.New("a ServiceAccount needs a namespace and a name")
-	}
-	return nil
+type actionActorAccount struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
 }
 
-func (a *ServiceAccount) UnmarshalJSON(data []byte) error {
+func (a *actionActorAccount) UnmarshalJSON(data []byte) error {
 	var wire struct {
 		Namespace *string `json:"namespace"`
 		Name      *string `json:"name"`
@@ -64,11 +63,14 @@ func (a *ServiceAccount) UnmarshalJSON(data []byte) error {
 	if err := errors.Join(required("namespace", wire.Namespace != nil), required("name", wire.Name != nil)); err != nil {
 		return err
 	}
-	*a = ServiceAccount{Namespace: *wire.Namespace, Name: *wire.Name}
-	return a.validate()
+	*a = actionActorAccount{Namespace: *wire.Namespace, Name: *wire.Name}
+	if a.Namespace == "" || a.Name == "" {
+		return errors.New("a ServiceAccount needs a namespace and a name")
+	}
+	return nil
 }
 
-func (a ServiceAccount) Proto() *sandboxespb.ServiceAccount {
+func serviceAccountProto(a model.ServiceAccount) *sandboxespb.ServiceAccount {
 	return &sandboxespb.ServiceAccount{Namespace: a.Namespace, Name: a.Name}
 }
 
@@ -79,7 +81,9 @@ func validateActionActor(principal *action_servicepb.Principal) error {
 	}
 	switch identity := principal.GetPrincipal().(type) {
 	case *action_servicepb.Principal_Caller:
-		if err := (ServiceAccount{Namespace: identity.Caller.GetNamespace(), Name: identity.Caller.GetName()}).validate(); err != nil {
+		account := identity.Caller
+		if account == nil || account.GetNamespace() == "" || account.GetName() == "" {
+			err := errors.New("a ServiceAccount needs a namespace and a name")
 			return fmt.Errorf("invalid caller actor: %w: %v", errInvalidActionActor, err)
 		}
 	case *action_servicepb.Principal_Operator:
@@ -103,8 +107,8 @@ func encodeActionActor(principal *action_servicepb.Principal) ([]byte, error) {
 	switch identity := principal.GetPrincipal().(type) {
 	case *action_servicepb.Principal_Caller:
 		return json.Marshal(struct {
-			Account ServiceAccount `json:"account"`
-		}{ServiceAccount{Namespace: identity.Caller.GetNamespace(), Name: identity.Caller.GetName()}})
+			Account actionActorAccount `json:"account"`
+		}{actionActorAccount{Namespace: identity.Caller.GetNamespace(), Name: identity.Caller.GetName()}})
 	case *action_servicepb.Principal_Operator:
 		return json.Marshal(struct {
 			Issuer  string `json:"issuer"`
