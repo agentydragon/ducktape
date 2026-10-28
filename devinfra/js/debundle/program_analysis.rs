@@ -304,10 +304,9 @@ fn resolve_primitive_binding_requirements(
     for requirement in requirements {
         if let Some(local) = imported_bindings.get(requirement) {
             imports.insert(local.clone());
-        } else if let Some(local_imports) = stable_bindings.get(requirement) {
-            imports.extend(local_imports.iter().cloned());
         } else {
-            return None;
+            let local_imports = stable_bindings.get(requirement)?;
+            imports.extend(local_imports.iter().cloned());
         }
     }
     Some(imports)
