@@ -20,6 +20,7 @@ func (c *Host) startOperation(slot **operation.Operation, work func(context.Cont
 	*slot = op
 	c.mu.Unlock()
 	if err := op.Start(
+		&c.mu,
 		func(done bool) error { return c.publishOperation(op, done) },
 		c.deps.OnError,
 		work,

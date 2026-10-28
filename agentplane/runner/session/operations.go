@@ -44,6 +44,7 @@ func (s *Session) startOperation(slot **operation.Operation, work func(context.C
 	s.mu.Unlock()
 
 	err := op.Start(
+		&s.mu,
 		func(done bool) error { return s.deps.publishOperation(s.id, op.ID(), done) },
 		s.deps.fail,
 		work,

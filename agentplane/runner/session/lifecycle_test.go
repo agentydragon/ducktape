@@ -251,6 +251,7 @@ func TestPreparationCompletionRefreshesStaleSchedulingInput(t *testing.T) {
 	s.preparation = op
 	s.mu.Unlock()
 	if err := op.Start(
+		&s.mu,
 		func(done bool) error { return m.publishOperation(s.id, op.ID(), done) },
 		m.fail, func(context.Context) error { return nil }, nil, nil,
 	); err != nil {

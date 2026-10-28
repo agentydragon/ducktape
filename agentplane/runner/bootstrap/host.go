@@ -277,6 +277,7 @@ func (h *Host) startOperation(work func(context.Context) error) {
 	h.mu.Unlock()
 
 	err := op.Start(
+		&h.mu,
 		func(done bool) error { return h.publishOperation(op, done) },
 		h.onError,
 		work,
