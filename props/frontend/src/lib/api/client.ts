@@ -122,13 +122,14 @@ function extractErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+type ApiSuccessData<Result> = Extract<Result, { data: unknown }> extends { data: infer Data } ? Data : never;
+
 function unwrapApiResult<Result extends { data?: unknown; error?: unknown }>(
   result: Result,
   fallback: string
-): Result extends { data: infer Data } ? Data : never;
-function unwrapApiResult(result: { data?: unknown; error?: unknown }, fallback: string): unknown {
+): ApiSuccessData<Result> {
   if ("error" in result) throw new Error(extractErrorMessage(result.error, fallback));
-  return result.data;
+  return result.data as ApiSuccessData<Result>;
 }
 
 // Convenience wrapper for overview endpoint
