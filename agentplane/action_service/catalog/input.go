@@ -1,0 +1,141 @@
+package catalog
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"reflect"
+
+	"github.com/invopop/jsonschema"
+	validator "github.com/santhosh-tekuri/jsonschema/v6"
+)
+
+// InputOptions describes one built-in Action input. Configure receives a fresh reflected schema,
+// so binding-specific constraints can be applied without changing another binding's contract.
+type InputOptions struct {
+	Name        string
+	Description string
+	Title       *string
+	Annotations *ToolAnnotations
+	Configure   func(*jsonschema.Schema) error
+}
+
+// Input binds an Action's advertised schema and argument decoder to the same Go wire type.
+// Construct it with NewInput; its zero value is not an Action.
+type Input[T any] struct {
+	name       string
+	definition ActionDefinition
+	validator  *validator.Schema
+}
+
+// NewInput reflects T as a closed JSON object, applies binding constraints, and compiles the
+// resulting self-contained schema with the same validator used for submitted Action arguments.
+// A field with `json:",omitempty"` is optional; `jsonschema:"nullable"` independently permits
+// explicit null. A pointer alone does neither.
+func NewInput[T any](options InputOptions) (Input[T], error) {
+	var empty Input[T]
+	if !IsKey(options.Name) {
+		return empty, fmt.Errorf("Action key %q is not a lowercase identifier of at most %d characters", options.Name, maxKeyLength)
+	}
+	if err := checkLength("description", options.Description, 1, 20_000); err != nil {
+		return empty, err
+	}
+	typeOf := reflect.TypeOf((*T)(nil)).Elem()
+	for typeOf.Kind() == reflect.Pointer {
+		typeOf = typeOf.Elem()
+	}
+	if typeOf.Kind() != reflect.Struct {
+		return empty, fmt.Errorf("Action %s input must be a struct", options.Name)
+	}
+	// The reflector's custom-schema method puts named types in $defs. Map Integer
+	// inline so per-field numerical tags apply to its integer type, rather than to
+	// a $ref sibling whose Type is empty during tag processing.
+	reflector := &jsonschema.Reflector{
+		Anonymous: true, ExpandedStruct: true,
+		Mapper: func(fieldType reflect.Type) *jsonschema.Schema {
+			if fieldType == reflect.TypeOf(Integer(0)) {
+				return Integer(0).JSONSchema()
+			}
+			return nil
+		},
+	}
+	schema := reflector.ReflectFromType(typeOf)
+	if options.Configure != nil {
+		if err := options.Configure(schema); err != nil {
+			return empty, fmt.Errorf("Action %s input schema: %w", options.Name, err)
+		}
+	}
+	document, err := json.Marshal(schema)
+	if err != nil {
+		return empty, fmt.Errorf("Action %s input schema: %w", options.Name, err)
+	}
+	parsed, err := validator.UnmarshalJSON(bytes.NewReader(document))
+	if err != nil {
+		return empty, fmt.Errorf("Action %s input schema: %w", options.Name, err)
+	}
+	compiled, err := CompileSchema(parsed)
+	if err != nil {
+		return empty, fmt.Errorf("Action %s input schema: %w", options.Name, err)
+	}
+	return Input[T]{
+		name: options.Name,
+		definition: ActionDefinition{
+			Description: options.Description,
+			InputSchema: document,
+			Title:       copyString(options.Title),
+			Annotations: copyAnnotations(options.Annotations),
+		},
+		validator: compiled,
+	}, nil
+}
+
+func (input Input[T]) Name() string { return input.name }
+
+// Definition returns a copy. The caller may edit it without changing later advertisements or
+// the validator used by Decode.
+func (input Input[T]) Definition() ActionDefinition {
+	definition := input.definition
+	definition.InputSchema = bytes.Clone(definition.InputSchema)
+	definition.Title = copyString(definition.Title)
+	definition.Annotations = copyAnnotations(definition.Annotations)
+	return definition
+}
+
+// Decode validates and decodes arguments into T. All malformed or rejected arguments have the
+// same ErrInvalidArguments result as the existing Action decoder.
+func (input Input[T]) Decode(arguments json.RawMessage) (T, error) {
+	var value T
+	if err := DecodeArguments(input.validator, arguments, &value); err != nil {
+		return value, err
+	}
+	return value, nil
+}
+
+func copyString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func copyBool(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func copyAnnotations(value *ToolAnnotations) *ToolAnnotations {
+	if value == nil {
+		return nil
+	}
+	return &ToolAnnotations{
+		Title:           copyString(value.Title),
+		ReadOnlyHint:    copyBool(value.ReadOnlyHint),
+		DestructiveHint: copyBool(value.DestructiveHint),
+		IdempotentHint:  copyBool(value.IdempotentHint),
+		OpenWorldHint:   copyBool(value.OpenWorldHint),
+	}
+}
