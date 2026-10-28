@@ -2,6 +2,7 @@
 
 Current configuration and acceptance boundary: [display guide](../../docs/wyrm2_display.md).
 On 2026-10-28 xrdp has a listener, but a fresh client login has not been verified.
+The operator reports no known working remote desktop; SPICE is also unverified.
 The working-session claims below describe July observations. For GRD, the later
 [readiness investigation](grd_listener_forensics/README.md) corrects the early
 claim that `grdctl`’s `EROFS` error itself blocks listener startup.
@@ -54,7 +55,7 @@ PR #3424 is **merged but dormant**: the daemon runs (`active`), no listener, ine
 (RDP isn't exposed, so it's safe). Revisit if nixpkgs merges a declarative
 Remote-Login surface or fixes the GDM handover.
 
-## Path B — Sunshine/Moonlight — WORKS (with a caveat)
+## Path B — Sunshine/Moonlight — July observations
 
 Sunshine is already on wyrm2 (`services.sunshine`, CUDA/NVENC build). Verified live:
 
@@ -86,7 +87,7 @@ needed — Nebula is the secure transport; UDP stream ports `47998–48000` are 
 `services.sunshine.openFirewall`. (Permanent install: add `moonlight-qt` to
 `nix/home/hosts/rugged.nix`.)
 
-## Path C — xrdp over Nebula — WORKING
+## Path C — xrdp over Nebula — July observations
 
 Headless desktop RD without auto-login and without an SSH tunnel. `services.xrdp`
 
@@ -139,7 +140,7 @@ access); **as root it auths fine** (the root build of the xrdp closure succeeded
 The token is valid — this is secret hygiene, not a rotation problem. Build/switch
 wyrm2 as root.
 
-## Decisions / status
+## July decisions / status
 
 - **xrdp over Nebula (Path C) is the working RD** — headless, pre-login, no
   auto-login, no tunnel. PRs #3431, #3442 (HOME fix). Connect via the "wyrm2 (RDP)"

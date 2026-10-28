@@ -1,5 +1,8 @@
 # Wyrm2 display and remote access
 
+No graphical remote-access path is currently confirmed usable: the operator reports
+no working remote desktop, and SPICE has not been validated.
+
 The declarative configuration is in
 [`default.nix`](../nixos/hosts/wyrm2/default.nix), the VM's display and USB
 attachments in [`proxmox-vms.tf`](../../cluster/terraform/main/proxmox-vms.tf),
@@ -19,7 +22,7 @@ USB-B keyboard/camera path disappears. Keep Steam's **GPU accelerated rendering
 in web views** enabled; the observed CPU path rendered Big Picture at about 5 FPS.
 Keep game prefixes on the SSD; small-file I/O on the HDD virtiofs share was slow.
 
-## Remote access: configured, desktop acceptance still needed
+## Remote desktop remains unresolved
 
 As checked on Wyrm2 on 2026-10-28, `xrdp` and `xrdp-sesman` are active and
 TCP 3389 is listening. This proves a listener, not successful client login or a
@@ -31,7 +34,8 @@ password through PAM. Its `rdpSession` wrapper supplies `HOME`, which was missin
 from the xrdp PAM environment during the original black-screen investigation.
 It does not share the local Wayland/GNOME desktop or need auto-login.
 
-From Rugged, use the **wyrm2 (RDP)** desktop entry, or:
+For a future client acceptance test, Rugged has a **wyrm2 (RDP)** desktop entry.
+Its command is shown here as a candidate test, not a verified access path:
 
 ```bash
 xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu /dynamic-resolution
@@ -62,8 +66,9 @@ error concerns boot persistence; it does not establish why the listener failed.
   migration, identify the affected DRM devices rather than reusing old `cardN`
   numbers from a previous boot.
 
-## SPICE resize
+## Historical SPICE resize diagnostics
 
+These July findings do not establish that SPICE works on the current setup.
 For a GNOME session using the virtual display, a saved `~/.config/monitors.xml`
 configuration can override the client's preferred mode and stop window-following
 resize without an error. Back up that file and its `~` copy, remove the virtual
