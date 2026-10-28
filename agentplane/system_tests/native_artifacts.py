@@ -1,4 +1,4 @@
-"""Export native evidence independently of which turns a scenario finished observing."""
+"""Export Session evidence independently of which turns a scenario finished observing."""
 
 import asyncio
 import json
@@ -25,9 +25,9 @@ async def capture(client: Client, *, sandbox_uid: UUID) -> None:
                 async with aclosing(client.events(thread.id, after=0, read_seconds=30)) as entries:
                     async for entry in entries:
                         cursor = entry.cursor
-                        if entry.event.HasField("native"):
-                            output.write(json.dumps(MessageToDict(entry)) + "\n")
-                            output.flush()
+                        # Keep stderr and lifecycle failures alongside frames so early exits are diagnosable.
+                        output.write(json.dumps(MessageToDict(entry)) + "\n")
+                        output.flush()
                         if cursor >= thread.last_cursor:
                             break
             if cursor < thread.last_cursor:

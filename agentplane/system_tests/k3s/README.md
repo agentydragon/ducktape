@@ -195,7 +195,8 @@ this additional assertion while retaining their logs. Launcher `compute` logs an
 namespace's `virt-handler` logs are retained under `vm-artifacts/launchers/` and
 `vm-artifacts/handlers/`, respectively, for graceful-shutdown and domain-exit evidence.
 
-For VM tests, shared client fixture cleanup exports retained native frames in both directions for
+For VM tests, shared client fixture cleanup exports retained Session events, including native frames
+in both directions, stderr and lifecycle failures, for
 every Sandbox where that client opened a Session. Exports go to
 `test.outputs/vm-artifacts/native/<sandbox-uid>/<thread-id>.jsonl`, with archive cursors and origins;
 the adjacent JSON records the export watermark. Failed and partially observed turns are included.
