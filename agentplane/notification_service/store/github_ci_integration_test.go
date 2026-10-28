@@ -43,7 +43,7 @@ func (g githubFixture) pollCI(t *testing.T, subject GitHubSubjectKey, observatio
 func normalizedCheckRunDelivery(g githubFixture, sha string, observation GitHubCIObservation) GitHubIngest {
 	options := []deliveryOption{onPullRequest(7), atCommit(sha)}
 	if observation.Action != nil {
-		options = append([]deliveryOption{action(*observation.Action)}, options...)
+		options = append([]deliveryOption{withAction(*observation.Action)}, options...)
 	}
 	ingest := g.delivery(string(EventCheckRun), options...)
 	ingest.CI = []GitHubCIObservation{observation}
@@ -286,7 +286,7 @@ func TestGitHubCISuccessIsFencedByHeadAndAccessGeneration(t *testing.T) {
 		{
 			name: "installation generation revoked and restored",
 			invalidate: func(t *testing.T, g githubFixture, _ githubSubscription) {
-				g.deliver(t, "installation", action("removed"))
+				g.deliver(t, "installation", withAction("removed"))
 			},
 		},
 		{

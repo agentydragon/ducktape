@@ -71,7 +71,7 @@ SHA, current head, and required checks before reporting success or merging. A ch
 head is not evidence for the latest one.
 
 An Agentplane-generated CI/check-state entry uses `event.githubObservation` with `appId`, `repositoryId`, `event`
-(`CHECK_RUN` or `STATUS`) and a durable, globally increasing generated `sequence`, not a webhook delivery ID.
+(`CHECK_RUN` or `STATUS`) and a durable generated `sequence` within that event category, not a webhook delivery ID.
 Its flat payload contains `repositoryId`, `headSha`, `event`, `id`, `name`, `status`, `detailsUrl`, `observedAt`,
 the applicable action, conclusion and timestamps, plus `checkAppId` when GitHub provides the owning App for a
 check run.
