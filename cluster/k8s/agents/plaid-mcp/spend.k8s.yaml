@@ -11,6 +11,7 @@ data:
   PLAID_SPEND_CONFIG_PATH: /etc/plaid-spend/spend-policy.yaml
   PLAID_SPEND_WEB_OIDC_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-web/
   PLAID_SPEND_WEB_OIDC_PUBLIC_BASE_URL: https://plaid-spend.allegedly.works
+immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

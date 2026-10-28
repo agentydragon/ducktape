@@ -328,6 +328,7 @@ data:
         "immediate": true
       }
     }
+immutable: false
 ---
 apiVersion: apps/v1
 kind: Deployment

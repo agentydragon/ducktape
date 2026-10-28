@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -269,10 +269,10 @@ def _synapse_routes(scope: Construct) -> None:
 
 
 def _element(scope: Construct) -> None:
-    k8s.KubeConfigMap(
+    ConfigMap(
         scope,
         "element-config",
-        metadata=k8s.ObjectMeta(name=_ELEMENT_CONFIG_MAP, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=_ELEMENT_CONFIG_MAP, namespace=NAMESPACE),
         data={"config.json": json.dumps(_ELEMENT_CONFIG, indent=2) + "\n"},
     )
     probe_action = k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_string(_ELEMENT_HTTP.port.name))

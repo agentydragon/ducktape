@@ -9,7 +9,7 @@ proxies to the apiserver over HTTPS, preserving the Authorization header.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ConfigMap, k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
@@ -146,10 +146,10 @@ def chart(app: App) -> Chart:
         backend=_SERVICE,
         hsts=False,
     )
-    k8s.KubeConfigMap(
+    ConfigMap(
         chart,
         "config",
-        metadata=k8s.ObjectMeta(name=_CONFIG_MAP, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=_CONFIG_MAP, namespace=NAMESPACE),
         data={"nginx.conf": _NGINX_CONF},
     )
     _deployment(chart)

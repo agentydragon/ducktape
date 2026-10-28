@@ -590,6 +590,7 @@ data:
       printf '%s,git_push,200,%s\n' "$TARGET_NAME" "$secs"
       i=$((i + 1))
     done
+immutable: false
 ---
 apiVersion: batch/v1
 kind: CronJob

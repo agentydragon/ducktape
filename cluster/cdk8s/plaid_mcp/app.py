@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ServiceAccount, k8s
+from cdk8s_plus_34 import ConfigMap, ServiceAccount, k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
@@ -248,7 +248,7 @@ def _sync_cronjob(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
-    k8s.KubeConfigMap(chart, "config", metadata=k8s.ObjectMeta(name=_CONFIG_MAP, namespace=NAMESPACE), data=_CONFIG)
+    ConfigMap(chart, "config", metadata=ApiObjectMetadata(name=_CONFIG_MAP, namespace=NAMESPACE), data=_CONFIG)
     _rbac(chart)
     _oidc_credentials(chart)
     _deployment(chart)

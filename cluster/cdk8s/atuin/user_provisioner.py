@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import ConfigMap, k8s
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.atuin.server import DATABASE, NAMESPACE
@@ -24,10 +24,10 @@ _SCRIPT = get_required_path(own_repo_rlocation("cluster/cdk8s/atuin/provision.py
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeConfigMap(
+    ConfigMap(
         chart,
         "script",
-        metadata=k8s.ObjectMeta(name=_SCRIPT_CONFIG_MAP, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=_SCRIPT_CONFIG_MAP, namespace=NAMESPACE),
         data={"provision.py": _SCRIPT},
     )
     k8s.KubeJob(

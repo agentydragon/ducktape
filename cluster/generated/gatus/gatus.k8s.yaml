@@ -327,6 +327,7 @@ kind: ConfigMap
 metadata:
   name: gatus
   namespace: gatus
+immutable: false
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease

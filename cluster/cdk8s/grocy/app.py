@@ -12,7 +12,7 @@ from functools import partial
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ConfigMap, k8s
 from volsync_replicationdestination_crds.backube.volsync import (
     ReplicationDestinationSpecRsyncTls,
     ReplicationDestinationSpecRsyncTlsCopyMethod,
@@ -162,10 +162,10 @@ def _server(chart: Chart, namespace: str) -> None:
         metadata=k8s.ObjectMeta(name=_NAME, namespace=namespace),
         spec=k8s.ServiceSpec(selector=_LABELS, ports=[_HTTP.k8s_service_port()], type="ClusterIP"),
     )
-    k8s.KubeConfigMap(
+    ConfigMap(
         chart,
         "settingoverrides",
-        metadata=k8s.ObjectMeta(name="grocy-settingoverrides", namespace=namespace),
+        metadata=ApiObjectMetadata(name="grocy-settingoverrides", namespace=namespace),
         data={
             # Trust X-authentik-username header from Authentik outpost proxy.
             # Grocy reads this via PSR-7 getHeader(), which uses the raw HTTP header name.

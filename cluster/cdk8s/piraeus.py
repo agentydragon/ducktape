@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecPostRenderers,
@@ -157,10 +157,10 @@ def operator_chart(app: App) -> Chart:
 def cluster_chart(app: App) -> Chart:
     """Declare LINSTOR, the Talos satellite patch, and the SSD and HDD classes."""
     chart = Chart(app, "piraeus-cluster", disable_resource_name_hashes=True)
-    k8s.KubeConfigMap(
+    ConfigMap(
         chart,
         "drbd-alloy-config",
-        metadata=k8s.ObjectMeta(
+        metadata=ApiObjectMetadata(
             name=_DRBD_ALLOY_CONFIG_MAP,
             namespace=NAMESPACE,
             annotations={"description": "Alloy scrape of the loopback-only DRBD Reactor metrics endpoint."},

@@ -107,6 +107,7 @@ data:
   AUTH_CLASS.txt: Grocy\Middleware\ReverseProxyAuthMiddleware
   DEFAULT_PERMISSIONS.txt: none
   REVERSE_PROXY_AUTH_HEADER.txt: X-authentik-username
+immutable: false
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

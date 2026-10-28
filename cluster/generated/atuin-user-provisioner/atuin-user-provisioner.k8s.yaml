@@ -71,6 +71,7 @@ data:
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
+immutable: false
 ---
 apiVersion: batch/v1
 kind: Job

@@ -28,6 +28,7 @@ data:
   PLAID_MCP_PUBLIC_BASE_URL: https://plaid-mcp.allegedly.works
   PLAID_MCP_TRANSACTION_DAYS: "730"
   PLAID_MCP_WEBHOOK_URL: https://plaid-mcp.allegedly.works/webhooks/plaid
+immutable: false
 ---
 apiVersion: v1
 kind: ServiceAccount

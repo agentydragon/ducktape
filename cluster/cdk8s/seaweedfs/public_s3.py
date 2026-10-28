@@ -15,7 +15,7 @@ instead of generating a replacement. DriveFS permissions come from its Bucket
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from seaweed_s3policy_crds.com.seaweedfs.seaweed import (
@@ -157,10 +157,10 @@ def _gateway(scope: Construct) -> None:
     # The only local configuration left is the credential-free anonymous PR-visuals read
     # rule; credentialed identities are all native IAM, so this is a ConfigMap and not a
     # Secret.
-    k8s.KubeConfigMap(
+    ConfigMap(
         scope,
         "bootstrap-config",
-        metadata=k8s.ObjectMeta(name=_CONFIG_MAP, namespace=namespace.NAME),
+        metadata=ApiObjectMetadata(name=_CONFIG_MAP, namespace=namespace.NAME),
         data={_CONFIG_KEY: '{"identities":[\n  {"name":"anonymous","actions":["Read:pr-visuals"]}\n]}\n'},
     )
     k8s.KubeDeployment(

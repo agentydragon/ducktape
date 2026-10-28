@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ServiceAccount, k8s
+from cdk8s_plus_34 import ConfigMap, ServiceAccount, k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
@@ -242,7 +242,7 @@ def _deployment(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    k8s.KubeConfigMap(chart, "config", metadata=k8s.ObjectMeta(name=_CONFIG_MAP, namespace=NAMESPACE), data=_CONFIG)
+    ConfigMap(chart, "config", metadata=ApiObjectMetadata(name=_CONFIG_MAP, namespace=NAMESPACE), data=_CONFIG)
     k8s.KubeRole(
         chart,
         "finance-config-reader",

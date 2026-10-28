@@ -6,7 +6,7 @@ ClusterRoleBinding that makes agentydragon's passthrough identity cluster-admin.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ConfigMap, k8s
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
@@ -122,10 +122,10 @@ def chart(app: App) -> Chart:
             },
         ),
     )
-    k8s.KubeConfigMap(
+    ConfigMap(
         chart,
         "configmap",
-        metadata=k8s.ObjectMeta(name=_CONFIG_MAP, namespace=NAME),
+        metadata=ApiObjectMetadata(name=_CONFIG_MAP, namespace=NAME),
         data={_CONFIG_FILE: _PUBLIC_CONFIG},
     )
     _deployment(chart)

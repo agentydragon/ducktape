@@ -97,6 +97,7 @@ data:
   TANA_MCP_URL: http://127.0.0.1:8262/mcp
   UNHEALTHY_POLL_SECONDS: "5.0"
   UNHEALTHY_THRESHOLD: "3"
+immutable: false
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -299,6 +300,7 @@ data:
   MCP_FACADE_PERSISTENCE__KIND: postgres
   MCP_FACADE_UPSTREAM__KIND: http
   MCP_FACADE_UPSTREAM__URL: http://tana-mcp.tana-mcp.svc:8263/mcp
+immutable: false
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -141,6 +141,7 @@ data:
     {"identities":[
       {"name":"anonymous","actions":["Read:pr-visuals"]}
     ]}
+immutable: false
 ---
 apiVersion: apps/v1
 kind: Deployment

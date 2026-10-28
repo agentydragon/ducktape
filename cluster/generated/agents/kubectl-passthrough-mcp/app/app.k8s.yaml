@@ -30,6 +30,7 @@ data:
     cluster_provider_strategy = "in-cluster"
     server_url = "https://kubectl-passthrough-mcp.allegedly.works"
     port = "8080"
+immutable: false
 ---
 apiVersion: apps/v1
 kind: Deployment

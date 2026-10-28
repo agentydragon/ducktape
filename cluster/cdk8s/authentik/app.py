@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ConfigMap, k8s
+from cdk8s_plus_34 import ConfigMap
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallStrategy,
@@ -197,10 +197,10 @@ def _helm_release(chart: Chart) -> None:
 
 
 def _host_config_map(chart: Chart) -> None:
-    k8s.KubeConfigMap(
+    ConfigMap(
         chart,
         "host",
-        metadata=k8s.ObjectMeta(name=_HOST_CONFIG_MAP, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=_HOST_CONFIG_MAP, namespace=NAMESPACE),
         data={
             "AUTHENTIK_HOST": f"https://{HOSTNAME}",
             # Cilium Gateway API uses host-network TPROXY, so Gateway hairpins can reach Authentik

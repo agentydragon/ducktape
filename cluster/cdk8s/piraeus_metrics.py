@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
@@ -54,10 +54,10 @@ def add_thin_pool_monitoring(
 
     pod_labels = {"app.kubernetes.io/name": name}
     config_map_name = f"{name}-collector"
-    k8s.KubeConfigMap(
+    ConfigMap(
         scope,
         "collector-script",
-        metadata=k8s.ObjectMeta(
+        metadata=ApiObjectMetadata(
             name=config_map_name,
             namespace=namespace,
             annotations={"description": "Reporting-only lvs collector for the selected Piraeus thin pool."},

@@ -24,6 +24,7 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
 )
 from cdk8s import ApiObjectMetadata, Chart, Size, Testing
 from cdk8s_plus_34 import (
+    ConfigMap,
     ContainerProps,
     ContainerResources,
     ContainerSecurityContextProps,
@@ -525,16 +526,16 @@ def build_chart(
         {"client-id": _MCP_LINKAGE.id, "client-secret": "test-k3s-actions-client-secret"},
     )
     add_secret(chart, _EGRESS_CA, {"tls.crt": ca_cert, "tls.key": ca_key, "ca.crt": ca_cert}, kind="kubernetes.io/tls")
-    k8s.KubeConfigMap(
+    ConfigMap(
         chart,
         "fixture-egress-ca",
-        metadata=k8s.ObjectMeta(name=_EGRESS_CA, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=_EGRESS_CA, namespace=NAMESPACE),
         data={"ca-certificates.crt": system_roots + ca_cert},
     )
-    k8s.KubeConfigMap(
+    ConfigMap(
         chart,
         "fixture-egress-upstream-ca",
-        metadata=k8s.ObjectMeta(name="systest-egress-upstream-ca", namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name="systest-egress-upstream-ca", namespace=NAMESPACE),
         data={"ca-certificates.crt": system_roots + cluster_ca},
     )
     key = models.key if isinstance(models, PublicLiteLLM) else "unused-without-litellm"

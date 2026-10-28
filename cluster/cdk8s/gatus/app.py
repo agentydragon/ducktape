@@ -4,7 +4,7 @@ own configuration (`config.py`) in the `gatus-config` ConfigMap."""
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ConfigMap, k8s
+from cdk8s_plus_34 import ConfigMap
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress, CiliumNetworkPolicySpecEgressToEntities
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
@@ -64,7 +64,7 @@ def _helm_release(scope: Construct, config_map: ConfigMap) -> None:
     # Empty ConfigMap required by the gatus Helm chart. The chart hardcodes
     # envFrom.configMapRef with the release name but skips creating it when
     # externalConfigMap is set (chart bug).
-    k8s.KubeConfigMap(scope, "env", metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE))
+    ConfigMap(scope, "env", metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE))
     helm_release(
         scope,
         _NAME,

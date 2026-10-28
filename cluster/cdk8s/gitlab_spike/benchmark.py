@@ -7,7 +7,7 @@ comparison, then collects the CSV emitted in each Job's log.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ConfigMap, k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgressDeny,
     CiliumNetworkPolicySpecEgressDenyToEntities,
@@ -30,10 +30,10 @@ _WORKER = "ovh-ns102453"
 
 
 def _scripts(chart: Chart) -> None:
-    k8s.KubeConfigMap(
+    ConfigMap(
         chart,
         "scripts",
-        metadata=k8s.ObjectMeta(name=_SCRIPTS, namespace=app.NAMESPACE),
+        metadata=ApiObjectMetadata(name=_SCRIPTS, namespace=app.NAMESPACE),
         data={
             "gitlab-bench.sh": get_required_path(
                 own_repo_rlocation("cluster/debug/gitlab_gitaly_storage_bench/gitlab-bench.sh")

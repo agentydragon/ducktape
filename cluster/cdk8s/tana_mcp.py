@@ -14,7 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ConfigMap, k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
@@ -184,10 +184,10 @@ def _tana_deployment(chart: Chart) -> None:
 
 
 def _resigner(chart: Chart) -> None:
-    k8s.KubeConfigMap(
+    ConfigMap(
         chart,
         "resigner-config",
-        metadata=k8s.ObjectMeta(name=_RESIGNER_CONFIG, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_RESIGNER_CONFIG, namespace=_NAMESPACE),
         data={
             # Tana web bundle's REACT_APP_FIREBASE_API_KEY for project tagr-prod. This
             # Firebase web API key is a public identifier, not a secret.
@@ -231,10 +231,10 @@ def _resigner(chart: Chart) -> None:
 
 
 def _facade(chart: Chart) -> None:
-    k8s.KubeConfigMap(
+    ConfigMap(
         chart,
         "facade-config",
-        metadata=k8s.ObjectMeta(name=_FACADE_CONFIG_MAP, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_FACADE_CONFIG_MAP, namespace=_NAMESPACE),
         data={
             "MCP_FACADE_AUTH__OIDC_ISSUER": "https://auth.allegedly.works/application/o/tana-mcp-facade/",
             "MCP_FACADE_AUTH__PUBLIC_BASE_URL": "https://tana-mcp-facade.allegedly.works",
