@@ -72,13 +72,13 @@ genrule(
 
 openapi_js_library(
     name = "openapi_types",
-    out = "openapi_types.d.ts",
     schema = ":openapi.json",
 )
 
+# This explicit path is imported below and keeps the external declaration under `api/`.
 openapi_js_library(
     name = "external_openapi_types",
-    out = "external_openapi_types.d.ts",
+    out = "api/external_openapi_types.d.ts",
     schema = "//devinfra/x/schema_codegen/typescript/fixtures:openapi_artifact",
     schema_files = ["//devinfra/x/schema_codegen/typescript/fixtures:external_model_artifact"],
 )
@@ -101,14 +101,12 @@ ts_library(
 
 json_schema_js_library(
     name = "external_json_schema_types",
-    out = "external_json_schema_types.d.ts",
     schema = "//devinfra/x/schema_codegen/typescript/fixtures:standalone_artifact",
     schema_files = ["//devinfra/x/schema_codegen/typescript/fixtures:external_model_artifact"],
 )
 
 openapi_js_library(
     name = "openapi_types_naming_default",
-    out = "openapi_types_naming_default.d.ts",
     schema = ":openapi_types_naming.schema.json",
 )
 
@@ -254,6 +252,7 @@ genrule(
     tools = [":export_standalone_bin"],
 )
 
+# The wrapper publishes declarations as the `standalone_types` module consumed below.
 json_schema_js_library(
     name = "standalone_types_declarations",
     out = "standalone_types.d.ts",

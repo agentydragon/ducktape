@@ -4,9 +4,10 @@ Small source models exercise real schema exporters, production conversion tools,
 bindings, and consumers. The TypeScript cases use the file-input rules documented in
 [SCHEMA_CODEGEN.md](../../js/SCHEMA_CODEGEN.md); generated documents and source files are Bazel
 outputs. The `openapi_js_library` and `json_schema_js_library` macros expose declarations through a
-`js_library` named by the macro call while preserving the raw `.d.ts` output label. Zod generation
-stays file-only and is compiled by its explicit `ts_library` consumer; application generators and wire
-contracts are unchanged.
+`js_library` named by the macro call while preserving the raw `.d.ts` output label. Both default the
+raw file to `<name>.d.ts`; the TypeScript fixtures cover omitted outputs and explicit module-path
+overrides. Zod generation stays file-only and is compiled by its explicit `ts_library` consumer;
+application generators and wire contracts are unchanged.
 
 Run all cases, including lint and language checks on the explicitly selected library targets:
 
