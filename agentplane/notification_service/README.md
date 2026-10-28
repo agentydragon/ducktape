@@ -96,9 +96,15 @@ order, loads only retained Message JSON that still needs text, and commits batch
 serialized JSON bytes (a single larger valid document is processed alone). It clears stale text for expired rows
 even below `expired_through`, verifies every retained Message JSON/text pair, and records progress in
 `notification_message_text_backfill`; it runs outside service startup and readiness. Do not move Message readers to
-typed-only storage until this command reports `backfilled` on every database. Keep the dual-write image as the
+canonical-text storage until this command reports `backfilled` on every database. Keep the dual-write image as the
 rollback version before the later Message text contract; that contract image will retire the backfill command and
 checkpoint.
+
+Deploy the canonical Message text reader only after the `backfilled` checkpoint is complete on every database.
+It reconstructs Message JSON from `message_body` and `message_from_session` and refuses retained rows missing text;
+it never falls back to legacy JSON or protobuf. Sandbox status summaries use only the relational sender identity
+and do not read Message bodies. During this reader phase, rollback to the 00016 dual-write reader/writer release
+remains safe because every Message write still fills JSON, protobuf and text.
 
 Migration `00015` also adds `entry_identity_provider_required` as a `NOT VALID` check. Migration `00018` makes
 `event` nullable and adds the relational Message JSON body ceiling before the writer-only image stops writing
