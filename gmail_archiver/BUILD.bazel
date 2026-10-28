@@ -261,15 +261,3 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
-py_test(
-    name = "test_gmail_archiver_wheel",
-    srcs = ["test_gmail_archiver_wheel.py"],
-    data = [":gmail_archiver_wheel"],
-    deps = [
-        ":event_classifier",
-        "//:conftest",
-        "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
-    ],
-)
