@@ -570,6 +570,22 @@ make them available as host accessors. Later invocation or publication of the
 result restores those capabilities. Unsupported constructor paths retain
 conservative reachability.
 
+An implicit local class constructor can also receive a source-derived
+construction certificate. The class must be a direct declaration in the same
+chunk, without inheritance, decorators, an explicit constructor, computed
+keys, static fields, or static blocks. Instance field initializers may be
+absent, primitive literals, boolean negation of a numeric/boolean literal,
+deferred function/arrow allocations, or zero-argument construction of an
+unshadowed built-in `Set`, `Map`, `WeakSet`, or `WeakMap`. Ordinary method and
+getter bodies remain deferred. Purity admits only a direct zero-argument
+top-level `new` initializer after that declaration when whole-chunk value flow
+resolves its binding to exactly that class. It suppresses only construction's
+side-effect ordering; method invocation, callback escape, and ordinary eager
+reads keep their own checks. The synchronous interpreter consumes the same
+class certificate and retains its separate binding-identity and deferred-body
+checks. Unsupported shapes and uncertain identities keep the conservative
+paths.
+
 At-init callback analysis also records possible implicit primitive conversions
 from arithmetic, relational and loose-equality operators, the left operand of
 `in`, numeric unary operators, updates and non-logical compound assignments.

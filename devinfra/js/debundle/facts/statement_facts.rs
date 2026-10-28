@@ -353,6 +353,7 @@ pub struct StructuralChunkAnalysis<'a> {
     pub(crate) imported_bindings: BTreeSet<Id>,
     pub(crate) value_flow: super::ChunkValueFlow,
     pub(crate) set_iterable_proof: super::SetIterableProof,
+    pub(crate) local_class_construction_proof: super::LocalClassConstructionProof,
     pub(crate) plain_data_bindings: Vec<String>,
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,

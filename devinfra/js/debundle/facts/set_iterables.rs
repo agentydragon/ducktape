@@ -9,6 +9,7 @@ use super::*;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SetIterableProof {
     constructor_starts: BTreeSet<u32>,
+    has_dynamic_scope: bool,
 }
 
 impl SetIterableProof {
@@ -18,10 +19,6 @@ impl SetIterableProof {
         flow: &ChunkValueFlow,
         plain_data_bindings: &[String],
     ) -> Self {
-        if shadowed.contains("Set") {
-            return Self::default();
-        }
-
         let candidates = collect_const_primitive_arrays(body);
         let mut scanner = ArrayUseScanner {
             candidates: &candidates,
@@ -36,6 +33,12 @@ impl SetIterableProof {
             item.as_module_item().visit_with(&mut scanner);
         }
         if scanner.has_dynamic_scope {
+            return Self {
+                has_dynamic_scope: true,
+                ..Self::default()
+            };
+        }
+        if shadowed.contains("Set") {
             return Self::default();
         }
 
@@ -80,11 +83,18 @@ impl SetIterableProof {
             flow,
             plain_data_bindings,
         ));
-        Self { constructor_starts }
+        Self {
+            constructor_starts,
+            has_dynamic_scope: false,
+        }
     }
 
     pub(crate) fn contains_constructor(&self, span: Span) -> bool {
         self.constructor_starts.contains(&span.lo.0)
+    }
+
+    pub(crate) fn has_dynamic_scope(&self) -> bool {
+        self.has_dynamic_scope
     }
 }
 

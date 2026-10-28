@@ -484,6 +484,7 @@ rust_library(
         "facts/global_object.rs",
         "facts/item_views.rs",
         "facts/lazy_boundary.rs",
+        "facts/local_class_construction.rs",
         "facts/local_effect_targets.rs",
         "facts/local_effects.rs",
         "facts/mod.rs",

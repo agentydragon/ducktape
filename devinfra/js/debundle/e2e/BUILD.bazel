@@ -270,6 +270,11 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "local_class_construction_test",
+    deps = ["@crates//:serde_json"],
+)
+
+debundle_e2e_test(
     name = "initializer_purity_test",
     deps = ["//devinfra/js/debundle:analysis"],
 )

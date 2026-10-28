@@ -14,6 +14,30 @@ fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
     analyze_chunk(module, &AnalysisInputs::default(), None, |_| None).facts
 }
 
+#[test]
+fn local_class_construction_before_declaration_is_not_pure() {
+    let module = parse("const instance = new Registry(); class Registry { value = 1; }");
+    let facts = analyze_facts(&module);
+    let instance = facts
+        .iter()
+        .find(|fact| fact.declared.contains(&test_id("instance")))
+        .expect("instance declaration");
+    assert!(!instance.purity.is_pure());
+}
+
+#[test]
+fn direct_eval_disables_local_class_construction_proof() {
+    let module = parse(
+        "class Registry { value = 1; } eval('Registry = class {}'); const instance = new Registry();",
+    );
+    let facts = analyze_facts(&module);
+    let instance = facts
+        .iter()
+        .find(|fact| fact.declared.contains(&test_id("instance")))
+        .expect("instance declaration");
+    assert!(!instance.purity.is_pure());
+}
+
 use raw_js_test_support::parse;
 
 // --- ChunkCodeGraph: function-body purity inference --------------------

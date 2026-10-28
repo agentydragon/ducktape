@@ -13,13 +13,13 @@ use crate::facts::ExportReentryPolicy;
 use crate::facts::fresh_receiver::fresh_mutation_callables;
 use crate::facts::item_views::TopLevelItemView;
 use crate::facts::local_effect_targets::MetadataDecorateCall;
-use crate::facts::set_iterables::SetIterableProof;
 use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
 use crate::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, StatementFacts, StatementKind,
     SynchronousCalls,
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin, Values as FlowValues};
+use crate::facts::{LocalClassConstructionProof, set_iterables::SetIterableProof};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     ExecutionOperation, ExecutionPrecisionLoss, ExecutionPrecisionLossReason,
@@ -2304,7 +2304,12 @@ impl Executor<'_> {
         // opaque path in execute_call. Other constructors need the class and
         // prototype to remain unexposed to avoid setters and method reentry.
         let inert_allocation = constructor.inert_allocation && arg_count == 0;
+        let checked_default_fields = constructor.checked_default_fields && arg_count == 0;
+        if constructor.checked_default_fields && arg_count != 0 {
+            return None;
+        }
         if !inert_allocation
+            && !checked_default_fields
             && (self.index.other_class_uses.contains(binding)
                 || (self.export_reentry_enabled && self.index.exported_bindings.contains(binding))
                 || self.tainted_classes.contains(&key)
@@ -4415,6 +4420,7 @@ fn callback_source_units_for_signature(
 /// aliases with unknown/reassigned targets and dynamic scopes remain opaque.
 pub(crate) struct SynchronousCallProofs<'a> {
     pub(crate) set_iterable: &'a SetIterableProof,
+    pub(crate) local_class_construction: &'a LocalClassConstructionProof,
     pub(crate) graph: &'a ChunkCodeGraph,
 }
 
@@ -4429,8 +4435,13 @@ pub(crate) fn annotate_synchronous_calls(
     export_reentry_policy: ExportReentryPolicy,
     facts: &mut [StatementFacts],
 ) {
-    let index =
-        ExecutionIndex::collect(body, hints, Some(flow), proofs.graph.plain_array_bindings());
+    let index = ExecutionIndex::collect(
+        body,
+        hints,
+        Some(flow),
+        proofs.graph.plain_array_bindings(),
+        proofs.local_class_construction,
+    );
     for candidate in index.retained_callback_calls.values() {
         if candidate.caller.is_some() {
             continue;

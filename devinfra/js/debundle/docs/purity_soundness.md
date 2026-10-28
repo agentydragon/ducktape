@@ -432,6 +432,38 @@ behavior is audited. No library name is implicitly trusted. The independent
 lookup, namespace identity, publication,
 and mutation checks still apply, and the return value remains opaque.
 
+## Implicit local class construction
+
+The source-derived local-class certificate is shared by purity classification
+and synchronous execution. Its class-shape gate excludes explicit constructors,
+inheritance, decorators, computed keys, static fields/blocks, and initializer
+expressions that might read or invoke user code. The accepted initializers are
+absent values, primitive literals, `!` of a numeric/boolean literal, deferred
+function/arrow allocation, and `new Set`/`Map`/`WeakSet`/`WeakMap` without
+arguments when the intrinsic binding is unshadowed. The latter reuses the
+existing no-argument built-in admission; it does not admit iterator arguments.
+An ordinary getter's body is deferred and is not evaluated by construction.
+
+Purity requires an exact direct top-level `new` initializer after the class
+declaration and a unique class origin in monotone whole-chunk value flow.
+Unknown, rebound, or shadowed alternatives fail this check. This preserves
+the temporal class initialization requirement without claiming that a function
+body appearing later cannot be called earlier. Synchronous execution consumes
+the same class certificate; its prefix-value check still excludes uncertain
+identity. For zero-argument certified default-field construction, the
+interpreter can omit the prototype/exposure guard used for explicit `this.x`
+assignment: class fields use DefineField on the fresh instance, and every
+admitted initializer is non-reentrant under the existing intrinsic premise.
+ECMA-262's [default constructor algorithm](https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#sec-runtime-semantics-classdefinitionevaluation)
+creates an ordinary instance before initializing its fields;
+[InitializeInstanceElements and DefineField](https://tc39.es/ecma262/multipage/abstract-operations.html#sec-definefield)
+install private fields with PrivateFieldAdd and public fields with
+CreateDataPropertyOrThrow, without consulting an inherited setter.
+The interpreter still tracks retained callbacks and defers later methods.
+The certificate does not prove later methods or field callbacks pure.
+Direct `eval` or `with` anywhere in the chunk disables the certificate, using
+the same dynamic-scope scan as the shared Set-iterable proof.
+
 ## Fresh local record field writes
 
 The local wrapper proof admits a narrow mutation while keeping ordinary

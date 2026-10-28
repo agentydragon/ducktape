@@ -6,6 +6,7 @@ use super::value_model::{
     object_data_property_name, static_prop, static_property_name,
 };
 use crate::analysis_inputs::AnalysisInputs;
+use crate::facts::LocalClassConstructionProof;
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
 };
@@ -931,6 +932,9 @@ struct LocalConstructor {
     key: Option<u32>,
     /// No constructor body or instance fields run during direct allocation.
     inert_allocation: bool,
+    /// Implicit constructor whose instance fields are checked to initialize
+    /// without user code. Unlike inert allocation, the fields still run.
+    checked_default_fields: bool,
     /// Own data fields written by the checked constructor body.
     own_fields: BTreeSet<String>,
     /// Parameter property reads must come from fresh plain data objects.
@@ -1020,10 +1024,14 @@ fn safe_constructor_assignment(
     }
 }
 
-fn local_constructor(class: &Class) -> Option<LocalConstructor> {
+fn local_constructor(
+    class: &Class,
+    construction_proof: &LocalClassConstructionProof,
+) -> Option<LocalConstructor> {
     if class.super_class.is_some() || !class.decorators.is_empty() {
         return None;
     }
+    let checked_default_fields = construction_proof.contains_class(class.span);
     let mut constructor = None;
     let mut has_instance_fields = false;
     for member in &class.body {
@@ -1038,18 +1046,20 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
                 if !prop.is_static
                     && prop.decorators.is_empty()
                     && !matches!(prop.key, PropName::Computed(_))
-                    && prop.value.as_deref().is_none_or(|value| {
-                        matches!(value.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))
-                    }) =>
+                    && (checked_default_fields
+                        || prop.value.as_deref().is_none_or(|value| {
+                            matches!(value.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))
+                        })) =>
             {
                 has_instance_fields = true
             }
             ClassMember::PrivateProp(prop)
                 if !prop.is_static
                     && prop.decorators.is_empty()
-                    && prop.value.as_deref().is_none_or(|value| {
-                        matches!(value.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))
-                    }) =>
+                    && (checked_default_fields
+                        || prop.value.as_deref().is_none_or(|value| {
+                            matches!(value.unwrap_parens(), Expr::Fn(_) | Expr::Arrow(_))
+                        })) =>
             {
                 has_instance_fields = true
             }
@@ -1061,6 +1071,7 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
         return Some(LocalConstructor {
             key: None,
             inert_allocation: !has_instance_fields,
+            checked_default_fields,
             own_fields: BTreeSet::new(),
             property_reads: BTreeSet::new(),
             binding_reads: BTreeSet::new(),
@@ -1111,6 +1122,7 @@ fn local_constructor(class: &Class) -> Option<LocalConstructor> {
     Some(LocalConstructor {
         key: Some(ctor.span.lo.0),
         inert_allocation: false,
+        checked_default_fields: false,
         own_fields: written_properties,
         property_reads,
         binding_reads,
@@ -1768,6 +1780,7 @@ struct ExecutionIndex {
     factory_callback_depth: u32,
     callables: BTreeMap<u32, Callable>,
     local_constructors: BTreeMap<u32, LocalConstructor>,
+    local_class_construction_proof: LocalClassConstructionProof,
     class_values: BTreeMap<u32, ClassValueFacts>,
     class_owners: BTreeMap<u32, SourceUnitOrdinal>,
     class_bindings: BTreeMap<u32, Id>,
@@ -1869,6 +1882,7 @@ impl Default for ExecutionIndex {
             factory_callback_depth: 0,
             callables: BTreeMap::new(),
             local_constructors: BTreeMap::new(),
+            local_class_construction_proof: LocalClassConstructionProof::default(),
             class_values: BTreeMap::new(),
             class_owners: BTreeMap::new(),
             class_bindings: BTreeMap::new(),
@@ -1961,11 +1975,13 @@ impl ExecutionIndex {
         hints: &AnalysisInputs,
         flow: Option<&ChunkValueFlow>,
         plain_array_bindings: &BTreeSet<String>,
+        construction_proof: &LocalClassConstructionProof,
     ) -> Self {
         let global_guards_requested = !hints.assumptions.deferred_global_publications.is_empty()
             || !hints.assumptions.non_reentrant_global_membership.is_empty();
         let mut index = Self {
             global_guards_requested,
+            local_class_construction_proof: construction_proof.clone(),
             top_calls: vec![Vec::new(); body.len()],
             owner_callable_prefix_reads: vec![None; body.len()],
             top_property_writes: vec![Vec::new(); body.len()],
@@ -3258,7 +3274,7 @@ impl Visit for ExecutionIndex {
         self.class_owners.insert(class.span.lo.0, self.owner);
         self.class_values
             .insert(class.span.lo.0, collect_class_value_facts(class));
-        if let Some(constructor) = local_constructor(class) {
+        if let Some(constructor) = local_constructor(class, &self.local_class_construction_proof) {
             self.local_constructors.insert(class.span.lo.0, constructor);
         }
         class.visit_children_with(self);
@@ -4589,7 +4605,13 @@ pub(crate) fn infer_returned_callback_factories(
     body: &[TopLevelItemView<'_>],
     exported_locals: &BTreeSet<String>,
 ) -> BTreeMap<String, u32> {
-    let index = ExecutionIndex::collect(body, &AnalysisInputs::default(), None, &BTreeSet::new());
+    let index = ExecutionIndex::collect(
+        body,
+        &AnalysisInputs::default(),
+        None,
+        &BTreeSet::new(),
+        &LocalClassConstructionProof::default(),
+    );
     if !index.dynamic_scope_owners.is_empty() {
         return BTreeMap::new();
     }

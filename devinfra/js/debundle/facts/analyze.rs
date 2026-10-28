@@ -177,11 +177,14 @@ where
         crate::purity::collect_plain_data_bindings(&body, &shadowed, &value_flow);
     let set_iterable_proof =
         SetIterableProof::analyze(&body, &shadowed, &value_flow, &plain_data_bindings);
+    let local_class_construction_proof =
+        LocalClassConstructionProof::analyze(&body, &shadowed, &value_flow, &set_iterable_proof);
     StructuralChunkAnalysis {
         body,
         imported_bindings,
         value_flow,
         set_iterable_proof,
+        local_class_construction_proof,
         plain_data_bindings,
         shadowed,
         per_statement,
@@ -238,6 +241,7 @@ where
         imported_bindings,
         value_flow,
         set_iterable_proof,
+        local_class_construction_proof,
         plain_data_bindings,
         shadowed,
         per_statement,
@@ -263,6 +267,7 @@ where
             &hints.imported_purities,
             &hints.assumptions.fluent_bindings,
             &set_iterable_proof,
+            &local_class_construction_proof,
             &plain_data_bindings,
             Some(&mut locate),
         )
@@ -330,6 +335,7 @@ where
             &value_flow,
             super::sync_effects::execution_index::interpreter::SynchronousCallProofs {
                 set_iterable: &set_iterable_proof,
+                local_class_construction: &local_class_construction_proof,
                 graph: &graph,
             },
             &shadowed,

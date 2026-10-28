@@ -80,6 +80,12 @@ pub(crate) fn classify_new_expr_purity(
         );
     };
     let arg_count = new_expr.args.as_ref().map_or(0, Vec::len);
+    if !local_shadowed.contains(callee.sym.as_ref())
+        && graph.has_proven_local_class_construction(new_expr.span)
+        && arg_count == 0
+    {
+        return Purity::Pure;
+    }
     if let Some(name) = PURE_BUILTIN_NEW_NO_ARGS
         .iter()
         .copied()
