@@ -19,6 +19,8 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const lifecycleTestTimeout = 10 * time.Second
@@ -317,6 +319,89 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	}
 	if facts.QuiesceStage != controlpb.RunnerFacts_QUIESCE_STAGE_QUIESCED {
 		t.Fatalf("facts after exact sealed cursor acknowledgement = %s, want QUIESCED", facts.QuiesceStage)
+	}
+}
+
+func TestCloseWaitsForAdmissionAndPublishesAdmissionTransitions(t *testing.T) {
+	r, s := lifecycleTestSession(t)
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+	defer cancel()
+
+	before, found, err := lifecycleRead[runnerInputSpec](ctx, r.lifecycle.state, "runner")
+	if err != nil || !found {
+		t.Fatalf("read RunnerInputs before admission: found=%v err=%v", found, err)
+	}
+	s.admitMu.Lock()
+	inputDone := make(chan error, 1)
+	go func() {
+		_, err := r.SubmitInput(ctx, &runnerservicepb.SubmitInputRequest{SessionId: s.id, CommandId: "close-race", Text: "input"})
+		inputDone <- err
+	}()
+	if err := watchLifecycle(ctx, r.lifecycle, "runner", func(input runnerInputSpec) (bool, error) {
+		return input.Admissions == 1, nil
+	}); err != nil {
+		s.admitMu.Unlock()
+		t.Fatalf("wait for held admission: %v", err)
+	}
+	during, found, err := lifecycleRead[runnerInputSpec](ctx, r.lifecycle.state, "runner")
+	if err != nil || !found || during.Revision != before.Revision+1 {
+		s.admitMu.Unlock()
+		t.Fatalf("RunnerInputs after admission start = %+v, found=%v err=%v; want one revision after %+v", during, found, err, before)
+	}
+
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- r.Close() }()
+	if err := watchLifecycle(ctx, r.lifecycle, "runner", func(runtime runnerRuntimeSpec) (bool, error) {
+		return runtime.Stage == stageDraining, nil
+	}); err != nil {
+		s.admitMu.Unlock()
+		t.Fatalf("wait for Close to drain admission: %v", err)
+	}
+	select {
+	case err := <-closeDone:
+		s.admitMu.Unlock()
+		t.Fatalf("Close returned while admission was held: %v", err)
+	default:
+	}
+	s.admitMu.Unlock()
+	if err := <-inputDone; status.Code(err) != codes.Aborted {
+		t.Fatalf("late input admission error = %v, want Aborted", err)
+	}
+	if err := waitClose(t, closeDone); err != nil {
+		t.Fatalf("Close after admission completion: %v", err)
+	}
+	after, found, err := lifecycleRead[runnerInputSpec](ctx, r.lifecycle.state, "runner")
+	if err != nil || !found || after.Admissions != 0 || after.Revision != before.Revision+2 {
+		t.Fatalf("RunnerInputs after admission completion = %+v, found=%v err=%v; want two revisions and no admissions after %+v", after, found, err, before)
+	}
+}
+
+func TestJournalAndAcknowledgementChangesDoNotReviseRunnerInputs(t *testing.T) {
+	r, s := lifecycleTestSession(t)
+	before, found, err := lifecycleRead[runnerInputSpec](r.ctx, r.lifecycle.state, "runner")
+	if err != nil || !found {
+		t.Fatalf("read RunnerInputs before journal update: found=%v err=%v", found, err)
+	}
+	changes := r.changesSince()
+	if _, err := s.recordEvent(r.ctx, observation(&eventpb.HarnessStderr{Text: "journal update"}), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	ack := IngressAcknowledgement{Cursor: s.journal.LastCursor()}
+	if err := r.store.WriteAcknowledgement(s.id, ack); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.lifecycle.publishAck(s.id, ack); err != nil {
+		t.Fatal(err)
+	}
+	r.changed() // Acknowledgement receipt still wakes observer-only consumers.
+	select {
+	case <-changes:
+	default:
+		t.Fatal("journal/acknowledgement changes did not wake Runner observers")
+	}
+	after, found, err := lifecycleRead[runnerInputSpec](r.ctx, r.lifecycle.state, "runner")
+	if err != nil || !found || after.Revision != before.Revision || after.Admissions != before.Admissions {
+		t.Fatalf("RunnerInputs changed on journal/acknowledgement: before=%+v after=%+v found=%v err=%v", before, after, found, err)
 	}
 }
 

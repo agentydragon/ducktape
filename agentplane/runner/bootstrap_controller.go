@@ -54,8 +54,6 @@ func (*bootstrapLifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
 			{Namespace: runnerlifecycle.Namespace, Type: bootstrapInputType, Kind: controller.InputQPrimary},
-			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.DesiredStateType, Kind: controller.InputQMapped},
-			{Namespace: runnerlifecycle.Namespace, Type: runnerInputType, Kind: controller.InputQMapped},
 			{Namespace: runnerlifecycle.Namespace, Type: operationResultType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: bootstrapRuntimeType, Kind: controller.OutputExclusive}},
@@ -65,8 +63,6 @@ func (*bootstrapLifecycleController) Settings() controller.QSettings {
 
 func (c *bootstrapLifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
 	switch ptr.Type() {
-	case runnerlifecycle.DesiredStateType, runnerInputType:
-		return []resource.Pointer{resource.NewMetadata(runnerlifecycle.Namespace, bootstrapInputType, "bootstrap", resource.VersionUndefined)}, nil
 	case operationResultType:
 		result, found, err := lifecycleRead[operationResultSpec](ctx, r, ptr.ID())
 		if err != nil || !found || result.Controller != bootstrapControllerName {

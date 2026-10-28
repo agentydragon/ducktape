@@ -143,8 +143,12 @@ func (r *Runner) changed() {
 	close(r.changes)
 	r.changes = make(chan struct{})
 	r.mu.Unlock()
+}
+
+func (r *Runner) admissionChanged() {
+	r.changed()
 	if r.lifecycle != nil {
-		r.lifecycle.touchRunner()
+		r.lifecycle.publishAdmissionState()
 	}
 }
 

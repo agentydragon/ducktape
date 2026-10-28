@@ -99,8 +99,8 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 	r.admissions++
 	err = r.store.Write(request.SessionId, record)
 	r.mu.Unlock()
-	r.changed()
-	defer func() { r.mu.Lock(); r.admissions--; r.mu.Unlock(); r.changed() }()
+	r.admissionChanged()
+	defer func() { r.mu.Lock(); r.admissions--; r.mu.Unlock(); r.admissionChanged() }()
 	if err != nil {
 		return nil, rpcError(err)
 	}
@@ -138,8 +138,8 @@ func (r *Runner) admit(id string, c *commandpb.Command) (*eventlogpb.EventEntry,
 	r.admissions++
 	r.idleSince = nil
 	r.mu.Unlock()
-	r.changed()
-	defer func() { r.mu.Lock(); r.admissions--; r.mu.Unlock(); r.changed() }()
+	r.admissionChanged()
+	defer func() { r.mu.Lock(); r.admissions--; r.mu.Unlock(); r.admissionChanged() }()
 	exists, err := r.store.Exists(id)
 	if err != nil {
 		return nil, rpcError(err)

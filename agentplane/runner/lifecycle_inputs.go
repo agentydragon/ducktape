@@ -31,10 +31,10 @@ func publishLifecycle[T lifecycleSpec[T]](l *lifecycle, id string, value T) erro
 	}, state.WithUpdateOwner("runner-host"))
 }
 
-func (l *lifecycle) touchRunner() {
+func (l *lifecycle) publishAdmissionState() {
 	l.runner.mu.Lock()
 	admissions := l.runner.admissions
-	l.runner.mu.Unlock()
+	defer l.runner.mu.Unlock()
 	l.publishMu.Lock()
 	defer l.publishMu.Unlock()
 	input, _, err := lifecycleRead[runnerInputSpec](l.runner.ctx, l.state, "runner")
@@ -59,6 +59,7 @@ func (l *lifecycle) publishSession(s *Session, demand bool) {
 		input.Demand++
 	}
 	s.mu.Lock()
+	input.Harness = s.record.Harness
 	input.SetupRequested = s.setupScript != nil
 	input.Setup, input.ActiveTurn, input.Pending, input.ProcessID = s.setup, s.activeTurn, len(s.pending), s.processID
 	input.ProcessRunning = s.process != nil && s.process.Running()

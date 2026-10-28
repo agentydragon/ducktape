@@ -10,6 +10,8 @@ import (
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/resource/typed"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/siderolabs/gen/optional"
 	"go.uber.org/zap"
 )
@@ -23,7 +25,6 @@ func (c *sessionLifecycleController) Settings() controller.QSettings {
 			{Namespace: runnerlifecycle.Namespace, Type: sessionInputType, Kind: controller.InputQPrimary},
 			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.DesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
-			{Namespace: runnerlifecycle.Namespace, Type: bootstrapRuntimeType, Kind: controller.InputQMapped},
 			{Namespace: runnerlifecycle.Namespace, Type: codexAppServerRuntimeType, Kind: controller.InputQMapped},
 			{Namespace: runnerlifecycle.Namespace, Type: operationResultType, Kind: controller.InputQMapped},
 		},
@@ -40,14 +41,17 @@ func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger
 		}
 		return []resource.Pointer{resource.NewMetadata(runnerlifecycle.Namespace, sessionInputType, result.Session, resource.VersionUndefined)}, nil
 	}
-	rows, err := r.List(ctx, resource.NewMetadata(runnerlifecycle.Namespace, sessionInputType, "", resource.VersionUndefined))
+	rows, err := safe.ReaderListAll[*typed.Resource[sessionInputSpec, lifecycleExtension[sessionInputSpec]]](ctx, r)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]resource.Pointer, 0, len(rows.Items))
-	for _, row := range rows.Items {
+	result := make([]resource.Pointer, 0, rows.Len())
+	rows.ForEach(func(row *typed.Resource[sessionInputSpec, lifecycleExtension[sessionInputSpec]]) {
+		if ptr.Type() == codexAppServerRuntimeType && row.TypedSpec().Harness != runnerpb.Harness_HARNESS_CODEX {
+			return
+		}
 		result = append(result, row.Metadata())
-	}
+	})
 	return result, nil
 }
 

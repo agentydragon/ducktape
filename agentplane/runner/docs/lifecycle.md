@@ -80,7 +80,9 @@ uses `runner-host`; process intent and input revisions published by `supervision
 `supervision-host`. Process status waits use COSI watches; predicates spanning native handles and
 journals retain the Runner observation notification.
 
-QControllers declare primary inputs, mapped dependencies, exclusive outputs, and concurrency.
+QControllers declare primary inputs, mapped dependencies, exclusive outputs, and concurrency. The
+Session QController maps Runner desired/runtime changes to every Session, app-server runtime changes
+only to Codex Sessions, and operation results to their owning Session.
 Deadlines use COSI requeue scheduling rather than sleeping inside reconciliation. Operation results
 name their consuming controller explicitly, rather than deriving routing from operation names.
 Native operation slots remain claimed through completion publication and until consumption;

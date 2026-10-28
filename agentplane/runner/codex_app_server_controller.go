@@ -63,7 +63,6 @@ func (*codexAppServerLifecycleController) Settings() controller.QSettings {
 			{Namespace: runnerlifecycle.Namespace, Type: codexAppServerInputType, Kind: controller.InputQPrimary},
 			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.DesiredStateType, Kind: controller.InputQMapped},
 			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
-			{Namespace: runnerlifecycle.Namespace, Type: runnerInputType, Kind: controller.InputQMapped},
 			{Namespace: runnerlifecycle.Namespace, Type: execserver.RuntimeType, Kind: controller.InputQMapped},
 			{Namespace: runnerlifecycle.Namespace, Type: operationResultType, Kind: controller.InputQMapped},
 		},

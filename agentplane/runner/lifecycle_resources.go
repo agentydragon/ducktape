@@ -94,6 +94,7 @@ type sessionRuntimeSpec struct {
 	Error          string
 }
 type sessionInputSpec struct {
+	Harness           runnerpb.Harness
 	Demand            uint64
 	Cursor            uint64
 	SetupRequested    bool
