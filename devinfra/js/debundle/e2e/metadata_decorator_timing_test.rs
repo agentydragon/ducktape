@@ -76,25 +76,19 @@ fn unpublished_metadata_target_stays_deferred_after_opaque_call() {
     let fixture = run_fixture(
         FixtureOpts::new(&source, claimed).with_extra_chunks(&[("static/peer", PROVIDER)]),
     );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/controllers/controller.js",
-        &["Controller"],
-        &["later"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/dynamic.js",
-        &["dynamic"],
-        &["later"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/later.js",
-        &["later"],
-        &["dynamic"],
-    );
     assert_preserved_entry_output(&fixture, "42 read,record\n");
+    // These are internal modules of the designated entry, not alternative ESM
+    // roots. Probe their export boundaries after that entry initializes them.
+    assert_generated_module_after_entry_script(
+        &fixture,
+        r#"const controller = await import('./static/app/modules/controllers/controller.js');
+const dynamic = await import('./static/app/modules/values/dynamic.js');
+const later = await import('./static/app/modules/values/later.js');
+console.log('Controller' in controller, 'later' in controller,
+  'dynamic' in dynamic, 'later' in dynamic, 'later' in later, 'dynamic' in later);
+"#,
+        "true false true false true false\n",
+    );
 }
 
 #[test]
