@@ -1,18 +1,10 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = ["@pypi//pytest"],
-)
-
 py_test(
     name = "test_consent_integration",
     srcs = ["test_consent_integration.py"],
     deps = [
         ":config",
-        ":conftest",
         ":provider",
         "//:conftest",
         "//mcp_infra:conftest",
@@ -31,7 +23,6 @@ py_test(
     srcs = ["test_jwt_verifier_contract.py"],
     deps = [
         ":config",
-        ":conftest",
         ":provider",
         "//:conftest",
         "//mcp_infra:conftest",
@@ -98,7 +89,6 @@ py_test(
     srcs = ["test_config.py"],
     deps = [
         ":config",
-        ":conftest",
         "//:conftest",
         "//mcp_infra:conftest",
         "@pypi//pytest",
@@ -110,7 +100,6 @@ py_test(
     name = "test_fastmcp_proxy",
     srcs = ["test_fastmcp_proxy.py"],
     deps = [
-        ":conftest",
         ":fastmcp_proxy",
         "//:conftest",
         "//mcp_infra:conftest",
@@ -134,7 +123,6 @@ py_test(
     srcs = ["test_provider.py"],
     deps = [
         ":config",
-        ":conftest",
         ":provider",
         "//:conftest",
         "//mcp_infra:conftest",
@@ -150,7 +138,6 @@ py_test(
     srcs = ["test_token_exchange.py"],
     deps = [
         ":config",
-        ":conftest",
         ":token_exchange",
         "//:conftest",
         "//mcp_infra:conftest",
@@ -166,7 +153,6 @@ py_test(
     name = "test_fastmcp_compatibility",
     srcs = ["test_fastmcp_compatibility.py"],
     deps = [
-        ":conftest",
         "//:conftest",
         "//mcp_infra:conftest",
         "@pypi//fastmcp_slim",

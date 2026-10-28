@@ -23,7 +23,6 @@ py_test(
     deps = [
         "//:conftest",
         "//props:conftest",
-        "//props/db:conftest",
         "@pypi//alembic",
         "@pypi//pytest_bazel",
     ],
@@ -38,7 +37,6 @@ py_test(
         "//:conftest",
         "//props:conftest",
         "//props/db:config",
-        "//props/db:conftest",
         "//util/testing:postgres",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -55,7 +53,6 @@ py_test(
         "//:conftest",
         "//props:conftest",
         "//props/db:config",
-        "//props/db:conftest",
         "//props/db:setup",
         "//util/testing:postgres",
         "//util/testing:undeclared_outputs",

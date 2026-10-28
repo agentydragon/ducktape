@@ -110,7 +110,6 @@ py_test(
     size = "medium",
     srcs = ["test_k8s_executor.py"],
     deps = [
-        ":conftest",
         ":executor",
         ":k8s_executor",
         "//:conftest",
@@ -126,7 +125,6 @@ py_test(
     srcs = ["test_grader_supervisor.py"],
     deps = [
         ":agent_registry",
-        ":conftest",
         ":executor",
         ":grader_supervisor",
         "//:conftest",
@@ -144,7 +142,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":agent_registry",
-        ":conftest",
         ":executor",
         "//:conftest",
         "//props:conftest",
@@ -158,11 +155,4 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = ["@pypi//pytest"],
 )

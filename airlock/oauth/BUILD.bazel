@@ -58,18 +58,11 @@ py_library(
 
 # Tests
 
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-)
-
 py_test(
     name = "test_provider",
     srcs = ["test_provider.py"],
     deps = [
         ":config",
-        ":conftest",
         ":provider",
         "//:conftest",
         "@pypi//httpx",
@@ -84,7 +77,6 @@ py_test(
     srcs = ["test_refresh.py"],
     deps = [
         ":config",
-        ":conftest",
         ":provider",
         ":refresh",
         "//:conftest",

@@ -133,7 +133,6 @@ py_library(
 #     srcs = ["test_function_learning.py"],
 #     requires_docker = True,
 #     deps = [
-#         ":conftest",
 #         ":function_learning",
 #         ":functions",
 #         ":result_types",
@@ -157,15 +156,8 @@ py_test(
     name = "test_functions",
     srcs = ["test_functions.py"],
     deps = [
-        ":conftest",
         ":functions",
         "//:conftest",
         "@pypi//pytest_bazel",
     ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
 )

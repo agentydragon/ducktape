@@ -86,18 +86,11 @@ oci_load(
 # Tests
 # =============================================================================
 
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-)
-
 py_test(
     name = "test_policy",
     srcs = ["test_policy.py"],
     deps = [
         ":config",
-        ":conftest",
         ":policy",
         "//:conftest",
         "@pypi//pytest",
@@ -110,7 +103,6 @@ py_test(
     srcs = ["test_proxy.py"],
     deps = [
         ":config",
-        ":conftest",
         ":policy",
         ":proxy",
         "//:conftest",

@@ -138,15 +138,6 @@ py_library(
 # Tests
 # =============================================================================
 
-# Test support
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    visibility = ["//props:__subpackages__"],
-    deps = ["@pypi//pytest"],
-)
-
 # db/ must not depend on agent code (container-only)
 assert_no_deps(
     name = "test_no_grader_deps",
@@ -175,7 +166,6 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":database",
         ":examples",
         ":models",
@@ -197,7 +187,6 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":examples",
         ":models",
         "//:conftest",
@@ -219,7 +208,6 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":database",
         ":models",
         "//:conftest",
@@ -242,7 +230,6 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":database",
         ":examples",
         ":models",

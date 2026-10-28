@@ -1,18 +1,10 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = ["@pypi//pytest"],
-)
-
 py_test(
     name = "test_client",
     srcs = ["test_client.py"],
     deps = [
         ":client",
-        ":conftest",
         "//:conftest",
         "//openai_utils:api_shape",
         "//props:conftest",
