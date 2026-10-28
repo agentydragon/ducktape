@@ -1,0 +1,45 @@
+{
+  "discoveryVersion": "v1",
+  "id": "widgets:v1",
+  "name": "widgets",
+  "version": "v1",
+  "schemas": {},
+  "resources": {
+    "items": {
+      "methods": {
+        "list": {
+          "id": "widgets.items.list",
+          "path": "v1/items",
+          "httpMethod": "GET",
+          "description": "Lists matching widgets.",
+          "response": {
+            "type": "object",
+            "properties": {
+              "nextPageToken": { "type": "string" },
+              "totalItems": { "type": "integer", "format": "int32" }
+            }
+          },
+          "parameters": {
+            "query": {
+              "type": "string",
+              "location": "query",
+              "description": "Search text."
+            },
+            "labels": {
+              "type": "string",
+              "repeated": true,
+              "location": "query",
+              "description": "Labels to match."
+            },
+            "pageSize": {
+              "type": "integer",
+              "format": "int32",
+              "required": true,
+              "location": "query"
+            }
+          }
+        }
+      }
+    }
+  }
+}

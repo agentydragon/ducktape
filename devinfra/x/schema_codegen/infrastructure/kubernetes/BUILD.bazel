@@ -1,0 +1,133 @@
+# gazelle:resolve py schema_codegen_crds //devinfra/x/schema_codegen/infrastructure/kubernetes:widget_constructs
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path", "go_test")
+load("//devinfra/go:controller_gen.bzl", "controller_crds", "controller_deepcopy")
+load("//devinfra/go:kubernetes_clients.bzl", "kubernetes_clients")
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//devinfra/x/schema_codegen:__pkg__"],
+)
+
+_API_IMPORT = "github.com/agentydragon/ducktape/devinfra/x/schema_codegen/infrastructure/kubernetes/api/v1alpha1"
+
+_INPUT_BASE = "github.com/agentydragon/ducktape/devinfra/x/schema_codegen/infrastructure/kubernetes"
+
+go_library(
+    name = "api_codegen_inputs",
+    srcs = [
+        "doc.go",
+        "types.go",
+    ],
+    importpath = _API_IMPORT,
+    deps = ["@io_k8s_apimachinery//pkg/apis/meta/v1:meta"],
+)
+
+go_path(
+    name = "api_gopath",
+    mode = "copy",
+    deps = [":api_codegen_inputs"],
+)
+
+controller_crds(
+    name = "generated_crds",
+    gopath = ":api_gopath",
+    importpath = _API_IMPORT,
+)
+
+controller_deepcopy(
+    name = "generated_deepcopy",
+    gopath = ":api_gopath",
+    importpath = _API_IMPORT,
+)
+
+go_library(
+    name = "api",
+    srcs = [
+        "doc.go",
+        "scheme.go",
+        "types.go",
+        ":generated_deepcopy",
+    ],
+    importpath = _API_IMPORT,
+    deps = [
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+    ],
+)
+
+genrule(
+    name = "widget_crd",
+    srcs = [":generated_crds"],
+    outs = ["widget.crd.yaml"],
+    cmd = "cp $(location :generated_crds)/codegen.schema.example.test_widgets.yaml $@",
+)
+
+cdk8s_import(
+    name = "widget_constructs",
+    crd = ":widget_crd",
+    module_name = "schema_codegen_crds",
+    module_path = "test/example/schema/codegen",
+)
+
+kubernetes_clients(
+    name = "generated_clients",
+    api = ":api",
+    apply_configuration_types = [
+        "Widget",
+        "WidgetSpec",
+        "WidgetStatus",
+    ],
+    importpath = "github.com/agentydragon/ducktape/devinfra/x/schema_codegen/infrastructure/kubernetes/client",
+    input_base = _INPUT_BASE,
+    kinds = ["Widget"],
+)
+
+go_test(
+    name = "test_generated_clients",
+    srcs = ["client_consumer_test.go"],
+    importpath = "github.com/agentydragon/ducktape/devinfra/x/schema_codegen/infrastructure/kubernetes/client_consumer_test",
+    deps = [
+        ":api",
+        ":applyconfiguration_api",
+        ":clientset",
+        ":informer_group",
+        ":informer_version",
+        ":informers",
+        ":listers",
+        ":typed",
+        "@io_k8s_client_go//rest",
+    ],
+)
+
+py_library(
+    name = "construct_consumer",
+    srcs = ["construct_consumer.py"],
+    deps = [
+        ":widget_constructs",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_test(
+    name = "test_construct_consumer",
+    srcs = ["test_construct_consumer.py"],
+    data = [
+        ":widget_crd",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":construct_consumer",
+        "//util/bazel:runfiles",
+        "@pypi//cdk8s",
+        "@pypi//jsonschema",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//referencing",
+    ],
+)

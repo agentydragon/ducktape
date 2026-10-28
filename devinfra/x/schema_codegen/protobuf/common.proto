@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package schema_codegen.v1;
+
+enum SampleStatus {
+  SAMPLE_STATUS_UNSPECIFIED = 0;
+  SAMPLE_STATUS_READY = 1;
+}
+
+message CommonMetadata {
+  string producer = 1;
+}

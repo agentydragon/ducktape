@@ -37,12 +37,13 @@ const reactProjects = [
   "props/frontend/**",
   "util/frontend/**",
 ];
-const projectGlobs = reactProjects;
+const typescriptProjects = ["devinfra/x/schema_codegen/**"];
+const projectGlobs = [...reactProjects, ...typescriptProjects];
 
-// All React projects' .ts/.tsx get the shared TypeScript, React, and hooks rules.
+// Selected projects get TypeScript rules; React projects also get React and hooks rules.
 const tsFiles = projectGlobs.map((g) => `${g}/*.{ts,tsx}`);
 const reactFiles = reactProjects.map((g) => `${g}/*.{ts,tsx}`);
-const testFiles = reactProjects.map((g) => `${g}/*.test.{ts,tsx}`);
+const testFiles = projectGlobs.map((g) => `${g}/*.test.{ts,tsx}`);
 
 // Import ordering (the TS equivalent of ruff's isort) is intentionally OFF.
 // import/order crashes under Bazel: ranking an import calls getContextPackagePath,

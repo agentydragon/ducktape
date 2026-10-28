@@ -1,0 +1,27 @@
+load("//devinfra/python:defs.bzl", "py_test")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//devinfra/x/schema_codegen:__pkg__"],
+)
+
+py_test(
+    name = "test_openapi_adapter",
+    srcs = ["test_openapi_adapter.py"],
+    data = ["sample_openapi.json"],
+    deps = [
+        "//:conftest",
+        "//grocy_mcp:client",
+        "//grocy_mcp:mcp_types",
+        "//grocy_mcp:server",
+        "//mcp_infra:request_scoped_openapi",
+        "//util/bazel:runfiles",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx2",
+        "@pypi//jsonschema",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        # keep: jsonschema validator signatures reference referencing types
+        "@pypi//referencing",
+    ],
+)
