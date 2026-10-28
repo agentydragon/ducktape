@@ -439,10 +439,11 @@ The typed-only writer version can roll out after every replica is running that t
 writing the legacy `action`, `actor` and `policy_evidence` JSON columns, so rollback after that point is to the
 typed-reader image. After every writer runs the typed-only version, run the migration image with
 `validate-storage --confirm-all-writers-typed-only`. This explicit offline command validates the full-table
-constraints one table at a time and records the writer rollout attestation; it can resume after interruption.
+constraints one table at a time; it can resume after interruption. The required confirmation is the operator gate;
+PostgreSQL's `convalidated` state is the durable proof required by the contract migration.
 Neither backfill nor validation runs in serving startup or readiness. Keep the legacy columns through the
-rollback window. A later, separately gated contract step removes them only after this attestation and PostgreSQL's
-validated constraints are present.
+rollback window. A later, separately gated contract step removes them only after every writer is typed-only, the
+rollback window has ended and PostgreSQL's validated constraints are present.
 
 ## MCP executor transports
 

@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestActionStorageCutoverRequiresBackfillThenRecordsValidation(t *testing.T) {
+func TestActionStorageValidationRequiresBackfill(t *testing.T) {
 	f := newFixture(t)
 	id := uuid.New()
 	f.exec(t, `ALTER TABLE action_request DROP CONSTRAINT action_request_typed_identity_present`)
@@ -17,26 +17,23 @@ func TestActionStorageCutoverRequiresBackfillThenRecordsValidation(t *testing.T)
 	f.exec(t, `ALTER TABLE action_request ADD CONSTRAINT action_request_typed_identity_present
 		CHECK (action_group IS NOT NULL AND action_name IS NOT NULL) NOT VALID`)
 
-	if err := ValidateActionStorageCutover(t.Context(), f.db); err == nil {
+	if err := ValidateActionStorageConstraints(t.Context(), f.db); err == nil {
 		t.Fatal("validated a database whose historical request lacks its typed identity")
 	}
-	if f.count(t, `SELECT count(*) FROM action_storage_cutover WHERE typed_only_writers_at IS NOT NULL`) != 0 {
-		t.Fatal("failed validation recorded the writer rollout attestation")
+	if f.count(t, `SELECT count(*) FROM pg_constraint WHERE conname = 'action_request_typed_identity_present' AND convalidated`) != 0 {
+		t.Fatal("failed validation marked the incomplete identity proof as valid")
 	}
 
 	if err := BackfillActionStorage(t.Context(), f.db); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateActionStorageCutover(t.Context(), f.db); err != nil {
+	if err := ValidateActionStorageConstraints(t.Context(), f.db); err != nil {
 		t.Fatalf("validated the backfilled database: %v", err)
 	}
 	if f.count(t, `SELECT count(*) FROM pg_constraint WHERE conname IN (
 		'action_request_typed_identity_present', 'action_event_actor_proto_present',
 		'action_decision_policy_evidence_proto_present') AND convalidated`) != 3 {
 		t.Fatal("cutover did not leave all three PostgreSQL proofs validated")
-	}
-	if f.count(t, `SELECT count(*) FROM action_storage_cutover WHERE typed_only_writers_at IS NOT NULL`) != 1 {
-		t.Fatal("successful validation did not record the writer rollout attestation")
 	}
 	if f.count(t, `SELECT count(*) FROM action_request WHERE id = $1 AND action_group = 'legacy-group'
 		AND action_name = 'legacy-action' AND action = '{"group":"legacy-group","name":"legacy-action"}'::jsonb`, id) != 1 {

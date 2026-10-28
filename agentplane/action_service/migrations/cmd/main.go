@@ -56,7 +56,7 @@ func main() {
 			if err := migrations.Up(ctx, db); err != nil {
 				return err
 			}
-			return store.ValidateActionStorageCutover(ctx, db)
+			return store.ValidateActionStorageConstraints(ctx, db)
 		}
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

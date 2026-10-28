@@ -95,7 +95,6 @@ def test_storage_validation_requires_typed_only_writer_confirmation(
                 )
                 == 3
             )
-            assert conn.scalar(text("SELECT typed_only_writers_at IS NOT NULL FROM action_storage_cutover")) is True
 
 
 if __name__ == "__main__":
