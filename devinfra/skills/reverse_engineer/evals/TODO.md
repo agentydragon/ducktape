@@ -88,9 +88,9 @@ followups remain open:
   against the same recovered tree.
 - **Conditional judge execution-cost trade-off** — if judge-container startup
   becomes the bottleneck, compare the current separate-container judge with
-  prompt-stuffing the needed context into the main agent prompt. Account for
-  the extra input tokens; keep the current design unless a measured comparison
-  favors the alternative.
+  stuffing the needed context into a separate judge prompt. Account for the
+  extra input tokens and keep reference material isolated from the solve agent;
+  change the current design only if a measured comparison favors the alternative.
 - **Differential verification** — compile the recovered Go source in the
   grader and adapt the protocol checks in
   `tasks/go_crypto_server/test_smoke.py` to exercise the recovered binary,
