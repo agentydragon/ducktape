@@ -23,8 +23,10 @@ from agentplane.x.central_sampler.testing import Endpoint
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
-async def _capture_stalled_session(deployed: CentralStack, session_id: str, command_id: str, admission: str) -> None:
-    """Retain the service boundary states when admission produces no provider request."""
+async def _capture_session_diagnostics(
+    deployed: CentralStack, session_id: str, command_id: str, admission: str
+) -> None:
+    """Retain sampler, History, Sandbox, and full event evidence for a Session."""
     diagnostic: dict[str, object] = {
         "session_id": session_id,
         "command_id": command_id,
@@ -54,6 +56,16 @@ async def _capture_stalled_session(deployed: CentralStack, session_id: str, comm
             }
             for entry in events.entries
         ]
+        diagnostic["history_boundary_records"] = [
+            {
+                "cursor": entry.cursor,
+                "source_id": entry.origin.source_id,
+                "sequence": entry.origin.sequence,
+                "boundary_record": str(entry.event.boundary_record),
+            }
+            for entry in events.entries
+            if entry.event.HasField("boundary_record")
+        ]
     except Exception as error:
         diagnostic["history_events_error"] = repr(error)
     try:
@@ -65,7 +77,7 @@ async def _capture_stalled_session(deployed: CentralStack, session_id: str, comm
         }
     except Exception as error:
         diagnostic["sandbox_error"] = repr(error)
-    (undeclared_outputs_dir() / "central-sampler-stalled-session.json").write_text(
+    (undeclared_outputs_dir() / "central-sampler-session-diagnostics.json").write_text(
         json.dumps(diagnostic, indent=2) + "\n"
     )
 
@@ -153,7 +165,7 @@ async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) 
             await _wait_for_setup(deployed, session_id)
             first_exchange = await endpoint.next()
         except Exception:
-            await _capture_stalled_session(deployed, session_id, command_id, admission)
+            await _capture_session_diagnostics(deployed, session_id, command_id, admission)
             raise
         async with first_exchange as exchange:
             assert any(item.get("content") == prompt for item in exchange.request.body["input"])
@@ -246,7 +258,10 @@ async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) 
         finished = [entry for entry in retained.entries if entry.event.HasField("setup_finished")]
         assert len(finished) == 1
         assert finished[0].event.setup_finished.exit_code == 0
-        assert b"".join(entry.event.setup_output.stdout for entry in retained.entries) == b"setup-on-executor\n"
+        setup_stdout = b"".join(entry.event.setup_output.stdout for entry in retained.entries)
+        if setup_stdout != b"setup-on-executor\n":
+            await _capture_session_diagnostics(deployed, session_id, command_id, admission)
+        assert setup_stdout == b"setup-on-executor\n"
         completed = [entry for entry in retained.entries if entry.event.HasField("item_completed")]
         for text in (reasoning, answer):
             (item,) = [entry for entry in completed if entry.event.item_completed.text == text]

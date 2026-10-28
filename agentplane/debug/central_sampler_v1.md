@@ -204,7 +204,7 @@ execution or History assertion was reached. The retained guest console also show
 connection dropping during the fixture's Gateway restart.
 
 The [VM rerun with sampler diagnostics](https://app.buildbuddy.io/invocation/a736ad69-e27c-46c9-b150-dbfd3dffb5ba)
-reproduced the first-provider timeout. Its retained `central-sampler-stalled-session.json` shows
+reproduced the first-provider timeout. Its retained session diagnostic artifact shows
 the Sandbox Ready and connected, but sampler setup interrupted exactly ten seconds after it
 started, with no provider or executor boundary records. The sampler stderr reports
 `context deadline exceeded`. The guest console places executor reconciliation at 21:11:38.096Z
