@@ -165,9 +165,10 @@ func TestAbsentValuesAreWrittenAsNull(t *testing.T) {
 		rows  int
 	}{
 		{"request", `SELECT count(*) FROM action_request WHERE description IS NULL`, 1},
-		{"events", `SELECT count(*) FROM action_event WHERE actor IS NULL`, 2},
+		{"events", `SELECT count(*) FROM action_event WHERE actor IS NULL AND actor_proto IS NULL`, 2},
 		{"decision", `SELECT count(*) FROM action_decision
-			WHERE decision_note IS NULL AND reason_code IS NULL AND reason_description IS NULL AND policy_evidence IS NULL`, 1},
+			WHERE decision_note IS NULL AND reason_code IS NULL AND reason_description IS NULL
+				AND policy_evidence IS NULL AND policy_evidence_proto IS NULL`, 1},
 		{"execution", `SELECT count(*) FROM action_execution
 			WHERE result IS NULL AND error IS NULL AND started_at IS NULL AND completed_at IS NULL AND executor_id IS NULL
 				AND lease_token IS NULL AND lease_expires_at IS NULL AND heartbeat_at IS NULL AND reconciled_at IS NULL`, 1},

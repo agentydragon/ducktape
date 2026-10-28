@@ -245,6 +245,7 @@ func advance(ctx context.Context, tx *sql.Tx, row *requestRow, state action_serv
 // appendEvent records the request's current version and state, and wakes whoever follows the request.
 func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principal) error {
 	var document any
+	var actorProto []byte
 	if actor != nil {
 		recorded, err := recordedActor(actor)
 		if err != nil {
@@ -255,10 +256,15 @@ func appendEvent(ctx context.Context, tx *sql.Tx, row requestRow, actor Principa
 			return err
 		}
 		document = string(encoded)
+		actorProto, err = encodeRecordedPrincipal(recorded)
+		if err != nil {
+			return err
+		}
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO action_event (request_id, sequence, state, at, actor) VALUES ($1, $2, $3, $4, $5::jsonb)`,
-		row.ID, row.Version, storedState(row.State), row.UpdatedAt, document); err != nil {
+		`INSERT INTO action_event (request_id, sequence, state, at, actor, actor_proto)
+			VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
+		row.ID, row.Version, storedState(row.State), row.UpdatedAt, document, actorProto); err != nil {
 		return err
 	}
 	return notify(ctx, tx, UpdatesChannel, row.ID.String())
@@ -297,13 +303,13 @@ func (s *Store) Submit(ctx context.Context, caller CallerPrincipal, input Action
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		at := now()
 		row, err := scanRequest(tx.QueryRowContext(ctx, `
-			INSERT INTO action_request (id, idempotency_key, action, arguments, title, description, caller_namespace,
-				caller_name, state, version, created_at, updated_at)
-			VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, 'decision_pending', 1, $9, $9)
+			INSERT INTO action_request (id, idempotency_key, action, action_group, action_name, arguments, title,
+				description, caller_namespace, caller_name, state, version, created_at, updated_at)
+			VALUES ($1, $2, $3::jsonb, $4, $5, $6::jsonb, $7, $8, $9, $10, 'decision_pending', 1, $11, $11)
 			ON CONFLICT (caller_namespace, caller_name, idempotency_key) DO NOTHING
 			RETURNING `+requestColumns,
-			admission.RequestID, input.IdempotencyKey, string(action), string(input.Arguments), input.Title,
-			input.Description, caller.Account.Namespace, caller.Account.Name, at))
+			admission.RequestID, input.IdempotencyKey, string(action), input.Action.Group, input.Action.Name,
+			string(input.Arguments), input.Title, input.Description, caller.Account.Namespace, caller.Account.Name, at))
 		if errors.Is(err, sql.ErrNoRows) {
 			return &ConflictError{
 				Reason:  ConflictIdempotencyKeyUsed,

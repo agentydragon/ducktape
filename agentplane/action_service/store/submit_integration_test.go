@@ -8,6 +8,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 func conflictReason(err error) ConflictReason {
@@ -35,6 +36,14 @@ func TestSubmitStoresAPendingRequestWithItsFirstEvent(t *testing.T) {
 		t.Errorf("stored %+v", request)
 	}
 	sameJSON(t, request.Arguments, body.Arguments)
+	var actionGroup, actionName string
+	if err := f.db.QueryRowContext(t.Context(), `SELECT action_group, action_name FROM action_request WHERE id = $1`, id).
+		Scan(&actionGroup, &actionName); err != nil {
+		t.Fatal(err)
+	}
+	if actionGroup != body.Action.Group || actionName != body.Action.Name {
+		t.Errorf("typed action identity = %q/%q, want %q/%q", actionGroup, actionName, body.Action.Group, body.Action.Name)
+	}
 	if got := f.get(t, id); !reflect.DeepEqual(got, request) {
 		t.Errorf("read back %+v, want %+v", got, request)
 	}
@@ -109,6 +118,27 @@ func TestADecisiveVoteCommitsItsDecisionWithTheInsert(t *testing.T) {
 				*decision.ReasonDescription != description || !reflect.DeepEqual(decision.PolicyEvidence, evidence) ||
 				decision.IdempotencyKey != "auto:"+request.ID.String() || !decision.DecidedAt.Equal(request.UpdatedAt) {
 				t.Errorf("decision %+v", decision)
+			}
+			var encodedEvidence []byte
+			if err := f.db.QueryRowContext(t.Context(), `SELECT policy_evidence_proto FROM action_decision WHERE request_id = $1`,
+				request.ID).Scan(&encodedEvidence); err != nil {
+				t.Fatal(err)
+			}
+			var storedEvidence action_servicepb.PolicyEvidence
+			if err := proto.Unmarshal(encodedEvidence, &storedEvidence); err != nil {
+				t.Fatal(err)
+			}
+			wantEvidence := &action_servicepb.PolicyEvidence{
+				Bindings:   []*action_servicepb.BindingEvidence{{Namespace: "test-namespace", Name: "test-binding", ResourceVersion: "7"}},
+				PolicySets: []*action_servicepb.PolicySetEvidence{{Namespace: "test-namespace", Name: "test-set", Generation: 4}},
+				Matched: &action_servicepb.MatchedPolicy{
+					Namespace: "test-namespace", PolicySet: "test-set",
+					Source: action_servicepb.PolicySource_POLICY_SOURCE_RULES,
+					Type:   action_servicepb.PolicyKind_POLICY_KIND_ARGUMENT_SCHEMA,
+				},
+			}
+			if !proto.Equal(&storedEvidence, wantEvidence) {
+				t.Errorf("protobuf evidence = %v, want %v", &storedEvidence, wantEvidence)
 			}
 			if (request.Execution != nil) != test.execution {
 				t.Fatalf("execution = %+v, want one: %v", request.Execution, test.execution)

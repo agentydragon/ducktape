@@ -31,23 +31,27 @@ type decisionRecord struct {
 // recordDecision decides a pending request in the caller's transaction and reports whether it now awaits
 // dispatch: an allow adds the one Execution and wakes the dispatchers.
 func recordDecision(ctx context.Context, tx *sql.Tx, row *requestRow, at time.Time, decision decisionRecord) (bool, error) {
-	var evidence, issuer, subject any
+	var evidence, evidenceProto, issuer, subject any
 	if decision.PolicyEvidence != nil {
 		encoded, err := json.Marshal(decision.PolicyEvidence)
 		if err != nil {
 			return false, err
 		}
 		evidence = string(encoded)
+		evidenceProto, err = encodePolicyEvidence(decision.PolicyEvidence)
+		if err != nil {
+			return false, err
+		}
 	}
 	if decision.Operator != nil {
 		issuer, subject = decision.Operator.Issuer, decision.Operator.Subject
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO action_decision (id, request_id, verdict, provider, operator_issuer, operator_subject,
-			decision_note, reason_code, reason_description, policy_evidence, idempotency_key, decided_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)`,
+			decision_note, reason_code, reason_description, policy_evidence, policy_evidence_proto, idempotency_key, decided_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13)`,
 		uuid.New(), row.ID, decision.Verdict, decision.Provider, issuer, subject, decision.DecisionNote,
-		decision.ReasonCode, decision.ReasonDescription, evidence, decision.IdempotencyKey, at); err != nil {
+		decision.ReasonCode, decision.ReasonDescription, evidence, evidenceProto, decision.IdempotencyKey, at); err != nil {
 		return false, err
 	}
 	state := action_servicepb.ActionState_ACTION_STATE_DENIED
