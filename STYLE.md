@@ -97,7 +97,7 @@ One library per job. An unlisted job reuses what other Go services import before
 | Retry      | `sethvargo/go-retry`; callers own error classification and progress resets.                                                                                    |
 | D-Bus      | `coreos/go-systemd/v22/dbus` for systemd; `godbus/dbus/v5` for generic D-Bus.                                                                                  |
 | GitHub     | `google/go-github` (REST) with `bradleyfalzon/ghinstallation` (App JWTs, installation tokens).                                                                 |
-| Schemas    | `santhosh-tekuri/jsonschema/v6`, with a loader of your own: the default one reads local files.                                                                 |
+| Schemas    | `invopop/jsonschema` for Go type reflection; `santhosh-tekuri/jsonschema/v6` for validation, with an explicit loader (the default reads local files).          |
 | TTL cache  | `apimachinery/pkg/util/cache.Expiring`; `x/sync/singleflight` shares a lookup between callers.                                                                 |
 | Sets       | `apimachinery/pkg/util/sets`.                                                                                                                                  |
 | Casefold   | `x/text/cases.Fold`.                                                                                                                                           |
