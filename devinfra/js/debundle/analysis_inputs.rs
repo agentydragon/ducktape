@@ -159,6 +159,7 @@ pub enum NativeIntrinsic {
     UnknownGlobalValue,
     Error,
     FinalizationRegistry,
+    Function,
     Object,
     Array,
     Math,

@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::analysis_inputs::ProofDependencies;
-use crate::facts::construction_inference::{ConstructionFacts, ConstructionKey};
+use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
 use crate::purity::PURE_BUILTIN_NEW_NO_ARGS;
 use std::sync::Arc;
 
@@ -98,11 +98,11 @@ impl LocalClassConstructionShapes {
 /// Structural shapes alone never construct this type.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct LocalClassConstructionProof {
-    facts: Arc<ConstructionFacts>,
+    facts: Arc<SemanticFacts>,
 }
 
 impl LocalClassConstructionProof {
-    pub(super) fn new(facts: Arc<ConstructionFacts>) -> Self {
+    pub(super) fn new(facts: Arc<SemanticFacts>) -> Self {
         Self { facts }
     }
 
@@ -111,7 +111,7 @@ impl LocalClassConstructionProof {
     }
 
     pub(crate) fn dependencies_for_class(&self, class: u32) -> Option<&ProofDependencies> {
-        self.facts.dependencies(&ConstructionKey::LocalClass(class))
+        self.facts.dependencies(&SemanticKey::LocalClass(class))
     }
 
     pub(crate) fn dependencies_for_construction(&self, span: Span) -> Option<&ProofDependencies> {
@@ -124,7 +124,7 @@ impl LocalClassConstructionProof {
         &self,
         class: u32,
     ) -> Option<crate::reports::schema::InferenceUse> {
-        self.facts.explain(&ConstructionKey::LocalClass(class))
+        self.facts.inference_use(&SemanticKey::LocalClass(class))
     }
 
     pub(crate) fn heap_proof(&self) -> LocalClassHeapProof {
@@ -139,13 +139,13 @@ impl LocalClassConstructionProof {
 /// argument evaluation remain separate effects.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct LocalClassHeapProof {
-    facts: Arc<ConstructionFacts>,
+    facts: Arc<SemanticFacts>,
 }
 
 impl LocalClassHeapProof {
     pub(crate) fn dependencies_for_construction(&self, span: Span) -> Option<&ProofDependencies> {
         let class = self.facts.class_for_construction(span)?;
-        self.facts.dependencies(&ConstructionKey::LocalClass(class))
+        self.facts.dependencies(&SemanticKey::LocalClass(class))
     }
 }
 

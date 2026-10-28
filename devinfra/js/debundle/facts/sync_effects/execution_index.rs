@@ -16,15 +16,19 @@ use crate::analysis_inputs::{
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, is_static_event_listener_registration,
 };
+use crate::facts::callable_inference::CallableInferenceInputs;
 use crate::facts::global_object::unshadowed_global_object_aliases;
 use crate::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
 use crate::facts::lazy_boundary::visit_eager_member_parts;
 use crate::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
+use crate::facts::semantic_inference::{
+    NativeBindingContext, SemanticFacts, SemanticKey, SemanticRules,
+};
 use crate::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness, StatementFacts,
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin};
-use crate::facts::{LocalClassConstructionProof, LocalClassConstructionShapes};
+use crate::facts::{LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableShapes};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePrototypeMutation,
@@ -929,6 +933,43 @@ enum CallKind {
     DeepDestructuringProtocol,
 }
 
+fn native_call_identity_key(
+    kind: CallKind,
+    callee: &ValueExpr,
+) -> Option<(native_calls::NativeCallModel, SemanticKey)> {
+    let (binding, receiver, member, global_this_qualified) = match callee {
+        ValueExpr::Binding(binding) => (binding, binding.0.as_ref(), None, false),
+        ValueExpr::Member(receiver, Some(member), true) => match receiver.as_ref() {
+            ValueExpr::Binding(binding) if binding.0.as_ref() == "globalThis" => {
+                (binding, member.as_str(), None, true)
+            }
+            ValueExpr::Binding(binding) => {
+                (binding, binding.0.as_ref(), Some(member.as_str()), false)
+            }
+            ValueExpr::Member(global, Some(receiver), true) => {
+                let ValueExpr::Binding(binding) = global.as_ref() else {
+                    return None;
+                };
+                if binding.0.as_ref() != "globalThis" {
+                    return None;
+                }
+                (binding, receiver.as_str(), Some(member.as_str()), true)
+            }
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let model = native_calls::native_call_model(receiver, member, kind)?;
+    Some((
+        model,
+        SemanticKey::NativeCallIdentity {
+            binding: binding.clone(),
+            intrinsic: model.intrinsic,
+            global_this_qualified,
+        },
+    ))
+}
+
 fn shallow_data_pattern(pattern: &Pat) -> bool {
     fn leaf(pattern: &Pat) -> bool {
         matches!(pattern, Pat::Ident(_))
@@ -1429,6 +1470,7 @@ fn captured_callable_return_shape_is_supported(
 fn named_global_intrinsic(property: &str) -> Option<IntrinsicRoot> {
     match property {
         "Error" => Some(IntrinsicRoot::Error),
+        "Function" => Some(IntrinsicRoot::Function),
         "Object" => Some(IntrinsicRoot::Object),
         "Array" => Some(IntrinsicRoot::Array),
         "Math" => Some(IntrinsicRoot::Math),
@@ -1574,6 +1616,9 @@ fn intrinsic_roots(
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Error" => {
             BTreeSet::from([intrinsic(IntrinsicRoot::Error)])
+        }
+        ValueExpr::Binding(id) if id.0.as_ref() == "Function" => {
+            BTreeSet::from([intrinsic(IntrinsicRoot::Function)])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Object" => {
             BTreeSet::from([intrinsic(IntrinsicRoot::Object)])
@@ -2571,6 +2616,7 @@ struct ExecutionIndex {
     local_constructors: BTreeMap<u32, LocalConstructor>,
     local_class_construction_shapes: LocalClassConstructionShapes,
     local_class_construction_proof: LocalClassConstructionProof,
+    semantic_facts: Option<Arc<SemanticFacts>>,
     class_values: BTreeMap<u32, ClassValueFacts>,
     class_owners: BTreeMap<u32, SourceUnitOrdinal>,
     class_bindings: BTreeMap<u32, Id>,
@@ -2715,6 +2761,7 @@ impl Default for ExecutionIndex {
             local_constructors: BTreeMap::new(),
             local_class_construction_shapes: LocalClassConstructionShapes::default(),
             local_class_construction_proof: LocalClassConstructionProof::default(),
+            semantic_facts: None,
             class_values: BTreeMap::new(),
             class_owners: BTreeMap::new(),
             class_bindings: BTreeMap::new(),
@@ -2830,6 +2877,82 @@ impl Default for ExecutionIndex {
 }
 
 impl ExecutionIndex {
+    /// Build one immutable context from the canonical source index and the
+    /// completed native-write census. Callable candidates are input facts;
+    /// their returned-record constructors participate in the same native
+    /// identity and integrity proofs as local-class fields.
+    pub(crate) fn prepare_semantic_facts(
+        &self,
+        flow: &ChunkValueFlow,
+        shadowed: &BTreeSet<&'static str>,
+        classes: LocalClassConstructionShapes,
+        sets: SetIterableShapes,
+        callables: CallableInferenceInputs,
+    ) -> Arc<SemanticFacts> {
+        let mut collection_bindings = BTreeMap::new();
+        let constructors = classes.classes.values().flatten().cloned().chain(
+            callables
+                .records
+                .values()
+                .map(|candidate| candidate.constructor.clone()),
+        );
+        for binding in constructors {
+            let Some(model) =
+                native_calls::native_call_model(binding.0.as_ref(), None, CallKind::New)
+            else {
+                continue;
+            };
+            if model.heap_effect == native_calls::NativeHeapEffect::FreshAllocation {
+                collection_bindings.insert(binding, model.intrinsic);
+            }
+        }
+
+        let native_call_identity_candidates: BTreeSet<_> = self
+            .top_calls
+            .iter()
+            .flatten()
+            .chain(self.callables.values().flat_map(|callable| &callable.calls))
+            .filter_map(|call| {
+                native_call_identity_key(call.kind, &call.callee).map(|(_, key)| key)
+            })
+            .chain(callables.records.values().filter_map(|candidate| {
+                native_call_identity_key(
+                    CallKind::New,
+                    &ValueExpr::Binding(candidate.constructor.clone()),
+                )
+                .map(|(_, key)| key)
+            }))
+            .collect();
+        let declared_bindings = native_call_identity_candidates
+            .iter()
+            .filter_map(|key| match key {
+                SemanticKey::NativeCallIdentity { binding, .. } => Some(binding.clone()),
+                _ => None,
+            })
+            .chain(collection_bindings.keys().cloned())
+            .filter(|binding| flow.is_declared(binding))
+            .collect();
+
+        Arc::new(SemanticFacts::solve(SemanticRules {
+            classes,
+            sets,
+            collection_bindings,
+            native_census_complete: true,
+            mutated_intrinsics: self.mutated_intrinsic_roots.clone(),
+            dynamic_scope: !self.dynamic_scope_owners.is_empty(),
+            native_dependencies: crate::analysis_inputs::ProofDependencies {
+                value_inputs: self.native_integrity_value_input_refs.clone(),
+            },
+            binding_context: NativeBindingContext {
+                declared_bindings,
+                shadowed_globals: shadowed.clone(),
+                global_object_names: self.global_object_names.clone(),
+            },
+            native_call_identity_candidates,
+            callables,
+        }))
+    }
+
     fn validate_value_inputs(
         &mut self,
         selected: &[SelectedBindingValueInput],
@@ -3656,6 +3779,9 @@ impl ExecutionIndex {
                 match id.0.as_ref() {
                     "Error" => {
                         mutated_intrinsics.insert(IntrinsicRoot::Error);
+                    }
+                    "Function" => {
+                        mutated_intrinsics.insert(IntrinsicRoot::Function);
                     }
                     "Object" => {
                         mutated_intrinsics.insert(IntrinsicRoot::Object);
@@ -6443,7 +6569,7 @@ impl Visit for ExecutionIndex {
             self.member_write_sites.insert(member.span.into());
         }
 
-        if matches!(expression.arg.unwrap_parens(), Expr::Ident(id) if matches!(id.sym.as_ref(), "Error" | "Object" | "Array" | "Math" | "RegExp" | "Symbol" | "Promise" | "Map" | "Set" | "WeakMap" | "WeakSet" | "FinalizationRegistry"))
+        if matches!(expression.arg.unwrap_parens(), Expr::Ident(id) if matches!(id.sym.as_ref(), "Error" | "Function" | "Object" | "Array" | "Math" | "RegExp" | "Symbol" | "Promise" | "Map" | "Set" | "WeakMap" | "WeakSet" | "FinalizationRegistry"))
         {
             self.intrinsic_writes.push(IntrinsicWriteTarget {
                 owner: self.owner,

@@ -1,5 +1,6 @@
 //! Guarded native summaries describe both call timing and returned values.
 
+use analysis::reports::schema::InferenceRule;
 use debundle_e2e_support::*;
 
 fn split_opts<'a>(source: &'a str, members: &[Member], anonymous: &[&str]) -> FixtureOpts<'a> {
@@ -73,6 +74,63 @@ console.log(typeof values, typeof frozen.callback);
         ],
     ));
     assert_preserved_entry_output(&fixture, "object function\n");
+
+    let graph = fixture.dependency_graph();
+    let values = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "values")
+        })
+        .expect("Map construction source unit");
+    let identity = values
+        .synchronous_execution
+        .as_ref()
+        .expect("synchronous execution report")
+        .inference_uses
+        .iter()
+        .find(|usage| usage.conclusion == InferenceRule::NativeCallIdentity)
+        .expect("native call identity inference use");
+    assert!(
+        identity
+            .derivation_rules
+            .contains(&InferenceRule::NativeIntegrity)
+    );
+}
+
+#[test]
+fn visible_native_replacement_keeps_the_call_out_of_shared_identity_proofs() {
+    let source = r#"globalThis.Math.round = function(value) { return 7; };
+const normalized = Math.round(1);
+console.log(normalized);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module("native/value", &[Member::new("normalized")])],
+    ));
+    assert_preserved_entry_output(&fixture, "7\n");
+
+    let graph = fixture.dependency_graph();
+    let normalized = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "normalized")
+        })
+        .expect("Math call source unit");
+    assert!(
+        !normalized
+            .synchronous_execution
+            .as_ref()
+            .expect("synchronous execution report")
+            .inference_uses
+            .iter()
+            .any(|usage| usage.conclusion == InferenceRule::NativeCallIdentity)
+    );
 }
 
 #[test]

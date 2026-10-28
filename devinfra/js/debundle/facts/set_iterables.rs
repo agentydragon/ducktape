@@ -6,7 +6,7 @@
 
 use super::*;
 use crate::analysis_inputs::ProofDependencies;
-use crate::facts::construction_inference::{ConstructionFacts, ConstructionKey};
+use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
@@ -85,17 +85,17 @@ impl SetIterableShapes {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SetIterableProof {
-    facts: Arc<ConstructionFacts>,
+    facts: Arc<SemanticFacts>,
 }
 
 impl SetIterableProof {
-    pub(super) fn new(facts: Arc<ConstructionFacts>) -> Self {
+    pub(super) fn new(facts: Arc<SemanticFacts>) -> Self {
         Self { facts }
     }
 
     pub(crate) fn dependencies_for_constructor(&self, span: Span) -> Option<&ProofDependencies> {
         self.facts
-            .dependencies(&ConstructionKey::PrimitiveSetIteration(span.lo.0))
+            .dependencies(&SemanticKey::PrimitiveSetIteration(span.lo.0))
     }
 
     pub(crate) fn inference_use_for_constructor(
@@ -103,7 +103,7 @@ impl SetIterableProof {
         span: Span,
     ) -> Option<crate::reports::schema::InferenceUse> {
         self.facts
-            .explain(&ConstructionKey::PrimitiveSetIteration(span.lo.0))
+            .inference_use(&SemanticKey::PrimitiveSetIteration(span.lo.0))
     }
 }
 

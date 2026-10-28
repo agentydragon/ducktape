@@ -46,8 +46,8 @@ pub(crate) use crate::purity::{
 mod analyze;
 mod array_content_effects;
 mod at_init_fallback;
+mod callable_inference;
 mod collector;
-mod construction_inference;
 mod dynamic_scope;
 mod fresh_receiver;
 mod global_object;
@@ -57,6 +57,7 @@ mod local_class_construction;
 mod local_effect_targets;
 mod local_effects;
 mod purity_classification;
+mod semantic_inference;
 mod set_iterables;
 mod source_unit_read_closure;
 mod statement_facts;

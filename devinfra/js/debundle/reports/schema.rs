@@ -422,9 +422,13 @@ pub struct NativeIntegrityUse {
 #[serde(rename_all = "snake_case")]
 pub enum InferenceRule {
     NativeIntegrity,
+    NativeCallIdentity,
     EmptyCollectionConstruction,
     LocalClassConstruction,
     PrimitiveSetIteration,
+    StableFunction,
+    CallbackFactory,
+    ReturnedRecord,
 }
 
 /// A purpose-specific certificate actually used by synchronous execution.

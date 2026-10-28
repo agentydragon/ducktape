@@ -1607,7 +1607,13 @@ remain conservative. Earlier effects retain their existing accepted shapes.
 `synchronous_execution.inference_uses` records construction certificates
 actually consumed by timing analysis. Each entry has a typed `conclusion`, the
 `derivation_rules` involved in its proof, and the exact `value_input_refs`.
-The local-class chain includes `native_integrity`,
+Guarded native call summaries also report `native_call_identity`, whose
+derivation includes `native_integrity` for the global object and operation
+family. The completed census also tracks `Function` so consumers that invoke
+through `Function.prototype.call` can require its integrity explicitly.
+Stable callable, callback-factory and returned-record certificates use
+their corresponding rule names when consumed.
+The local-class chain includes `native_integrity`, `native_call_identity`,
 `empty_collection_construction` and `local_class_construction` when native
 fields are present; a source-only class has no unrelated native premises.
 Primitive Set iteration composes `native_integrity` with

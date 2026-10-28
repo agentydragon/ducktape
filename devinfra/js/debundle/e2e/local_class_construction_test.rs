@@ -562,6 +562,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
             conclusion: InferenceRule::LocalClassConstruction,
             derivation_rules: BTreeSet::from([
                 InferenceRule::NativeIntegrity,
+                InferenceRule::NativeCallIdentity,
                 InferenceRule::EmptyCollectionConstruction,
                 InferenceRule::LocalClassConstruction,
             ]),
