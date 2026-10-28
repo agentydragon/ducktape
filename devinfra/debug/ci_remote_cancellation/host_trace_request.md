@@ -28,7 +28,7 @@ does not provide access to the hosted worker. No key expansion or infrastructure
 change was attempted. The next evidence requires a hosted operator or an
 operator-provided trace export.
 
-## Related Bazel fix to probe separately
+## Related Bazel fix and matched comparison
 
 Bazel [issue #30954](https://github.com/bazelbuild/bazel/issues/30954) reports a
 server continuing its command after its client is killed. The upstream fix,
@@ -42,9 +42,9 @@ On October 28, the latest release API reported 9.3.1. A direct source check
 found the old cancellation handler in both 9.2.0 and 9.3.1; the fix commit has
 the new handler. The [selected evidence](host_trace_access.json) records source
 hashes and refs. Upgrading to 9.3.1 alone therefore does not include this fix.
-A bounded probe with a build containing that change could test its relevance;
-no Bazel pin or binary was changed in this investigation. Keep the hosted
-trace request open because this source fix does not establish when the hosted
+A [matched parent/fix probe](bazel_client_disconnect_comparison.md) subsequently
+confirmed the changed behavior after killing a verified native client; the
+repository Bazel pin remains unchanged. Keep the hosted trace request open because this source fix does not establish when the hosted
 outer worker stops, or how long its lease lasts.
 
 ## Draft request
@@ -62,7 +62,8 @@ synthetic terminal cancellation result.
   `bb-snapshot/uploads/44f97f92-f798-4029-ba2c-35a80f52b413/blobs/blake3/7cc68722c4c9f597251afead78f3734884d74254561ab476b6464e5ced290cd4/149`.
 - **Initial child execution:**
   `/uploads/6a19728a-2528-4627-8ee0-4454d12ae906/blobs/47290b996b9bad63cef5e0eeac414f53e3ab2c42ff4636715440fb91622f13c6/310`.
-- **Guest Bazel identities:** client PID `27726`, start ticks `13608454`;
+- **Guest process identities:** launched-command/launcher PID `27726`, start
+  ticks `13608454` (native client identity was not verified in this attempt);
   Java server PID `27743`, start ticks `13608460`, PPID `1`. These are guest
   namespace identities; please correlate them with the actual worker/VM identity.
 - **Client versions:** Bazel 9.2.0, CLI 5.0.466. Effective child remote retries
@@ -82,7 +83,7 @@ synthetic terminal cancellation result.
 
 The wrapper concurrently forwarded TERM to the local CLI, which cancels the
 outer invocation, and called `CancelExecutions` for the child. The remote
-watcher had double-forked to guest PID 1 and opened exact client/server pidfds
+watcher had double-forked to guest PID 1 and opened exact launched-command/server pidfds
 before cancellation. It published readiness to CAS, independently of final
 runner artifacts. No later exit, idle, or observer-error receipt was retained.
 The analysis gate was **never released** in this attempt. No later-action

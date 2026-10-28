@@ -2,7 +2,7 @@
 
 **2026-10-28 UTC:** a normal single-action cancellation with
 `--remote_retries=0` now has positive evidence that its Bazel build command
-finished. The client process exited; a subsequent `info server_pid` completed
+finished. The launched Bazel command process exited; a subsequent `info server_pid` completed
 on the **same original Java server**, with its PID and process start time
 unchanged. The controller received that receipt **within 2.302 seconds of signaling
 the entry shell**. That is an upper bound including publication and polling,
@@ -18,11 +18,11 @@ artifact digests. The [main investigation](investigation.md) remains open.
 
 ## Results
 
-| Case                                                              | Child / outer invocation                                                                                                                                                      | Observation                                                                                                                                                        |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Channel calibration: deliberately kill both owned Bazel processes | [ec425559](https://app.buildbuddy.io/invocation/ec425559-57f6-4b3f-984c-866073e91af0) / [c408503a](https://app.buildbuddy.io/invocation/c408503a-2dca-4269-9134-188227ccc721) | Exact client and server pidfds became readable; both CAS exit receipts survived. This is a calibration, not normal cancellation.                                   |
-| Normal wrapper, single action, zero retries                       | [dde2a084](https://app.buildbuddy.io/invocation/dde2a084-ad16-4f06-9b5a-c220c2578a8e) / [9ab90295](https://app.buildbuddy.io/invocation/9ab90295-86a2-4d8f-8666-8165ac3e3923) | Local exit 130; remote Bazel client exit 34 after `Cancelled: invocation cancelled`; same-server info succeeded.                                                   |
-| Normal wrapper, blocked analysis, zero retries                    | [ac648165](https://app.buildbuddy.io/invocation/ac648165-ec92-4138-943f-17c49026f596) / [96c2cba2](https://app.buildbuddy.io/invocation/96c2cba2-507f-4c5e-9231-8b19602d337b) | Local exit 130 and terminal cancellation records; no positive stop receipt. The release marker was withheld, so this run did not test a later action's completion. |
+| Case                                                                   | Child / outer invocation                                                                                                                                                      | Observation                                                                                                                                                        |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Channel calibration: deliberately kill the launched command and server | [ec425559](https://app.buildbuddy.io/invocation/ec425559-57f6-4b3f-984c-866073e91af0) / [c408503a](https://app.buildbuddy.io/invocation/c408503a-2dca-4269-9134-188227ccc721) | Exact launched-command and server pidfds became readable; both CAS exit receipts survived. This is a calibration, not normal cancellation.                         |
+| Normal wrapper, single action, zero retries                            | [dde2a084](https://app.buildbuddy.io/invocation/dde2a084-ad16-4f06-9b5a-c220c2578a8e) / [9ab90295](https://app.buildbuddy.io/invocation/9ab90295-86a2-4d8f-8666-8165ac3e3923) | Local exit 130; launched command exit 34 after `Cancelled: invocation cancelled`; same-server info succeeded.                                                      |
+| Normal wrapper, blocked analysis, zero retries                         | [ac648165](https://app.buildbuddy.io/invocation/ac648165-ec92-4138-943f-17c49026f596) / [96c2cba2](https://app.buildbuddy.io/invocation/96c2cba2-507f-4c5e-9231-8b19602d337b) | Local exit 130 and terminal cancellation records; no positive stop receipt. The release marker was withheld, so this run did not test a later action's completion. |
 
 An earlier control, child `eae39ea8-9fb9-4bb3-a633-91aef6bbbff4`, tried a single
 SIGINT while repository evaluation was blocked. Its 30-second client wait
@@ -40,11 +40,14 @@ The hosted server version and lease remain unknown.
 
 The independent watcher double-forks, creates a new session, and verifies that
 its parent is guest PID 1 before announcing readiness. It opens pidfds for the
-exact Bazel client and server before cancellation. Its stdout is detached from
+exact launched-command and server processes before cancellation. Its stdout is detached from
 the canceled command, and it publishes small, unique CAS receipts while running.
 This does not depend on end-of-command artifact publication.
 
-A readable client pidfd establishes process exit, not that Java stopped its build.
+The `client` PID in this first probe came from `Popen` and can identify a
+launcher. Its pidfd establishes that process's exit, not native-client identity
+or Java build completion. The [later comparison](bazel_client_disconnect_comparison.md)
+verifies the native executable separately.
 For that second question, the watcher runs a read-only command against the same
 output base. In Bazel 9.2.0:
 
@@ -71,7 +74,7 @@ avoids interpreting an idle reusable Java process as an active build.
 | ----------------------------------------------------- | --------------- |
 | Controller signals only entry shell                   | 05:07:59.155657 |
 | Local wrapper exits 130                               | 05:07:59.421014 |
-| Watcher observes client pidfd readable                | 05:08:00.009543 |
+| Watcher observes launched-command pidfd readable      | 05:08:00.009543 |
 | Same-server blocking info returns, PID 3990 unchanged | 05:08:00.841398 |
 | Watcher starts its own cleanup shutdown               | 05:08:01.451466 |
 | Controller receives and verifies idle CAS receipt     | 05:08:01.456801 |
@@ -99,7 +102,7 @@ These are experiment artifacts, not a supported checked-in runner.
    on the normal outer runner. Give each attempt a unique child UUID and output
    base. Set `--remote_retries=0`, `--nopreemptible`, and an explicit bounded
    workload. Keep credentials on the trusted outer runner, outside action inputs.
-2. Record the client PID and `${output_base}/server/server.pid.txt`, including
+2. Record the launched-command PID and `${output_base}/server/server.pid.txt`, including
    both process start times. Double-fork the independent watcher, verify PPID 1,
    and open both pidfds. Close inherited stdout/stderr and use a directory
    outside the runner workspace so the watcher does not pin that mount.

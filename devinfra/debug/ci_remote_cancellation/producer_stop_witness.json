@@ -669,6 +669,7 @@
     "Missing receipts do not distinguish process survival from observer or VM teardown.",
     "Same-server info completion witnesses command-lock release, not physical child-action termination.",
     "The gated normal case withheld its release marker; no later-action success was tested in that case.",
-    "The 2.3 second upper bound uses one controller monotonic clock and includes receipt publication and polling."
+    "The 2.3 second upper bound uses one controller monotonic clock and includes receipt publication and polling.",
+    "The historical client field is the launched-command/launcher PID; its executable was not independently identified. Same-server command-lock completion remains the producer-stop evidence."
   ]
 }

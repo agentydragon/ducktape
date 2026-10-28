@@ -1,0 +1,485 @@
+{
+  "schema_version": 1,
+  "date_utc": "2026-10-28",
+  "source_commit": "baee47c38d29f8a02a1d46ec256f4332909b714d",
+  "scope": "Controlled actual-client SIGKILL; outer runner deliberately kept alive",
+  "upstream_fix_commit": "29b6ec37e9aff603d4da51570ffb175071605de1",
+  "parent_commit": "8bf014af128dbf5b886ed403b115366ef3e57c12",
+  "cases": [
+    {
+      "child_invocation_id": "e37ff6f6-ba4d-405d-a611-03a899f433df",
+      "outer_invocation_id": "fc8047cf-aba6-4476-a135-dfec0448b35e",
+      "controller_events": [
+        {
+          "at": "2026-10-28T05:36:26.335920+00:00",
+          "monotonic": 87274.256433068,
+          "event": "prepared",
+          "child_invocation_id": "e37ff6f6-ba4d-405d-a611-03a899f433df",
+          "mode": "control",
+          "case": "ungated",
+          "bazel_ref": "8bf014af128dbf5b886ed403b115366ef3e57c12",
+          "expected_binary_md5": "ccb370cb79939f6c666bc745b3a0c9cb",
+          "source_commit": "baee47c38d29f8a02a1d46ec256f4332909b714d"
+        },
+        {
+          "at": "2026-10-28T05:37:03.002906+00:00",
+          "monotonic": 87310.923439178,
+          "event": "active_and_watcher_ready",
+          "outer_invocation_id": "fc8047cf-aba6-4476-a135-dfec0448b35e",
+          "execution_ids": [
+            "/uploads/d58d9542-7232-4b12-a643-97e0aeba33d5/blobs/aab773c672981401d703b9306fdb612eb35a844e70a8f02dc99c94465a8d0fbc/310"
+          ]
+        },
+        {
+          "at": "2026-10-28T05:37:03.246515+00:00",
+          "monotonic": 87311.167035389,
+          "event": "marker_uploaded",
+          "phase": "control_interrupt",
+          "digest": "f0a5f562dbe650d8be901400ab3119bdae37e7193207e251f83099c4886dec2a/71"
+        },
+        {
+          "at": "2026-10-28T05:37:03.246588+00:00",
+          "monotonic": 87311.167091775,
+          "event": "positive_control_kill_requested"
+        },
+        {
+          "at": "2026-10-28T05:37:04.335692+00:00",
+          "monotonic": 87312.256202563,
+          "event": "receipt_observed",
+          "phase": "client_exited",
+          "digest": "fc28fe26cfa234b7a56bab320a304e711ef1b4281751278687673ba1268a2390/67"
+        },
+        {
+          "at": "2026-10-28T05:37:04.689850+00:00",
+          "monotonic": 87312.610353647,
+          "event": "receipt_observed",
+          "phase": "server_alive_after_client_exit",
+          "digest": "4c21294d0d43a14c957a2851933432714dcf9f6531c32fa4f0d19b64a4ce04ae/84"
+        },
+        {
+          "at": "2026-10-28T05:37:04.982232+00:00",
+          "monotonic": 87312.902740268,
+          "event": "receipt_observed",
+          "phase": "server_command_busy_after_client_exit",
+          "digest": "5d6021f4a05eaf66ac9aa66dcb7bda1c37e4d99b115aa11bc2cf0ededd696ece/91"
+        },
+        {
+          "at": "2026-10-28T05:37:30.392839+00:00",
+          "monotonic": 87338.313343241,
+          "event": "receipt_observed",
+          "phase": "observer_error",
+          "digest": "78de5906aec1ea63e3f8d0fd737356b6db43a54369bd3d94d13fa581e8971958/68"
+        },
+        {
+          "at": "2026-10-28T05:37:30.481026+00:00",
+          "monotonic": 87338.401549818,
+          "event": "entry_exited",
+          "exit_code": 0
+        },
+        {
+          "at": "2026-10-28T05:37:30.767949+00:00",
+          "monotonic": 87338.688463435,
+          "event": "cleanup_cancel",
+          "invocation_id": "e37ff6f6-ba4d-405d-a611-03a899f433df",
+          "http_status": 200
+        },
+        {
+          "at": "2026-10-28T05:37:30.843324+00:00",
+          "monotonic": 87338.763837977,
+          "event": "cleanup_cancel",
+          "invocation_id": "fc8047cf-aba6-4476-a135-dfec0448b35e",
+          "http_status": 200
+        }
+      ],
+      "remote_watcher_events": [
+        {
+          "at": "2026-10-28T05:36:50.581346+00:00",
+          "monotonic": 136821.231514553,
+          "event": "watcher_ready",
+          "watcher": {
+            "pid": 9110,
+            "ppid": 1,
+            "pgid": 9109,
+            "sid": 9109,
+            "start_ticks": 13682123
+          },
+          "client": {
+            "pid": 9083,
+            "ppid": 9066,
+            "pgid": 9065,
+            "sid": 9065,
+            "start_ticks": 13681935
+          },
+          "server": {
+            "pid": 9085,
+            "ppid": 1,
+            "pgid": 9085,
+            "sid": 9085,
+            "start_ticks": 13682105
+          }
+        },
+        {
+          "at": "2026-10-28T05:37:03.481735+00:00",
+          "monotonic": 136834.131877413,
+          "event": "actual_client_only_sigkill_sent",
+          "client_pid": 9083,
+          "launcher_pid": 9066
+        },
+        {
+          "at": "2026-10-28T05:37:03.484625+00:00",
+          "monotonic": 136834.134732056,
+          "event": "client_pidfd_readable"
+        },
+        {
+          "at": "2026-10-28T05:37:04.143567+00:00",
+          "monotonic": 136834.793663653,
+          "event": "nonblocking_same_server_info",
+          "returncode": 9,
+          "original_server_alive": true
+        },
+        {
+          "at": "2026-10-28T05:37:04.446084+00:00",
+          "monotonic": 136835.096183902,
+          "event": "same_server_info_started"
+        },
+        {
+          "at": "2026-10-28T05:37:29.469955+00:00",
+          "monotonic": 136860.120056316,
+          "event": "observer_error",
+          "error_type": "TimeoutExpired"
+        }
+      ],
+      "outer_retained_files": [
+        {
+          "name": "bazel.log",
+          "sha256": "49cb3ab4bee2f29df23a89437c103f9fc2600f45e9ab9df356028015894888b5",
+          "size_bytes": 983
+        },
+        {
+          "name": "peek.stderr",
+          "sha256": "fa6a63b80a31854e7503e54a3e8a89147a2148f3dbf76c10cf56cca05eed3142",
+          "size_bytes": 60
+        },
+        {
+          "name": "peek.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0
+        },
+        {
+          "name": "watcher-events.jsonl",
+          "sha256": "1290022381eecedd2989b2da91199016c72f09f5854f8c4bcf261631f992ad5b",
+          "size_bytes": 1043
+        }
+      ],
+      "remote_retries_options": ["0", "0", "0", "0"],
+      "private_source_sha256": {
+        "remote.py": "52f006686c9a3ce19d7708a551aa8e53c2b0fb8c51530f4557aa37bb356fe692",
+        "controller.py": "bcd3818dda7bb62f2c8b730702621d60c61ac2fe7b47c58736d981f2e0d8ec16",
+        "gate.py": "7b2125c9726826edb01642ab190731d9492ce762f045fc764e2da4305604bc99",
+        "gate.bzl": "b2a27b88e9cd16e5a8256baa73c8a885174c685a8d9f979b55ff34109cbbe5fc"
+      },
+      "bazel_commit": "8bf014af128dbf5b886ed403b115366ef3e57c12",
+      "official_binary": {
+        "case": "parent",
+        "commit": "8bf014af128dbf5b886ed403b115366ef3e57c12",
+        "official_binary_url": "https://storage.googleapis.com/bazel-builds/artifacts/linux/8bf014af128dbf5b886ed403b115366ef3e57c12/bazel",
+        "official_binary_md5": "ccb370cb79939f6c666bc745b3a0c9cb",
+        "official_binary_size": 65931761,
+        "controller_exit": 0
+      },
+      "verified_client_binary": {
+        "ref": "8bf014af128dbf5b886ed403b115366ef3e57c12",
+        "client_pid": 9083,
+        "launcher_pid": 9066,
+        "size_bytes": 65931761,
+        "md5": "ccb370cb79939f6c666bc745b3a0c9cb"
+      },
+      "outcome": {
+        "entry_exit_code": 0,
+        "observed_receipts": {
+          "client_exited": "2026-10-28T05:37:04.335594+00:00",
+          "server_alive_after_client_exit": "2026-10-28T05:37:04.689816+00:00",
+          "server_command_busy_after_client_exit": "2026-10-28T05:37:04.982182+00:00",
+          "observer_error": "2026-10-28T05:37:30.392803+00:00"
+        },
+        "gate_released_after_client_exit_busy_receipt": false,
+        "new_execution_records": [],
+        "positive_producer_stop_witness": false
+      },
+      "peek_stderr": "Another command (pid=9083) is running. Exiting immediately.\n",
+      "reported_bazel_versions": ["10.0.0-pre-8bf014af128dbf5b886ed403b115366ef3e57c12"]
+    },
+    {
+      "child_invocation_id": "29f85810-a082-4808-b09e-1ca3490bc4bb",
+      "outer_invocation_id": "18d3e690-0b9a-4b2c-a0d0-c17bbbb3fa94",
+      "controller_events": [
+        {
+          "at": "2026-10-28T05:37:31.139952+00:00",
+          "monotonic": 87339.060463052,
+          "event": "prepared",
+          "child_invocation_id": "29f85810-a082-4808-b09e-1ca3490bc4bb",
+          "mode": "control",
+          "case": "ungated",
+          "bazel_ref": "29b6ec37e9aff603d4da51570ffb175071605de1",
+          "expected_binary_md5": "19e5d274dd8ad9b8a5c904e028be42bc",
+          "source_commit": "baee47c38d29f8a02a1d46ec256f4332909b714d"
+        },
+        {
+          "at": "2026-10-28T05:38:05.849857+00:00",
+          "monotonic": 87373.770371178,
+          "event": "active_and_watcher_ready",
+          "outer_invocation_id": "18d3e690-0b9a-4b2c-a0d0-c17bbbb3fa94",
+          "execution_ids": [
+            "/uploads/b3cffc9d-7b95-4c7a-9061-c5ef197ec2e6/blobs/a1da583e4f08f2346588bfa99a2e62add16f96124b6fd58ad91d57399de1e665/310"
+          ]
+        },
+        {
+          "at": "2026-10-28T05:38:06.060841+00:00",
+          "monotonic": 87373.981421131,
+          "event": "marker_uploaded",
+          "phase": "control_interrupt",
+          "digest": "0559f57f9599771b7e8f331b88681d027491ef696835d71351e9fbccefbad123/71"
+        },
+        {
+          "at": "2026-10-28T05:38:06.060986+00:00",
+          "monotonic": 87373.981492887,
+          "event": "positive_control_kill_requested"
+        },
+        {
+          "at": "2026-10-28T05:38:07.138681+00:00",
+          "monotonic": 87375.059185143,
+          "event": "receipt_observed",
+          "phase": "client_exited",
+          "digest": "0ace494f2d3f9c4a26cdad03a80f2db1c347554c06f1e4d1a8df1331f2bdb179/67"
+        },
+        {
+          "at": "2026-10-28T05:38:07.533622+00:00",
+          "monotonic": 87375.454126196,
+          "event": "receipt_observed",
+          "phase": "server_alive_after_client_exit",
+          "digest": "4b448cf1f3ce96bae6ff7a3765cac59b01ee67aea9006d02c13cd8b344f0114f/84"
+        },
+        {
+          "at": "2026-10-28T05:38:07.888337+00:00",
+          "monotonic": 87375.808840526,
+          "event": "receipt_observed",
+          "phase": "same_server_idle",
+          "digest": "46b06cb1d1f1d1943e0e5c360e441a03d077ed0554da4d4c839bdc2da4f1ee63/70"
+        },
+        {
+          "at": "2026-10-28T05:38:08.318240+00:00",
+          "monotonic": 87376.238744311,
+          "event": "receipt_observed",
+          "phase": "observer_done",
+          "digest": "ac86be14f315e128a6f013da27f04c8eb2c513228dcddb77d1ba92d3971dee8d/67"
+        },
+        {
+          "at": "2026-10-28T05:38:13.043240+00:00",
+          "monotonic": 87380.963764564,
+          "event": "entry_exited",
+          "exit_code": 0
+        },
+        {
+          "at": "2026-10-28T05:38:13.339548+00:00",
+          "monotonic": 87381.26006412,
+          "event": "cleanup_cancel",
+          "invocation_id": "29f85810-a082-4808-b09e-1ca3490bc4bb",
+          "http_status": 200
+        },
+        {
+          "at": "2026-10-28T05:38:13.462595+00:00",
+          "monotonic": 87381.383108405,
+          "event": "cleanup_cancel",
+          "invocation_id": "18d3e690-0b9a-4b2c-a0d0-c17bbbb3fa94",
+          "http_status": 200
+        }
+      ],
+      "remote_watcher_events": [
+        {
+          "at": "2026-10-28T05:37:54.384998+00:00",
+          "monotonic": 136845.719069342,
+          "event": "watcher_ready",
+          "watcher": {
+            "pid": 8177,
+            "ppid": 1,
+            "pgid": 8176,
+            "sid": 8176,
+            "start_ticks": 13684571
+          },
+          "client": {
+            "pid": 8150,
+            "ppid": 8134,
+            "pgid": 8133,
+            "sid": 8133,
+            "start_ticks": 13684305
+          },
+          "server": {
+            "pid": 8152,
+            "ppid": 1,
+            "pgid": 8152,
+            "sid": 8152,
+            "start_ticks": 13684553
+          }
+        },
+        {
+          "at": "2026-10-28T05:38:06.247583+00:00",
+          "monotonic": 136857.581628287,
+          "event": "actual_client_only_sigkill_sent",
+          "client_pid": 8150,
+          "launcher_pid": 8134
+        },
+        {
+          "at": "2026-10-28T05:38:06.250043+00:00",
+          "monotonic": 136857.584066926,
+          "event": "client_pidfd_readable"
+        },
+        {
+          "at": "2026-10-28T05:38:06.908761+00:00",
+          "monotonic": 136858.24279682,
+          "event": "nonblocking_same_server_info",
+          "returncode": 0,
+          "original_server_alive": true
+        },
+        {
+          "at": "2026-10-28T05:38:06.910691+00:00",
+          "monotonic": 136858.244711683,
+          "event": "same_server_info_started"
+        },
+        {
+          "at": "2026-10-28T05:38:06.977740+00:00",
+          "monotonic": 136858.311767443,
+          "event": "same_server_info_returned",
+          "returncode": 0,
+          "same_pid": true,
+          "same_start_ticks": true,
+          "original_server_alive": true
+        },
+        {
+          "at": "2026-10-28T05:38:07.546995+00:00",
+          "monotonic": 136858.881027707,
+          "event": "observer_done"
+        },
+        {
+          "at": "2026-10-28T05:38:07.548297+00:00",
+          "monotonic": 136858.882312225,
+          "event": "probe_cleanup_shutdown_started"
+        }
+      ],
+      "outer_retained_files": [
+        {
+          "name": "bazel.log",
+          "sha256": "011075c4fd7bbb7881aec58d2fc31b91ad85bd16ff6251cf0c1a42832857e989",
+          "size_bytes": 935
+        },
+        {
+          "name": "info.stderr",
+          "sha256": "5ff1a52622f57740362172459c3690e84282b6d6c45880b19e5ee70fe837fb85",
+          "size_bytes": 58
+        },
+        {
+          "name": "info.stdout",
+          "sha256": "0d03999f81285a5a29d6aa25af19e1fe1de9cd3fb83bd94eeb7fbbcde3ae385d",
+          "size_bytes": 5
+        },
+        {
+          "name": "peek.stderr",
+          "sha256": "c9f88b183fba14176dd78eebcaddd9fb16fa1cbb553e1b9881f6ae3bc714f0e7",
+          "size_bytes": 58
+        },
+        {
+          "name": "peek.stdout",
+          "sha256": "0d03999f81285a5a29d6aa25af19e1fe1de9cd3fb83bd94eeb7fbbcde3ae385d",
+          "size_bytes": 5
+        },
+        {
+          "name": "watcher-events.jsonl",
+          "sha256": "b2497f6532d5f348858ad7aa9244b0f754de8f163c5ecde6956c068f8a23d0e9",
+          "size_bytes": 1330
+        }
+      ],
+      "remote_retries_options": ["0", "0", "0", "0"],
+      "private_source_sha256": {
+        "remote.py": "52f006686c9a3ce19d7708a551aa8e53c2b0fb8c51530f4557aa37bb356fe692",
+        "controller.py": "bcd3818dda7bb62f2c8b730702621d60c61ac2fe7b47c58736d981f2e0d8ec16",
+        "gate.py": "7b2125c9726826edb01642ab190731d9492ce762f045fc764e2da4305604bc99",
+        "gate.bzl": "b2a27b88e9cd16e5a8256baa73c8a885174c685a8d9f979b55ff34109cbbe5fc"
+      },
+      "bazel_commit": "29b6ec37e9aff603d4da51570ffb175071605de1",
+      "official_binary": {
+        "case": "fixed",
+        "commit": "29b6ec37e9aff603d4da51570ffb175071605de1",
+        "official_binary_url": "https://storage.googleapis.com/bazel-builds/artifacts/linux/29b6ec37e9aff603d4da51570ffb175071605de1/bazel",
+        "official_binary_md5": "19e5d274dd8ad9b8a5c904e028be42bc",
+        "official_binary_size": 65931898,
+        "controller_exit": 0
+      },
+      "verified_client_binary": {
+        "ref": "29b6ec37e9aff603d4da51570ffb175071605de1",
+        "client_pid": 8150,
+        "launcher_pid": 8134,
+        "size_bytes": 65931898,
+        "md5": "19e5d274dd8ad9b8a5c904e028be42bc"
+      },
+      "outcome": {
+        "entry_exit_code": 0,
+        "observed_receipts": {
+          "client_exited": "2026-10-28T05:38:07.138637+00:00",
+          "server_alive_after_client_exit": "2026-10-28T05:38:07.533589+00:00",
+          "same_server_idle": "2026-10-28T05:38:07.888303+00:00",
+          "observer_done": "2026-10-28T05:38:08.318204+00:00"
+        },
+        "gate_released_after_client_exit_busy_receipt": false,
+        "new_execution_records": [],
+        "positive_producer_stop_witness": true
+      },
+      "peek_stderr": "INFO: Invocation ID: 04842e68-5aac-48b6-8496-67769ff91a92\n",
+      "reported_bazel_versions": ["10.0.0-pre-29b6ec37e9aff603d4da51570ffb175071605de1"],
+      "remote_sigkill_to_same_server_info_return_seconds": 0.7301391559885815
+    }
+  ],
+  "excluded_setup_attempts": [
+    {
+      "child_invocation_id": "beab7b18-aa05-41cf-bcdd-f4a4b1ad452d",
+      "error_type": "URLError",
+      "reason": "API TLS handshake timed out before readiness",
+      "cleanup_events": [
+        {
+          "at": "2026-10-28T05:30:08.975248+00:00",
+          "monotonic": 86896.895774177,
+          "event": "cleanup_cancel",
+          "invocation_id": "beab7b18-aa05-41cf-bcdd-f4a4b1ad452d",
+          "http_status": 500
+        }
+      ]
+    },
+    {
+      "child_invocation_id": "3dd0bfa6-f0d8-4f39-965b-f640d8caafe8",
+      "error_type": "RuntimeError",
+      "reason": "Client discovery missed children of non-main launcher threads; no SIGKILL experiment was performed",
+      "cleanup_events": [
+        {
+          "at": "2026-10-28T05:34:05.549782+00:00",
+          "monotonic": 87133.470298249,
+          "event": "cleanup_cancel",
+          "invocation_id": "3dd0bfa6-f0d8-4f39-965b-f640d8caafe8",
+          "http_status": 200
+        },
+        {
+          "at": "2026-10-28T05:34:05.621784+00:00",
+          "monotonic": 87133.542298822,
+          "event": "cleanup_cancel",
+          "invocation_id": "08132b95-3732-4f5e-81fe-69c4b2ea433c",
+          "http_status": 200
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "One matched pair, not a latency distribution or fleet-effect measurement.",
+    "Both binaries are development builds; no repository Bazel pin changed.",
+    "The outer runner was deliberately preserved. This does not measure hosted lease or physical VMM teardown.",
+    "The parent returned positive busy-command evidence; its subsequent blocking info request timed out after 25 seconds. A timeout alone does not measure continued worker activity.",
+    "The earlier producer-stop witness tracked the launched command/launcher PID. This comparison verifies the native client executable before opening its pidfd.",
+    "Final cleanup HTTP success is not physical remote-action termination proof."
+  ]
+}

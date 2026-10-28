@@ -38,10 +38,16 @@ cancellation fix remains open.
   probes reproduced the replacement but did not retain their trace artifacts.
 
 - The [producer-stop witness](producer_stop_witness.md) positively confirmed
-  that a normal single-action build with zero retries finished: its client exited
+  that a normal single-action build with zero retries finished: its launched command exited
   and a subsequent info command completed on the same Java server. The receipt
   reached the controller within 2.302 seconds of its entry signal. An attempt with blocked
   analysis retained no stop receipt and remains inconclusive.
+
+- A [matched upstream-fix control](bazel_client_disconnect_comparison.md)
+  killed a binary-verified native Bazel client while preserving the outer
+  runner. The parent retained a busy command; the fix released it, with
+  same-server info completing within 0.731 seconds of the pre-signal event.
+  This identifies an implementation candidate, not the hosted incident's cause.
 
 ## Cancellation ownership
 

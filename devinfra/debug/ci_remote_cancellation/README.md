@@ -7,6 +7,10 @@ is a separate control of the cancellation API's scope.
 
 Related evidence in this folder:
 
+- [Bazel client-disconnection fix](bazel_client_disconnect_comparison.md): a
+  matched parent/fix pair changed a killed native client from a busy server to
+  confirmed command completion; [selected evidence](bazel_client_disconnect_comparison.json).
+
 - [Hosted worker trace request](host_trace_request.md): unsent operator handoff
   for the blocked-analysis case, with [API access evidence](host_trace_access.json).
 
