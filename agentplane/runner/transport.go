@@ -3,8 +3,6 @@ package runner
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io"
 	"strings"
 	"sync"
 	"time"
@@ -12,13 +10,12 @@ import (
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/runner_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	tunnelpb "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel"
-	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	"github.com/agentydragon/ducktape/agentplane/runner/ingress"
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/runner/stream"
 	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
-	"github.com/sethvargo/go-retry"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/codes"
@@ -31,13 +28,7 @@ import (
 const (
 	heartbeatInterval = 10 * time.Second
 	streamLiveness    = 30 * time.Second
-	ingressInFlight   = 1024
 )
-
-type localStreamError struct{ err error }
-
-func (e *localStreamError) Error() string { return e.err.Error() }
-func (e *localStreamError) Unwrap() error { return e.err }
 
 func connection(endpoint Endpoint) (*grpc.ClientConn, error) {
 	return grpc.NewClient(endpoint.Target, observability.GRPCClientOption(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.Config{BaseDelay: 500 * time.Millisecond, Multiplier: 2, Jitter: 0.2, MaxDelay: 30 * time.Second}, MinConnectTimeout: 10 * time.Second}))
@@ -77,41 +68,11 @@ func (r *Runner) Run(ctx context.Context, control, ingress Endpoint) error {
 	return errors.Join(failure, closeErr)
 }
 
-func retryStream(ctx context.Context, name string, attempt func(context.Context) (bool, error)) error {
-	newBackoff := func() retry.Backoff {
-		return retry.WithFullJitter(retry.WithCappedDuration(30*time.Second, retry.NewExponential(500*time.Millisecond)))
-	}
-	backoff := newBackoff()
-	var lastError error
-	waits := retry.BackoffFunc(func() (time.Duration, bool) {
-		wait, stop := backoff.Next()
-		if code := status.Code(lastError); code == codes.PermissionDenied || code == codes.FailedPrecondition {
-			wait = 30 * time.Second
-		}
-		zap.L().Warn("runner stream lost", zap.String("stream", name), zap.Error(lastError), zap.Duration("retry_after", wait))
-		return wait, stop
-	})
-	err := retry.Do(ctx, waits, func(ctx context.Context) error {
-		progress, err := attempt(ctx)
-		var storage *journal.StorageError
-		var local *localStreamError
-		if err == nil || errors.As(err, &storage) || errors.As(err, &local) {
-			return err
-		}
-		if progress {
-			backoff = newBackoff()
-		}
-		lastError = err
-		return retry.RetryableError(err)
-	})
-	if ctx.Err() != nil {
-		return nil
-	}
-	return err
-}
-
 func (r *Runner) controlLoop(ctx context.Context, endpoint Endpoint) error {
-	return retryStream(ctx, "control", func(ctx context.Context) (bool, error) { return r.connectControl(ctx, endpoint) })
+	return stream.Retry(ctx, "control", func(ctx context.Context) (bool, error) { return r.connectControl(ctx, endpoint) }, func(err error) bool {
+		var storage *journal.StorageError
+		return errors.As(err, &storage)
+	})
 }
 
 func (r *Runner) connectControl(ctx context.Context, endpoint Endpoint) (bool, error) {
@@ -280,7 +241,14 @@ func (r *Runner) ingressLoop(ctx context.Context, endpoint Endpoint) error {
 		return err
 	}
 	defer conn.Close()
-	stub := ingresspb.NewRunnerIngressClient(conn)
+	client := ingress.NewClient(ingresspb.NewRunnerIngressClient(conn), r.store, func(id string, ack retained.Acknowledgement) error {
+		if err := r.lifecycle.publishAck(id, ack); err != nil {
+			return err
+		}
+		r.changed()
+		return nil
+	})
+	authCtx := authenticated(ctx, endpoint)
 	active := map[string]bool{}
 	finished := make(chan string, 16)
 	var pushes sync.WaitGroup
@@ -302,7 +270,7 @@ func (r *Runner) ingressLoop(ctx context.Context, endpoint Endpoint) error {
 			pushes.Add(1)
 			go func(s *Session) {
 				defer pushes.Done()
-				err := retryStream(ctx, "ingress "+s.id, func(ctx context.Context) (bool, error) { return r.pushOnce(ctx, endpoint, stub, s) })
+				err := client.Deliver(authCtx, ingress.Source{ID: s.id, Announce: s.attached, Journal: s.journal})
 				if err != nil {
 					r.fail(err)
 				}
@@ -317,145 +285,6 @@ func (r *Runner) ingressLoop(ctx context.Context, endpoint Endpoint) error {
 			return nil
 		case id := <-finished:
 			delete(active, id)
-		case <-changed:
-		}
-	}
-}
-
-func (r *Runner) pushOnce(ctx context.Context, endpoint Endpoint, stub ingresspb.RunnerIngressClient, s *Session) (bool, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	stream, err := stub.Push(authenticated(ctx, endpoint))
-	if err != nil {
-		return false, err
-	}
-	if err := stream.Send(&ingresspb.PushFrame{Frame: &ingresspb.PushFrame_Announce{Announce: s.attached()}}); err != nil {
-		return false, err
-	}
-	type receivedAck struct {
-		ack *ingresspb.Acknowledgement
-		err error
-	}
-	received := make(chan receivedAck, 1)
-	go func() {
-		for {
-			ack, err := stream.Recv()
-			select {
-			case received <- receivedAck{ack, err}:
-			case <-ctx.Done():
-				return
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-	timer := time.NewTimer(streamLiveness)
-	defer timer.Stop()
-	var first receivedAck
-	select {
-	case first = <-received:
-	case <-timer.C:
-		return false, errors.New("no first acknowledgement from ingress")
-	case <-ctx.Done():
-		return false, ctx.Err()
-	}
-	if first.err != nil {
-		return false, first.err
-	}
-	if first.ack.Cursor > s.journal.LastCursor() {
-		return false, status.Error(codes.FailedPrecondition, "ingress cursor exceeds the journal")
-	}
-	acknowledged, sent := first.ack.Cursor, first.ack.Cursor
-	if err := r.store.WriteAcknowledgement(s.id, retained.Acknowledgement{Cursor: acknowledged, Sealed: first.ack.Sealed}); err != nil {
-		return false, &localStreamError{err}
-	}
-	if err := r.lifecycle.publishAck(s.id, retained.Acknowledgement{Cursor: acknowledged, Sealed: first.ack.Sealed}); err != nil {
-		return false, &localStreamError{err}
-	}
-	r.changed()
-	if first.ack.Sealed {
-		return true, nil
-	}
-	progressed, sealedSent := false, false
-	lastReceived, lastSent := time.Now(), time.Now()
-	ticker := time.NewTicker(heartbeatInterval)
-	defer ticker.Stop()
-	for {
-		changed := r.changesSince()
-		if !sealedSent && sent < acknowledged+ingressInFlight {
-			limit := 128
-			if remaining := acknowledged + ingressInFlight - sent; remaining < uint64(limit) {
-				limit = int(remaining)
-			}
-			entries, err := s.journal.Since(ctx, sent, limit)
-			if err != nil {
-				return progressed, err
-			}
-			for _, entry := range entries {
-				sent = entry.Cursor
-				if err := stream.Send(&ingresspb.PushFrame{Frame: &ingresspb.PushFrame_Entry{Entry: entry}}); err != nil {
-					return progressed, err
-				}
-				lastSent = time.Now()
-			}
-			if len(entries) > 0 {
-				continue
-			}
-			if seal := s.journal.SealState(); seal != nil && sent == seal.Cursor {
-				uid := seal.IncarnationUID
-				if err := stream.Send(&ingresspb.PushFrame{Frame: &ingresspb.PushFrame_Sealed{Sealed: &runnerpb.Sealed{Cursor: seal.Cursor, IncarnationUid: &uid}}}); err != nil {
-					return progressed, err
-				}
-				sealedSent = true
-				if err := stream.CloseSend(); err != nil {
-					return progressed, err
-				}
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return progressed, ctx.Err()
-		case message := <-received:
-			if message.err != nil {
-				if message.err == io.EOF {
-					message.err = errors.New("ingress ended before acknowledging the seal")
-				}
-				return progressed, message.err
-			}
-			ack := message.ack
-			lastReceived = time.Now()
-			if ack.Cursor < acknowledged || ack.Cursor > sent {
-				return progressed, status.Error(codes.FailedPrecondition, fmt.Sprintf("invalid ingress acknowledgement %d after %d, sent %d", ack.Cursor, acknowledged, sent))
-			}
-			progressed = progressed || ack.Cursor > acknowledged
-			acknowledged = ack.Cursor
-			if ack.Sealed {
-				seal := s.journal.SealState()
-				if !sealedSent || seal == nil || ack.Cursor != seal.Cursor {
-					return progressed, status.Error(codes.FailedPrecondition, "ingress acknowledged an unsent seal")
-				}
-			}
-			if err := r.store.WriteAcknowledgement(s.id, retained.Acknowledgement{Cursor: ack.Cursor, Sealed: ack.Sealed}); err != nil {
-				return progressed, &localStreamError{err}
-			}
-			if err := r.lifecycle.publishAck(s.id, retained.Acknowledgement{Cursor: ack.Cursor, Sealed: ack.Sealed}); err != nil {
-				return false, &localStreamError{err}
-			}
-			r.changed()
-			if ack.Sealed {
-				return true, nil
-			}
-		case <-ticker.C:
-			if time.Since(lastReceived) > streamLiveness {
-				return progressed, errors.New("no frame from ingress")
-			}
-			if !sealedSent && time.Since(lastSent) >= heartbeatInterval {
-				if err := stream.Send(&ingresspb.PushFrame{Frame: &ingresspb.PushFrame_Heartbeat{Heartbeat: &ingresspb.Heartbeat{}}}); err != nil {
-					return progressed, err
-				}
-				lastSent = time.Now()
-			}
 		case <-changed:
 		}
 	}

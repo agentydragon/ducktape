@@ -10,7 +10,10 @@ go_library(
     ],
     embedsrcs = glob(["migrations/*.sql"]),
     importpath = "github.com/agentydragon/ducktape/agentplane/runner/journal",
-    visibility = ["//agentplane/runner:__pkg__"],
+    visibility = [
+        "//agentplane/runner:__pkg__",
+        "//agentplane/runner/ingress:__pkg__",
+    ],
     deps = [
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",

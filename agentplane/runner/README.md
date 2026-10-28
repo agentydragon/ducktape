@@ -49,7 +49,11 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   startup, protocol routing, reader drain, and process exit. `Session` supplies callbacks that
   commit routed frame batches and exit observations to its journal.
 - `transport.go`: the outbound control tunnel and independent per-Session ingress
-  pushes, including heartbeat, replay, acknowledgement and backpressure.
+  connection, authentication and discovery worker scheduling. Runner retains one inventory
+  notification seam and owns starting and joining per-Session delivery workers.
+- `ingress/`: each Session's history push protocol, including replay, acknowledgements,
+  backpressure, sealing, journal wakeups and retry. Runner retains discovery and worker lifecycle.
+- `stream/`: the neutral reconnect policy shared by control and ingress.
 - `journal/`: the Goose-managed SQLite schema, verbatim protobuf Event blobs, native request records
   with foreign-key links to their originating commands, and recovery queries. It depends on the
   neutral harness contract and protobuf types, with no dependency on `Runner`. Transactions use
@@ -195,8 +199,9 @@ says what to run after a bump.
 transaction publication, coalesced receipts, rollback, and seals. `persistence_test.go` checks
 session metadata and initialization log compatibility. `session_test.go`
 checks native reply publication after translation commits and final frames at EOF.
-`transport_test.go` exercises real loopback gRPC replay, durable acknowledgements,
-the ingress window, and seal ordering. `process_test.go` checks parent-death fencing,
+`ingress/client_test.go` exercises real loopback gRPC replay, durable acknowledgements,
+journal wakeups, backpressure and seal ordering; `transport_test.go` covers Runner wiring and COSI
+acknowledgement observation. `process_test.go` checks parent-death fencing,
 native descendants, inherited state ownership, and cancellation during blocked input.
 These are not physical power-loss tests.
 

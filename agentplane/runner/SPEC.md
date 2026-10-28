@@ -202,7 +202,9 @@ budget remains authoritative across all of its native services.
   ingress's first acknowledgement, replayed and then live, at most 1024 beyond the latest
   acknowledgement, then `Sealed` once the journal is sealed.
 - The runner records each session's latest acknowledgement on its state volume and deletes no
-  journal entry on it. A lost call retries with the control stream's backoff; one the ingress refuses as
+  journal entry on it, then publishes the acknowledgement to Runner lifecycle observation. Journal
+  read/wait, acknowledgement persistence, and lifecycle-observation failures are local and fail the
+  Runner; remote stream loss retries with the control stream's backoff. A call the ingress refuses as
   another writer's, or whose first acknowledgement is beyond the journal, retries at the maximum.
   Neither holds up another session, a command or a lifecycle request: the journal is the buffer.
 - The bearer it sends is a placeholder the egress proxy substitutes for the ingress's own audience.
