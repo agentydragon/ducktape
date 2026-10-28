@@ -221,7 +221,6 @@ editing a route.
       `trusted-proxy` auth and an `agentydragon` user allowlist.
 - [ ] Ollama: per-user auth (Authentik JWTs or LiteLLM proxy)
 - [ ] LiteLLM: `ollama/` provider drops `tool_calls` — use `openai-chat` variants for now
-- [ ] Verify ntfy.sh notifications
 - [ ] ActivityWatch: replace the static egress-substituted read bearer with a
       rotator-issued short-lived token. Keep the current static bearer until the
       rotator handoff is designed.
