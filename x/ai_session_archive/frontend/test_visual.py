@@ -100,7 +100,7 @@ async def test_inferred_subagent_parent_link(visual: VisualHarness, capture_name
     ) as view:
         page = view.page
         await page.get_by_role("link", name="Inspect a local transcript").click()
-        related = page.locator('[aria-label="Related sessions"]')
+        related = page.locator('#session-browser-sidebar [aria-label="Related sessions"]')
         await expect(related).to_contain_text("Parent inferred from Claude subagent path")
         await expect(related).to_contain_text("Inferred Claude parent · session 12ab")
         await expect(
@@ -123,8 +123,10 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
         if viewport.width <= 760:
             await page.get_by_role("button", name="Session list").click()
         await page.get_by_role("link", name="Inspect a local transcript").click()
+        if viewport.width <= 760:
+            await page.get_by_role("button", name="Related sessions", exact=True).click()
 
-        related = page.locator('[aria-label="Related sessions"]')
+        related = page.locator('#session-browser-sidebar [aria-label="Related sessions"]')
         children = page.get_by_role("region", name="Child sessions")
         transcript = page.get_by_role("region", name="Session transcript")
         await expect(related).to_contain_text("Inferred Claude parent · session 12ab")
@@ -138,10 +140,19 @@ async def test_long_child_list_stays_scrollable_without_covering_transcript(
         last_child = children.get_by_role("link", name="Inspect module 63")
         await expect(last_child).to_be_in_viewport()
         await expect(transcript).to_contain_text("The capture preserves the original JSONL records.")
+        if viewport.width <= 760:
+            await view.check(context="related children remain reachable in the mobile session-list drawer")
+            await view.capture(target=page.locator("#root"), name=f"{capture_name}_related_drawer")
+            await page.get_by_role("dialog", name="Session list").get_by_role("button", name="Close").click()
+
         events = page.locator(".session-browser-events")
-        assert await events.evaluate(
-            "element => { const rect = element.getBoundingClientRect(); return element.clientHeight >= 150 && rect.top >= 0 && rect.bottom <= window.innerHeight; }"
+        geometry = await events.evaluate(
+            "element => { const rect = element.getBoundingClientRect(); return { height: element.clientHeight, top: rect.top, bottom: rect.bottom, viewport: window.innerHeight }; }"
         )
+        transcript_viewport_is_usable = (
+            geometry["height"] >= 150 and geometry["top"] >= 0 and geometry["bottom"] <= geometry["viewport"]
+        )
+        assert transcript_viewport_is_usable, f"conversation viewport is too small or outside the viewport: {geometry}"
         assert await events.locator('[data-event-ordinal="1"]').evaluate(
             "element => { const parent = element.closest('.session-browser-events'); const row = element.getBoundingClientRect(); const viewport = parent.getBoundingClientRect(); return row.top >= viewport.top && row.bottom <= viewport.bottom; }"
         )

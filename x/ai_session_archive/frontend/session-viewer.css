@@ -83,6 +83,8 @@
 }
 
 .session-browser-mobile-toggle,
+.session-browser-mobile-related-toggle,
+.session-browser-mobile-toolbar,
 .session-browser-mobile-sidebar-heading,
 .session-browser-mobile-backdrop {
   display: none;
@@ -119,6 +121,8 @@
   }
 
   .session-browser-mobile-toggle,
+  .session-browser-mobile-related-toggle,
+  .session-browser-mobile-toolbar,
   .session-browser-mobile-sidebar-heading {
     display: flex;
   }

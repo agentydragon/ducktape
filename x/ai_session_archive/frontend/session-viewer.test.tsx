@@ -108,6 +108,25 @@ it("opens and closes the mobile session list with Escape", async () => {
   expect(sidebar?.classList.contains("session-browser-sidebar-open")).toBe(false);
 });
 
+it("opens the mobile drawer at related sessions from the transcript control", async () => {
+  const view = await renderViewer(sessionFixtureApi, "/sessions/claude-session-1");
+  await act(async () => {
+    await flush();
+    await flush();
+  });
+
+  const toggle = view.querySelector<HTMLButtonElement>('button[aria-label="Related sessions"]');
+  const sidebar = view.querySelector<HTMLElement>('[aria-label="Session list"]');
+  const related = view.querySelector<HTMLElement>('[aria-label="Related sessions"]:not(button)');
+  expect(toggle).not.toBeNull();
+  expect(sidebar).not.toBeNull();
+  expect(related).not.toBeNull();
+
+  await act(async () => toggle!.click());
+  expect(sidebar?.classList.contains("session-browser-sidebar-open")).toBe(true);
+  expect(document.activeElement).toBe(related);
+});
+
 it("opens a direct session link outside the first page and restores the requested version and filters", async () => {
   const api: SessionBrowserApi = {
     ...sessionFixtureApi,

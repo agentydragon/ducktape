@@ -146,6 +146,8 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   const requestedVersionId = search.get("version");
   const layoutRef = useRef<HTMLDivElement>(null);
   const mobileSessionListRef = useRef<HTMLElement>(null);
+  const relatedSessionsRef = useRef<HTMLElement>(null);
+  const focusRelatedSessionsOnOpenRef = useRef(false);
   const [layoutWidth, setLayoutWidth] = useState(() => Math.max(0, window.innerWidth - 32));
   const [mobileSessionListOpen, setMobileSessionListOpen] = useState(false);
   const sidebarMaxWidth = maxSessionSidebarWidth(layoutWidth);
@@ -223,6 +225,12 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     versionsSessionId === selectedSession?.id
       ? (versions.find((version) => version.id === selectedVersionId) ?? null)
       : null;
+  const hasRelatedSessions =
+    selectedSession !== null &&
+    (selectedSession.parent_session_id !== null ||
+      selectedSession.parent_link_kind !== null ||
+      childSessions.length > 0 ||
+      loadingRelatedSessions);
 
   useEffect(
     () => () => {
@@ -258,7 +266,13 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
         'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
       ) ?? []),
     ];
-    focusableElements()[0]?.focus();
+    if (focusRelatedSessionsOnOpenRef.current && relatedSessionsRef.current !== null) {
+      focusRelatedSessionsOnOpenRef.current = false;
+      relatedSessionsRef.current.scrollIntoView?.({ block: "nearest" });
+      relatedSessionsRef.current.focus();
+    } else {
+      focusableElements()[0]?.focus();
+    }
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
         setMobileSessionListOpen(false);
@@ -611,6 +625,11 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     navigate(`${location.pathname}?${search.toString()}`);
   };
 
+  const openMobileRelatedSessions = (): void => {
+    focusRelatedSessionsOnOpenRef.current = true;
+    setMobileSessionListOpen(true);
+  };
+
   return (
     <Stack gap="sm" style={{ height: "100%", minHeight: 0 }}>
       <Group justify="space-between" align="end" wrap="wrap">
@@ -703,6 +722,19 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
             >
               Refresh session list
             </Button>
+            {hasRelatedSessions && (
+              <Button
+                size="xs"
+                variant="subtle"
+                aria-controls="session-browser-related-sessions"
+                onClick={() => {
+                  relatedSessionsRef.current?.scrollIntoView?.({ block: "nearest" });
+                  relatedSessionsRef.current?.focus();
+                }}
+              >
+                Jump to related sessions
+              </Button>
+            )}
             <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
               {loadingSessions ? (
                 <Center h={200}>
@@ -739,6 +771,118 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                   Load more sessions
                 </Button>
               )}
+              {hasRelatedSessions && selectedSession !== null && (
+                <Paper
+                  component="section"
+                  withBorder
+                  radius="sm"
+                  p="xs"
+                  aria-label="Related sessions"
+                  id="session-browser-related-sessions"
+                  tabIndex={0}
+                  ref={relatedSessionsRef}
+                  className="session-browser-related-sessions"
+                >
+                  <Stack gap="xs">
+                    <Text size="sm" fw={600}>
+                      Related sessions
+                    </Text>
+                    {(selectedSession.parent_session_id !== null || selectedSession.parent_link_kind !== null) && (
+                      <Group gap="xs" wrap="wrap">
+                        <Text size="xs" c="dimmed">
+                          Parent
+                        </Text>
+                        {selectedSession.parent_session_id !== null && parentSession !== null ? (
+                          <Button
+                            component={Link}
+                            to={sessionPath(parentSession.id)}
+                            variant="subtle"
+                            size="xs"
+                            onClick={() => setMobileSessionListOpen(false)}
+                          >
+                            {parentSession.title || "Untitled parent session"}
+                          </Button>
+                        ) : selectedSession.parent_session_id !== null ? (
+                          <Loader size="xs" aria-label="Loading parent session" />
+                        ) : (
+                          <Text size="xs" c="dimmed">
+                            Parent session could not be resolved to a captured session.
+                          </Text>
+                        )}
+                        {parentLinkLabel(selectedSession.parent_link_kind) !== null && (
+                          <Badge color="orange" variant="light">
+                            {parentLinkLabel(selectedSession.parent_link_kind)}
+                          </Badge>
+                        )}
+                        {typeof selectedSession.parent_native_session_id === "string" && (
+                          <Text size="xs" c="dimmed">
+                            Native parent ID: {selectedSession.parent_native_session_id}
+                          </Text>
+                        )}
+                        {selectedSession.parent_native_session_id_conflict && (
+                          <Text size="xs" c="red" style={{ overflowWrap: "anywhere" }}>
+                            Conflicting native parent ID candidates:{" "}
+                            {(selectedSession.parent_native_session_id_candidates ?? []).join(", ") || "unavailable"}
+                          </Text>
+                        )}
+                        {parentSession?.identity_inferred && (
+                          <Text size="xs" c="orange">
+                            Parent transcript is not captured; its identity is inferred.
+                          </Text>
+                        )}
+                      </Group>
+                    )}
+                    {childSessions.length > 0 && (
+                      <Stack gap={2}>
+                        <Text size="xs" c="dimmed">
+                          Child sessions
+                        </Text>
+                        <div
+                          className="session-browser-related-children"
+                          role="region"
+                          aria-label="Child sessions"
+                          tabIndex={0}
+                        >
+                          <Stack gap={2} role="list">
+                            {childSessions.map((child) => (
+                              <Group key={child.id} gap="xs" wrap="wrap" role="listitem">
+                                <Button
+                                  component={Link}
+                                  to={sessionPath(child.id)}
+                                  variant="subtle"
+                                  size="xs"
+                                  onClick={() => setMobileSessionListOpen(false)}
+                                >
+                                  {child.title || "Untitled child session"}
+                                </Button>
+                                {parentLinkLabel(child.parent_link_kind) !== null && (
+                                  <Badge color="orange" variant="light">
+                                    {parentLinkLabel(child.parent_link_kind)}
+                                  </Badge>
+                                )}
+                                <Text size="xs" c="dimmed">
+                                  {formatDateTime(child.last_activity_at)}
+                                </Text>
+                              </Group>
+                            ))}
+                          </Stack>
+                        </div>
+                      </Stack>
+                    )}
+                    {loadingRelatedSessions && <Loader size="xs" aria-label="Loading related sessions" />}
+                    {childSessionCursor !== null && (
+                      <Button
+                        variant="default"
+                        size="xs"
+                        loading={loadingMoreRelatedSessions}
+                        onClick={() => void loadMoreRelatedSessions()}
+                      >
+                        Load more child sessions
+                      </Button>
+                    )}
+                  </Stack>
+                </Paper>
+              )}
             </ScrollArea>
           </Stack>
         </Paper>
@@ -760,16 +904,31 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
           p="md"
           className="session-browser-transcript"
         >
-          <Button
-            className="session-browser-mobile-toggle"
-            variant="default"
-            size="xs"
-            aria-controls="session-browser-sidebar"
-            aria-expanded={mobileSessionListOpen}
-            onClick={() => setMobileSessionListOpen(true)}
-          >
-            Session list
-          </Button>
+          <Group className="session-browser-mobile-toolbar" gap="xs" wrap="wrap">
+            <Button
+              className="session-browser-mobile-toggle"
+              variant="default"
+              size="xs"
+              aria-controls="session-browser-sidebar"
+              aria-expanded={mobileSessionListOpen}
+              onClick={() => setMobileSessionListOpen(true)}
+            >
+              Session list
+            </Button>
+            {hasRelatedSessions && (
+              <Button
+                className="session-browser-mobile-related-toggle"
+                variant="default"
+                size="xs"
+                aria-label="Related sessions"
+                aria-controls="session-browser-sidebar"
+                aria-expanded={mobileSessionListOpen}
+                onClick={openMobileRelatedSessions}
+              >
+                Related sessions{childSessions.length > 0 ? ` (${childSessions.length})` : ""}
+              </Button>
+            )}
+          </Group>
           {selectedSession === null ? (
             <Center style={{ flex: 1 }}>
               {loadingSelectedSession ? (
@@ -856,107 +1015,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                   )}
                 </Box>
               </Group>
-              {(selectedSession.parent_session_id !== null ||
-                selectedSession.parent_link_kind !== null ||
-                childSessions.length > 0 ||
-                loadingRelatedSessions) && (
-                <Paper
-                  component="section"
-                  withBorder
-                  radius="sm"
-                  p="xs"
-                  aria-label="Related sessions"
-                  tabIndex={0}
-                  className="session-browser-related-sessions"
-                >
-                  <Stack gap="xs">
-                    <Text size="sm" fw={600}>
-                      Related sessions
-                    </Text>
-                    {(selectedSession.parent_session_id !== null || selectedSession.parent_link_kind !== null) && (
-                      <Group gap="xs" wrap="wrap">
-                        <Text size="xs" c="dimmed">
-                          Parent
-                        </Text>
-                        {selectedSession.parent_session_id !== null && parentSession !== null ? (
-                          <Button component={Link} to={sessionPath(parentSession.id)} variant="subtle" size="xs">
-                            {parentSession.title || "Untitled parent session"}
-                          </Button>
-                        ) : selectedSession.parent_session_id !== null ? (
-                          <Loader size="xs" aria-label="Loading parent session" />
-                        ) : (
-                          <Text size="xs" c="dimmed">
-                            Parent session could not be resolved to a captured session.
-                          </Text>
-                        )}
-                        {parentLinkLabel(selectedSession.parent_link_kind) !== null && (
-                          <Badge color="orange" variant="light">
-                            {parentLinkLabel(selectedSession.parent_link_kind)}
-                          </Badge>
-                        )}
-                        {typeof selectedSession.parent_native_session_id === "string" && (
-                          <Text size="xs" c="dimmed">
-                            Native parent ID: {selectedSession.parent_native_session_id}
-                          </Text>
-                        )}
-                        {selectedSession.parent_native_session_id_conflict && (
-                          <Text size="xs" c="red" style={{ overflowWrap: "anywhere" }}>
-                            Conflicting native parent ID candidates:{" "}
-                            {(selectedSession.parent_native_session_id_candidates ?? []).join(", ") || "unavailable"}
-                          </Text>
-                        )}
-                        {parentSession?.identity_inferred && (
-                          <Text size="xs" c="orange">
-                            Parent transcript is not captured; its identity is inferred.
-                          </Text>
-                        )}
-                      </Group>
-                    )}
-                    {childSessions.length > 0 && (
-                      <Stack gap={2}>
-                        <Text size="xs" c="dimmed">
-                          Child sessions
-                        </Text>
-                        <div
-                          className="session-browser-related-children"
-                          role="region"
-                          aria-label="Child sessions"
-                          tabIndex={0}
-                        >
-                          <Stack gap={2} role="list">
-                            {childSessions.map((child) => (
-                              <Group key={child.id} gap="xs" wrap="wrap" role="listitem">
-                                <Button component={Link} to={sessionPath(child.id)} variant="subtle" size="xs">
-                                  {child.title || "Untitled child session"}
-                                </Button>
-                                {parentLinkLabel(child.parent_link_kind) !== null && (
-                                  <Badge color="orange" variant="light">
-                                    {parentLinkLabel(child.parent_link_kind)}
-                                  </Badge>
-                                )}
-                                <Text size="xs" c="dimmed">
-                                  {formatDateTime(child.last_activity_at)}
-                                </Text>
-                              </Group>
-                            ))}
-                          </Stack>
-                        </div>
-                      </Stack>
-                    )}
-                    {loadingRelatedSessions && <Loader size="xs" aria-label="Loading related sessions" />}
-                    {childSessionCursor !== null && (
-                      <Button
-                        variant="default"
-                        size="xs"
-                        loading={loadingMoreRelatedSessions}
-                        onClick={() => void loadMoreRelatedSessions()}
-                      >
-                        Load more child sessions
-                      </Button>
-                    )}
-                  </Stack>
-                </Paper>
-              )}
               {requestedVersionUnavailable ? (
                 <Center h={180}>
                   <Stack align="center" gap="xs" maw={480}>
