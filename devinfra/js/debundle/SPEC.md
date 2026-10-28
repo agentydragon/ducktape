@@ -599,12 +599,20 @@ retained lazy closure are included as well, covering an accessor that returns
 another conversion callable. This is callback-effect analysis; it does not
 classify the enclosing operator as pure.
 
-A direct, unshadowed global `Math.round(value)` with one non-spread argument
-also avoids opaque callback promotion when retained values prove that argument
-primitive. Source-visible Math/global intrinsic mutation (including aliases),
-dynamic scope, objects, and unknown arguments disable this inference. Argument
-evaluation retains its own effects. This timing proof does not classify the call
-as pure or change its result's abstract shape.
+Native call models share one checked projection for call timing and successful
+return values. A direct `Math.round`, `floor`, `ceil`, `trunc`, `abs`, or `sign`
+call with one proven primitive argument has no synchronous callback effect and
+returns a primitive. That return fact composes with subsequent conversions.
+Direct `RegExp` calls and construction admit zero to two primitive arguments
+for timing only; their results remain opaque and compilation may still throw.
+Fresh-record `Object.freeze` uses the same projection and returns its original
+argument identity, preserving callbacks stored in that object.
+
+The intrinsic must be undeclared and unshadowed. Dynamic scope or visible
+writes to its intrinsic/global family, including aliases and reflective writes,
+disable the model. Spreads and unsupported input shapes remain conservative.
+Callee and argument evaluation retain their effects and throws. These models
+neither classify calls as pure nor bypass their ordinary source-order constraints.
 
 ## Purity hint diagnostics
 

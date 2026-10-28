@@ -1198,6 +1198,7 @@ enum IntrinsicRoot {
     Object,
     Array,
     Math,
+    RegExp,
 }
 
 type IntrinsicRoots = BTreeSet<IntrinsicRoot>;
@@ -1218,6 +1219,9 @@ fn intrinsic_roots(
             BTreeSet::from([IntrinsicRoot::Array])
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Math" => BTreeSet::from([IntrinsicRoot::Math]),
+        ValueExpr::Binding(id) if id.0.as_ref() == "RegExp" => {
+            BTreeSet::from([IntrinsicRoot::RegExp])
+        }
         ValueExpr::Binding(id) if globals.contains(id.0.as_ref()) => {
             BTreeSet::from([IntrinsicRoot::GlobalObject])
         }
@@ -1248,6 +1252,9 @@ fn intrinsic_roots(
                         Some("Math") => {
                             out.insert(IntrinsicRoot::Math);
                         }
+                        Some("RegExp") => {
+                            out.insert(IntrinsicRoot::RegExp);
+                        }
                         Some("globalThis" | "window" | "self" | "frames" | "top") | None => {
                             out.insert(IntrinsicRoot::GlobalObject);
                         }
@@ -1260,7 +1267,8 @@ fn intrinsic_roots(
                     IntrinsicRoot::Error
                     | IntrinsicRoot::Object
                     | IntrinsicRoot::Array
-                    | IntrinsicRoot::Math => {
+                    | IntrinsicRoot::Math
+                    | IntrinsicRoot::RegExp => {
                         out.insert(root);
                     }
                 }
@@ -2272,6 +2280,9 @@ impl ExecutionIndex {
                 }
                 "Math" => {
                     mutated_intrinsics.insert(IntrinsicRoot::Math);
+                }
+                "RegExp" => {
+                    mutated_intrinsics.insert(IntrinsicRoot::RegExp);
                 }
                 _ => {}
             }
@@ -4680,3 +4691,6 @@ pub(crate) fn stable_ts_enum_named_data_members(
 
 #[path = "interpreter.rs"]
 pub(crate) mod interpreter;
+
+#[path = "native_calls.rs"]
+mod native_calls;

@@ -4,6 +4,7 @@ use super::super::value_model::{
     AbstractValue, ArrayIteration, ArrayIterationMethod, CallSite, Captured, CapturedContext,
     Context, DenseArray, FrozenNamespaceProof, ValueExpr, Values,
 };
+use super::native_calls::{CallInputs, CallReturn, native_call_model};
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, IntrinsicRoot, LocalConstructor,
     RetainedCallbackCall,
@@ -268,58 +269,69 @@ impl Executor<'_> {
                 .any(|root| matches!(root, IntrinsicRoot::GlobalObject | IntrinsicRoot::Object))
     }
 
-    /// Freezing a newly created ordinary data object examines its own
-    /// descriptors, but cannot invoke the values stored in those descriptors.
-    /// Keep the returned object identity so a later consumer can still reach
-    /// callbacks stored in its fields. Expression effects are indexed and
-    /// executed separately before this call.
-    fn fresh_freeze_argument<'b>(
+    /// A successful model lookup certifies the operation after its inputs
+    /// have evaluated. Both return values and call timing use these same
+    /// identity, mutation, and input guards; neither infers purity.
+    fn resolve_native_call(
         &self,
+        kind: CallKind,
         callee: &ValueExpr,
-        args: &'b [ValueExpr],
-    ) -> Option<&'b ValueExpr> {
-        let ValueExpr::Member(receiver, Some(method), true) = callee else {
-            return None;
+        expressions: &[ValueExpr],
+        args: &[Values],
+    ) -> Option<CallReturn> {
+        let (binding, member) = match callee {
+            ValueExpr::Binding(binding) => (binding, None),
+            ValueExpr::Member(receiver, Some(member), true) => {
+                let ValueExpr::Binding(binding) = receiver.as_ref() else {
+                    return None;
+                };
+                (binding, Some(member.as_str()))
+            }
+            _ => return None,
         };
-        let ValueExpr::Binding(object_intrinsic) = receiver.as_ref() else {
-            return None;
-        };
-        let [argument @ ValueExpr::ObjectLiteral(object, _)] = args else {
-            return None;
-        };
-        (method == "freeze"
-            && object_intrinsic.0.as_ref() == "Object"
-            && !self.flow.is_declared(object_intrinsic)
-            && !self.shadowed.contains("Object")
-            && self.ordinary_object_prototype_intact()
-            && self.index.plain_data_objects.contains(object))
-        .then_some(argument)
-    }
-
-    fn primitive_math_round_call(&self, call: &Call, args: &[Values]) -> bool {
-        let ValueExpr::Member(receiver, Some(property), true) = &call.callee else {
-            return false;
-        };
-        let ValueExpr::Binding(binding) = receiver.as_ref() else {
-            return false;
-        };
-        call.kind == CallKind::Call
-            && !call.has_spread
-            && property == "round"
-            && binding.0.as_ref() == "Math"
-            && !self.flow.is_declared(binding)
-            && !self.shadowed.contains("Math")
-            && self.index.dynamic_scope_owners.is_empty()
-            && !self
+        let model = native_call_model(binding.0.as_ref(), member, kind)?;
+        if self.flow.is_declared(binding)
+            || self.shadowed.contains(binding.0.as_ref())
+            || !self.index.dynamic_scope_owners.is_empty()
+            || self
                 .index
                 .mutated_intrinsic_roots
                 .iter()
-                .any(|root| matches!(root, IntrinsicRoot::GlobalObject | IntrinsicRoot::Math))
-            && args.len() == 1
-            && !args[0].is_empty()
-            && args[0]
-                .iter()
-                .all(|value| matches!(value, AbstractValue::NonCallable | AbstractValue::Undefined))
+                .any(|root| *root == IntrinsicRoot::GlobalObject || *root == model.intrinsic)
+        {
+            return None;
+        }
+        let admitted = match model.inputs {
+            CallInputs::Primitives { min, max } => {
+                (min..=max).contains(&args.len())
+                    && args.iter().all(|values| {
+                        !values.is_empty()
+                            && values.iter().all(|value| {
+                                matches!(
+                                    value,
+                                    AbstractValue::NonCallable | AbstractValue::Undefined
+                                )
+                            })
+                    })
+            }
+            CallInputs::FreshDataRecord => {
+                matches!(expressions, [ValueExpr::ObjectLiteral(object, _)]
+                    if self.index.plain_data_objects.contains(object))
+            }
+        };
+        admitted.then_some(model.returns)
+    }
+
+    fn native_return_values(returns: CallReturn, args: &[Values], may_throw: bool) -> Values {
+        let mut values = match returns {
+            CallReturn::Unknown => unknown(),
+            CallReturn::Primitive => BTreeSet::from([AbstractValue::NonCallable]),
+            CallReturn::Argument(index) => args.get(index).cloned().unwrap_or_else(unknown),
+        };
+        if may_throw {
+            values.insert(AbstractValue::Unavailable);
+        }
+        values
     }
 
     fn standard_object_prototype_property(property: &str) -> bool {
@@ -3433,9 +3445,6 @@ impl Executor<'_> {
                 if self.frozen_namespace_calls.contains(span) {
                     return self.evaluate(&args[0], env, captures);
                 }
-                if let Some(argument) = self.fresh_freeze_argument(callee, args) {
-                    return self.evaluate(argument, env, captures);
-                }
                 if let Some((proof, _, _, _, _)) = self.array_iteration_plan(*span, env, captures) {
                     return if proof.method == ArrayIterationMethod::ForEach {
                         BTreeSet::from([AbstractValue::Undefined])
@@ -3469,6 +3478,11 @@ impl Executor<'_> {
                 }
                 for values in &mut args {
                     values.remove(&AbstractValue::Unavailable);
+                }
+                if let Some(returns) =
+                    self.resolve_native_call(CallKind::Call, callee, expressions, &args)
+                {
+                    return Self::native_return_values(returns, &args, args_may_throw);
                 }
                 if let Some(callbacks) = self.retained_factory_callbacks(*span, expressions, &args)
                 {
@@ -3557,6 +3571,16 @@ impl Executor<'_> {
                     .iter()
                     .map(|arg| self.evaluate(arg, env, captures))
                     .collect();
+                let mut successful_args = evaluated_args.clone();
+                let mut args_may_throw = targets.contains(&AbstractValue::Unavailable);
+                for values in &mut successful_args {
+                    args_may_throw |= values.remove(&AbstractValue::Unavailable);
+                }
+                if let Some(returns) =
+                    self.resolve_native_call(CallKind::New, callee, args, &successful_args)
+                {
+                    return Self::native_return_values(returns, &successful_args, args_may_throw);
+                }
                 if self.index.retained_constructor_calls.contains_key(span) {
                     if targets.len() == 1 && targets.contains(&AbstractValue::Unavailable) {
                         return BTreeSet::from([AbstractValue::Unavailable]);
@@ -3950,14 +3974,6 @@ impl Executor<'_> {
         {
             return;
         }
-        if call.kind == CallKind::Call
-            && !call.has_spread
-            && self
-                .fresh_freeze_argument(&call.callee, &call.args)
-                .is_some()
-        {
-            return;
-        }
         if matches!(
             call.kind,
             CallKind::InProtocol
@@ -4180,10 +4196,11 @@ impl Executor<'_> {
         for values in &mut args {
             values.remove(&AbstractValue::Unavailable);
         }
-        // Math.round only converts its argument and performs numeric work.
-        // A primitive cannot invoke a conversion hook. Argument evaluation
-        // still contributes its own effects; the result remains unknown.
-        if self.primitive_math_round_call(call, &args) {
+        if !call.has_spread
+            && self
+                .resolve_native_call(call.kind, &call.callee, &call.args, &args)
+                .is_some()
+        {
             return;
         }
         if call.kind == CallKind::Call

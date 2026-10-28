@@ -82,22 +82,36 @@ or expose callbacks. The CLI cases in `empty_collection_timing_test` cover
 all four empty constructors and real callback reentry through a shadowed
 constructor and a supplied iterator.
 
-## Primitive-argument `Math.round` timing
+## Guarded native call summaries
 
-Synchronous callback analysis excludes a direct `Math.round(value)` call with
-one non-spread argument when retained value flow proves the evaluated argument
-primitive. The receiver must be the undeclared, unshadowed global `Math` binding.
-Dynamic scope or visible writes to the Math/global intrinsic family, including
-aliases and reflective property mutation, disable the proof.
+The synchronous interpreter uses one model lookup for both returned values and
+callback timing. Models describe the operation after callee and argument
+evaluation, preserving those evaluations' effects and throws. All require an
+undeclared, unshadowed intrinsic, no spread, no dynamic scope, and no visible
+mutation of the intrinsic/global family through direct, aliased, or reflective
+writes. They do not change purity classification or ordinary source ordering.
 
-Under A11 intrinsic integrity, [Math.round](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-math.round)
-converts its argument with `ToNumber` and performs numeric operations. A primitive
-argument cannot invoke a user-defined conversion hook. Object and unknown inputs
-retain opaque-call analysis. Argument evaluation keeps its own effects, including
-callbacks in a sequence whose final value is primitive. This is a call-timing
-proof only: it neither classifies the call as pure nor gives its result a known
-shape. `math_round_timing_test` pairs the admitted arithmetic case with coercion,
-effectful argument, shadowing, aliased method mutation, and getter controls.
+Under A11 intrinsic integrity, the unary numeric methods `Math.round`, `floor`,
+`ceil`, `trunc`, `abs`, and `sign` perform `ToNumber` followed by numeric work;
+see [Math](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-math-object).
+One primitive-valued argument cannot invoke a conversion hook. Successful
+results are primitive too, so subsequent conversions can use the same fact.
+Object and unknown arguments retain opaque-call analysis. Argument evaluation
+may still reenter, including a sequence whose final value is primitive.
+
+Direct `RegExp` calls and construction allow zero to two primitive arguments.
+[RegExp construction](https://tc39.es/ecma262/multipage/text-processing.html#sec-regexp-pattern-flags)
+cannot take its object-pattern/property-inspection branch for a primitive input;
+conversion and compilation need no user code under A11. The result remains
+opaque, and syntax/type errors remain observable. The existing fresh-record
+`Object.freeze` proof below uses this same model projection, returning argument
+zero without losing its object identity or callbacks.
+
+`native_call_summary_test` covers all six numeric methods followed by another
+conversion, both RegExp call forms, object coercion, global-constructor
+replacement, and syntax errors. `math_round_timing_test` retains effectful
+argument, shadowing, aliased method mutation, and getter controls;
+`fresh_freeze_callback_timing_test` retains its identity/publication controls.
 
 ## Native `Proxy` construction
 
