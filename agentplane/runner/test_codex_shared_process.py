@@ -129,7 +129,9 @@ async def test_a_shared_app_server_crash_loses_every_hosted_turn_and_each_sessio
     crashed = await _codex_process(driver)
 
     runner = await driver.gateway.control.runner()
-    await kill_harness(await runner.GetStatus(runner_pb2.GetStatusRequest()), SESSION_IDS[0])
+    await kill_harness(
+        await runner.GetStatus(runner_pb2.GetStatusRequest()), sessions[SESSION_IDS[0]].attached.session_id
+    )
     for session in sessions.values():
         lost = await session.until(events.turn_completed)
         assert lost.event.turn_completed.status == event_pb2.TURN_STATUS_PROCESS_LOST
