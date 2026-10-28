@@ -17,8 +17,8 @@ type storedEntryContent struct {
 	messageFromSession *string
 }
 
-// marshalEntryStorageContent retains the typed payload and exposes Message's canonical text columns from the same
-// decoded value. The text columns are dual-written with the legacy JSON and protobuf until the reader cutover.
+// marshalEntryStorageContent encodes event content in its storage representation. Message content is canonical in
+// text columns; other typed providers use the protobuf column.
 func marshalEntryStorageContent(event EventIdentity, payload json.RawMessage) (storedEntryContent, error) {
 	var content *entrystoragepb.EntryContent
 	var stored storedEntryContent
@@ -65,11 +65,7 @@ func marshalEntryStorageContent(event EventIdentity, payload json.RawMessage) (s
 		}
 		stored.messageBody = wire.Body
 		stored.messageFromSession = wire.FromSession
-		message := &entrystoragepb.MessageContent{Body: *wire.Body}
-		if wire.FromSession != nil {
-			message.FromSession = wire.FromSession
-		}
-		content = &entrystoragepb.EntryContent{Content: &entrystoragepb.EntryContent_Message{Message: message}}
+		return stored, nil
 	default:
 		return storedEntryContent{}, fmt.Errorf("unsupported event identity type %T", event)
 	}

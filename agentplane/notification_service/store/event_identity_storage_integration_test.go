@@ -226,7 +226,7 @@ func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *te
 		got[6].messageSenderNamespace.String != "sender-ns" || got[6].messageSenderName.String != "sender" {
 		t.Errorf("message identity columns = %+v", got[6])
 	}
-	for i, wantNull := range []bool{false, true, true, true, false, false, false} {
+	for i, wantNull := range []bool{false, true, true, true, false, false, true} {
 		var identityJSONNull bool
 		if err := f.db.QueryRowContext(t.Context(), `SELECT event IS NULL
 			FROM entry WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1).Scan(&identityJSONNull); err != nil {
@@ -242,7 +242,7 @@ func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *te
 		}
 		wantLegacyPayloadNull := false
 		switch events[i].(type) {
-		case ActionsEvent, GitHubMergeabilityEvent, GitHubMergeabilitySnapshotEvent:
+		case ActionsEvent, GitHubMergeabilityEvent, GitHubMergeabilitySnapshotEvent, MessageEvent:
 			wantLegacyPayloadNull = true
 		}
 		if legacyPayloadNull != wantLegacyPayloadNull {
@@ -282,11 +282,6 @@ func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *te
 				mergeability.GetPreviousMergeability() != entrystoragepb.GitHubMergeabilityState_GITHUB_MERGEABILITY_STATE_UNKNOWN ||
 				mergeability.GetMergeability() != entrystoragepb.GitHubMergeabilityState_GITHUB_MERGEABILITY_STATE_CONFLICTING {
 				t.Errorf("mergeability typed content = %v", mergeability)
-			}
-		case MessageEvent:
-			message := content.GetMessage()
-			if message == nil || message.GetBody() != "stored message" || message.FromSession == nil || *message.FromSession != "sender-session" {
-				t.Errorf("message typed content = %v", message)
 			}
 		default:
 			t.Fatalf("unexpected event in typed content test: %T", event)

@@ -98,8 +98,8 @@ func TestAMessageIsAnEntryOfItsSessionsInboxThatItsSenderFollows(t *testing.T) {
 		FROM entry WHERE message_id = $1`, sent.ID).Scan(&legacyPayloadNull, &typedPayloadPresent); err != nil {
 		t.Fatal(err)
 	}
-	if legacyPayloadNull || !typedPayloadPresent {
-		t.Fatalf("message storage has legacy-payload-null=%t typed-payload-present=%t; want both JSON and protobuf during the staged size-guard rollout",
+	if !legacyPayloadNull || typedPayloadPresent {
+		t.Fatalf("message storage has legacy-payload-null=%t typed-payload-present=%t; want canonical text without legacy JSON or protobuf",
 			legacyPayloadNull, typedPayloadPresent)
 	}
 	var storedBody, storedFromSession sql.NullString
@@ -243,8 +243,8 @@ func TestTheDatabaseHoldsNoBodyBeyondTheCeiling(t *testing.T) {
 		t.Fatalf("text body update error = %v, want the canonical text ceiling's constraint", err)
 	}
 	_, err = f.Send(t.Context(), f.message(sender, "beyond-ceiling", body+"x"))
-	if refused := (*pq.Error)(nil); !errors.As(err, &refused) || refused.Constraint != "entry_message_body_ceiling_relational" {
-		t.Fatalf("oversized dual-write error = %v, want the retained JSON ceiling's constraint", err)
+	if refused := (*pq.Error)(nil); !errors.As(err, &refused) || refused.Constraint != "entry_message_text_body_ceiling" {
+		t.Fatalf("oversized Message write error = %v, want the canonical text ceiling's constraint", err)
 	}
 	if got := f.sentMessage(t, sender, sent.ID); got.ID != sent.ID {
 		t.Fatalf("sender receipt changed while checking text ceiling: %+v", got)
@@ -328,15 +328,14 @@ func TestMessageTextExpansionPreservesPredecessorPayloads(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload := json.RawMessage(`{"body":"retained message","from_session":"launch-session"}`)
-	storedContent, err := marshalEntryStorageContent(event, payload)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Literal EntryContent.Message protobuf bytes from the predecessor writer prove expansion preserves retained data
+	// without keeping the retired Message protobuf codec in production.
+	legacyTypedPayload := []byte("\x1a\x22\x0a\x10retained message\x12\x0elaunch-session")
 	if _, err := db.ExecContext(ctx, `INSERT INTO entry (
 		inbox_id, cursor, event, payload, created_at, identity_provider, message_id,
 		message_sender_namespace, message_sender_name, typed_payload)
 		VALUES ($1, 1, $2::jsonb, $3::jsonb, now(), 'message', $4, $5, $6, $7)`,
-		inboxID, string(eventJSON), string(payload), event.MessageID, event.Sender.Namespace, event.Sender.Name, storedContent.typedPayload); err != nil {
+		inboxID, string(eventJSON), string(payload), event.MessageID, event.Sender.Namespace, event.Sender.Name, legacyTypedPayload); err != nil {
 		t.Fatalf("insert predecessor message entry: %v", err)
 	}
 	if err := migrations.UpTo(ctx, db, 16); err != nil {
@@ -351,8 +350,8 @@ func TestMessageTextExpansionPreservesPredecessorPayloads(t *testing.T) {
 	); err != nil {
 		t.Fatalf("read predecessor message after expansion: %v", err)
 	}
-	if !payloadPreserved || !bytes.Equal(gotTypedPayload, storedContent.typedPayload) || messageBody.Valid || messageFromSession.Valid {
+	if !payloadPreserved || !bytes.Equal(gotTypedPayload, legacyTypedPayload) || messageBody.Valid || messageFromSession.Valid {
 		t.Fatalf("expansion changed predecessor representations: JSON preserved %t, protobuf equal %t, body %+v, sender %+v",
-			payloadPreserved, bytes.Equal(gotTypedPayload, storedContent.typedPayload), messageBody, messageFromSession)
+			payloadPreserved, bytes.Equal(gotTypedPayload, legacyTypedPayload), messageBody, messageFromSession)
 	}
 }

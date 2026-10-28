@@ -188,7 +188,7 @@ func insertEntry(
 	}
 	var legacyPayloadParameter any = string(payload)
 	switch event.(type) {
-	case ActionsEvent, GitHubMergeabilityEvent, GitHubMergeabilitySnapshotEvent:
+	case ActionsEvent, GitHubMergeabilityEvent, GitHubMergeabilitySnapshotEvent, MessageEvent:
 		legacyPayloadParameter = nil
 	}
 	var typedPayloadParameter any

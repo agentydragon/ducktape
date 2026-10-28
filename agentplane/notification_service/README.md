@@ -88,17 +88,18 @@ This writer still stores relational identity and legacy identity JSON, which a l
 
 `00016_message_text_expand.sql` adds nullable `entry.message_body` and `entry.message_from_session` text columns. The dual-write release keeps Message JSON and protobuf intact while also writing the canonical body and optional sender label to text; database checks bound the body by UTF-8 bytes and the label by the existing 1–200 character contract. The old JSON body ceiling remains until identity JSON is retired. Roll back only to a dual-write-capable release while this phase is active; the additive nullable columns preserve old-reader compatibility.
 
-After every Message append, replay, expiry writer and cleanup worker runs the text dual-write release, use the
-backfill-capable image to run
+Before deploying `00019_message_text_writer_only.sql`, every Message append, replay, expiry writer and cleanup worker
+must run the text dual-write release. Use that release's backfill-capable image to run
 `bb run //agentplane/notification_service/migrations/cmd:notifications-migrate -- backfill-message-text --writer-gate=notification-message-text-and-cleanup-dual-write-v1`
 once against each Notification database. The resumable command scans all entries in native `(inbox_id, cursor)`
 order, loads only retained Message JSON that still needs text, and commits batches bounded by row count and raw
 serialized JSON bytes (a single larger valid document is processed alone). It clears stale text for expired rows
 even below `expired_through`, verifies every retained Message JSON/text pair, and records progress in
 `notification_message_text_backfill`; it runs outside service startup and readiness. Do not move Message readers to
-canonical-text storage until this command reports `backfilled` on every database. Keep the dual-write image as the
-rollback version before the later Message text contract; that contract image will retire the backfill command and
-checkpoint.
+canonical-text storage until this command reports `backfilled` on every database. The `00019` migration requires the
+terminal checkpoint on populated databases, then drops it to fence and retire this command before text-only Message
+writes begin. Keep the dual-write image as the rollback version before `00019`; after it, roll application code back
+only to a canonical-text reader release.
 
 Deploy the canonical Message text reader only after the `backfilled` checkpoint is complete on every database.
 It reconstructs Message JSON from `message_body` and `message_from_session` and refuses retained rows missing text;
@@ -119,6 +120,19 @@ identity contract: it checks that phase and the validated catalog proofs before 
 required and dropping the legacy identity JSON, its JSONB deduplication constraint, and the backfill checkpoint.
 The relational key indexes remain authoritative; Message payload JSON and native GitHub JSON remain stored as
 before.
+
+After every Message reader uses canonical text and the 00017 backfill is complete on every database, deploy the
+Message text-only writer. Its `00019` migration requires the terminal backfill marker on populated databases, then
+drops the checkpoint before JSON/PB writes stop; fresh empty databases need no marker. New writes keep the stable
+`message.digest` comparison bytes but store Message content only in `message_body` and `message_from_session`.
+The writer also retires the private Message protobuf variant. Existing Message JSON and protobuf bytes remain
+untouched until the separate bounded legacy-content cleanup phase. Roll back only to a canonical-text reader
+release; a pre-reader image cannot read rows whose legacy payload is NULL.
+
+Once every reader and Message append/replay/expiry writer uses canonical text, attest
+`notification-message-text-only-v1` before running the separate legacy-content cleanup. That offline, resumable
+command removes old Message JSON/protobuf while preserving retained text and clearing expired rows; its validated
+proofs gate the later metadata-only contract that retires the cleanup command and old storage constraints.
 
 Keep the typed-capable dual-write release as the minimum rollback version; an older reader that depends on
 non-GitHub `entry.payload` cannot read Action or mergeability entries written by this release. Before migration `00015`, rollback
