@@ -6,47 +6,54 @@ import (
 	"fmt"
 	"time"
 
-	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/entrystoragepb"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// marshalEntryContent writes the non-key content for sources with a private typed storage representation.
-// GitHub webhooks are native JSON and remain in entry.payload.
-func marshalEntryContent(event model.EventIdentity, payload json.RawMessage) ([]byte, error) {
+type storedEntryContent struct {
+	typedPayload       []byte
+	messageBody        *string
+	messageFromSession *string
+}
+
+// marshalEntryStorageContent retains the typed payload and exposes Message's canonical text columns from the same
+// decoded value. The text columns are dual-written with the legacy JSON and protobuf until the reader cutover.
+func marshalEntryStorageContent(event model.EventIdentity, payload json.RawMessage) (storedEntryContent, error) {
 	var content *entrystoragepb.EntryContent
+	var stored storedEntryContent
 	switch event := event.(type) {
 	case model.ActionsEvent:
 		var action ActionEvent
 		if err := json.Unmarshal(payload, &action); err != nil {
-			return nil, fmt.Errorf("decode Action content: %w", err)
+			return storedEntryContent{}, fmt.Errorf("decode Action content: %w", err)
 		}
 		if action.Sequence != event.Sequence {
-			return nil, fmt.Errorf("Action content sequence %d does not match identity sequence %d", action.Sequence, event.Sequence)
+			return storedEntryContent{}, fmt.Errorf("Action content sequence %d does not match identity sequence %d", action.Sequence, event.Sequence)
 		}
 		at := timestamppb.New(action.At)
 		if err := at.CheckValid(); err != nil {
-			return nil, fmt.Errorf("Action content at: %w", err)
+			return storedEntryContent{}, fmt.Errorf("Action content at: %w", err)
 		}
 		content = &entrystoragepb.EntryContent{Content: &entrystoragepb.EntryContent_Action{Action: &entrystoragepb.ActionContent{
 			State: action.State, At: at, Actor: action.Actor,
 		}}}
 	case model.GitHubEvent:
-		return nil, nil
+		return storedEntryContent{}, nil
 	case model.GitHubObservationEvent:
-		return nil, nil
+		return storedEntryContent{}, nil
 	case model.GitHubMergeabilityEvent:
 		mergeability, err := mergeabilityContentFromJSON(payload, event.PullRequestNumber)
 		if err != nil {
-			return nil, err
+			return storedEntryContent{}, err
 		}
 		content = &entrystoragepb.EntryContent{Content: &entrystoragepb.EntryContent_Mergeability{Mergeability: mergeability}}
 	case model.GitHubMergeabilitySnapshotEvent:
 		mergeability, err := mergeabilityContentFromJSON(payload, event.PullRequestNumber)
 		if err != nil {
-			return nil, err
+			return storedEntryContent{}, err
 		}
 		content = &entrystoragepb.EntryContent{Content: &entrystoragepb.EntryContent_Mergeability{Mergeability: mergeability}}
 	case model.MessageEvent:
@@ -55,24 +62,27 @@ func marshalEntryContent(event model.EventIdentity, payload json.RawMessage) ([]
 			FromSession *string `json:"from_session"`
 		}
 		if err := decode(payload, &wire); err != nil {
-			return nil, fmt.Errorf("decode message content: %w", err)
+			return storedEntryContent{}, fmt.Errorf("decode message content: %w", err)
 		}
 		if wire.Body == nil {
-			return nil, errors.New("message content has no body")
+			return storedEntryContent{}, errors.New("message content has no body")
 		}
+		stored.messageBody = wire.Body
+		stored.messageFromSession = wire.FromSession
 		message := &entrystoragepb.MessageContent{Body: *wire.Body}
 		if wire.FromSession != nil {
 			message.FromSession = wire.FromSession
 		}
 		content = &entrystoragepb.EntryContent{Content: &entrystoragepb.EntryContent_Message{Message: message}}
 	default:
-		return nil, fmt.Errorf("unsupported event identity type %T", event)
+		return storedEntryContent{}, fmt.Errorf("unsupported event identity type %T", event)
 	}
 	encoded, err := proto.Marshal(content)
 	if err != nil {
-		return nil, fmt.Errorf("marshal typed entry content: %w", err)
+		return storedEntryContent{}, fmt.Errorf("marshal typed entry content: %w", err)
 	}
-	return encoded, nil
+	stored.typedPayload = encoded
+	return stored, nil
 }
 
 // entryPayloadFromStoredContent recreates the public JSON payload from typed storage. GitHub webhook payloads are
@@ -81,7 +91,7 @@ func entryPayloadFromStoredContent(event model.EventIdentity, legacyPayload, typ
 	switch event.(type) {
 	case model.GitHubEvent, model.GitHubObservationEvent:
 		if typedPayload != nil {
-			return nil, errors.New("native GitHub event has an unexpected typed payload")
+			return nil, errors.New("GitHub webhook has an unexpected typed payload")
 		}
 		if !legacyPayloadPresent || legacyPayload == nil {
 			return nil, errors.New("payload expired before the inbox's expired prefix")

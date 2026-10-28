@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -10,9 +11,47 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/entrystoragepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestEventIdentityProviderProofIsValidatedOfflineAndConstrainsNewWrites(t *testing.T) {
+	db, ctx := newStorageIntegrationDatabase(t)
+	resetNotificationSchema(t, db)
+	if err := migrations.UpTo(ctx, db, 19); err != nil {
+		t.Fatalf("build schema through event identity writer migration 00019: %v", err)
+	}
+	f := fixtureForDatabase(t, db, defaultQuotas())
+	subscription := f.subscribe(t, body("event-identity-proof"))
+	event := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
+	insertHistoricalActionEntry(t, db, subscription.InboxID, 1, event)
+
+	var validated bool
+	if err := f.db.QueryRowContext(t.Context(), `SELECT convalidated FROM pg_constraint
+		WHERE conrelid = 'entry'::regclass AND conname = 'entry_identity_provider_required'`).Scan(&validated); err != nil {
+		t.Fatal(err)
+	}
+	if validated {
+		t.Fatal("migration validated the identity provider proof on the serving path")
+	}
+	_, err := f.db.ExecContext(t.Context(), `UPDATE entry SET identity_provider = NULL WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
+	var postgresError *pq.Error
+	if !errors.As(err, &postgresError) || postgresError.Constraint != "entry_identity_provider_required" {
+		t.Fatalf("writing an incomplete relational identity returned %v, want entry_identity_provider_required", err)
+	}
+	if err := ValidateEntryIdentityProviderConstraint(t.Context(), f.db); err != nil {
+		t.Fatalf("validate provider proof in the offline validator: %v", err)
+	}
+	if err := f.db.QueryRowContext(t.Context(), `SELECT convalidated FROM pg_constraint
+		WHERE conrelid = 'entry'::regclass AND conname = 'entry_identity_provider_required'`).Scan(&validated); err != nil {
+		t.Fatal(err)
+	}
+	if !validated {
+		t.Fatal("offline validation did not publish the provider proof")
+	}
+}
 
 func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
@@ -100,6 +139,15 @@ func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t
 		t.Errorf("message identity columns = %+v", got[7])
 	}
 	for i, wantNull := range []bool{false, true, true, true, true, false, false, false} {
+		var legacyPayloadNull bool
+		if err := f.db.QueryRowContext(t.Context(), `SELECT payload IS NULL
+			FROM entry WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1).Scan(&legacyPayloadNull); err != nil {
+			t.Fatal(err)
+		}
+		wantLegacyPayloadNull := i == 0 || i == 5 || i == 6
+		if legacyPayloadNull != wantLegacyPayloadNull {
+			t.Errorf("event %d legacy JSON payload is NULL = %t, want %t", i, legacyPayloadNull, wantLegacyPayloadNull)
+		}
 		var isNull bool
 		var encoded []byte
 		if err := f.db.QueryRowContext(t.Context(), `SELECT typed_payload IS NULL, typed_payload
@@ -111,6 +159,20 @@ func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t
 			continue
 		}
 		if wantNull {
+			if _, ok := events[i].(model.GitHubObservationEvent); ok {
+				var payload []byte
+				if err := f.db.QueryRowContext(t.Context(), `SELECT payload FROM entry WHERE inbox_id = $1 AND cursor = $2`,
+					subscription.InboxID, i+1).Scan(&payload); err != nil {
+					t.Fatal(err)
+				}
+				var native map[string]any
+				if err := json.Unmarshal(payload, &native); err != nil {
+					t.Fatalf("decode native GitHub observation payload: %v", err)
+				}
+				if native["repositoryId"] != float64(2) || native["headSha"] != "0123456789abcdef0123456789abcdef01234567" {
+					t.Errorf("native GitHub observation payload = %s", payload)
+				}
+			}
 			continue
 		}
 		var content entrystoragepb.EntryContent

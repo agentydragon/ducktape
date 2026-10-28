@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/google/uuid"

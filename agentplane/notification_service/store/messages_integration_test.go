@@ -1,10 +1,14 @@
 package store
 
 import (
+	"bytes"
+	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -90,6 +94,24 @@ func TestAMessageIsAnEntryOfItsSessionsInboxThatItsSenderFollows(t *testing.T) {
 		t.Fatalf("entry = %+v", entry)
 	}
 	sameJSON(t, entry.Payload, []byte(`{"body": "Please review the change.", "from_session": "test-from-session"}`))
+	var legacyPayloadNull, typedPayloadPresent bool
+	if err := f.db.QueryRowContext(t.Context(), `SELECT payload IS NULL, typed_payload IS NOT NULL
+		FROM entry WHERE message_id = $1`, sent.ID).Scan(&legacyPayloadNull, &typedPayloadPresent); err != nil {
+		t.Fatal(err)
+	}
+	if legacyPayloadNull || !typedPayloadPresent {
+		t.Fatalf("message storage has legacy-payload-null=%t typed-payload-present=%t; want both JSON and protobuf during the staged size-guard rollout",
+			legacyPayloadNull, typedPayloadPresent)
+	}
+	var storedBody, storedFromSession sql.NullString
+	if err := f.db.QueryRowContext(t.Context(), `SELECT message_body, message_from_session FROM entry
+		WHERE inbox_id = $1 AND cursor = $2`, inbox.ID, entry.Cursor).Scan(&storedBody, &storedFromSession); err != nil {
+		t.Fatal(err)
+	}
+	if !storedBody.Valid || storedBody.String != message.Body || !storedFromSession.Valid || storedFromSession.String != *message.FromSession {
+		t.Fatalf("stored message text = (%q, %q), want (%q, %q)", storedBody.String, storedFromSession.String,
+			message.Body, *message.FromSession)
+	}
 
 	// The message made the inbox due, and a notice covers it.
 	claim := f.claim(t)
@@ -150,7 +172,8 @@ func TestARetryAnswersWithTheMessageAndAKeyReusedForOtherContentIsRefused(t *tes
 	message := f.message(sender, "first", "test body")
 	sent := f.send(t, message)
 	// The payload expires; the retry is still recognized.
-	f.exec(t, `UPDATE entry SET payload = NULL WHERE inbox_id = $1`, f.recipientInbox(t).ID)
+	f.exec(t, `UPDATE entry SET payload = NULL, typed_payload = NULL, message_body = NULL, message_from_session = NULL
+		WHERE inbox_id = $1`, f.recipientInbox(t).ID)
 	if retried := f.send(t, message); retried.ID != sent.ID || !retried.AcceptedAt.Equal(sent.AcceptedAt) {
 		t.Fatalf("retry = %+v, want %+v", retried, sent)
 	}
@@ -201,9 +224,136 @@ func TestMessagesDoNotCountTowardsTheInboxsEntryLimit(t *testing.T) {
 func TestTheDatabaseHoldsNoBodyBeyondTheCeiling(t *testing.T) {
 	f := newFixture(t, messageQuotas())
 	f.openInbox(t)
-	f.send(t, f.message(newOwner(), "at-ceiling", strings.Repeat("é", MessageBodyCeiling/2)))
-	_, err := f.Send(t.Context(), f.message(newOwner(), "beyond-ceiling", strings.Repeat("é", MessageBodyCeiling/2)+"x"))
+	body := strings.Repeat("é", MessageBodyCeiling/2)
+	sender := newOwner()
+	sent := f.send(t, f.message(sender, "at-ceiling", body))
+	inbox := f.recipientInbox(t)
+	var storedBody string
+	var storedFromSession sql.NullString
+	if err := f.db.QueryRowContext(t.Context(), `SELECT message_body, message_from_session FROM entry
+		WHERE inbox_id = $1 AND cursor = 1`, inbox.ID).Scan(&storedBody, &storedFromSession); err != nil {
+		t.Fatal(err)
+	}
+	if storedBody != body || storedFromSession.Valid {
+		t.Fatalf("stored message text has %d bytes, sender label = %+v; want exact %d-byte body and SQL NULL label",
+			len(storedBody), storedFromSession, len(body))
+	}
+	_, err := f.db.ExecContext(t.Context(), `UPDATE entry SET message_body = $3 WHERE inbox_id = $1 AND cursor = $2`,
+		inbox.ID, 1, body+"x")
+	if refused := (*pq.Error)(nil); !errors.As(err, &refused) || refused.Constraint != "entry_message_text_body_ceiling" {
+		t.Fatalf("text body update error = %v, want the canonical text ceiling's constraint", err)
+	}
+	_, err = f.Send(t.Context(), f.message(sender, "beyond-ceiling", body+"x"))
 	if refused := (*pq.Error)(nil); !errors.As(err, &refused) || refused.Constraint != "entry_message_body_ceiling" {
-		t.Fatalf("error = %v, want the body ceiling's constraint", err)
+		t.Fatalf("oversized dual-write error = %v, want the retained JSON ceiling's constraint", err)
+	}
+	if got := f.sentMessage(t, sender, sent.ID); got.ID != sent.ID {
+		t.Fatalf("sender receipt changed while checking text ceiling: %+v", got)
+	}
+}
+
+func TestMessageTextChecksMatchProviderAndSenderShape(t *testing.T) {
+	f := newFixture(t, messageQuotas())
+	f.openInbox(t)
+	sender := newOwner()
+	sent := f.send(t, f.message(sender, "shape", "body"))
+	inbox := f.recipientInbox(t)
+	_, err := f.db.ExecContext(t.Context(), `UPDATE entry SET message_body = NULL, message_from_session = 'label'
+		WHERE inbox_id = $1 AND cursor = 1`, inbox.ID)
+	requireConstraint(t, err, "23514", "entry_message_text_shape")
+	_, err = f.db.ExecContext(t.Context(), `UPDATE entry SET message_from_session = $3 WHERE inbox_id = $1 AND cursor = $2`,
+		inbox.ID, 1, strings.Repeat("s", 201))
+	requireConstraint(t, err, "23514", "entry_message_text_sender_length")
+
+	creation := body("non-message-text-shape")
+	subscription := f.subscribe(t, creation)
+	event := model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
+	var actionCursor int64
+	if err := f.db.QueryRowContext(t.Context(), `SELECT cursor FROM entry
+		WHERE inbox_id = $1 AND identity_provider = 'actions'`, subscription.InboxID).Scan(&actionCursor); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.db.ExecContext(t.Context(), `UPDATE entry SET message_body = 'not a message'
+		WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, actionCursor)
+	requireConstraint(t, err, "23514", "entry_message_text_shape")
+	if got := f.sentMessage(t, sender, sent.ID); got.ID != sent.ID {
+		t.Fatalf("sender receipt changed during shape checks: %+v", got)
+	}
+}
+
+func TestMessageExpiryClearsEveryBodyRepresentationAndKeepsTheDigestReceipt(t *testing.T) {
+	f := newFixture(t, messageQuotas())
+	sender := newOwner()
+	f.openInbox(t)
+	message := f.message(sender, "expired-message", "body that should expire")
+	message.FromSession = ptr("sender-session")
+	sent := f.send(t, message)
+	inbox := f.recipientInbox(t)
+	f.exec(t, `UPDATE entry SET created_at = now() - interval '31 days' WHERE inbox_id = $1 AND cursor = 1`, inbox.ID)
+	f.cleanAll(t)
+	var payload, typedPayload []byte
+	var body, fromSession sql.NullString
+	if err := f.db.QueryRowContext(t.Context(), `SELECT payload, typed_payload, message_body, message_from_session
+		FROM entry WHERE inbox_id = $1 AND cursor = 1`, inbox.ID).Scan(&payload, &typedPayload, &body, &fromSession); err != nil {
+		t.Fatal(err)
+	}
+	if payload != nil || typedPayload != nil || body.Valid || fromSession.Valid {
+		t.Fatalf("expired content remains: JSON nil=%t protobuf nil=%t body=%+v sender=%+v", payload == nil,
+			typedPayload == nil, body, fromSession)
+	}
+	if retried := f.send(t, message); retried.ID != sent.ID {
+		t.Fatalf("retry after expiry = %+v, want original receipt %s", retried, sent.ID)
+	}
+}
+
+func TestMessageTextExpansionPreservesPredecessorPayloads(t *testing.T) {
+	db, ctx := newStorageIntegrationDatabase(t)
+	if _, err := db.ExecContext(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
+		t.Fatalf("reset cloned test database schema: %v", err)
+	}
+	if err := migrations.UpTo(ctx, db, 19); err != nil {
+		t.Fatalf("apply migrations through predecessor Notification writer release: %v", err)
+	}
+	inboxID := uuid.New()
+	if _, err := db.ExecContext(ctx, `INSERT INTO inbox (
+		id, owner_namespace, owner_name, destination_key, destination_namespace, destination_name, destination_uid,
+		session_id, last_cursor, acknowledged, covered, expired_through, retired, updated_at, claim_until)
+		VALUES ($1, 'message-text-expansion', 'owner', 'stored-key', 'destination-ns', 'destination-name', 'uid',
+		'session-before-expansion', 1, 0, 0, 0, false, now(), now())`, inboxID); err != nil {
+		t.Fatalf("insert predecessor inbox: %v", err)
+	}
+	event := model.MessageEvent{MessageID: uuid.New(), Sender: model.ServiceAccount{Namespace: "sender-ns", Name: "sender-name"}}
+	eventJSON, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := json.RawMessage(`{"body":"retained message","from_session":"launch-session"}`)
+	storedContent, err := marshalEntryStorageContent(event, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO entry (
+		inbox_id, cursor, event, payload, created_at, identity_provider, message_id,
+		message_sender_namespace, message_sender_name, typed_payload)
+		VALUES ($1, 1, $2::jsonb, $3::jsonb, now(), 'message', $4, $5, $6, $7)`,
+		inboxID, string(eventJSON), string(payload), event.MessageID, event.Sender.Namespace, event.Sender.Name, storedContent.typedPayload); err != nil {
+		t.Fatalf("insert predecessor message entry: %v", err)
+	}
+	if err := migrations.UpTo(ctx, db, 20); err != nil {
+		t.Fatalf("apply message text expansion: %v", err)
+	}
+	var payloadPreserved bool
+	var gotTypedPayload []byte
+	var messageBody, messageFromSession sql.NullString
+	if err := db.QueryRowContext(ctx, `SELECT payload = $2::jsonb, typed_payload, message_body, message_from_session
+		FROM entry WHERE inbox_id = $1 AND cursor = 1`, inboxID, string(payload)).Scan(
+		&payloadPreserved, &gotTypedPayload, &messageBody, &messageFromSession,
+	); err != nil {
+		t.Fatalf("read predecessor message after expansion: %v", err)
+	}
+	if !payloadPreserved || !bytes.Equal(gotTypedPayload, storedContent.typedPayload) || messageBody.Valid || messageFromSession.Valid {
+		t.Fatalf("expansion changed predecessor representations: JSON preserved %t, protobuf equal %t, body %+v, sender %+v",
+			payloadPreserved, bytes.Equal(gotTypedPayload, storedContent.typedPayload), messageBody, messageFromSession)
 	}
 }

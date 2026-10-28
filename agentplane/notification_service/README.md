@@ -68,7 +68,7 @@ until every old writer has drained and every reader has moved to relational keys
 Typed entry content is a separate phase. `00014_entry_typed_payload_expand.sql` adds nullable protobuf `BYTEA` for
 Actions events, generated mergeability observations and messages. New writers fill it while retaining the existing
 JSON payload for older readers; cleanup clears both physical representations in one transaction. GitHub webhook
-payloads remain native JSONB and do not use the typed column. After every writer and cleanup worker runs that
+and generated commit-observation payloads remain native JSONB and do not use the typed column. After every writer and cleanup worker runs that
 dual-write release, run
 `bb run //agentplane/notification_service/migrations/cmd:notifications-migrate -- backfill-entry-content --writer-gate=notification-entry-typed-payload-dual-write-v1`
 once against each Notification database. The command is resumable outside Pod init, walks every entry in native
@@ -76,20 +76,55 @@ once against each Notification database. The command is resumable outside Pod in
 JSON (a single oversized row is processed alone). It never loads GitHub webhook JSON. It also physically clears
 typed bytes left by an older cleanup writer wherever the legacy payload is already NULL, including entries below
 an inbox's `expired_through` cursor. It verifies both conditions over the full table before reporting completion.
-Do not switch readers to typed-only content until it completes on every database, including newly initialized
-databases. During rollout, an older cleanup replica can clear only the legacy JSON column; a future typed reader
-must treat that SQL `NULL` as expired even if typed bytes remain, until the all-cleanup-writers gate and backfill
-have completed.
+This command is available in the dual-write migration image and must finish before `00019`; the typed-only image
+removes both the command and its checkpoint. Do not switch readers to typed-only content until it completes on every
+database, including newly initialized databases. During rollout, an older cleanup replica can clear only the legacy
+JSON column; a typed reader must treat that SQL `NULL` as expired even if typed bytes remain, until the
+all-cleanup-writers gate and backfill have completed.
 
-To roll back before the content backfill runs, restore the previous service image and leave the additive column in
-place; do not run a migration's `Down` section while dual writers remain. If the content command has started or
-completed, leave its checkpoint and typed bytes in place too; the previous image continues to use the retained
-JSON payload. If the event identity backfill/index command has completed, leave its columns, checkpoint and
-natural-key indexes in place as well. After the rollback rollout settles, verify the previous API's reads, writes,
-replay deduplication and readiness. Only after no reader depends on relational keys should a later cleanup drop the
-natural-key indexes concurrently, then run the migration Down sections in reverse order. Before a later forward
-rollout, drain old writers and check for any unconverted rows; the backfill command stops with their inbox/cursors
-instead of silently cutting over.
+After the content backfill reports `backfilled` on every database and every reader, including Sandbox status
+summaries, runs the typed-capable release, roll out the Action/mergeability typed-only writer. Its `00019` migration refuses a
+populated database without the terminal backfill marker, then drops the backfill checkpoint before the service
+starts. This retires the old command before `payload IS NULL` starts meaning both “expired” and “normal typed-only
+row”; do not run the backfill command again or roll this migration down. The fresh-database path can proceed without
+a marker when `entry` is empty. This writer leaves `entry.payload` NULL for Actions and generated mergeability
+payloads while continuing to store GitHub webhooks and generated commit observations as native JSONB. Messages keep both JSON and
+protobuf during this phase so the existing database CHECK continues to measure the canonical body in UTF-8 bytes;
+the `00020` Message text expansion adds canonical text fields and their own bounds before message JSON writes stop.
+This writer still stores relational identity and legacy identity JSON, which a later identity contract retires separately.
+
+`00020_message_text_expand.sql` adds nullable `entry.message_body` and `entry.message_from_session` text columns. The dual-write release keeps Message JSON and protobuf intact while also writing the canonical body and optional sender label to text; database checks bound the body by UTF-8 bytes and the label by the existing 1–200 character contract. The old JSON body ceiling remains until identity JSON is retired. Roll back only to a dual-write-capable release while this phase is active; the additive nullable columns preserve old-reader compatibility.
+
+After every Message append, replay, expiry writer and cleanup worker runs the text dual-write release, use the
+backfill-capable image to run
+`bb run //agentplane/notification_service/migrations/cmd:notifications-migrate -- backfill-message-text --writer-gate=notification-message-text-and-cleanup-dual-write-v1`
+once against each Notification database. The resumable command scans all entries in native `(inbox_id, cursor)`
+order, loads only retained Message JSON that still needs text, and commits batches bounded by row count and raw
+serialized JSON bytes (a single larger valid document is processed alone). It clears stale text for expired rows
+even below `expired_through`, verifies every retained Message JSON/text pair, and records progress in
+`notification_message_text_backfill`; it runs outside service startup and readiness. Do not move Message readers to
+typed-only storage until this command reports `backfilled` on every database. Keep the dual-write image as the
+rollback version before the later Message text contract; that contract image will retire the backfill command and
+checkpoint.
+
+Migration `00019` also adds `entry_identity_provider_required` as a `NOT VALID` check. After the relational
+dual-write release is on every writer, run
+`bb run //agentplane/notification_service/storage_backfill/event_identity_validate_cmd:notification-event-identity-validate -- --writer-gate=notification-event-identity-dual-write-v1`
+to validate the proof outside Pod init. A later identity contract can use its validated catalog state before
+making `identity_provider` required and dropping the legacy identity JSON and JSONB deduplication index.
+
+Keep the typed-capable dual-write release as the minimum rollback version; an older reader that depends on
+non-GitHub `entry.payload` cannot read Action or mergeability entries written by this release. Before migration `00019`, rollback
+to the previous dual-write image with the checkpoint and typed bytes retained. After `00019`, leave the migration
+applied and roll back only to a typed-capable release. The checkpoint has been dropped, so the old content-backfill
+command fails before touching entries; do not restore that table manually. In either case, after the rollback
+settles, verify the previous API's reads, writes, replay deduplication and readiness.
+
+Do not run a migration's `Down` section while dual writers remain. If the event identity backfill/index command has
+completed, leave its columns, checkpoint and natural-key indexes in place as well. Only after no reader depends on
+relational keys should a later cleanup drop the natural-key indexes concurrently, then run compatible migration
+Down sections in reverse order. Before a later forward rollout, drain old writers and check for any unconverted
+rows; the identity backfill command stops with their inbox/cursors instead of silently cutting over.
 
 `00009_inbox_destination_expand.sql` adds nullable relational destination columns while the service continues to
 dual-write them and reads legacy `destination_ref` JSON when needed. After every Notification Service writer runs

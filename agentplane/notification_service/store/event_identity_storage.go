@@ -210,22 +210,27 @@ func insertEntry(
 	if err != nil {
 		return err
 	}
-	typedPayload, err := marshalEntryContent(event, payload)
+	storedContent, err := marshalEntryStorageContent(event, payload)
 	if err != nil {
 		return fmt.Errorf("encode %T entry payload: %w", event, err)
 	}
-	var typedPayloadParameter any
-	if typedPayload != nil {
-		typedPayloadParameter = typedPayload
+	var legacyPayloadParameter any = string(payload)
+	switch event.(type) {
+	case model.ActionsEvent, model.GitHubMergeabilityEvent, model.GitHubMergeabilitySnapshotEvent:
+		legacyPayloadParameter = nil
 	}
-	args := append([]any{inboxID, cursor, string(identity), string(payload), createdAt}, columns.args()...)
-	args = append(args, typedPayloadParameter)
+	var typedPayloadParameter any
+	if storedContent.typedPayload != nil {
+		typedPayloadParameter = storedContent.typedPayload
+	}
+	args := append([]any{inboxID, cursor, string(identity), legacyPayloadParameter, createdAt}, columns.args()...)
+	args = append(args, typedPayloadParameter, storedContent.messageBody, storedContent.messageFromSession)
 	_, err = tx.ExecContext(ctx, `INSERT INTO entry (inbox_id, cursor, event, payload, created_at,
 		identity_provider, actions_request_id, actions_sequence,
 		github_app_id, github_delivery_id, github_repository_id, github_event, github_action,
 		github_pull_request_number, github_mergeability_sequence, github_snapshot_version, github_observation_sequence,
-		message_id, message_sender_namespace, message_sender_name, typed_payload)
-		VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`, args...)
+		message_id, message_sender_namespace, message_sender_name, typed_payload, message_body, message_from_session)
+		VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`, args...)
 	return err
 }
 

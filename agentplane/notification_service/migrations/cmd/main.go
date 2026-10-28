@@ -17,11 +17,9 @@ import (
 )
 
 const (
-	databaseURLEnv                       = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
-	requiredEventIdentityWriterGate      = "notification-event-identity-dual-write-v1"
-	requiredEntryContentWriterGate       = "notification-entry-typed-payload-dual-write-v1"
-	defaultEntryContentBackfillBatchSize = 512
-	maxEntryContentBackfillBatchSize     = 4096
+	databaseURLEnv                  = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
+	requiredEventIdentityWriterGate = "notification-event-identity-dual-write-v1"
+	requiredMessageTextWriterGate   = "notification-message-text-and-cleanup-dual-write-v1"
 )
 
 func main() {
@@ -55,27 +53,27 @@ func main() {
 		run = func(ctx context.Context, db *sql.DB) error {
 			return store.BackfillEventIdentities(ctx, db, *batchSize)
 		}
-	case os.Args[1] == "backfill-entry-content":
+	case os.Args[1] == "backfill-message-text":
 		flags := flag.NewFlagSet(os.Args[1], flag.ContinueOnError)
-		writerGate := flags.String("writer-gate", "", "required rollout gate: "+requiredEntryContentWriterGate)
-		batchSize := flags.Int("batch-size", defaultEntryContentBackfillBatchSize, "maximum entry keys per short transaction")
+		writerGate := flags.String("writer-gate", "", "required rollout gate: "+requiredMessageTextWriterGate)
+		batchSize := flags.Int("batch-size", 512, "maximum entry keys per short transaction")
 		if err := flags.Parse(os.Args[2:]); err != nil {
 			os.Exit(2)
 		}
-		if flags.NArg() != 0 || *batchSize < 1 || *batchSize > maxEntryContentBackfillBatchSize {
-			fmt.Fprintf(os.Stderr, "backfill-entry-content accepts --writer-gate=... and --batch-size=N where N is between 1 and %d\n", maxEntryContentBackfillBatchSize)
+		if flags.NArg() != 0 || *batchSize < 1 || *batchSize > 4096 {
+			fmt.Fprintln(os.Stderr, "backfill-message-text accepts --writer-gate=... and --batch-size=N where N is between 1 and 4096")
 			os.Exit(2)
 		}
-		if *writerGate != requiredEntryContentWriterGate {
-			fmt.Fprintf(os.Stderr, "run only after every Notification Service writer and cleanup worker is at the dual-write rollout gate; pass --writer-gate=%s\n", requiredEntryContentWriterGate)
+		if *writerGate != requiredMessageTextWriterGate {
+			fmt.Fprintf(os.Stderr, "run only after every append, replay and expiry writer and cleanup worker is at the Message text dual-write rollout gate; pass --writer-gate=%s\n", requiredMessageTextWriterGate)
 			os.Exit(2)
 		}
 		run = func(ctx context.Context, db *sql.DB) error {
-			return store.BackfillEntryContent(ctx, db, *batchSize)
+			return store.BackfillMessageText(ctx, db, *batchSize)
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
-		fmt.Fprintln(os.Stderr, "commands: (default) migrate, backfill-event-identities, backfill-entry-content")
+		fmt.Fprintln(os.Stderr, "commands: (default) migrate, backfill-event-identities, backfill-message-text")
 		os.Exit(2)
 	}
 	if err := migrate.Run(ctx, databaseURL, run); err != nil {
