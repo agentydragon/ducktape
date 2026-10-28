@@ -13,12 +13,10 @@ func TestSubscriptionCreationUsesTypedStorageAndEnforcesConstraints(t *testing.T
 	if got := countQuery(t, t.Context(), g.db, `SELECT count(*) FROM subscription`); got != 0 {
 		t.Fatalf("fresh database has %d subscriptions, want none", got)
 	}
-	assertColumnExists(t, g.db, "subscription", "creation", false)
 	assertColumnExists(t, g.db, "subscription", "creation_proto", true)
 	assertColumnExists(t, g.db, "subscription", "source_provider", true)
 	assertColumnNullability(t, g.db, "subscription", "creation_proto", false)
 	assertColumnNullability(t, g.db, "subscription", "source_provider", false)
-	assertTableExists(t, g.db, "notification_storage_backfill_progress", false)
 	assertCreationContractConstraints(t, g.db)
 
 	creation := body("typed-creation-final-schema")

@@ -4,13 +4,10 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations/backfill"
-
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"google.golang.org/protobuf/proto"
@@ -21,24 +18,6 @@ func TestDestinationKeysAreThosePythonComputes(t *testing.T) {
 		t.Run(vector.Name, func(t *testing.T) {
 			if got := model.DestinationKey(vector.DestinationRef, vector.SessionID); got != vector.Key {
 				t.Errorf("model.DestinationKey = %s, want %s", got, vector.Key)
-			}
-		})
-	}
-}
-
-func TestCreationsAreTheSameWhereThePythonCheckSaysSo(t *testing.T) {
-	for _, vector := range loadGolden(t).Comparisons {
-		t.Run(vector.Name, func(t *testing.T) {
-			a, errA := backfill.DecodeHistoricalSubscription(vector.A)
-			b, errB := backfill.DecodeHistoricalSubscription(vector.B)
-			if err := errors.Join(errA, errB); err != nil {
-				t.Fatal(err)
-			}
-			if got := a.Equal(b); got != vector.Same {
-				t.Errorf("a.Equal(b) = %v, want %v", got, vector.Same)
-			}
-			if got := b.Equal(a); got != vector.Same {
-				t.Errorf("b.Equal(a) = %v, want %v", got, vector.Same)
 			}
 		})
 	}
@@ -147,24 +126,6 @@ func TestRunnerEntriesSerializeAsPythonDoes(t *testing.T) {
 			}
 			if !bytes.Equal(again, want) {
 				t.Errorf("Python's bytes serialize again as %x, want %x", again, want)
-			}
-		})
-	}
-}
-
-func TestSubjectKeysAreThosePythonIndexes(t *testing.T) {
-	for _, vector := range loadGolden(t).SubjectKeys {
-		t.Run(vector.Kind, func(t *testing.T) {
-			subject, err := backfill.DecodeHistoricalSubject(vector.Subject)
-			if err != nil {
-				t.Fatal(err)
-			}
-			key, err := NewGitHubSubjectKey(7, subject)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if want := (GitHubSubjectKey{RepositoryID: 7, Kind: vector.Kind, Key: vector.Key}); key != want {
-				t.Errorf("key = %+v, want %+v", key, want)
 			}
 		})
 	}

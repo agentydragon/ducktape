@@ -93,7 +93,6 @@ func TestReadReconstructsTypedPayloadsAndKeepsGitHubJSONNative(t *testing.T) {
 		wantPayloads[i] = []byte(payload)
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payload)
 		if _, nativeJSON := event.(model.GitHubEvent); !nativeJSON {
-			// After the content-backfill gate, native fields stand on their own.
 			f.exec(t, `UPDATE entry SET payload = NULL WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1)
 		}
 	}

@@ -13,8 +13,6 @@ func TestFinalEventIdentityHasValidatedRelationalKeys(t *testing.T) {
 	event := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
 
-	assertColumnExists(t, f.db, "entry", "event", false)
-	assertTableExists(t, f.db, "notification_event_identity_backfill", false)
 	var indexCount int
 	if err := f.db.QueryRowContext(t.Context(), `SELECT count(*) FROM pg_index i
 		JOIN pg_class c ON c.oid = i.indexrelid

@@ -4,38 +4,29 @@ go_library(
     name = "migrations",
     srcs = [
         "migrations.go",
-        "native_storage.go",
     ],
     embedsrcs = glob([
         "notifications/*.sql",
-        "phases/*.sql",
     ]),
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/migrations",
     visibility = ["//agentplane/notification_service:__subpackages__"],
     deps = [
-        "//agentplane/notification_service/migrations/backfill",
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",
     ],
 )
 
 go_test(
-    name = "cutover_integration_test",
+    name = "baseline_integration_test",
     size = "medium",
-    srcs = ["cutover_integration_test.go"],
+    srcs = ["baseline_integration_test.go"],
     tags = ["requires_docker"],
     deps = [
         ":migrations",
-        "//agentplane/action_service:action_service_go_proto",
-        "//agentplane/notification_service:storage_go_proto",
+        "//agentplane/notification_service/model",
+        "//agentplane/notification_service/store",
         "//agentplane/testing/postgres",
+        "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
-        "@org_golang_google_protobuf//proto",
     ],
-)
-
-filegroup(
-    name = "notification_migration_files",
-    srcs = glob(["notifications/*.sql"]),
-    visibility = ["//agentplane/notification_service:__subpackages__"],
 )

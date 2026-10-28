@@ -12,16 +12,6 @@ import (
 func TestFinalSchemaUsesRelationalDestinationFields(t *testing.T) {
 	db, ctx := newStorageIntegrationDatabase(t)
 
-	var legacyColumnExists bool
-	if err := db.QueryRowContext(ctx, `SELECT EXISTS (
-		SELECT 1 FROM information_schema.columns
-		WHERE table_schema = current_schema() AND table_name = 'inbox' AND column_name = 'destination_ref'
-	)`).Scan(&legacyColumnExists); err != nil {
-		t.Fatal(err)
-	}
-	if legacyColumnExists {
-		t.Fatal("contract migration retained inbox.destination_ref")
-	}
 	for _, column := range []string{"destination_namespace", "destination_name", "destination_uid"} {
 		var required bool
 		if err := db.QueryRowContext(ctx, `SELECT attnotnull FROM pg_attribute
@@ -29,7 +19,7 @@ func TestFinalSchemaUsesRelationalDestinationFields(t *testing.T) {
 			t.Fatalf("inspect inbox.%s: %v", column, err)
 		}
 		if !required {
-			t.Errorf("inbox.%s is nullable after the contract migration", column)
+			t.Errorf("inbox.%s is nullable", column)
 		}
 	}
 	var shapeProofValidated bool
@@ -38,16 +28,7 @@ func TestFinalSchemaUsesRelationalDestinationFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !shapeProofValidated {
-		t.Fatal("contract migration did not preserve a validated destination shape constraint")
-	}
-	var destinationProgressColumns int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM information_schema.columns
-		WHERE table_schema = current_schema() AND table_name = 'notification_storage_backfill_progress'
-		AND column_name IN ('inbox_destination_last_id', 'inbox_destination_complete')`).Scan(&destinationProgressColumns); err != nil {
-		t.Fatal(err)
-	}
-	if destinationProgressColumns != 0 {
-		t.Fatalf("destination backfill checkpoint columns remain: %d", destinationProgressColumns)
+		t.Fatal("destination shape constraint is not validated")
 	}
 }
 

@@ -41,44 +41,28 @@ service-account tokens, Kubernetes read access to Sandboxes, PolicySets and Poli
 PolicyBinding status. Preserve existing staging data. Verify an Action
 subscription through a newly opened harness after rollout. Existing sessions retain their original prompt.
 
-Schema changes are registered Goose migrations. The baseline, `00001_baseline.sql`, takes over a
-database that the retired Alembic history left at revision `0010_drop_write_only_columns` and refuses one behind it;
-the migrator keeps the advisory lock key the Alembic runner took.
+Schema changes are Goose migrations. `00010_final_schema.sql` creates the native schema directly for
+an empty database, or adopts a database that completed version 9. Existing Goose history and stored
+rows stay intact; only the completed cutover checkpoint is removed. Databases predating version 9
+must first finish the native-storage conversion with the preceding migration-capable image. Do not
+renumber this baseline: subsequent migrations start at version 11.
 
-Entry storage has one staging cutover. The Notification Deployment uses `Recreate`, so its old
-writers stop before the init container migrates and the new service starts. This interrupts
-Notification and webhook handling for the migration and restart. Inspect and redeliver failed GitHub
-webhooks from this window; GitHub does not retry them automatically. No operator backfill commands,
-writer gates or intervening application releases are required. Goose migrations `00001`–`00008`
-remain byte-for-byte unchanged; version `9` is one Go migration that owns the entire native-storage
-cutover. The packaging prerequisite must first put `notifications-migrate` in the
-currently deployed service image; verify that image is selected before enabling the init command.
+The Notification Deployment uses `Recreate`, so old writers stop before the init container migrates
+and the new service starts. Goose's PostgreSQL advisory session lock serializes init containers.
+This interrupts Notification and webhook handling for migration and restart. Inspect and redeliver
+failed GitHub webhooks from this window; GitHub does not retry them automatically.
 
-The init migrator holds a PostgreSQL advisory session lock across the entire cutover, in addition
-to Goose's existing lock. It expands destinations, subscription creation, event identities and
-entry content, then copies retained rows in bounded primary-key batches. It builds six native
-identity indexes, fences new owned JSON writes, cleans old Action, mergeability and Message JSON,
-validates database constraints, and contracts the legacy columns. Each batch commits its data and
-cursor together. If init fails or a Pod restarts, the next init resumes from Goose and backfill
-checkpoints; it does not admit serving writes until the final contract completes. DDL and internal
-phase checkpoints commit together. One completion row remains so a retry after the final DDL commit
-but before Goose records version `9` skips completed conversion. Once version `9` is applied, normal
-restarts inspect only Goose metadata and perform no retained-row walk.
-A fresh empty database follows the same path automatically.
-
-The final schema stores Action state, actor and timestamp; mergeability repository, refs, states,
+The schema stores Action state, actor and timestamp; mergeability repository, refs, states,
 commit and nanosecond timestamp; and Message text and optional source Session in native columns.
 GitHub webhook and observation payloads remain JSONB. Subscription `creation_proto` and notice
-`runner_entry` remain binary protobuf snapshots. Expired entries keep their identity tombstones
-while their content stays cleared. The migration fails on an undecodable or conflicting retained
-row and leaves its original JSON intact for diagnosis; completed bounded copies are safe to rerun.
+`runner_entry` remain binary protobuf snapshots. Expired entries retain identity tombstones while
+their content stays cleared.
 
-Rollback after the cutover needs a forward fix or a native-schema-capable service image. Restore a
-pre-cutover database backup only before admitting new writes, never over newly accepted work.
-Keep the Deployment stopped during restore, then verify readiness, authorization, inbox reads,
-new writes, expiry and replay deduplication. Staging verification also includes a fresh Action
-subscription and a real GitHub webhook delivery; database checks alone do not prove ingress or
-runner notice delivery.
+Rollback requires a native-schema-capable service image. Restore a backup only before admitting
+new writes, never over newly accepted work. Keep the Deployment stopped during restore, then verify
+readiness, authorization, inbox reads, new writes, expiry and replay deduplication. Staging
+verification also includes a fresh Action subscription and a real GitHub webhook delivery;
+database checks alone do not prove ingress or runner notice delivery.
 
 The service reads the settings file and environment variables of [Configuration](#configuration). It takes no
 flags, and no `log_levels`; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work,
@@ -164,19 +148,15 @@ repair does not invent `created`, `in_progress` or `completed` actions. The exis
 command and default filters are unchanged. Branch and fixed-commit CI notifications continue to use raw webhook events. See the
 [agent GitHub guide](docs/agents/github.md#follow-github-activity) for identity, payload and filter details.
 
-Migration 00007 copies the landed aggregate recovery tables into native-resource storage, preserving observation
-sequences, payloads, subscription boundaries and pending snapshots. It retains the legacy tables and columns;
-both legacy and native event logs use GitHub retention. Stop legacy GitHub workers before applying this copy and
-starting the new writers, so writes cannot continue in the old tables after the copy. Keep the reader-capable
-image available for rollback with its GitHub provider disabled, and preserve the migrated database. Existing
-notifications retain their original payload shape; only new facts use the native resource fields.
+The legacy `github_ci_*` tables and subscription/delivery columns remain alongside native GitHub
+commit observations. Retention still cleans both event logs. Before removing the legacy tables,
+reconcile rows written after the original copy: some legacy event sequences identify different
+native observations; see the [reconciliation findings](debug/legacy_ci_reconciliation.md). Existing
+inbox payloads can also retain the original aggregate shape.
 
-Migration 00008 adds durable current review refresh state and pull-request review/lifecycle observations. These
-records use the same retention setting and do not reconstruct review history or lifecycle transitions missed
-between observations.
-
-The migration gives existing deliveries its own timestamp because their actual ingestion times
-were not recorded. They first become eligible after the configured retention interval from migration.
+Current review refresh state and pull-request review/lifecycle observations use the same retention
+setting and do not reconstruct transitions missed between observations. Deliveries predating the
+original retention migration use its timestamp because their actual ingestion times were not recorded.
 Deletes free space for PostgreSQL to reuse; they do not immediately shrink its volume.
 
 ### Runner notice debounce

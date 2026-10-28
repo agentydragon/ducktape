@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations/backfill"
-
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
@@ -114,24 +112,16 @@ func newOwner() model.ServiceAccount {
 	return model.ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
 }
 
-// insertContractedHistoricalEntry decodes a Python identity fixture and stores its current relational form.
-func insertContractedHistoricalEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor int64, eventJSON []byte, payload string) {
+func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef, sessionID string) uuid.UUID {
 	t.Helper()
-	event, err := backfill.DecodeHistoricalEventIdentity(eventJSON)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tx, err := db.BeginTx(t.Context(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback()
-	if err := insertEntry(t.Context(), tx, inboxID, cursor, event, json.RawMessage(payload), time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatal(err)
-	}
+	id := uuid.New()
+	f.exec(t, `
+		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
+			destination_namespace, destination_name, destination_uid, session_id,
+			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, now(), now(), now())`,
+		id, f.owner.Namespace, f.owner.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID)
+	return id
 }
 
 func entryPayloadForTest(t *testing.T, event model.EventIdentity) string {

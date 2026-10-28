@@ -16,14 +16,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-// golden.json holds what the retired Python service wrote and accepted: the destination key of an inbox, the creation
-// JSON of a subscription and the event JSON of an entry, each from the Python code that produced it, with the
-// creations Python's models refused and the pairs it told apart. It also holds the webhook deliveries Python
-// accepted and refused, with what its ingest stored for each, and the key it indexed each subject by.
-//
-// The Python service and the generator that wrote this file (`generate_golden.py`) are in git history at commit
-// 180ae8a62d. The file is now a fixture: a deliberate change to what the store writes changes the
-// expectations it makes.
+// golden.json holds persisted destination keys and payload and runner-byte vectors shared with older writers. The
+// retired Python service and fixture generator are in git history at commit 180ae8a62d.
 //
 //go:embed golden.json
 var goldenJSON []byte
@@ -35,27 +29,6 @@ type golden struct {
 		SessionID      string               `json:"session_id"`
 		Key            string               `json:"key"`
 	} `json:"destination_keys"`
-	// Subscriptions are valid creations: Input is what a caller sends, Stored the JSON Python writes for it.
-	Subscriptions []struct {
-		Name   string          `json:"name"`
-		Input  json.RawMessage `json:"input"`
-		Stored json.RawMessage `json:"stored"`
-	} `json:"subscriptions"`
-	InvalidSubscriptions []struct {
-		Name  string          `json:"name"`
-		Input json.RawMessage `json:"input"`
-	} `json:"invalid_subscriptions"`
-	// Comparisons are pairs of creations and whether Python's idempotency check calls them the same.
-	Comparisons []struct {
-		Name string          `json:"name"`
-		A    json.RawMessage `json:"a"`
-		B    json.RawMessage `json:"b"`
-		Same bool            `json:"same"`
-	} `json:"comparisons"`
-	Events []struct {
-		Name  string          `json:"name"`
-		Event json.RawMessage `json:"event"`
-	} `json:"events"`
 	// ActionEvents are Action events as the Action Service sends them, with the payload Python stores for each.
 	ActionEvents []struct {
 		Name    string          `json:"name"`
@@ -98,12 +71,6 @@ type golden struct {
 		Raw        string    `json:"raw"`
 		Reason     string    `json:"reason"`
 	} `json:"rejected_deliveries"`
-	// SubjectKeys are subjects with the kind and key Python indexes them by.
-	SubjectKeys []struct {
-		Subject json.RawMessage `json:"subject"`
-		Kind    string          `json:"kind"`
-		Key     string          `json:"key"`
-	} `json:"subject_keys"`
 }
 
 type goldenDelivery struct {

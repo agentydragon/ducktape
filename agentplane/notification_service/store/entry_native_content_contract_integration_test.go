@@ -50,11 +50,9 @@ func TestFinalSchemaRetainsNativeContentAndBinarySnapshots(t *testing.T) {
 	}
 	before := f.read(t, subscription.InboxID, 0)
 	assertNativeContentContractProofs(t, db)
-	assertColumnExists(t, db, "entry", "event", false)
 	assertColumnExists(t, db, "entry", "payload", true)
 	assertColumnExists(t, db, "subscription", "creation_proto", true)
 	assertColumnExists(t, db, "notice", "runner_entry", true)
-	assertTableExists(t, db, "notification_entry_legacy_cleanup", false)
 
 	if err := migrations.Up(ctx, db); err != nil {
 		t.Fatalf("repeat full migration on the completed schema: %v", err)

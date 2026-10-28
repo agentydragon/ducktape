@@ -117,7 +117,7 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 			excludeNormalizedCommit = "AND NOT (" + strings.Join(excluded, " OR ") + ")"
 		}
 	}
-	// The relational natural key matches this delivery; never depend on retained event JSON after writer-only cutover.
+	// The relational natural key matches this delivery; payload expiry does not affect identity.
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT d.position, d.app_id, d.delivery_id, d.repository_id, d.event, d.action, d.payload
 		FROM github_delivery d
