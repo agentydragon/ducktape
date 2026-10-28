@@ -120,6 +120,98 @@ fn contained_roots(
     roots
 }
 
+fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: &mut BTreeSet<Id>) {
+    value.bindings(bindings);
+    match value {
+        ValueExpr::ObjectLiteral(_, properties) => {
+            for (_, value) in properties {
+                contained_root_bindings(value, index, bindings);
+            }
+        }
+        ValueExpr::Origin(ValueOrigin::Function(key)) => {
+            bindings.extend(
+                index
+                    .prototype_callable_reads
+                    .get(key)
+                    .into_iter()
+                    .flatten()
+                    .cloned(),
+            );
+        }
+        ValueExpr::Origin(ValueOrigin::Class(key)) => {
+            if let Some(owner) = index.class_owners.get(key) {
+                for (key, callable) in &index.callables {
+                    if callable.owner == *owner {
+                        bindings.extend(
+                            index
+                                .prototype_callable_reads
+                                .get(key)
+                                .into_iter()
+                                .flatten()
+                                .cloned(),
+                        );
+                    }
+                }
+            }
+            if let Some(class) = index.class_values.get(key) {
+                for value in class.static_fields.values() {
+                    contained_root_bindings(value, index, bindings);
+                }
+            }
+        }
+        ValueExpr::Member(base, ..) => contained_root_bindings(base, index, bindings),
+        ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
+            contained_root_bindings(callee, index, bindings);
+            for argument in args {
+                contained_root_bindings(argument, index, bindings);
+            }
+        }
+        ValueExpr::Alternatives(options) => {
+            for option in options {
+                contained_root_bindings(option, index, bindings);
+            }
+        }
+        ValueExpr::Binding(_)
+        | ValueExpr::Primitive(_)
+        | ValueExpr::Undefined
+        | ValueExpr::NonCallable
+        | ValueExpr::Unknown
+        | ValueExpr::Origin(_) => {}
+    }
+}
+
+struct CapabilityContainmentRules<'a> {
+    bindings: Vec<(Id, ValueExpr)>,
+    index: &'a ExecutionIndex,
+}
+
+impl IterativeRules for CapabilityContainmentRules<'_> {
+    type Key = Id;
+    type Fact = NativeReceiverRoots;
+    type Rule = usize;
+
+    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+        let (target, value) = &self.bindings[*rule];
+        let mut reads = BTreeSet::new();
+        contained_root_bindings(value, self.index, &mut reads);
+        let aliases = read_intrinsic_aliases(context, reads);
+        let roots = contained_roots(value, &aliases, self.index);
+        let roots: NativeReceiverRoots = roots
+            .into_iter()
+            .map(NativeReceiverRoot::Intrinsic)
+            .collect();
+        if !roots.is_empty() {
+            context.propose(target.clone(), roots);
+        }
+    }
+
+    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        let previous_len = current.len();
+        current.extend(contribution);
+        current.len() != previous_len
+    }
+}
+
 impl ExecutionIndex {
     pub(super) fn collect_prototype_mutations(
         &self,
@@ -129,33 +221,30 @@ impl ExecutionIndex {
     ) -> Vec<NativePrototypeMutation> {
         // Capability containment is separate from receiver identity: a record
         // holding a native is not itself a native mutation receiver.
-        let mut capabilities = aliases.clone();
-        loop {
-            let mut changed = false;
-            for (id, value) in
-                assignments
+        let bindings = assignments
+            .iter()
+            .copied()
+            .map(|(id, value)| (id.clone(), value.clone()))
+            .chain(
+                self.hoisted_bindings
                     .iter()
-                    .copied()
-                    .map(|(id, value)| (id.clone(), value.clone()))
-                    .chain(self.hoisted_bindings.iter().map(|(id, key)| {
-                        (id.clone(), ValueExpr::Origin(ValueOrigin::Function(*key)))
-                    }))
-                    .chain(
-                        self.class_bindings.iter().map(|(key, id)| {
-                            (id.clone(), ValueExpr::Origin(ValueOrigin::Class(*key)))
-                        }),
-                    )
-            {
-                let roots = contained_roots(&value, &capabilities, self);
-                let entry = capabilities.entry(id).or_default();
-                let before = entry.len();
-                entry.extend(roots.into_iter().map(NativeReceiverRoot::Intrinsic));
-                changed |= entry.len() != before;
-            }
-            if !changed {
-                break;
-            }
+                    .map(|(id, key)| (id.clone(), ValueExpr::Origin(ValueOrigin::Function(*key)))),
+            )
+            .chain(
+                self.class_bindings
+                    .iter()
+                    .map(|(key, id)| (id.clone(), ValueExpr::Origin(ValueOrigin::Class(*key)))),
+            )
+            .collect::<Vec<_>>();
+        let producer_count = bindings.len();
+        let mut inference = IterativeInference::new(CapabilityContainmentRules {
+            bindings,
+            index: self,
+        });
+        for (id, roots) in aliases {
+            inference.seed(id.clone(), roots.clone());
         }
+        let capabilities = inference.solve(0..producer_count).into_values();
         let mutation = |owner, span, kind, key: Option<&PropertyKeyExpr>| {
             let evidence =
                 key.map(|key| property_key_evidence(key, &self.property_key_assignments, declared));

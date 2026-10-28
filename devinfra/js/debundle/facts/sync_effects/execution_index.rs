@@ -797,26 +797,55 @@ fn infer_mutation_receiver_aliases(
     aliases: &BTreeSet<Id>,
     facts: &NamespaceValueFacts,
 ) -> BTreeSet<Id> {
-    let mut receiver_aliases = BTreeSet::new();
-    loop {
-        let mut changed = false;
-        for assignment in assignments {
-            let (target, value) = *assignment;
-            if target != namespace
-                && value.may_be_namespace_mutation_receiver(
-                    namespace,
-                    aliases,
-                    &receiver_aliases,
-                    facts,
-                )
-                && receiver_aliases.insert(target.clone())
-            {
-                changed = true;
-            }
+    let rules = MutationReceiverAliasRules {
+        namespace,
+        assignments,
+        aliases,
+        facts,
+    };
+    IterativeInference::new(rules)
+        .solve(0..assignments.len())
+        .into_values()
+        .into_keys()
+        .collect()
+}
+
+struct MutationReceiverAliasRules<'a> {
+    namespace: &'a Id,
+    assignments: &'a [&'a (Id, ValueExpr)],
+    aliases: &'a BTreeSet<Id>,
+    facts: &'a NamespaceValueFacts,
+}
+
+impl IterativeRules for MutationReceiverAliasRules<'_> {
+    type Key = Id;
+    type Fact = bool;
+    type Rule = usize;
+
+    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+        let (target, value) = self.assignments[*rule];
+        let mut mentioned = BTreeSet::new();
+        value.bindings(&mut mentioned);
+        let receiver_aliases = mentioned
+            .into_iter()
+            .filter_map(|binding| context.read(binding.clone()).copied().map(|_| binding))
+            .collect::<BTreeSet<_>>();
+        if target != self.namespace
+            && value.may_be_namespace_mutation_receiver(
+                self.namespace,
+                self.aliases,
+                &receiver_aliases,
+                self.facts,
+            )
+        {
+            context.propose(target.clone(), true);
         }
-        if !changed {
-            return receiver_aliases;
-        }
+    }
+
+    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        let changed = !*current && contribution;
+        *current |= contribution;
+        changed
     }
 }
 
@@ -1824,6 +1853,267 @@ fn intrinsic_roots(
         }
         _ => NativeReceiverRoots::new(),
     }
+}
+
+fn read_intrinsic_alias_inputs<R>(
+    context: &mut IterativeContext<'_, R>,
+    value: &ValueExpr,
+) -> BTreeMap<Id, NativeReceiverRoots>
+where
+    R: IterativeRules<Key = Id, Fact = NativeReceiverRoots>,
+{
+    let mut mentioned = BTreeSet::new();
+    value.bindings(&mut mentioned);
+    read_intrinsic_aliases(context, mentioned)
+}
+
+fn read_intrinsic_aliases<R>(
+    context: &mut IterativeContext<'_, R>,
+    bindings: impl IntoIterator<Item = Id>,
+) -> BTreeMap<Id, NativeReceiverRoots>
+where
+    R: IterativeRules<Key = Id, Fact = NativeReceiverRoots>,
+{
+    bindings
+        .into_iter()
+        .filter_map(|binding| {
+            context
+                .read(binding.clone())
+                .cloned()
+                .map(|roots| (binding, roots))
+        })
+        .collect()
+}
+
+struct RawIntrinsicAliasRules<'a> {
+    assignments: &'a [&'a (Id, ValueExpr)],
+    globals: &'a BTreeSet<&'static str>,
+}
+
+impl IterativeRules for RawIntrinsicAliasRules<'_> {
+    type Key = Id;
+    type Fact = NativeReceiverRoots;
+    type Rule = usize;
+
+    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+        let (target, value) = self.assignments[*rule];
+        let aliases = read_intrinsic_alias_inputs(context, value);
+        let roots = intrinsic_roots(
+            value,
+            &aliases,
+            self.globals,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+        if !roots.is_empty() {
+            context.propose(target.clone(), roots);
+        }
+    }
+
+    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        let previous_len = current.len();
+        current.extend(contribution);
+        current.len() != previous_len
+    }
+}
+
+fn close_raw_intrinsic_aliases(
+    assignments: &[&(Id, ValueExpr)],
+    globals: &BTreeSet<&'static str>,
+) -> BTreeMap<Id, NativeReceiverRoots> {
+    IterativeInference::new(RawIntrinsicAliasRules {
+        assignments,
+        globals,
+    })
+    .solve(0..assignments.len())
+    .into_values()
+}
+
+#[cfg(test)]
+mod iterative_alias_closure_tests {
+    use super::{
+        NamespaceValueFacts, NativeReceiverRoot, ValueExpr, close_raw_intrinsic_aliases,
+        infer_mutation_receiver_aliases,
+    };
+    use crate::analysis_inputs::NativeIntrinsic;
+    use std::collections::BTreeSet;
+    use swc_common::SyntaxContext;
+    use swc_ecma_ast::Id;
+
+    fn id(name: &str) -> Id {
+        (name.into(), SyntaxContext::empty())
+    }
+
+    #[test]
+    fn receiver_alias_watchers_propagate_backward_assignment_chains() {
+        let namespace = id("namespace");
+        let first = id("first");
+        let second = id("second");
+        let assignments = [
+            (first.clone(), ValueExpr::Binding(second.clone())),
+            (second.clone(), ValueExpr::Binding(namespace.clone())),
+        ];
+        let assignment_refs = assignments.iter().collect::<Vec<_>>();
+
+        let aliases = infer_mutation_receiver_aliases(
+            &namespace,
+            &assignment_refs,
+            &BTreeSet::new(),
+            &NamespaceValueFacts::default(),
+        );
+
+        assert_eq!(aliases, BTreeSet::from([first, second]));
+    }
+
+    #[test]
+    fn raw_intrinsic_aliases_remain_source_only_and_follow_late_roots() {
+        let array = id("Array");
+        let first = id("first");
+        let second = id("second");
+        let assignments = [
+            (first.clone(), ValueExpr::Binding(second.clone())),
+            (second.clone(), ValueExpr::Binding(array.clone())),
+        ];
+        let assignment_refs = assignments.iter().collect::<Vec<_>>();
+
+        let aliases = close_raw_intrinsic_aliases(&assignment_refs, &BTreeSet::new());
+
+        assert_eq!(
+            aliases.get(&first),
+            Some(&BTreeSet::from([NativeReceiverRoot::Intrinsic(
+                NativeIntrinsic::Array
+            )]))
+        );
+        assert_eq!(
+            aliases.get(&second),
+            Some(&BTreeSet::from([NativeReceiverRoot::Intrinsic(
+                NativeIntrinsic::Array
+            )]))
+        );
+        assert!(!aliases.contains_key(&array));
+    }
+}
+
+struct PostAuthorIntrinsicAliasRules<'a> {
+    assignments: &'a [&'a (Id, ValueExpr)],
+    index: &'a ExecutionIndex,
+    ordinary_inputs: &'a BTreeMap<Id, (ValueInputRef, SourceUnitOrdinal)>,
+    callable_return_inputs: &'a BTreeMap<Id, BTreeSet<(ValueInputRef, SourceUnitOrdinal)>>,
+}
+
+impl IterativeRules for PostAuthorIntrinsicAliasRules<'_> {
+    type Key = Id;
+    type Fact = NativeReceiverRoots;
+    type Rule = usize;
+
+    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+        let (target, value) = self.assignments[*rule];
+        if self.index.ordinary_input_refs.contains_key(target) {
+            return;
+        }
+        let aliases = read_intrinsic_alias_inputs(context, value);
+        let mut roots = intrinsic_roots(
+            value,
+            &aliases,
+            &self.index.global_object_names,
+            self.ordinary_inputs,
+            self.callable_return_inputs,
+        );
+        if roots.is_empty() {
+            return;
+        }
+
+        let stable_copy_owner = self.index.stable_top_level_copy_owner(target, value);
+        let ordinary_refs: BTreeSet<_> = roots
+            .iter()
+            .filter_map(|root| match root {
+                NativeReceiverRoot::OrdinaryDirect {
+                    reference,
+                    available_after,
+                }
+                | NativeReceiverRoot::OrdinaryDescendant {
+                    reference,
+                    available_after,
+                } => Some((reference.clone(), *available_after)),
+                NativeReceiverRoot::Intrinsic(_) => None,
+            })
+            .collect();
+        if let Some(copy_owner) = stable_copy_owner {
+            roots = roots
+                .into_iter()
+                .map(|root| match root {
+                    NativeReceiverRoot::OrdinaryDirect {
+                        reference,
+                        available_after,
+                    } if copy_owner > available_after => NativeReceiverRoot::OrdinaryDirect {
+                        reference,
+                        available_after: copy_owner,
+                    },
+                    NativeReceiverRoot::OrdinaryDirect { .. } => {
+                        NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
+                    }
+                    NativeReceiverRoot::OrdinaryDescendant {
+                        reference,
+                        available_after,
+                    } if copy_owner > available_after => NativeReceiverRoot::OrdinaryDescendant {
+                        reference,
+                        available_after,
+                    },
+                    NativeReceiverRoot::OrdinaryDescendant { .. } => {
+                        NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
+                    }
+                    other => other,
+                })
+                .collect();
+        } else if !ordinary_refs.is_empty() {
+            for (reference, available_after) in ordinary_refs {
+                roots.insert(NativeReceiverRoot::Intrinsic(
+                    IntrinsicRoot::UnknownGlobalValue,
+                ));
+                roots.insert(NativeReceiverRoot::OrdinaryDescendant {
+                    reference,
+                    available_after,
+                });
+            }
+        }
+        if !roots.is_empty() {
+            context.propose(target.clone(), roots);
+        }
+    }
+
+    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        let previous_len = current.len();
+        current.extend(contribution);
+        current.len() != previous_len
+    }
+}
+
+fn close_post_author_intrinsic_aliases(
+    index: &ExecutionIndex,
+    assignments: &[&(Id, ValueExpr)],
+    raw_aliases: &BTreeMap<Id, NativeReceiverRoots>,
+    callable_return_inputs: &BTreeMap<Id, BTreeSet<(ValueInputRef, SourceUnitOrdinal)>>,
+) -> BTreeMap<Id, NativeReceiverRoots> {
+    if index.resolved_value_inputs.is_empty() {
+        return raw_aliases.clone();
+    }
+
+    let mut inference = IterativeInference::new(PostAuthorIntrinsicAliasRules {
+        assignments,
+        index,
+        ordinary_inputs: &index.ordinary_input_refs,
+        callable_return_inputs,
+    });
+    for resolved in &index.resolved_value_inputs {
+        inference.seed(
+            resolved.binding.clone(),
+            BTreeSet::from([NativeReceiverRoot::OrdinaryDirect {
+                reference: resolved.evidence.reference.clone(),
+                available_after: resolved.initializer_ordinal,
+            }]),
+        );
+    }
+    inference.solve(0..assignments.len()).into_values()
 }
 
 /// Property-key facts affect only the native write census. They make no claim
@@ -3860,131 +4150,20 @@ impl ExecutionIndex {
         // Track aliases to native and explicitly captured ordinary values in
         // one receiver domain. The first pass is source-only and is used to
         // reject recognized contradictions before any author input is seeded.
-        let mut raw_intrinsic_aliases = BTreeMap::<Id, NativeReceiverRoots>::new();
-        loop {
-            let mut changed = false;
-            for (id, value) in &namespace_assignments {
-                let found = intrinsic_roots(
-                    value,
-                    &raw_intrinsic_aliases,
-                    &index.global_object_names,
-                    &BTreeMap::new(),
-                    &BTreeMap::new(),
-                );
-                if !found.is_empty() {
-                    let roots = raw_intrinsic_aliases.entry((*id).clone()).or_default();
-                    let before = roots.len();
-                    roots.extend(found);
-                    changed |= roots.len() != before;
-                }
-            }
-            if !changed {
-                break;
-            }
-        }
+        let raw_intrinsic_aliases =
+            close_raw_intrinsic_aliases(&namespace_assignments, &index.global_object_names);
         index.validate_value_inputs(
             &hints.selected_value_inputs,
             &hints.assumptions.captured_value_inputs,
             &raw_intrinsic_aliases,
         );
         let callable_return_inputs = index.callable_return_value_inputs(flow);
-        let mut intrinsic_aliases = raw_intrinsic_aliases.clone();
-        if !index.resolved_value_inputs.is_empty() {
-            intrinsic_aliases.clear();
-            for resolved in &index.resolved_value_inputs {
-                intrinsic_aliases.insert(
-                    resolved.binding.clone(),
-                    BTreeSet::from([NativeReceiverRoot::OrdinaryDirect {
-                        reference: resolved.evidence.reference.clone(),
-                        available_after: resolved.initializer_ordinal,
-                    }]),
-                );
-            }
-            loop {
-                let mut changed = false;
-                for (id, value) in &namespace_assignments {
-                    if index.ordinary_input_refs.contains_key(id) {
-                        continue;
-                    }
-                    let mut found = intrinsic_roots(
-                        value,
-                        &intrinsic_aliases,
-                        &index.global_object_names,
-                        &index.ordinary_input_refs,
-                        &callable_return_inputs,
-                    );
-                    if found.is_empty() {
-                        continue;
-                    }
-                    let stable_copy_owner = index.stable_top_level_copy_owner(id, value);
-                    let ordinary_refs: BTreeSet<_> = found
-                        .iter()
-                        .filter_map(|root| match root {
-                            NativeReceiverRoot::OrdinaryDirect {
-                                reference,
-                                available_after,
-                            }
-                            | NativeReceiverRoot::OrdinaryDescendant {
-                                reference,
-                                available_after,
-                            } => Some((reference.clone(), *available_after)),
-                            NativeReceiverRoot::Intrinsic(_) => None,
-                        })
-                        .collect();
-                    if let Some(copy_owner) = stable_copy_owner {
-                        found = found
-                            .into_iter()
-                            .map(|root| match root {
-                                NativeReceiverRoot::OrdinaryDirect {
-                                    reference,
-                                    available_after,
-                                } if copy_owner > available_after => {
-                                    NativeReceiverRoot::OrdinaryDirect {
-                                        reference,
-                                        available_after: copy_owner,
-                                    }
-                                }
-                                NativeReceiverRoot::OrdinaryDirect { .. } => {
-                                    NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
-                                }
-                                NativeReceiverRoot::OrdinaryDescendant {
-                                    reference,
-                                    available_after,
-                                } if copy_owner > available_after => {
-                                    NativeReceiverRoot::OrdinaryDescendant {
-                                        reference,
-                                        available_after,
-                                    }
-                                }
-                                NativeReceiverRoot::OrdinaryDescendant { .. } => {
-                                    NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
-                                }
-                                other => other,
-                            })
-                            .collect();
-                    } else if !ordinary_refs.is_empty() {
-                        for (reference, available_after) in ordinary_refs {
-                            found.insert(NativeReceiverRoot::Intrinsic(
-                                IntrinsicRoot::UnknownGlobalValue,
-                            ));
-                            found.insert(NativeReceiverRoot::OrdinaryDescendant {
-                                reference,
-                                available_after,
-                            });
-                        }
-                    }
-                    if !found.is_empty() {
-                        let roots = intrinsic_aliases.entry((*id).clone()).or_default();
-                        let before = roots.len();
-                        roots.extend(found);
-                        changed |= roots.len() != before;
-                    }
-                }
-                if !changed {
-                    break;
-                }
-            }
-        }
+        let intrinsic_aliases = close_post_author_intrinsic_aliases(
+            &index,
+            &namespace_assignments,
+            &raw_intrinsic_aliases,
+            &callable_return_inputs,
+        );
         let mut mutated_intrinsics = IntrinsicRoots::new();
         let mut unconditional_witnesses = Vec::new();
         let mut binding_write_sites = BTreeSet::new();
