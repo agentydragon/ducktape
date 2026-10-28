@@ -7,7 +7,7 @@ its own deployment can publish it after the scenario modules load.
 import asyncio
 import json
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
 from kubernetes_asyncio import client as k8s, config as k8s_config
@@ -18,7 +18,7 @@ from agentplane.system_tests.conftest import namespace
 KUBECTL_SECONDS = 310
 
 
-async def kubectl(*args: str, body: object | None = None) -> str:
+async def kubectl(*args: str, body: object | None = None, check_failure: Callable[[], None] | None = None) -> str:
     process = await asyncio.create_subprocess_exec(
         "kubectl",
         "-n",
@@ -30,7 +30,13 @@ async def kubectl(*args: str, body: object | None = None) -> str:
     )
     try:
         async with asyncio.timeout(KUBECTL_SECONDS):
-            stdout, stderr = await process.communicate(json.dumps(body).encode() if body is not None else None)
+            async with asyncio.TaskGroup() as tasks:
+                output = tasks.create_task(process.communicate(json.dumps(body).encode() if body is not None else None))
+                if check_failure is not None:
+                    while not output.done():
+                        check_failure()
+                        await asyncio.wait([output], timeout=0.25)
+            stdout, stderr = output.result()
     except BaseException:
         if process.returncode is None:
             process.kill()

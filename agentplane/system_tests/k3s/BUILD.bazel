@@ -195,12 +195,14 @@ py_library(
     srcs = ["system_test_target.py"],
     visibility = ["//agentplane/system_tests:__pkg__"],
     deps = [
+        ":guest_logs",
         ":rendered_fixture",
         ":stack",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests:operator_login",
         "//util:net",
         "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
         "@pypi//pytest",
     ],
 )
@@ -530,6 +532,7 @@ py_library(
 py_library(
     name = "guest_logs",
     srcs = ["guest_logs.py"],
+    visibility = ["//agentplane/system_tests:__pkg__"],
 )
 
 py_test(

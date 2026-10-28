@@ -53,9 +53,9 @@ type systemdAuxUnit struct {
 	Properties []systemdProperty
 }
 type systemdExec struct {
-	Path          string
-	Arguments     []string
-	IgnoreFailure bool
+	Path      string
+	Arguments []string
+	Flags     []string
 }
 type systemdDeviceLimit struct {
 	Path  string
@@ -77,7 +77,7 @@ func (p *VMProcessPolicy) properties(limits ResourceLimits) ([]systemdProperty, 
 	}
 	props := []systemdProperty{
 		property("CPUQuotaPerSecUSec", uint64(limits.CPUQuotaMicros)*10), property("CPUQuotaPeriodUSec", cgroupCPUPeriodMicros),
-		property("MemoryMax", uint64(limits.MemoryMaxBytes)), property("MemorySwapMax", uint64(0)), property("MemoryOOMGroup", false), property("TasksMax", uint64(limits.PidsMax)),
+		property("MemoryMax", uint64(limits.MemoryMaxBytes)), property("MemorySwapMax", uint64(0)), property("TasksMax", uint64(limits.PidsMax)),
 	}
 	for name, rate := range map[string]uint64{"IOReadBandwidthMax": limits.ReadBPS, "IOWriteBandwidthMax": limits.WriteBPS, "IOReadIOPSMax": limits.ReadIOPS, "IOWriteIOPSMax": limits.WriteIOPS} {
 		entries := []systemdDeviceLimit{}
@@ -233,5 +233,5 @@ func fenceSystemdUnit(ctx context.Context, conn *dbus.Conn, name string) error {
 }
 
 func (p *VMProcessPolicy) identityProperties() []systemdProperty {
-	return []systemdProperty{property("User", strconv.FormatUint(uint64(p.AgentUID), 10)), property("Group", strconv.FormatUint(uint64(p.AgentGID), 10)), property("NoNewPrivileges", true), property("CapabilityBoundingSet", uint64(0)), property("AmbientCapabilities", uint64(0))}
+	return []systemdProperty{property("User", strconv.FormatUint(uint64(p.AgentUID), 10)), property("Group", strconv.FormatUint(uint64(p.AgentGID), 10)), property("SetLoginEnvironment", false), property("NoNewPrivileges", true), property("CapabilityBoundingSet", uint64(0)), property("AmbientCapabilities", uint64(0))}
 }

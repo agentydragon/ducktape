@@ -33,7 +33,10 @@ Runner needs access to the system manager. The unprivileged harness identity has
 start, stop or reconfigure system units.
 
 Separate stdout/stderr and stdin pipes cross D-Bus as file descriptors, preserving native protocol
-transport and stderr diagnostics. Start waits for the manager's completed start job, so a rejected
+transport and stderr diagnostics. `ExecStartEx` disables manager argument expansion, preserving
+literal dollar signs, specifiers and shell source. The configured environment values are passed
+explicitly; systemd adds service metadata but does not inherit Runner-only variables. Login
+environment defaults are disabled. Start waits for the manager's completed start job, so a rejected
 `execve` is a launch failure. The unit reference retains exit information until cleanup completes.
 
 ## Completion and crash fencing

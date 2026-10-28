@@ -6,9 +6,30 @@ import pytest
 import pytest_bazel
 from tenacity import Retrying, stop_after_delay, wait_fixed
 
-from agentplane.system_tests.k3s.guest_logs import SHUTDOWN_COMPLETE, GuestShutdownError, capture
+from agentplane.system_tests.k3s.guest_logs import (
+    CONSOLES_ENV,
+    SHUTDOWN_COMPLETE,
+    SUPERVISION_FAILED,
+    GuestBootError,
+    GuestShutdownError,
+    capture,
+    check_boot,
+)
 
 MARKER = "2026-10-27T21:41:13.112914838Z stdout F " + SHUTDOWN_COMPLETE.decode() + "\n"
+
+
+def test_boot_failure_requires_a_complete_console_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(CONSOLES_ENV, str(tmp_path))
+    console = tmp_path / "test-launcher" / "console.cri.log"
+    console.parent.mkdir()
+    marker = b"2026-10-27T21:41:13Z stdout F " + SUPERVISION_FAILED
+    console.write_bytes(marker.replace(b"stdout F ", b"stdout F + echo ") + b"\n" + marker)
+    check_boot()
+    with console.open("ab") as stream:
+        stream.write(b"\n")
+    with pytest.raises(GuestBootError, match="test-launcher"):
+        check_boot()
 
 
 def test_retains_unlinked_logs_and_new_incarnations(tmp_path: Path) -> None:

@@ -29,7 +29,10 @@ The loader resolves `runner_environment` against the process environment, overla
 values, and resolves `harness_environment` against that result. In each declaration `inherit` is an
 allowlist of names, and `values` is a map that takes precedence over inherited values. Missing
 inherited names are omitted with a warning. Undeclared process variables never enter harnesses.
-All validation completes before Runner environment changes or state ownership begins.
+VM services also receive systemd-generated service metadata. Login-environment defaults are
+disabled; the configured environment values override manager defaults. Runner-only credentials
+and telemetry are not inherited by the manager-launched process. All validation completes before
+Runner environment changes or state ownership begins.
 
 ## File fields
 

@@ -174,9 +174,9 @@ The subsequent conversation-recovery failure is addressed separately in
 - [Tool memory isolation](harness_tool_memory_isolation.md) records optional research on putting
   tighter resource limits around a tool child. That would be a separate resource policy, not a change
   to the Sandbox security boundary.
-- The Go harness supervisor retains the state-owner descriptor, forwards stop signals and reaps
-  descendants, so a Runner restart cannot open the same state while old native work continues
-  ([runner README](../runner/README.md#sqlite-storage)).
+- Systemd owns native service cgroups and stops them on Runner death. After acquiring the state-owner
+  lock, a replacement fences its prior owned services before opening Session stores and journals
+  ([runner supervision](../runner/docs/supervision.md#completion-and-crash-fencing)).
 - Agent processes get no unrestricted guest root and no cgroup administration, so they cannot alter
   guest services or the configured resource budgets. This does not protect Runner-owned state from
   other code in the same Sandbox; the journal is not tamper-proof against agent code.

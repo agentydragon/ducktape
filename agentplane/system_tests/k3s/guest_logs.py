@@ -12,10 +12,31 @@ from typing import BinaryIO
 
 logger = logging.getLogger(__name__)
 SHUTDOWN_COMPLETE = b"AGENTPLANE_GUEST_SHUTDOWN_COMPLETE"
+SUPERVISION_FAILED = b"AGENTPLANE_GUEST_SUPERVISION_FAILED"
+CONSOLES_ENV = "AGENTPLANE_TEST_GUEST_CONSOLES"
 
 
 class GuestShutdownError(RuntimeError):
     """A retained guest incarnation did not complete its orderly shutdown."""
+
+
+class GuestBootError(RuntimeError):
+    """The real-manager supervision proof failed before runner startup."""
+
+
+def _has_payload(path: Path, payload: bytes) -> bool:
+    return any(
+        line.endswith(b"\n") and line.rstrip(b"\r\n").split(b" ", 3)[1:] == [b"stdout", b"F", payload]
+        for line in path.read_bytes().splitlines(keepends=True)
+    )
+
+
+def check_boot() -> None:
+    if (directory := os.environ.get(CONSOLES_ENV)) is None:
+        return
+    for path in Path(directory).glob("*/*.cri.log"):
+        if _has_payload(path, SUPERVISION_FAILED):
+            raise GuestBootError(f"Guest supervision proof failed; see retained console {path}")
 
 
 def _copy(log_root: Path, scopes: dict[str, Path], stop: threading.Event) -> None:
@@ -66,11 +87,7 @@ def _require_shutdown(consoles: Path) -> None:
         incarnation.name
         for incarnation in consoles.glob("*")
         if incarnation.is_dir()
-        and not any(
-            line.split(b" ", 3)[1:] == [b"stdout", b"F", SHUTDOWN_COMPLETE]
-            for path in incarnation.glob("*.cri.log")
-            for line in path.read_bytes().splitlines()
-        )
+        and not any(_has_payload(path, SHUTDOWN_COMPLETE) for path in incarnation.glob("*.cri.log"))
     )
     if missing:
         raise GuestShutdownError(f"Guest shutdown did not complete for launcher(s): {', '.join(missing)}")

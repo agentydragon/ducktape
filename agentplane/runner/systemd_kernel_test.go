@@ -25,6 +25,7 @@ func TestMain(m *testing.M) {
 // This target runs inside the actual systemd VM guest, before the real Runner.
 // It is deliberately excluded from runner_test: no fake manager establishes these claims.
 func TestSystemdKernelFixture(t *testing.T) {
+	t.Setenv("AGENTPLANE_PARENT_ONLY_SENTINEL", "must not reach native services")
 	if err := os.Remove("/state/runner-systemd-proof.json"); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
@@ -76,13 +77,13 @@ func TestSystemdKernelFixture(t *testing.T) {
 		<-stderr
 	})
 	t.Run("streams_identity_and_resources", func(t *testing.T) {
-		p := startSystemdProof(t, ctx, policy, dir, "printf 'out:%s:%s:%s\\n' \"$(id -u)\" \"$(id -g)\" \"$PWD\"; printf 'err:%s\\n' \"$SENTINEL\" >&2; IFS= read -r line; printf 'input:%s\\n' \"$line\"")
+		p := startSystemdProof(t, ctx, policy, dir, "printf 'out:%s:%s:%s\\n' \"$(id -u)\" \"$(id -g)\" \"$PWD\"; printf 'err:%s\\n' \"$SENTINEL\" >&2; printf 'home:%s\\n' \"$HOME\"; test -z \"${AGENTPLANE_PARENT_ONLY_SENTINEL+x}\"; IFS= read -r line; printf 'input:%s\\n' \"$line\"")
 		stdout, stderr := readProofStreams(p)
 		props, err := systemdProperties(ctx, conn, p.systemd.name, serviceInterface)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for name, want := range map[string]any{"MemoryMax": uint64(policy.ProcessLimits.MemoryMaxBytes), "MemorySwapMax": uint64(0), "TasksMax": uint64(policy.ProcessLimits.PidsMax), "CPUQuotaPerSecUSec": uint64(policy.ProcessLimits.CPUQuotaMicros) * 10, "MemoryOOMGroup": false, "OOMPolicy": "continue", "Slice": workloadSlice} {
+		for name, want := range map[string]any{"MemoryMax": uint64(policy.ProcessLimits.MemoryMaxBytes), "MemorySwapMax": uint64(0), "TasksMax": uint64(policy.ProcessLimits.PidsMax), "CPUQuotaPerSecUSec": uint64(policy.ProcessLimits.CPUQuotaMicros) * 10, "OOMPolicy": "continue", "Slice": workloadSlice} {
 			if props[name].Value() != want {
 				t.Fatalf("%s=%v want %v", name, props[name].Value(), want)
 			}
@@ -129,7 +130,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		if err != nil || code != 0 {
 			t.Fatalf("wait code=%d err=%v", code, err)
 		}
-		want := fmt.Sprintf("out:%d:%d:%s\ninput:verbatim input\n", policy.AgentUID, policy.AgentGID, dir)
+		want := fmt.Sprintf("out:%d:%d:%s\nhome:/explicit/proof-home\ninput:verbatim input\n", policy.AgentUID, policy.AgentGID, dir)
 		if got := <-stdout; got != want {
 			t.Fatalf("stdout=%q want %q", got, want)
 		}
@@ -137,6 +138,30 @@ func TestSystemdKernelFixture(t *testing.T) {
 			t.Fatalf("stderr=%q", got)
 		}
 		assertSystemdProofEmpty(t, ctx, conn, p.systemd.name)
+	})
+
+	t.Run("argv_is_verbatim_and_only_shell_expands_environment", func(t *testing.T) {
+		script := `printf '%s|%s|%s|%s\n' "$1" "$2" "$3" "$4"; printf 'shell:%s:%s\n' "$HOME" "${SENTINEL}"`
+		literals := []string{"$HOME", "${SENTINEL}", "%n", `single'quote"$`}
+		command := append([]string{"/bin/sh", "-eu", "-c", script, "--"}, literals...)
+		p, err := NewProcess(ProcessConfig{Command: command, Dir: dir, Env: map[string]string{"PATH": "/bin:/usr/bin", "HOME": "/explicit/proof-home", "SENTINEL": "shell sentinel"}, VMProcessPolicy: policy})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Start(ctx); err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr := readProofStreams(p)
+		if code, err := p.Wait(ctx); err != nil || code != 0 {
+			t.Fatalf("verbatim argv exit=%d error=%v", code, err)
+		}
+		want := strings.Join(literals, "|") + "\nshell:/explicit/proof-home:shell sentinel\n"
+		if got := <-stdout; got != want {
+			t.Fatalf("argv/shell output=%q want %q", got, want)
+		}
+		if got := <-stderr; got != "" {
+			t.Fatalf("argv/shell stderr=%q", got)
+		}
 	})
 	t.Run("leader_exit_fences_detached_descendants", func(t *testing.T) {
 		p := startSystemdProof(t, ctx, policy, dir, "setsid /bin/sh -c 'trap \"\" TERM; while :; do sleep 1; done' & echo $!; exit 0")
@@ -286,7 +311,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 
 func startSystemdProof(t *testing.T, ctx context.Context, policy *VMProcessPolicy, dir, script string) *Process {
 	t.Helper()
-	p, err := NewProcess(ProcessConfig{Command: []string{"/bin/sh", "-eu", "-c", script}, Dir: dir, Env: map[string]string{"PATH": "/bin:/usr/bin", "SENTINEL": "proof sentinel"}, VMProcessPolicy: policy})
+	p, err := NewProcess(ProcessConfig{Command: []string{"/bin/sh", "-eu", "-c", script}, Dir: dir, Env: map[string]string{"PATH": "/bin:/usr/bin", "HOME": "/explicit/proof-home", "SENTINEL": "proof sentinel"}, VMProcessPolicy: policy})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,12 +359,12 @@ func assertSystemdProofEmpty(t *testing.T, ctx context.Context, conn *dbus.Conn,
 }
 
 func proofUnitProperties(executable string, args []string, slice string) []systemdProperty {
-	return []systemdProperty{property("Type", "exec"), property("ExecStart", []systemdExec{{executable, args, false}}), property("Slice", slice), property("RemainAfterExit", true), property("AddRef", true), property("KillMode", "control-group"), property("TimeoutStopUSec", uint64(stopGrace/time.Microsecond))}
+	return []systemdProperty{property("Type", "exec"), property("ExecStartEx", []systemdExec{{executable, args, []string{"no-env-expand"}}}), property("Slice", slice), property("RemainAfterExit", true), property("AddRef", true), property("KillMode", "control-group"), property("TimeoutStopUSec", uint64(stopGrace/time.Microsecond))}
 }
 
 func assertKernelBudget(t *testing.T, group string, limits ResourceLimits) {
 	t.Helper()
-	for file, want := range map[string]string{"cpu.max": fmt.Sprintf("%d %d", limits.CPUQuotaMicros, cgroupCPUPeriodMicros), "memory.max": strconv.FormatInt(limits.MemoryMaxBytes, 10), "memory.swap.max": "0", "pids.max": strconv.FormatInt(limits.PidsMax, 10)} {
+	for file, want := range map[string]string{"cpu.max": fmt.Sprintf("%d %d", limits.CPUQuotaMicros, cgroupCPUPeriodMicros), "memory.max": strconv.FormatInt(limits.MemoryMaxBytes, 10), "memory.swap.max": "0", "memory.oom.group": "0", "pids.max": strconv.FormatInt(limits.PidsMax, 10)} {
 		data, err := os.ReadFile(filepath.Join(group, file))
 		if err != nil {
 			t.Fatal(err)

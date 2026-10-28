@@ -525,6 +525,7 @@ system_test(
         "//agentplane:sandbox_resource",
         "//agentplane/app/testing:client",
         "//agentplane/system_tests/k3s:block_storage",
+        "//agentplane/system_tests/k3s:guest_logs",
         "//util/testing:undeclared_outputs",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",

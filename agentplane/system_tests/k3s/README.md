@@ -185,7 +185,7 @@ to a test that can create a VM Sandbox. Deployments must use fixture images, nev
 
 Guest console logs are copied continuously to `test.outputs/vm-artifacts/consoles/`, scoped by
 launcher Pod UID and container log inode. They retain Kubernetes CRI timestamps and stream markers,
-including the guest kernel, Runner and executor supervisor output. Open log descriptors preserve
+including the guest kernel, systemd, Runner and native service diagnostics. Open log descriptors preserve
 output across launcher deletion, suspension, replacement and container restarts.
 On successful VM test teardown, each retained launcher incarnation must contain
 `AGENTPLANE_GUEST_SHUTDOWN_COMPLETE`, emitted by a systemd unit after runner exit and successful

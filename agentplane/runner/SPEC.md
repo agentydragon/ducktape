@@ -25,7 +25,9 @@ Codex or claims execution ownership.
 
 The loader first resolves Runner environment declarations, then harness declarations. Each declaration
 has inherited names and explicit values; explicit values take precedence. Provider tokens are read
-from the named Runner environment variables. Undeclared variables never enter native harnesses.
+from the named Runner environment variables. Undeclared Runner variables never enter native harnesses. VM services additionally receive
+systemd-generated service metadata; login-environment defaults are disabled and explicit native
+environment values are preserved.
 Session configuration cannot override template resource ceilings or executor selection.
 
 Pods and VMs expose `/run/agentplane/config/runner.json`,

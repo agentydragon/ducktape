@@ -72,12 +72,14 @@ func (p *Process) startSystemd(ctx context.Context) error {
 		conn.Close()
 		return p.cleanupFailedStart(err)
 	}
+	// ExecStartEx disables manager-side $ expansion. Native argv (including shell
+	// programs) must be delivered verbatim, with expansion owned by the native process.
 	props = append(props, policy.identityProperties()...)
 	props = append(
 		props,
 		property("Description", "Agentplane native launch "+backend.name), property("Type", "exec"), property("Restart", "no"), property("Slice", policy.Slice),
 		property("BindsTo", []string{policy.parentUnit()}), property("After", []string{policy.parentUnit()}), property("AddRef", true), property("RemainAfterExit", true),
-		property("ExecStart", []systemdExec{{executable, command, false}}), property("Environment", environment(p.config.Env)), property("WorkingDirectory", p.config.Dir),
+		property("ExecStartEx", []systemdExec{{executable, command, []string{"no-env-expand"}}}), property("Environment", environment(p.config.Env)), property("WorkingDirectory", p.config.Dir),
 		property("StandardInputFileDescriptor", dbus.UnixFD(stdinReader.Fd())), property("StandardOutputFileDescriptor", dbus.UnixFD(stdoutWriter.Fd())), property("StandardErrorFileDescriptor", dbus.UnixFD(stderrWriter.Fd())),
 		property("PrivateTmp", false), property("ProtectSystem", "strict"), property("ReadWritePaths", []string{"/state", "/tmp"}), property("UMask", uint32(7)), property("LockPersonality", true), property("ProtectKernelModules", true), property("ProtectKernelLogs", true),
 		property("KillMode", "control-group"), property("KillSignal", int32(15)), property("SendSIGKILL", true), property("TimeoutStopUSec", uint64(stopGrace/time.Microsecond)), property("OOMPolicy", "continue"),

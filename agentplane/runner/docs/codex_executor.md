@@ -69,7 +69,7 @@ See [native supervision](supervision.md) for the backend and ownership boundary.
 ## Startup, loss and suspend
 
 1. Runner acquires state ownership and fences previous native work. In Pods it waits for an idle
-   companion generation before opening Session stores. In VMs it clears old delegated groups.
+   companion generation before opening Session stores. In VMs it fences old owned systemd services in the expected slices.
 2. The first Codex startup starts the executor restart loop and waits for a bounded RPC probe.
    The probe initializes a WebSocket session and reads `environment/status`. The app-server then
    starts with the configured executor URL.

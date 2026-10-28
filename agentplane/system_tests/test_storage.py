@@ -19,6 +19,7 @@ from agentplane.crd_group import GROUP, VERSION
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cluster import api_client, kubectl
 from agentplane.system_tests.conftest import POD_TEMPLATE, VM_TEMPLATE, namespace
+from agentplane.system_tests.k3s import guest_logs
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -38,6 +39,7 @@ async def _condition(name: str, condition: str, value: str = "True") -> None:
         f"sandboxes.{GROUP}/{name}",
         f'--for=jsonpath={{.status.conditions[?(@.type=="{condition}")].status}}={value}',
         f"--timeout={BOUND_SECONDS}s",
+        check_failure=guest_logs.check_boot if condition == "Ready" and value == "True" else None,
     )
 
 

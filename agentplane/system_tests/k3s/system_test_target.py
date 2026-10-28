@@ -20,11 +20,12 @@ import pytest
 
 from agentplane.system_tests import operator_login
 from agentplane.system_tests.conftest import BASE_URL, MCP_EDGE_URL, NAMESPACE, TOKEN
-from agentplane.system_tests.k3s import rendered_fixture
+from agentplane.system_tests.k3s import guest_logs, rendered_fixture
 from agentplane.system_tests.k3s.rendered_fixture import Backend, LocalModel, PublicLiteLLM
 from agentplane.system_tests.k3s.stack import Timeline, node_ip, running_stack
 from util.bazel.runfiles import get_required_path
 from util.net import Listener, listen_tcp
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 TIMELINE = pytest.StashKey[Timeline]()
 
@@ -81,6 +82,7 @@ def k3s_deployment(
         environment.setenv(BASE_URL, stack.base_url)
         environment.setenv(TOKEN, stack.token)
         environment.setenv(NAMESPACE, stack.namespace)
+        environment.setenv(guest_logs.CONSOLES_ENV, str(undeclared_outputs_dir() / "vm-artifacts/consoles"))
         if stack.mcp_fixtures is not None:
             environment.setenv("SSL_CERT_FILE", str(stack.mcp_fixtures.ca_bundle))
             environment.setenv(

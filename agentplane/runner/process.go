@@ -28,7 +28,7 @@ const (
 )
 
 // ProcessConfig describes one native launch and its containment policy.
-// Env is passed as the complete environment for the native command.
+// Env supplies explicitly selected native variables; systemd also adds service metadata.
 type ProcessConfig struct {
 	Command              []string
 	Dir                  string
