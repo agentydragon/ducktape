@@ -23,21 +23,24 @@ witness with a runnable inspection command. Start with one supported causal
 path and permit expansion. Keep unsupported causes explicitly inconclusive and
 preserve the conservative fallback; diagnostics must not relax acceptance rules.
 
-## D — Discover related bindings for one inspection
+## D — Discover related bindings across a module family
 
 **Priority:** P1. **Owner:** inspection CLI.
 
-[`describe --batch`](../docs/cli.md#describe-related-ids-together) accepts a
-caller-supplied list of identifiers and reuses one graph load and verification
-for those selections. A module-path selection resolves claims for one owner;
-the CLI has no query that discovers related bindings by module or semantic
-family for a review. Collecting a group's identifiers still requires a
-separate discovery step.
+[`describe <module-path>`](../docs/cli.md#name-and-identifier-resolution)
+reports one owner's claims and direct graph neighbors, while
+[`cluster <binding>`](../docs/cli.md#name-and-identifier-resolution) reports
+adjacent module neighbors for one binding. [`describe --batch`](../docs/cli.md#describe-related-ids-together)
+can inspect a caller-supplied ID list with one graph load and verification.
+These cover one-hop exploration and already-known IDs, but discovering a
+reviewer-defined family across multiple owners still requires separate queries
+and manual ID curation.
 
-**Acceptance:** add a query that discovers bindings related by a selected
-module or supported semantic family, with bounded results and explicit total,
-emitted, and truncation counts. Keep the existing batch path available for
-reviewers who already have an explicit ID list.
+**Acceptance:** add a query that discovers bindings across a selected set of
+module owners or a supported semantic family and returns the group in one
+bounded result with explicit total, emitted, and truncation counts. Keep the
+existing batch path available for reviewers who already have an explicit ID
+list.
 
 ## F — Suggest evidence-backed regroupings for human module boundaries
 
