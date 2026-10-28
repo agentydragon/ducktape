@@ -1303,6 +1303,214 @@ async def test_transactions_refresh_on_initial_event_without_view_get(page: Page
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_spending_loading_shell_and_same_period_refresh_error(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
+    await page.set_viewport_size({"width": width, "height": height})
+    release_events = asyncio.Event()
+    events_requested = asyncio.Event()
+    initial_history_loaded = asyncio.Event()
+    transaction_requests = 0
+
+    async def delay_events(route: Route) -> None:
+        events_requested.set()
+        await release_events.wait()
+        await route.continue_()
+
+    async def serve_initial_history_then_fail_refresh(route: Route) -> None:
+        nonlocal transaction_requests
+        transaction_requests += 1
+        if transaction_requests == 1:
+            response = await route.fetch()
+            await route.fulfill(response=response)
+            initial_history_loaded.set()
+        else:
+            await route.fulfill(status=503, body="synthetic refresh failure")
+
+    await page.route("**/api/v1/events*", delay_events)
+    await page.route("**/api/v1/transactions*", serve_initial_history_then_fail_refresh)
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await events_requested.wait()
+    await initial_history_loaded.wait()
+
+    loading = page.get_by_role("status", name="Loading spending view")
+    await expect(loading).to_be_visible()
+    await expect(page.get_by_text("No flexible allowance yet", exact=True)).to_have_count(0)
+    await expect(page.get_by_text("No cards configured.", exact=True)).to_have_count(0)
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"spending-initial-loading-{width}",
+        label=f"Spending initial loading at {width}px",
+        full_page=True,
+        animations="disabled",
+    )
+
+    release_events.set()
+    await page.locator("canvas[aria-label]").wait_for()
+    refresh_error = page.get_by_role("alert").filter(has_text="Couldn't load last 7 days spending history")
+    await expect(refresh_error).to_be_visible()
+    await expect(page.locator("#spending-history-summary")).to_have_text(
+        "$15 flexible spending over 7 days; average $2 per day; leash reference $28 per day."
+    )
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"spending-refresh-error-with-data-{width}",
+        label=f"Same-period refresh error with matching data retained at {width}px",
+        full_page=True,
+        animations="disabled",
+    )
+
+    async def close_estimate_events(route: Route) -> None:
+        if "estimate_period_id=rolling_30d" in route.request.url:
+            await route.fulfill(status=204)
+        else:
+            await route.continue_()
+
+    async def fail_estimate_view(route: Route) -> None:
+        await route.fulfill(status=503, body="synthetic estimate view failure")
+
+    await page.route("**/api/v1/events*", close_estimate_events)
+    await page.route("**/api/v1/view*", fail_estimate_view)
+    await page.get_by_text("30 days", exact=True).click()
+    estimate_error = page.get_by_role("alert").filter(has_text="Couldn't load last 30 days spending history")
+    await expect(estimate_error).to_contain_text("No data for last 30 days has loaded yet.")
+    await expect(page.locator("#spending-history-summary")).to_have_count(0)
+    spending_pace = page.locator('[aria-label="Spending pace"]')
+    await expect(spending_pace).to_contain_text("30 days estimate unavailable")
+    await expect(spending_pace).to_contain_text("No estimate loaded for last 30 days.")
+    await expect(spending_pace).not_to_contain_text("Based on last 7 days")
+    await expect(spending_pace).not_to_contain_text("$75.00")
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"spending-estimate-switch-error-{width}",
+        label=f"Failed estimate-window switch at {width}px",
+        full_page=True,
+        animations="disabled",
+    )
+    view.errors.assert_none(context="Spend loading")
+
+
+@pytest.mark.asyncio
+async def test_terminal_first_load_error_does_not_claim_recent_data(
+    page: Page, view: VisualPage, dashboard_url: str
+) -> None:
+    events_closed = asyncio.Event()
+
+    async def close_events(route: Route) -> None:
+        events_closed.set()
+        await route.fulfill(status=204)
+
+    async def fail_view(route: Route) -> None:
+        await route.fulfill(status=503, body="synthetic unavailable view")
+
+    await page.route("**/api/v1/events*", close_events)
+    await page.route("**/api/v1/view*", fail_view)
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await events_closed.wait()
+
+    unavailable = page.get_by_role("alert").filter(has_text="Couldn't load your spending view")
+    await expect(unavailable).to_contain_text("No spending view has loaded yet.")
+    await expect(page.get_by_text("No flexible allowance yet", exact=True)).to_have_count(0)
+    await expect(page.get_by_text("No cards configured.", exact=True)).to_have_count(0)
+    await expect(page.get_by_role("status", name="Loading spending view")).to_have_count(0)
+    await expect(page.get_by_text("Unable to connect", exact=True)).to_be_visible()
+    await view.capture(
+        "spending-first-load-error",
+        label="Terminal connection failure before a view loads",
+        full_page=True,
+        animations="disabled",
+    )
+    view.errors.assert_none(context="Spend initial error")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_transactions_skeleton_and_period_error_hide_prior_period_rows(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
+    await page.set_viewport_size({"width": width, "height": height})
+    release_transactions = asyncio.Event()
+    initial_request_started = asyncio.Event()
+
+    async def delay_initial_period_and_fail_switch(route: Route) -> None:
+        period = route.request.url.split("period=")[-1]
+        if period == "rolling_30d":
+            initial_request_started.set()
+            await release_transactions.wait()
+            await route.continue_()
+        else:
+            await route.fulfill(status=503, body="synthetic period failure")
+
+    await page.route("**/api/v1/transactions*", delay_initial_period_and_fail_switch)
+    await page.goto(f"{dashboard_url}/#/transactions", wait_until="domcontentloaded")
+    await initial_request_started.wait()
+
+    loading = page.get_by_role("status", name="Loading last 30 days transactions")
+    await expect(loading).to_be_visible()
+    await expect(page.get_by_text("No transactions match this period and filter.", exact=True)).to_have_count(0)
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"transactions-initial-loading-{width}",
+        label=f"Transactions initial loading at {width}px",
+        full_page=True,
+        animations="disabled",
+    )
+
+    release_transactions.set()
+    await page.get_by_text("Example Travel", exact=True).wait_for()
+    await page.get_by_text("7 days", exact=True).click()
+    period_error = page.get_by_role("alert").filter(has_text="Couldn't load last 7 days transactions")
+    await expect(period_error).to_contain_text("No data for last 7 days has loaded yet.")
+    await expect(page.get_by_text("Example Travel", exact=True)).to_have_count(0)
+    await expect(page.get_by_text("No transactions match this period and filter.", exact=True)).to_have_count(0)
+    await expect(page.get_by_role("status", name="Loading last 7 days transactions")).to_have_count(0)
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"transactions-period-error-{width}",
+        label=f"Period request failure with prior period data hidden at {width}px",
+        full_page=True,
+        animations="disabled",
+    )
+    view.errors.assert_none(context="Transactions period error")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
+async def test_configuration_initial_loading_skeleton(
+    page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
+) -> None:
+    await page.set_viewport_size({"width": width, "height": height})
+    release_configuration = asyncio.Event()
+    configuration_requested = asyncio.Event()
+
+    async def delay_configuration(route: Route) -> None:
+        configuration_requested.set()
+        await release_configuration.wait()
+        await route.continue_()
+
+    await page.route("**/api/v1/configuration", delay_configuration)
+    await page.goto(f"{dashboard_url}/#/configuration", wait_until="domcontentloaded")
+    await configuration_requested.wait()
+
+    loading = page.get_by_role("status", name="Loading configuration")
+    await expect(loading).to_be_visible()
+    await expect(page.get_by_text("No flexible allowance configured", exact=True)).to_have_count(0)
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    await view.capture(
+        f"configuration-initial-loading-{width}",
+        label=f"Configuration initial loading at {width}px",
+        full_page=True,
+        animations="disabled",
+    )
+
+    release_configuration.set()
+    await page.get_by_text("Analysis categories", exact=True).wait_for()
+    await expect(loading).to_be_hidden()
+    view.errors.assert_none(context="Configuration loading")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
 async def test_spending_decision_dark_theme(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
 ) -> None:

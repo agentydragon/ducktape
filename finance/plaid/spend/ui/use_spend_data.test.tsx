@@ -64,7 +64,7 @@ interface ProbeProps {
 function Probe({ activeTab, transactionPeriodId }: ProbeProps) {
   const spend = useSpendData({ activeTab, selectedEstimatePeriodId: null, transactionPeriodId });
   return (
-    <output>{`${spend.connectionState}|${spend.error ?? "no-error"}|${spend.transactions?.requested_period_id ?? "no-period"}|${spend.transactionsLoading ? "loading" : "loaded"}`}</output>
+    <output>{`${spend.connectionState}|${spend.view ? "view" : "no-view"}|${spend.error ?? "no-error"}|${spend.transactions?.requested_period_id ?? "no-period"}|${spend.transactionsLoading ? "loading" : "loaded"}|${spend.transactionsErrorPeriodId ?? "no-error-period"}|${spend.transactionsError ?? "no-tx-error"}`}</output>
   );
 }
 
@@ -162,7 +162,47 @@ it("returns to live state when the EventSource reconnects and delivers a view", 
     stream.open();
     stream.sendView(spendView());
   });
-  expect(outputText()).toBe("Live updates|no-error|no-period|loaded");
+  expect(outputText()).toBe("Live updates|view|no-error|no-period|loaded|no-error-period|no-tx-error");
+});
+
+it("reports a terminal first-load failure without claiming a view was loaded", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.resolve(new Response("unavailable", { status: 503 })))
+  );
+  await mount("sustainability", "rolling_30d");
+  const stream = TestEventSource.instances[0];
+  if (!stream) throw new Error("EventSource was not created");
+
+  await act(async () => {
+    stream.readyState = TestEventSource.CLOSED;
+    stream.onerror?.(new Event("error"));
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(outputText()).toBe(
+    "Unable to connect|no-view|Connection check returned 503|no-period|loaded|no-error-period|no-tx-error"
+  );
+});
+
+it("loads an HTTP view snapshot after the live stream closes terminally", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.resolve(new Response(JSON.stringify(spendView()), { status: 200 })))
+  );
+  await mount("sustainability", "rolling_30d");
+  const stream = TestEventSource.instances[0];
+  if (!stream) throw new Error("EventSource was not created");
+
+  await act(async () => {
+    stream.readyState = TestEventSource.CLOSED;
+    stream.onerror?.(new Event("error"));
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(outputText()).toBe("Unable to connect|view|no-error|no-period|loaded|no-error-period|no-tx-error");
 });
 
 it("aborts and ignores transaction data for a period that was replaced", async () => {
@@ -194,5 +234,57 @@ it("aborts and ignores transaction data for a period that was replaced", async (
     newResponse.resolve(transactionResponse("credit_cycle"));
     await Promise.resolve();
   });
-  expect(outputText()).toBe("Connecting|no-error|credit_cycle|loaded");
+  expect(outputText()).toBe("Connecting|no-view|no-error|credit_cycle|loaded|no-error-period|no-tx-error");
+});
+
+it("retains matching data when a same-period refresh fails and scopes the error to that period", async () => {
+  const refreshResponse = deferred<Response>();
+  let requestCount = 0;
+  const fetchMock = vi.fn(() => {
+    requestCount += 1;
+    return requestCount === 1 ? Promise.resolve(transactionResponse("rolling_30d")) : refreshResponse.promise;
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  await mount("transactions", "rolling_30d");
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(outputText()).toContain("no-error|rolling_30d|loaded|no-error-period|no-tx-error");
+
+  const stream = TestEventSource.instances[0];
+  if (!stream) throw new Error("EventSource was not created");
+  await act(async () => stream.sendView(spendView()));
+  expect(outputText()).toContain("view|no-error|rolling_30d|loading|no-error-period");
+
+  await act(async () => {
+    refreshResponse.resolve(new Response("unavailable", { status: 503 }));
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(outputText()).toContain("view|no-error|rolling_30d|loaded|rolling_30d|Transactions request returned 503");
+});
+
+it("keeps the prior period in state but associates a failed switch with its requested period", async () => {
+  const fetchMock = vi.fn((input: RequestInfo | URL) => {
+    const period = new URL(String(input), "http://test.invalid").searchParams.get("period");
+    return Promise.resolve(
+      period === "rolling_30d" ? transactionResponse("rolling_30d") : new Response("unavailable", { status: 503 })
+    );
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  await mount("transactions", "rolling_30d");
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  await rerender("transactions", "credit_cycle");
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(outputText()).toContain("no-view|no-error|rolling_30d|loaded|credit_cycle|Transactions request returned 503");
 });
