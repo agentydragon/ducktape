@@ -53,12 +53,20 @@ py_library(
     ],
 )
 
-# Prints the OpenAPI schema; the frontend's js_openapi_schema runs it to generate types.
+# Prints the OpenAPI schema for the frontend's declared schema artifact.
 py_binary(
     name = "export_schema_bin",
     main_module = "devinfra.claude.session_export.export_schema",
     visibility = ["//devinfra/claude/session_export/frontend:__pkg__"],
     deps = [":export_schema"],
+)
+
+genrule(
+    name = "openapi_schema",
+    outs = ["openapi.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+    visibility = ["//devinfra/claude/session_export/frontend:__pkg__"],
 )
 
 py_binary(

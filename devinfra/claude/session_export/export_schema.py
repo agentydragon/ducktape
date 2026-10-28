@@ -1,7 +1,7 @@
 """Print the pairing page API's OpenAPI schema to stdout (for frontend type-gen).
 
-Driven by `//devinfra/claude/session_export/frontend:schema` (`js_openapi_schema`) so the page's wire types are
-the API's Pydantic models rather than a hand-kept copy. `app.openapi()` reads route signatures only: nothing
+Captured as `//devinfra/claude/session_export:openapi_schema` so the page's wire types are the API's
+Pydantic models rather than a hand-kept copy. `app.openapi()` reads route signatures only: nothing
 here connects to a database, an IdP or Anthropic, and the placeholders exist because `create_app` requires them.
 """
 
