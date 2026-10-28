@@ -5749,10 +5749,14 @@ impl Visit for ExecutionIndex {
                         direct_top_level,
                         simple_identifier: false,
                     });
-                self.property_key_assignments
-                    .entry(id)
-                    .or_default()
-                    .push(PropertyKeyExpr::Unknown);
+                // A for-of declaration has no initializer: its key fact was
+                // supplied by the loop protocol, rather than an unknown RHS.
+                if declarator.init.is_some() {
+                    self.property_key_assignments
+                        .entry(id)
+                        .or_default()
+                        .push(PropertyKeyExpr::Unknown);
+                }
             }
         }
         if let Some(key) = self.current
