@@ -59,7 +59,9 @@ type Subscription struct {
 	GitHub *GitHubStatus
 }
 
-const subscriptionColumns = `s.id, s.inbox_id, s.creation, s.idempotency_key, s.version, s.cancelled, s.expires_at,
+const subscriptionColumns = `s.id, s.inbox_id,
+	CASE WHEN s.creation_proto IS NULL AND s.source_provider IS NULL THEN s.creation END,
+	s.creation_proto, s.source_provider, s.idempotency_key, s.version, s.cancelled, s.expires_at,
 	s.last_success_at, s.error, s.error_kind, s.error_since, s.error_observed_at, s.next_attempt`
 
 // scanSubscription reads subscriptionColumns, then any columns the query adds into extra. viewedAt is the time
@@ -67,18 +69,20 @@ const subscriptionColumns = `s.id, s.inbox_id, s.creation, s.idempotency_key, s.
 func scanSubscription(row rowScanner, viewedAt time.Time, extra ...any) (Subscription, error) {
 	var subscription Subscription
 	var creation []byte
+	var creationProto sql.Null[[]byte]
+	var sourceProvider sql.NullString
 	var message, kind sql.NullString
 	var lastSuccess, since, observed, nextAttempt sql.NullTime
 	if err := row.Scan(append([]any{
-		&subscription.ID, &subscription.InboxID, &creation, &subscription.IdempotencyKey,
+		&subscription.ID, &subscription.InboxID, &creation, &creationProto, &sourceProvider, &subscription.IdempotencyKey,
 		&subscription.Version, &subscription.Cancelled, &subscription.ExpiresAt, &lastSuccess, &message, &kind,
 		&since, &observed, &nextAttempt,
 	}, extra...)...); err != nil {
 		return Subscription{}, err
 	}
-	var body Subscribe
-	if err := decode(creation, &body); err != nil {
-		return Subscription{}, fmt.Errorf("subscription %s creation: %w", subscription.ID, err)
+	body, err := decodeStoredSubscriptionCreation(subscription.ID, creation, creationProto, sourceProvider, subscription.IdempotencyKey)
+	if err != nil {
+		return Subscription{}, err
 	}
 	subscription.Source = body.Source
 	subscription.ExpiresAt = subscription.ExpiresAt.UTC()
@@ -211,6 +215,10 @@ func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscr
 	if err != nil {
 		return Subscription{}, err
 	}
+	creationProto, sourceProvider, err := encodeSubscriptionCreation(body)
+	if err != nil {
+		return Subscription{}, err
+	}
 	var subscription Subscription
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		if _, github := body.Source.(GitHubSource); github {
@@ -226,12 +234,17 @@ func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscr
 		written := now()
 		var existingID uuid.UUID
 		var existing []byte
-		err = tx.QueryRowContext(ctx, `SELECT id, creation FROM subscription WHERE inbox_id = $1 AND idempotency_key = $2`,
-			inbox.ID, body.IdempotencyKey).Scan(&existingID, &existing)
+		var existingProto sql.Null[[]byte]
+		var existingProvider sql.NullString
+		err = tx.QueryRowContext(ctx, `SELECT id,
+			CASE WHEN creation_proto IS NULL AND source_provider IS NULL THEN creation END,
+			creation_proto, source_provider
+			FROM subscription WHERE inbox_id = $1 AND idempotency_key = $2`,
+			inbox.ID, body.IdempotencyKey).Scan(&existingID, &existing, &existingProto, &existingProvider)
 		if err == nil {
-			var previous Subscribe
-			if err := decode(existing, &previous); err != nil {
-				return fmt.Errorf("subscription %s creation: %w", existingID, err)
+			previous, err := decodeStoredSubscriptionCreation(existingID, existing, existingProto, existingProvider, body.IdempotencyKey)
+			if err != nil {
+				return err
 			}
 			if !previous.Equal(body) {
 				return ErrIdempotencyKeyReused
@@ -251,11 +264,12 @@ func (s *Store) Subscribe(ctx context.Context, owner ServiceAccount, body Subscr
 		}
 		id := uuid.New()
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO subscription (id, inbox_id, idempotency_key, creation, version, actions_after_sequence,
+			INSERT INTO subscription (id, inbox_id, idempotency_key, creation, creation_proto, source_provider,
+				version, actions_after_sequence,
 				github_start_position, github_app_id, github_installation_id, github_repository_id, github_subject_kind,
 				github_subject_key, generation, cancelled, expires_at, next_attempt)
-			VALUES ($1, $2, $3, $4::jsonb, 1, $5, $6, $7, $8, $9, $10, $11, 0, false, $12, $13)`,
-			id, inbox.ID, body.IdempotencyKey, string(creation), binding.actionsAfterSequence,
+			VALUES ($1, $2, $3, $4::jsonb, $5, $6, 1, $7, $8, $9, $10, $11, $12, $13, 0, false, $14, $15)`,
+			id, inbox.ID, body.IdempotencyKey, string(creation), creationProto, sourceProvider, binding.actionsAfterSequence,
 			binding.githubStartPosition, binding.githubApp, binding.githubInstallation, binding.githubRepository,
 			binding.githubSubjectKind, binding.githubSubjectKey, expiry(written, body.LifetimeDays), written); err != nil {
 			return err

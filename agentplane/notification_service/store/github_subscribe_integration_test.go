@@ -131,6 +131,15 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	var provider string
+	var hasTypedCreation bool
+	if err := g.db.QueryRowContext(t.Context(), `SELECT source_provider, creation_proto IS NOT NULL
+		FROM subscription WHERE id = $1`, original.ID).Scan(&provider, &hasTypedCreation); err != nil {
+		t.Fatal(err)
+	}
+	if provider != "github" || !hasTypedCreation {
+		t.Fatalf("new GitHub subscription storage = (provider %q, typed %t), want typed GitHub creation", provider, hasTypedCreation)
+	}
 
 	reordered := created
 	reordered.Source = g.source(
@@ -147,13 +156,18 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 		t.Fatalf("a replay with the filters reordered and repeated made subscription %s, not %s", replayed.ID, original.ID)
 	}
 
-	// Stored creations are read with the same set semantics, whatever order they were written in.
+	// The typed creation is authoritative even while legacy JSON remains for rollback.
 	g.exec(t, `
-		UPDATE subscription SET creation = jsonb_set(creation, '{source,events}',
-			'[{"event": "issue_comment", "actions": ["edited", "created"]}, {"event": "check_run", "actions": ["completed"]}]')
+		UPDATE subscription SET creation = jsonb_set(creation, '{source,repository}', '"legacy-json-value"')
 		WHERE id = $1`, original.ID)
+	stored, err := g.GetSubscription(t.Context(), g.incarnation(), original.ID)
+	if err != nil || !sourcesEqual(stored.Source, created.Source) {
+		t.Fatalf("stored typed GitHub creation = %+v, %v; want %+v", stored.Source, err, created.Source)
+	}
+
+	// Idempotency still compares normalized filter sets regardless of their order or duplicates.
 	if again, err := g.Subscribe(t.Context(), g.owner, created, ptr(g.access())); err != nil || again.ID != original.ID {
-		t.Fatalf("a replay against a creation stored in another order = %+v, %v; want subscription %s", again, err, original.ID)
+		t.Fatalf("a normalized replay = %+v, %v; want subscription %s", again, err, original.ID)
 	}
 
 	changed := created
