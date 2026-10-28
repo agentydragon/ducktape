@@ -10,7 +10,6 @@ ts_config(
 
 openapi_zod_ts_library(
     name = "schema_zod",
-    out = "schema_zod.mts",
     config = "openapi-ts.config.mjs",
     schema = "//study_casino:frontend_openapi_json",
     tsconfig = ":tsconfig",

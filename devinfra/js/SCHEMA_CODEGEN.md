@@ -59,20 +59,10 @@ openapi_zod_ts_library(
 )
 ```
 
-The raw generated source is also available by file label, `:schema_zod.ts` by default. Set `out` to
-choose another source path. Use an `.mts` output when a plain JavaScript consumer needs the compiled
-`.mjs` module and matching `.d.mts` declaration:
-
-```starlark
-openapi_zod_ts_library(
-    name = "schema_zod",
-    out = "schema_zod.mts",
-    schema = ":openapi_schema",
-    config = "openapi-ts.config.mjs",
-    tsconfig = ":tsconfig",
-    deps = ["//:node_modules/zod"],
-)
-```
+The raw generated source is also available by file label, `:schema_zod.ts` by default. JavaScript
+consumers import the compiled `schema_zod.js`; TypeScript consumers resolve `schema_zod.d.ts`.
+Set `out` to choose another source path. An `.mts` output selects `.mjs` and `.d.mts` when an
+integration specifically requires those extensions.
 
 The config is an ES module with one default-exported configuration object. List local modules it
 imports in `config_files` and imported runtime packages in `config_deps`. The converter uses Hey

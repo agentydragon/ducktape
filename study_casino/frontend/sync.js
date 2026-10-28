@@ -26,7 +26,7 @@ import {
   zMeResponse,
   zStateDump,
   zWsStateChangedMessage,
-} from "./lib/schema_zod.mjs";
+} from "./lib/schema_zod.js";
 
 const WS_RECONNECT_BASE_MS = 1_000;
 const WS_RECONNECT_MAX_MS = 30_000;
