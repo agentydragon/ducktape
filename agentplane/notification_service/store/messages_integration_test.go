@@ -243,7 +243,7 @@ func TestTheDatabaseHoldsNoBodyBeyondTheCeiling(t *testing.T) {
 		t.Fatalf("text body update error = %v, want the canonical text ceiling's constraint", err)
 	}
 	_, err = f.Send(t.Context(), f.message(sender, "beyond-ceiling", body+"x"))
-	if refused := (*pq.Error)(nil); !errors.As(err, &refused) || refused.Constraint != "entry_message_body_ceiling" {
+	if refused := (*pq.Error)(nil); !errors.As(err, &refused) || refused.Constraint != "entry_message_body_ceiling_relational" {
 		t.Fatalf("oversized dual-write error = %v, want the retained JSON ceiling's constraint", err)
 	}
 	if got := f.sentMessage(t, sender, sent.ID); got.ID != sent.ID {

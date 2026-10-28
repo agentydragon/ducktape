@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,8 +19,33 @@ import (
 func TestEventIdentityProviderProofIsValidatedOfflineAndConstrainsNewWrites(t *testing.T) {
 	db, ctx := newStorageIntegrationDatabase(t)
 	resetNotificationSchema(t, db)
-	if err := migrations.UpTo(ctx, db, 15); err != nil {
-		t.Fatalf("build schema through event identity proof migration 00015: %v", err)
+	if err := migrations.UpTo(ctx, db, 18); err != nil {
+		t.Fatalf("build schema through event identity writer-only migration 00018: %v", err)
+	}
+	var eventNullable bool
+	if err := db.QueryRowContext(ctx, `SELECT NOT attnotnull FROM pg_attribute
+		WHERE attrelid = 'entry'::regclass AND attname = 'event' AND NOT attisdropped`).Scan(&eventNullable); err != nil {
+		t.Fatalf("inspect event nullability after writer-only migration: %v", err)
+	}
+	if !eventNullable {
+		t.Fatal("writer-only migration left the event identity column NOT NULL")
+	}
+	var indexCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pg_index i
+		JOIN pg_class c ON c.oid = i.indexrelid
+		WHERE i.indrelid = 'entry'::regclass AND c.relname LIKE 'entry_identity_%_key'
+		AND i.indisvalid AND i.indisready AND i.indisunique`).Scan(&indexCount); err != nil {
+		t.Fatal(err)
+	}
+	if indexCount != 5 {
+		t.Fatalf("fresh database identity indexes = %d, want 5", indexCount)
+	}
+	var phase string
+	if err := db.QueryRowContext(ctx, `SELECT phase FROM notification_event_identity_backfill WHERE singleton`).Scan(&phase); err != nil {
+		t.Fatal(err)
+	}
+	if phase != "indexed" {
+		t.Fatalf("fresh database identity phase = %q, want indexed", phase)
 	}
 	f := fixtureForDatabase(t, db, defaultQuotas())
 	subscription := f.subscribe(t, body("event-identity-proof"))
@@ -39,8 +65,8 @@ func TestEventIdentityProviderProofIsValidatedOfflineAndConstrainsNewWrites(t *t
 	if !errors.As(err, &postgresError) || postgresError.Constraint != "entry_identity_provider_required" {
 		t.Fatalf("writing an incomplete relational identity returned %v, want entry_identity_provider_required", err)
 	}
-	if err := ValidateEntryIdentityProviderConstraint(t.Context(), f.db); err != nil {
-		t.Fatalf("validate provider proof in the offline validator: %v", err)
+	if err := ValidateEventIdentityWriterOnly(t.Context(), f.db); err != nil {
+		t.Fatalf("validate event identity writer-only proofs offline: %v", err)
 	}
 	if err := f.db.QueryRowContext(t.Context(), `SELECT convalidated FROM pg_constraint
 		WHERE conrelid = 'entry'::regclass AND conname = 'entry_identity_provider_required'`).Scan(&validated); err != nil {
@@ -49,9 +75,79 @@ func TestEventIdentityProviderProofIsValidatedOfflineAndConstrainsNewWrites(t *t
 	if !validated {
 		t.Fatal("offline validation did not publish the provider proof")
 	}
+	phase = ""
+	if err := f.db.QueryRowContext(t.Context(), `SELECT phase FROM notification_event_identity_backfill WHERE singleton`).Scan(&phase); err != nil {
+		t.Fatal(err)
+	}
+	if phase != "writer_only" {
+		t.Fatalf("offline validator phase = %q, want writer_only", phase)
+	}
 }
 
-func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *testing.T) {
+func TestEventIdentityWriterOnlyMigrationRequiresIndexedProofOnPopulatedDatabase(t *testing.T) {
+	db, ctx := newStorageIntegrationDatabase(t)
+	resetNotificationSchema(t, db)
+	if err := migrations.UpTo(ctx, db, 17); err != nil {
+		t.Fatalf("build populated migration predecessor through 00017: %v", err)
+	}
+	f := fixtureForDatabase(t, db, defaultQuotas())
+	inboxID := f.insertInbox(t, "event-identity-writer-only-gate", DestinationRef{
+		Namespace: "identity-migration-ns", Name: "identity-migration-destination", UID: testSandboxUID,
+	}, "identity-migration-session")
+	event := ActionsEvent{RequestID: uuid.New(), Sequence: 9}
+	eventJSON, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := entryPayloadForTest(t, event)
+	content, err := marshalEntryStorageContent(event, json.RawMessage(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO entry (
+		inbox_id, cursor, event, payload, typed_payload, created_at,
+		identity_provider, actions_request_id, actions_sequence)
+		VALUES ($1, 1, $2::jsonb, NULL, $3, now(), 'actions', $4, $5)`,
+		inboxID, string(eventJSON), content.typedPayload, event.RequestID, event.Sequence); err != nil {
+		t.Fatalf("seed retained dual-schema entry: %v", err)
+	}
+
+	if err := migrations.UpTo(ctx, db, 18); err == nil || !strings.Contains(err.Error(), "event identity indexes are not ready") {
+		t.Fatalf("writer-only migration error = %v, want populated-database index gate", err)
+	}
+	var eventNotNull bool
+	if err := db.QueryRowContext(ctx, `SELECT attnotnull FROM pg_attribute
+		WHERE attrelid = 'entry'::regclass AND attname = 'event' AND NOT attisdropped`).Scan(&eventNotNull); err != nil {
+		t.Fatal(err)
+	}
+	if !eventNotNull {
+		t.Fatal("rejected writer-only migration changed event nullability")
+	}
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND cursor = 1`, inboxID); got != 1 {
+		t.Fatalf("retained entries after migration refusal = %d, want 1", got)
+	}
+
+	if err := BackfillEventIdentities(ctx, db, 16); err != nil {
+		t.Fatalf("complete offline identity/index backfill: %v", err)
+	}
+	if err := migrations.UpTo(ctx, db, 18); err != nil {
+		t.Fatalf("retry writer-only migration after indexed proof: %v", err)
+	}
+	var provider, storedRequestID string
+	var storedSequence int64
+	if err := db.QueryRowContext(ctx, `SELECT identity_provider, actions_request_id::text, actions_sequence
+		FROM entry WHERE inbox_id = $1 AND cursor = 1`, inboxID).Scan(&provider, &storedRequestID, &storedSequence); err != nil {
+		t.Fatalf("read retained entry after migration retry: %v", err)
+	}
+	if provider != "actions" || storedRequestID != event.RequestID.String() || storedSequence != event.Sequence {
+		t.Fatalf("retained identity after successful retry = (%q, %q, %d)", provider, storedRequestID, storedSequence)
+	}
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND cursor = 1 AND event IS NOT NULL AND typed_payload IS NOT NULL`, inboxID); got != 1 {
+		t.Fatalf("retained identity/content row count after successful retry = %d, want 1", got)
+	}
+}
+
+func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	subscription := f.subscribe(t, body("identity-columns"))
 	requestID := uuid.New()
@@ -131,6 +227,14 @@ func TestAppendEventDualWritesEverySourceIdentityWithoutCollapsingGitHubAction(t
 		t.Errorf("message identity columns = %+v", got[6])
 	}
 	for i, wantNull := range []bool{false, true, true, true, false, false, false} {
+		var identityJSONNull bool
+		if err := f.db.QueryRowContext(t.Context(), `SELECT event IS NULL
+			FROM entry WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1).Scan(&identityJSONNull); err != nil {
+			t.Fatal(err)
+		}
+		if !identityJSONNull {
+			t.Errorf("event %d legacy identity JSON is not NULL after writer-only cutover", i)
+		}
 		var legacyPayloadNull bool
 		if err := f.db.QueryRowContext(t.Context(), `SELECT payload IS NULL
 			FROM entry WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1).Scan(&legacyPayloadNull); err != nil {
@@ -209,8 +313,8 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 	for _, event := range events {
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
 	}
-	// Make one legacy copy disagree with the relational identity so this test proves that new reads and retries
-	// use the populated columns. Production writers still dual-write the correct JSON for old readers in rollout.
+	// Retained pre-cutover rows can still have identity JSON. Make one such copy disagree with the relational key
+	// to prove that readers and retries use the populated columns even while rollback data remains.
 	legacyEvent, err := json.Marshal(ActionsEvent{RequestID: requestID, Sequence: 999})
 	if err != nil {
 		t.Fatal(err)
