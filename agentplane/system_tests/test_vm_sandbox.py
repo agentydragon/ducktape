@@ -32,7 +32,7 @@ printf 'VM_UID %s\n' "$(id -u)"
 printf 'VM_PID1 %s\n' "$(cat /proc/1/comm)"
 printf 'VM_CGROUP %s\n' "$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)"
 printf 'VM_SYSTEMD_PROOF %s\n' "$(cat /state/runner-systemd-proof.json)"
-if systemctl_output=$(systemctl --no-ask-password restart agentplane-cgroup-observer.service 2>&1); then
+if systemctl_output=$(/usr/bin/systemctl --no-ask-password restart agentplane-cgroup-observer.service 2>&1); then
     echo VM_SYSTEMCTL_UNEXPECTED_SUCCESS
     exit 23
 fi
@@ -174,24 +174,30 @@ async def test_a_vm_sandbox_runs_a_turn(
             turn = turns.create_task(agent.run(PING))
             await model.reply(await model.request(), ShellCall("vm-supervision", VM_SUPERVISION_PROBE))
             result = await model.request()
-            (output,) = result.tool_outputs
-            assert output.call_id == "vm-supervision"
-            assert output.contains("VM_UID 107"), output.blocks
-            assert output.contains("VM_PID1 systemd"), output.blocks
-            output_text = "\n".join(output.blocks)
-            assert 'VM_SYSTEMD_PROOF {"real_systemd_supervision":"passed"}' in output_text, output.blocks
-            (cgroup_line,) = [line for line in output_text.splitlines() if line.startswith("VM_CGROUP ")]
-            cgroup = cgroup_line.removeprefix("VM_CGROUP ")
-            subtree = (
-                "agentplane-executors.slice" if harness == runner_pb2.HARNESS_CODEX else "agentplane-workloads.slice"
-            )
-            _assert_native_service_cgroup(cgroup, subtree)
-            assert "VM_SYSTEMCTL_UNEXPECTED_SUCCESS" not in output_text, output.blocks
-            systemctl_denial = re.search(
-                r"authentication|authorization|not authorized|access denied", output_text, re.IGNORECASE
-            )
-            assert systemctl_denial is not None, output.blocks
-            await model.reply(result, Text("PING"))
+            try:
+                (output,) = result.tool_outputs
+                assert output.call_id == "vm-supervision"
+                assert output.contains("VM_UID 107"), output.blocks
+                assert output.contains("VM_PID1 systemd"), output.blocks
+                output_text = "\n".join(output.blocks)
+                assert 'VM_SYSTEMD_PROOF {"real_systemd_supervision":"passed"}' in output_text, output.blocks
+                (cgroup_line,) = [line for line in output_text.splitlines() if line.startswith("VM_CGROUP ")]
+                cgroup = cgroup_line.removeprefix("VM_CGROUP ")
+                subtree = (
+                    "agentplane-executors.slice"
+                    if harness == runner_pb2.HARNESS_CODEX
+                    else "agentplane-workloads.slice"
+                )
+                _assert_native_service_cgroup(cgroup, subtree)
+                assert "VM_SYSTEMCTL_UNEXPECTED_SUCCESS" not in output_text, output.blocks
+                systemctl_denial = re.search(
+                    r"authentication|authorization|not authorized|access denied", output_text, re.IGNORECASE
+                )
+                assert systemctl_denial is not None, output.blocks
+            finally:
+                # Even a failed guest assertion should complete this scripted turn so endpoint
+                # teardown reports the actual assertion, not a second unsettled exchange.
+                await model.reply(result, Text("PING"))
         # The scripted reply is the thread's answer: the guest's model traffic came back through the launcher.
         assert "PING" in turn.result().answer, turn.result().transcript
 
