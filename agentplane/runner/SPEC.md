@@ -367,7 +367,9 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   explicit Sandbox/state owner scope before opening Session stores, journals or admitting native
   work. It verifies each unit's expected slice and leaves unrelated units alone. A lost or
   canceled launch reply is resolved by fencing that same launch identity, never by issuing a
-  second launch. Manager unavailability remains a fence failure, preventing successors and seals.
+  second launch. A status-read timeout on a connected manager retries without declaring native
+  exit or releasing ownership. Manager disconnection remains a fencing barrier, preventing
+  successors and seals until the native domain is proven empty.
   [Supervision](docs/supervision.md) describes the resource hierarchy and backend boundary.
 - The supported state mount is the checked-in node-local `piraeus-hdd-local` PVC. A remote or
   otherwise unreliable locking filesystem is unsupported rather than a substitute cross-host

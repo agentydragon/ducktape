@@ -382,6 +382,76 @@ func TestSystemdKernelFixture(t *testing.T) {
 		<-stderr
 		assertSystemdProofEmpty(t, ctx, conn, systemdProofUnitName(t, p))
 	})
+	t.Run("reap_retries_property_deadline_on_connected_manager", func(t *testing.T) {
+		owned := *policy
+		authoritativePID := make(chan uint32, 1)
+		propertyReads := 0 // Only this process's reaper calls the hook.
+		owned.reapServiceProperties = func(readCtx context.Context, bus *systemd.Conn, name string) (map[string]any, error) {
+			propertyReads++
+			if propertyReads == 1 {
+				return nil, context.DeadlineExceeded
+			}
+			props, err := bus.GetUnitTypePropertiesContext(readCtx, name, "Service")
+			if err == nil {
+				if mainPID, ok := props["MainPID"].(uint32); ok {
+					select {
+					case authoritativePID <- mainPID:
+					default:
+					}
+				}
+			}
+			return props, err
+		}
+		p := startSystemdProof(t, ctx, owned.newSupervisor(), dir, "IFS= read -r line; printf 'input:%s\\n' \"$line\"; exit 23")
+		stdout, stderr := readProofStreams(p)
+		readCtx, cancelRead := context.WithTimeout(ctx, 10*time.Second)
+		defer cancelRead()
+
+		type waitResult struct {
+			code int
+			err  error
+		}
+		waited := make(chan waitResult, 1)
+		go func() {
+			code, err := p.Wait(readCtx)
+			waited <- waitResult{code: code, err: err}
+		}()
+		select {
+		case mainPID := <-authoritativePID:
+			if int(mainPID) != p.PID() {
+				t.Fatalf("authoritative MainPID=%d after retry, want original PID %d", mainPID, p.PID())
+			}
+		case result := <-waited:
+			t.Fatalf("Wait completed instead of retrying the connected manager read: code=%d err=%v", result.code, result.err)
+		case <-readCtx.Done():
+			t.Fatalf("reaper did not retry the real manager read: %v", readCtx.Err())
+		}
+		if !p.Running() {
+			t.Fatal("native process stopped before intentional stdin input")
+		}
+		select {
+		case result := <-waited:
+			t.Fatalf("Wait completed before intentional stdin input: code=%d err=%v", result.code, result.err)
+		default:
+		}
+
+		if err := p.WriteLine(readCtx, "finish"); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case result := <-waited:
+			if result.err != nil || result.code != 23 {
+				t.Fatalf("Wait after intentional stdin input: code=%d err=%v, want 23", result.code, result.err)
+			}
+		case <-readCtx.Done():
+			t.Fatalf("native process did not exit after intentional stdin input: %v", readCtx.Err())
+		}
+		if got := <-stdout; got != "input:finish\n" {
+			t.Fatalf("native stdin/stdout round trip=%q", got)
+		}
+		<-stderr
+		assertSystemdProofEmpty(t, readCtx, conn, systemdProofUnitName(t, p))
+	})
 	if t.Failed() {
 		return
 	}

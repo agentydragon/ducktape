@@ -224,9 +224,16 @@ func (b *systemdBackend) reap(p *Process) {
 	code := 125
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		props, err := b.conn.GetUnitTypePropertiesContext(ctx, b.name, "Service")
+		props, err := b.readServiceProperties(ctx)
 		cancel()
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) && b.conn.Connected() {
+				zap.L().Warn("native systemd process observation timed out; retrying", zap.String("unit", b.name), zap.Error(err))
+				if !b.waitChange() {
+					break
+				}
+				continue
+			}
 			break
 		}
 		pid, _ := props["MainPID"].(uint32)
@@ -261,6 +268,13 @@ func (b *systemdBackend) reap(p *Process) {
 	_ = p.CloseStdin()
 	b.release()
 	p.completeWith(code, fenceErr)
+}
+
+func (b *systemdBackend) readServiceProperties(ctx context.Context) (map[string]any, error) {
+	if read := b.policy.reapServiceProperties; read != nil {
+		return read(ctx, b.conn, b.name)
+	}
+	return b.conn.GetUnitTypePropertiesContext(ctx, b.name, "Service")
 }
 
 func (b *systemdBackend) stop(ctx context.Context, p *Process, grace time.Duration) error {

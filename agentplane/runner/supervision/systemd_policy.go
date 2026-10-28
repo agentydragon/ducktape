@@ -33,6 +33,7 @@ type SystemdPolicy struct {
 	lifetimeUnit                   string
 	lifetimeMarker                 string
 	startTransient                 func(context.Context, *systemd.Conn, string, []systemd.Property, chan<- string) (int, error)
+	reapServiceProperties          func(context.Context, *systemd.Conn, string) (map[string]any, error)
 }
 
 // ValidateProcessLimits checks values and ensures one process remains within its aggregate budget.
