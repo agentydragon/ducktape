@@ -834,7 +834,7 @@ function MachineImportProgressPanel({
             </Text>
           )
         ) : (
-          <ScrollArea h={200} type="auto">
+          <ScrollArea h={120} type="auto">
             <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="xs">
               {progress.map((machine) => (
                 <Paper key={machine.machine_id} withBorder radius="xs" p="xs">
