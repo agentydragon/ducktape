@@ -100,7 +100,7 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 			return status.Error(codes.Aborted, "this Sandbox is quiesced")
 		}
 		r.admissions++
-			r.idleSince = nil
+		r.idleSince = nil
 		admitted = true
 		writeErr := r.store.Write(request.SessionId, record)
 		r.mu.Unlock()
