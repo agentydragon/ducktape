@@ -9,6 +9,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 
 ## Open plans and gates
 
+- [Runner supervision backends](runner_supervision.md) — systemd-managed native services in VMs,
+  container-native supervision in Pods, and the fixture, fencing and resource-budget migration
 - [Architecture overview](architecture_overview.md) — four whole directions for where Agentplane's
   objects and data live, the operator's workflows through each, what Agentplane borrows from
   Kubernetes and what each direction keeps or replaces, what is right under every direction, and the

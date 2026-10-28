@@ -1008,7 +1008,38 @@ flowchart TD
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Deferred: retire the superseded state attachment]
     IDLE_SUSPEND_UI_DRIVE[Operator: remaining VM idle-suspend/send-to-wake UI drive]
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
+    RUNNER_SYSTEMD_FIXTURE[Candidate: real systemd in the VM fixture]
+    RUNNER_SYSTEMD_EXEC_SERVER[Candidate: VM exec-server supervision backend]
+    RUNNER_SYSTEMD_NATIVE_LAUNCHES[Blocked: remaining VM native launches and cleanup]
+    RUNNER_SYSTEMD_FIXTURE -->|required acceptance fixture| RUNNER_SYSTEMD_EXEC_SERVER
+    RUNNER_SYSTEMD_EXEC_SERVER --> RUNNER_SYSTEMD_NATIVE_LAUNCHES
 ```
+
+### `RUNNER_SYSTEMD_FIXTURE` — exercise real systemd in the VM fixture
+
+**Candidate; selected next by the operator, 2026-10-27 PDT.** Replace the test guest's BusyBox PID 1
+supervision with real systemd and a system bus, sharing production's runner unit/resource policy.
+Preserve direct kernel boot, mounts, network, shutdown and resource coverage. Exit: existing VM
+tests pass with real systemd before native supervision changes. The
+[supervision plan](runner_supervision.md#implementation-prs) owns the contract and implementation slices.
+
+### `RUNNER_SYSTEMD_EXEC_SERVER` — supervise the VM exec-server through systemd
+
+**Candidate; requires the real systemd fixture for acceptance.** Introduce the process-control seam
+and systemd backend, move the VM exec-server, and preserve the common resource envelope around
+runner and all native services. Prove lost-start-reply handling, crash cleanup, descendant fencing,
+replacement exclusion, OOM behavior and container regressions using the
+[proof matrix](runner_supervision.md#proof-matrix). Independently specifiable code can proceed in a
+stack while the fixture lands. COSI retains restart policy; the old VM exec-server launch path is
+removed when replaced, with no failure-driven fallback.
+
+### `RUNNER_SYSTEMD_NATIVE_LAUNCHES` — migrate remaining VM launches and remove superseded code
+
+**Blocked on the exec-server backend's process-control seam.** Move Claude, Codex app-server, setup/bootstrap and
+workspace helpers to the VM backend. Preserve streams, credentials, journals and exact seal/ack
+ordering. Remove superseded VM supervision/cgroup plumbing while retaining container callers.
+Exit: the [proof matrix](runner_supervision.md#proof-matrix) covers the migrated launch families,
+runtime documentation describes implemented behavior, and the completed supervision plan is retired.
 
 ### `DECLARATIVE_SESSIONS_DESIGN` — long-running Sessions and managed subscriptions through Flux
 
