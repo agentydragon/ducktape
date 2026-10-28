@@ -77,6 +77,55 @@ fn direct_literal_const_import_does_not_promote_unrelated_callbacks() {
 }
 
 #[test]
+fn imported_template_and_numeric_values_survive_copy_and_reexport_chains() {
+    let source = "import { prefix, forwardedPrefix, limit } from './bridge.js';\n\
+                  let later = 0;\nconst callback = () => later;\n\
+                  globalThis.saved = callback;\n\
+                  const computed = `${prefix}${forwardedPrefix}${4 * limit + 256}`;\n\
+                  later = 42;\nconsole.log(computed, callback());\n";
+    let peers = [
+        (
+            "static/bridge",
+            "import { prefix as providerPrefix, limit } from './provider.js';\n\
+             const copiedPrefix = providerPrefix;\n\
+             const copiedLimit = limit;\n\
+             export { copiedPrefix as prefix, copiedLimit as limit };\n\
+             export { prefix as forwardedPrefix } from './provider.js';\n",
+        ),
+        (
+            "static/provider",
+            "if (false) import.meta.require('./deferred-host-module.js');\n\
+             const family = { [Symbol.toPrimitive]() { console.log('coerce'); return 'notes'; } };\n\
+             export const prefix = `tool_${family}_`;\n\
+             const amount = 2 * 3;\n\
+             export const limit = amount;\n",
+        ),
+    ];
+    let fixture = run_fixture(FixtureOpts::new(source, split_modules()).with_extra_chunks(&peers));
+    assert_preserved_entry_output(&fixture, "coerce\ntool_notes_tool_notes_280 42\n");
+
+    let graph = fixture.dependency_graph();
+    let computed = source_unit_for_binding(&graph, "computed");
+    let later = source_unit_for_binding(&graph, "later");
+    assert!(!graph.edges.iter().any(|edge| {
+        edge.source == computed
+            && edge.target == later
+            && edge.edge_kind == DepKind::EagerUse
+            && edge.constrains_init_order
+    }));
+    assert!(
+        !graph
+            .nodes
+            .iter()
+            .find(|node| node.id == computed)
+            .unwrap()
+            .purity
+            .is_pure(),
+        "primitive result inference must not erase coercion effects"
+    );
+}
+
+#[test]
 fn immutable_var_and_direct_export_aliases_are_primitive() {
     for peer in [
         "export var limit = 2;\n",
@@ -169,13 +218,83 @@ fn mutable_opaque_and_indirect_exports_stay_conservative() {
         "export var limit = 2; var limit;\n",
         "export const limit = { valueOf() { return 2; } };\n",
         "export const { limit } = { limit: 2 };\n",
-        "import { value } from './base.js'; export { value as limit };\n",
-        "import { value } from './base.js'; export const limit = value;\n",
-        "export { value as limit } from './base.js';\n",
         "export const limit = 2; void typeof module;\n",
     ] {
         assert_conservative(peer);
     }
+}
+
+fn assert_imported_chain_conservative(bridge: &str, provider: &str) {
+    let app_source = source(
+        "import { limit as bytes } from './bridge.js';",
+        "4 * bytes + 256",
+    );
+    let peers = [("static/bridge", bridge), ("static/provider", provider)];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(&app_source, split_modules()).with_extra_chunks(&peers),
+        &["compute", "later"],
+        &["eager_use"],
+    );
+}
+
+#[test]
+fn conditional_and_logical_results_require_primitive_value_alternatives() {
+    let app_source = source(
+        "import { conditional, logical } from './bridge.js';",
+        "4 * conditional + logical",
+    );
+    let peers = [
+        (
+            "static/bridge",
+            "import { limit } from './provider.js';\n\
+             const conditional = globalThis.flag ? limit : 3;\n\
+             const logical = limit && 2;\n\
+             export { conditional, logical };\n",
+        ),
+        ("static/provider", "export const limit = 6;\n"),
+    ];
+    let fixture =
+        run_fixture(FixtureOpts::new(&app_source, split_modules()).with_extra_chunks(&peers));
+    assert_preserved_entry_output(&fixture, "14 42\n");
+}
+
+#[test]
+fn object_branches_rebinding_accessors_and_unseeded_import_cycles_stay_unknown() {
+    let provider = "export const limit = 2;\n";
+    assert_imported_chain_conservative(
+        "import { limit } from './provider.js';\n\
+         export const copied = globalThis.flag ? limit : { valueOf() { return 2; } };\n\
+         export { copied as limit };\n",
+        provider,
+    );
+    assert_imported_chain_conservative(
+        "import { limit } from './provider.js';\n\
+         export const copied = globalThis.flag && { valueOf() { return 2; } };\n\
+         export { copied as limit };\n",
+        provider,
+    );
+    assert_imported_chain_conservative(
+        "import { limit } from './provider.js';\n\
+         var copied = limit;\n\
+         copied = { valueOf() { return 2; } };\n\
+         export { copied as limit };\n",
+        provider,
+    );
+    assert_imported_chain_conservative(
+        "import { limit as sourceLimit } from './provider.js';\n\
+         var limit = sourceLimit;\n\
+         void typeof module;\n\
+         Object.defineProperty(exports, 'limit', { get() { return { valueOf() { return 2; } }; } });\n\
+         export { limit };\n",
+        provider,
+    );
+    assert_imported_chain_conservative(
+        "import { value as back } from './provider.js';\n\
+         const result = back;\n\
+         export { result as limit };\n",
+        "import { limit } from './bridge.js';\n\
+         export const value = limit;\n",
+    );
 }
 
 #[test]

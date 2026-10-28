@@ -117,20 +117,32 @@ and [ProxyCreate](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-
 ## Imported primitive coercion timing
 
 The synchronous-effect interpreter can omit callback promotion for implicit
-coercion of an exact direct imported binding when the provider proves that all
-its possible values are primitive. The canonical shallow analysis recognizes
-string, numeric, boolean, null, and BigInt literals in top-level `const` or
-single-declaration `var` bindings, direct named export aliases, and literal or
-binding default exports. A `var` cell can also contain its hoisted `undefined`;
-that value cannot execute a conversion callback either.
+coercion of an exact named/default imported binding when the provider proves
+that every value read from the export is primitive. The canonical shallow
+analysis recognizes primitive literals, untagged templates, unary/update and
+non-logical binary expressions that return a primitive when they complete, and
+the final value of a sequence. Conditional and logical expressions qualify
+only when every possible returned value is primitive. This is a result-type
+fact, not a purity fact: evaluating a template or operator may still coerce an
+object, call user code, or throw, and those initializer effects remain in the
+source-order graph. A `var` cell can also contain its hoisted `undefined`, which
+cannot execute a conversion callback.
 
-The provider must be ESM without CommonJS interop, direct eval, or `with` anywhere
-in its body, including deferred functions. A whole-module hygienic declaration
-and write census rejects duplicate declarations, assignment/update/loop writes,
-and writes in closures. `let`, opaque initializers, local value-copy aliases,
-reexports, imported initializers, namespace properties, and vendor-affected
-providers remain opaque. The cross-module resolver projects only direct named
-or default imports; a shadowing local binding does not inherit the fact.
+Stable top-level `const` or `var` bindings can copy primitive values through
+local aliases, named/default imports, and named/default re-exports. Local
+binding dependencies use the hygienic declaration/write census; cross-module
+dependencies use the artifact import resolver and a seedless fixedpoint. Every
+dependency must resolve to a proven primitive export, so an unsupported alias
+cycle remains unknown. The provider must be ESM without an own CommonJS export
+surface, direct `eval`, or `with` anywhere in its body, including deferred
+functions. The separate full CommonJS-interop fact still includes request-only
+host loaders and continues to guard generic importer-reentry analysis; those
+requests do not invalidate the primitive type of an explicit ESM binding.
+Primitive facts only project through artifact imports and re-exports that
+resolve to the target chunk's entry file. Duplicate
+declarations, assignment/update/loop writes, writes in closures, `let`, opaque
+initializers, namespace properties, and vendor-affected providers remain
+conservative. A shadowing local binding does not inherit an import's fact.
 
 This is an inferred callback-timing fact, separate from purity and author
 assertions. It does not remove eager binding reads, relax live-binding or TDZ

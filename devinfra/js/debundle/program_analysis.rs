@@ -154,20 +154,48 @@ pub struct DeclarationRecord {
 }
 
 enum PrimitiveExportSource {
-    Literal,
-    Binding(Id),
+    Bindings(BTreeSet<Id>),
+    ReExport { source: String, export: String },
 }
 
-fn primitive_literal(expression: &Expr) -> bool {
-    matches!(
-        expression.unwrap_parens(),
+/// Bindings whose value is needed to prove that a normally-completing
+/// expression returns a primitive. This is deliberately separate from purity:
+/// templates and operators can coerce objects and run user code while still
+/// producing a primitive result when they complete.
+fn primitive_value_requirements(expression: &Expr) -> Option<BTreeSet<Id>> {
+    let requirements = match expression.unwrap_parens() {
         Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
-    )
+        | Expr::Tpl(_)
+        | Expr::Unary(_)
+        | Expr::Update(_) => return Some(BTreeSet::new()),
+        Expr::Ident(id) => return Some(BTreeSet::from([id.to_id()])),
+        Expr::Bin(binary) => match binary.op {
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing => {
+                let mut requirements = primitive_value_requirements(&binary.left)?;
+                requirements.extend(primitive_value_requirements(&binary.right)?);
+                requirements
+            }
+            _ => return Some(BTreeSet::new()),
+        },
+        Expr::Cond(cond) => {
+            let mut requirements = primitive_value_requirements(&cond.cons)?;
+            requirements.extend(primitive_value_requirements(&cond.alt)?);
+            requirements
+        }
+        Expr::Seq(sequence) => {
+            return sequence
+                .exprs
+                .last()
+                .and_then(|last| primitive_value_requirements(last));
+        }
+        _ => return None,
+    };
+    Some(requirements)
 }
 
 fn collect_primitive_export_candidates(
     item: &ModuleItem,
-    bindings: &mut BTreeSet<Id>,
+    bindings: &mut BTreeMap<Id, BTreeSet<Id>>,
     exports: &mut BTreeMap<String, Vec<Option<PrimitiveExportSource>>>,
 ) {
     let declaration = match item {
@@ -180,9 +208,10 @@ fn collect_primitive_export_candidates(
     {
         for decl in &var.decls {
             if let Pat::Ident(id) = &decl.name
-                && decl.init.as_deref().is_some_and(primitive_literal)
+                && let Some(initializer) = decl.init.as_deref()
+                && let Some(requirements) = primitive_value_requirements(initializer)
             {
-                bindings.insert(id.id.to_id());
+                bindings.insert(id.id.to_id(), requirements);
             }
         }
     }
@@ -192,25 +221,39 @@ fn collect_primitive_export_candidates(
                 exports
                     .entry(id.0.to_string())
                     .or_default()
-                    .push(Some(PrimitiveExportSource::Binding(id)));
+                    .push(Some(PrimitiveExportSource::Bindings(BTreeSet::from([id]))));
             }
         }
         ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
+            if named.type_only {
+                return;
+            }
             for specifier in &named.specifiers {
                 match specifier {
                     ExportSpecifier::Named(specifier) => {
+                        if specifier.is_type_only {
+                            continue;
+                        }
                         let name = module_export_name(
                             specifier.exported.as_ref().unwrap_or(&specifier.orig),
                         );
-                        let source = if named.src.is_none() {
+                        let source = if let Some(source) = &named.src {
+                            named
+                                .with
+                                .is_none()
+                                .then(|| PrimitiveExportSource::ReExport {
+                                    source: str_value(source),
+                                    export: module_export_name(&specifier.orig),
+                                })
+                        } else {
                             match &specifier.orig {
                                 ModuleExportName::Ident(id) => {
-                                    Some(PrimitiveExportSource::Binding(id.to_id()))
+                                    Some(PrimitiveExportSource::Bindings(BTreeSet::from([
+                                        id.to_id()
+                                    ])))
                                 }
                                 _ => None,
                             }
-                        } else {
-                            None
                         };
                         exports.entry(name).or_default().push(source);
                     }
@@ -224,17 +267,22 @@ fn collect_primitive_export_candidates(
                         exports
                             .entry(specifier.exported.sym.to_string())
                             .or_default()
-                            .push(None);
+                            .push(named.src.as_ref().and_then(|source| {
+                                named
+                                    .with
+                                    .is_none()
+                                    .then(|| PrimitiveExportSource::ReExport {
+                                        source: str_value(source),
+                                        export: "default".to_string(),
+                                    })
+                            }));
                     }
                 }
             }
         }
         ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default)) => {
-            let source = match default.expr.unwrap_parens() {
-                expr if primitive_literal(expr) => Some(PrimitiveExportSource::Literal),
-                Expr::Ident(id) => Some(PrimitiveExportSource::Binding(id.to_id())),
-                _ => None,
-            };
+            let source =
+                primitive_value_requirements(&default.expr).map(PrimitiveExportSource::Bindings);
             exports
                 .entry("default".to_string())
                 .or_default()
@@ -245,6 +293,24 @@ fn collect_primitive_export_candidates(
         }
         _ => {}
     }
+}
+
+fn resolve_primitive_binding_requirements(
+    requirements: &BTreeSet<Id>,
+    imported_bindings: &BTreeMap<Id, String>,
+    stable_bindings: &BTreeMap<Id, BTreeSet<String>>,
+) -> Option<BTreeSet<String>> {
+    let mut imports = BTreeSet::new();
+    for requirement in requirements {
+        if let Some(local) = imported_bindings.get(requirement) {
+            imports.insert(local.clone());
+        } else if let Some(local_imports) = stable_bindings.get(requirement) {
+            imports.extend(local_imports.iter().cloned());
+        } else {
+            return None;
+        }
+    }
+    Some(imports)
 }
 
 /// If `item` is a top-level declaration of a kind we anchor extraction on,
@@ -285,6 +351,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         observable_module_effect,
         has_rewritable_specifier,
         has_cjs_interop: visitor_has_cjs_interop,
+        has_own_cjs_export_surface: visitor_has_own_cjs_export_surface,
         binding_declarations,
         binding_writes,
         dynamic_scope,
@@ -299,6 +366,13 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                 )
             )
         });
+    let has_own_cjs_export_surface = visitor_has_own_cjs_export_surface
+        || parsed.module.body.iter().any(|item| {
+            matches!(
+                item,
+                ModuleItem::ModuleDecl(ModuleDecl::TsExportAssignment(_))
+            )
+        });
 
     let mut runtime_facts = ChunkRuntimeFacts {
         module_kind: if parsed.module.body.iter().any(
@@ -310,13 +384,19 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         },
         has_top_level_await: module_has_top_level_await(&parsed.module),
         has_cjs_interop,
+        has_own_cjs_export_surface,
         ..ChunkRuntimeFacts::default()
     };
 
-    let mut primitive_bindings = BTreeSet::new();
+    let mut primitive_binding_requirements = BTreeMap::new();
+    let mut primitive_imported_bindings = BTreeMap::new();
     let mut primitive_exports = BTreeMap::<String, Vec<Option<PrimitiveExportSource>>>::new();
     for item in &parsed.module.body {
-        collect_primitive_export_candidates(item, &mut primitive_bindings, &mut primitive_exports);
+        collect_primitive_export_candidates(
+            item,
+            &mut primitive_binding_requirements,
+            &mut primitive_exports,
+        );
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(decl)) = item {
             if import_decl_has_runtime_request(decl) {
                 runtime_facts.static_requests.push(StaticModuleRequest {
@@ -327,6 +407,24 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                         StaticModuleRequestMode::Unsupported
                     },
                 });
+            }
+            if !decl.type_only
+                && matches!(&decl.phase, ImportPhase::Evaluation)
+                && decl.with.is_none()
+            {
+                for specifier in &decl.specifiers {
+                    match specifier {
+                        ImportSpecifier::Named(named) if !named.is_type_only => {
+                            primitive_imported_bindings
+                                .insert(named.local.to_id(), named.local.sym.to_string());
+                        }
+                        ImportSpecifier::Default(default) => {
+                            primitive_imported_bindings
+                                .insert(default.local.to_id(), default.local.sym.to_string());
+                        }
+                        ImportSpecifier::Namespace(_) | ImportSpecifier::Named(_) => {}
+                    }
+                }
             }
             let import_record = describe_import(&line_index, decl);
             import_local_names.extend(
@@ -417,26 +515,64 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
     }
 
     if runtime_facts.module_kind == ChunkModuleKind::Esm
-        && !runtime_facts.has_cjs_interop
+        && !runtime_facts.has_own_cjs_export_surface
         && !dynamic_scope
     {
-        primitive_bindings
-            .retain(|id| binding_declarations.get(id) == Some(&1) && !binding_writes.contains(id));
-        runtime_facts.stable_primitive_exports = primitive_exports
+        let stable_primitive_bindings = primitive_binding_requirements
             .into_iter()
-            .filter_map(|(name, sources)| {
-                let [Some(source)] = sources.as_slice() else {
-                    return None;
-                };
-                match source {
-                    PrimitiveExportSource::Literal => Some(name),
-                    PrimitiveExportSource::Binding(id) if primitive_bindings.contains(id) => {
-                        Some(name)
-                    }
-                    _ => None,
-                }
+            .filter(|(id, _)| {
+                binding_declarations.get(id) == Some(&1) && !binding_writes.contains(id)
             })
-            .collect();
+            .collect::<BTreeMap<_, _>>();
+        let mut stable_binding_import_dependencies = BTreeMap::new();
+        loop {
+            let mut changed = false;
+            for (id, requirements) in &stable_primitive_bindings {
+                if stable_binding_import_dependencies.contains_key(id) {
+                    continue;
+                }
+                if let Some(imports) = resolve_primitive_binding_requirements(
+                    requirements,
+                    &primitive_imported_bindings,
+                    &stable_binding_import_dependencies,
+                ) {
+                    stable_binding_import_dependencies.insert(id.clone(), imports);
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        for (name, sources) in primitive_exports {
+            let [Some(source)] = sources.as_slice() else {
+                continue;
+            };
+            match source {
+                PrimitiveExportSource::Bindings(requirements) => {
+                    let Some(imports) = resolve_primitive_binding_requirements(
+                        requirements,
+                        &primitive_imported_bindings,
+                        &stable_binding_import_dependencies,
+                    ) else {
+                        continue;
+                    };
+                    if imports.is_empty() {
+                        runtime_facts.stable_primitive_exports.insert(name);
+                    } else {
+                        runtime_facts
+                            .stable_primitive_export_import_dependencies
+                            .insert(name, imports);
+                    }
+                }
+                PrimitiveExportSource::ReExport { source, export } => {
+                    runtime_facts
+                        .stable_primitive_export_reexports
+                        .insert(name, (source.clone(), export.clone()));
+                }
+            }
+        }
     }
 
     ProgramAnalysis {
@@ -585,6 +721,7 @@ struct ModuleScanVisitor {
     observable_module_effect: bool,
     has_rewritable_specifier: bool,
     has_cjs_interop: bool,
+    has_own_cjs_export_surface: bool,
     unresolved_context: SyntaxContext,
     binding_declarations: BTreeMap<Id, usize>,
     binding_writes: BTreeSet<Id>,
@@ -651,10 +788,15 @@ impl Visit for ModuleScanVisitor {
     }
 
     fn visit_ident(&mut self, node: &Ident) {
-        if node.ctxt == self.unresolved_context
-            && matches!(node.sym.as_ref(), "require" | "module" | "exports")
-        {
-            self.has_cjs_interop = true;
+        if node.ctxt == self.unresolved_context {
+            match node.sym.as_ref() {
+                "require" => self.has_cjs_interop = true,
+                "module" | "exports" => {
+                    self.has_cjs_interop = true;
+                    self.has_own_cjs_export_surface = true;
+                }
+                _ => {}
+            }
         }
     }
 
