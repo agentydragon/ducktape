@@ -1,6 +1,7 @@
 # wyrm2: missing monitor audio output
 
-2026-10-27. Current playback recovered; the original device holder is unproven.
+2026-10-27. Current playback recovered. Temporary contention reproduces the
+missing-output failure; the original device holder is unproven.
 
 ## Failure and evidence
 
@@ -59,7 +60,67 @@ file-descriptor capture exists to prove that owner.
 The user's audio services had already been running since 08:47, before the
 graphical login. The account also belongs to the `audio` group. These facts
 are relevant to investigating cross-session device access, but do not prove
-the original holder. No persistent configuration change was made. If this
-recurs, capture `/proc/asound/card1/pcm3p/sub0/status` and privileged
-`fuser -v /dev/snd/*` while the device is busy, together with both sessions'
-audio logs, before recreating the profile.
+the original holder. The SSH session began at 08:45:29; the graphical session
+was not created until 15:07:38, about 11 seconds after the failure. Thus the
+user's failed activation occurred before their graphical login, while the
+greeter still owned the active seat. Both WirePlumber instances use separate
+session D-Bus connections for `ReserveDevice1`, so those reservations do not
+coordinate device access across the two users.
+
+## Controlled reproduction
+
+At 17:24, an isolated PipeWire daemon held the unused QEMU playback device
+`hw:3,0` open. The monitor output continued playing Chrome throughout.
+Cycling the QEMU card's profile Off and back to its original Analog Stereo
+Duplex profile reproduced the original error chain:
+
+```text
+pipewire[520424]: spa.alsa: 'front:3': playback open failed: Device or resource busy
+pipewire[520424]: mod.adapter: ... can't get format: Device or resource busy
+wireplumber[520425]: s-monitors: Failed to create alsa_output.pci-0000_08_0c.0.analog-stereo: Object activation aborted: PipeWire proxy destroyed
+```
+
+After the isolated daemon released the PCM device, its ALSA status was
+`closed`, but the main session's output was still absent at one and ten
+seconds. Another profile cycle restored it. The QEMU profile was restored
+and the isolated daemon stopped after the experiment.
+
+This reproduces persistent output loss after temporary contention. It does
+not identify the original HDMI holder or reproduce the complete GDM handoff.
+
+## Why releasing the device does not repair the output
+
+In PipeWire 1.6.6's `spa/plugins/alsa/alsa-udev.c`,
+`emit_added_object_info()` checks busy PCMs before marking the card emitted.
+`process_card()` retries unavailable cards on permission/close notifications,
+but only creates a card when `card->emitted` is false. A node creation failure
+later in WirePlumber does not reset that card flag. Consequently, releasing
+the PCM does not recreate the failed node of an already emitted card.
+
+WirePlumber 0.5.14's `src/scripts/monitors/alsa.lua` logs the node activation
+failure without retrying. Its D-Bus module defaults to the session bus
+(`modules/module-dbus-connection.c`), as selected explicitly by the shipped
+configuration's `support.dbus` component.
+
+## Prevention candidates and remaining proof
+
+1. **Restore seat-controlled hardware access.** Remove static `audio` group
+   membership for wyrm2's operator account and rely on logind's active-seat
+   ACLs. The current group membership grants device access even before a
+   graphical login; the active session's named ACL grants that access when
+   it is needed. This targets the observed pre-login overlap. It requires a
+   fresh user manager/session to test: changing the group database does not
+   remove supplementary groups from existing PipeWire processes. Validate
+   physical login, monitor sleep/wake, and required remote/streaming use
+   before treating it as a verified prevention.
+2. **Handle failed node creation upstream.** Add bounded recovery after an
+   ALSA node fails to bind, accounting for device removal and profile changes.
+   The controlled reproduction is a regression case for this missing retry.
+   WirePlumber 0.5.18 adds recovery for nodes that enter the error state after
+   successful activation, but its activation failure callback still does not
+   retry. An upgrade alone has not been shown to cover this failure.
+
+No persistent configuration change was made. If the original conflict recurs,
+capture `/proc/asound/card1/pcm3p/sub0/status` and privileged
+`fuser -v /dev/snd/*` while it is busy, together with both sessions' audio logs,
+before recreating the profile.
