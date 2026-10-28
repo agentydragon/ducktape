@@ -75,12 +75,12 @@ agentplane_vitest_test(
     deps = [
         ":connection_service_client",
         ":consent",
-        ":fixture",
-        ":test_support",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend/actions:testing",
+        "//agentplane/app/frontend/actions/testing:harness",
+        "//agentplane/app/frontend/connections/testing:fixture",
+        "//agentplane/app/frontend/connections/testing:test_support",
     ],
 )
 
@@ -147,37 +147,14 @@ agentplane_vitest_test(
     srcs = ["management.test.tsx"],
     deps = [
         ":connection_service_client",
-        ":fixture",
         ":management",
         ":models",
-        ":test_support",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend/actions:testing",
-    ],
-)
-
-ts_library(
-    name = "fixture",
-    testonly = True,
-    srcs = ["fixture.ts"],
-    tsconfig = TSCONFIG,
-    deps = [":models"],
-)
-
-ts_library(
-    name = "test_support",
-    testonly = True,
-    srcs = ["test_support.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
+        "//agentplane/app/frontend/actions/testing:harness",
+        "//agentplane/app/frontend/connections/testing:fixture",
+        "//agentplane/app/frontend/connections/testing:test_support",
     ],
 )

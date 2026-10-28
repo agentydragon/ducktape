@@ -4,9 +4,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
-from agentplane.app.frontend.testing.visual_assertions import _focus, _open_phone_navigation
-from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from agentplane.app.frontend.visual_app import (
+from agentplane.app.frontend.testing.app import (
     DELETED_SANDBOX_THREAD,
     IDLE_THREAD,
     RUNNING_THREAD,
@@ -16,6 +14,8 @@ from agentplane.app.frontend.visual_app import (
     Flag,
     Scene,
 )
+from agentplane.app.frontend.testing.visual_assertions import _focus, _open_phone_navigation
+from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
 from util.testing.visual_capture import VisualPage
 
 pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")

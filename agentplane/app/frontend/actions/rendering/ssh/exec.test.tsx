@@ -2,7 +2,7 @@
 import { act, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { mount } from "../../testing";
+import { mount } from "../../testing/harness";
 import { renderPreview } from "../entry";
 import { renderResultPreview } from "../result_entry";
 import { execArgumentsPreview, execCollapsedPreview, execResultPreview } from "./exec";

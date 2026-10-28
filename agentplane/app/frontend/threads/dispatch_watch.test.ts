@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
-import { stubWatchFetch } from "../watch_fixture";
+import { stubWatchFetch } from "../testing/watch";
 import { watchDispatches } from "./dispatch_watch";
 import { LocalCommands } from "./local_commands";
 

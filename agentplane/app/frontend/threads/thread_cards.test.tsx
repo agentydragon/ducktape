@@ -9,8 +9,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { EntityCard } from "./thread_cards";
-import { testItem } from "./thread_entity_fixture";
-import { badgeLabels, entity, reference, serving, toggle } from "./thread_state_fixture";
+import { testItem } from "./testing/entity";
+import { badgeLabels, entity, reference, serving, toggle } from "./testing/state";
 import { ThreadSyncContext, type ThreadEntity } from "./thread_sync";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

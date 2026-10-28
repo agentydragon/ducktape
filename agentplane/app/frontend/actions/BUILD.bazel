@@ -78,20 +78,6 @@ ts_library(
 )
 
 ts_library(
-    name = "proto_test_fixtures",
-    testonly = True,
-    srcs = ["proto_test_fixtures.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":types",
-        "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/action_service:action_service_pb",
-        "//agentplane/action_service:operator_action_service_pb",
-        "//agentplane/app/frontend:mcp_linkage_client",
-    ],
-)
-
-ts_library(
     name = "call",
     srcs = ["call.tsx"],
     tsconfig = TSCONFIG,
@@ -156,12 +142,12 @@ agentplane_vitest_test(
     deps = [
         ":action_client",
         ":requests",
-        ":testing",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:stream_status",
+        "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
 
@@ -171,11 +157,11 @@ agentplane_vitest_test(
     deps = [
         ":requests",
         ":sidebar",
-        ":testing",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
 
@@ -203,11 +189,11 @@ agentplane_vitest_test(
         ":detail",
         ":requests",
         ":sidebar",
-        ":testing",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
 
@@ -300,30 +286,12 @@ agentplane_vitest_test(
         ":action_client",
         ":history",
         ":requests",
-        ":testing",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/actions/testing:harness",
         "//util/frontend:test_intersection_observer",
-    ],
-)
-
-ts_library(
-    name = "testing",
-    testonly = True,
-    srcs = ["testing.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":action_client",
-        ":proto_test_fixtures",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
-        "//agentplane/app/frontend:client",
     ],
 )
 

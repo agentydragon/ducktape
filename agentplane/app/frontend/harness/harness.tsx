@@ -14,7 +14,7 @@ import {
   routes,
   UNANSWERED,
 } from "./network";
-import { TEST_REASONING_EFFORTS } from "../test_model_catalog";
+import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import "@mantine/core/styles.css";
 
 import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
@@ -38,8 +38,8 @@ import {
   mcpLinkagesSnapshotCompleteProtoJson,
   mcpLinkagesSnapshotProtoJson,
   mcpLinkageUpsertProtoJson,
-} from "../actions/proto_test_fixtures";
-import { sampleConnection } from "../connections/fixture";
+} from "../actions/testing/proto_fixtures";
+import { sampleConnection } from "../connections/testing/fixture";
 import type { Connection } from "../connections/models";
 import { type BindingView, type PolicySetView, type Decision, type SandboxView } from "../sandboxes/client";
 

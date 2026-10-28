@@ -265,10 +265,10 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:app",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:langfuse_search",
-        "//agentplane/app/frontend:langfuse_search_fixture",
         "//agentplane/app/frontend:live",
-        "//agentplane/app/frontend:test_model_catalog",
         "//agentplane/app/frontend:trace_search",
+        "//agentplane/app/frontend/testing:langfuse_search",
+        "//agentplane/app/frontend/testing:model_catalog",
         "//agentplane/app/frontend/threads:client",
     ],
 )
@@ -287,8 +287,8 @@ agentplane_vitest_test(
         "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend:test_model_catalog",
         "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/testing:model_catalog",
     ],
 )
 

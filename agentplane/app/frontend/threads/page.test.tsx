@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { create } from "@bufbuild/protobuf";
-import { TEST_REASONING_EFFORTS } from "../test_model_catalog";
+import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
@@ -14,7 +14,7 @@ import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import type * as ThreadClientModule from "./client";
 import type * as ModelCatalogModule from "../model_catalog";
 import type * as SandboxClientModule from "../sandboxes/client";
-import { LANGFUSE_SEARCH_SETTINGS } from "../langfuse_search_fixture";
+import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { api } from "../client";
 import { submitInput, changeModel, changeReasoningEffort, interruptTurn, getThread, type ThreadView } from "./client";
 import { models } from "../model_catalog";
@@ -32,20 +32,11 @@ import { HistoryRowView } from "./history_row_views";
 import { RetainedDisclosureProvider } from "./retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
 import { THREAD_STATUS_MARKS } from "../status_mark";
-import { testItem } from "./thread_entity_fixture";
-import {
-  badgeLabels,
-  entity,
-  reference,
-  serving,
-  THREAD,
-  threadState,
-  toggle,
-  viewState,
-} from "./thread_state_fixture";
+import { testItem } from "./testing/entity";
+import { badgeLabels, entity, reference, serving, THREAD, threadState, toggle, viewState } from "./testing/state";
 import { ThreadSyncContext, type ThreadEntity, type ThreadState, type ThreadSync } from "./thread_sync";
 import { TopbarContext } from "../topbar";
-import { type ServedWatch, stubWatchFetch } from "../watch_fixture";
+import { type ServedWatch, stubWatchFetch } from "../testing/watch";
 
 vi.mock("./client", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadClientModule>()),

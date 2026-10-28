@@ -2,7 +2,7 @@
 import { act } from "react";
 import { describe, expect, it } from "vitest";
 
-import { mount } from "../../testing";
+import { mount } from "../../testing/harness";
 import {
   actionCompactCardExpands,
   actionOffersCardDecisionButtons,

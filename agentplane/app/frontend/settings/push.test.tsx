@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
-import { ServedWatch } from "../watch_fixture";
+import { ServedWatch } from "../testing/watch";
 import { PushSettings } from "./push";
 
 const PUSH_PATH = "/upstream/actions/v1/operator/push";

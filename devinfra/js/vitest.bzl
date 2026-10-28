@@ -14,6 +14,7 @@ in the package that no `vitest_test` in it lists in `srcs`. `glob` stops at pack
 so each package holding specs calls it; nothing checks that one that does not has no specs.
 """
 
+load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
@@ -41,7 +42,7 @@ def vitest_config(name, environment, setup_files = [], data = []):
             pragma: `node`, `happy-dom` or `jsdom`. Required: whether a package's specs get a DOM
             is its own decision, and a default would be wrong for most of them. A spec's pragma
             may name another one, whose package must then be in `data`.
-        setup_files: Files, relative to the package, vitest runs before each spec file.
+        setup_files: Source-file labels, relative or absolute, run before each spec file.
         data: Further runtime files, such as the packages pragmas select.
     """
     if environment not in _ENVIRONMENT_PACKAGES:
@@ -49,7 +50,11 @@ def vitest_config(name, environment, setup_files = [], data = []):
 
     test = {"environment": environment, "include": ["**/*.test.js"]}
     if setup_files:
-        test["setupFiles"] = ["./" + setup_file for setup_file in setup_files]
+        setup_paths = []
+        for setup_file in setup_files:
+            label = native.package_relative_label(setup_file)
+            setup_paths.append("./" + paths.relativize(label.package + "/" + label.name, native.package_name()))
+        test["setupFiles"] = setup_paths
     write_file(
         name = name + "_file",
         out = name + ".mjs",

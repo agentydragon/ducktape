@@ -1,0 +1,47 @@
+load("//devinfra/js:ts_library.bzl", "ts_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane/app:__subpackages__"],
+)
+
+TSCONFIG = "//agentplane/app/frontend:tsconfig"
+
+ts_library(
+    name = "proto_fixtures",
+    srcs = ["proto_fixtures.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/action_service:action_service_pb",
+        "//agentplane/action_service:operator_action_service_pb",
+        "//agentplane/app/frontend:mcp_linkage_client",
+        "//agentplane/app/frontend/actions:types",
+    ],
+)
+
+ts_library(
+    name = "harness",
+    srcs = ["harness.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":proto_fixtures",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend/actions:action_client",
+    ],
+)
+
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = [
+        "harness.tsx",
+        "proto_fixtures.ts",
+    ],
+    visibility = ["//agentplane/app/frontend:__pkg__"],
+)

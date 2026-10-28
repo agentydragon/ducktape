@@ -3,9 +3,9 @@ import { type ReactNode, act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, type Mock, vi } from "vitest";
 
-import { api } from "../client";
-import type { ActionGroupView, ActionRequestView, ActionState } from "./client";
-import type { McpLinkageView } from "../mcp_linkage_client";
+import { api } from "../../client";
+import type { ActionGroupView, ActionRequestView, ActionState } from "../client";
+import type { McpLinkageView } from "../../mcp_linkage_client";
 import {
   actionGroupUpsertProtoJson,
   actionGroupsSnapshotCompleteProtoJson,
@@ -23,8 +23,8 @@ import {
   mcpLinkagesSnapshotCompleteProtoJson,
   mcpLinkagesSnapshotProtoJson,
   startMcpLinkageProtoJson,
-} from "./proto_test_fixtures";
-import type { ActionHistoryPage } from "./types";
+} from "./proto_fixtures";
+import type { ActionHistoryPage } from "../types";
 
 /** Shared fixtures, stand-ins for the network, and mounting for the Action views' suites. */
 

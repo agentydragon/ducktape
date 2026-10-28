@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { ActionsAttentionBar, ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
-import { mount, request, send, unmountLast } from "./testing";
+import { mount, request, send, unmountLast } from "./testing/harness";
 import type { ActionRequestView } from "./types";
 
 function CurrentPath(): JSX.Element {

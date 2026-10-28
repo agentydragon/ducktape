@@ -4,9 +4,9 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Page, expect
 
+from agentplane.app.frontend.testing.app import IDLE_THREAD, AgentplaneFixture, Flag
 from agentplane.app.frontend.testing.visual_assertions import _open_settings
 from agentplane.app.frontend.testing.visual_fixtures import MOBILE_ONLY
-from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture, Flag
 from util.testing.visual_capture import VisualPage
 
 pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")

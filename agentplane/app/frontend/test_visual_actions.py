@@ -7,9 +7,9 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
+from agentplane.app.frontend.testing.app import IDLE_THREAD, AgentplaneFixture
 from agentplane.app.frontend.testing.visual_assertions import _open_phone_navigation
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE
-from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
 from util.testing.page_capture import wait_for_stable
 from util.testing.visual_capture import VisualPage
 

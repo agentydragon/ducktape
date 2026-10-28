@@ -1,7 +1,7 @@
 import { act } from "react";
 
-import type { ThreadView } from "./client";
-import type { PayloadRef, ThreadEntity, ThreadState, ThreadSync } from "./thread_sync";
+import type { ThreadView } from "../client";
+import type { PayloadRef, ThreadEntity, ThreadState, ThreadSync } from "../thread_sync";
 
 export const THREAD: ThreadView = {
   id: "10000000-0000-4000-8000-000000000001",

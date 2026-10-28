@@ -2,7 +2,7 @@
 import { act, type JSX, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { mount } from "./actions/testing";
+import { mount } from "./actions/testing/harness";
 import { ClampedBlock, lineCount } from "./clamped_block";
 
 // happy-dom does no layout, so the content's height is whatever a test says it is.

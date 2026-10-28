@@ -82,8 +82,8 @@ vitest_test(
         "//:node_modules/vitest",
         "//agentplane/action_service:action_service_pb",
         "//agentplane/action_service:operator_action_service_pb",
-        "//agentplane/app/frontend/actions:proto_test_fixtures",
         "//agentplane/app/frontend/actions:types",
+        "//agentplane/app/frontend/actions/testing:proto_fixtures",
     ],
 )
 

@@ -7,6 +7,7 @@ import pytest_asyncio
 import pytest_bazel
 from playwright.async_api import Page, expect
 
+from agentplane.app.frontend.testing.app import IDLE_THREAD, RUNNING_THREAD, SUSPENDED_THREAD, AgentplaneFixture, Scene
 from agentplane.app.frontend.testing.visual_assertions import (
     _expand_tool_steps,
     _focus,
@@ -20,7 +21,6 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _tool_steps,
 )
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, SUSPENDED_THREAD, AgentplaneFixture, Scene
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, MOBILE_TOUCH, Viewport
 from util.testing.visual_capture import VisualPage

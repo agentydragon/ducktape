@@ -3,7 +3,7 @@
 import pytest
 import pytest_asyncio
 
-from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture, Scene
+from agentplane.app.frontend.testing.app import IDLE_THREAD, AgentplaneFixture, Scene
 from util.testing.viewports import DESKTOP, MOBILE, Viewport
 from util.testing.visual_capture import VisualPage
 

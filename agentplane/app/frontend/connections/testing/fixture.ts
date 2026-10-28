@@ -1,4 +1,4 @@
-import type { Connection } from "./models";
+import type { Connection } from "../models";
 
 export function sampleConnection(): Connection {
   return {

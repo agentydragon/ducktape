@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { Verdict as ProtoVerdict } from "../../../action_service/action_service_pb";
 import { DecideActionRequestRequestSchema } from "../../../action_service/operator_action_service_pb";
 import type { ActionRequestView } from "../actions/types";
-import { decideActionRequestProtoJson, listActionRequestsProtoJson } from "../actions/proto_test_fixtures";
+import { decideActionRequestProtoJson, listActionRequestsProtoJson } from "../actions/testing/proto_fixtures";
 
 type PushMessage =
   | {

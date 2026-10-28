@@ -6,7 +6,7 @@ import httpx
 import pytest_bazel
 from testcontainers.core.container import DockerContainer
 
-from agentplane.app.frontend.serving.image import IMAGE
+from agentplane.app.frontend.serving.testing.image import IMAGE
 from util.oci import load_oci_image
 
 

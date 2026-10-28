@@ -115,11 +115,11 @@ agentplane_vitest_test(
     srcs = ["history_rows.test.ts"],
     deps = [
         ":history_rows",
-        ":thread_entity_fixture",
         ":thread_sync",
         ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/threads/testing:entity",
         "//agentplane/proto:event_pb",
     ],
 )
@@ -144,7 +144,7 @@ agentplane_vitest_test(
         ":local_commands",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend:watch_fixture",
+        "//agentplane/app/frontend/testing:watch",
         "//agentplane/proto:command_pb",
     ],
 )
@@ -335,8 +335,6 @@ agentplane_vitest_test(
         ":local_commands",
         ":page",
         ":retained_disclosures",
-        ":thread_entity_fixture",
-        ":thread_state_fixture",
         ":thread_sync",
         ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
@@ -349,16 +347,18 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:langfuse_search",
-        "//agentplane/app/frontend:langfuse_search_fixture",
         "//agentplane/app/frontend:model_catalog",
         "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend:stream_status",
-        "//agentplane/app/frontend:test_model_catalog",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend:trace_search",
-        "//agentplane/app/frontend:watch_fixture",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/app/frontend/testing:langfuse_search",
+        "//agentplane/app/frontend/testing:model_catalog",
+        "//agentplane/app/frontend/testing:watch",
+        "//agentplane/app/frontend/threads/testing:entity",
+        "//agentplane/app/frontend/threads/testing:state",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
@@ -453,8 +453,6 @@ agentplane_vitest_test(
     deps = [
         ":retained_disclosures",
         ":thread_cards",
-        ":thread_entity_fixture",
-        ":thread_state_fixture",
         ":thread_sync",
         ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
@@ -464,6 +462,8 @@ agentplane_vitest_test(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/threads/testing:entity",
+        "//agentplane/app/frontend/threads/testing:state",
         "//agentplane/proto:event_pb",
     ],
 )
@@ -557,31 +557,6 @@ agentplane_vitest_test(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "thread_entity_fixture",
-    testonly = True,
-    srcs = ["thread_entity_fixture.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":thread_sync",
-        "//agentplane/proto:event_pb",
-    ],
-)
-
-ts_library(
-    name = "thread_state_fixture",
-    testonly = True,
-    srcs = ["thread_state_fixture.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":thread_sync",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/app/frontend:client",
     ],
 )
 

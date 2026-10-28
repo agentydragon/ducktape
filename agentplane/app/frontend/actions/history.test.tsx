@@ -20,7 +20,7 @@ import {
   send,
   sshExec,
   unmountLast,
-} from "./testing";
+} from "./testing/harness";
 
 async function showNextPage(container: HTMLElement): Promise<void> {
   const sentinel = container.querySelector('[data-testid="action-history-sentinel"]');

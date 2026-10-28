@@ -1,3 +1,4 @@
+load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/python:defs.bzl", "py_library")
 
 package(
@@ -20,10 +21,61 @@ py_library(
     name = "visual_fixtures",
     srcs = ["visual_fixtures.py"],
     deps = [
-        "//agentplane/app/frontend:visual_app",
+        ":app",
         "//util/testing:viewports",
         "//util/testing:visual_capture",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],
+)
+
+TSCONFIG = "//agentplane/app/frontend:tsconfig"
+
+ts_library(
+    name = "model_catalog",
+    srcs = ["model_catalog.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:model_catalog",
+    ],
+)
+
+ts_library(
+    name = "langfuse_search",
+    srcs = ["langfuse_search.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:langfuse_search",
+    ],
+)
+
+ts_library(
+    name = "watch",
+    srcs = ["watch.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//:node_modules/vitest"],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    deps = ["@pypi//playwright"],
+)
+
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = [
+        "langfuse_search.ts",
+        "model_catalog.ts",
+        "setup.ts",
+        "watch.ts",
+    ],
+    visibility = ["//agentplane/app/frontend:__pkg__"],
+)
+
+exports_files(
+    ["setup.ts"],
+    visibility = ["//agentplane/app/frontend:__pkg__"],
 )

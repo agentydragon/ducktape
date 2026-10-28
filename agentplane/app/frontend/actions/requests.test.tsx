@@ -17,7 +17,7 @@ import {
   send,
   sshExec,
   unmountLast,
-} from "./testing";
+} from "./testing/harness";
 
 describe("ActionRequests", () => {
   it("shows a refused decision's structured error", async () => {

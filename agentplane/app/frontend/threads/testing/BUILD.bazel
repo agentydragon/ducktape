@@ -1,0 +1,40 @@
+load("//devinfra/js:ts_library.bzl", "ts_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane/app:__subpackages__"],
+)
+
+TSCONFIG = "//agentplane/app/frontend:tsconfig"
+
+ts_library(
+    name = "entity",
+    srcs = ["entity.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//agentplane/app/frontend/threads:thread_sync",
+        "//agentplane/proto:event_pb",
+    ],
+)
+
+ts_library(
+    name = "state",
+    srcs = ["state.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend/threads:client",
+        "//agentplane/app/frontend/threads:thread_sync",
+    ],
+)
+
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = [
+        "entity.ts",
+        "state.tsx",
+    ],
+    visibility = ["//agentplane/app/frontend:__pkg__"],
+)

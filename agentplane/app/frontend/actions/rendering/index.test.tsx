@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import { CallToolResultView, type CallToolResult, parseCallToolResult } from "../call_tool_result";
-import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing";
+import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing/harness";
 import {
   actionCompactCardExpands,
   actionOffersCardDecisionButtons,

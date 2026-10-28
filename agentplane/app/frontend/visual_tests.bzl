@@ -17,7 +17,7 @@ def agentplane_visual_test(name, src, title, shard_count = 1):
         harness = ":visual_bundle_js",
         shard_count = shard_count,
         test_deps = [
-            ":visual_app",
+            "//agentplane/app/frontend/testing:app",
             "//agentplane/app/frontend/testing:visual_fixtures",
             "//agentplane/app/frontend/testing:visual_assertions",
             "//util/testing:page_capture",

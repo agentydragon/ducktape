@@ -14,7 +14,6 @@ load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
-load("//devinfra/python:defs.bzl", "py_library")
 load(":visual_tests.bzl", "agentplane_visual_test")
 load(":vitest.bzl", "agentplane_vitest_test")
 
@@ -24,6 +23,7 @@ TSCONFIG = ":tsconfig"
 
 filegroup(
     name = "typed_lint_srcs",
+    testonly = True,
     srcs = glob(
         [
             "*.ts",
@@ -35,11 +35,15 @@ filegroup(
     ) + [
         "//agentplane/app/frontend/actions:typed_lint_srcs",
         "//agentplane/app/frontend/actions/rendering:typed_lint_srcs",
+        "//agentplane/app/frontend/actions/testing:typed_lint_srcs",
         "//agentplane/app/frontend/bindings:typed_lint_srcs",
         "//agentplane/app/frontend/connections:typed_lint_srcs",
+        "//agentplane/app/frontend/connections/testing:typed_lint_srcs",
         "//agentplane/app/frontend/sandboxes:typed_lint_srcs",
         "//agentplane/app/frontend/service_worker:typed_lint_srcs",
+        "//agentplane/app/frontend/testing:typed_lint_srcs",
         "//agentplane/app/frontend/threads:typed_lint_srcs",
+        "//agentplane/app/frontend/threads/testing:typed_lint_srcs",
     ],
 )
 
@@ -115,17 +119,6 @@ js_openapi_schema(
 )
 
 ts_library(
-    name = "test_model_catalog",
-    testonly = True,
-    srcs = ["test_model_catalog.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":model_catalog",
-    ],
-)
-
-ts_library(
     name = "frontend_config",
     srcs = ["frontend_config.ts"],
     tsconfig = TSCONFIG,
@@ -166,24 +159,13 @@ ts_library(
     ],
 )
 
-ts_library(
-    name = "langfuse_search_fixture",
-    testonly = True,
-    srcs = ["langfuse_search_fixture.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":langfuse_search",
-    ],
-)
-
 agentplane_vitest_test(
     name = "langfuse_search_test",
     srcs = ["langfuse_search.test.ts"],
     deps = [
         ":langfuse_search",
-        ":langfuse_search_fixture",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:langfuse_search",
     ],
 )
 
@@ -328,7 +310,7 @@ agentplane_vitest_test(
         ":clamped_block",
         "//:node_modules/@types/react",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend/actions:testing",
+        "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
 
@@ -432,9 +414,9 @@ agentplane_vitest_test(
     deps = [
         ":live_stream",
         ":mcp_linkage_client",
-        ":watch_fixture",
         "//:node_modules/@types/react",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:watch",
     ],
 )
 
@@ -465,7 +447,7 @@ agentplane_vitest_test(
         "//:node_modules/react",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/actions:action_client",
-        "//agentplane/app/frontend/actions:testing",
+        "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
 
@@ -513,22 +495,14 @@ ts_library(
     ],
 )
 
-ts_library(
-    name = "watch_fixture",
-    testonly = True,
-    srcs = ["watch_fixture.ts"],
-    tsconfig = TSCONFIG,
-    deps = ["//:node_modules/vitest"],
-)
-
 agentplane_vitest_test(
     name = "watch_stream_test",
     srcs = ["watch_stream.test.ts"],
     deps = [
         ":live_stream",
-        ":watch_fixture",
         ":watch_stream",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:watch",
     ],
 )
 
@@ -910,7 +884,7 @@ vitest_config(
         "//util/frontend:test_intersection_observer",
     ],
     environment = "node",
-    setup_files = ["test_setup.ts"],
+    setup_files = ["//agentplane/app/frontend/testing:setup.ts"],
 )
 
 # Python visual tests mount the app against canned inventory and runner events.
@@ -944,7 +918,6 @@ ts_library(
         ":notification_types",
         ":shell_command_view",
         ":stream_status",
-        ":test_model_catalog",
         ":text_block",
         ":theme",
         ":visual_rollouts",
@@ -955,12 +928,13 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//agentplane/app/frontend/actions:action_client",
-        "//agentplane/app/frontend/actions:proto_test_fixtures",
         "//agentplane/app/frontend/actions/rendering:index",
-        "//agentplane/app/frontend/connections:fixture",
+        "//agentplane/app/frontend/actions/testing:proto_fixtures",
         "//agentplane/app/frontend/connections:models",
+        "//agentplane/app/frontend/connections/testing:fixture",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/app/frontend/testing:model_catalog",
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
@@ -1047,14 +1021,14 @@ agentplane_vitest_test(
     srcs = ["settings/push.test.tsx"],
     deps = [
         ":push",
-        ":watch_fixture",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend/actions:testing",
+        "//agentplane/app/frontend/actions/testing:harness",
+        "//agentplane/app/frontend/testing:watch",
     ],
 )
 
@@ -1084,12 +1058,6 @@ ts_library(
 )
 
 check_vitest_specs()
-
-py_library(
-    name = "visual_app",
-    srcs = ["visual_app.py"],
-    deps = ["@pypi//playwright"],
-)
 
 agentplane_visual_test(
     name = "visual_actions",

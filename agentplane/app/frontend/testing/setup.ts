@@ -1,5 +1,5 @@
 // Use the compiled module here and in specs so setup and tests share one observer registry.
-import { TestIntersectionObserver } from "../../../util/frontend/test_intersection_observer.js";
+import { TestIntersectionObserver } from "../../../../util/frontend/test_intersection_observer.js";
 
 // Mantine 9's autosizing Textarea listens for font-loading events. happy-dom does
 // not provide document.fonts, but the frontend tests do not need font metrics.

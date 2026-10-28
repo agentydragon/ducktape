@@ -8,7 +8,7 @@ import {
   startMcpLinkage,
   type McpLinkageWatchFrame,
 } from "./mcp_linkage_client";
-import { type ServedWatch, stubWatchFetch } from "./watch_fixture";
+import { type ServedWatch, stubWatchFetch } from "./testing/watch";
 
 let fetchMock: ReturnType<typeof stubWatchFetch>;
 let frames: McpLinkageWatchFrame[];

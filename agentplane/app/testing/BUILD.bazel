@@ -144,7 +144,7 @@ py_library(
     srcs = ["http2_proxy.py"],
     data = ["http2_proxy.conf.j2"],
     deps = [
-        "//agentplane/app/frontend/serving:image",
+        "//agentplane/app/frontend/serving/testing:image",
         "//third_party/containers:nginx_unprivileged",
         "//util:net",
         "//util:oci",

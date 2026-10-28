@@ -26,7 +26,7 @@ import {
   WatchActionRequestsResponseSchema,
   type ActionGroup,
   type ActionRequest,
-} from "../../../action_service/action_service_pb";
+} from "../../../../action_service/action_service_pb";
 import {
   DecideActionRequestResponseSchema,
   DisconnectMcpServerResponseSchema,
@@ -35,8 +35,8 @@ import {
   McpServerLinkageSchema,
   StartMcpServerLinkageResponseSchema,
   WatchMcpServersResponseSchema,
-} from "../../../action_service/operator_action_service_pb";
-import type { McpLinkageView } from "../mcp_linkage_client";
+} from "../../../../action_service/operator_action_service_pb";
+import type { McpLinkageView } from "../../mcp_linkage_client";
 import type {
   ActionGroupView,
   ActionHistoryPage,
@@ -44,7 +44,7 @@ import type {
   ActionState,
   ExecutionState,
   PolicyEvidence,
-} from "./types";
+} from "../types";
 
 function actionState(value: ActionState): ProtoActionState {
   switch (value) {

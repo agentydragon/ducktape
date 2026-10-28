@@ -6,13 +6,13 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Page, expect
 
+from agentplane.app.frontend.testing.app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture, Flag, Scene
 from agentplane.app.frontend.testing.visual_assertions import (
     _assert_phone_composer_layout,
     _open_phone_navigation,
     _open_standalone_reasoning,
 )
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture, Flag, Scene
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import SMALL_MOBILE, Viewport
 from util.testing.visual_capture import VisualPage

@@ -6,8 +6,8 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
+from agentplane.app.frontend.testing.app import AgentplaneFixture
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE
-from agentplane.app.frontend.visual_app import AgentplaneFixture
 from util.testing.viewports import DESKTOP, Viewport
 from util.testing.visual_capture import VisualPage
 

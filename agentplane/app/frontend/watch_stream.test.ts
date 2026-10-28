@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { StreamConnection } from "./live_stream";
 import { followWatch } from "./watch_stream";
-import { type ServedWatch, stubWatchFetch } from "./watch_fixture";
+import { type ServedWatch, stubWatchFetch } from "./testing/watch";
 
 let fetchMock: ReturnType<typeof stubWatchFetch>;
 let events: unknown[] = [];

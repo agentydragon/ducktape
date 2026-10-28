@@ -10,7 +10,7 @@ import {
   summarizeSetup,
   setupProgress,
 } from "./history_rows";
-import { testEntity, testItem } from "./thread_entity_fixture";
+import { testEntity, testItem } from "./testing/entity";
 import type { ThreadEntity } from "./thread_sync";
 
 /** A lifecycle entity carrying a real, parseable `Event`: grouping a lifecycle observation depends

@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import { parseCallToolResult } from "../../call_tool_result";
-import { mount } from "../../testing";
+import { mount } from "../../testing/harness";
 import { renderDetailsResult } from "../index";
 
 function parsedResult(value: unknown) {

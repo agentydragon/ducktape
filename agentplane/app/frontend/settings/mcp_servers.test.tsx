@@ -2,7 +2,7 @@
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 
-import { answerApi, mount, send, sendUpserts } from "../actions/testing";
+import { answerApi, mount, send, sendUpserts } from "../actions/testing/harness";
 import type { ActionGroupView } from "../actions/client";
 import type { McpLinkageView } from "../mcp_linkage_client";
 import { McpServers } from "./mcp_servers";

@@ -15,7 +15,7 @@ visual tests disable animations).
 
 ## Adding a visual test
 
-Configure mock services through `AgentplaneFixture` (`visual_app.py`), then explicitly mount the app
+Configure mock services through `AgentplaneFixture` (`testing/app.py`), then explicitly mount the app
 at a route (or the isolated disclosure specimen). The TypeScript harness exposes data builders and
 component mounts only: it never selects setup from a scene name or interprets a recipe object, and
 gets no switches that click, focus, scroll or inspect the DOM. Keep recorded payloads (e.g. rollout

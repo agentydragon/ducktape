@@ -203,7 +203,7 @@ agentplane_vitest_test(
         "//:node_modules/@types/react",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/actions:call_tool_result",
-        "//agentplane/app/frontend/actions:testing",
+        "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
 
@@ -215,7 +215,7 @@ agentplane_vitest_test(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend/actions:testing",
+        "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
 
@@ -229,7 +229,7 @@ agentplane_vitest_test(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend/actions:testing",
+        "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
 

@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from jinja2 import Template
 
-from agentplane.app.frontend.serving.image import IMAGE as STATIC_IMAGE
+from agentplane.app.frontend.serving.testing.image import IMAGE as STATIC_IMAGE
 from third_party.containers import nginx_unprivileged
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port

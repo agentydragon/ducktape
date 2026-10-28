@@ -8,7 +8,7 @@ import { ActionRequestDetail } from "./detail";
 import type { ActionRequestView } from "./client";
 import { ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
-import { answerApi, mount, request, send, unmountLast, type Sent } from "./testing";
+import { answerApi, mount, request, send, unmountLast, type Sent } from "./testing/harness";
 
 const ROW = {
   ...request("decision_pending", 21),
