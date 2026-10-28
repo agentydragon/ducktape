@@ -43,9 +43,11 @@ class GmailInbox:
             self.console.print(f"[dim]Fetching {len(uncached_ids)} messages (batch size {batch_size})...[/dim]")
 
         if uncached_ids:
-            fetched = self.client.get_messages_batch(uncached_ids, batch_size=batch_size)
+            fetched, errors = self.client.get_messages_batch(uncached_ids, batch_size=batch_size)
             for msg in fetched:
                 self._full_cache[msg.id] = msg
+            if errors:
+                raise RuntimeError(f"Failed to fetch Gmail messages: {errors}")
 
         return [self._full_cache[mid] for mid in message_ids if mid in self._full_cache]
 
@@ -70,9 +72,11 @@ class GmailInbox:
             )
 
         if uncached_ids:
-            fetched = self.client.get_messages_metadata_batch(uncached_ids, batch_size=batch_size)
+            fetched, errors = self.client.get_messages_metadata_batch(uncached_ids, batch_size=batch_size)
             for msg in fetched:
                 self._metadata_cache[msg.id] = msg
+            if errors:
+                raise RuntimeError(f"Failed to fetch Gmail message metadata: {errors}")
 
         # Return from either cache (prefer metadata cache, but can use full cache)
         result = []
@@ -93,9 +97,11 @@ class GmailInbox:
         if self.show_progress:
             self.console.print(f"[dim]Fetching metadata for {len(uncached_ids)} messages...[/dim]")
 
-        fetched = self.client.get_messages_metadata_batch(uncached_ids, batch_size=batch_size)
+        fetched, errors = self.client.get_messages_metadata_batch(uncached_ids, batch_size=batch_size)
         for msg in fetched:
             self._metadata_cache[msg.id] = msg
+        if errors:
+            raise RuntimeError(f"Failed to fetch Gmail message metadata: {errors}")
 
     def get_metadata(self, message_id: str) -> GmailMessageWithHeaders:
         """Raises if not cached - call ensure_metadata_cached first."""

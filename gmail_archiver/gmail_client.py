@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import batched
@@ -23,7 +24,6 @@ from gmail_archiver.gmail_api_models import (
     GmailMessageWithHeaders,
 )
 from gmail_archiver.models import Email
-from util.fmt import format_truncation_suffix
 
 logger = logging.getLogger(__name__)
 
@@ -87,17 +87,17 @@ def _get_retry_after(exception: HttpError) -> tuple[int | None, dict]:
 
 
 @dataclass
-class _RawBatchAttempt:
-    results: list[tuple[str, bytes]]
-    errors: list[tuple[str, Exception | None, str]]
-    failed_ids: list[str]
+class _MessageBatchAttempt[T]:
+    results: dict[str, T]
+    errors: dict[str, tuple[Exception | None, str]]
+    individual_retry_ids: set[str]
 
     @property
     def rate_limit_errors(self) -> list[HttpError]:
-        return [exc for _, exc, _ in self.errors if _is_rate_limit_error(exc)]
+        return [exc for exc, _ in self.errors.values() if _is_rate_limit_error(exc)]
 
 
-def _wait_for_raw_batch(retry_state: RetryCallState) -> float:
+def _wait_for_message_batch(retry_state: RetryCallState) -> float:
     assert retry_state.outcome is not None
     retry_after_values = [
         seconds
@@ -109,7 +109,7 @@ def _wait_for_raw_batch(retry_state: RetryCallState) -> float:
     return wait_exponential(multiplier=2, max=60)(retry_state)
 
 
-def _log_raw_batch_retry(retry_state: RetryCallState) -> None:
+def _log_message_batch_retry(retry_state: RetryCallState) -> None:
     assert retry_state.outcome is not None
     assert retry_state.next_action is not None
     retry_results = [_get_retry_after(error) for error in retry_state.outcome.result().rate_limit_errors]
@@ -146,9 +146,9 @@ def _log_raw_batch_retry(retry_state: RetryCallState) -> None:
         )
 
 
-def _return_last_raw_batch(retry_state: RetryCallState) -> _RawBatchAttempt:
+def _return_last_message_batch[T](retry_state: RetryCallState) -> _MessageBatchAttempt[T]:
     assert retry_state.outcome is not None
-    return cast(_RawBatchAttempt, retry_state.outcome.result())
+    return cast(_MessageBatchAttempt[T], retry_state.outcome.result())
 
 
 class GmailClient:
@@ -193,46 +193,22 @@ class GmailClient:
 
     def get_messages_metadata_batch(
         self, message_ids: list[str], batch_size: int = 50
-    ) -> list[GmailMessageWithHeaders]:
+    ) -> tuple[list[GmailMessageWithHeaders], list[tuple[str, str]]]:
         """Fetch message metadata (headers only) using batch requests.
 
         Uses format=metadata to get headers without body content.
-        Returns GmailMessageWithHeaders objects with full payload.headers.
+        Returns successful GmailMessageWithHeaders objects and per-message failures.
         """
-        results: list[GmailMessageWithHeaders] = []
-        all_errors = []
-
-        def create_callback(results_list, errors_list):
-            def callback(request_id, response, exception):
-                if exception:
-                    errors_list.append((request_id, str(exception)))
-                    return
-                try:
-                    results_list.append(GmailMessageWithHeaders.model_validate(response))
-                except Exception as e:
-                    errors_list.append((request_id, str(e)))
-
-            return callback
-
-        for batch in batched(message_ids, batch_size, strict=False):
-            batch_results: list[GmailMessageWithHeaders] = []
-            batch_errors: list[tuple[str, str]] = []
-
-            batch_request = self.service.new_batch_http_request()
-            for msg_id in batch:
-                batch_request.add(
-                    self.service.users().messages().get(userId="me", id=msg_id, format="metadata"),
-                    callback=create_callback(batch_results, batch_errors),
-                )
-
-            batch_request.execute()
-            results.extend(batch_results)
-            all_errors.extend(batch_errors)
-
-        if all_errors:
-            print(f"Warning: Failed to fetch metadata for {len(all_errors)} messages", file=sys.stderr)
-
-        return results
+        attempt = self._get_messages_batched(
+            message_ids,
+            batch_size,
+            message_format="metadata",
+            parse_response=GmailMessageWithHeaders.model_validate,
+        )
+        return (
+            [attempt.results[msg_id] for msg_id in message_ids if msg_id in attempt.results],
+            [(msg_id, attempt.errors[msg_id][1]) for msg_id in message_ids if msg_id in attempt.errors],
+        )
 
     def get_messages_raw_batch(
         self, message_ids: list[str], batch_size: int, *, retry_failures: bool = True
@@ -241,139 +217,141 @@ class GmailClient:
 
         Returns (successful_results, failed_results) where each is a list of (message_id, data) tuples.
         """
-        results = []
-        all_errors = []
-        failed_message_ids = []
+        attempt = self._get_messages_batched(
+            message_ids,
+            batch_size,
+            message_format="raw",
+            parse_response=lambda response: base64.urlsafe_b64decode(response["raw"]),
+        )
 
-        def create_callback(msg_id, results_list, errors_list, failed_ids_list):
-            """Create callback that captures the actual message ID and exception."""
-
-            def callback(request_id, response, exception):
-                if exception:
-                    error_msg = str(exception)
-                    # Store (msg_id, exception, error_msg) for proper error checking
-                    errors_list.append((msg_id, exception, error_msg))
-                    # Only retry individually if it's NOT a rate limit error
-                    # (batch retry with exponential backoff already handled 429/503)
-                    if not _is_rate_limit_error(exception):
-                        failed_ids_list.append(msg_id)
-                    return
-                try:
-                    raw_bytes = base64.urlsafe_b64decode(response["raw"])
-                    results_list.append((response["id"], raw_bytes))
-                except Exception as e:
-                    error_msg = str(e)
-                    # Decoding errors don't have an HttpError exception
-                    errors_list.append((response["id"], None, error_msg))
-                    # Decoding errors are worth retrying individually
-                    failed_ids_list.append(response["id"])
-
-            return callback
-
-        def fetch_batch(batch: tuple[str, ...]) -> _RawBatchAttempt:
-            batch_results: list[tuple[str, bytes]] = []
-            batch_errors: list[tuple[str, Exception | None, str]] = []
-            batch_failed_ids: list[str] = []
-
-            # Use service.new_batch_http_request() to get correct batch endpoint
-            batch_request = self.service.new_batch_http_request()
-            for msg_id in batch:
-                batch_request.add(
-                    self.service.users().messages().get(userId="me", id=msg_id, format="raw"),
-                    callback=create_callback(msg_id, batch_results, batch_errors, batch_failed_ids),
-                )
-
-            batch_request.execute()
-            return _RawBatchAttempt(batch_results, batch_errors, batch_failed_ids)
-
-        # Process in batches (API allows 100, but 50 recommended to avoid rate limits)
-        for batch in batched(message_ids, batch_size, strict=False):
-            batch_attempt = Retrying(
-                retry=retry_if_result(lambda attempt: bool(attempt.rate_limit_errors)),
-                stop=stop_after_attempt(10),
-                wait=_wait_for_raw_batch,
-                before_sleep=_log_raw_batch_retry,
-                retry_error_callback=_return_last_raw_batch,
-            )(fetch_batch, batch)
-            results.extend(batch_attempt.results)
-            all_errors.extend(batch_attempt.errors)
-            failed_message_ids.extend(batch_attempt.failed_ids)
-
-            if batch_attempt.rate_limit_errors:
-                print("✗ Batch failed after 10 retries - aborting", file=sys.stderr, flush=True)
-                print(
-                    f"Aborting download - processed {len(results)} messages before failure", file=sys.stderr, flush=True
-                )
-                break
-
-        # Retry failed messages individually (only for non-rate-limit errors)
-        # Rate limit errors (429/503) are already handled by batch retry with exponential backoff
-        if retry_failures and failed_message_ids:
+        # Retry failed messages individually (only for non-rate-limit errors).
+        if retry_failures and attempt.individual_retry_ids:
             print(
-                f"Retrying {len(failed_message_ids)} failed messages individually (non-rate-limit errors)...",
+                f"Retrying {len(attempt.individual_retry_ids)} failed messages individually (non-rate-limit errors)...",
                 file=sys.stderr,
             )
 
-            for msg_id in failed_message_ids:
+            for msg_id in message_ids:
+                if msg_id not in attempt.individual_retry_ids:
+                    continue
                 try:
                     msg = self.service.users().messages().get(userId="me", id=msg_id, format="raw").execute()
                     raw_bytes = base64.urlsafe_b64decode(msg["raw"])
-                    results.append((msg_id, raw_bytes))
-                    # Remove from errors list since retry succeeded
-                    all_errors = [(err_id, exc, err_msg) for err_id, exc, err_msg in all_errors if err_id != msg_id]
+                    attempt.results[msg_id] = raw_bytes
+                    attempt.errors.pop(msg_id, None)
                 except Exception as e:
-                    # Update error with retry failure info
                     error_msg = f"Retry failed: {e!s}"
                     print(f"  Failed retry for {msg_id}: {error_msg[:100]}", file=sys.stderr)
-                    all_errors = [(err_id, exc, err_msg) for err_id, exc, err_msg in all_errors if err_id != msg_id]
-                    all_errors.append((msg_id, None, error_msg))
+                    attempt.errors[msg_id] = (None, error_msg)
 
-        # Convert 3-tuples (msg_id, exception, error_msg) to 2-tuples (msg_id, error_msg) for callers
-        return results, [(msg_id, err_msg) for msg_id, _, err_msg in all_errors]
+        return (
+            [(msg_id, attempt.results[msg_id]) for msg_id in message_ids if msg_id in attempt.results],
+            [(msg_id, attempt.errors[msg_id][1]) for msg_id in message_ids if msg_id in attempt.errors],
+        )
 
-    def get_messages_batch(self, message_ids: list[str], batch_size: int) -> list[Email]:
-        emails = []
+    def get_messages_batch(
+        self, message_ids: list[str], batch_size: int
+    ) -> tuple[list[Email], list[tuple[str, str]]]:
+        attempt = self._get_messages_batched(
+            message_ids,
+            batch_size,
+            message_format="raw",
+            parse_response=lambda response: Email.from_gmail_response(
+                base64.urlsafe_b64decode(response["raw"]), GmailMessageMinimal.model_validate(response)
+            ),
+        )
+        return (
+            [attempt.results[msg_id] for msg_id in message_ids if msg_id in attempt.results],
+            [(msg_id, attempt.errors[msg_id][1]) for msg_id in message_ids if msg_id in attempt.errors],
+        )
 
-        def create_callback(results_list, errors_list):
-            def callback(request_id, response, exception):
+    def _get_messages_batched[T](
+        self,
+        message_ids: list[str],
+        batch_size: int,
+        *,
+        message_format: str,
+        parse_response: Callable[[dict], T],
+    ) -> _MessageBatchAttempt[T]:
+        results: dict[str, T] = {}
+        errors: dict[str, tuple[Exception | None, str]] = {}
+        individual_retry_ids: set[str] = set()
+        batches = iter(batched(message_ids, batch_size, strict=False))
+
+        for batch in batches:
+            pending_ids = list(batch)
+
+            def fetch_pending_batch(_batch: tuple[str, ...]) -> _MessageBatchAttempt[T]:
+                nonlocal pending_ids
+                current_attempt = self._get_message_batch(pending_ids, message_format, parse_response)
+
+                for msg_id, response in current_attempt.results.items():
+                    results[msg_id] = response
+                    errors.pop(msg_id, None)
+                    individual_retry_ids.discard(msg_id)
+                for msg_id, error in current_attempt.errors.items():
+                    errors[msg_id] = error
+                    if msg_id in current_attempt.individual_retry_ids:
+                        individual_retry_ids.add(msg_id)
+                pending_ids = [
+                    msg_id
+                    for msg_id, (exception, _) in current_attempt.errors.items()
+                    if _is_rate_limit_error(exception)
+                ]
+                return _MessageBatchAttempt(results.copy(), errors.copy(), individual_retry_ids.copy())
+
+            batch_attempt = Retrying(
+                retry=retry_if_result(lambda attempt: bool(attempt.rate_limit_errors)),
+                stop=stop_after_attempt(10),
+                wait=_wait_for_message_batch,
+                before_sleep=_log_message_batch_retry,
+                retry_error_callback=_return_last_message_batch,
+            )(fetch_pending_batch, batch)
+
+            if batch_attempt.rate_limit_errors:
+                for remaining_batch in batches:
+                    for msg_id in remaining_batch:
+                        errors[msg_id] = (None, "Not fetched because an earlier batch exhausted rate-limit retries")
+                break
+
+        return _MessageBatchAttempt(results, errors, individual_retry_ids)
+
+    def _get_message_batch[T](
+        self,
+        message_ids: list[str],
+        message_format: str,
+        parse_response: Callable[[dict], T],
+    ) -> _MessageBatchAttempt[T]:
+        results: dict[str, T] = {}
+        errors: dict[str, tuple[Exception | None, str]] = {}
+        individual_retry_ids: set[str] = set()
+
+        batch_request = self.service.new_batch_http_request()
+        for msg_id in message_ids:
+            def callback(request_id, response, exception, *, requested_id: str = msg_id) -> None:
                 if exception:
-                    errors_list.append((request_id, str(exception)))
+                    errors[requested_id] = (exception, str(exception))
+                    if not _is_rate_limit_error(exception):
+                        individual_retry_ids.add(requested_id)
                     return
                 try:
-                    raw_bytes = base64.urlsafe_b64decode(response["raw"])
-                    metadata = GmailMessageMinimal.model_validate(response)
-                    results_list.append(Email.from_gmail_response(raw_bytes, metadata))
+                    results[requested_id] = parse_response(response)
                 except Exception as e:
-                    errors_list.append((request_id, str(e)))
+                    errors[requested_id] = (e, str(e))
+                    individual_retry_ids.add(requested_id)
 
-            return callback
+            batch_request.add(
+                self.service.users().messages().get(userId="me", id=msg_id, format=message_format),
+                callback=callback,
+            )
 
-        # Process in batches
-        all_errors = []
-        for batch in batched(message_ids, batch_size, strict=False):
-            batch_emails: list[Email] = []
-            batch_errors: list[tuple[str, str]] = []
+        batch_request.execute()
 
-            batch_request = self.service.new_batch_http_request()
-            for msg_id in batch:
-                batch_request.add(
-                    self.service.users().messages().get(userId="me", id=msg_id, format="raw"),
-                    callback=create_callback(batch_emails, batch_errors),
-                )
+        for msg_id in message_ids:
+            if msg_id not in results and msg_id not in errors:
+                errors[msg_id] = (None, "Batch response did not contain a result")
 
-            batch_request.execute()
-            emails.extend(batch_emails)
-            all_errors.extend(batch_errors)
-
-        if all_errors:
-            # Log errors but don't fail completely
-            print(f"Warning: Failed to fetch {len(all_errors)} messages:", file=sys.stderr)
-            for req_id, error in all_errors[:5]:  # Show first 5
-                print(f"  - Request {req_id}: {error}", file=sys.stderr)
-            if suffix := format_truncation_suffix(len(all_errors), 5, "errors"):
-                print(suffix, file=sys.stderr)
-
-        return emails
+        return _MessageBatchAttempt(results, errors, individual_retry_ids)
 
     def get_label_id(self, label_name: str) -> str | None:
         self._refresh_label_cache_if_needed()

@@ -213,12 +213,16 @@ def download_matching(
     sample_table.add_column("Date", style="magenta", width=20)
 
     sample_size = min(10, len(all_message_ids))
-    sample_metadata = client.get_messages_metadata_batch(all_message_ids[:sample_size], batch_size=sample_size)
+    sample_metadata, sample_errors = client.get_messages_metadata_batch(
+        all_message_ids[:sample_size], batch_size=sample_size
+    )
 
     for idx, msg in enumerate(sample_metadata, start=1):
         sample_table.add_row(str(idx), msg.sender[:30], msg.subject[:50], (msg.date_header or "")[:20])
 
     console.print(sample_table)
+    if sample_errors:
+        console.print(f"[yellow]Failed to fetch {len(sample_errors)} sample message(s): {sample_errors}[/yellow]")
     if suffix := format_truncation_suffix(len(all_message_ids), sample_size, "emails"):
         console.print(suffix + "\n")
 
