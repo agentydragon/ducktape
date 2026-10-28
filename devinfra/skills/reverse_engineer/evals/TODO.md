@@ -37,8 +37,7 @@ build-time scrambling and the language-specific recovery angles.
   skill (e.g. `info_gathering`). Should perform comparable to skill-off;
   sanity-checks that observed gains aren't mere "skill priming".
 - **Skill-off control** — vanilla agent without any skill mounted, same
-  binary, same prompt. Already implied by the eval matrix but worth
-  calling out explicitly.
+  binary, same prompt. Include it in the evaluation matrix below.
 - **Hinted arm — per-specimen "efficient solve path"** —
   alongside `skill-on` / `skill-off`, add a `skill-on-hinted` arm where
   the agent gets specimen-specific procedural hints in addition to the
@@ -67,21 +66,27 @@ build-time scrambling and the language-specific recovery angles.
   command dispatch tables. Tests recovery of control-flow graphs and
   enum/state name reconstruction.
 
-## Eval protocol itself (deferred to next planning round)
+## Inspect AI eval followups
 
-Land after at least one specimen + rubric is checked in:
+The Inspect AI implementation and rubric judge are in `x/`. These
+followups remain open:
 
-- Sandbox shape — Microsoft Agent Framework + `scratch_exec_server` +
-  the **whole skill archive** (`//devinfra/skills/reverse_engineer:reverse_engineer_skill`)
-  mounted at `/work/.skill/`. Stock `python:3.14-slim` base; agent has
-  internet (proxy already wired in
-  <skills/eval_infra/docker_exec.py>) and installs `binutils`,
-  `radare2`, `file`, etc. on demand.
-- Judge LLM rubric harness driven by `RUBRIC.yaml` — one critique per
-  rubric item, scored 0/1/2, weighted to a 0–100 final.
-- Matrix runner ({skill on/off} × {anthropic/openai} × {model} × seed),
-  result aggregation following the `twenty_questions` pattern under
-  <skills/info_gathering/evals/twenty_questions/>.
-- Live-API offline tests for the judge, gated by
-  `--test_tag_filters=-live_openai_api` per
-  `//openai_utils/testing:testing.bzl`.
+- **Anthropic strict tool mode** — native Anthropic tools do not yet get
+  `strict: true`; consider a provider client subclass like the one used
+  by `skills/eval_infra/af_chat_client.py`.
+- **Multi-specimen support** — make the Inspect task and rubric selection
+  work across a dataset of specimens, rather than only
+  `go_crypto_server`.
+- **Evaluation matrix and aggregation** — run configured skill-on/off,
+  provider, model, and repeat-run combinations, then summarize the
+  resulting scores so comparisons do not require manual one-off runs.
+- **Automated judge checks** — exercise empty-work and reference-work
+  score expectations as live-API tests behind the `live_openai_api` tag.
+  The `validate_empty` and `validate_reference` targets currently provide
+  manual judge checks.
+- **Judge determinism** — measure score variation across repeated runs
+  against the same recovered tree.
+- **Differential verification** — compile the recovered Go source in the
+  grader and adapt the protocol checks in
+  `tasks/go_crypto_server/test_smoke.py` to exercise the recovered binary,
+  reporting behavioral verification separately from rubric quality.

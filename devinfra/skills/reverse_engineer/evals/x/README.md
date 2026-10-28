@@ -5,7 +5,11 @@ Inspect AI port of the manually-scored Agent Framework eval at
 `garble`-obfuscated binary; an LLM judge grades it against
 `../tasks/go_crypto_server/RUBRIC.yaml` in a separate grader container.
 
-For the architecture and design rationale see <PLAN.md>.
+The grader runs in a separate container with read-only mounts for the
+recovered source, reference source, specimen spec, and rubric. The agent
+container never receives the reference, spec, or rubric. The empty-work
+and reference-work validation targets check the judge's floor and ceiling
+before trusting eval scores.
 
 ## Files
 
@@ -85,12 +89,4 @@ self-contained; serve them with `uvx` instead.
 
 ## Followups
 
-Tracked in <PLAN.md>:
-
-- Anthropic strict tool mode (provider doesn't yet emit
-  `strict: true` on custom tools — would need a `_StrictAnthropicClient`
-  subclass mirroring `skills/eval_infra/af_chat_client.py`).
-- Stage 3 differential verification — compile recovered Go in the
-  grader, run `test_smoke.py` against the agent's binary.
-- Multi-specimen support.
-- Judge determinism check.
+See <../TODO.md> for open eval work.
