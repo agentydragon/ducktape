@@ -152,22 +152,47 @@ def _is_debundle_source(path: str, contents: bytes) -> bool:
     return True
 
 
-def select_alias_module(modules: list[dict], spec: str, marker_separator: str | None = None) -> tuple[str, dict]:
-    """Resolve one stable alias from one marker or a conjunction of markers."""
+def _split_alias_spec(spec: str, marker_separator: str | None, option: str = "alias") -> tuple[str, list[str]]:
     if "=" not in spec:
-        raise ExtractError(f"alias expects NAME=MARKER, got {spec!r}")
+        raise ExtractError(f"{option} expects NAME=MARKER, got {spec!r}")
     alias_name, marker_expr = spec.split("=", 1)
     markers = marker_expr.split(marker_separator) if marker_separator is not None else [marker_expr]
     if not alias_name or any(not marker for marker in markers):
-        raise ExtractError(f"alias expects non-empty NAME and MARKER values, got {spec!r}")
+        raise ExtractError(f"{option} expects non-empty NAME and MARKER values, got {spec!r}")
+    return alias_name, markers
+
+
+def select_alias_module(
+    modules: list[dict],
+    spec: str,
+    marker_separator: str | None = None,
+    exclude_marker_sets: list[tuple[str, ...]] | None = None,
+) -> tuple[str, dict]:
+    """Resolve one stable alias, optionally filtering candidates by marker sets.
+
+    A candidate is excluded when it contains every marker in any exclusion
+    set. Positive and negative markers are literal source bytes, not regexes.
+    """
+    alias_name, markers = _split_alias_spec(spec, marker_separator)
     needles = [marker.encode() for marker in markers]
     hits = [m for m in modules if all(needle in m["contents"] for needle in needles)]
+    positive_count = len(hits)
+    exclusions = [tuple(marker.encode() for marker in marker_set) for marker_set in (exclude_marker_sets or [])]
+    if exclusions:
+        hits = [
+            module
+            for module in hits
+            if not any(all(needle in module["contents"] for needle in marker_set) for marker_set in exclusions)
+        ]
     if len(hits) != 1:
         marker_description = (
             repr(markers[0]) if len(markers) == 1 else "all markers " + ", ".join(repr(marker) for marker in markers)
         )
+        match_description = f"matched {len(hits)} modules"
+        if exclusions:
+            match_description = f"matched {positive_count} modules before exclusions and {len(hits)} after exclusions"
         raise ExtractError(
-            f"alias {alias_name}: {marker_description} matched {len(hits)} modules, "
+            f"alias {alias_name}: {marker_description} {match_description}, "
             "need exactly 1" + ("" if not hits else ": " + ", ".join(h["name"] for h in hits))
         )
     return alias_name, hits[0]
@@ -207,6 +232,17 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     ap.add_argument(
+        "--alias-without",
+        action="append",
+        default=[],
+        metavar="NAME=MARKER[::MARKER...]",
+        help=(
+            "exclude matching modules from an existing --alias or --alias-all "
+            "selector. An exclusion matches when the module contains every "
+            "double-colon-separated marker. Repeatable."
+        ),
+    )
+    ap.add_argument(
         "--only-js",
         action="store_true",
         help=(
@@ -231,15 +267,38 @@ def main(argv: list[str] | None = None) -> int:
         dest.write_bytes(mod["contents"])
         written[rel] = mod["contents"]
 
+    alias_specs = [
+        *(("--alias", spec, None) for spec in args.alias),
+        *(("--alias-all", spec, "::") for spec in args.alias_all),
+    ]
+    alias_names: set[str] = set()
+    for option, spec, separator in alias_specs:
+        try:
+            alias_name, _ = _split_alias_spec(spec, separator)
+        except ExtractError as error:
+            raise SystemExit(f"{option}: {error}") from error
+        if alias_name in alias_names:
+            raise SystemExit(f"{option}: duplicate alias selector for {alias_name!r}")
+        alias_names.add(alias_name)
+
+    exclusions_by_alias: dict[str, list[tuple[str, ...]]] = {}
+    for spec in args.alias_without:
+        try:
+            alias_name, markers = _split_alias_spec(spec, "::", "alias-without")
+        except ExtractError as error:
+            raise SystemExit(f"--alias-without: {error}") from error
+        if alias_name not in alias_names:
+            raise SystemExit(f"--alias-without: no --alias or --alias-all selector for {alias_name!r}")
+        exclusions_by_alias.setdefault(alias_name, []).append(tuple(markers))
+
     alias_sources: dict[str, str] = {}
     source_aliases: dict[str, str] = {}
     alias_collisions: list[str] = []
-    for option, spec, separator in [
-        *(("--alias", spec, None) for spec in args.alias),
-        *(("--alias-all", spec, "::") for spec in args.alias_all),
-    ]:
+    for option, spec, separator in alias_specs:
         try:
-            alias_name, hit = select_alias_module(modules, spec, separator)
+            alias_name, hit = select_alias_module(
+                modules, spec, separator, exclusions_by_alias.get(_split_alias_spec(spec, separator)[0])
+            )
         except ExtractError as error:
             raise SystemExit(f"{option}: {error}") from error
         source_path = _safe_relpath(hit["name"])

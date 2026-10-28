@@ -65,6 +65,34 @@ def test_conjunctive_markers_reject_no_match(alias_modules: list[dict]) -> None:
         select_alias_module(alias_modules, "selected.js=factory::missing", "::")
 
 
+def test_exclusion_markers_disambiguate(alias_modules: list[dict]) -> None:
+    name, selected = select_alias_module(alias_modules, "selected.js=provider", exclude_marker_sets=[("factory",)])
+    assert name == "selected.js"
+    assert selected["name"] == "c.js"
+
+
+def test_exclusion_marker_set_requires_every_marker() -> None:
+    modules = [
+        {"name": "a.js", "contents": b"provider startServer"},
+        {"name": "b.js", "contents": b"provider startServer export"},
+    ]
+    name, selected = select_alias_module(
+        modules, "selected.js=provider", exclude_marker_sets=[("startServer", "export")]
+    )
+    assert name == "selected.js"
+    assert selected["name"] == "a.js"
+
+
+def test_exclusions_reject_zero_remaining_candidates(alias_modules: list[dict]) -> None:
+    with pytest.raises(ExtractError, match="matched 2 modules before exclusions and 0 after exclusions"):
+        select_alias_module(alias_modules, "selected.js=provider", exclude_marker_sets=[("factory",), ("provider",)])
+
+
+def test_exclusions_reject_ambiguous_remaining_candidates(alias_modules: list[dict]) -> None:
+    with pytest.raises(ExtractError, match="matched 2 modules before exclusions and 2 after exclusions"):
+        select_alias_module(alias_modules, "selected.js=factory", exclude_marker_sets=[("not-present",)])
+
+
 def test_empty_marker_is_rejected(alias_modules: list[dict]) -> None:
     with pytest.raises(ExtractError, match="non-empty"):
         select_alias_module(alias_modules, "selected.js=factory::", "::")
@@ -90,6 +118,67 @@ def test_two_aliases_for_one_source_are_rejected(tmp_path: Path) -> None:
                 "first.js=one_marker",
                 "--alias",
                 "second.js=two_marker",
+            ]
+        )
+
+
+def test_alias_without_filters_a_structural_duplicate_in_binary_cli(tmp_path: Path) -> None:
+    shared_config_provider = b"var config = globalThis.sharedConfig; export { config };"
+    duplicate_entry = b"globalThis.sharedConfig; export { startService };"
+    binary = tmp_path / "binary"
+    binary.write_bytes(
+        synthetic_graph(
+            [
+                ("/$bunfs/root/config-provider.js", shared_config_provider),
+                ("/$bunfs/root/entry-copy.js", duplicate_entry),
+            ]
+        )
+    )
+    output = tmp_path / "extracted"
+    assert (
+        main(
+            [
+                str(binary),
+                str(output),
+                "--alias-all",
+                "sharedConfig.js=globalThis.sharedConfig",
+                "--alias-without",
+                "sharedConfig.js=startService",
+            ]
+        )
+        == 0
+    )
+    assert (output / "sharedConfig.js").read_bytes() == shared_config_provider
+
+
+def test_alias_without_rejects_unknown_alias_name(tmp_path: Path) -> None:
+    binary = tmp_path / "binary"
+    binary.write_bytes(synthetic_graph([("/$bunfs/root/a.js", b"provider")]))
+    with pytest.raises(SystemExit, match=r"no --alias or --alias-all selector for 'missing\.js'"):
+        main(
+            [
+                str(binary),
+                str(tmp_path / "extracted"),
+                "--alias-without",
+                "missing.js=duplicate",
+                "--alias",
+                "provider.js=provider",
+            ]
+        )
+
+
+def test_alias_without_rejects_empty_markers(tmp_path: Path) -> None:
+    binary = tmp_path / "binary"
+    binary.write_bytes(synthetic_graph([("/$bunfs/root/a.js", b"provider")]))
+    with pytest.raises(SystemExit, match="alias-without expects non-empty NAME and MARKER values"):
+        main(
+            [
+                str(binary),
+                str(tmp_path / "extracted"),
+                "--alias",
+                "provider.js=provider",
+                "--alias-without",
+                "provider.js=::duplicate",
             ]
         )
 
