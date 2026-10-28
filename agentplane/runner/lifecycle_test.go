@@ -399,7 +399,7 @@ func TestJournalAndAcknowledgementChangesDoNotReviseRunnerInputs(t *testing.T) {
 	if _, err := s.recordEvent(r.ctx, observation(&eventpb.HarnessStderr{Text: "journal update"}), nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	ack := IngressAcknowledgement{Cursor: s.journal.LastCursor()}
+	ack := retained.Acknowledgement{Cursor: s.journal.LastCursor()}
 	if err := r.store.WriteAcknowledgement(s.id, ack); err != nil {
 		t.Fatal(err)
 	}

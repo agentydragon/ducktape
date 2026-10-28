@@ -56,7 +56,7 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		changed, err := runnerlifecycle.WriteStatus(ctx, r, current)
 		if changed {
 			c.l.runner.changed()
-			// RunnerRuntime is this controller's output, so it cannot trigger the next aggregate step itself.
+			// This controller does not subscribe to RunnerRuntime, so queue the next aggregate step explicitly.
 			r.QueueReconcile()
 		}
 		return err
