@@ -5,7 +5,6 @@ Tests that _get_upstream_route requires explicit configured upstreams.
 
 from __future__ import annotations
 
-from unittest.mock import patch
 from uuid import UUID
 
 import pytest
@@ -51,14 +50,16 @@ def sample_config() -> PropsConfig:
     )
 
 
-def test_resolve_upstream_url_from_env() -> None:
+def test_resolve_upstream_url_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """URL from env var is resolved."""
     config = UpstreamConfig(url_env="MY_URL_VAR", api_key_env="KEY")
-    with patch.dict("os.environ", {"MY_URL_VAR": "http://test.example.com/v1"}):
-        assert _resolve_upstream_url(config) == "http://test.example.com/v1"
+    monkeypatch.setenv("MY_URL_VAR", "http://test.example.com/v1")
+    assert _resolve_upstream_url(config) == "http://test.example.com/v1"
 
 
-def test_custom_model_routes_to_configured_upstream(synced_db: Database, sample_config: PropsConfig) -> None:
+def test_custom_model_routes_to_configured_upstream(
+    synced_db: Database, sample_config: PropsConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Custom model routes to its configured upstream with model rewriting."""
     # Insert a custom model pointing to "local" upstream
     with synced_db.session() as session:
@@ -77,7 +78,8 @@ def test_custom_model_routes_to_configured_upstream(synced_db: Database, sample_
         session.commit()
 
     with synced_db.session() as session:
-        with patch.dict("os.environ", {"LOCAL_API_KEY": "local-key"}):
+        with monkeypatch.context() as mp:
+            mp.setenv("LOCAL_API_KEY", "local-key")
             route = _get_upstream_route("local:llama-70b", session, sample_config, LLMApiShape.RESPONSES)
         assert route.url == "http://localhost:11434/v1"
         assert route.api_key == "local-key"

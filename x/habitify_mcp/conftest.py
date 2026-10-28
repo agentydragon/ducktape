@@ -1,7 +1,6 @@
 """Shared pytest configuration and fixtures for habitify tests."""
 
 import json
-import os
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -40,11 +39,10 @@ def load_reference_data():
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch: pytest.MonkeyPatch):
     """Create a Habitify client with a mock API key."""
-    with patch.dict(os.environ, {"HABITIFY_API_KEY": "test_api_key"}):
-        client = HabitifyClient()
-        yield client
+    monkeypatch.setenv("HABITIFY_API_KEY", "test_api_key")
+    return HabitifyClient()
 
 
 @pytest.fixture
