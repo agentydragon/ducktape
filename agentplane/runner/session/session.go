@@ -222,20 +222,13 @@ func (s *Session) recover(ctx context.Context) error {
 			return err
 		}
 	}
-	commands, err := s.journal.PendingCommands(ctx)
+	commands, err := s.journal.PendingCommandRecords(ctx)
 	if err != nil {
 		return err
 	}
-	for _, c := range commands {
-		if c.GetInterruptTurn() != nil {
-			stored, err := s.journal.GetCommand(ctx, c.CommandId)
-			if err != nil {
-				return err
-			}
-			if stored == nil || stored.DispatchPlanned {
-				continue
-			}
-			if err := s.NoopCommand(ctx, c.CommandId, "the target turn is no longer active after the runner restarted", nil); err != nil {
+	for _, record := range commands {
+		if record.Command.GetInterruptTurn() != nil && !record.DispatchPlanned {
+			if err := s.NoopCommand(ctx, record.Command.CommandId, "the target turn is no longer active after the runner restarted", nil); err != nil {
 				return err
 			}
 		}
@@ -244,17 +237,13 @@ func (s *Session) recover(ctx context.Context) error {
 }
 
 func (s *Session) settleUndispatched(ctx context.Context, reason string) error {
-	commands, err := s.journal.PendingCommands(ctx)
+	commands, err := s.journal.PendingCommandRecords(ctx)
 	if err != nil {
 		return err
 	}
-	for _, command := range commands {
-		stored, err := s.journal.GetCommand(ctx, command.CommandId)
-		if err != nil {
-			return err
-		}
-		if stored != nil && !stored.DispatchPlanned {
-			if err := s.FailCommand(ctx, command.CommandId, reason, nil); err != nil {
+	for _, record := range commands {
+		if !record.DispatchPlanned {
+			if err := s.FailCommand(ctx, record.Command.CommandId, reason, nil); err != nil {
 				return err
 			}
 		}
