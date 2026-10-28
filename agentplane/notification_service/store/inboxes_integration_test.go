@@ -95,6 +95,10 @@ func TestReadReconstructsTypedPayloadsAndKeepsGitHubJSONNative(t *testing.T) {
 			// After the cleanup-writer and content-backfill gates, typed payloads stand on their own.
 			f.exec(t, `UPDATE entry SET payload = NULL WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1)
 		}
+		if _, message := event.(MessageEvent); message {
+			// Message's canonical reader uses text columns and must not load the now-obsolete protobuf copy.
+			f.exec(t, `UPDATE entry SET typed_payload = NULL WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1)
+		}
 	}
 
 	page := f.read(t, subscription.InboxID, 0)
@@ -103,6 +107,33 @@ func TestReadReconstructsTypedPayloadsAndKeepsGitHubJSONNative(t *testing.T) {
 	}
 	for i := range events {
 		sameJSON(t, page.Entries[i].Payload, wantPayloads[i])
+	}
+}
+
+func TestReadUsesCanonicalMessageTextAndPreservesOptionalSender(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, body("canonical-message-text-reader"))
+	event := MessageEvent{MessageID: uuid.New(), Sender: ServiceAccount{Namespace: "sender", Name: "sandbox"}}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, `{"body":"text-only message"}`)
+	f.exec(t, `UPDATE entry SET payload = NULL, typed_payload = NULL WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
+
+	page := f.read(t, subscription.InboxID, 0)
+	if len(page.Entries) != 1 {
+		t.Fatalf("read returned %d entries, want 1", len(page.Entries))
+	}
+	sameJSON(t, page.Entries[0].Payload, []byte(`{"body":"text-only message"}`))
+}
+
+func TestReadRejectsMissingCanonicalMessageTextInsteadOfFallingBack(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, body("missing-canonical-message-text"))
+	event := MessageEvent{MessageID: uuid.New(), Sender: ServiceAccount{Namespace: "sender", Name: "sandbox"}}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, `{"body":"legacy body must not be used"}`)
+	f.exec(t, `UPDATE entry SET message_body = NULL WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
+
+	_, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, 0, 128)
+	if err == nil || !strings.Contains(err.Error(), "canonical Message text is missing") {
+		t.Fatalf("read error = %v, want a missing canonical Message text error", err)
 	}
 }
 

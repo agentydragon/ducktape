@@ -35,6 +35,15 @@ type Message struct {
 	FromSession *string
 }
 
+type messagePayload struct {
+	Body        string  `json:"body"`
+	FromSession *string `json:"from_session,omitempty"`
+}
+
+func encodeMessagePayload(body string, fromSession *string) ([]byte, error) {
+	return json.Marshal(messagePayload{Body: body, FromSession: fromSession})
+}
+
 // Validate checks the bounds of the message, its body against limit UTF-8 bytes. The destination's UID may be
 // empty, for the Sandbox of that name as it is now.
 func (m Message) Validate(limit int) error {
@@ -63,10 +72,7 @@ func (m Message) Validate(limit int) error {
 
 // payload is the entry's payload: what the sender wrote.
 func (m Message) payload() ([]byte, error) {
-	return json.Marshal(struct {
-		Body        string  `json:"body"`
-		FromSession *string `json:"from_session,omitempty"`
-	}{m.Body, m.FromSession})
+	return encodeMessagePayload(m.Body, m.FromSession)
 }
 
 // SentMessage is a message as its sender sees it: where it went and how far the recipient's inbox has moved

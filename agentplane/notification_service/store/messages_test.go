@@ -6,6 +6,25 @@ import (
 	"testing"
 )
 
+func TestMessagePayloadKeepsItsStableDigestEncoding(t *testing.T) {
+	fromSession := "sender-session"
+	payload, err := (Message{Body: "message", FromSession: &fromSession}).payload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(payload), `{"body":"message","from_session":"sender-session"}`; got != want {
+		t.Fatalf("message digest payload = %s, want %s", got, want)
+	}
+
+	payload, err = (Message{Body: "message"}).payload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(payload), `{"body":"message"}`; got != want {
+		t.Fatalf("message digest payload without sender label = %s, want %s", got, want)
+	}
+}
+
 func TestAMessageIsRefusedOutsideItsBounds(t *testing.T) {
 	const limit = 8
 	valid := Message{

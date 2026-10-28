@@ -183,6 +183,23 @@ func TestSandboxStatusSummarizesTypedContentWhenLegacyJSONConflicts(t *testing.T
 	}})
 }
 
+func TestSandboxStatusSummarizesMessageWithoutLoadingAnyBodyEncoding(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	ref := uniqueSandbox()
+	f.sandboxUID = ref.UID
+	subscription := f.subscribeIn(t, "message-summary", uniqueSession(), ref)
+	event := MessageEvent{MessageID: uuid.New(), Sender: ServiceAccount{Namespace: "sender", Name: "sandbox"}}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, `{"body":"private message body"}`)
+	f.exec(t, `UPDATE entry SET payload = NULL, typed_payload = NULL, message_body = NULL, message_from_session = NULL
+		WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID)
+
+	inbox := f.onlyInbox(t, ref)
+	requireEqual(t, inbox.PendingEntries, []EntrySummary{{
+		Cursor: 1, CreatedAt: f.entryCreatedAt(t, subscription.InboxID, 1), Provider: EntryFromMessage,
+		Summary: "Message from sender/sandbox",
+	}})
+}
+
 func TestSandboxStatusDescribesAtMostAHundredPendingEntries(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	ref := uniqueSandbox()
