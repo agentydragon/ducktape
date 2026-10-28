@@ -15,11 +15,10 @@ func TestTypedOnlyWriterMigrationRequiresBackfillAndRetiresUnsafeCommand(t *test
 	if err := migrations.UpTo(ctx, db, 14); err != nil {
 		t.Fatalf("build predecessor schema through migration 00014: %v", err)
 	}
-
 	f := fixtureForDatabase(t, db, defaultQuotas())
 	subscription := f.subscribe(t, body("typed-only"))
 	event := ActionsEvent{RequestID: uuid.New(), Sequence: 1}
-	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
+	insertHistoricalActionEntry(t, db, subscription.InboxID, 1, event)
 
 	if err := migrations.UpTo(ctx, db, 15); err == nil || !strings.Contains(err.Error(), "entry content backfill is incomplete") {
 		t.Fatalf("writer-only migration error = %v, want the incomplete-backfill gate", err)
@@ -30,8 +29,8 @@ func TestTypedOnlyWriterMigrationRequiresBackfillAndRetiresUnsafeCommand(t *test
 		Scan(&payloadIsNull, &typedPayload); err != nil {
 		t.Fatalf("read Action entry after rejected migration: %v", err)
 	}
-	if !payloadIsNull || len(typedPayload) == 0 {
-		t.Fatalf("typed-only row has legacy-null=%t and %d typed bytes; want NULL legacy JSON and live typed bytes",
+	if payloadIsNull || len(typedPayload) == 0 {
+		t.Fatalf("historical dual-write row has legacy-null=%t and %d typed bytes; want its JSON and protobuf preserved",
 			payloadIsNull, len(typedPayload))
 	}
 
@@ -51,7 +50,7 @@ func TestTypedOnlyWriterMigrationRequiresBackfillAndRetiresUnsafeCommand(t *test
 	}
 
 	// The dual-write image's command first inserts or locks this row. It must fail before any batch can clear
-	// live typed-only content after the checkpoint has been retired.
+	// retained content after the checkpoint has been retired.
 	if _, err := db.ExecContext(ctx, `INSERT INTO notification_entry_content_backfill (singleton)
 		VALUES (true) ON CONFLICT (singleton) DO NOTHING`); err == nil {
 		t.Fatal("old content-backfill checkpoint access succeeded after writer-only cutover")
@@ -60,8 +59,8 @@ func TestTypedOnlyWriterMigrationRequiresBackfillAndRetiresUnsafeCommand(t *test
 		Scan(&payloadIsNull, &typedPayload); err != nil {
 		t.Fatalf("read live Action entry after rejected old command access: %v", err)
 	}
-	if !payloadIsNull || len(typedPayload) == 0 {
-		t.Fatalf("old command access changed typed-only content: legacy-null=%t typed-bytes=%d", payloadIsNull, len(typedPayload))
+	if payloadIsNull || len(typedPayload) == 0 {
+		t.Fatalf("old command access changed retained content: legacy-null=%t typed-bytes=%d", payloadIsNull, len(typedPayload))
 	}
 }
 

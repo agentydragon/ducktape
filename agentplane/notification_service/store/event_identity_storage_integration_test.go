@@ -24,7 +24,7 @@ func TestEventIdentityProviderProofIsValidatedOfflineAndConstrainsNewWrites(t *t
 	f := fixtureForDatabase(t, db, defaultQuotas())
 	subscription := f.subscribe(t, body("event-identity-proof"))
 	event := ActionsEvent{RequestID: uuid.New(), Sequence: 1}
-	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
+	insertHistoricalActionEntry(t, db, subscription.InboxID, 1, event)
 
 	var validated bool
 	if err := f.db.QueryRowContext(t.Context(), `SELECT convalidated FROM pg_constraint

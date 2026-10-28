@@ -140,16 +140,37 @@ func insertContentBackfilledEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, c
 	if err != nil {
 		t.Fatal(err)
 	}
-	typedPayload, err := marshalEntryContent(event, json.RawMessage(payload))
+	storedContent, err := marshalEntryStorageContent(event, json.RawMessage(payload))
 	if err != nil {
 		t.Fatal(err)
 	}
 	insertBackfilledEntry(t, db, inboxID, cursor, eventJSON, payload)
-	if typedPayload == nil {
+	if storedContent.typedPayload == nil {
 		return
 	}
-	if _, err := db.ExecContext(t.Context(), `UPDATE entry SET typed_payload = $3 WHERE inbox_id = $1 AND cursor = $2`, inboxID, cursor, typedPayload); err != nil {
+	if _, err := db.ExecContext(t.Context(), `UPDATE entry SET typed_payload = $3 WHERE inbox_id = $1 AND cursor = $2`, inboxID, cursor, storedContent.typedPayload); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// insertHistoricalActionEntry models a retained dual-write row from the pre-00015 serving image without routing
+// the fixture through the current writer, whose SQL columns and representation policy advance with migrations.
+func insertHistoricalActionEntry(t *testing.T, db *sql.DB, inboxID uuid.UUID, cursor int64, event ActionsEvent) {
+	t.Helper()
+	eventJSON, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := entryPayloadForTest(t, event)
+	stored, err := marshalEntryStorageContent(event, json.RawMessage(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO entry (
+		inbox_id, cursor, event, payload, created_at, identity_provider, actions_request_id, actions_sequence, typed_payload)
+		VALUES ($1, $2, $3::jsonb, $4::jsonb, now(), 'actions', $5, $6, $7)`, inboxID, cursor,
+		string(eventJSON), payload, event.RequestID, event.Sequence, stored.typedPayload); err != nil {
+		t.Fatalf("insert historical dual-write Action entry: %v", err)
 	}
 }
 

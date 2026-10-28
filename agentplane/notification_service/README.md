@@ -86,6 +86,8 @@ protobuf during this phase so the existing database CHECK continues to measure t
 a separate storage phase will add canonical text fields and their own bounds before message JSON writes stop. This
 writer still stores relational identity and legacy identity JSON, which a later identity contract retires separately.
 
+`00016_message_text_expand.sql` adds nullable `entry.message_body` and `entry.message_from_session` text columns. The dual-write release keeps Message JSON and protobuf intact while also writing the canonical body and optional sender label to text; database checks bound the body by UTF-8 bytes and the label by the existing 1–200 character contract. The old JSON body ceiling remains until identity JSON is retired. Roll back only to a dual-write-capable release while this phase is active; the additive nullable columns preserve old-reader compatibility.
+
 Migration `00015` also adds `entry_identity_provider_required` as a `NOT VALID` check. After the relational
 dual-write release is on every writer, run
 `bb run //agentplane/notification_service/storage_backfill/event_identity_validate_cmd:notification-event-identity-validate -- --writer-gate=notification-event-identity-dual-write-v1`

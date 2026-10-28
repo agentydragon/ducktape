@@ -446,7 +446,8 @@ func expirePayloads(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, expiredT
 	if through == expiredThrough {
 		return nil
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE entry SET payload = NULL, typed_payload = NULL WHERE inbox_id = $1 AND cursor > $2 AND cursor <= $3`,
+	if _, err := tx.ExecContext(ctx, `UPDATE entry SET payload = NULL, typed_payload = NULL,
+		message_body = NULL, message_from_session = NULL WHERE inbox_id = $1 AND cursor > $2 AND cursor <= $3`,
 		inboxID, expiredThrough, through); err != nil {
 		return err
 	}
