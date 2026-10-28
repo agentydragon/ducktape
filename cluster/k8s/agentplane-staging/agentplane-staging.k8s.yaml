@@ -5983,13 +5983,15 @@ spec:
       imagePullSecrets:
         - name: forgejo-images-creds
       initContainers:
-        - env:
+        - command:
+            - /usr/local/bin/actions-migrate
+          env:
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   key: uri
                   name: postgres-actions
-          image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:unset
+          image: git.allegedly.works/ducktape-ci/agentplane-action-service:unset
           imagePullPolicy: Always
           name: migrate
           resources:

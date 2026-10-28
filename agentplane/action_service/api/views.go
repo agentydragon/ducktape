@@ -37,18 +37,6 @@ var cancellationOutcomes = map[store.CancellationOutcome]action_servicepb.Cancel
 	store.OutcomeTooLate:          action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_TOO_LATE,
 }
 
-var policyKinds = map[store.PolicyKind]action_servicepb.PolicyKind{
-	store.PolicyExactActions:               action_servicepb.PolicyKind_POLICY_KIND_EXACT_ACTIONS,
-	store.PolicyArgumentSchema:             action_servicepb.PolicyKind_POLICY_KIND_ARGUMENT_SCHEMA,
-	store.PolicyGitHubRepository:           action_servicepb.PolicyKind_POLICY_KIND_GITHUB_REPOSITORY,
-	store.PolicyGitHubPublicRepository:     action_servicepb.PolicyKind_POLICY_KIND_GITHUB_PUBLIC_REPOSITORY,
-	store.PolicyHomeAssistantEntityControl: action_servicepb.PolicyKind_POLICY_KIND_HOME_ASSISTANT_ENTITY_CONTROL,
-}
-
-var policySources = map[string]action_servicepb.PolicySource{
-	store.PolicySourceRules: action_servicepb.PolicySource_POLICY_SOURCE_RULES,
-}
-
 func reversed[Stored, View comparable](views map[Stored]View) map[View]Stored {
 	stored := make(map[View]Stored, len(views))
 	for value, view := range views {
@@ -142,43 +130,8 @@ func decisionView(decision *store.Decision) (*action_servicepb.Decision, error) 
 		view.Operator = operator(*decision.Operator)
 	}
 	if decision.PolicyEvidence != nil {
-		if view.PolicyEvidence, err = evidenceView(*decision.PolicyEvidence); err != nil {
-			return nil, err
-		}
-	}
-	return view, nil
-}
-
-func evidenceView(evidence store.PolicyEvidence) (*action_servicepb.PolicyEvidence, error) {
-	view := &action_servicepb.PolicyEvidence{}
-	for _, binding := range evidence.Bindings {
-		view.Bindings = append(view.Bindings, &action_servicepb.BindingEvidence{
-			Namespace: binding.Namespace, Name: binding.Name, ResourceVersion: binding.ResourceVersion,
-		})
-	}
-	for _, set := range evidence.PolicySets {
-		view.PolicySets = append(view.PolicySets, &action_servicepb.PolicySetEvidence{
-			Namespace: set.Namespace, Name: set.Name, Generation: set.Generation,
-		})
-	}
-	matched := evidence.Matched
-	source, err := lookup(policySources, "policy source", matched.Source)
-	if err != nil {
-		return nil, err
-	}
-	kind, err := lookup(policyKinds, "policy kind", matched.Type)
-	if err != nil {
-		return nil, err
-	}
-	if matched.Index > math.MaxInt32 {
-		return nil, fmt.Errorf("%w: policy index %d", errStoredRequest, matched.Index)
-	}
-	view.Matched = &action_servicepb.MatchedPolicy{
-		Namespace: matched.Namespace, PolicySet: matched.PolicySet, Source: source, Index: int32(matched.Index), Type: kind,
-	}
-	if repository := matched.Repository; repository != nil {
-		view.Matched.Repository = &action_servicepb.MatchedRepository{
-			Owner: repository.Owner, Repository: repository.Repository, ConfirmedPublic: repository.ConfirmedPublic,
+		if view.PolicyEvidence, err = decision.PolicyEvidence.Proto(); err != nil {
+			return nil, fmt.Errorf("%w: policy evidence: %w", errStoredRequest, err)
 		}
 	}
 	return view, nil

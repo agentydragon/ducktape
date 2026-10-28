@@ -87,5 +87,16 @@ def test_actions_roll_does_not_overlap_execution_protocols(staging_manifests: li
     assert deployment["spec"]["strategy"] == {"type": "Recreate"}
 
 
+def test_actions_migrate_from_service_image(staging_manifests: list[dict[str, Any]]) -> None:
+    deployment = one(
+        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
+    )
+    pod = deployment["spec"]["template"]["spec"]
+    migrator = one(item for item in pod["initContainers"] if item["name"] == "migrate")
+    server = one(item for item in pod["containers"] if item["name"] == "actions")
+    assert migrator["image"] == server["image"]
+    assert migrator["command"] == ["/usr/local/bin/actions-migrate"]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

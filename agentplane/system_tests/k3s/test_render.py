@@ -74,7 +74,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     )
     assert not any(doc["kind"] == "Deployment" and doc["metadata"]["name"] == "electric" for doc in docs)
     for workload, migration in {
-        "actions": "agentplane-action-service-migrate",
+        "actions": "agentplane-action-service",
         "app": "agentplane-app-migrate",
         "egress": "agentplane-egress-history-migrate",
         "history-service": "agentplane-history-migrate",
@@ -86,6 +86,8 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
         init = next(container for container in pod_spec["initContainers"] if container["name"] == "migrate")
         assert init["image"] == f"git.allegedly.works/ducktape-ci/{migration}:unset"
         assert init["imagePullPolicy"] == "IfNotPresent"
+        if workload == "actions":
+            assert init["command"] == ["/usr/local/bin/actions-migrate"]
     assert (
         _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]["imagePullPolicy"]
         == "IfNotPresent"

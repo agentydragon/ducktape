@@ -95,7 +95,6 @@ oci_image(
 # Bazel-built service images, loaded into k3s's containerd.
 _IMAGES = {
     "action_service": "//agentplane/action_service:service_image",
-    "action_service_migrate": "//agentplane/action_service/migrations:image",
     "app": "//agentplane/app:image",
     "app_migrate": "//agentplane/app:migration_image",
     "egress_proxy": "//agentplane/egress/cmd:image",

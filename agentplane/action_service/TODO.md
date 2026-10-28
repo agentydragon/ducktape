@@ -2,12 +2,6 @@
 
 Gaps to close if a workflow needs them; none is committed.
 
-## Replace legacy model storage representations
-
-Evaluate typed SQL or binary protobuf storage for Action/Notification models, the migration
-scope, and any data-retention requirements. Keep current stored formats compatible during this
-shared-protobuf refactor.
-
 ## Dynamic Client Registration for MCP OAuth linkage
 
 `linkage.Server` requires either a registered `client_id` or the shared Client ID Metadata

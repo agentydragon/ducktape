@@ -454,12 +454,41 @@ authentication performs no Thread or Agent lookup.
 Operator/BFF calls use the separate `/v1/operator/...` surface, gated by the configured OIDC
 verifier. Without `operator_oidc`, operator requests are refused.
 
-The Deployment runs Goose migrations in an init container using
-`//agentplane/action_service/migrations:image`; the server checks schema compatibility at startup.
-`//agentplane/action_service:service_image` contains the Go service. Each deployed
+The Deployment uses the same `//agentplane/action_service:service_image` for its server and
+migration init container, which explicitly executes `/usr/local/bin/actions-migrate`. Each deployed
 environment gives the service its own `actions` database and login role on the namespace's shared
 CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
 separate from the integration app's database.
+
+### Native storage cutover
+
+Goose version 6 converts Action identities from JSON to `action_group`/`action_name` columns, event
+actors to binary `Principal` messages, and decision policy evidence to binary `PolicyEvidence`
+messages. Arguments, results and errors retain their native JSONB representation. Actor and evidence
+messages are immutable historical snapshots; the relational columns continue to carry request,
+caller, state, operator and decision lookup fields. The historical JSON decoder is private to the
+migration, so future runtime model changes cannot reinterpret old records.
+
+This is one coordinated rollout on the sole instance, `agentplane-staging`. Its `Recreate`
+Deployment stops the old writers before starting the new Pods. Goose's session lock serializes the
+init containers, and version 6 expands, converts in bounded batches, validates and drops the old
+columns in one transaction. There is no separate backfill command or validation stage. Malformed
+history or cancellation rolls back the entire version, including DDL and its Goose history entry;
+retrying the init container starts from the unchanged version 5 data. Applied versions 1–5 remain
+unchanged. Human decisions and all other Action history are preserved.
+
+Before landing the cutover, deploy the packaging prerequisite
+[PR #12655](https://github.com/agentydragon/ducktape/pull/12655): the currently pinned service image
+must already contain `actions-migrate` when the Deployment switches its init command. The final
+init and server then share one image pin. After version 6 commits, old JSON-reading or JSON-writing
+images cannot run against the schema; rollback requires a compatible typed-storage image or a
+coordinated database restore. Keep a pre-cutover database backup and verify the deployed migration
+version, row counts and service readiness after rollout.
+
+A populated migration benchmark and preservation/rollback tests are recorded in
+[the cutover evidence](debug/2026_10_28_native_storage_cutover.md). The measured transaction is small
+enough for an init-container conversion at current staging scale; it still takes exclusive table
+locks and makes Actions unavailable during the conversion.
 
 ## MCP executor transports
 

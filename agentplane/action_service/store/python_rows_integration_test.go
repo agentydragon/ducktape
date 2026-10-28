@@ -2,26 +2,31 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"slices"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
-// These tests write rows the way the Python service does, from the golden vectors it produced, and hold the
-// store to reading them, and to writing the same documents back: the store takes over a database that Python
-// filled.
+// These tests use the Python-produced golden vectors to hold the typed store to the same request, decision and
+// native JSON behavior as the former service.
 
 // insertRequest writes a pending request and the Event Python's insert listener records for it.
 func (f fixture) insertRequest(t *testing.T, id uuid.UUID, owner ServiceAccount, key string, stored storedRequest) {
 	t.Helper()
+	var action ActionIdentity
+	if err := json.Unmarshal(stored.Action, &action); err != nil {
+		t.Fatal(err)
+	}
 	f.exec(t, `
-		INSERT INTO action_request (id, idempotency_key, action, arguments, title, description, caller_namespace, caller_name,
-			state, version, created_at, updated_at)
-		VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, 'decision_pending', 1, now(), now())`,
-		id, key, string(stored.Action), string(stored.Arguments), stored.Title, stored.Description, owner.Namespace,
+		INSERT INTO action_request (id, idempotency_key, action_group, action_name, arguments, title, description,
+			caller_namespace, caller_name, state, version, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 'decision_pending', 1, now(), now())`,
+		id, key, action.Group, action.Name, string(stored.Arguments), stored.Title, stored.Description, owner.Namespace,
 		owner.Name)
 	f.exec(t, `INSERT INTO action_event (request_id, sequence, state, at) VALUES ($1, 1, 'decision_pending', now())`, id)
 }
@@ -73,7 +78,14 @@ func TestRequestsPythonStoredAreReadAndWrittenBack(t *testing.T) {
 			}
 
 			written := f.submitInput(t, caller, sent, Admission{RequestID: uuid.New()})
-			sameJSON(t, f.document(t, `SELECT action FROM action_request WHERE id = $1`, written.ID), vector.Stored.Action)
+			var group, name string
+			if err := f.db.QueryRowContext(t.Context(), `SELECT action_group, action_name FROM action_request WHERE id = $1`,
+				written.ID).Scan(&group, &name); err != nil {
+				t.Fatal(err)
+			}
+			if group != sent.Action.Group || name != sent.Action.Name {
+				t.Errorf("typed action identity = %q/%q, want %q/%q", group, name, sent.Action.Group, sent.Action.Name)
+			}
 			sameJSON(t, f.document(t, `SELECT arguments FROM action_request WHERE id = $1`, written.ID), vector.Stored.Arguments)
 			if f.count(t, `SELECT count(*) FROM action_request WHERE id = $1 AND title = $2 AND description IS NOT DISTINCT FROM $3`,
 				written.ID, vector.Stored.Title, vector.Stored.Description) != 1 {
@@ -87,10 +99,18 @@ func TestRequestsPythonStoredAreReadAndWrittenBack(t *testing.T) {
 // evidence.
 func (f fixture) decideAsPython(t *testing.T, id uuid.UUID, evidence json.RawMessage) {
 	t.Helper()
+	var decoded *PolicyEvidence
+	if err := json.Unmarshal(evidence, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := encodePolicyEvidence(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
 	f.exec(t, `
-		INSERT INTO action_decision (id, request_id, verdict, provider, idempotency_key, decided_at, reason_code, policy_evidence)
-		VALUES ($1, $2, 'deny', 'test-provider', $3, now(), 'test_reason', $4::jsonb)`,
-		uuid.New(), id, "auto:"+id.String(), jsonParam(evidence))
+		INSERT INTO action_decision (id, request_id, verdict, provider, idempotency_key, decided_at, reason_code, policy_evidence_proto)
+		VALUES ($1, $2, 'deny', 'test-provider', $3, now(), 'test_reason', $4)`,
+		uuid.New(), id, "auto:"+id.String(), encoded)
 	f.exec(t, `UPDATE action_request SET state = 'denied', version = 2, updated_at = now(), history_at = now() WHERE id = $1`, id)
 	f.exec(t, `INSERT INTO action_event (request_id, sequence, state, at) VALUES ($1, 2, 'denied', now())`, id)
 }
@@ -115,42 +135,11 @@ func TestPolicyEvidencePythonStoredIsReadAndWrittenBack(t *testing.T) {
 			written := f.submitInput(t, caller, input("go-decided"), Admission{RequestID: uuid.New(), Vote: &ProviderVote{
 				Provider: "test-provider", Verdict: VerdictDeny, ReasonCode: "test_reason", Evidence: &evidence,
 			}})
-			sameJSON(t, f.document(t, `SELECT policy_evidence FROM action_decision WHERE request_id = $1`, written.ID), vector.Stored)
-		})
-	}
-}
-
-func TestActorsPythonStoredAreReadAndWrittenBack(t *testing.T) {
-	f := newFixture(t)
-	for _, vector := range loadGolden(t).Actors {
-		if !vector.Valid {
-			continue
-		}
-		t.Run(vector.Name, func(t *testing.T) {
-			id := f.insertMinimalRequest(t, otherCaller.Account, "python-"+vector.Name)
-			f.exec(t, `INSERT INTO action_event (request_id, sequence, state, at, actor) VALUES ($1, 2, 'cancelled', now(), $2::jsonb)`,
-				id, string(vector.Stored))
-			events := f.events(t, id)
-			if len(events) != 2 || events[1].Actor == nil {
-				t.Fatalf("events %+v", events)
+			encoded := f.document(t, `SELECT policy_evidence_proto FROM action_decision WHERE request_id = $1`, written.ID)
+			got, err := decodeStoredPolicyEvidenceProto(encoded)
+			if err != nil || !reflect.DeepEqual(got, &evidence) {
+				t.Errorf("typed policy evidence = %+v, %v; want %+v", got, err, evidence)
 			}
-			if isCaller := events[1].Actor.GetCaller() != nil; isCaller != (vector.Kind == "caller") {
-				t.Errorf("read a %T, want a %s", events[1].Actor, vector.Kind)
-			}
-
-			if vector.Kind != "caller" {
-				return
-			}
-			actor, err := decodeStoredActor(vector.Input)
-			if err != nil {
-				t.Fatal(err)
-			}
-			owner := CallerPrincipal{Account: ServiceAccount{Namespace: actor.GetCaller().GetNamespace(), Name: actor.GetCaller().GetName()}}
-			written := f.submitInput(t, owner, input("go-"+vector.Name), Admission{RequestID: uuid.New()})
-			if _, err := f.Cancel(t.Context(), written.ID, owner); err != nil {
-				t.Fatal(err)
-			}
-			sameJSON(t, f.document(t, `SELECT actor FROM action_event WHERE request_id = $1 AND sequence = 2`, written.ID), vector.Stored)
 		})
 	}
 }
@@ -165,9 +154,10 @@ func TestAbsentValuesAreWrittenAsNull(t *testing.T) {
 		rows  int
 	}{
 		{"request", `SELECT count(*) FROM action_request WHERE description IS NULL`, 1},
-		{"events", `SELECT count(*) FROM action_event WHERE actor IS NULL`, 2},
+		{"events", `SELECT count(*) FROM action_event WHERE actor_proto IS NULL`, 2},
 		{"decision", `SELECT count(*) FROM action_decision
-			WHERE decision_note IS NULL AND reason_code IS NULL AND reason_description IS NULL AND policy_evidence IS NULL`, 1},
+			WHERE decision_note IS NULL AND reason_code IS NULL AND reason_description IS NULL
+				AND policy_evidence_proto IS NULL`, 1},
 		{"execution", `SELECT count(*) FROM action_execution
 			WHERE result IS NULL AND error IS NULL AND started_at IS NULL AND completed_at IS NULL AND executor_id IS NULL
 				AND lease_token IS NULL AND lease_expires_at IS NULL AND heartbeat_at IS NULL AND reconciled_at IS NULL`, 1},
@@ -181,8 +171,6 @@ func TestAbsentValuesAreWrittenAsNull(t *testing.T) {
 func TestAJSONNullIsAnAbsentValue(t *testing.T) {
 	f := newFixture(t)
 	allowed := f.allowed(t, caller, "json-null")
-	f.exec(t, `UPDATE action_event SET actor = 'null'::jsonb WHERE request_id = $1`, allowed.ID)
-	f.exec(t, `UPDATE action_decision SET policy_evidence = 'null'::jsonb WHERE request_id = $1`, allowed.ID)
 	f.exec(t, `UPDATE action_execution SET state = 'succeeded', result = 'null'::jsonb, error = 'null'::jsonb WHERE request_id = $1`, allowed.ID)
 
 	read := f.get(t, allowed.ID)
@@ -261,7 +249,6 @@ func TestRequestsPythonWroteCanBeDecidedAndCancelled(t *testing.T) {
 	f := newFixture(t)
 	toDecide := f.insertMinimalRequest(t, caller.Account, "python-to-decide")
 	toCancel := f.insertMinimalRequest(t, caller.Account, "python-to-cancel")
-
 	pending := f.get(t, toDecide)
 	decided, dispatch, err := f.Decide(t.Context(), toDecide, decision(pending, VerdictAllow, "test-decision"), operator)
 	if err != nil || !dispatch || decided.State != action_servicepb.ActionState_ACTION_STATE_ALLOWED || decided.Version != 2 {
@@ -278,5 +265,43 @@ func TestRequestsPythonWroteCanBeDecidedAndCancelled(t *testing.T) {
 		if got := eventStates(f.events(t, id)); !slices.Equal(got, states) {
 			t.Errorf("events of %s = %v, want %v", id, got, states)
 		}
+	}
+}
+
+func TestTypedReadersRejectInvalidPresentProtobuf(t *testing.T) {
+	f := newFixture(t)
+	actorRequest := f.submit(t, caller, "invalid-actor-proto")
+	f.exec(t, `UPDATE action_event SET actor_proto = $3 WHERE request_id = $1 AND sequence = $2`,
+		actorRequest.ID, 1, []byte{0x78, 0x01})
+	if _, err := f.Events(t.Context(), actorRequest.ID, operator, EventsFilter{}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("an actor protobuf without a principal: %v", err)
+	}
+	f.exec(t, `UPDATE action_event SET actor_proto = decode('', 'hex') WHERE request_id = $1 AND sequence = 1`, actorRequest.ID)
+	if f.count(t, `SELECT count(*) FROM action_event WHERE request_id = $1 AND sequence = 1
+		AND actor_proto IS NOT NULL AND octet_length(actor_proto) = 0`, actorRequest.ID) != 1 {
+		t.Fatal("fixture did not store an empty, non-NULL actor protobuf")
+	}
+	if _, err := f.Events(t.Context(), actorRequest.ID, operator, EventsFilter{}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("an empty actor protobuf: %v", err)
+	}
+
+	evidenceRequest := f.allowed(t, caller, "invalid-evidence-proto")
+	unknownEvidence, err := proto.Marshal(&action_servicepb.PolicyEvidence{Matched: &action_servicepb.MatchedPolicy{
+		Source: action_servicepb.PolicySource(99), Type: action_servicepb.PolicyKind_POLICY_KIND_EXACT_ACTIONS,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.exec(t, `UPDATE action_decision SET policy_evidence_proto = $2 WHERE request_id = $1`, evidenceRequest.ID, unknownEvidence)
+	if _, err := f.Get(t.Context(), evidenceRequest.ID, operator); err == nil {
+		t.Fatal("an unknown policy-source enum was accepted")
+	}
+	f.exec(t, `UPDATE action_decision SET policy_evidence_proto = decode('', 'hex') WHERE request_id = $1`, evidenceRequest.ID)
+	if f.count(t, `SELECT count(*) FROM action_decision WHERE request_id = $1
+		AND policy_evidence_proto IS NOT NULL AND octet_length(policy_evidence_proto) = 0`, evidenceRequest.ID) != 1 {
+		t.Fatal("fixture did not store an empty, non-NULL policy evidence protobuf")
+	}
+	if _, err := f.Get(t.Context(), evidenceRequest.ID, operator); err == nil {
+		t.Fatal("an empty policy-evidence protobuf was accepted")
 	}
 }

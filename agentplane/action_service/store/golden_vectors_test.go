@@ -48,10 +48,6 @@ type golden struct {
 		Decisive bool `json:"decisive"`
 	} `json:"provider_outcomes"`
 	PolicyEvidence []storedVector `json:"policy_evidence"`
-	Actors         []struct {
-		storedVector
-		Kind string `json:"kind"`
-	} `json:"actors"`
 	HistoryCursors struct {
 		Encoded []struct {
 			Name      string `json:"name"`

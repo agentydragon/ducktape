@@ -64,7 +64,6 @@ from util.settings_contract import env_name, validate_settings_fragment
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "actions"
 _ACTIONS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service"
-_MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service-migrate"
 _LABELS = {"app.kubernetes.io/name": NAME}
 
 # Where the Action Service reads linked upstream MCP client credentials from the OAuth Secret.
@@ -506,9 +505,10 @@ class Actions(Construct):
             # 20s execution drain + 5s forced persistence, with room for HTTP/adapter teardown.
             termination_grace=Duration.seconds(60),
             migrate=migrate_init_container(
-                f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}",
+                f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
                 name="migrate",
                 env_variables=self._database_env(),
+                command=["/usr/local/bin/actions-migrate"],
                 image_pull_policy=self.migrate_pull_policy,
                 memory_limit=self.migrate_memory_limit,
             ),

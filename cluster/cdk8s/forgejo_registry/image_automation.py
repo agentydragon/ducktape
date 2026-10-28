@@ -37,7 +37,6 @@ _PULL_SECRET = "forgejo-images-creds"
 IMAGES = (
     # keep-sorted start
     "agentplane-action-service",
-    "agentplane-action-service-migrate",
     "agentplane-app",
     "agentplane-app-migrate",
     "agentplane-egress-history-migrate",

@@ -10,6 +10,19 @@ The service publishes an agent overview at `/llms.txt`, linked Markdown workflow
 `/docs/agents/`, and request/response schemas at `/openapi.json`. These static documentation
 surfaces do not require caller admission.
 
+## Durable storage
+
+The service owns the `actions` database. Action identity and lookup fields use SQL columns;
+immutable event actors and decision policy evidence use the canonical `Principal` and
+`PolicyEvidence` protobuf messages as binary snapshots. Arguments, execution results and errors
+remain JSONB. Serving code reads and writes only this representation, with no legacy JSON fallback.
+
+The migration init container and server use the same image. The Deployment uses `Recreate` for
+schema cutovers so old writers stop before migration. Goose serializes init containers with its
+PostgreSQL session lock. Version 6 converts historical JSON and contracts the schema in one
+transaction; failure leaves the old schema and data intact. A committed cutover requires a
+storage-compatible image for application rollback.
+
 ## Built-in input contracts
 
 Sandbox and orchestration Action inputs have one Go contract per wire shape. The same typed

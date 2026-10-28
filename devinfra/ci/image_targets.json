@@ -219,11 +219,6 @@
       "test": "//agentplane/action_service/...",
       "registry": "forgejo"
     },
-    "agentplane-action-service-migrate": {
-      "target": "//agentplane/action_service/migrations:image",
-      "test": "//agentplane/action_service/migrations/...",
-      "registry": "forgejo"
-    },
     "agentplane-mcp-edge-migrate": {
       "target": "//agentplane/mcp_edge/migrations:image",
       "registry": "forgejo"

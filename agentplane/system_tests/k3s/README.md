@@ -55,7 +55,8 @@ only the loops it attached after k3s removes its Pods. This gives the VM test gu
 device while keeping state on the fixture's filesystem class. The fixture runs the Go egress proxy
 and Goose history migrator through the same construct as staging, with fixture-only PostgreSQL TLS
 settings. The shared construct supplies the egress RBAC, policies, trust mounts, images and flags.
-Actions uses its Go service and Goose migrator images, with native gRPC readiness and `livez` probes.
+Actions runs Goose migrations from its service image through `/usr/local/bin/actions-migrate`,
+with native gRPC readiness and `livez` probes.
 The fixture selects that runtime explicitly; staging selects its own independently.
 The standalone MCP edge runs in every stack because the app's Connection Service endpoint targets it;
 its own PostgreSQL database, Goose init migrator, caller-token RBAC and gRPC readiness are rendered
