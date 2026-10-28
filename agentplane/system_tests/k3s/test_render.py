@@ -253,6 +253,12 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     # The fixture's one Pod execution environment, on its local-path storage.
     template = _resource(docs, "SandboxTemplate", fixture_chart.POD_TEMPLATE)
     assert template["spec"]["stateVolume"]["claim"]["storageClassName"] == "local-path"
+    pod_containers = {container["name"]: container for container in template["spec"]["pod"]["spec"]["containers"]}
+    runner_env = {entry["name"]: entry.get("value") for entry in pod_containers["runner"]["env"]}
+    assert runner_env["OTEL_SDK_DISABLED"] == "true"
+    sidecar_env = {entry["name"]: entry.get("value") for entry in pod_containers["egress-sidecar"]["env"]}
+    assert sidecar_env["OTEL_SDK_DISABLED"] == "true"
+    assert "OTEL_SDK_DISABLED" not in {entry["name"] for entry in pod_containers["codex-executor"].get("env", [])}
 
     for name, expected_image in (
         ("sandbox", "git.allegedly.works/ducktape-ci/agentplane-sandbox:unset"),

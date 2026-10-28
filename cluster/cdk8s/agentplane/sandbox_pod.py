@@ -253,7 +253,12 @@ def add_sidecar_settings(
 
 
 def _egress_sidecar(
-    env: Environment, settings: PodWiring, resources: k8s.ResourceRequirements, *, telemetry_enabled: bool
+    env: Environment,
+    settings: PodWiring,
+    resources: k8s.ResourceRequirements,
+    *,
+    telemetry_enabled: bool,
+    disable_otel_sdk: bool,
 ) -> k8s.Container:
     telemetry_env = (
         [
@@ -266,7 +271,11 @@ def _egress_sidecar(
     return k8s.Container(
         name=sidecar_config.CONTAINER_NAME,
         image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
-        env=[settings.path_env, *telemetry_env],
+        env=[
+            settings.path_env,
+            *telemetry_env,
+            *([k8s.EnvVar(name="OTEL_SDK_DISABLED", value="true")] if disable_otel_sdk else []),
+        ],
         security_context=workload_security_context(),
         readiness_probe=k8s.Probe(
             http_get=k8s.HttpGetAction(
@@ -328,6 +337,7 @@ def pod_spec(
     sidecar_resources: k8s.ResourceRequirements | None = None,
     image_pull_secret_name: str | None = SECRET_NAME,
     enable_telemetry: bool = False,
+    disable_otel_sdk: bool = False,
 ) -> k8s.PodSpec:
     """`workload` beside the egress sidecar, as uid 1000, with no ServiceAccount token in the Pod: the
     projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
@@ -337,7 +347,8 @@ def pod_spec(
     `additional_workloads` are other workload containers, before the egress sidecar. `sidecar_settings`
     is the sidecar's settings file (`add_sidecar_settings`), and `workload_volumes`
     are Pod volumes the workload mounts beyond the egress path's own. `node_selector` is the optional
-    placement restriction for this template."""
+    placement restriction for this template. `disable_otel_sdk` avoids a sidecar export attempt in a
+    hermetic fixture with no collector."""
     settings = sidecar_settings.pod_wiring(
         volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.Settings.config_file_env
     )
@@ -356,6 +367,7 @@ def pod_spec(
                     limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("128Mi")},
                 ),
                 telemetry_enabled=enable_telemetry,
+                disable_otel_sdk=disable_otel_sdk,
             ),
         ],
         automount_service_account_token=False,

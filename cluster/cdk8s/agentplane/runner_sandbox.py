@@ -190,7 +190,8 @@ def workspace_volume_spec(
 class RunnerSandbox(Construct):
     """The environment's Pod execution environment, plus the VM template and relay when enabled. Fleet
     network and route fences are added separately. A VM workspace can name a distinct class when its
-    Block claim needs a different provisioner from the state filesystem."""
+    Block claim needs a different provisioner from the state filesystem. A hermetic fixture with no
+    trace collector can disable the Pod runner and sidecar SDKs without changing the VM guest."""
 
     def __init__(
         self,
@@ -211,6 +212,7 @@ class RunnerSandbox(Construct):
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
         control_service: ServiceRef | None = None,
         session_reconcile_concurrency: int | None = None,
+        disable_otel_sdk: bool = False,
     ) -> None:
         super().__init__(scope, id)
         if vm_workspace_storage_class is not None:
@@ -236,6 +238,7 @@ class RunnerSandbox(Construct):
             control_service=control_service,
             egress_api_service=egress_api_service,
             session_reconcile_concurrency=session_reconcile_concurrency,
+            disable_otel_sdk=disable_otel_sdk,
         )
         if env.vm_sandboxes:
             launcher_relay.LauncherRelayPolicy(
@@ -308,6 +311,7 @@ class RunnerTemplate(Construct):
         control_service: ServiceRef | None = None,
         egress_api_service: ServiceRef | None = None,
         session_reconcile_concurrency: int | None = None,
+        disable_otel_sdk: bool = False,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
@@ -324,6 +328,7 @@ class RunnerTemplate(Construct):
         self.trust_mounts = trust_mounts if trust_mounts is not None else sandbox_pod.proxy_trust_mounts()
         self.control_service = control_service
         self.session_reconcile_concurrency = session_reconcile_concurrency
+        self.disable_otel_sdk = disable_otel_sdk
         self.agent_cli_env = agent_cli_environment(service_urls(env, egress_api_service=egress_api_service))
         if not env.isolated_codex_executor and executor_resources is not None:
             raise ValueError("executor_resources cannot be set when isolated Codex execution is disabled")
@@ -453,6 +458,7 @@ class RunnerTemplate(Construct):
                     # On the container and not just on the harness children the runner spawns.
                     *sandbox_pod.egress_env(),
                     *(k8s.EnvVar(name=name, value=value) for name, value in self.agent_cli_env.items()),
+                    *([k8s.EnvVar(name="OTEL_SDK_DISABLED", value="true")] if self.disable_otel_sdk else []),
                     # Neither a workload token nor a LiteLLM key: the placeholder the
                     # agentplane-workload EgressCredential derives from its name. Central
                     # substitutes the sidecar-only projected token; the ingress replaces
@@ -523,6 +529,7 @@ class RunnerTemplate(Construct):
                 sidecar_resources=self.sidecar_resources,
                 image_pull_secret_name=self.image_pull_secret_name,
                 enable_telemetry=True,
+                disable_otel_sdk=self.disable_otel_sdk,
             ),
         )
         state_volume = {
