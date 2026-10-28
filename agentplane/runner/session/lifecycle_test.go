@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -230,32 +231,45 @@ func TestIdleProcessExitConsumesCompletedCommandDemand(t *testing.T) {
 }
 
 func TestPreparationCompletionRefreshesStaleSchedulingInput(t *testing.T) {
-	s, p, m := frameTestSessionWithController(t, []string{"/bin/cat"}, true)
-	setSessionPhase(t, s, Preparing)
-	// Model the completion resource becoming visible before the worker refreshes
-	// its Session input. The native process is already live, but input is stale.
-	m.publishMu.Lock()
-	input, _, err := ReadInput(m.ctx, m.state, s.id)
-	if err == nil {
-		input.ProcessID = ""
-		input.ProcessRunning = false
-		err = publish(m.ctx, m.state, s.id, input)
-	}
-	m.publishMu.Unlock()
-	if err != nil {
-		t.Fatal(err)
-	}
-	op := operation.New(m.ctx)
-	op.Register(&s.work)
-	s.mu.Lock()
-	s.preparation = op
-	s.mu.Unlock()
-	if err := op.Start(
-		&s.mu,
-		func(done bool) error { return m.publishOperation(s.id, op.ID(), done) },
-		m.fail, func(context.Context) error { return nil }, nil, nil,
-	); err != nil {
-		t.Fatal(err)
-	}
+	var gate sync.Mutex
+	s, p, m := frameTestSessionWithControllerGate(t, []string{"/bin/cat"}, true, &gate)
+	waitSession(t, s, func(Runtime) bool { return true }, "initial Session runtime")
+	func() {
+		// Wait for any in-flight reconcile before constructing the synthetic
+		// preparation. Otherwise it can overwrite the test's Preparing phase.
+		gate.Lock()
+		defer gate.Unlock()
+		setSessionPhase(t, s, Preparing)
+		// Model the completion resource becoming visible before the worker refreshes
+		// its Session input. The native process is already live, but input is stale.
+		m.publishMu.Lock()
+		defer m.publishMu.Unlock()
+		input, _, err := ReadInput(m.ctx, m.state, s.id)
+		if err == nil {
+			input.ProcessID = ""
+			input.ProcessRunning = false
+			err = publish(m.ctx, m.state, s.id, input)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		op := operation.New(m.ctx)
+		op.Register(&s.work)
+		s.mu.Lock()
+		s.preparation = op
+		s.mu.Unlock()
+		if err := op.Start(
+			&s.mu,
+			func(done bool) error { return m.publishOperation(s.id, op.ID(), done) },
+			m.fail, func(context.Context) error { return nil }, nil, nil,
+		); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-op.Done():
+		case <-time.After(lifecycleTestTimeout):
+			t.Fatal("preparation operation did not finish")
+		}
+	}()
 	waitSession(t, s, func(current Runtime) bool { return current.Phase == Ready && current.ProcessID == p.ID() }, "preparation ready after stale input")
 }
