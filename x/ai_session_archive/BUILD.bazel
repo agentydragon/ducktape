@@ -104,10 +104,17 @@ py_library(
 )
 
 py_library(
+    name = "codex_metadata",
+    srcs = ["codex_metadata.py"],
+    deps = [":restic"],
+)
+
+py_library(
     name = "ingest",
     srcs = ["ingest.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":codex_metadata",
         ":database",
         ":models",
         ":restic",
@@ -288,6 +295,23 @@ py_test(
 )
 
 py_test(
+    name = "test_codex_title_conflict",
+    srcs = ["test_codex_title_conflict.py"],
+    data = ["//third_party/restic"],
+    requires_docker = True,
+    deps = [
+        ":database",
+        ":ingest",
+        ":models",
+        ":testing",
+        "//:conftest",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_codex_parent_links",
     srcs = ["test_codex_parent_links.py"],
     requires_docker = True,
@@ -408,6 +432,48 @@ py_test(
         "@pypi//itsdangerous",
         "@pypi//playwright",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "codex_titles_testing",
+    testonly = True,
+    srcs = ["codex_titles_testing.py"],
+)
+
+py_test(
+    name = "test_codex_title_rename",
+    srcs = ["test_codex_title_rename.py"],
+    data = ["//third_party/restic"],
+    requires_docker = True,
+    deps = [
+        ":codex_titles_testing",
+        ":database",
+        ":ingest",
+        ":models",
+        ":testing",
+        "//:conftest",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_codex_titles",
+    srcs = ["test_codex_titles.py"],
+    data = ["//third_party/restic"],
+    requires_docker = True,
+    deps = [
+        ":codex_titles_testing",
+        ":database",
+        ":ingest",
+        ":models",
+        ":testing",
+        "//:conftest",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

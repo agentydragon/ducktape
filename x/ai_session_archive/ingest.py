@@ -16,7 +16,9 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
+from x.ai_session_archive.codex_metadata import read_codex_titles
 from x.ai_session_archive.database import (
+    CodexTitleObservationRow,
     FileVersionRecordRow,
     FileVersionRow,
     MachineRow,
@@ -75,6 +77,7 @@ class IngestReport:
     files_partial: int
     files_failed: int
     files_unclassified: int
+    codex_metadata_partial: int
 
 
 @dataclass(frozen=True)
@@ -109,9 +112,22 @@ class SnapshotIngestor:
     def ingest(self) -> IngestReport:
         snapshots = self._source.restic.list_snapshots()
         self._ensure_source()
+        if snapshots:
+            # Make the latest names visible before a potentially long historical transcript import.
+            self._process_codex_metadata(snapshots[-1])
+            self._project_codex_titles(allow_index_only=False)
         for snapshot in snapshots:
             self._prepare_snapshot(snapshot)
+            self._process_codex_metadata(snapshot)
             self._process_snapshot(snapshot)
+        with self._session_factory() as db:
+            all_inventoried = all(
+                row.inventory_status == "complete" and row.processing_status == "complete"
+                for row in db.scalars(
+                    select(ResticSnapshotRow).where(ResticSnapshotRow.machine_id == self._source.machine_id)
+                )
+            )
+        self._project_codex_titles(allow_index_only=all_inventoried)
         return self._report(len(snapshots))
 
     def _ensure_source(self) -> None:
@@ -154,6 +170,7 @@ class SnapshotIngestor:
                         comparison_snapshot_id=None,
                         inventory_status="pending",
                         processing_status="pending",
+                        codex_metadata_status="pending",
                         capture_status="unknown",
                     )
                     db.add(row)
@@ -373,6 +390,100 @@ class SnapshotIngestor:
             )
             failed = any(status in ("pending", "failed") for status in statuses)
             snapshot_row.processing_status = "failed" if failed else "complete"
+
+    def _process_codex_metadata(self, snapshot: ResticSnapshot) -> None:
+        with self._session_factory() as db, db.begin():
+            row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id))
+            if row is None:
+                row = ResticSnapshotRow(
+                    machine_id=self._source.machine_id,
+                    snapshot_id=snapshot.id,
+                    captured_at=snapshot.captured_at,
+                    parent_snapshot_id=snapshot.parent_id,
+                    tree_id=snapshot.tree_id,
+                    paths=list(snapshot.paths),
+                    comparison_snapshot_id=None,
+                    inventory_status="pending",
+                    processing_status="pending",
+                    codex_metadata_status="pending",
+                    capture_status="unknown",
+                )
+                db.add(row)
+            if row.codex_metadata_status in ("complete", "partial"):
+                return
+        roots = tuple(root.path for root in self._roots if root.harness == Harness.CODEX)
+        try:
+            observations, warnings = read_codex_titles(self._source.restic, snapshot.id, roots)
+            with self._session_factory() as db, db.begin():
+                row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id), with_for_update=True)
+                if row is None or row.codex_metadata_status in ("complete", "partial"):
+                    return
+                for item in observations:
+                    key = (self._source.machine_id, snapshot.id, item.native_session_id)
+                    if db.get(CodexTitleObservationRow, key) is None:
+                        db.add(
+                            CodexTitleObservationRow(
+                                machine_id=self._source.machine_id,
+                                snapshot_id=snapshot.id,
+                                native_session_id=item.native_session_id,
+                                source_path=item.source_path,
+                                title=item.title,
+                                title_source=item.title_source,
+                                updated_at=item.updated_at,
+                            )
+                        )
+                row.codex_metadata_status = "partial" if warnings else "complete"
+                row.codex_metadata_error = "; ".join(warnings)[:4000] if warnings else None
+        except Exception as exc:
+            with self._session_factory() as db, db.begin():
+                row = db.get(ResticSnapshotRow, (self._source.machine_id, snapshot.id), with_for_update=True)
+                if row is not None:
+                    row.codex_metadata_status = "failed"
+                    row.codex_metadata_error = _error_text(exc)
+
+    def _project_codex_titles(self, *, allow_index_only: bool) -> None:
+        with self._session_factory() as db, db.begin():
+            sessions = list(
+                db.scalars(
+                    select(SessionRow).where(
+                        SessionRow.machine_id == self._source.machine_id, SessionRow.harness == Harness.CODEX.value
+                    )
+                )
+            )
+            by_path = {row.source_path: row for row in sessions if not row.native_session_id_conflict}
+            by_native: dict[str, list[SessionRow]] = {}
+            for row in sessions:
+                if row.native_session_id and not row.native_session_id_conflict and not row.native_session_id_inferred:
+                    by_native.setdefault(row.native_session_id, []).append(row)
+            latest: dict[UUID, tuple[datetime, str, str]] = {}
+            observations = db.execute(
+                select(CodexTitleObservationRow, ResticSnapshotRow.captured_at)
+                .join(
+                    ResticSnapshotRow,
+                    (ResticSnapshotRow.machine_id == CodexTitleObservationRow.machine_id)
+                    & (ResticSnapshotRow.snapshot_id == CodexTitleObservationRow.snapshot_id),
+                )
+                .where(CodexTitleObservationRow.machine_id == self._source.machine_id)
+            )
+            for observation, captured_at in observations:
+                match = by_path.get(observation.source_path) if observation.source_path else None
+                if match is not None and match.native_session_id != observation.native_session_id:
+                    continue
+                if match is None and not observation.source_path and allow_index_only:
+                    candidates = by_native.get(observation.native_session_id, [])
+                    match = candidates[0] if len(candidates) == 1 else None
+                if match is None:
+                    continue
+                rank = (captured_at, observation.snapshot_id, observation.title)
+                if match.id not in latest or rank > latest[match.id]:
+                    latest[match.id] = rank
+            for row in sessions:
+                if row.id in latest:
+                    row.title = latest[row.id][2]
+                    row.codex_title_from_metadata = True
+                elif row.codex_title_from_metadata and allow_index_only:
+                    row.title = None
+                    row.codex_title_from_metadata = False
 
     def _process_file(self, snapshot: ResticSnapshot, path: str) -> None:
         try:
@@ -621,11 +732,35 @@ class SnapshotIngestor:
             row.cwd = str(metadata["cwd"])
         if row.title is None and metadata.get("title"):
             row.title = str(metadata["title"])[:500]
+        if row.harness == Harness.CODEX.value:
+            self._apply_latest_codex_title(db, row)
         first = metadata.get("first_timestamp")
         last = metadata.get("last_timestamp")
         if isinstance(first, datetime) and isinstance(last, datetime):
             row.started_at = first if row.started_at is None else min(row.started_at, first)
             row.last_activity_at = last if row.last_activity_at is None else max(row.last_activity_at, last)
+
+    def _apply_latest_codex_title(self, db: DbSession, row: SessionRow) -> None:
+        if row.native_session_id_conflict or not row.native_session_id:
+            return
+        observations = db.execute(
+            select(CodexTitleObservationRow, ResticSnapshotRow.captured_at)
+            .join(
+                ResticSnapshotRow,
+                (ResticSnapshotRow.machine_id == CodexTitleObservationRow.machine_id)
+                & (ResticSnapshotRow.snapshot_id == CodexTitleObservationRow.snapshot_id),
+            )
+            .where(
+                CodexTitleObservationRow.machine_id == row.machine_id,
+                CodexTitleObservationRow.native_session_id == row.native_session_id,
+            )
+            .order_by(ResticSnapshotRow.captured_at.desc(), CodexTitleObservationRow.snapshot_id.desc())
+        )
+        for observation, _ in observations:
+            if observation.source_path == row.source_path:
+                row.title = observation.title
+                row.codex_title_from_metadata = True
+                return
 
     def _resolve_codex_parent_link(self, db: DbSession, child: SessionRow) -> None:
         if child.parent_native_session_id_conflict:
@@ -717,15 +852,22 @@ class SnapshotIngestor:
         return IngestReport(
             snapshots_seen=snapshot_count,
             snapshots_complete=sum(
-                row.inventory_status == "complete" and row.processing_status == "complete" for row in snapshots
+                row.inventory_status == "complete"
+                and row.processing_status == "complete"
+                and row.codex_metadata_status in ("complete", "partial")
+                for row in snapshots
             ),
             snapshots_incomplete=sum(
-                row.inventory_status != "complete" or row.processing_status != "complete" for row in snapshots
+                row.inventory_status != "complete"
+                or row.processing_status != "complete"
+                or row.codex_metadata_status not in ("complete", "partial")
+                for row in snapshots
             ),
             files_complete=sum(row.status == "complete" for row in files),
             files_partial=sum(row.status == "partial" for row in files),
             files_failed=sum(row.status == "failed" for row in files),
             files_unclassified=sum(row.status == "unclassified" for row in files),
+            codex_metadata_partial=sum(row.codex_metadata_status == "partial" for row in snapshots),
         )
 
 
