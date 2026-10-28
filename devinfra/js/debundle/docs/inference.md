@@ -55,16 +55,15 @@ factories and returned records require the same stable-function judgment;
 returned records additionally require their checked native allocation. Their
 member and capture data are carried by the resulting fact.
 
-Own-property inspection uses a separate call-local inference store. The shared
-semantic context supplies completed native identity and integrity judgments;
-the local rules derive an exact object origin, its canonical source shape, and
-the current prefix state before projecting names or descriptors. Each query
-borrows the selected object's current shape and property state, and the store
-is discarded after the call. Intermediate facts share those references; the
-final projection is moved out after its explanation is expanded. No prefix
-fact survives a later mutation. Name projection follows ECMAScript own-string-key
-ordering, while descriptor projection retains current data identities and
-accessor closures without invoking them.
+Own-property inspection is a direct producer in the shared runtime fact
+context, keyed by the query's program point. It reads completed semantic
+judgments and the selected object's current prefix shape and property state,
+then projects names or descriptors. The producer forwards the judgments'
+typed proof dependencies; it does not rebuild trust from a report. A terminal
+projection is consumed with `take_final` after its dependencies are recorded.
+No prefix fact survives a later mutation. Name projection follows ECMAScript
+own-string-key ordering, while descriptor projection retains current data
+identities and accessor closures without invoking them.
 Namespace-wrapper source checks can request the same ordinary prefix-state
 fact without a native call key; the consumer composes that origin with its
 separately guarded provider proof.
@@ -93,10 +92,9 @@ its dependencies. Semantic certificates use `GuardedContext::finish` around
 positive `require` calls; any absent requirement prevents publication, while a
 later contribution wakes the consumer. Author and runtime assumptions enter through
 `assume`; an author assertion remains distinct from an inferred source fact.
-`RuleContext::import` borrows a proved judgment from an earlier immutable
-context and inherits its dependencies. Call-local rules require an explicit
-bridge key, retaining the source proof for explanations. Reports are never
-decoded back into trusted judgments.
+Consumers of completed judgments carry their actual typed
+`ProofDependencies` forward with `assume`. Reports are explanatory projections
+only and are never decoded back into trusted judgments.
 An evaluator cannot publish a fact after requesting an unproved prerequisite,
 even if it accidentally returns a successful value.
 
@@ -117,8 +115,10 @@ their own runtime assumptions.
 keys and join contributions; both missing and present reads install watchers.
 Multiple producers can contribute to one fact. Changes to values or captured
 input dependencies wake consumers. Source-ordered rounds retain the
-conservative initial-sweep semantics of source analyses. Only a completed
-closure is exposed outside a producer.
+conservative initial-sweep semantics of source analyses. Growing dependency
+families, including cross-module function effects and recursive purity, still
+run to closure in their worklist. Only a completed closure is exposed outside
+a producer.
 
 Binding, property, parameter and return flow shares a store with candidate-object
 reachability. Return and property contributions propagate candidate identities
@@ -139,36 +139,44 @@ recursive cycles therefore need no optimistic purity seed. Unknown targets
 remain direct unknown-call effects. Pinned export assertions are explicit
 axioms; export inference does not consume chunk-local declared-pure hints.
 
-The call-local `Inference` mode retains demand-driven immutable certificates.
-A query discovers missing prerequisites and the FIFO queue retries consumers
-when those prerequisites become proven. A waiting cycle does not prove itself;
-unsupported or missing facts retain the conservative fallback. This mode borrows
-position-specific object state and discards it after the call.
+Runtime expression, invoke, call, heap, callback, and model transfers use one
+shared runtime fact context. Each child is keyed by a `ProgramPoint` (owning
+source unit and nested operation path) and carries operation-specific inputs,
+including its environment or captured context where required. A transfer owns
+its predecessor `ExecutionState` and returns a typed result with a successor
+state; already published predecessor facts remain immutable. Acyclic terminal
+dependencies are evaluated eagerly in dependency order on the same fact
+context. `take_final` retires their single-consumer requests and results while
+preserving proof dependencies, so parents do not replay and a missing terminal
+result is not turned into a provisional unknown. Growing strongly connected
+fact families continue to use worklist evaluation.
+
+Invocation memo entries are facts in the shared runtime store. `ExecutionState`
+keeps links from each invocation signature to its memo program point, while the
+`Outcome` itself remains a typed memo fact in the store. Replacing or clearing
+those links retires the corresponding memo facts. Existing active-invocation
+recursion checks and evaluation budgets remain in force; this scheduling change
+does not add recursive return-summary inference.
 
 ## Dependency regions and barriers
 
-Every feedback region must iterate in one store. Completion barriers are valid
-only at actual one-way dependencies; the old pass order alone is insufficient.
-The source-level evidence is recorded in `plans/shared_inference.md`.
+Completion barriers are valid only at actual one-way dependencies; the old pass
+order alone is insufficient. The source-level evidence is recorded in
+`plans/shared_inference.md`.
 
-- Source shapes and value flow feed escape/write admission. Their consumers do
-  not change source assignments, properties, parameters or returns.
-- Source-only alias validation precedes author-assisted aliases. An assertion
-  cannot establish the source-only absence premise used to accept that assertion.
 - Native integrity requires a completed conditional write census from every
-  analyzed chunk. Native branch pruning consumes source-derived callback object
-  argument coverage; later inferred callback-factory certificates do not produce
-  that coverage. Integrity and callable certificates therefore cannot certify
-  their own census by cycling through a generic factory flag.
-- Completed native/construction/callable facts feed function effects. Function
-  purity does not write the source/native census. Local and imported effects do
-  feed each other and have no intervening completion barrier.
+  analyzed chunk. Native branch refinement consumes
+  `callback_object_arguments` from the source-only canonical AST collectors.
+  Later generic callback-factory certificates do not produce that field or feed
+  the census.
+- Source-only aliases and assignments precede captured author-input validation.
+  Author assertions cannot establish the source-only absence premises used to
+  validate those assertions.
 - Completed static read/rebind and function facts feed execution-prefix heap,
-  capture and reentry interpretation. Prefix execution does not update static
-  flow or function-purity caches. A checked call-local result can discharge an
-  exact statement obligation without making the provider function globally pure.
-- Own-property queries borrow the selected current prefix state. Their results
-  do not update provider source certificates and cannot survive a later mutation.
+  capture, and reentry interpretation. Prefix execution does not update static
+  flow or function-purity caches. Own-property queries use the selected current
+  prefix state; their results do not update provider source certificates and
+  cannot survive a later mutation.
 
 A changed source, author input, import summary or analysis policy creates a new
 context. A missing fact during evaluation is bottom, not proof that a JavaScript
@@ -188,7 +196,7 @@ bitmap representation or cross-module preparation caches.
 
 `synchronous_execution.inference_uses` expands the rule names and captured-input
 references for certificates actually consumed by timing analysis, including
-native call identity, callable conclusions and call-local own-property
+native call identity, callable conclusions and position-specific own-property
 projections. These projections establish return shape only; they do not
 establish purity or exception freedom. Purity and heap reports keep their
 existing dependency fields. Saved dependency graphs are diagnostic artifacts,
