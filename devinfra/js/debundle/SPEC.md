@@ -165,7 +165,7 @@ module-quotient edges. Reason values are the serialized `DepKind` names:
 `deferred_rebind`, `sequenced`, `co_declaration`, and `local_effect`; repeated
 values are combined with OR. Rows have stable ID ordering, with the selected
 binding, source unit, atomic group, proposal, or diagnostic kept first in its
- matching section before truncation.
+matching section before truncation.
 
 ## Unassigned source
 
