@@ -277,9 +277,7 @@ pub(super) fn run_describe(args: DescribeArgs, roots: InspectionRoots) -> Result
         },
         &args.common.modules_root,
         args.source_root.as_deref(),
-        roots.spec_root.as_deref(),
-        roots.graph_source_root.as_deref(),
-        &roots.graph_package_roots,
+        &roots,
         GraphCompatibilityScope::AuthoredModuleTree { tree_config: None },
     )?;
     // Finish the entire batch before emitting any result, including NDJSON.

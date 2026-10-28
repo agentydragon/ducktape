@@ -89,9 +89,11 @@ fn verify_graph_compatibility_with_scope(
         &graph,
         modules_root,
         selector_source_root,
-        spec_root,
-        graph_source_root,
-        graph_package_roots,
+        &InspectionRoots {
+            spec_root: spec_root.map(std::path::Path::to_path_buf),
+            graph_source_root: graph_source_root.map(std::path::Path::to_path_buf),
+            graph_package_roots: graph_package_roots.clone(),
+        },
         scope,
     )
 }
@@ -101,9 +103,7 @@ fn verify_graph_header_compatibility(
     graph: &graph_provenance::GraphHeader,
     modules_root: &std::path::Path,
     selector_source_root: Option<&std::path::Path>,
-    spec_root: Option<&std::path::Path>,
-    graph_source_root: Option<&std::path::Path>,
-    graph_package_roots: &std::collections::BTreeMap<String, std::path::PathBuf>,
+    roots: &InspectionRoots,
     scope: GraphCompatibilityScope<'_>,
 ) -> Result<()> {
     let (require_module_scope, tree_config) = match scope {
@@ -120,9 +120,9 @@ fn verify_graph_header_compatibility(
         )
     })?;
     let current = graph_provenance::CurrentRoots {
-        spec: spec_root.map(std::path::Path::to_path_buf),
-        source: graph_source_root.map(std::path::Path::to_path_buf),
-        packages: graph_package_roots.clone(),
+        spec: roots.spec_root.clone(),
+        source: roots.graph_source_root.clone(),
+        packages: roots.graph_package_roots.clone(),
     };
     let (regenerate_command, regenerate_cwd) = provenance.regeneration_recipe(&current)?;
     if require_module_scope && provenance.modules_directory.is_none() {
