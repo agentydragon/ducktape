@@ -646,12 +646,11 @@ class Egress(Construct):
                 RUNNER_INGRESS_AUDIENCE,
             ],
         }
-        validate_settings_fragment(Settings, content)
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-go-settings", namespace=env.namespace),
-            content=yaml_config(content),
+            content=yaml_config(validate_settings_fragment(Settings, content)),
             # A directory of its own: the CA volumes mount under /etc/agentplane-egress, and nothing
             # can mount inside a read-only ConfigMap volume.
             path="/etc/agentplane-egress/settings/settings.yaml",

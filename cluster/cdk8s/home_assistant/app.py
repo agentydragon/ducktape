@@ -311,9 +311,10 @@ _ONBOARDING_SETTINGS_CONTENT = {
     ).model_dump(),
     "core_config": onboarding.CoreConfig(time_zone="America/Los_Angeles").model_dump(exclude_none=True),
 }
-validate_settings_fragment(onboarding.Settings, _ONBOARDING_SETTINGS_CONTENT)
 _ONBOARDING_SETTINGS = ConfigMapArgs(
-    name=_ONBOARDING, namespace=_NAMESPACE, data={"settings.yaml": yaml_config(_ONBOARDING_SETTINGS_CONTENT)}
+    name=_ONBOARDING,
+    namespace=_NAMESPACE,
+    data={"settings.yaml": yaml_config(validate_settings_fragment(onboarding.Settings, _ONBOARDING_SETTINGS_CONTENT))},
 )
 
 
@@ -399,8 +400,7 @@ def _token_provisioner(scope: Construct) -> None:
         "owner_username": _OWNER_USERNAME,
         "tokens": [token.model_dump(exclude_defaults=True) for token in _TOKENS],
     }
-    validate_settings_fragment(tokens.Settings, content)
-    settings = _settings_config_map(scope, _TOKEN_PROVISIONER, content)
+    settings = _settings_config_map(scope, _TOKEN_PROVISIONER, validate_settings_fragment(tokens.Settings, content))
     k8s.KubeRoleBinding(
         scope,
         "token-provisioner-binding",

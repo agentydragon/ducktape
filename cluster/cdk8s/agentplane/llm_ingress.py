@@ -125,12 +125,11 @@ class LlmIngress(Construct):
             "attribution": env.llm_ingress.attribution.model_dump(mode="json"),
             **({} if catalog_map is None else {"codex_model_catalog_file": str(_CODEX_CATALOG_PATH)}),
         }
-        validate_settings_fragment(Settings, content)
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{_NAME}-settings", namespace=env.namespace),
-            content=yaml_config(content),
+            content=yaml_config(validate_settings_fragment(Settings, content)),
             path="/etc/agentplane-llm-ingress/settings.yaml",
         )
         deployment = self._add_deployment(service_account, settings, catalog_map)

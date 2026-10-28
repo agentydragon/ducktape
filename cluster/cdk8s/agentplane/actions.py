@@ -345,12 +345,11 @@ class Actions(Construct):
         content["action_groups"] = {
             key: group.model_dump(mode="json", exclude_unset=True) for key, group in groups.items()
         }
-        validate_settings_fragment(Settings, content)
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name="actions-settings", namespace=env.namespace),
-            content=yaml_config(content),
+            content=yaml_config(validate_settings_fragment(Settings, content)),
             path="/etc/agentplane-actions/settings.yaml",
         )
         workload = self._add_workload(settings)

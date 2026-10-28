@@ -129,12 +129,11 @@ class HistoryService(Construct):
                 "settle_deltas": env.settle_deltas,
             },
         }
-        validate_settings_fragment(Settings, content)
         config = SettingsFile(
             self,
             "config",
             metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace),
-            content=yaml_config(content),
+            content=yaml_config(validate_settings_fragment(Settings, content)),
             path="/etc/agentplane-history-service/config.yaml",
         )
         # The History Service writes the `sandbox_service` database, so it connects as that

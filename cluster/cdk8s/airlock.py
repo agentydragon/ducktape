@@ -144,9 +144,10 @@ _CONFIG_DATA = {
     "port": SERVICE.port.number,
     "oauth": OAUTH_CONFIG.model_dump(mode="json", exclude_unset=True),
 }
-validate_settings_fragment(Settings, _CONFIG_DATA)
 CONFIG_MAP = ConfigMapArgs(
-    name="airlock-config", namespace=NAME, data={_CONFIG_FILE: yaml_config(_CONFIG_DATA)}
+    name="airlock-config",
+    namespace=NAME,
+    data={_CONFIG_FILE: yaml_config(validate_settings_fragment(Settings, _CONFIG_DATA))},
 )
 
 

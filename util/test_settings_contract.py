@@ -107,9 +107,9 @@ def test_flags_render_kebab_case_in_call_order_after_type_checks() -> None:
 
 def test_settings_fragment_checks_each_present_key_and_value() -> None:
     content = {"allowed_namespaces": ["a", "b"], "servers": {"github": {"client_id": "id"}}}
-    validate_settings_fragment(_Settings, content)
+    assert validate_settings_fragment(_Settings, content) is content
     coercible = {"listen_port": "9090"}
-    validate_settings_fragment(_Settings, coercible)
+    assert validate_settings_fragment(_Settings, coercible) is coercible
     assert coercible["listen_port"] == "9090"
     with pytest.raises(ValidationError):
         validate_settings_fragment(_Settings, {"listen_port": "not-a-port"})

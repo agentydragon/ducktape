@@ -85,12 +85,11 @@ class McpEdge(Construct):
             "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
             "mintable_accounts": sorted(f"{account.namespace}/{account.name}" for account in props.mintable_accounts),
         }
-        validate_settings_fragment(Settings, content)
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
-            content=yaml_config(content),
+            content=yaml_config(validate_settings_fragment(Settings, content)),
             path="/etc/agentplane-mcp-edge/settings.yaml",
         )
         variables = {env_name(Settings, "database_url"): database_url}

@@ -120,13 +120,12 @@ class Notifications(Construct):
             },
             "github": {"app_id": github.app_id} if github is not None else None,
         }
-        validate_settings_fragment(Settings, content)
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
             path="/etc/agentplane-notifications/settings.yaml",
-            content=yaml_config(content),
+            content=yaml_config(validate_settings_fragment(Settings, content)),
         )
         readiness = grpc_probe(port=endpoint.pod_port, initial_delay_seconds=3, period_seconds=10)
         liveness = grpc_probe(

@@ -142,13 +142,14 @@ def _check_present(annotation: Any, value: Any) -> None:
         TypeAdapter(annotation).validate_python(value)
 
 
-def validate_settings_fragment(model: type[BaseModel], fragment: dict[str, Any]) -> None:
+def validate_settings_fragment[T](model: type[BaseModel], fragment: dict[str, T]) -> dict[str, T]:
     """Check each present fragment key and value against its model field annotation.
 
-    This checks field names and present values against their annotations without normalizing them.
-    Model mappings are checked field by field, so completeness and cross-field rules remain the
+    Return the same mapping, without normalizing it, so callers can render it directly. Model
+    mappings are checked field by field, so completeness and cross-field rules remain the
     responsibility of the settings source that combines file and environment values and validates
     the effective settings.
     """
     for name, value in fragment.items():
         _check_present(_field_annotation(model, name), value)
+    return fragment

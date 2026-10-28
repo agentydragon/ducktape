@@ -198,12 +198,11 @@ class RunnerGateway(Construct):
             "gateway_callers": gateway_accounts,
             **({"wake_callers": wake_accounts} if wake_accounts else {}),
         }
-        validate_settings_fragment(Settings, content)
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{runner_gateway.NAME}-settings", namespace=namespace),
-            content=yaml_config(content),
+            content=yaml_config(validate_settings_fragment(Settings, content)),
             path="/etc/agentplane-runner-gateway/settings/settings.yaml",
         )
         workload = add_service_workload(

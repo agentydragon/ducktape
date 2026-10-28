@@ -96,7 +96,6 @@ def _config_map(household: str) -> ConfigMapArgs:
         },
         "persistence": {"kind": "postgres"},
     }
-    validate_settings_fragment(ServerSettings, settings)
     oidc = _oidc(household)
     header = (
         f"# Non-secret config for the {oidc.namespace} MCP server, mounted at {CONFIG_FILE_ENV}.\n"
@@ -104,7 +103,9 @@ def _config_map(household: str) -> ConfigMapArgs:
         "# k8s Secret), so no single field here is secret.\n"
     )
     return ConfigMapArgs(
-        name=_CONFIG_MAP, namespace=oidc.namespace, data={_CONFIG_FILE: header + yaml_config(settings)}
+        name=_CONFIG_MAP,
+        namespace=oidc.namespace,
+        data={_CONFIG_FILE: header + yaml_config(validate_settings_fragment(ServerSettings, settings))},
     )
 
 

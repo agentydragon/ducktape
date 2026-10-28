@@ -114,14 +114,13 @@ class App(Construct):
 
         self._add_agent_service_account()
         content = env.app_config.model_dump(mode="json", exclude_unset=True, exclude={"connection_service_url"})
-        validate_settings_fragment(Settings, content)
         config = SettingsFile(
             self,
             "config",
             metadata=ApiObjectMetadata(name="app-config", namespace=env.namespace),
             # The endpoint is delivered as an env var: an older app image ignores unknown env vars
             # while this manifest reaches the cluster before image automation publishes the new image.
-            content=yaml_config(content),
+            content=yaml_config(validate_settings_fragment(Settings, content)),
             path="/etc/agentplane/config.yaml",
         )
         workload = self._add_workload(config)
