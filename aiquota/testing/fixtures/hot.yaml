@@ -2,33 +2,40 @@
 # claude: short=hot(dev+20, 50% used at 30% elapsed), long=100%.
 # That means extra spend is active: panel shows the spend pill with ⚡ and
 # the popup collapses to a one-line 5h/7d reset row without bars.
-# extraSpend uses aiquota's ExtraSpend fields. The spend ratio is deliberately
+# extra_spend uses aiquota's ExtraSpend fields. The spend ratio is deliberately
 # memorable: 314159 / 500000 = pi digits.
 # codex: both ok(dev+0) -> panel ok.
 # zai: short=null (off-peak), long=warn(dev+10, 40% at 30%) -> panel warn.
-claude:
-  short: { usedPercent: 50, resetSeconds: 12600, windowSeconds: 18000 }
-  long: { usedPercent: 100, resetSeconds: 423360, windowSeconds: 604800 }
-  lastFetch: 1
-  error: null
-  extraSpend:
-    is_enabled: true
-    utilization: 62.8318
-    used_usd: 3141.59
-    monthly_limit_usd: 5000.0
-  currentlyOverPlan: true
-  extraStatus: active
-codex:
-  short: { usedPercent: 30, resetSeconds: 12600, windowSeconds: 18000 }
-  long: { usedPercent: 30, resetSeconds: 423360, windowSeconds: 604800 }
-  lastFetch: 1
-  error: null
-  extraSpend: null
-  availableResetCredits: 2
-  availableResetCreditExpiries: ["2026-09-20T09:00:00Z"]
-zai:
-  short: null
-  long: { usedPercent: 40, resetSeconds: 423360, windowSeconds: 604800 }
-  lastFetch: 1
-  error: null
-  extraSpend: null
+providers:
+  - provider: claude
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: success
+        windows:
+          - { used_percent: 50.0, reset_seconds: 12600.0, window_seconds: 18000.0 }
+          - { used_percent: 100.0, reset_seconds: 423360.0, window_seconds: 604800.0 }
+        extra_spend:
+          is_enabled: true
+          monthly_limit_usd: 5000.0
+          used_usd: 3141.59
+          utilization: 62.8318
+  - provider: codex
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: success
+        windows:
+          - { used_percent: 30.0, reset_seconds: 12600.0, window_seconds: 18000.0 }
+          - { used_percent: 30.0, reset_seconds: 423360.0, window_seconds: 604800.0 }
+        available_reset_credits: 2
+        available_reset_credit_expiries:
+          - "2026-09-20T09:00:00Z"
+  - provider: zai
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: success
+        windows:
+          - { used_percent: 40.0, reset_seconds: 423360.0, window_seconds: 604800.0 }
+fetched_at: "2026-01-15T12:00:00Z"

@@ -8,7 +8,7 @@ py_library(
     visibility = ["//aiquota:__subpackages__"],
     deps = [
         "//aiquota:models",
-        "@pypi//pydantic",
+        "//aiquota/render:view_model_lib",
         "@pypi//pyyaml",
     ],
 )

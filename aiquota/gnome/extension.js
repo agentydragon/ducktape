@@ -29,6 +29,12 @@ import {
 } from "./presentation.js";
 
 const STALE_AFTER_SECONDS = 5 * 60;
+let fixtureNowMs = null;
+
+function nowMs() {
+  return fixtureNowMs ?? Date.now();
+}
+
 const BUS_NAME = "works.allegedly.AiQuota";
 const OBJECT_PATH = "/works/allegedly/AiQuota";
 const INTERFACE_NAME = "works.allegedly.AiQuota1";
@@ -79,12 +85,12 @@ function withLiveReset(state) {
   if (!state?.resetAtMs) return state;
   return {
     ...state,
-    resetSeconds: Math.max(0, (state.resetAtMs - Date.now()) / 1000),
+    resetSeconds: Math.max(0, (state.resetAtMs - nowMs()) / 1000),
   };
 }
 
 function isStaleFetch(lastFetch) {
-  return lastFetch != null && (Date.now() - lastFetch) / 1000 > STALE_AFTER_SECONDS;
+  return lastFetch != null && (nowMs() - lastFetch) / 1000 > STALE_AFTER_SECONDS;
 }
 
 function formatAge(seconds) {
@@ -102,7 +108,7 @@ function effectiveState(state) {
     state.paidCredits != null ||
     state.prepaidBalance != null
   ) {
-    const staleAge = state.error && state.lastFetch != null ? Math.max(0, (Date.now() - state.lastFetch) / 1000) : null;
+    const staleAge = state.error && state.lastFetch != null ? Math.max(0, (nowMs() - state.lastFetch) / 1000) : null;
     return {
       windows: state.windows,
       extraSpend: state.extraSpend,
@@ -133,7 +139,7 @@ function effectiveState(state) {
       staleAge: null,
     };
   }
-  const ageSeconds = snap.fetchedAt != null ? Math.max(0, (Date.now() - snap.fetchedAt) / 1000) : null;
+  const ageSeconds = snap.fetchedAt != null ? Math.max(0, (nowMs() - snap.fetchedAt) / 1000) : null;
   return {
     windows: snap.windows,
     extraSpend: snap.extraSpend,
@@ -149,7 +155,7 @@ function effectiveState(state) {
 function formatCheckFailure(error, lastCheck, haveWindows) {
   const prefix = haveWindows ? "last refresh failed" : "check failed";
   if (lastCheck == null) return `${prefix}: ${error}`;
-  const ageSeconds = Math.max(0, (Date.now() - lastCheck) / 1000);
+  const ageSeconds = Math.max(0, (nowMs() - lastCheck) / 1000);
   return `${prefix} ${formatAge(ageSeconds)} ago: ${error}`;
 }
 
@@ -229,7 +235,7 @@ function burnChangesAt(burn) {
 function formatBurnSummary(burn) {
   const changesAt = burnChangesAt(burn);
   if (!changesAt) return null;
-  const until = formatDuration(Math.max(0, (changesAt.getTime() - Date.now()) / 1000));
+  const until = formatDuration(Math.max(0, (changesAt.getTime() - nowMs()) / 1000));
   if (burn.in_peak) {
     return `🔥 ${formatMultiplier(burn.multiplier)} burn until ${formatClock(changesAt)} (${until})`;
   }
@@ -310,18 +316,15 @@ const QuotaIndicator = GObject.registerClass(
         this._fixtureMode = true;
         this._streamStatus = "connected";
         this._streamError = "";
-        // Provider visibility derived from which keys are present in the fixture.
         const [ok, bytes] = GLib.file_get_contents(fixturePath);
         if (!ok) throw new Error(`fixture not readable: ${fixturePath}`);
-        const fixtureData = JSON.parse(decodeBytes(bytes));
-        const shows = {};
-        for (const { id } of PROVIDER_DEFS) shows[id] = id in fixtureData;
-        this._initUI(shows);
-        this._loadFixtureData(fixtureData);
+        this._initUI({});
+        this._loadFixtureView(decodeBytes(bytes));
         this._exportTestInterface();
         return;
       }
 
+      fixtureNowMs = null;
       this._fixtureMode = false;
       // The daemon view is the source of truth for provider visibility.
       // Start empty so an unconfigured provider (for example z.ai when using
@@ -352,55 +355,13 @@ const QuotaIndicator = GObject.registerClass(
       this._startDisplayTick();
     }
 
-    _loadFixtureData(data) {
+    _loadFixtureView(rawView) {
       this._streamStatus = "connected";
       this._streamError = "";
       this._lastAttemptAt = 0;
       this._nextRetryAt = 0;
       this._testNow = null;
-      // Test fixtures specify currentlyOverPlan / extraStatus explicitly so
-      // we never re-derive policy on the JS side (see aiquota/AGENTS.md).
-      const loadLastSuccess = (snap) => {
-        if (!snap) return null;
-        // Fixtures express snapshot age as `ageSeconds` (relative to "now")
-        // so the rendered "(stale Xm)" tag is stable across test runs.
-        const fetchedAt = snap.ageSeconds != null ? Date.now() - snap.ageSeconds * 1000 : (snap.fetchedAt ?? null);
-        return {
-          windows: [snap.short, snap.long].filter((window) => window != null),
-          extraSpend: snap.extraSpend ?? null,
-          paidCredits: snap.paidCredits ?? null,
-          prepaidBalance: snap.prepaidBalance ?? null,
-          availableResetCredits: snap.availableResetCredits ?? null,
-          availableResetCreditExpiries: snap.availableResetCreditExpiries ?? [],
-          resetCreditExpiryLookupFailed: snap.resetCreditExpiryLookupFailed === true,
-          fetchedAt,
-        };
-      };
-      const provider = (node) => {
-        const lastFetch = node?.lastFetch != null ? Date.now() : null;
-        const lastCheck = node?.lastCheckAgeSeconds != null ? Date.now() - node.lastCheckAgeSeconds * 1000 : lastFetch;
-        return {
-          windows: [node?.short, node?.long].filter((window) => window != null),
-          lastFetch,
-          lastCheck,
-          error: node?.error ?? null,
-          extraSpend: node?.extraSpend ?? null,
-          paidCredits: node?.paidCredits ?? null,
-          prepaidBalance: node?.prepaidBalance ?? null,
-          availableResetCredits: node?.availableResetCredits ?? null,
-          availableResetCreditExpiries: node?.availableResetCreditExpiries ?? [],
-          resetCreditExpiryLookupFailed: node?.resetCreditExpiryLookupFailed === true,
-          currentlyOverPlan: node?.currentlyOverPlan === true,
-          extraStatus: node?.extraStatus ?? "none",
-          paidCreditsActive: node?.paidCreditsActive === true,
-          burn: node?.burn ?? null,
-          lastSuccess: loadLastSuccess(node?.lastSuccess),
-        };
-      };
-      for (const p of this._providers) p.state = provider(data[p.id]);
-      this._buildPopup();
-      this._renderPanel();
-      this._renderPopup();
+      this._acceptView(rawView);
     }
 
     _exportTestInterface() {
@@ -420,6 +381,7 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="SetSyncState"><arg type="d" direction="in" name="lastAttemptAt"/><arg type="d" direction="in" name="nextRetryAt"/><arg type="d" direction="in" name="now"/></method>' +
           '<method name="GetStreamStatus"><arg type="s" direction="out" name="status"/></method>' +
           '<method name="GetPrepaidText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetWindowRows"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="rows"/></method>' +
           '<method name="SetViewForTest"><arg type="s" direction="in" name="view"/></method>' +
           '<method name="ConnectDaemon"/>' +
           '<method name="FetchView"/>' +
@@ -434,12 +396,19 @@ const QuotaIndicator = GObject.registerClass(
           Reload: (path) => {
             const [ok, bytes] = GLib.file_get_contents(path);
             if (!ok) throw new Error(`fixture not readable: ${path}`);
-            this._loadFixtureData(JSON.parse(decodeBytes(bytes)));
+            this._loadFixtureView(decodeBytes(bytes));
           },
           SetStreamStatus: (status, error) => this._setStreamState(status, error),
           GetPrepaidText: (provider) => {
             const item = this._providers.find(({ id }) => id === provider)?.prepaidRow;
             return item?._summaryLabel.get_text() ?? "";
+          },
+          GetWindowRows: (provider) => {
+            const rows = this._providers
+              .find(({ id }) => id === provider)
+              ?.windowRows.filter((row) => row.visible)
+              .map((row) => row._summaryLabel.get_text());
+            return JSON.stringify(rows ?? []);
           },
           SetSyncState: (lastAttemptAt, nextRetryAt, now) => {
             this._lastAttemptAt = lastAttemptAt;
@@ -608,7 +577,7 @@ const QuotaIndicator = GObject.registerClass(
           : this._streamStatus === "disconnected"
             ? "Quota stream disconnected"
             : "Connecting to quota stream";
-      const now = this._testNow ?? Date.now() / 1000;
+      const now = this._testNow ?? nowMs() / 1000;
       const lastAttempt =
         this._lastAttemptAt > 0
           ? `Desktop sync attempt ${formatAge(Math.max(0, now - this._lastAttemptAt))} ago`
@@ -624,6 +593,10 @@ const QuotaIndicator = GObject.registerClass(
         if (typeof rawView !== "string" || rawView.length === 0) return;
         const data = JSON.parse(rawView);
         if (!data || !Array.isArray(data.providers)) throw new Error("invalid AIQuota view");
+        if (this._fixtureMode) {
+          const fixtureTime = Date.parse(data.fetched_at);
+          fixtureNowMs = Number.isFinite(fixtureTime) ? fixtureTime : null;
+        }
         this._remoteView = rawView;
         this._loadViewData(data);
         this._renderPanel();
@@ -1117,6 +1090,7 @@ const QuotaIndicator = GObject.registerClass(
 
     destroy() {
       this._destroyed = true;
+      if (this._fixtureMode) fixtureNowMs = null;
       this._getterCancellable?.cancel();
       this._getterCancellable = null;
       if (this._proxy) {

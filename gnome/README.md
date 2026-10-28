@@ -26,8 +26,10 @@ since that copy would shadow it), pre-enables the extension, and launches
 `gnome-shell --devkit --wayland`. Requires `gnome-shell` on the host PATH.
 
 To preview a specific render state without real auth/HTTP, point
-`AI_QUOTA_FIXTURE` at the JSON form of one of the `aiquota/testing/fixtures/*.yaml`
-fixtures (the render test converts them the same way):
+`AI_QUOTA_FIXTURE` at the normal `/v1/quotas` view JSON generated from one of the
+Pydantic-shaped `aiquota/testing/fixtures/*.yaml` scenarios with
+`aiquota.testing.quota_fixtures.load_quota_view_fixture` (which derives the view
+through `aiquota.render.view_model.to_view`, as the render tests do):
 
 ```bash
 AI_QUOTA_FIXTURE=/path/to/fixture.json bazelisk run //aiquota/gnome:devkit

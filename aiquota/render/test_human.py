@@ -219,5 +219,5 @@ def test_renders_banked_reset_count_from_live_usage() -> None:
 @pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)
 def test_renders_shared_fixture(fixture_name: str, snapshot: SnapshotAssertion) -> None:
     fixture_path = get_required_path(f"_main/aiquota/testing/fixtures/{fixture_name}.yaml")
-    quotas = load_quota_fixture(fixture_path, now=_FETCHED_AT)
+    quotas = load_quota_fixture(fixture_path)
     assert human.render(quotas, now=_FETCHED_AT, tz=UTC) == snapshot

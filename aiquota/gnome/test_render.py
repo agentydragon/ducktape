@@ -40,7 +40,7 @@ import pytest
 import pytest_bazel
 from testcontainers.core.container import DockerContainer
 
-from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_fixture_data
+from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
 from util.testing.gnome import GnomeSession, capture_panel_menu, exec_output
@@ -89,11 +89,11 @@ def extension_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="module")
 def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Materialize YAML source fixtures as JSON for the GNOME JS test hook."""
+    """Materialize the normal API view payload for the GNOME JS test hook."""
     dest = tmp_path_factory.mktemp("ai-quota-fixtures")
     for fixture_name in FIXTURE_NAMES:
         src = get_required_path(f"_main/aiquota/testing/fixtures/{fixture_name}.yaml")
-        data = load_fixture_data(src)
+        data = load_quota_view_fixture(src)
         (dest / f"{fixture_name}.json").write_text(json.dumps(data, indent=2) + "\n")
     return dest
 
@@ -156,6 +156,12 @@ def test_render(render_session: tuple[GnomeSession, Path], undeclared_dir: Path,
             assert prepaid_text.endswith("$123.45")
         elif fixture_name == "claude_prepaid_balance_unavailable":
             assert _string_reply(session.call("GetPrepaidText", "claude")) == "Claude prepaid balance unavailable"
+        elif fixture_name == "wire_fields":
+            rows = json.loads(_string_reply(session.call("GetWindowRows", "codex")))
+            assert len(rows) == 1
+            assert rows[0].startswith("visible (5h):")
+            assert "↻45m" in rows[0]
+            assert "internal-only" not in "\n".join(rows)
         geometry = session.open_menu()
         try:
             capture_panel_menu(

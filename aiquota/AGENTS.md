@@ -23,9 +23,12 @@ snake_case API data in <frontend/format.ts>, and the GNOME zip carries the emitt
 beside `extension.js`. The browser format test replays Python-generated cases, and the GNOME
 render test loads the packaged extension across the shared scenarios.
 
-Scenarios in `testing/fixtures/*.yaml` feed all three: CLI snapshots (`render/test_human.py`),
-extension renders (`gnome/test_render.py`), dashboard screenshots in both themes
-(`frontend:screenshots`).
+Scenarios in `testing/fixtures/*.yaml` are `AllQuotas` Pydantic model data with fixed timestamps.
+CLI snapshots (`render/test_human.py`) load those models directly; GNOME and browser fixtures
+are generated through `to_view(...).model_dump(mode="json")`, the same snake_case view contract
+served by `/v1/quotas` and the desktop daemon. GNOME passes that payload through `_loadViewData`.
+The scenarios feed GNOME renders (`gnome/test_render.py`) and dashboard screenshots in both
+themes (`frontend:screenshots`).
 
 **The board must survive embedding**: `frontend/board.css` is `aiquota-`-prefixed with the
 palette scoped to `.aiquota-scope`; the component neither fetches nor reads a clock (host

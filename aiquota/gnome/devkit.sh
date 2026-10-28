@@ -15,8 +15,8 @@
 #
 # Optional env:
 #   AI_QUOTA_FIXTURE=/path/to/fixture.json
-#       Skip real auth/HTTP and load the indicator from a fixture JSON
-#       (same hook used by //aiquota/gnome:test_render).
+#       Skip real auth/HTTP and load the indicator from an API-shaped quota
+#       view JSON payload (same hook used by //aiquota/gnome:test_render).
 set -euo pipefail
 
 # --- begin runfiles.bash initialization v3 ---

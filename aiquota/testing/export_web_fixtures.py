@@ -26,16 +26,13 @@ from aiquota.render.format import (
     format_pace_forecast,
     format_window_label,
 )
-from aiquota.render.view_model import AllQuotasView, ProviderView, to_view
-from aiquota.testing.quota_fixtures import DEFAULT_NOW, FIXTURE_NAMES, load_quota_fixture
+from aiquota.render.view_model import AllQuotasView, ProviderView
+from aiquota.testing.quota_fixtures import DEFAULT_NOW, FIXTURE_NAMES, load_quota_view_fixture
 from util.bazel.runfiles import get_required_path
 
 
 def scene_payloads(*, now: datetime = DEFAULT_NOW) -> dict[str, Any]:
-    return {
-        name: to_view(load_quota_fixture(_fixture_path(name), now=now), now).model_dump(mode="json")
-        for name in FIXTURE_NAMES
-    }
+    return {name: load_quota_view_fixture(_fixture_path(name), now=now) for name in FIXTURE_NAMES}
 
 
 def _fixture_path(name: str) -> Path:

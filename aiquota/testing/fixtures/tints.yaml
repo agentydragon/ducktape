@@ -3,21 +3,27 @@
 # codex: short=warn(dev+10, 60% used at 50% elapsed),
 #        long=cool(dev-15, 15% used at 30% elapsed) -> panel warn "+10%".
 # zai: short=absolute-hot(90% >= 85), long=ok(dev+0) -> panel hot "+40%".
-claude:
-  short: null
-  long: null
-  lastFetch: null
-  error: "HTTP 401 invalid_request: invalid_token"
-  extraSpend: null
-codex:
-  short: { usedPercent: 60, resetSeconds: 9000, windowSeconds: 18000 }
-  long: { usedPercent: 15, resetSeconds: 423360, windowSeconds: 604800 }
-  lastFetch: 1
-  error: null
-  extraSpend: null
-zai:
-  short: { usedPercent: 90, resetSeconds: 9000, windowSeconds: 18000 }
-  long: { usedPercent: 30, resetSeconds: 423360, windowSeconds: 604800 }
-  lastFetch: 1
-  error: null
-  extraSpend: null
+providers:
+  - provider: claude
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: error
+        error: "HTTP 401 invalid_request: invalid_token"
+  - provider: codex
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: success
+        windows:
+          - { used_percent: 60.0, reset_seconds: 9000.0, window_seconds: 18000.0 }
+          - { used_percent: 15.0, reset_seconds: 423360.0, window_seconds: 604800.0 }
+  - provider: zai
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: success
+        windows:
+          - { used_percent: 90.0, reset_seconds: 9000.0, window_seconds: 18000.0 }
+          - { used_percent: 30.0, reset_seconds: 423360.0, window_seconds: 604800.0 }
+fetched_at: "2026-01-15T12:00:00Z"
