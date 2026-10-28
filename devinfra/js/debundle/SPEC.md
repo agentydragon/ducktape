@@ -869,10 +869,13 @@ conditioned witness, including when its affected-root set is empty. A member or
 descendant of the captured object remains `unknown_global_value`, including
 computed, symbol and `constructor` paths. Calls or construction involving a
 captured value are widened only when the existing value facts show that input
-is involved. A local callable whose canonical return summary contains only the
-selected binding is recognized as returning an opaque descendant, so its call
-result keeps the `unknown_global_value` barrier. Other captured-return shapes
-are rejected as unsupported. This is an intra-chunk direct-return case, not a
+is involved. A synchronous local callable whose canonical return summary
+contains only the selected binding is recognized as returning an opaque
+descendant, so its call result keeps the `unknown_global_value` barrier. A
+synchronous callable whose returns are all statically primitive is also
+accepted; those results do not create captured-object aliases. Mixed, unknown
+or member-valued returns, and captured async or generator callables, are
+rejected as unsupported. This remains an intra-chunk direct-return case, not a
 general return or cross-module alias analysis. A write through a descendant
 therefore retains the usual global/native barrier, and recognized native writes
 elsewhere in the analyzed program remain effective.

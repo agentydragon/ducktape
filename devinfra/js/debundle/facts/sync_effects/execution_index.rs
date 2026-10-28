@@ -1312,6 +1312,41 @@ fn is_opaque_member_slot(value: &ValueExpr) -> bool {
     }
 }
 
+/// Captured bindings may flow back from a synchronous callable only as the
+/// exact binding or as a statically primitive result. This is a value-shape
+/// boundary; it does not assert that evaluating the callable is pure or safe.
+fn is_statically_primitive_value(value: &ValueExpr) -> bool {
+    match value {
+        ValueExpr::Undefined | ValueExpr::NonCallable | ValueExpr::Primitive(_) => true,
+        ValueExpr::Alternatives(values) => {
+            !values.is_empty() && values.iter().all(is_statically_primitive_value)
+        }
+        ValueExpr::Binding(_)
+        | ValueExpr::Origin(_)
+        | ValueExpr::ObjectLiteral(..)
+        | ValueExpr::Member(..)
+        | ValueExpr::Call(..)
+        | ValueExpr::New(..)
+        | ValueExpr::Unknown => false,
+    }
+}
+
+fn captured_callable_return_shape_is_supported(
+    callable: &Callable,
+    is_async: bool,
+    binding: &Id,
+) -> bool {
+    if is_async || callable.generator {
+        return false;
+    }
+    callable.returns.is_empty()
+        || callable
+            .returns
+            .iter()
+            .all(|value| matches!(value, ValueExpr::Binding(returned) if returned == binding))
+        || callable.returns.iter().all(is_statically_primitive_value)
+}
+
 /// The named native binding a write on a proved global object can replace.
 /// Reading an unrelated global slot instead yields an unknown value identity.
 fn named_global_intrinsic(property: &str) -> Option<IntrinsicRoot> {
@@ -2821,19 +2856,16 @@ impl ExecutionIndex {
                 ));
                 continue;
             }
-            if self
-                .callables
-                .values()
-                .any(|callable| {
-                    callable.reads.contains(&binding)
-                        && !callable.returns.is_empty()
-                        && !callable.returns.iter().all(
-                            |value| matches!(value, ValueExpr::Binding(returned) if returned == &binding),
-                        )
-                })
-            {
+            if self.callables.iter().any(|(key, callable)| {
+                callable.reads.contains(&binding)
+                    && !captured_callable_return_shape_is_supported(
+                        callable,
+                        self.async_callables.contains(key),
+                        &binding,
+                    )
+            }) {
                 self.value_input_errors.push(format!(
-                    "{request} cannot refine `{}` because a local callable that captures it returns a possibly derived value; only direct same-binding returns are supported",
+                    "{request} cannot refine `{}` because a local callable that captures it has an unsupported return shape; only synchronous direct same-binding or statically primitive returns are supported",
                     input.selected_binding
                 ));
                 continue;
@@ -2948,15 +2980,16 @@ impl ExecutionIndex {
                 ));
                 continue;
             }
-            if self.callables.values().any(|callable| {
+            if self.callables.iter().any(|(key, callable)| {
                 callable.reads.contains(&input.binding)
-                    && !callable.returns.is_empty()
-                    && !callable.returns.iter().all(|value| {
-                        matches!(value, ValueExpr::Binding(returned) if returned == &input.binding)
-                    })
+                    && !captured_callable_return_shape_is_supported(
+                        callable,
+                        self.async_callables.contains(key),
+                        &input.binding,
+                    )
             }) {
                 self.value_input_errors.push(format!(
-                    "{request} cannot refine `{}` because a local callable that captures it returns a possibly derived value; only direct same-binding returns are supported",
+                    "{request} cannot refine `{}` because a local callable that captures it has an unsupported return shape; only synchronous direct same-binding or statically primitive returns are supported",
                     input.evidence.selected_binding
                 ));
                 continue;

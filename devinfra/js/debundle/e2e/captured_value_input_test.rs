@@ -160,6 +160,36 @@ fn unmaterialized_provider_value_input_restores_only_the_captured_receiver() {
 }
 
 #[test]
+fn captured_primitive_predicate_return_preserves_cli_runtime() {
+    let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function isReady() { if (captured.ready) return false; return true; }\n";
+    let chunks = [("static/peer", provider)];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import './opaque.js';\nimport { isReady } from './peer.js';\nconsole.log(isReady(), globalThis.runtimeSettings.events.join(','));\n",
+            vec![],
+        )
+        .with_extra_chunks(&chunks)
+        .with_extra_files(OPAQUE_FILES)
+        .with_value_inputs("static/peer", vec![captured_input(provider)]),
+    );
+    assert_preserved_entry_output(&fixture, "false capture\n");
+
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert!(
+        graph["native_integrity_witnesses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|witness| {
+                witness["chunk_id"] == "static/peer"
+                    && witness["operation"] == "mutation_call"
+                    && input_refs(&witness["value_input_refs"])
+            }),
+        "captured predicate must preserve consumed input provenance: {graph}"
+    );
+}
+
+#[test]
 fn fresh_graph_does_not_hide_stale_source_pin_or_wrong_export() {
     let input = captured_input(PROVIDER);
     let mut stale = input.clone();
@@ -269,7 +299,27 @@ fn recognized_native_and_any_rebinding_reject_the_value_input() {
         (
             "var captured = globalThis.runtimeSettings.state;\nfunction getChild() { return captured.child; }\nObject.assign(getChild(), {});\n",
             "var captured = globalThis.runtimeSettings.state;",
-            "only direct same-binding returns are supported",
+            "only synchronous direct same-binding or statically primitive returns are supported",
+        ),
+        (
+            "var captured = globalThis.runtimeSettings.state;\nfunction getMaybeChild() { return captured.ready ? false : captured.child; }\nObject.assign(captured, {});\n",
+            "var captured = globalThis.runtimeSettings.state;",
+            "only synchronous direct same-binding or statically primitive returns are supported",
+        ),
+        (
+            "var captured = globalThis.runtimeSettings.state;\nfunction getUnknown() { return captured?.run?.(); }\nObject.assign(captured, {});\n",
+            "var captured = globalThis.runtimeSettings.state;",
+            "only synchronous direct same-binding or statically primitive returns are supported",
+        ),
+        (
+            "var captured = globalThis.runtimeSettings.state;\nasync function getAsync() { return captured.ready ? false : true; }\nObject.assign(captured, {});\n",
+            "var captured = globalThis.runtimeSettings.state;",
+            "only synchronous direct same-binding or statically primitive returns are supported",
+        ),
+        (
+            "var captured = globalThis.runtimeSettings.state;\nfunction* getGenerator() { yield captured.child; return false; }\nObject.assign(captured, {});\n",
+            "var captured = globalThis.runtimeSettings.state;",
+            "only synchronous direct same-binding or statically primitive returns are supported",
         ),
     ] {
         let chunks = [("static/peer", source)];
