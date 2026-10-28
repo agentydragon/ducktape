@@ -130,6 +130,7 @@ mod from_report_tests {
             statement_kind: StatementKind::VarDecl,
             purity: Purity::Pure,
             callback_factory_barriers: Vec::new(),
+            synchronous_execution: None,
             destination: crate::ModuleKey("residual".to_string()),
         }
     }

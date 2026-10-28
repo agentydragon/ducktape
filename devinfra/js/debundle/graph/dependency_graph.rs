@@ -52,6 +52,7 @@ pub struct SourceUnit {
     pub kind: StatementKind,
     pub purity: Purity,
     pub callback_factory_barriers: Vec<CallbackFactoryBarrierFact>,
+    pub synchronous_execution: Option<crate::reports::schema::SynchronousExecutionReport>,
 }
 
 /// Declaration-based classification, independent of syntax kind and destination.
@@ -176,6 +177,7 @@ impl DependencyGraph {
                 kind: n.statement_kind,
                 purity: n.purity.clone(),
                 callback_factory_barriers: Vec::new(),
+                synchronous_execution: None,
             })
             .collect();
 

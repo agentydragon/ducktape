@@ -338,6 +338,30 @@ where
             &mut facts,
         );
     }
+    if let Some(source_path) = source_path {
+        let source_locations: Vec<_> = facts
+            .iter()
+            .map(|fact| fact.source_location.clone())
+            .collect();
+        for fact in &mut facts {
+            if let Some(calls) = &mut fact.synchronous_calls {
+                for loss in &mut calls.precision_losses {
+                    loss.source_location = if loss.span.is_dummy() {
+                        source_locations[loss.statement_ordinal.0].clone()
+                    } else {
+                        line_range_for_span(loss.span).map(
+                            |(start_line, end_line, start_column)| SourceLocation {
+                                source_path: source_path.to_string(),
+                                start_line,
+                                end_line,
+                                start_column: Some(start_column),
+                            },
+                        )
+                    };
+                }
+            }
+        }
+    }
     ChunkFactAnalysis {
         facts,
         top_level_await,

@@ -21,10 +21,13 @@ use crate::facts::statement_facts::{
 };
 use crate::facts::value_flow::{ChunkValueFlow, ValueOrigin, Values as FlowValues};
 use crate::purity::ChunkCodeGraph;
+use crate::reports::schema::{
+    ExecutionOperation, ExecutionPrecisionLoss, ExecutionPrecisionLossReason,
+};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use swc_common::SyntaxContext;
+use swc_common::{DUMMY_SP, Span, SyntaxContext};
 use swc_ecma_ast::*;
 
 fn from_flow(values: FlowValues) -> Values {
@@ -48,6 +51,47 @@ struct Outcome {
     complete: bool,
     executed_owners: BTreeSet<SourceUnitOrdinal>,
     unknown_call: bool,
+}
+
+impl Outcome {
+    fn lose_precision(
+        &mut self,
+        reason: ExecutionPrecisionLossReason,
+        owner: SourceUnitOrdinal,
+        span: Span,
+    ) {
+        self.complete = false;
+        let loss = ExecutionPrecisionLoss {
+            reason,
+            statement_ordinal: owner,
+            source_location: None,
+            span,
+        };
+        if !self.effects.precision_losses.contains(&loss) {
+            self.effects.precision_losses.push(loss);
+        }
+    }
+
+    fn unsupported(&mut self, operation: ExecutionOperation, owner: SourceUnitOrdinal, span: Span) {
+        self.lose_precision(
+            ExecutionPrecisionLossReason::UnsupportedOperation { operation },
+            owner,
+            span,
+        );
+    }
+
+    fn inherit_completeness(&mut self, complete: bool, losses: Vec<ExecutionPrecisionLoss>) {
+        self.complete &= complete;
+        self.inherit_precision_losses(losses);
+    }
+
+    fn inherit_precision_losses(&mut self, losses: Vec<ExecutionPrecisionLoss>) {
+        for loss in losses {
+            if !self.effects.precision_losses.contains(&loss) {
+                self.effects.precision_losses.push(loss);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -455,7 +499,7 @@ impl Executor<'_> {
             .extend(nested.effects.uninitialized_reads);
         outcome.executed_owners.extend(nested.executed_owners);
         outcome.unknown_call |= nested.unknown_call;
-        outcome.complete &= nested.complete;
+        outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
     }
 
     fn execute_array_iteration(
@@ -1647,7 +1691,7 @@ impl Executor<'_> {
             for accessor_owner in accessor_owners {
                 self.promote_lazy_owner(accessor_owner, effect_owner, outcome);
             }
-            outcome.complete = false;
+            outcome.unsupported(ExecutionOperation::PropertyWrite, owner, DUMMY_SP);
         }
     }
 
@@ -2121,7 +2165,7 @@ impl Executor<'_> {
             // factory result, can add callbacks/accessors. Conservatively
             // include their effects now, before a later opaque consumer or
             // member projection can execute an otherwise untracked callback.
-            outcome.complete = false;
+            outcome.unsupported(ExecutionOperation::PropertyWrite, owner, DUMMY_SP);
             outcome.unknown_call = true;
             self.note_unknown_execution(owner);
             let values = self.evaluate(&write.value, env, captures);
@@ -2499,7 +2543,12 @@ impl Executor<'_> {
         }
         let mut outcome = std::mem::take(&mut self.fallback_outcome);
         let rebinds_before = outcome.effects.rebinds.len();
-        outcome.complete = false;
+        outcome.unsupported(
+            ExecutionOperation::ReturnedCallback,
+            self.current_top_owner
+                .expect("returned callback has a top owner"),
+            DUMMY_SP,
+        );
         outcome.unknown_call = true;
         self.promote_deferred_callbacks(&callbacks, &mut outcome);
         // Class/superclass capability checks can invoke code and populate the
@@ -2519,6 +2568,7 @@ impl Executor<'_> {
             .executed_owners
             .append(&mut reentrant.executed_owners);
         outcome.unknown_call |= reentrant.unknown_call;
+        outcome.inherit_precision_losses(reentrant.effects.precision_losses);
         if outcome.effects.rebinds.len() != rebinds_before {
             self.apply_rebind_effects(&outcome.effects.rebinds);
         }
@@ -2640,10 +2690,10 @@ impl Executor<'_> {
                 .extend(nested.effects.uninitialized_reads);
             outcome.executed_owners.extend(nested.executed_owners);
             outcome.unknown_call |= nested.unknown_call;
-            outcome.complete &= nested.complete;
+            outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
         }
         if has_unknown {
-            outcome.complete = false;
+            outcome.unsupported(ExecutionOperation::SuperclassConstruction, owner, DUMMY_SP);
             outcome.unknown_call = true;
             let effect_owner = self.current_top_owner.unwrap_or(owner);
             self.note_unknown_execution(effect_owner);
@@ -2745,11 +2795,27 @@ impl Executor<'_> {
                 // entire pool in its arguments. Summarize that pool once rather
                 // than enumerate permutations of callbacks around the cycle.
                 // The same batch fallback bounds exhausted acyclic expansions.
+                let reason = if reentrant_pool {
+                    ExecutionPrecisionLossReason::RecursiveInvocation
+                } else if callbacks.len() > MAX_SYNCHRONOUS_CALLBACK_POOL {
+                    ExecutionPrecisionLossReason::CallbackPoolLimit {
+                        limit: MAX_SYNCHRONOUS_CALLBACK_POOL,
+                    }
+                } else if self.invocation_count >= MAX_SYNCHRONOUS_INVOCATIONS {
+                    ExecutionPrecisionLossReason::InvocationExpansionLimit {
+                        limit: MAX_SYNCHRONOUS_INVOCATIONS,
+                    }
+                } else {
+                    ExecutionPrecisionLossReason::InvocationDepthLimit {
+                        limit: MAX_SYNCHRONOUS_INVOCATION_DEPTH,
+                    }
+                };
                 let nested = self.bounded_invocation_fallback(
                     self.current_top_owner
                         .expect("callback call has a top owner"),
                     std::slice::from_ref(&callbacks),
                     &Context::new(),
+                    reason,
                 );
                 self.apply_rebind_effects(&nested.effects.rebinds);
                 outcome.effects.reads.extend(nested.effects.reads);
@@ -2760,7 +2826,7 @@ impl Executor<'_> {
                     .extend(nested.effects.uninitialized_reads);
                 outcome.executed_owners.extend(nested.executed_owners);
                 outcome.unknown_call |= nested.unknown_call;
-                outcome.complete &= nested.complete;
+                outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
                 break;
             }
             let nested = match callback {
@@ -2795,7 +2861,7 @@ impl Executor<'_> {
                 .extend(nested.effects.uninitialized_reads);
             outcome.executed_owners.extend(nested.executed_owners);
             outcome.unknown_call |= nested.unknown_call;
-            outcome.complete &= nested.complete;
+            outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
         }
         // An opaque callee can retain any callback passed to it and invoke it
         // during a later prefix event.
@@ -2830,6 +2896,7 @@ impl Executor<'_> {
         owner: SourceUnitOrdinal,
         args: &[Values],
         captured: &Context,
+        reason: ExecutionPrecisionLossReason,
     ) -> Outcome {
         let effect_owner = self.current_top_owner.unwrap_or(owner);
         if self.array_iteration_depth > 0 {
@@ -2841,7 +2908,7 @@ impl Executor<'_> {
         // repeatedly. Reusing earlier fallback roots only adds constraints.
         let mut outcome = std::mem::take(&mut self.fallback_outcome);
         let rebinds_before = outcome.effects.rebinds.len();
-        outcome.complete = false;
+        outcome.lose_precision(reason.clone(), owner, DUMMY_SP);
         outcome.unknown_call = true;
         outcome.executed_owners.insert(owner);
 
@@ -2983,13 +3050,14 @@ impl Executor<'_> {
         // not the lexical callee. Accumulate them there once instead of copying
         // and re-merging the whole summary through every nested invocation.
         self.fallback_outcome = outcome;
-        Outcome {
+        let mut result = Outcome {
             returns: unknown(),
-            complete: false,
             unknown_call: true,
             executed_owners: BTreeSet::from([owner]),
             ..Outcome::default()
-        }
+        };
+        result.lose_precision(reason, owner, DUMMY_SP);
+        result
     }
 
     fn evaluate(&mut self, expr: &ValueExpr, env: &Context, captures: &Context) -> Values {
@@ -3496,7 +3564,23 @@ impl Executor<'_> {
             || self.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH
             || self.invocation_count >= MAX_SYNCHRONOUS_INVOCATIONS
         {
-            return self.bounded_invocation_fallback(callable_owner, &args, captured_context);
+            let reason = if self.active.contains(&active_invocation) {
+                ExecutionPrecisionLossReason::RecursiveInvocation
+            } else if self.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH {
+                ExecutionPrecisionLossReason::InvocationDepthLimit {
+                    limit: MAX_SYNCHRONOUS_INVOCATION_DEPTH,
+                }
+            } else {
+                ExecutionPrecisionLossReason::InvocationExpansionLimit {
+                    limit: MAX_SYNCHRONOUS_INVOCATIONS,
+                }
+            };
+            return self.bounded_invocation_fallback(
+                callable_owner,
+                &args,
+                captured_context,
+                reason,
+            );
         }
         self.active.insert(active_invocation);
         self.invocation_depth += 1;
@@ -3564,13 +3648,23 @@ impl Executor<'_> {
             // Generator parameter initializers run at call time, although
             // the body waits for the first iteration. Their effects are not
             // separated in the index, so retain the conservative path.
-            outcome.complete = false;
+            outcome.unsupported(
+                ExecutionOperation::GeneratorParameters,
+                callable.owner,
+                DUMMY_SP,
+            );
             self.active.remove(&active_invocation);
             self.invocation_depth -= 1;
             self.cache.insert(signature, outcome.clone());
             return outcome;
         }
-        outcome.complete &= !callable.opaque;
+        if callable.opaque {
+            outcome.unsupported(
+                ExecutionOperation::OpaqueExecution,
+                callable.owner,
+                DUMMY_SP,
+            );
+        }
         for id in &callable.reads {
             if self.top_bindings.contains(id) {
                 outcome.effects.reads.insert((id.clone(), callable.owner));
@@ -3660,7 +3754,15 @@ impl Executor<'_> {
                 self.current_top_owner.unwrap_or(callable.owner),
                 &mut outcome,
             );
-            outcome.complete = false;
+            outcome.unsupported(
+                if unsupported_inputs {
+                    ExecutionOperation::CallableInputs
+                } else {
+                    ExecutionOperation::ArrayIteration
+                },
+                callable.owner,
+                DUMMY_SP,
+            );
         }
         self.active.remove(&active_invocation);
         self.invocation_depth -= 1;
@@ -3728,7 +3830,15 @@ impl Executor<'_> {
             self.promote_raw_callbacks(&values, outcome);
             self.invoke_possible_callbacks(&[values], false, outcome);
             self.note_unknown_call(call);
-            outcome.complete = false;
+            outcome.unsupported(
+                match call.kind {
+                    CallKind::InProtocol => ExecutionOperation::MembershipProtocol,
+                    CallKind::InstanceOfProtocol => ExecutionOperation::InstanceOfProtocol,
+                    _ => ExecutionOperation::DestructuringProtocol,
+                },
+                call.owner,
+                call.span,
+            );
             outcome.unknown_call = true;
             return;
         }
@@ -3780,7 +3890,7 @@ impl Executor<'_> {
                 if self.array_iteration_depth > 0 {
                     self.array_iteration_unsupported = true;
                 }
-                outcome.complete = false;
+                outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
             }
             return;
         }
@@ -3792,7 +3902,7 @@ impl Executor<'_> {
             if self.array_iteration_depth > 0 {
                 self.array_iteration_unsupported = true;
             }
-            outcome.complete = false;
+            outcome.unsupported(ExecutionOperation::ObjectSpread, call.owner, call.span);
             outcome.unknown_call = true;
             self.note_unknown_call(call);
             self.promote_raw_callbacks(&values, outcome);
@@ -3804,7 +3914,7 @@ impl Executor<'_> {
             if self.dense_source(&values).is_some() {
                 return;
             }
-            outcome.complete = false;
+            outcome.unsupported(ExecutionOperation::ArraySpread, call.owner, call.span);
             outcome.unknown_call = true;
             self.note_unknown_call(call);
             // Consuming a custom iterator can execute deferred generator bodies.
@@ -3846,7 +3956,7 @@ impl Executor<'_> {
             // synchronous call and expose callbacks carried by the operand;
             // this covers both the exotic and ordinary conversion paths
             // without assuming which method succeeds first.
-            outcome.complete = false;
+            outcome.unsupported(ExecutionOperation::ImplicitCoercion, call.owner, call.span);
             outcome.unknown_call = true;
             self.note_unknown_call(call);
             // A conversion property may be an accessor that returns a
@@ -4027,7 +4137,11 @@ impl Executor<'_> {
         let retained_callback = matches!(args.as_slice(), [values] if !values.is_empty()
             && values.iter().all(|value| matches!(value, AbstractValue::DeferredCallbacks(_))));
         if targets.is_empty() {
-            outcome.complete = false;
+            outcome.lose_precision(
+                ExecutionPrecisionLossReason::UnknownCallTarget,
+                call.owner,
+                call.span,
+            );
             outcome.unknown_call = true;
             self.note_unknown_call(call);
             self.invoke_possible_callbacks(&opaque_args, call.no_sync_arguments, outcome);
@@ -4051,7 +4165,11 @@ impl Executor<'_> {
                             [ValueExpr::Origin(ValueOrigin::Function(_))]
                         ) => {}
                 AbstractValue::DeferredCallbacks(captured) => {
-                    outcome.complete = false;
+                    outcome.lose_precision(
+                        ExecutionPrecisionLossReason::UnknownCallTarget,
+                        call.owner,
+                        call.span,
+                    );
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     let mut possible_args = opaque_args.clone();
@@ -4060,14 +4178,22 @@ impl Executor<'_> {
                     self.invoke_possible_callbacks(&possible_args, false, outcome);
                 }
                 AbstractValue::ClassMembers(key) => {
-                    outcome.complete = false;
+                    outcome.lose_precision(
+                        ExecutionPrecisionLossReason::UnknownCallTarget,
+                        call.owner,
+                        call.span,
+                    );
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     self.promote_class_members(key, outcome);
                     self.invoke_possible_callbacks(&opaque_args, false, outcome);
                 }
                 AbstractValue::Instance(key, captured) => {
-                    outcome.complete = false;
+                    outcome.lose_precision(
+                        ExecutionPrecisionLossReason::UnknownCallTarget,
+                        call.owner,
+                        call.span,
+                    );
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     self.promote_class_members(key, outcome);
@@ -4111,7 +4237,7 @@ impl Executor<'_> {
                     for accessor_owner in possible_accessors {
                         self.promote_lazy_owner(accessor_owner, effect_owner, outcome);
                     }
-                    outcome.complete = false;
+                    outcome.unsupported(ExecutionOperation::ObjectAssign, call.owner, call.span);
                     outcome.unknown_call = true;
                 }
                 AbstractValue::Origin(ValueOrigin::Class(key)) if call.kind == CallKind::New => {
@@ -4128,9 +4254,14 @@ impl Executor<'_> {
                             .extend(nested.effects.uninitialized_reads);
                         outcome.executed_owners.extend(nested.executed_owners);
                         outcome.unknown_call |= nested.unknown_call;
-                        outcome.complete &= nested.complete;
+                        outcome
+                            .inherit_completeness(nested.complete, nested.effects.precision_losses);
                     } else {
-                        outcome.complete = false;
+                        outcome.unsupported(
+                            ExecutionOperation::Construction,
+                            call.owner,
+                            call.span,
+                        );
                         outcome.unknown_call = true;
                         self.note_unknown_call(call);
                         self.escaped_class_capabilities.insert(key);
@@ -4157,7 +4288,7 @@ impl Executor<'_> {
                         .extend(nested.effects.uninitialized_reads);
                     outcome.executed_owners.extend(nested.executed_owners);
                     outcome.unknown_call |= nested.unknown_call;
-                    outcome.complete &= nested.complete;
+                    outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
                 }
                 AbstractValue::Closure(key, captured) if call.kind == CallKind::Call => {
                     let nested = self.invoke(key, args.clone(), Some(captured), false);
@@ -4170,10 +4301,14 @@ impl Executor<'_> {
                         .extend(nested.effects.uninitialized_reads);
                     outcome.executed_owners.extend(nested.executed_owners);
                     outcome.unknown_call |= nested.unknown_call;
-                    outcome.complete &= nested.complete;
+                    outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
                 }
                 _ => {
-                    outcome.complete = false;
+                    outcome.lose_precision(
+                        ExecutionPrecisionLossReason::UnknownCallTarget,
+                        call.owner,
+                        call.span,
+                    );
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     if !invoked_unknown_callbacks {
@@ -4703,9 +4838,11 @@ pub(crate) fn annotate_synchronous_calls(
                 .extend(fallback.effects.uninitialized_reads);
             outcome.executed_owners.extend(fallback.executed_owners);
             outcome.unknown_call = true;
-            outcome.complete = false;
+            outcome.inherit_completeness(false, fallback.effects.precision_losses);
         }
-        outcome.complete &= !index.opaque_top.contains(&fact.ordinal);
+        if index.opaque_top.contains(&fact.ordinal) {
+            outcome.unsupported(ExecutionOperation::OpaqueExecution, fact.ordinal, DUMMY_SP);
+        }
         outcome.effects.complete = outcome.complete;
         // A failed runtime path forfeits the prevalidated private-result proof.
         // Keep the actual execution/effect outcome in either case.

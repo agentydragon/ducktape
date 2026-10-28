@@ -179,6 +179,56 @@ impl DependencyGraphReport {
     }
 }
 
+/// Completeness of the existing synchronous-effect inference, independent of purity.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SynchronousExecutionReport {
+    pub complete: bool,
+    pub precision_losses: Vec<ExecutionPrecisionLoss>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ExecutionPrecisionLoss {
+    pub reason: ExecutionPrecisionLossReason,
+    /// Lexical source unit containing the operation or truncated callable.
+    pub statement_ordinal: SourceUnitOrdinal,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+    #[serde(skip)]
+    pub(crate) span: swc_common::Span,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "code", rename_all = "snake_case")]
+pub enum ExecutionPrecisionLossReason {
+    UnknownCallTarget,
+    UnsupportedOperation { operation: ExecutionOperation },
+    RecursiveInvocation,
+    InvocationDepthLimit { limit: usize },
+    InvocationExpansionLimit { limit: usize },
+    CallbackPoolLimit { limit: usize },
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionOperation {
+    MembershipProtocol,
+    InstanceOfProtocol,
+    DestructuringProtocol,
+    MemberRead,
+    ObjectSpread,
+    ArraySpread,
+    ImplicitCoercion,
+    PropertyWrite,
+    ReturnedCallback,
+    SuperclassConstruction,
+    ObjectAssign,
+    Construction,
+    OpaqueExecution,
+    GeneratorParameters,
+    CallableInputs,
+    ArrayIteration,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceUnitReport {
     pub id: String,
@@ -196,6 +246,9 @@ pub struct SourceUnitReport {
     /// call families; rejected unsupported guards are reported explicitly.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub callback_factory_barriers: Vec<CallbackFactoryBarrierReport>,
+    /// Reasons retained by synchronous inference, rather than reconstructed from purity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synchronous_execution: Option<SynchronousExecutionReport>,
     /// The module this source unit is assigned to, as an interned
     /// [`ModuleKey`]. Resolve to a path / residual flag via the module
     /// table (`quotient.nodes`).

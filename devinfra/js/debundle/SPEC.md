@@ -1093,6 +1093,24 @@ Stable initialized identities, dependency closures and target co-location
 checks still apply. Extra arguments and unsupported decorator/key expressions
 remain conservative. Earlier effects retain their existing accepted shapes.
 
+## Synchronous execution diagnostics
+
+Dependency-graph source units carry `synchronous_execution` when synchronous
+analysis ran. `complete` is the analyzer's existing effect-completeness verdict,
+independent of `purity`. `precision_losses` retains the reasons observed when
+execution became conservative: unresolved call targets, unsupported operations,
+recursive invocations, and depth, expansion, or callback-pool limits. Limit
+records include the configured bound. These records do not change gate acceptance
+or emitted JavaScript and do not inventory author-contract dependencies.
+
+Each loss identifies its lexical `statement_ordinal`. Its `source_location`
+identifies the exact indexed operation when available; otherwise it identifies
+the truncated callable or source unit. Nested execution carries its reasons to
+the active top-level source unit; repeated and cached outcomes deduplicate equal
+reasons at the same source site. A record describes an analysis fallback, not
+proof that the operation executes on every runtime path. Historical graphs may
+omit `synchronous_execution`.
+
 ## Vendor split-brain evidence
 
 A partial vendor swap rejected for shared retained implementation reports both

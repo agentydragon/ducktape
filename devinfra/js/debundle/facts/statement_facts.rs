@@ -196,6 +196,7 @@ pub(crate) struct SynchronousCalls {
     /// dependency graph can preserve that observation point.
     pub uninitialized_reads: BTreeSet<Id>,
     pub complete: bool,
+    pub precision_losses: Vec<crate::reports::schema::ExecutionPrecisionLoss>,
 }
 
 impl StatementFacts {

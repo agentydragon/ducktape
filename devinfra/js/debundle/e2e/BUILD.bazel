@@ -688,3 +688,8 @@ debundle_e2e_test(
         "@crates//:serde_yaml",
     ],
 )
+
+debundle_e2e_test(
+    name = "synchronous_precision_report_test",
+    deps = ["@crates//:serde_json"],
+)

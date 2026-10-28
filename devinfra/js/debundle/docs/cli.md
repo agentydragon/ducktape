@@ -1136,3 +1136,14 @@ inline or `--selector 'modules/file.yaml#/source_matches/0'` to read an authored
 entry. This mode does not run the whole-spec solver, establish uniqueness, or
 check external reference identities. The debugging workflow and address syntax
 are in <debugging_selectors.md>.
+
+### Synchronous execution precision
+
+In `dependency_graph.json`, inspect a node's `synchronous_execution.complete`
+and `precision_losses` to see why synchronous-effect inference retained a
+conservative fallback. Reasons distinguish unknown call targets, unsupported
+operations, recursion, and exhausted invocation or callback-pool budgets. Budget
+records include their limit; each loss carries its lexical statement ordinal and,
+when available, its source location. Nested reasons retain their original source
+site. This evidence is separate from purity reasons and does not certify author
+contracts. See [the report contract](../SPEC.md#synchronous-execution-diagnostics).

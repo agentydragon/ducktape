@@ -143,6 +143,7 @@ fn build_source_unit_nodes_and_edges(
             declared_bindings: binding_reports(assignment_analysis, node.declared.iter()),
             statement_kind: node.kind,
             purity: node.purity.clone(),
+            synchronous_execution: node.synchronous_execution.clone(),
             callback_factory_barriers: node
                 .callback_factory_barriers
                 .iter()

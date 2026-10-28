@@ -70,6 +70,12 @@ pub fn build_dependency_graph_with(
             kind: stmt.kind,
             purity: stmt.purity.clone(),
             callback_factory_barriers: stmt.callback_factory_barriers.clone(),
+            synchronous_execution: stmt.synchronous_calls.as_ref().map(|calls| {
+                crate::reports::schema::SynchronousExecutionReport {
+                    complete: calls.complete,
+                    precision_losses: calls.precision_losses.clone(),
+                }
+            }),
         });
     }
 
