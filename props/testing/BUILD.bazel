@@ -1,6 +1,7 @@
 """Props test infrastructure package."""
 
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
+load("//props:py_test.bzl", "py_test")
 
 package(default_testonly = True)
 

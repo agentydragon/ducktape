@@ -1,5 +1,6 @@
 load("//devinfra/deps:check.bzl", "assert_no_deps")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
+load("//props:py_test.bzl", "py_test")
 
 # =============================================================================
 # Library targets

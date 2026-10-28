@@ -1,6 +1,7 @@
 """Agent runtime libraries shared across all in-container agents."""
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//props:py_test.bzl", "py_test")
 
 py_library(
     name = "schema",

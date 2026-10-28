@@ -74,11 +74,6 @@ def pytest_configure(config: pytest.Config) -> None:
     if not os.environ.get("PROPS_AGENT_PASSWORD_SALT"):
         os.environ["PROPS_AGENT_PASSWORD_SALT"] = "test-agent-password-salt"
 
-    # Set these before pytest's logging plugin reads them in its configure hook.
-    config.option.log_cli_level = "INFO"
-    config.option.log_cli_format = "%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s"
-    config.option.log_cli_date_format = "%H:%M:%S"
-
     config.addinivalue_line("markers", "live_openai_api: marks tests calling real OpenAI API")
 
 
