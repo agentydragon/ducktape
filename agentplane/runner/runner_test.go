@@ -378,6 +378,23 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 			}
 		}
 	}()
+	defer func() {
+		if !t.Failed() {
+			return
+		}
+		input, _, inputErr := lifecycleRead[bootstrapInputSpec](r.ctx, r.lifecycle.state, "bootstrap")
+		current, _, runtimeErr := lifecycleRead[bootstrapRuntimeSpec](r.ctx, r.lifecycle.state, "bootstrap")
+		r.bootstrapMu.Lock()
+		op := r.bootstrapOp
+		if op != nil {
+			t.Logf("bootstrap operation: done=%t error=%v", operationDone(op), op.err)
+		}
+		r.bootstrapMu.Unlock()
+		t.Logf("bootstrap input=%+v (%v), runtime=%+v (%v)", input, inputErr, current, runtimeErr)
+		if data, err := os.ReadFile(filepath.Join(stateDir, "initialization", "events.jsonl")); err == nil {
+			t.Logf("bootstrap events: %s", data)
+		}
+	}()
 	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
 	request.SetupScript = &setup
 	if _, err := r.OpenSession(context.Background(), request); err != nil {
