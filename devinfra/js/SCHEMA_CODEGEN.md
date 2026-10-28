@@ -1,32 +1,46 @@
 # OpenAPI TypeScript declarations
 
-The `openapi_typescript` rule converts a declared OpenAPI JSON artifact into a TypeScript declaration
-file. The schema owner produces the artifact; this rule does not invoke a backend exporter.
+The `openapi_typescript` rule converts a declared OpenAPI JSON artifact into a TypeScript
+declaration file. The schema owner produces the artifact; the converter does not invoke a backend
+exporter.
 
 ```starlark
-load("//devinfra/js:openapi_typescript.bzl", "openapi_typescript")
+genrule(
+    name = "openapi_schema",
+    outs = ["openapi.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+)
 
 openapi_typescript(
     name = "_schema_types",
-    schema = "//my/api:openapi_schema",
+    schema = ":openapi_schema",
     out = "api/schema.d.ts",
+)
+
+js_library(
+    name = "schema",
+    srcs = [":_schema_types"],
+)
+
+ts_library(
+    name = "client",
+    srcs = ["client.ts"],
+    deps = [":schema"],
 )
 ```
 
-`schema` and every entry in `schema_files` must be a single-file Bazel target. List each file reached
-through a relative local `$ref` in `schema_files`; the conversion action receives the files through
-declared Bazel inputs and `$(location)` paths. Source, generated, and cross-package targets are
-supported. Wrap the generated declaration in a `js_library` when consumers need it as a dependency.
+`schema` and every entry in `schema_files` must be a single-file Bazel target. List each file
+reached through a relative local `$ref` in `schema_files`; source, generated, and cross-package
+targets are supported. The generated declarations preserve `rootTypes: true` and
+`rootTypesNoSchemaPrefix: true` so component models keep their named imports.
 
-The generated declarations preserve `openapi-typescript`'s `rootTypes: true` and
-`rootTypesNoSchemaPrefix: true` options so component models keep their named imports. Remote
-references are disabled during generation: the launcher temporarily replaces `fetch` and restores it
-after conversion. A loopback-server test verifies that a remote `$ref` is rejected without an HTTP
-request, while a local document with an absolute `$id` still converts.
+`js_library` publishes the generated declaration through `JsInfo.transitive_types`; it does not
+run a compiler action. `ts_library` consumes those declarations for type checking and does not emit
+them as JavaScript source.
 
-Schema exporters remain responsible for their source contract and any serialization choices. This
-rule does not normalize schema dialects or merge OpenAPI and JSON Schema inputs.
-
-Reference interpretation otherwise follows the pinned OpenAPI parser. In particular, it may treat a
-literal `$ref` key nested inside example or default data as a schema reference; payloads with that
-shape are not claimed as supported by this conversion path.
+Remote references are disabled during generation. Schema exporters remain responsible for their
+source contract and serialization choices; this rule does not normalize schema dialects or merge
+OpenAPI and JSON Schema inputs. Reference interpretation otherwise follows the pinned OpenAPI
+parser. In particular, it may treat a literal `$ref` key nested inside example or default data as a
+schema reference; such payloads are not claimed as supported by this conversion path.

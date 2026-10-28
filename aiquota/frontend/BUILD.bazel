@@ -63,7 +63,6 @@ openapi_typescript(
 js_library(
     name = "schema",
     srcs = [":_schema_types"],
-    tags = ["no-lint"],
 )
 
 ts_library(
