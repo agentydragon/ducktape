@@ -1,36 +1,7 @@
 {
-  "source_devel_commit": "2ae990424df7481ead4b5a170ab502934e136a7d",
-  "window_start_utc": "2026-10-24T04:00:00Z",
-  "window_end_utc": "2026-10-28T07:41:50.773Z",
-  "published_at_utc": "2026-10-28T08:00:04.090382+00:00",
-  "attribution": "not collected; retained historical scopes and focused policy/post-merge samples are separate",
-  "policy_pilot_window_utc": [
-    "2026-10-28T03:06:00Z",
-    "2026-10-28T06:05:00Z"
-  ],
-  "retained_baseline_commit": "f7d6595d1a24ed4f028206c4e854f0d22b139b58",
-  "source_disposition_review": "2ae990424df7481ead4b5a170ab502934e136a7d",
-  "natural_devel_run_creation_window_utc": [
-    "2026-10-28T06:05:00Z",
-    "2026-10-28T07:14:04Z"
-  ],
-  "fresh_adoption_baseline_report_commit": "fcc22e0abf741e91ff5a004706fc13d51f63d240",
-  "post_window_diagnostics": {
-    "source_devel_commit": "93d06c5e933a5ec01901da81c1eea1aeeb4a8755",
-    "vm_startup_trace_utc": [
-      "2026-10-28T07:17:37Z",
-      "2026-10-28T07:26:29Z"
-    ],
-    "native_cli_profile_runs_utc": [
-      [
-        "2026-10-28T07:22:30.500Z",
-        "2026-10-28T07:31:39.333Z"
-      ],
-      [
-        "2026-10-28T07:33:43.745Z",
-        "2026-10-28T07:41:50.773Z"
-      ]
-    ],
-    "scope": "Diagnostic observation only; does not extend the natural CI cohort window."
-  }
+  "source_devel_commit": "fa64098e36a9b5956e476b60e7d45e224e77de25",
+  "window_start_utc": "2026-10-27T06:00:00Z",
+  "window_end_utc": "2026-10-28T19:55:00Z",
+  "published_at_utc": "2026-10-28T21:13:22.424833+00:00",
+  "attribution": "not collected"
 }
