@@ -1,5 +1,5 @@
 # gazelle:exclude test_visual.py
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
@@ -98,7 +98,7 @@ openapi_js_library(
 # TypeScript declarations and their source JSON: :mcp_tool_schema turns each catalog entry into
 # a runtime Zod validator derived from FastMCP's advertised structural contract.
 json_schema_typescript(
-    name = "_mcp_tool_arguments_types",
+    name = "mcp_tool_arguments_types",
     out = "api/mcp_tool_arguments.d.ts",
     schema = "//haku/console/mcp:tool_arguments_schema",
 )
@@ -111,10 +111,8 @@ copy_file(
 
 js_library(
     name = "mcp_tool_arguments",
-    srcs = [
-        ":_mcp_tool_arguments_json",
-        ":_mcp_tool_arguments_types",
-    ],
+    srcs = [":_mcp_tool_arguments_json"],
+    deps = [":mcp_tool_arguments_types"],
 )
 
 # The exact output (result) schemas advertised by the in-process MCP servers, emitted by the
@@ -123,7 +121,7 @@ js_library(
 # restating it. grocy-sf contributes its reflected batch and read tools; its OpenAPI tool widgets
 # stay hand-authored.
 json_schema_typescript(
-    name = "_mcp_tool_results_types",
+    name = "mcp_tool_results_types",
     out = "api/mcp_tool_results.d.ts",
     schema = "//haku/console/mcp:tool_results_schema",
 )
@@ -136,10 +134,8 @@ copy_file(
 
 js_library(
     name = "mcp_tool_results",
-    srcs = [
-        ":_mcp_tool_results_json",
-        ":_mcp_tool_results_types",
-    ],
+    srcs = [":_mcp_tool_results_json"],
+    deps = [":mcp_tool_results_types"],
 )
 
 ts_library(
@@ -168,14 +164,9 @@ ts_library(
 # The shared ToolCallRecord wire model. No Console route serves it, so it is not in :schema; the
 # renderer-only state and preview targets consume it directly.
 json_schema_typescript(
-    name = "_tool_call_record_types",
+    name = "tool_call_record",
     out = "api/tool_call_record.d.ts",
     schema = "//haku/console:tool_call_record_schema",
-)
-
-js_library(
-    name = "tool_call_record",
-    srcs = [":_tool_call_record_types"],
 )
 
 ts_library(

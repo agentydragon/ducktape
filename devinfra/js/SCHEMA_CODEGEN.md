@@ -81,14 +81,15 @@ schema reference; such payloads are not claimed as supported by this conversion 
 
 ## Standalone JSON Schema declarations
 
-The `json_schema_typescript` rule converts one declared JSON Schema file without invoking its
-producer. It has the same file-input shape as `openapi_js_library`:
+The `json_schema_typescript` macro converts one declared JSON Schema file without invoking its
+producer and packages the declaration in a `js_library` under the requested target name. It has the
+same file-input shape as `openapi_js_library`:
 
 ```starlark
 load("//devinfra/js:json_schema_typescript.bzl", "json_schema_typescript")
 
 json_schema_typescript(
-    name = "_types",
+    name = "types",
     schema = "//my/api:types_schema",
     schema_files = ["//my/api:shared_definitions"],
     out = "api/types.d.ts",
@@ -100,11 +101,19 @@ as a declared input and resolves the reference from the root schema's path. Remo
 is disabled by the converter.
 
 When a runtime consumer needs the source JSON as well as generated declarations, keep the schema
-artifact as its own Bazel input and package both files in `js_library`:
+artifact as its own Bazel input. A wrapper can package the JSON source and depend on the declaration
+library:
 
 ```starlark
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("//devinfra/js:json_schema_typescript.bzl", "json_schema_typescript")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+json_schema_typescript(
+    name = "tool_arguments_types",
+    schema = ":types_schema",
+    out = "api/types.d.ts",
+)
 
 copy_file(
     name = "_schema_json",
@@ -113,8 +122,9 @@ copy_file(
 )
 
 js_library(
-    name = "types",
-    srcs = [":_types", ":_schema_json"],
+    name = "tool_arguments",
+    srcs = [":_schema_json"],
+    deps = [":tool_arguments_types"],
 )
 ```
 
