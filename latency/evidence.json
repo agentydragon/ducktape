@@ -45853,6 +45853,8 @@
       "pod_only_to_all_three_vm_execution_wall_delta_s": -36.612,
       "pod_only_to_all_three_vm_cleanup_sum_delta_s": -14.489,
       "pod_only_to_all_three_vm_cpu_delta_s": 10.553,
+      "later_all_three_vm_minus_mcp_worker_finish_s": 80.386,
+      "conditional_vm_only_feedback_ceiling": "At feb source, assuming other paths unchanged, roughly 80.39s of VM-only improvement before fresh MCP becomes next observed gate; not a fleet estimate.",
       "causal_status": "Unmatched source/cache/image state; no combined CI feedback or compute savings estimate. Controlled pre-merge phase experiments remain separate evidence."
     },
     "visibility_limits": [
@@ -45863,8 +45865,8 @@
       "The whole GitHub workflow includes release/push-image jobs beyond the Bazel job; report figures are Bazel job and test step only."
     ],
     "report_validation": {
-      "exact_html_sha256": "7b337b57d0f29aec974c3815cfa04aded403d37f12444edc09c3736fc5bbadbf",
-      "browser_review_invocation": "2dd28c6f-e4ee-4895-8b81-1a228c3c8f88",
+      "exact_html_sha256": "8e5c3f760f2f6d610a0c9ca2fca7fbedae2ed8e226529e29d40ad63ce0d96ef1",
+      "browser_review_invocation": "edf6ee96-8766-47fc-8006-8c0ae6c1c864",
       "browser_review": "passed two Playwright viewport cases on RBE, 1280x900 desktop and 390x844 mobile; visually inspected overview and post-merge table; no page horizontal overflow",
       "temporary_bazel_target": "//devinfra/ci/reports:post_merge_report_review",
       "screenshots_sha256": {

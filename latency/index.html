@@ -523,10 +523,13 @@
           In the later run, MCP finished at 06:30:43 UTC and VM at 06:32:04 UTC;
           their RBE queue waits were only 0.059s and 0.063s. Its ten MCP cases
           remained intact, with a warm 54.1s fixture stack and a 335.67s fresh
-          test action. VM's 97.6s of guest Ready spans and 34.4s guest-root
-          import make readiness, guest startup and image-state matching the next
-          measurement targets. These spans sit in different sequential/nested
-          phases and cannot simply be subtracted from CI feedback.
+          test action. At this source, a VM-only improvement is bounded by the
+          80.39s VM-versus-MCP finish gap before MCP becomes the next observed
+          gate, if other paths stay fixed. VM's 97.6s of guest Ready spans and
+          34.4s guest-root import make readiness, guest startup and image-state
+          matching the next measurement targets. These spans sit in different
+          sequential/nested phases and cannot simply be subtracted from CI
+          feedback.
         </p>
         <p class="small">
           Source-pinned BuildBuddy invocations:
