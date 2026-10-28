@@ -2760,7 +2760,7 @@ impl IterativeRules for DerivedBindingRules {
     type Fact = ();
     type Rule = usize;
 
-    fn evaluate(&self, rule: &Self::Rule, context: &mut IterativeContext<'_, Self>) {
+    fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let (target, sources) = &self.dependencies[*rule];
         if sources
             .iter()

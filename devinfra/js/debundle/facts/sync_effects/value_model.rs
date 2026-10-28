@@ -825,9 +825,10 @@ pub(super) fn infer_namespace_aliases(
             if target == self.namespace {
                 return;
             }
-            let aliases = context.read(()).cloned().unwrap_or_default();
-            if value.may_equal_namespace(self.namespace, &aliases, self.facts, &mut BTreeSet::new())
-            {
+            let is_alias = context.read(()).is_some_and(|aliases| {
+                value.may_equal_namespace(self.namespace, aliases, self.facts, &mut BTreeSet::new())
+            });
+            if is_alias {
                 context.propose((), BTreeSet::from([target.clone()]));
             }
         }

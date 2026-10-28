@@ -183,6 +183,9 @@ pub(super) fn infer_fluent_const_bindings(
     body: &[TopLevelItemView<'_>],
     seed: &BTreeSet<String>,
 ) -> BTreeSet<String> {
+    if seed.is_empty() {
+        return BTreeSet::new();
+    }
     let mut inference = IterativeInference::new(ValueRules {
         const_inits: BTreeMap::new(),
         shadowed: None,
