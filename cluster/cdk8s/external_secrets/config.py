@@ -150,6 +150,7 @@ def chart(app: App) -> Chart:
             "props",
             "public-coder-agent",
             "sdr",
+            "session-backup",
             "ssh-mcp",
             "study-casino",
             "tana-mcp",

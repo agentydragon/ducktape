@@ -156,6 +156,7 @@ spec:
         - props
         - public-coder-agent
         - sdr
+        - session-backup
         - ssh-mcp
         - study-casino
         - tana-mcp
