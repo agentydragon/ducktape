@@ -20,7 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/state"
 	"go.uber.org/zap"
@@ -46,7 +46,7 @@ type Dependencies struct {
 	HarnessEnvironment map[string]string
 	StateDir           string
 	RequestAdmission   RequestAdmission
-	Admission          runnerlifecycle.AdmissionGuard
+	Admission          lifecycle.AdmissionGuard
 	ExecServer         *execserver.Host
 	OnError            func(error)
 	OnChange           func()
@@ -185,11 +185,11 @@ func (c *Host) Host(ctx context.Context, s *Attachment) (*Process, error) {
 	}
 	var ready *Process
 	err := c.waitFor(ctx, func() (bool, error) {
-		desired, _, err := runnerlifecycle.ReadDesired(c.deps.Context, c.deps.State)
+		desired, _, err := lifecycle.ReadDesired(c.deps.Context, c.deps.State)
 		if err != nil {
 			return false, err
 		}
-		if desired.Mode != runnerlifecycle.Running {
+		if desired.Mode != lifecycle.Running {
 			return false, errors.New("runner is not accepting new Codex work")
 		}
 		runtime, _, err := ReadRuntime(c.deps.Context, c.deps.State)
@@ -226,11 +226,11 @@ func (c *Host) Host(ctx context.Context, s *Attachment) (*Process, error) {
 
 // RequestLocked records accepted demand. Caller holds the synchronous Runner admission barrier.
 func (c *Host) RequestLocked(ctx context.Context, s *Attachment) (uint64, error) {
-	desired, found, err := runnerlifecycle.ReadDesired(ctx, c.deps.State)
+	desired, found, err := lifecycle.ReadDesired(ctx, c.deps.State)
 	if err != nil {
 		return 0, err
 	}
-	if !found || desired.Mode != runnerlifecycle.Running {
+	if !found || desired.Mode != lifecycle.Running {
 		return 0, errors.New("runner is not accepting new Codex work")
 	}
 	c.inputMu.Lock()

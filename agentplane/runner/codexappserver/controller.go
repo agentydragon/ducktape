@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/codex/execserver"
-	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/siderolabs/gen/optional"
@@ -22,11 +22,11 @@ func (*LifecycleController) Name() string { return ControllerName }
 func (*LifecycleController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
-			{Namespace: runnerlifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
-			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.DesiredStateType, Kind: controller.InputQMapped},
-			{Namespace: runnerlifecycle.Namespace, Type: runnerlifecycle.AggregateStatusType, Kind: controller.InputQMapped},
-			{Namespace: runnerlifecycle.Namespace, Type: execserver.RuntimeType, Kind: controller.InputQMapped},
-			{Namespace: runnerlifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: InputType, Kind: controller.InputQPrimary},
+			{Namespace: lifecycle.Namespace, Type: lifecycle.DesiredStateType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: execserver.RuntimeType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: OperationType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: RuntimeType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
@@ -40,7 +40,7 @@ func (*LifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r contr
 			return nil, err
 		}
 	}
-	return []resource.Pointer{resource.NewMetadata(runnerlifecycle.Namespace, InputType, ResourceID, resource.VersionUndefined)}, nil
+	return []resource.Pointer{resource.NewMetadata(lifecycle.Namespace, InputType, ResourceID, resource.VersionUndefined)}, nil
 }
 
 func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, _ resource.Pointer) error {
@@ -56,11 +56,11 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 	if err != nil {
 		return err
 	}
-	desiredState, _, err := runnerlifecycle.ReadDesired(ctx, r)
+	desiredState, _, err := lifecycle.ReadDesired(ctx, r)
 	if err != nil {
 		return err
 	}
-	outer, _, err := runnerlifecycle.ReadStatus(ctx, r)
+	outer, _, err := lifecycle.ReadStatus(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -93,7 +93,7 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			server.initializingOwnerGeneration = 0
 			live := p != nil && p.Running()
 			server.mu.Unlock()
-			if live && desiredState.Mode == runnerlifecycle.Running && generation == desiredState.Generation {
+			if live && desiredState.Mode == lifecycle.Running && generation == desiredState.Generation {
 				current.Phase = Ready
 				current.ProcessID = p.ID()
 				current.Attempt = input.Demand
@@ -135,12 +135,12 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 			current.Error = input.ExitError
 			if current.Error == "" {
 				current.Error = "Codex app-server exited"
-			} else if desiredState.Mode != runnerlifecycle.Running {
+			} else if desiredState.Mode != lifecycle.Running {
 				current.StopError = input.ExitError
 			}
 		}
 	}
-	if desiredState.Mode == runnerlifecycle.Running && current.Generation != desiredState.Generation {
+	if desiredState.Mode == lifecycle.Running && current.Generation != desiredState.Generation {
 		server.mu.Lock()
 		inactive := server.initializing == nil && server.draining == nil && server.current == nil
 		if inactive && server.initializingOwnerGeneration != desiredState.Generation {
@@ -162,10 +162,10 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		}
 	}
 
-	if desiredState.Mode != runnerlifecycle.Running {
-		// RunnerLifecycleController reaches runnerlifecycle.Stopping only after every Session has halted. Until
+	if desiredState.Mode != lifecycle.Running {
+		// RunnerLifecycleController reaches lifecycle.Stopping only after every Session has halted. Until
 		// then, the app-server remains available to finish those Sessions' native observations.
-		if outer.Stage < runnerlifecycle.Stopping {
+		if outer.Stage < lifecycle.Stopping {
 			return write()
 		}
 		if current.StopError != "" {

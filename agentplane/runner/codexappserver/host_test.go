@@ -14,7 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	"github.com/cosi-project/runtime/pkg/controller"
-	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
+	"github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -65,7 +65,7 @@ func newFixtureWithOnChange(t *testing.T, onChange func()) *fixture {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	f := &fixture{ctx: ctx, cancel: cancel, store: state.WrapCore(namespaced.NewState(inmem.Build)), runDone: make(chan error, 1)}
-	engine, err := cosiruntime.NewRuntime(f.store, zap.NewNop())
+	engine, err := runtime.NewRuntime(f.store, zap.NewNop())
 	if err != nil {
 		t.Fatal(err)
 	}
