@@ -1,8 +1,9 @@
-"""Independent cash/unit controls and the documented offline study entry point."""
+"""Independent cash/unit controls, study invariants, and the offline entry point."""
 
 import json
 import subprocess
 from dataclasses import replace
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -10,22 +11,28 @@ import numpy as np
 import pytest
 import pytest_bazel
 
+from finance.augur.model.historical_windows import HistoricalWindowsModel
 from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey, SecurityKey
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_to_quanta
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
 from finance.augur.study.trinity.replay import (
+    BOND_SPEC,
     BONDS,
     EQUITY,
+    EQUITY_SPEC,
     HORIZON_MONTHS,
     INITIAL_PORTFOLIO,
     QUANTUM,
+    Replay,
     compose,
     drive,
     opening_lots,
+    replay_model,
     situation,
     sleeve_targets,
 )
+from finance.augur.study.trinity.synthetic import synthetic_history
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
@@ -139,6 +146,40 @@ def test_final_exact_depletion_is_success_but_an_unpaid_final_withdrawal_is_not(
     if not success:
         assert len(summary.cash[0].values) == 350
         assert result.stop == RejectedAction(month=348, action_index=0)
+
+
+def test_safemax_finds_the_known_flat_portfolio_boundary() -> None:
+    """Thirty $30k withdrawals fit $1M; thirty $40k withdrawals do not."""
+    case = situation(
+        ExternalSeriesContext.from_level_blocks(
+            [
+                (SecurityKey(symbol=EQUITY), np.full((1, HORIZON_MONTHS + 1), 100.0)),
+                (InflationKey(), np.ones((1, HORIZON_MONTHS + 1))),
+            ],
+            rollout_count=1,
+            horizon_months=HORIZON_MONTHS,
+        ),
+        rollout_count=1,
+    )
+    replay = Replay(
+        situation=case,
+        window_starts=(date(1930, 1, 1),),
+        record_start=date(1930, 1, 1),
+        record_end=date(1960, 1, 1),
+        compound_return_percent={},
+    )
+    assert replay.safemax(equity_share=1.0, grid=(0.02, 0.03, 0.04, 0.05)) == 0.03
+    assert replay.safemax(equity_share=1.0, grid=(0.04, 0.05)) is None
+
+
+def test_raising_withdrawals_never_improves_a_synthetic_window() -> None:
+    replay = replay_model(
+        HistoricalWindowsModel(history=synthetic_history(HORIZON_MONTHS), equity=EQUITY_SPEC, instruments=(BOND_SPEC,))
+    )
+    for equity_share in (1.0, 0.5, 0.0):
+        rates = [replay.success_rate(equity_share=equity_share, withdrawal_rate=rate) for rate in (0.02, 0.04, 0.08)]
+        assert rates == sorted(rates, reverse=True), f"{equity_share:.0%} equity: {rates}"
+        assert rates[0] > rates[-1], f"{equity_share:.0%} equity did not cross survival boundary"
 
 
 @pytest.mark.parametrize("share", [0.0, 0.5, 1.0])

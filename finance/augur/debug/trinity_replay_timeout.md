@@ -26,8 +26,15 @@ windows all succeeded, while historical windows can stop at different months.
 The temporary profiling Bazel target was removed after the run; raw stats remain
 at `/tmp/trinity-replay-temp.prof` on the diagnosing host.
 
-Four Bazel shards distribute the seven existing cases by collection position:
-shard 1 checks the record and table, shard 2 the input returns and all-bond row,
-shard 3 the 4% claim and monotonicity, and shard 4 SAFEMAX. Each shard samples
-the same named public evidence and checks all historical windows in its cells.
-The manual suite remains network dependent; the four shards fetch separately.
+The paper resolves SAFEMAX only to `[3%, 4%)`. The full table already runs those
+two cells for each equity-holding allocation, so the manual test now asserts
+100% survival at 3% and less than 100% at 4% from those results. The 31-point
+historical bisection added no published-claim coverage. An offline flat-portfolio
+case checks the bisection's known boundary, and four synthetic windows check
+withdrawal monotonicity across stock, mixed, and bond allocations with a real
+survival-to-exhaustion transition.
+
+The manual suite now runs 33 full-population cells across two Bazel shards:
+the 4% headline, full Table 3 neighbourhood, and all-bond direction still use
+all 474 historical starts and the 360-month horizon. Both shards fetch the
+named public evidence separately, so this remains an opt-in network test.

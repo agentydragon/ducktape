@@ -3,8 +3,8 @@
 The assertions are deliberately not tight. A reproduction that matched to the point would be
 suspicious — the equity series, the bond model and the window spacing all differ from the
 paper (see `replay.py`) — so what is pinned here is that augur lands in the published
-neighbourhood, that it does so for the reason the paper gives (the input returns resemble the
-paper's), and that its answer moves the way a withdrawal study's answer must.
+neighbourhood, and that it does so for the reason the paper gives (the input returns
+resemble the paper's). Structural controls on synthetic paths run in `test_actions.py`.
 
 Network-dependent and slow: the record is fetched from the public upstreams and every cell is
 a 474-rollout simulation. Hence `manual` — see the package README.
@@ -24,7 +24,6 @@ from finance.augur.study.trinity.replay import (
     HORIZON_MONTHS,
     PAPER_COMPOUND_RETURN_PERCENT,
     PUBLISHED_RATES,
-    SAFEMAX_GRID,
     TABLE_3_SUCCESS_PERCENT,
     Replay,
     sample_replay,
@@ -99,16 +98,6 @@ def test_the_four_percent_failure_rate_matches_the_published_one(replay: Replay)
         )
 
 
-def test_safemax_lands_where_table_3_puts_it(replay: Replay) -> None:
-    """Table 3 resolves SAFEMAX only to "in [3%, 4%)" — 100% success at 3%, less at 4% — for
-    every allocation holding equity. A finer grid must still land inside that interval."""
-
-    for equity_share in (*EQUITY_LED_SHARES, 0.25):
-        safemax = replay.safemax(equity_share=equity_share, grid=SAFEMAX_GRID)
-        assert safemax is not None, f"{equity_share:.0%} equity did not survive the grid's floor"
-        assert 0.03 <= safemax < 0.04, f"{equity_share:.0%} equity: SAFEMAX {safemax:.1%}"
-
-
 def test_the_whole_table_lands_in_the_published_neighbourhood(replay: Replay) -> None:
     """Every allocation that holds equity. The all-bond row sits outside any tolerance this
     could set and gets its own directional test below — see the module docstring."""
@@ -123,6 +112,12 @@ def test_the_whole_table_lands_in_the_published_neighbourhood(replay: Replay) ->
             assert reproduced == pytest.approx(paper, abs=TABLE_TOLERANCE_POINTS), (
                 f"{equity_share:.0%} equity at {rate:.0%}: augur {reproduced:.0f}%, Table 3 {paper}%"
             )
+            # The paper resolves SAFEMAX only to [3%, 4%): every equity-holding
+            # allocation survives 3%, while at least one window fails at 4%.
+            if rate == 0.03:
+                assert reproduced == 100.0, f"{equity_share:.0%} equity failed at 3%"
+            elif rate == 0.04:
+                assert reproduced < 100.0, f"{equity_share:.0%} equity survived every 4% window"
 
 
 def test_the_all_bond_row_stays_under_the_published_one(replay: Replay) -> None:
@@ -145,16 +140,6 @@ def test_the_all_bond_row_stays_under_the_published_one(replay: Replay) -> None:
             continue
         reproduced = 100.0 * replay.success_rate(equity_share=0.0, withdrawal_rate=rate)
         assert reproduced <= paper, f"all-bond at {rate:.0%}: augur {reproduced:.0f}%, Table 3 {paper}%"
-
-
-def test_raising_the_withdrawal_never_raises_the_success_rate(replay: Replay) -> None:
-    """A structural invariant rather than a fact about history: a larger withdrawal takes
-    strictly more out of the portfolio in every month of every window, so it cannot rescue a
-    window that a smaller one exhausted. It is also what makes `safemax`'s bisection valid."""
-
-    for equity_share in (1.00, 0.50, 0.00):
-        rates = [replay.success_rate(equity_share=equity_share, withdrawal_rate=rate) for rate in CHECKED_RATES]
-        assert rates == sorted(rates, reverse=True), f"{equity_share:.0%} equity: {rates}"
 
 
 if __name__ == "__main__":
