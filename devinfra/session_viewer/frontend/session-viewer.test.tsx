@@ -133,7 +133,6 @@ it("distinguishes inventory, failed and missing imports from an empty captured v
     source_path: "/archive/empty.jsonl",
     complete: true,
     parse_issue_count: 0,
-    snapshot_id: "empty-snapshot",
   };
   const api: SessionBrowserApi = {
     ...sessionFixtureApi,
