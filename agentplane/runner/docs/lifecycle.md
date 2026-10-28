@@ -33,7 +33,15 @@ The `session.Manager` owns the Session registry, serialized durable reservation 
 journal reconstruction, component resources and controller, and startup recovery. It reconciles retained setup and turn state
 before publishing the first schedulable Session input. Its map mutex protects only registry access;
 publication and recovery run after releasing it. The Runner mutex remains the synchronous admission
-and quiesce barrier around accepting checks and durable reservation. Each Session holds its own
+and quiesce barrier around accepting checks and durable reservation.
+
+`RunnerInputs.Admissions` is the sole count of admission handlers in flight, not queued commands
+or active turns. Its increment commits under that barrier before durable
+reservation or journal work begins, and its decrement commits when the handler settles.
+The aggregate controller and status projection read this same COSI state; count changes wake
+reconciliation directly. A missing resource or failed update is an error, never an idle count.
+
+Each Session holds its own
 context, store, journal, launch configuration, and narrow lifecycle publication capabilities;
 it reads lifecycle state directly instead of reaching through Runner. Runner registers the Manager's
 controller before starting the runtime. After aggregate shutdown and controller termination,

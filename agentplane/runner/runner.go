@@ -45,7 +45,6 @@ type Runner struct {
 	changes             chan struct{}
 	fatal               chan error
 	idleSince           *timestamppb.Timestamp
-	admissions          int
 	lifecycle           *lifecycle
 	closeOnce           sync.Once
 	closeErr            error
@@ -184,13 +183,6 @@ func (r *Runner) changed() {
 	close(r.changes)
 	r.changes = make(chan struct{})
 	r.mu.Unlock()
-}
-
-func (r *Runner) admissionChanged() {
-	r.changed()
-	if r.lifecycle != nil {
-		r.lifecycle.publishAdmissionState()
-	}
 }
 
 func (r *Runner) changesSince() <-chan struct{} { r.mu.Lock(); defer r.mu.Unlock(); return r.changes }

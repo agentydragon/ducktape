@@ -65,7 +65,6 @@ func lifecycleWrite[T lifecycleSpec[T]](ctx context.Context, writer controller.R
 }
 
 type runnerInputSpec struct {
-	Revision   uint64
 	Admissions int
 }
 type journalSealSpec struct {

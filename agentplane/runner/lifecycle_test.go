@@ -126,6 +126,57 @@ func waitClose(t *testing.T, done <-chan error) error {
 	}
 }
 
+// Hold the real journal transaction so an admission remains in flight.
+func holdJournalBatch(t *testing.T, ctx context.Context, s *session.Session) func() {
+	t.Helper()
+	held, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- s.EventJournal().WithBatch(ctx, func(context.Context) error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	var once sync.Once
+	releaseBatch := func() {
+		once.Do(func() {
+			close(release)
+			if err := <-done; err != nil {
+				t.Errorf("release journal transaction: %v", err)
+			}
+		})
+	}
+	t.Cleanup(releaseBatch)
+	select {
+	case <-held:
+	case <-ctx.Done():
+		t.Fatal("journal transaction did not start")
+	}
+	return releaseBatch
+}
+
+// Restore only after the failed handler has settled; production must never
+// recreate missing authoritative accounting as an idle (zero) count.
+func removeAdmissionState(t *testing.T, r *Runner) func() {
+	t.Helper()
+	ptr := lifecycleResourceFor("runner", runnerInputSpec{}).Metadata()
+	r.mu.Lock()
+	err := r.lifecycle.state.Destroy(r.ctx, ptr, state.WithDestroyOwner("runner-host"))
+	r.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return func() {
+		r.mu.Lock()
+		err := r.lifecycle.state.Create(r.ctx, lifecycleResourceFor("runner", runnerInputSpec{}), state.WithCreateOwner("runner-host"))
+		r.mu.Unlock()
+		if err != nil {
+			t.Errorf("restore admission accounting for teardown: %v", err)
+		}
+	}
+}
+
 // The controller creates its output; COSI watches creation and retries version conflicts.
 func modifyLifecycleForTest[T lifecycleSpec[T]](ctx context.Context, r *Runner, id, owner string, modify func(*T)) error {
 	var zero T
@@ -221,32 +272,12 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	}
 }
 
-func TestCloseWaitsForAdmissionAndPublishesAdmissionTransitions(t *testing.T) {
+func TestCloseWaitsForAdmission(t *testing.T) {
 	r, s := lifecycleTestSession(t)
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 
-	before, found, err := lifecycleRead[runnerInputSpec](ctx, r.lifecycle.state, "runner")
-	if err != nil || !found {
-		t.Fatalf("read RunnerInputs before admission: found=%v err=%v", found, err)
-	}
-	held, release := make(chan struct{}), make(chan struct{})
-	batchDone := make(chan error, 1)
-	var releaseOnce sync.Once
-	releaseBatch := func() { releaseOnce.Do(func() { close(release) }) }
-	t.Cleanup(releaseBatch)
-	go func() {
-		batchDone <- s.EventJournal().WithBatch(ctx, func(context.Context) error {
-			close(held)
-			<-release
-			return nil
-		})
-	}()
-	select {
-	case <-held:
-	case <-ctx.Done():
-		t.Fatal("journal transaction did not start")
-	}
+	releaseBatch := holdJournalBatch(t, ctx, s)
 	inputDone := make(chan error, 1)
 	go func() {
 		_, err := r.SubmitInput(ctx, &runnerservicepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "close-race", Text: "input"})
@@ -258,12 +289,17 @@ func TestCloseWaitsForAdmissionAndPublishesAdmissionTransitions(t *testing.T) {
 		releaseBatch()
 		t.Fatalf("wait for held admission: %v", err)
 	}
-	during, found, err := lifecycleRead[runnerInputSpec](ctx, r.lifecycle.state, "runner")
-	if err != nil || !found || during.Revision != before.Revision+1 {
-		releaseBatch()
-		t.Fatalf("RunnerInputs after admission start = %+v, found=%v err=%v; want one revision after %+v", during, found, err, before)
+	facts, err := r.facts()
+	if err != nil {
+		t.Fatal(err)
 	}
-
+	admissionBlocked := false
+	for _, blocker := range facts.AutosuspendBlockers {
+		admissionBlocked = admissionBlocked || blocker.Reason == autosuspendAdmission
+	}
+	if !admissionBlocked || facts.IdleSince != nil {
+		t.Fatalf("facts during admission = %v, want Admission blocker without idle token", facts)
+	}
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close() }()
 	if err := runnerlifecycle.WatchStatus(ctx, r.lifecycle.state, func(runtime runnerlifecycle.Status) (bool, error) {
@@ -279,9 +315,6 @@ func TestCloseWaitsForAdmissionAndPublishesAdmissionTransitions(t *testing.T) {
 	default:
 	}
 	releaseBatch()
-	if err := <-batchDone; err != nil {
-		t.Fatal(err)
-	}
 	if err := <-inputDone; status.Code(err) != codes.Aborted {
 		t.Fatalf("late input admission error = %v, want Aborted", err)
 	}
@@ -289,8 +322,70 @@ func TestCloseWaitsForAdmissionAndPublishesAdmissionTransitions(t *testing.T) {
 		t.Fatalf("Close after admission completion: %v", err)
 	}
 	after, found, err := lifecycleRead[runnerInputSpec](ctx, r.lifecycle.state, "runner")
-	if err != nil || !found || after.Admissions != 0 || after.Revision != before.Revision+2 {
-		t.Fatalf("RunnerInputs after admission completion = %+v, found=%v err=%v; want two revisions and no admissions after %+v", after, found, err, before)
+	if err != nil || !found || after.Admissions != 0 {
+		t.Fatalf("RunnerInputs after admission completion = %+v, found=%v err=%v; want no admissions", after, found, err)
+	}
+}
+
+func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
+	r, s := lifecycleTestSession(t)
+	restore := removeAdmissionState(t, r)
+	defer restore()
+	if facts, err := r.facts(); err == nil {
+		t.Fatalf("missing accounting returned facts: %v", facts)
+	}
+	cursor := s.EventJournal().LastCursor()
+	if _, err := r.SubmitInput(r.ctx, &runnerservicepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "missing-accounting", Text: "input"}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("command with missing accounting = %v, want Unavailable", err)
+	}
+	if after := s.EventJournal().LastCursor(); after != cursor {
+		t.Fatalf("rejected command changed journal cursor: %d -> %d", cursor, after)
+	}
+	request := openLifecycleSession("new-session", filepath.Join(r.config.WorkspaceRoot, "project"))
+	if _, err := r.OpenSession(r.ctx, request); status.Code(err) != codes.Unavailable {
+		t.Fatalf("Session reservation with missing accounting = %v, want Unavailable", err)
+	}
+	if exists, err := r.store.Exists(request.SessionId); err != nil || exists {
+		t.Fatalf("rejected Session was persisted: exists=%v err=%v", exists, err)
+	}
+}
+
+func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
+	r, s := lifecycleTestSession(t)
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+	defer cancel()
+	releaseBatch := holdJournalBatch(t, ctx, s)
+	inputDone := make(chan error, 1)
+	go func() {
+		_, err := r.SubmitInput(ctx, &runnerservicepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "completion-accounting", Text: "input"})
+		inputDone <- err
+	}()
+	if err := watchLifecycle(ctx, r.lifecycle, "runner", func(input runnerInputSpec) (bool, error) {
+		return input.Admissions == 1, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	restore := removeAdmissionState(t, r)
+	defer restore()
+	releaseBatch()
+	select {
+	case err := <-inputDone:
+		if status.Code(err) != codes.Unavailable {
+			t.Fatalf("completion with missing accounting = %v, want Unavailable", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("admission did not finish")
+	}
+	select {
+	case err := <-r.fatal:
+		if !state.IsNotFoundError(err) {
+			t.Fatalf("Runner failure = %v, want missing admission state", err)
+		}
+	default:
+		t.Fatal("accounting completion failure did not reach Runner supervision")
+	}
+	if facts, err := r.facts(); err == nil {
+		t.Fatalf("failed completion returned facts: %v", facts)
 	}
 }
 
@@ -307,12 +402,8 @@ func TestCloseProgressesForEmptyRunner(t *testing.T) {
 	}
 }
 
-func TestJournalAndAcknowledgementChangesDoNotReviseRunnerInputs(t *testing.T) {
+func TestJournalAndAcknowledgementChangesWakeObservers(t *testing.T) {
 	r, s := lifecycleTestSession(t)
-	before, found, err := lifecycleRead[runnerInputSpec](r.ctx, r.lifecycle.state, "runner")
-	if err != nil || !found {
-		t.Fatalf("read RunnerInputs before journal update: found=%v err=%v", found, err)
-	}
 	changes := r.changesSince()
 	if err := s.Emit(r.ctx, &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "journal update"}}}, nil); err != nil {
 		t.Fatal(err)
@@ -329,10 +420,6 @@ func TestJournalAndAcknowledgementChangesDoNotReviseRunnerInputs(t *testing.T) {
 	case <-changes:
 	default:
 		t.Fatal("journal/acknowledgement changes did not wake Runner observers")
-	}
-	after, found, err := lifecycleRead[runnerInputSpec](r.ctx, r.lifecycle.state, "runner")
-	if err != nil || !found || after.Revision != before.Revision || after.Admissions != before.Admissions {
-		t.Fatalf("RunnerInputs changed on journal/acknowledgement: before=%+v after=%+v found=%v err=%v", before, after, found, err)
 	}
 }
 

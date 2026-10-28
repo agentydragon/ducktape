@@ -105,6 +105,9 @@ func newLifecycle(r *Runner, adapters *execserver.Adapters) (*lifecycle, error) 
 	if err := runnerlifecycle.PublishDesired(l.runner.ctx, l.state, runnerlifecycle.Desired{}); err != nil {
 		return nil, err
 	}
+	if err := l.state.Create(r.ctx, lifecycleResourceFor("runner", runnerInputSpec{}), state.WithCreateOwner("runner-host")); err != nil {
+		return nil, err
+	}
 	return l, nil
 }
 

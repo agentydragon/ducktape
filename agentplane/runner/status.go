@@ -95,7 +95,12 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 		}
 	}
 	r.mu.Lock()
-	if r.admissions > 0 {
+	admissions, err := r.lifecycle.admissionCount(r.ctx)
+	if err != nil {
+		r.mu.Unlock()
+		return nil, err
+	}
+	if admissions > 0 {
 		blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendAdmission})
 	}
 	busy := len(blockers) > 0

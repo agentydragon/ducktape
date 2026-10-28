@@ -1,6 +1,9 @@
 package runner
 
 import (
+	"context"
+	"errors"
+
 	"github.com/agentydragon/ducktape/agentplane/runner/journal"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -32,18 +35,26 @@ func publishLifecycle[T lifecycleSpec[T]](l *lifecycle, id string, value T) erro
 	}, state.WithUpdateOwner("runner-host"))
 }
 
-func (l *lifecycle) publishAdmissionState() {
-	l.runner.mu.Lock()
-	admissions := l.runner.admissions
-	defer l.runner.mu.Unlock()
-	l.publishMu.Lock()
-	defer l.publishMu.Unlock()
-	input, _, err := lifecycleRead[runnerInputSpec](l.runner.ctx, l.state, "runner")
+func (l *lifecycle) admissionCount(ctx context.Context) (int, error) {
+	input, found, err := lifecycleRead[runnerInputSpec](ctx, l.state, "runner")
 	if err != nil {
-		l.runner.fail(err)
-		return
+		return 0, err
 	}
-	input.Admissions = admissions
-	input.Revision++
-	l.runner.fail(publishLifecycle(l, "runner", input))
+	if !found {
+		return 0, errors.New("runner admission state is missing")
+	}
+	return input.Admissions, nil
+}
+
+// Caller holds Runner.mu: accounting must precede durable admission and serialize with closing.
+func (l *lifecycle) changeAdmissionsLocked(delta int) error {
+	_, err := safe.StateUpdateWithConflicts(l.runner.ctx, l.state, lifecycleResourceFor("runner", runnerInputSpec{}).Metadata(), func(value *typed.Resource[runnerInputSpec, lifecycleExtension[runnerInputSpec]]) error {
+		input := value.TypedSpec()
+		if input.Admissions+delta < 0 {
+			return errors.New("runner admission count would become negative")
+		}
+		input.Admissions += delta
+		return nil
+	}, state.WithUpdateOwner("runner-host"))
+	return err
 }

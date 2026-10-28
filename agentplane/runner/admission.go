@@ -99,16 +99,19 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 			r.mu.Unlock()
 			return status.Error(codes.Aborted, "this Sandbox is quiesced")
 		}
-		r.admissions++
+		if err := r.lifecycle.changeAdmissionsLocked(1); err != nil {
+			r.mu.Unlock()
+			return err
+		}
 		r.idleSince = nil
 		admitted = true
 		writeErr := r.store.Write(request.SessionId, record)
 		r.mu.Unlock()
-		r.admissionChanged()
+		r.changed()
 		return writeErr
 	})
 	if admitted {
-		defer func() { r.mu.Lock(); r.admissions--; r.mu.Unlock(); r.admissionChanged() }()
+		defer r.finishAdmission(&resultErr)
 	}
 	if err != nil {
 		return nil, rpcError(err)
@@ -123,7 +126,7 @@ func (r *Runner) OpenSession(ctx context.Context, request *runnerservicepb.OpenS
 
 func equalString(a, b *string) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
 
-func (r *Runner) admit(id string, c *commandpb.Command) (*eventlogpb.EventEntry, error) {
+func (r *Runner) admit(id string, c *commandpb.Command) (entry *eventlogpb.EventEntry, resultErr error) {
 	if c.CommandId == "" || c.Operation == nil {
 		return nil, status.Error(codes.InvalidArgument, "command_id and operation required")
 	}
@@ -137,11 +140,14 @@ func (r *Runner) admit(id string, c *commandpb.Command) (*eventlogpb.EventEntry,
 		return nil, status.Error(codes.Unavailable, "runner is closed")
 	}
 	lameduck := !r.lifecycle.accepting()
-	r.admissions++
+	if err := r.lifecycle.changeAdmissionsLocked(1); err != nil {
+		r.mu.Unlock()
+		return nil, rpcError(err)
+	}
 	r.idleSince = nil
 	r.mu.Unlock()
-	r.admissionChanged()
-	defer func() { r.mu.Lock(); r.admissions--; r.mu.Unlock(); r.admissionChanged() }()
+	r.changed()
+	defer r.finishAdmission(&resultErr)
 	exists, err := r.store.Exists(id)
 	if err != nil {
 		return nil, rpcError(err)
@@ -153,8 +159,19 @@ func (r *Runner) admit(id string, c *commandpb.Command) (*eventlogpb.EventEntry,
 	if err != nil {
 		return nil, rpcError(err)
 	}
-	entry, err := s.Admit(r.ctx, c, lameduck)
+	entry, err = s.Admit(r.ctx, c, lameduck)
 	return entry, rpcError(err)
+}
+
+func (r *Runner) finishAdmission(resultErr *error) {
+	r.mu.Lock()
+	err := r.lifecycle.changeAdmissionsLocked(-1)
+	r.mu.Unlock()
+	r.changed()
+	if err != nil {
+		r.fail(err)
+		*resultErr = status.Error(codes.Unavailable, errors.Join(*resultErr, err).Error())
+	}
 }
 
 func (r *Runner) SubmitInput(_ context.Context, q *runnerservicepb.SubmitInputRequest) (*runnerservicepb.SubmitInputResponse, error) {

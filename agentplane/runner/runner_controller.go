@@ -69,8 +69,11 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		return write()
 	}
 	c.l.runner.mu.Lock()
-	admissions := c.l.runner.admissions
+	admissions, err := c.l.admissionCount(ctx)
 	c.l.runner.mu.Unlock()
+	if err != nil {
+		return err
+	}
 	if admissions != 0 {
 		current.Stage = runnerlifecycle.Draining
 		return write()
@@ -204,7 +207,12 @@ func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.
 		// Closing the final admission window and publishing completion share
 		// the RPC barrier, including late exact-turn controls.
 		c.l.runner.mu.Lock()
-		if c.l.runner.admissions != 0 {
+		admissions, err := c.l.admissionCount(ctx)
+		if err != nil {
+			c.l.runner.mu.Unlock()
+			return err
+		}
+		if admissions != 0 {
 			c.l.runner.mu.Unlock()
 			return nil
 		}
