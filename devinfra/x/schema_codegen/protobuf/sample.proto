@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package schema_codegen.v1;
+
+import "devinfra/x/schema_codegen/protobuf/common.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+message Sample {
+  string sample_id = 1;
+  int64 sequence = 2;
+  google.protobuf.Timestamp observed_at = 3;
+  SampleStatus status = 4;
+  optional string note = 5;
+  CommonMetadata metadata = 6;
+  oneof payload {
+    string text_payload = 7;
+    bytes binary_payload = 8;
+  }
+}
+
+message GetSampleRequest {
+  string sample_id = 1;
+}
+
+service SampleService {
+  rpc GetSample(GetSampleRequest) returns (Sample) {
+    option (google.api.http) = {
+      get: "/v1/samples/{sample_id}"
+    };
+  }
+}

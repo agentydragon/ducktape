@@ -1,0 +1,30 @@
+# Schema conversion spikes
+
+Small source models exercise real schema exporters, conversion tools, generated bindings, and
+consumers. Generated documents and source files are Bazel outputs; application generators and wire
+contracts are unchanged.
+
+Run all cases, including lint and language checks on the explicitly selected library targets:
+
+```bash
+bbr test //devinfra/x/schema_codegen/... //loom/gym:test_schema_codegen --test_output=errors
+```
+
+The runtime suites can also be selected together with
+`bbr test //devinfra/x/schema_codegen:tests --test_output=errors`. Selecting only the suite does
+not independently select every Python library for its mypy/ruff aspects.
+
+| Package                          | Cases                                                                                                                                                                             |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `typescript`                     | Pydantic/FastAPI export; OpenAPI → API declarations and Zod; JSON Schema → declarations and runtime Zod; named-export naming limits; typed vocabulary; Zod → JSON Schema → Python |
+| `protobuf`                       | Imported proto graph → JavaScript/declarations, Python, Go, Rust, and Swagger; native gRPC/gateway; typed consumers and cross-language ProtoJSON fixtures                         |
+| `infrastructure/quicktype`       | JSON Schema → generated Go models → compiled runtime consumer                                                                                                                     |
+| `infrastructure/kubernetes`      | Go API types → CRD → Python/jsii construct → synthesis; generated Go API clients                                                                                                  |
+| `infrastructure/discovery`       | Google Discovery fixture → actual MCP adapter → advertised JSON Schema                                                                                                            |
+| `infrastructure/grocy_openapi`   | OpenAPI → real Grocy/FastMCP tool adapter → advertised schemas and mocked HTTP invocation                                                                                         |
+| `//loom/gym:test_schema_codegen` | Private Loom adapter → flattened nested provider JSON Schema; test stays in owning package                                                                                        |
+| `infrastructure/pydantic`        | Pydantic → provider-specific JSON Schema → strict-subset and payload validation                                                                                                   |
+
+These are tool-composition and boundary-contract tests. They do not prove that every production
+schema is supported, that Python custom validators survive export, or that a remote provider accepts
+the published schema. Production migrations need their own producer fixtures and consumer tests.

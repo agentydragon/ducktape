@@ -1,0 +1,286 @@
+load("@aspect_bazel_lib//lib:directory_path.bzl", "directory_path")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
+load("//devinfra/go:proto_openapi.bzl", "proto_openapi")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+load(":protobuf_es.bzl", "protobuf_es")
+
+package(default_testonly = True)
+
+proto_library(
+    name = "common_proto",
+    srcs = ["common.proto"],
+)
+
+proto_library(
+    name = "sample_proto",
+    srcs = ["sample.proto"],
+    deps = [
+        ":common_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "common_pb2",
+    deps = [":common_proto"],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "sample_pb2",
+    deps = [":sample_proto"],
+)
+
+py_grpc_service_library(
+    name = "sample_pb2_grpc",
+    proto = ":sample_proto",
+    py_proto = ":sample_pb2",
+)
+
+go_proto_library(
+    name = "common_go_proto",
+    importpath = "github.com/agentydragon/ducktape/devinfra/x/schema_codegen/protobuf/commonpb",
+    proto = ":common_proto",
+)
+
+go_proto_library(
+    name = "sample_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//devinfra/go:grpc_gateway",
+    ],
+    importpath = "github.com/agentydragon/ducktape/devinfra/x/schema_codegen/protobuf/samplepb",
+    proto = ":sample_proto",
+    deps = [
+        ":common_go_proto",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+    ],
+)
+
+rust_prost_library(
+    name = "common_rust_proto",
+    proto = ":common_proto",
+)
+
+rust_library(
+    name = "rust_consumer",
+    srcs = ["rust_consumer.rs"],
+    edition = "2024",
+    deps = [":common_rust_proto"],
+)
+
+rust_test(
+    name = "rust_consumer_test",
+    crate = ":rust_consumer",
+    edition = "2024",
+    visibility = ["//devinfra/x/schema_codegen:__pkg__"],
+)
+
+directory_path(
+    name = "protoc_gen_es_entry",
+    directory = "//:node_modules/@bufbuild/protoc-gen-es/dir",
+    path = "bin/protoc-gen-es",
+)
+
+js_binary(
+    name = "protoc_gen_es",
+    data = ["//:node_modules/@bufbuild/protoc-gen-es"],
+    entry_point = ":protoc_gen_es_entry",
+)
+
+protobuf_es(
+    name = "proto_es_generated",
+    options = ["json_types=true"],
+    proto = ":sample_proto",
+)
+
+js_library(
+    name = "proto_es",
+    srcs = [":proto_es_generated"],
+    deps = ["//:node_modules/@bufbuild/protobuf"],
+)
+
+proto_openapi(
+    name = "sample_openapi",
+    proto = ":sample_proto",
+)
+
+py_library(
+    name = "python_producer",
+    srcs = ["python_producer.py"],
+    deps = [
+        ":common_pb2",
+        ":sample_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "python_main",
+    srcs = ["python_main.py"],
+    deps = [":python_producer"],
+)
+
+py_library(
+    name = "python_grpc_consumer",
+    srcs = ["python_grpc_consumer.py"],
+    deps = [
+        ":sample_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_binary(
+    name = "python_fixture",
+    main_module = "devinfra.x.schema_codegen.protobuf.python_main",
+    deps = [":python_main"],
+)
+
+genrule(
+    name = "python_fixture_json",
+    outs = ["python_fixture.json"],
+    cmd = "$(location :python_fixture) > $@",
+    tools = [":python_fixture"],
+)
+
+py_test(
+    name = "python_schema_test",
+    srcs = ["test_python_schema.py"],
+    main = "test_python_schema.py",
+    visibility = ["//devinfra/x/schema_codegen:__pkg__"],
+    deps = [
+        ":python_producer",
+        ":sample_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "python_grpc_test",
+    srcs = ["test_python_grpc.py"],
+    main = "test_python_grpc.py",
+    visibility = ["//devinfra/x/schema_codegen:__pkg__"],
+    deps = [
+        ":python_grpc_consumer",
+        "@pypi//grpcio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+go_library(
+    name = "go_producer",
+    srcs = ["producer.go"],
+    importpath = "github.com/agentydragon/ducktape/devinfra/x/schema_codegen/protobuf/producer",
+    deps = [
+        ":common_go_proto",
+        ":sample_go_proto",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_binary(
+    name = "go_fixture",
+    srcs = ["go_fixture_main.go"],
+    deps = [":go_producer"],
+)
+
+genrule(
+    name = "go_fixture_json",
+    outs = ["go_fixture.json"],
+    cmd = "$(location :go_fixture) > $@",
+    tools = [":go_fixture"],
+)
+
+go_test(
+    name = "go_producer_test",
+    srcs = ["producer_test.go"],
+    embed = [":go_producer"],
+    visibility = ["//devinfra/x/schema_codegen:__pkg__"],
+    deps = [
+        ":sample_go_proto",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "go_grpc_test",
+    srcs = ["grpc_test.go"],
+    importpath = "github.com/agentydragon/ducktape/devinfra/x/schema_codegen/protobuf/grpc_test",
+    visibility = ["//devinfra/x/schema_codegen:__pkg__"],
+    deps = [
+        ":sample_go_proto",
+        "@org_golang_google_grpc//:grpc",
+    ],
+)
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+ts_library(
+    name = "consumer",
+    srcs = ["consumer.ts"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":proto_es",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@types/node",
+    ],
+)
+
+vitest_config(
+    name = "vitest",
+    environment = "node",
+)
+
+vitest_test(
+    name = "consumer_test",
+    srcs = ["consumer.test.ts"],
+    config = ":vitest",
+    data = [
+        ":go_fixture_json",
+        ":python_fixture_json",
+    ],
+    tsconfig = ":tsconfig",
+    visibility = ["//devinfra/x/schema_codegen:__pkg__"],
+    deps = [
+        ":consumer",
+        ":proto_es",
+        "//:node_modules/@types/node",
+        "//:node_modules/vitest",
+    ],
+)
+
+py_test(
+    name = "openapi_test",
+    srcs = ["test_openapi.py"],
+    data = [":sample_openapi"],
+    main = "test_openapi.py",
+    visibility = ["//devinfra/x/schema_codegen:__pkg__"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+check_vitest_specs()

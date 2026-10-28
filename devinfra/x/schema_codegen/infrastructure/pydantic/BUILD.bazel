@@ -1,0 +1,28 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//devinfra/x/schema_codegen:__pkg__"],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = [
+        "//openai_utils:json_schema",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_published_schema",
+    srcs = ["test_published_schema.py"],
+    deps = [
+        ":models",
+        "@pypi//jsonschema",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//referencing",
+    ],
+)
