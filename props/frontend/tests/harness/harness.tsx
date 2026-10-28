@@ -4,6 +4,7 @@
 import { createRoot } from "react-dom/client";
 import { HashRouter } from "react-router";
 import App from "../../src/App";
+import type { ComponentType } from "react";
 import { MantineProvider } from "@mantine/core";
 
 import "../../src/app.css";
