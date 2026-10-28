@@ -66,8 +66,11 @@ it("shows captured machines, readable records, malformed raw lines, and older ve
   expect(view.textContent).toContain("3 of 5 registered complete");
   expect(view.textContent).toContain("Oldest unfinished snapshot:");
   expect(view.textContent).toContain("File processing pending");
+  expect(view.textContent).toContain("Codex metadata pending");
+  expect(view.textContent).toContain("Codex metadata failed");
+  expect(view.textContent).toContain("Codex metadata: 1 pending · 0 failed · 1 partial");
+  expect(view.textContent).toContain("completed snapshots can have partial metadata, shown separately");
   expect(view.textContent).toContain("27 processed · 4 pending · 0 failed");
-  expect(view.textContent).toContain("File processing failed");
   expect(view.textContent).toContain("11 processed · 0 pending · 1 failed");
   expect(view.textContent).toContain("Snapshot counts include registered snapshots");
   expect(view.textContent).toContain("can grow as more are discovered");

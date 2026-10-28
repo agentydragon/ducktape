@@ -38,6 +38,10 @@ function snapshotStateLabel(state: SnapshotImportState | null): string {
       return "Inventory pending";
     case "inventory_failed":
       return "Inventory failed";
+    case "codex_metadata_pending":
+      return "Codex metadata pending";
+    case "codex_metadata_failed":
+      return "Codex metadata failed";
     case "processing_pending":
       return "File processing pending";
     case "processing_failed":
@@ -50,8 +54,12 @@ function snapshotStateLabel(state: SnapshotImportState | null): string {
 }
 
 function snapshotStateColor(state: SnapshotImportState): "red" | "yellow" | "green" {
-  if (state === "inventory_failed" || state === "processing_failed") return "red";
-  if (state === "inventory_pending" || state === "processing_pending") return "yellow";
+  if (state === "inventory_failed" || state === "codex_metadata_failed" || state === "processing_failed") {
+    return "red";
+  }
+  if (state === "inventory_pending" || state === "codex_metadata_pending" || state === "processing_pending") {
+    return "yellow";
+  }
   return "green";
 }
 
@@ -816,7 +824,8 @@ function MachineImportProgressPanel({
         <Text size="xs" c="dimmed">
           Snapshot counts include registered snapshots, even if Restic later prunes them, and can grow as more are
           discovered. File counts cover entries inventoried so far and can grow as snapshots are inventoried; processed
-          means handled, not necessarily imported as a transcript.
+          means handled, not necessarily imported as a transcript. Codex metadata counts cover registered snapshots;
+          completed snapshots can have partial metadata, shown separately.
         </Text>
         {error !== null && (
           <Text size="xs" c="red">
@@ -852,6 +861,11 @@ function MachineImportProgressPanel({
                     <Text size="xs" c="dimmed">
                       Snapshots: {machine.completed_snapshot_count} of {machine.known_snapshot_count} registered
                       complete · {machine.failed_snapshot_count} failed
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      Codex metadata: {machine.codex_metadata_pending_snapshot_count} pending ·{" "}
+                      {machine.codex_metadata_failed_snapshot_count} failed ·{" "}
+                      {machine.codex_metadata_partial_snapshot_count} partial
                     </Text>
                     <Text size="xs" c="dimmed">
                       Oldest unfinished snapshot:{" "}

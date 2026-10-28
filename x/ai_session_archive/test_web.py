@@ -119,6 +119,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                     paths=["/fake"],
                     inventory_status="complete",
                     processing_status="complete",
+                    codex_metadata_status="complete",
                 ),
                 ResticSnapshotRow(
                     machine_id="fake-host",
@@ -127,6 +128,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                     paths=["/fake"],
                     inventory_status="complete",
                     processing_status="complete",
+                    codex_metadata_status="complete",
                 ),
                 ResticSnapshotRow(
                     machine_id="fake-host",
@@ -135,6 +137,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                     paths=["/fake"],
                     inventory_status="complete",
                     processing_status="pending",
+                    codex_metadata_status="complete",
                 ),
                 ResticSnapshotRow(
                     machine_id="fake-host",
@@ -143,6 +146,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                     paths=["/fake"],
                     inventory_status="complete",
                     processing_status="failed",
+                    codex_metadata_status="complete",
                 ),
                 SnapshotFileRow(
                     machine_id="fake-host",
@@ -194,7 +198,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                 FileVersionRecordRow(file_version_id=version_id, ordinal=0, byte_offset=0, payload_id=payload_id),
             ]
         )
-        snapshot_ids = ["1" * 64, "2" * 64, "3" * 64, "4" * 64]
+        snapshot_ids = [f"{index}" * 64 for index in range(1, 9)]
         db.add_all(
             [
                 ResticSnapshotRow(
@@ -204,6 +208,7 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                     paths=[],
                     inventory_status="complete",
                     processing_status="complete",
+                    codex_metadata_status="complete",
                 ),
                 ResticSnapshotRow(
                     machine_id="progress-host",
@@ -211,7 +216,8 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                     captured_at=datetime(2026, 1, 2, tzinfo=UTC),
                     paths=[],
                     inventory_status="complete",
-                    processing_status="failed",
+                    processing_status="complete",
+                    codex_metadata_status="pending",
                 ),
                 ResticSnapshotRow(
                     machine_id="progress-host",
@@ -219,15 +225,53 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
                     captured_at=datetime(2026, 1, 3, tzinfo=UTC),
                     paths=[],
                     inventory_status="complete",
-                    processing_status="pending",
+                    processing_status="complete",
+                    codex_metadata_status="failed",
                 ),
                 ResticSnapshotRow(
                     machine_id="progress-host",
                     snapshot_id=snapshot_ids[3],
                     captured_at=datetime(2026, 1, 4, tzinfo=UTC),
                     paths=[],
+                    inventory_status="complete",
+                    processing_status="complete",
+                    codex_metadata_status="partial",
+                ),
+                ResticSnapshotRow(
+                    machine_id="progress-host",
+                    snapshot_id=snapshot_ids[4],
+                    captured_at=datetime(2026, 1, 5, tzinfo=UTC),
+                    paths=[],
+                    inventory_status="complete",
+                    processing_status="failed",
+                    codex_metadata_status="complete",
+                ),
+                ResticSnapshotRow(
+                    machine_id="progress-host",
+                    snapshot_id=snapshot_ids[5],
+                    captured_at=datetime(2026, 1, 6, tzinfo=UTC),
+                    paths=[],
+                    inventory_status="complete",
+                    processing_status="pending",
+                    codex_metadata_status="complete",
+                ),
+                ResticSnapshotRow(
+                    machine_id="progress-host",
+                    snapshot_id=snapshot_ids[6],
+                    captured_at=datetime(2026, 1, 7, tzinfo=UTC),
+                    paths=[],
                     inventory_status="failed",
                     processing_status="failed",
+                    codex_metadata_status="complete",
+                ),
+                ResticSnapshotRow(
+                    machine_id="progress-host",
+                    snapshot_id=snapshot_ids[7],
+                    captured_at=datetime(2026, 1, 8, tzinfo=UTC),
+                    paths=[],
+                    inventory_status="pending",
+                    processing_status="pending",
+                    codex_metadata_status="pending",
                 ),
             ]
         )
@@ -290,6 +334,9 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
             "known_snapshot_count": 4,
             "completed_snapshot_count": 2,
             "failed_snapshot_count": 1,
+            "codex_metadata_pending_snapshot_count": 0,
+            "codex_metadata_failed_snapshot_count": 0,
+            "codex_metadata_partial_snapshot_count": 0,
             "oldest_unfinished_snapshot_at": "2026-01-01T00:00:00",
             "oldest_unfinished_snapshot_state": "processing_failed",
             "processed_file_count": 2,
@@ -302,6 +349,9 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
             "known_snapshot_count": 0,
             "completed_snapshot_count": 0,
             "failed_snapshot_count": 0,
+            "codex_metadata_pending_snapshot_count": 0,
+            "codex_metadata_failed_snapshot_count": 0,
+            "codex_metadata_partial_snapshot_count": 0,
             "oldest_unfinished_snapshot_at": None,
             "oldest_unfinished_snapshot_state": None,
             "processed_file_count": 0,
@@ -311,11 +361,14 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
         {
             "machine_id": "progress-host",
             "display_name": "Progress host",
-            "known_snapshot_count": 4,
-            "completed_snapshot_count": 1,
-            "failed_snapshot_count": 2,
+            "known_snapshot_count": 8,
+            "completed_snapshot_count": 2,
+            "failed_snapshot_count": 3,
+            "codex_metadata_pending_snapshot_count": 2,
+            "codex_metadata_failed_snapshot_count": 1,
+            "codex_metadata_partial_snapshot_count": 1,
             "oldest_unfinished_snapshot_at": "2026-01-02T00:00:00",
-            "oldest_unfinished_snapshot_state": "processing_failed",
+            "oldest_unfinished_snapshot_state": "codex_metadata_pending",
             "processed_file_count": 5,
             "pending_file_count": 2,
             "failed_file_count": 1,

@@ -7,7 +7,13 @@ export type Machine = {
 };
 
 export type SnapshotImportState =
-  "inventory_pending" | "inventory_failed" | "processing_pending" | "processing_failed" | "complete";
+  | "inventory_pending"
+  | "inventory_failed"
+  | "codex_metadata_pending"
+  | "codex_metadata_failed"
+  | "processing_pending"
+  | "processing_failed"
+  | "complete";
 
 export type MachineImportProgress = {
   machine_id: string;
@@ -15,6 +21,9 @@ export type MachineImportProgress = {
   known_snapshot_count: number;
   completed_snapshot_count: number;
   failed_snapshot_count: number;
+  codex_metadata_pending_snapshot_count: number;
+  codex_metadata_failed_snapshot_count: number;
+  codex_metadata_partial_snapshot_count: number;
   oldest_unfinished_snapshot_at: string | null;
   oldest_unfinished_snapshot_state: SnapshotImportState | null;
   processed_file_count: number;

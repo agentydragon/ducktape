@@ -47,21 +47,36 @@ def list_import_progress(session: DbSession) -> list[MachineImportProgress]:
         for machine in machines
     }
     snapshots_by_machine: dict[str, list[tuple[datetime, SnapshotImportState]]] = {}
-    for machine_id, captured_at, inventory_status, processing_status in session.execute(
+    for machine_id, captured_at, inventory_status, processing_status, codex_metadata_status in session.execute(
         select(
             ResticSnapshotRow.machine_id,
             ResticSnapshotRow.captured_at,
             ResticSnapshotRow.inventory_status,
             ResticSnapshotRow.processing_status,
+            ResticSnapshotRow.codex_metadata_status,
         ).order_by(ResticSnapshotRow.machine_id, ResticSnapshotRow.captured_at, ResticSnapshotRow.snapshot_id)
     ):
-        state = _snapshot_import_state(inventory_status, processing_status)
+        state = _snapshot_import_state(inventory_status, processing_status, codex_metadata_status)
         machine_progress = progress[machine_id]
         machine_progress.known_snapshot_count += 1
-        if state is SnapshotImportState.COMPLETE:
+        if (
+            inventory_status == "complete"
+            and processing_status == "complete"
+            and codex_metadata_status in ("complete", "partial")
+        ):
             machine_progress.completed_snapshot_count += 1
-        elif state in (SnapshotImportState.INVENTORY_FAILED, SnapshotImportState.PROCESSING_FAILED):
+        if state in (
+            SnapshotImportState.INVENTORY_FAILED,
+            SnapshotImportState.PROCESSING_FAILED,
+            SnapshotImportState.CODEX_METADATA_FAILED,
+        ):
             machine_progress.failed_snapshot_count += 1
+        if codex_metadata_status == "pending":
+            machine_progress.codex_metadata_pending_snapshot_count += 1
+        elif codex_metadata_status == "failed":
+            machine_progress.codex_metadata_failed_snapshot_count += 1
+        elif codex_metadata_status == "partial":
+            machine_progress.codex_metadata_partial_snapshot_count += 1
         snapshots_by_machine.setdefault(machine_id, []).append((captured_at, state))
 
     for machine_id, snapshots in snapshots_by_machine.items():
@@ -87,13 +102,19 @@ def list_import_progress(session: DbSession) -> list[MachineImportProgress]:
     return [progress[machine.id] for machine in machines]
 
 
-def _snapshot_import_state(inventory_status: str, processing_status: str) -> SnapshotImportState:
+def _snapshot_import_state(
+    inventory_status: str, processing_status: str, codex_metadata_status: str
+) -> SnapshotImportState:
     if inventory_status == "failed":
         return SnapshotImportState.INVENTORY_FAILED
-    if inventory_status != "complete":
-        return SnapshotImportState.INVENTORY_PENDING
     if processing_status == "failed":
         return SnapshotImportState.PROCESSING_FAILED
+    if codex_metadata_status == "failed":
+        return SnapshotImportState.CODEX_METADATA_FAILED
+    if inventory_status != "complete":
+        return SnapshotImportState.INVENTORY_PENDING
+    if codex_metadata_status == "pending":
+        return SnapshotImportState.CODEX_METADATA_PENDING
     if processing_status != "complete":
         return SnapshotImportState.PROCESSING_PENDING
     return SnapshotImportState.COMPLETE
