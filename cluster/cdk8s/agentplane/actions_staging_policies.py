@@ -19,7 +19,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from agentplane.action_service.policies.resources import CALLER_LABEL, parse_action_rule
-from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
+from agentplane.action_service.sandbox.contract.actions import SANDBOX_GROUP, SandboxAction
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import agent_access_profiles as access, external_creds
 from cluster.cdk8s.agentplane.actions import ORCHESTRATION_GROUP

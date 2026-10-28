@@ -454,30 +454,6 @@
       "read_only_hint": false,
       "title": null
      },
-     "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-       "name": {
-        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
-        "maxLength": 48,
-        "minLength": 1,
-        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
-        "title": "Name",
-        "type": "string"
-       },
-       "template": {
-        "description": "Which template to create the box from. Only the templates this deployment offers can be named.",
-        "title": "Template",
-        "type": "string"
-       }
-      },
-      "required": [
-       "name",
-       "template"
-      ],
-      "title": "CreateArgs",
-      "type": "object"
-     },
      "title": "Create sandbox"
     },
     "dispose": {
@@ -487,25 +463,6 @@
       "open_world_hint": null,
       "read_only_hint": false,
       "title": null
-     },
-     "input_schema": {
-      "additionalProperties": false,
-      "description": "The whole argument of an Action that names one sandbox and nothing else.",
-      "properties": {
-       "name": {
-        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
-        "maxLength": 48,
-        "minLength": 1,
-        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
-        "title": "Name",
-        "type": "string"
-       }
-      },
-      "required": [
-       "name"
-      ],
-      "title": "NameArgs",
-      "type": "object"
      },
      "title": "Dispose sandbox"
     },
@@ -517,60 +474,6 @@
       "read_only_hint": false,
       "title": null
      },
-     "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-       "cwd": {
-        "anyOf": [
-         {
-          "type": "string"
-         },
-         {
-          "type": "null"
-         }
-        ],
-        "default": null,
-        "description": "Working directory; omit to start in the container's own working directory.",
-        "title": "Cwd"
-       },
-       "max_output_bytes": {
-        "description": "Maximum bytes retained independently from stdout and stderr.",
-        "maximum": 200000,
-        "minimum": 0,
-        "title": "Max Output Bytes",
-        "type": "integer"
-       },
-       "name": {
-        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
-        "maxLength": 48,
-        "minLength": 1,
-        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
-        "title": "Name",
-        "type": "string"
-       },
-       "script": {
-        "description": "Bash script text run with `bash -lc`. Pipes, redirects, globs, variable expansion and compound commands use normal Bash semantics.",
-        "minLength": 1,
-        "title": "Script",
-        "type": "string"
-       },
-       "timeout_seconds": {
-        "description": "Wall-clock ceiling for the script.",
-        "exclusiveMinimum": 0,
-        "maximum": 1800,
-        "title": "Timeout Seconds",
-        "type": "integer"
-       }
-      },
-      "required": [
-       "name",
-       "script",
-       "timeout_seconds",
-       "max_output_bytes"
-      ],
-      "title": "ExecArgs",
-      "type": "object"
-     },
      "title": "Run script in sandbox"
     },
     "get": {
@@ -580,25 +483,6 @@
       "open_world_hint": false,
       "read_only_hint": true,
       "title": null
-     },
-     "input_schema": {
-      "additionalProperties": false,
-      "description": "The whole argument of an Action that names one sandbox and nothing else.",
-      "properties": {
-       "name": {
-        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
-        "maxLength": 48,
-        "minLength": 1,
-        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
-        "title": "Name",
-        "type": "string"
-       }
-      },
-      "required": [
-       "name"
-      ],
-      "title": "NameArgs",
-      "type": "object"
      },
      "title": "Inspect sandbox"
     },
@@ -610,21 +494,6 @@
       "read_only_hint": true,
       "title": null
      },
-     "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-       "template": {
-        "description": "Which template to show; only the ones `create` offers.",
-        "title": "Template",
-        "type": "string"
-       }
-      },
-      "required": [
-       "template"
-      ],
-      "title": "TemplateArgs",
-      "type": "object"
-     },
      "title": "Show sandbox template"
     },
     "list": {
@@ -634,12 +503,6 @@
       "open_world_hint": false,
       "read_only_hint": true,
       "title": null
-     },
-     "input_schema": {
-      "additionalProperties": false,
-      "properties": {},
-      "title": "NoArgs",
-      "type": "object"
      },
      "title": "List sandboxes"
     }
@@ -664,30 +527,6 @@
       "read_only_hint": false,
       "title": null
      },
-     "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-       "name": {
-        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
-        "maxLength": 48,
-        "minLength": 1,
-        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
-        "title": "Name",
-        "type": "string"
-       },
-       "template": {
-        "description": "Which template to create the box from. Only the templates this deployment offers can be named.",
-        "title": "Template",
-        "type": "string"
-       }
-      },
-      "required": [
-       "name",
-       "template"
-      ],
-      "title": "CreateArgs",
-      "type": "object"
-     },
      "title": "Create sandbox"
     },
     "dispose": {
@@ -697,25 +536,6 @@
       "open_world_hint": null,
       "read_only_hint": false,
       "title": null
-     },
-     "input_schema": {
-      "additionalProperties": false,
-      "description": "The whole argument of an Action that names one sandbox and nothing else.",
-      "properties": {
-       "name": {
-        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
-        "maxLength": 48,
-        "minLength": 1,
-        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
-        "title": "Name",
-        "type": "string"
-       }
-      },
-      "required": [
-       "name"
-      ],
-      "title": "NameArgs",
-      "type": "object"
      },
      "title": "Dispose sandbox"
     },
@@ -727,60 +547,6 @@
       "read_only_hint": false,
       "title": null
      },
-     "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-       "cwd": {
-        "anyOf": [
-         {
-          "type": "string"
-         },
-         {
-          "type": "null"
-         }
-        ],
-        "default": null,
-        "description": "Working directory; omit to start in the container's own working directory.",
-        "title": "Cwd"
-       },
-       "max_output_bytes": {
-        "description": "Maximum bytes retained independently from stdout and stderr.",
-        "maximum": 0,
-        "minimum": 0,
-        "title": "Max Output Bytes",
-        "type": "integer"
-       },
-       "name": {
-        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
-        "maxLength": 48,
-        "minLength": 1,
-        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
-        "title": "Name",
-        "type": "string"
-       },
-       "script": {
-        "description": "Bash script text run with `bash -lc`. Pipes, redirects, globs, variable expansion and compound commands use normal Bash semantics.",
-        "minLength": 1,
-        "title": "Script",
-        "type": "string"
-       },
-       "timeout_seconds": {
-        "description": "Wall-clock ceiling for the script.",
-        "exclusiveMinimum": 0,
-        "maximum": 1,
-        "title": "Timeout Seconds",
-        "type": "integer"
-       }
-      },
-      "required": [
-       "name",
-       "script",
-       "timeout_seconds",
-       "max_output_bytes"
-      ],
-      "title": "ExecArgs",
-      "type": "object"
-     },
      "title": "Run script in sandbox"
     },
     "get": {
@@ -790,25 +556,6 @@
       "open_world_hint": false,
       "read_only_hint": true,
       "title": null
-     },
-     "input_schema": {
-      "additionalProperties": false,
-      "description": "The whole argument of an Action that names one sandbox and nothing else.",
-      "properties": {
-       "name": {
-        "description": "DNS-label name for the sandbox, unique among this caller's. Reuse it to reach the same box again; choose another for an independent one.",
-        "maxLength": 48,
-        "minLength": 1,
-        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
-        "title": "Name",
-        "type": "string"
-       }
-      },
-      "required": [
-       "name"
-      ],
-      "title": "NameArgs",
-      "type": "object"
      },
      "title": "Inspect sandbox"
     },
@@ -820,21 +567,6 @@
       "read_only_hint": true,
       "title": null
      },
-     "input_schema": {
-      "additionalProperties": false,
-      "properties": {
-       "template": {
-        "description": "Which template to show; only the ones `create` offers.",
-        "title": "Template",
-        "type": "string"
-       }
-      },
-      "required": [
-       "template"
-      ],
-      "title": "TemplateArgs",
-      "type": "object"
-     },
      "title": "Show sandbox template"
     },
     "list": {
@@ -844,12 +576,6 @@
       "open_world_hint": false,
       "read_only_hint": true,
       "title": null
-     },
-     "input_schema": {
-      "additionalProperties": false,
-      "properties": {},
-      "title": "NoArgs",
-      "type": "object"
      },
      "title": "List sandboxes"
     }

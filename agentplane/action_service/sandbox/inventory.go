@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -347,7 +348,7 @@ func (i *Inventory) Run(ctx context.Context, caller store.ServiceAccount, name s
 
 func readiness(pod *corev1.Pod) *corev1.PodCondition {
 	for n := range pod.Status.Conditions {
-		if pod.Status.Conditions[n].Type == readyCondition {
+		if pod.Status.Conditions[n].Type == contract.ReadyCondition {
 			return &pod.Status.Conditions[n]
 		}
 	}

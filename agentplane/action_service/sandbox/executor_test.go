@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
@@ -28,7 +29,7 @@ func (f fixture) attempt(t *testing.T, caller store.ServiceAccount, action, argu
 		t.Fatal(err)
 	}
 	outcome, err := executor.attempt(t.Context(), store.ExecutionRequest{
-		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: action},
+		RequestID: uuid.New(), Action: store.ActionIdentity{Group: contract.GroupName, Name: action},
 		Arguments: json.RawMessage(arguments), Caller: caller,
 	})
 	return attempted{t, outcome, err}
@@ -68,18 +69,18 @@ func TestEveryActionActsAsTheRequestCaller(t *testing.T) {
 	f := newFixture(t, nil)
 	other := account(t, f.binding.Namespace, "test-other")
 	for _, caller := range []store.ServiceAccount{f.caller, other} {
-		resultOf[Info](f.attempt(t, caller, actionCreate, `{"name": "box", "template": "test-template"}`))
+		resultOf[Info](f.attempt(t, caller, string(contract.Create), `{"name": "box", "template": "test-template"}`))
 		if pod := f.pod(t, caller, "box"); pod.Spec.ServiceAccountName != caller.Name {
 			t.Errorf("%s's box runs as %q", caller.Name, pod.Spec.ServiceAccountName)
 		}
 	}
-	if listed := resultOf[SandboxList](f.attempt(t, f.caller, actionList, `{}`)); len(listed.Sandboxes) != 1 {
+	if listed := resultOf[SandboxList](f.attempt(t, f.caller, string(contract.List), `{}`)); len(listed.Sandboxes) != 1 {
 		t.Errorf("list = %v, want the caller's one box", listed)
 	}
-	if disposed := resultOf[DisposeResult](f.attempt(t, f.caller, actionDispose, `{"name": "box"}`)); !disposed.Existed {
+	if disposed := resultOf[DisposeResult](f.attempt(t, f.caller, string(contract.Dispose), `{"name": "box"}`)); !disposed.Existed {
 		t.Errorf("dispose = %v, want the caller's box disposed of", disposed)
 	}
-	resultOf[Info](f.attempt(t, other, actionGet, `{"name": "box"}`))
+	resultOf[Info](f.attempt(t, other, string(contract.Get), `{"name": "box"}`))
 }
 
 // No argument names an account: one that tries is refused rather than quietly ignored.
@@ -87,7 +88,7 @@ func TestAnAccountNamedInArgumentsIsNotRead(t *testing.T) {
 	f := newFixture(t, nil)
 	other := account(t, f.binding.Namespace, "test-other")
 	arguments := `{"name": "box", "template": "test-template", "caller": "test-other", "namespace": "` + f.binding.Namespace + `"}`
-	if kind := f.attempt(t, f.caller, actionCreate, arguments).failure(); kind != "invalid_arguments" {
+	if kind := f.attempt(t, f.caller, string(contract.Create), arguments).failure(); kind != "invalid_arguments" {
 		t.Errorf("kind = %q, want invalid_arguments", kind)
 	}
 	for _, caller := range []store.ServiceAccount{f.caller, other} {
@@ -108,7 +109,7 @@ func TestACallerFromAnotherNamespaceIsRefused(t *testing.T) {
 	}
 	// The refusal comes before any lease is held, so it needs none.
 	outcome, err := executor.Execute(t.Context(), store.ExecutionRequest{
-		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: actionCreate},
+		RequestID: uuid.New(), Action: store.ActionIdentity{Group: contract.GroupName, Name: string(contract.Create)},
 		Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`), Caller: elsewhere,
 	}, nil)
 	if kind := (attempted{t, outcome, err}).failure(); kind != "caller_not_local" {
@@ -123,9 +124,9 @@ func TestACallerFromAnotherNamespaceIsRefused(t *testing.T) {
 // A command that ran and failed is an answer: the Action did what it was asked.
 func TestANonzeroExitIsAResult(t *testing.T) {
 	f := newFixture(t, nil)
-	resultOf[Info](f.attempt(t, f.caller, actionCreate, `{"name": "box", "template": "test-template"}`))
+	resultOf[Info](f.attempt(t, f.caller, string(contract.Create), `{"name": "box", "template": "test-template"}`))
 	f.report(t, f.caller, "box", ready)
-	result := resultOf[map[string]any](f.attempt(t, f.caller, actionExec,
+	result := resultOf[map[string]any](f.attempt(t, f.caller, string(contract.Exec),
 		`{"name": "box", "script": "echo out; echo err >&2; exit 3", "timeout_seconds": 60, "max_output_bytes": 1000}`))
 	if _, timed := result["duration_seconds"].(float64); !timed {
 		t.Errorf("result %v has no duration", result)
@@ -141,7 +142,7 @@ func TestANonzeroExitIsAResult(t *testing.T) {
 func TestAnExecIsCutToThisGroupsCaps(t *testing.T) {
 	f := newFixture(t, nil)
 	f.binding.MaxTimeoutSeconds, f.binding.MaxOutputBytes = 1, 4
-	resultOf[Info](f.attempt(t, f.caller, actionCreate, `{"name": "box", "template": "test-template"}`))
+	resultOf[Info](f.attempt(t, f.caller, string(contract.Create), `{"name": "box", "template": "test-template"}`))
 	f.report(t, f.caller, "box", ready)
 	for _, test := range []struct {
 		script string
@@ -151,7 +152,7 @@ func TestAnExecIsCutToThisGroupsCaps(t *testing.T) {
 		{"sleep 60", "exit", map[string]any{"kind": "timed_out"}},
 		{"printf 0123456789", "stdout", map[string]any{"truncated_text": "0123", "total_bytes": 10.0}},
 	} {
-		result := resultOf[map[string]any](f.attempt(t, f.caller, actionExec,
+		result := resultOf[map[string]any](f.attempt(t, f.caller, string(contract.Exec),
 			`{"name": "box", "script": "`+test.script+`", "timeout_seconds": 3600, "max_output_bytes": 1000000}`))
 		if !reflect.DeepEqual(result[test.field], test.want) {
 			t.Errorf("%q ran to %v, want %s %v", test.script, result, test.field, test.want)
@@ -164,7 +165,7 @@ func TestARefusalBecomesAReasonTheCallerCanActOn(t *testing.T) {
 	// No node runs a box here, so the API server has no kubelet to hand an exec to.
 	f.exec.run = KubernetesExec(server.Config, server.Clientset)
 	for _, name := range []string{"box", "unready"} {
-		resultOf[Info](f.attempt(t, f.caller, actionCreate, `{"name": "`+name+`", "template": "test-template"}`))
+		resultOf[Info](f.attempt(t, f.caller, string(contract.Create), `{"name": "`+name+`", "template": "test-template"}`))
 	}
 	f.report(t, f.caller, "box", ready)
 	other := account(t, f.binding.Namespace, "test-other")
@@ -184,11 +185,11 @@ func TestARefusalBecomesAReasonTheCallerCanActOn(t *testing.T) {
 		arguments string
 		kind      string
 	}{
-		{"an absent box", f.caller, actionGet, `{"name": "absent"}`, "sandbox_unavailable"},
-		{"a template not offered", f.caller, actionCreate, `{"name": "box", "template": "unoffered"}`, "sandbox_unavailable"},
-		{"a box that is not ready", f.caller, actionExec, run("unready"), "sandbox_unavailable"},
-		{"a Pod that is not the caller's", other, actionGet, `{"name": "taken"}`, "sandbox_not_yours"},
-		{"an exec Kubernetes cannot run", f.caller, actionExec, run("box"), "exec_failed"},
+		{"an absent box", f.caller, string(contract.Get), `{"name": "absent"}`, "sandbox_unavailable"},
+		{"a template not offered", f.caller, string(contract.Create), `{"name": "box", "template": "unoffered"}`, "sandbox_unavailable"},
+		{"a box that is not ready", f.caller, string(contract.Exec), run("unready"), "sandbox_unavailable"},
+		{"a Pod that is not the caller's", other, string(contract.Get), `{"name": "taken"}`, "sandbox_not_yours"},
+		{"an exec Kubernetes cannot run", f.caller, string(contract.Exec), run("box"), "exec_failed"},
 		{"an Action this executor lacks", f.caller, "unoffered", `{}`, "unknown_action"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -204,7 +205,7 @@ func TestARefusalBecomesAReasonTheCallerCanActOn(t *testing.T) {
 func TestAnUnexpectedFailureIsNotSwallowed(t *testing.T) {
 	f := newFixture(t, nil)
 	f.binding.Templates["missing-template"] = "a box with no template"
-	if attempt := f.attempt(t, f.caller, actionGetTemplate, `{"template": "missing-template"}`); !apierrors.IsNotFound(attempt.err) {
+	if attempt := f.attempt(t, f.caller, string(contract.GetTemplate), `{"template": "missing-template"}`); !apierrors.IsNotFound(attempt.err) {
 		t.Errorf("attempt = %v, %v; want the API server's NotFound", attempt.outcome, attempt.err)
 	}
 }
@@ -216,7 +217,7 @@ func TestATemplateComesBackAsThePodItself(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shown := resultOf[corev1.PodTemplateSpec](f.attempt(t, f.caller, actionGetTemplate, `{"template": "test-template"}`))
+	shown := resultOf[corev1.PodTemplateSpec](f.attempt(t, f.caller, string(contract.GetTemplate), `{"template": "test-template"}`))
 	if !reflect.DeepEqual(shown, stored.Template) {
 		t.Errorf("get_template = %#v, want the stored template %#v", shown, stored.Template)
 	}

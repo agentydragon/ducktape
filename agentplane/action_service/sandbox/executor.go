@@ -2,14 +2,13 @@ package sandbox
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
-	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 // Executor runs the sandbox Actions in this process, as the caller the request names. That identity comes from
@@ -20,21 +19,20 @@ import (
 type Executor struct {
 	binding   catalog.PodBinding
 	inventory *Inventory
-	// arguments are the schemas of each Action's arguments, without this group's caps: a request admitted under
-	// other caps is cut to these, not refused.
-	arguments map[string]*jsonschema.Schema
+	inputs    contract.Inputs
 }
 
 func NewExecutor(binding catalog.PodBinding, inventory *Inventory) (*Executor, error) {
-	arguments := map[string]*jsonschema.Schema{}
-	for action, schema := range schemas() {
-		compiled, err := catalog.CompileSchema(schema)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", action, err)
-		}
-		arguments[action] = compiled
+	inputs, err := contract.Bind(binding)
+	if err != nil {
+		return nil, err
 	}
-	return &Executor{binding: binding, inventory: inventory, arguments: arguments}, nil
+	return &Executor{binding: binding, inventory: inventory, inputs: inputs}, nil
+}
+
+// Actions are this executor's bound Action definitions, including the caps advertised to admission.
+func (e *Executor) Actions() map[string]catalog.ActionDefinition {
+	return e.inputs.Definitions()
 }
 
 // Execute makes one attempt at request, holding the lease for as long as the attempt takes, which the attempt
@@ -74,28 +72,6 @@ func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) 
 	return outcome, err
 }
 
-type createArgs struct {
-	Name     string `json:"name"`
-	Template string `json:"template"`
-}
-
-type templateArgs struct {
-	Template string `json:"template"`
-}
-
-type execArgs struct {
-	Name   string  `json:"name"`
-	Script string  `json:"script"`
-	Cwd    *string `json:"cwd"`
-	// The integers decode as float64 because a JSON Schema integer may be written 60.0; the schema bounds them.
-	TimeoutSeconds float64 `json:"timeout_seconds"`
-	MaxOutputBytes float64 `json:"max_output_bytes"`
-}
-
-type nameArgs struct {
-	Name string `json:"name"`
-}
-
 // SandboxList is the result of list.
 type SandboxList struct {
 	Sandboxes []Info `json:"sandboxes"`
@@ -110,52 +86,47 @@ type DisposeResult struct {
 func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest) (store.ExecutionOutcome, error) {
 	caller, action := request.Caller, request.Action.Name
 	switch action {
-	case actionCreate:
-		var args createArgs
-		if err := e.decode(action, request.Arguments, &args); err != nil {
+	case string(contract.Create):
+		args, err := e.inputs.Create.Decode(request.Arguments)
+		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
-		return worker.Succeeded(e.inventory.Create(ctx, caller, args.Name, args.Template))
-	case actionGetTemplate:
-		var args templateArgs
-		if err := e.decode(action, request.Arguments, &args); err != nil {
+		return worker.Succeeded(e.inventory.Create(ctx, caller, string(args.Name), args.Template))
+	case string(contract.GetTemplate):
+		args, err := e.inputs.GetTemplate.Decode(request.Arguments)
+		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
 		return worker.Succeeded(e.inventory.Template(ctx, args.Template))
-	case actionExec:
-		var args execArgs
-		if err := e.decode(action, request.Arguments, &args); err != nil {
+	case string(contract.Exec):
+		args, err := e.inputs.DecodeExec.Decode(request.Arguments)
+		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
-		return worker.Succeeded(e.inventory.Run(ctx, caller, args.Name, Script{
+		return worker.Succeeded(e.inventory.Run(ctx, caller, string(args.Name), Script{
 			Text: args.Script, Cwd: args.Cwd, TimeoutSeconds: int(args.TimeoutSeconds), MaxOutputBytes: int(args.MaxOutputBytes),
 		}))
-	case actionList:
-		if err := e.decode(action, request.Arguments, &struct{}{}); err != nil {
+	case string(contract.List):
+		if _, err := e.inputs.List.Decode(request.Arguments); err != nil {
 			return store.ExecutionOutcome{}, err
 		}
 		boxes, err := e.inventory.List(ctx, caller)
 		return worker.Succeeded(SandboxList{Sandboxes: boxes}, err)
-	case actionGet:
-		var args nameArgs
-		if err := e.decode(action, request.Arguments, &args); err != nil {
+	case string(contract.Get):
+		args, err := e.inputs.Get.Decode(request.Arguments)
+		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
-		return worker.Succeeded(e.inventory.Get(ctx, caller, args.Name))
-	case actionDispose:
-		var args nameArgs
-		if err := e.decode(action, request.Arguments, &args); err != nil {
+		return worker.Succeeded(e.inventory.Get(ctx, caller, string(args.Name)))
+	case string(contract.Dispose):
+		args, err := e.inputs.Dispose.Decode(request.Arguments)
+		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
-		existed, err := e.inventory.Dispose(ctx, caller, args.Name)
-		return worker.Succeeded(DisposeResult{Name: args.Name, Existed: existed}, err)
+		existed, err := e.inventory.Dispose(ctx, caller, string(args.Name))
+		return worker.Succeeded(DisposeResult{Name: string(args.Name), Existed: existed}, err)
 	default:
 		// The catalog admitted it, so this is a roster that grew without a branch here.
 		return worker.Failed("unknown_action", fmt.Sprintf("this executor has no %q", action)), nil
 	}
-}
-
-// decode reads arguments into args once they match the Action's schema.
-func (e *Executor) decode(action string, arguments json.RawMessage, args any) error {
-	return catalog.DecodeArguments(e.arguments[action], arguments, args)
 }

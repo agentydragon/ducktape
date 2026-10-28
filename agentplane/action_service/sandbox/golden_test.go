@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
@@ -61,19 +62,35 @@ type annotations struct {
 	OpenWorldHint   *bool   `json:"open_world_hint"`
 }
 
-// TestActionRoster holds each Action's title, annotations and argument schema, caps included, to the fixture.
+// TestActionRoster holds each Action's title and annotations to the independent fixture. Argument acceptance is
+// checked against the existing input vectors in TestArgumentValidation rather than comparing generator shape.
 // Descriptions are prose, and are not compared.
 func TestActionRoster(t *testing.T) {
 	for name, roster := range readVectors(t).Roster {
 		t.Run(name, func(t *testing.T) {
 			type action struct {
-				Title       *string         `json:"title"`
-				InputSchema json.RawMessage `json:"input_schema"`
-				Annotations *annotations    `json:"annotations"`
+				Title       *string      `json:"title"`
+				Annotations *annotations `json:"annotations"`
+			}
+			executor, err := NewExecutor(catalog.PodBinding(roster.Binding), nil)
+			if err != nil {
+				t.Fatal(err)
 			}
 			offered := map[string]action{}
-			for key, definition := range Actions(catalog.PodBinding(roster.Binding)) {
-				offered[key] = action{definition.Title, definition.InputSchema, (*annotations)(definition.Annotations)}
+			definitions := executor.Actions()
+			for key, definition := range definitions {
+				offered[key] = action{definition.Title, (*annotations)(definition.Annotations)}
+			}
+			actionNames := make([]string, 0, len(definitions))
+			for name := range definitions {
+				actionNames = append(actionNames, name)
+			}
+			want := make([]string, 0, len(contract.Roster()))
+			for _, name := range contract.Roster() {
+				want = append(want, string(name))
+			}
+			if !sameActions(actionNames, want) {
+				t.Errorf("executor Action names = %v, contract roster = %v", actionNames, want)
 			}
 			document, err := json.Marshal(offered)
 			if err != nil {
@@ -90,28 +107,136 @@ func TestActionRoster(t *testing.T) {
 	}
 }
 
-// arguments are what dispatch decodes each Action's arguments into.
-var arguments = map[string]func() any{
-	actionCreate:      func() any { return &createArgs{} },
-	actionGetTemplate: func() any { return &templateArgs{} },
-	actionExec:        func() any { return &execArgs{} },
-	actionList:        func() any { return &struct{}{} },
-	actionGet:         func() any { return &nameArgs{} },
-	actionDispose:     func() any { return &nameArgs{} },
+func sameActions(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	counts := make(map[string]int, len(got))
+	for _, action := range got {
+		counts[action]++
+	}
+	for _, action := range want {
+		counts[action]--
+	}
+	for _, count := range counts {
+		if count != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func TestArgumentValidation(t *testing.T) {
-	executor, err := NewExecutor(catalog.PodBinding{}, nil)
+	executor, err := NewExecutor(catalog.PodBinding{
+		MaxTimeoutSeconds: 3600,
+		MaxOutputBytes:    1_000_000,
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	offered := executor.Actions()
 	for _, vector := range readVectors(t).Arguments {
 		t.Run(vector.Action+"/"+vector.Name, func(t *testing.T) {
-			if err := executor.decode(vector.Action, vector.Input, arguments[vector.Action]()); (err == nil) != vector.Valid {
+			if err := decodeContractInput(executor, vector.Action, vector.Input); (err == nil) != vector.Valid {
 				t.Errorf("decode(%s) = %v; valid = %t", vector.Input, err, vector.Valid)
+			}
+			var document any
+			if err := json.Unmarshal(vector.Input, &document); err != nil {
+				t.Fatal(err)
+			}
+			if err := offered[vector.Action].CheckArguments(document); (err == nil) != vector.Valid {
+				t.Errorf("advertised schema check = %v; valid = %t", err, vector.Valid)
 			}
 		})
 	}
+}
+
+func decodeContractInput(executor *Executor, action string, arguments json.RawMessage) error {
+	switch action {
+	case string(contract.Create):
+		_, err := executor.inputs.Create.Decode(arguments)
+		return err
+	case string(contract.GetTemplate):
+		_, err := executor.inputs.GetTemplate.Decode(arguments)
+		return err
+	case string(contract.Exec):
+		_, err := executor.inputs.DecodeExec.Decode(arguments)
+		return err
+	case string(contract.List):
+		_, err := executor.inputs.List.Decode(arguments)
+		return err
+	case string(contract.Get):
+		_, err := executor.inputs.Get.Decode(arguments)
+		return err
+	case string(contract.Dispose):
+		_, err := executor.inputs.Dispose.Decode(arguments)
+		return err
+	default:
+		return catalog.ErrInvalidArguments
+	}
+}
+
+func TestExecIntegerSpellingsDecodeExactly(t *testing.T) {
+	executor, err := NewExecutor(catalog.PodBinding{
+		MaxTimeoutSeconds: 3600,
+		MaxOutputBytes:    1_000_000,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []string{
+		`{"name":"box","script":"true","timeout_seconds":60,"max_output_bytes":1000}`,
+		`{"name":"box","script":"true","timeout_seconds":60.0,"max_output_bytes":1e3}`,
+		`{"name":"box","script":"true","timeout_seconds":6e1,"max_output_bytes":1000}`,
+	} {
+		args, err := executor.inputs.DecodeExec.Decode(json.RawMessage(input))
+		if err != nil {
+			t.Fatalf("Decode(%s) = %v", input, err)
+		}
+		if args.TimeoutSeconds != 60 || args.MaxOutputBytes != 1000 {
+			t.Errorf("Decode(%s) = timeout %d, output %d", input, args.TimeoutSeconds, args.MaxOutputBytes)
+		}
+	}
+}
+
+func TestBoundExecSchemaKeepsAdmissionCapsSeparateFromStoredDecode(t *testing.T) {
+	lower, err := NewExecutor(catalog.PodBinding{MaxTimeoutSeconds: 1, MaxOutputBytes: 4}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	higher, err := NewExecutor(catalog.PodBinding{MaxTimeoutSeconds: 20, MaxOutputBytes: 40}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(t *testing.T, executor *Executor, input string, valid bool) {
+		t.Helper()
+		err := executor.Actions()[string(contract.Exec)].CheckArguments(mustJSON(t, json.RawMessage(input)))
+		if (err == nil) != valid {
+			t.Errorf("advertised schema check = %v; valid = %t", err, valid)
+		}
+	}
+	check(t, lower, `{"name":"box","script":"true","timeout_seconds":1,"max_output_bytes":4}`, true)
+	check(t, lower, `{"name":"box","script":"true","timeout_seconds":2,"max_output_bytes":4}`, false)
+	check(t, higher, `{"name":"box","script":"true","timeout_seconds":20,"max_output_bytes":40}`, true)
+	check(t, higher, `{"name":"box","script":"true","timeout_seconds":21,"max_output_bytes":40}`, false)
+	check(t, lower, `{"name":"box","script":"true","timeout_seconds":20,"max_output_bytes":40}`, false)
+
+	storedRequest := json.RawMessage(`{"name":"box","script":"true","timeout_seconds":3600,"max_output_bytes":1000000}`)
+	if _, err := lower.inputs.DecodeExec.Decode(storedRequest); err != nil {
+		t.Fatalf("stable execution input rejected an admitted request after a cap change: %v", err)
+	}
+	if _, err := lower.inputs.DecodeExec.Decode(json.RawMessage(`{"name":"box","script":"true","timeout_seconds":3601,"max_output_bytes":1000000}`)); err == nil {
+		t.Fatal("stable execution input accepted a request above the group ceiling")
+	}
+}
+
+func mustJSON(t *testing.T, input json.RawMessage) any {
+	t.Helper()
+	var value any
+	if err := json.Unmarshal(input, &value); err != nil {
+		t.Fatal(err)
+	}
+	return value
 }
 
 // TestBoxIdentity pins the object name and labels used to find a caller's existing box.

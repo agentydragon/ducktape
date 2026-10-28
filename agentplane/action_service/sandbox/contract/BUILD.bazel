@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//devinfra/python:defs.bzl", "py_library")
+
+go_library(
+    name = "contract",
+    srcs = ["contract.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract",
+    visibility = ["//agentplane/action_service:__subpackages__"],
+    deps = [
+        "//agentplane/action_service/catalog",
+        "@com_github_invopop_jsonschema//:jsonschema",
+    ],
+)
+
+genrule(
+    name = "actions_py",
+    outs = ["actions.py"],
+    cmd = "$(location //agentplane/action_service/sandbox/contract/cmd/export_python:export_python) > $@",
+    tools = ["//agentplane/action_service/sandbox/contract/cmd/export_python"],
+)
+
+py_library(
+    name = "actions",
+    srcs = [":actions_py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+)
