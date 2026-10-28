@@ -4197,6 +4197,7 @@ impl Executor<'_> {
         if call.kind == CallKind::New
             && call.caller.is_none()
             && self.set_iterable_proof.contains_constructor(call.span)
+            && self.index.set_iterable_intrinsics_are_unmodified()
         {
             return;
         }
@@ -4208,7 +4209,8 @@ impl Executor<'_> {
             && matches!(&call.callee, ValueExpr::Binding(id)
                 if matches!(id.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet")
                     && !self.flow.is_declared(id)
-                    && !self.shadowed.contains(id.0.as_ref()))
+                    && !self.shadowed.contains(id.0.as_ref())
+                    && self.index.collection_intrinsic_is_unmodified(id.0.as_ref()))
         {
             return;
         }
@@ -4602,8 +4604,36 @@ fn callback_source_units_for_signature(
 /// aliases with unknown/reassigned targets and dynamic scopes remain opaque.
 pub(crate) struct SynchronousCallProofs<'a> {
     pub(crate) set_iterable: &'a SetIterableProof,
-    pub(crate) local_class_construction: &'a LocalClassConstructionProof,
     pub(crate) graph: &'a ChunkCodeGraph,
+    pub(crate) index: PreparedSynchronousCallIndex,
+}
+
+pub(crate) struct PreparedSynchronousCallIndex {
+    index: ExecutionIndex,
+}
+
+impl PreparedSynchronousCallIndex {
+    pub(crate) fn set_iterable_intrinsics_are_unmodified(&self) -> bool {
+        self.index.set_iterable_intrinsics_are_unmodified()
+    }
+}
+
+pub(crate) fn prepare_synchronous_call_index(
+    body: &[TopLevelItemView<'_>],
+    flow: &ChunkValueFlow,
+    hints: &AnalysisInputs,
+    plain_array_bindings: &BTreeSet<String>,
+    local_class_construction: &LocalClassConstructionProof,
+) -> PreparedSynchronousCallIndex {
+    PreparedSynchronousCallIndex {
+        index: ExecutionIndex::collect(
+            body,
+            hints,
+            Some(flow),
+            plain_array_bindings,
+            local_class_construction,
+        ),
+    }
 }
 
 /// Finalize enum own-key candidates with the already collected binding-write
@@ -4617,13 +4647,7 @@ pub(crate) fn annotate_synchronous_calls(
     export_reentry_policy: ExportReentryPolicy,
     facts: &mut [StatementFacts],
 ) {
-    let index = ExecutionIndex::collect(
-        body,
-        hints,
-        Some(flow),
-        proofs.graph.plain_array_bindings(),
-        proofs.local_class_construction,
-    );
+    let index = proofs.index.index;
     for candidate in index.retained_callback_calls.values() {
         if candidate.caller.is_some() {
             continue;

@@ -253,6 +253,20 @@ where
         per_statement,
         top_level_await,
     } = structural;
+    let plain_array_bindings = crate::purity::collect_plain_array_bindings(&body, &shadowed);
+    let prepared_sync_index =
+        super::sync_effects::execution_index::interpreter::prepare_synchronous_call_index(
+            &body,
+            &value_flow,
+            hints,
+            &plain_array_bindings,
+            &local_class_construction_proof,
+        );
+    let set_iterable_proof = if prepared_sync_index.set_iterable_intrinsics_are_unmodified() {
+        set_iterable_proof
+    } else {
+        super::SetIterableProof::default()
+    };
     let graph = {
         let mut locate = |span| {
             let source_path = source_path?;
@@ -275,6 +289,7 @@ where
             &set_iterable_proof,
             &local_class_construction_proof,
             &plain_data_bindings,
+            &plain_array_bindings,
             Some(&mut locate),
         )
     };
@@ -341,8 +356,8 @@ where
             &value_flow,
             super::sync_effects::execution_index::interpreter::SynchronousCallProofs {
                 set_iterable: &set_iterable_proof,
-                local_class_construction: &local_class_construction_proof,
                 graph: &graph,
+                index: prepared_sync_index,
             },
             &shadowed,
             hints,

@@ -41,7 +41,9 @@ use crate::analysis_inputs::{CallableSummary, CallbackFactoryEvidence};
 use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
 };
-use crate::purity::{ChunkCodeGraph, Purity, collect_plain_data_bindings};
+use crate::purity::{
+    ChunkCodeGraph, Purity, collect_plain_array_bindings, collect_plain_data_bindings,
+};
 
 /// Stable key identifying a module in the program (the chunk name).
 pub type ModuleKey = String;
@@ -78,6 +80,7 @@ struct PreparedModulePurityFacts<'a> {
     set_iterable_proof: crate::facts::SetIterableProof,
     local_class_construction_proof: crate::facts::LocalClassConstructionProof,
     plain_data_bindings: Vec<String>,
+    plain_array_bindings: BTreeSet<String>,
 }
 
 impl<'a> ModulePurityFacts<'a> {
@@ -86,8 +89,9 @@ impl<'a> ModulePurityFacts<'a> {
         let shadowed = compute_shadowed_globals(&views);
         let value_flow = ChunkValueFlow::analyze(&views);
         let plain_data_bindings = collect_plain_data_bindings(&views, &shadowed, &value_flow);
+        let plain_array_bindings = collect_plain_array_bindings(&views, &shadowed);
         let dynamic_scope = crate::facts::DynamicScopeFact::analyze(&views);
-        let set_iterable_proof = crate::facts::SetIterableProof::analyze(
+        let mut set_iterable_proof = crate::facts::SetIterableProof::analyze(
             &views,
             &shadowed,
             &value_flow,
@@ -100,12 +104,24 @@ impl<'a> ModulePurityFacts<'a> {
             &value_flow,
             dynamic_scope,
         );
+        let prepared_sync_index =
+            crate::facts::sync_effects::execution_index::interpreter::prepare_synchronous_call_index(
+                &views,
+                &value_flow,
+                &crate::analysis_inputs::AnalysisInputs::default(),
+                &plain_array_bindings,
+                &local_class_construction_proof,
+            );
+        if !prepared_sync_index.set_iterable_intrinsics_are_unmodified() {
+            set_iterable_proof = crate::facts::SetIterableProof::default();
+        }
         PreparedModulePurityFacts {
             views,
             shadowed,
             set_iterable_proof,
             local_class_construction_proof,
             plain_data_bindings,
+            plain_array_bindings,
         }
     }
 
@@ -141,6 +157,7 @@ impl<'a> ModulePurityFacts<'a> {
             &prepared.set_iterable_proof,
             &prepared.local_class_construction_proof,
             &prepared.plain_data_bindings,
+            &prepared.plain_array_bindings,
             Some(&mut locate),
         )
     }
@@ -627,9 +644,10 @@ fn resolve_asserted_export_bindings(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swc_common::{FileName, sync::Lrc};
-    use swc_ecma_ast::Module;
+    use swc_common::{FileName, Span, sync::Lrc};
+    use swc_ecma_ast::{Expr, Module, NewExpr};
     use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
+    use swc_ecma_visit::{Visit, VisitWith};
 
     fn parse(source: &str) -> Module {
         let cm: Lrc<swc_common::SourceMap> = Default::default();
@@ -714,6 +732,34 @@ mod tests {
         ]);
         let resolved = resolve_imported_purities(&modules, &BTreeMap::new());
         assert!(!resolved["app"].contains_key("table"));
+    }
+
+    #[test]
+    fn cross_module_graph_preparation_gates_mutated_set_iterable_proof() {
+        let module = parse(
+            "const values = [1]; Set.prototype.add = function add(value) {}; new Set(values);",
+        );
+        let prepared = facts(&module, &[], &[]).prepare();
+
+        struct SetConstructors(Vec<Span>);
+        impl Visit for SetConstructors {
+            fn visit_new_expr(&mut self, node: &NewExpr) {
+                if matches!(node.callee.unwrap_parens(), Expr::Ident(ident) if ident.sym.as_ref() == "Set")
+                {
+                    self.0.push(node.span);
+                }
+                node.visit_children_with(self);
+            }
+        }
+        let mut constructors = SetConstructors(Vec::new());
+        module.visit_with(&mut constructors);
+        assert_eq!(constructors.0.len(), 1, "fixture needs one Set constructor");
+        assert!(
+            !prepared
+                .set_iterable_proof
+                .contains_constructor(constructors.0[0]),
+            "cross-module purity preparation must honor the canonical intrinsic census"
+        );
     }
 
     #[test]

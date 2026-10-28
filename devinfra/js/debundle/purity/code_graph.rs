@@ -175,7 +175,18 @@ impl ChunkCodeGraph {
     ) -> Self {
         let value_flow = crate::facts::ChunkValueFlow::analyze(body);
         let plain_data_bindings = collect_plain_data_bindings(body, shadowed, &value_flow);
+        let plain_array_bindings = collect_plain_array_bindings(body, shadowed);
         let dynamic_scope = DynamicScopeFact::analyze(body);
+        let local_class_construction_proof =
+            LocalClassConstructionProof::analyze(body, shadowed, &value_flow, dynamic_scope);
+        let prepared_sync_index =
+            crate::facts::sync_effects::execution_index::interpreter::prepare_synchronous_call_index(
+                body,
+                &value_flow,
+                &crate::analysis_inputs::AnalysisInputs::default(),
+                &plain_array_bindings,
+                &local_class_construction_proof,
+            );
         let set_iterable_proof = SetIterableProof::analyze(
             body,
             shadowed,
@@ -183,8 +194,11 @@ impl ChunkCodeGraph {
             &plain_data_bindings,
             dynamic_scope,
         );
-        let local_class_construction_proof =
-            LocalClassConstructionProof::analyze(body, shadowed, &value_flow, dynamic_scope);
+        let set_iterable_proof = if prepared_sync_index.set_iterable_intrinsics_are_unmodified() {
+            set_iterable_proof
+        } else {
+            SetIterableProof::default()
+        };
         Self::build_full_with_prepared_plain_data(
             body,
             shadowed,
@@ -196,6 +210,7 @@ impl ChunkCodeGraph {
             &set_iterable_proof,
             &local_class_construction_proof,
             &plain_data_bindings,
+            &plain_array_bindings,
             locate,
         )
     }
@@ -213,6 +228,7 @@ impl ChunkCodeGraph {
         set_iterable_proof: &SetIterableProof,
         local_class_construction_proof: &LocalClassConstructionProof,
         plain_data_bindings: &[String],
+        plain_array_bindings: &BTreeSet<String>,
         mut locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
         let functions = collect_chunk_functions(body);
@@ -290,7 +306,7 @@ impl ChunkCodeGraph {
             declared_pure_members: declared_pure_members.clone(),
             primitive_const_bindings,
             symbol_const_bindings,
-            plain_array_bindings: collect_plain_array_bindings(body, shadowed),
+            plain_array_bindings: plain_array_bindings.clone(),
             ts_enum_named_data_candidates,
             set_iterable_proof: set_iterable_proof.clone(),
             local_class_construction_proof: local_class_construction_proof.clone(),
@@ -396,10 +412,6 @@ impl ChunkCodeGraph {
     /// array-method at-init fallback refinement.
     pub(crate) fn is_plain_array(&self, name: &str) -> bool {
         self.plain_array_bindings.contains(name)
-    }
-
-    pub(crate) fn plain_array_bindings(&self) -> &BTreeSet<String> {
-        &self.plain_array_bindings
     }
 
     pub(crate) fn ts_enum_named_data_candidates(&self) -> &BTreeMap<Id, TsEnumNamedDataCandidate> {

@@ -60,7 +60,9 @@ Every admission argument here additionally assumes **intrinsic integrity**
 Prototype pollution — replacing `Set.prototype.add` or
 `Array.prototype[Symbol.iterator]` — defeats every entry whose ECMA-262
 citation describes the standard built-in, and the analyzer cannot detect it
-because the pollution may live outside the analyzed chunk.
+when the pollution lives outside the analyzed chunk. Individual proofs may
+also reject visible in-chunk mutations through the shared intrinsic-write
+census; see the collection-construction rules below.
 
 ## Empty intrinsic collection construction
 
@@ -73,14 +75,18 @@ returns before looking up an adder or invoking iterator/user code. See the
 [Set](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-set-iterable),
 [WeakMap](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-weakmap-iterable)
 and [WeakSet](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-weakset-iterable)
-constructor algorithms.
+constructor algorithms. The shared intrinsic-write census disables this
+shortcut after a visible in-chunk write to the corresponding global
+constructor or global-object property, including writes through aliases and
+unknown computed global properties. Dynamic scopes disable it too.
 
 This does not certify subsequent collection operations. A shadowed or dynamic
 callee, subclass construction, arguments and spreads keep ordinary callback
 analysis. In particular, a nonempty iterable argument may invoke its iterator
 or expose callbacks. The CLI cases in `empty_collection_timing_test` cover
-all four empty constructors and real callback reentry through a shadowed
-constructor and a supplied iterator.
+all four empty constructors, global constructor replacement, and callback
+reentry through a shadowed constructor, a replaced Set adder, and a replaced
+Array iterator.
 
 ## Guarded native call summaries
 
@@ -244,7 +250,12 @@ item. The standard Array iterator reads the indexed own data properties of the
 fresh literal, and `Set.prototype.add` stores the values using SameValueZero
 without coercing them or invoking callbacks. The reference rules ensure the
 array cannot have been mutated, published, or given an own iterator override
-before construction. See [Set construction and `Set.prototype.add`](https://tc39.es/ecma262/2024/multipage/keyed-collections.html#sec-set-constructor),
+before construction. The proof also requires the shared intrinsic-write
+census to find no visible in-chunk mutation of the global `Set` family,
+`Array` family, global object, or dynamic scope. This keeps a replaced
+`Set.prototype.add` and `Array.prototype[Symbol.iterator]` observable even
+when the iterable itself is fresh and primitive-valued. Pollution outside the
+analyzed chunk remains covered by A11. See [Set construction and `Set.prototype.add`](https://tc39.es/ecma262/2024/multipage/keyed-collections.html#sec-set-constructor),
 [`Set.prototype.add`](https://tc39.es/ecma262/2024/multipage/keyed-collections.html#sec-set.prototype.add),
 and the [Array iterator](https://tc39.es/ecma262/2024/multipage/indexed-collections.html#sec-array.prototype-@@iterator).
 

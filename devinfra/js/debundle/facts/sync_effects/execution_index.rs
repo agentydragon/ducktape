@@ -1194,6 +1194,10 @@ enum IntrinsicRoot {
     RegExp,
     Symbol,
     Promise,
+    Map,
+    Set,
+    WeakMap,
+    WeakSet,
 }
 
 type IntrinsicRoots = BTreeSet<IntrinsicRoot>;
@@ -1222,6 +1226,14 @@ fn intrinsic_roots(
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Promise" => {
             BTreeSet::from([IntrinsicRoot::Promise])
+        }
+        ValueExpr::Binding(id) if id.0.as_ref() == "Map" => BTreeSet::from([IntrinsicRoot::Map]),
+        ValueExpr::Binding(id) if id.0.as_ref() == "Set" => BTreeSet::from([IntrinsicRoot::Set]),
+        ValueExpr::Binding(id) if id.0.as_ref() == "WeakMap" => {
+            BTreeSet::from([IntrinsicRoot::WeakMap])
+        }
+        ValueExpr::Binding(id) if id.0.as_ref() == "WeakSet" => {
+            BTreeSet::from([IntrinsicRoot::WeakSet])
         }
         ValueExpr::Binding(id) if globals.contains(id.0.as_ref()) => {
             BTreeSet::from([IntrinsicRoot::GlobalObject])
@@ -1262,6 +1274,18 @@ fn intrinsic_roots(
                         Some("Promise") => {
                             out.insert(IntrinsicRoot::Promise);
                         }
+                        Some("Map") => {
+                            out.insert(IntrinsicRoot::Map);
+                        }
+                        Some("Set") => {
+                            out.insert(IntrinsicRoot::Set);
+                        }
+                        Some("WeakMap") => {
+                            out.insert(IntrinsicRoot::WeakMap);
+                        }
+                        Some("WeakSet") => {
+                            out.insert(IntrinsicRoot::WeakSet);
+                        }
                         Some("globalThis" | "window" | "self" | "frames" | "top") | None => {
                             out.insert(IntrinsicRoot::GlobalObject);
                         }
@@ -1277,7 +1301,11 @@ fn intrinsic_roots(
                     | IntrinsicRoot::Math
                     | IntrinsicRoot::RegExp
                     | IntrinsicRoot::Symbol
-                    | IntrinsicRoot::Promise => {
+                    | IntrinsicRoot::Promise
+                    | IntrinsicRoot::Map
+                    | IntrinsicRoot::Set
+                    | IntrinsicRoot::WeakMap
+                    | IntrinsicRoot::WeakSet => {
                         out.insert(root);
                     }
                 }
@@ -2337,6 +2365,18 @@ impl ExecutionIndex {
                 "Promise" => {
                     mutated_intrinsics.insert(IntrinsicRoot::Promise);
                 }
+                "Map" => {
+                    mutated_intrinsics.insert(IntrinsicRoot::Map);
+                }
+                "Set" => {
+                    mutated_intrinsics.insert(IntrinsicRoot::Set);
+                }
+                "WeakMap" => {
+                    mutated_intrinsics.insert(IntrinsicRoot::WeakMap);
+                }
+                "WeakSet" => {
+                    mutated_intrinsics.insert(IntrinsicRoot::WeakSet);
+                }
                 _ => {}
             }
         }
@@ -2863,6 +2903,26 @@ impl ExecutionIndex {
             }
         }
         index
+    }
+
+    fn collection_intrinsic_is_unmodified(&self, constructor: &str) -> bool {
+        let root = match constructor {
+            "Map" => IntrinsicRoot::Map,
+            "Set" => IntrinsicRoot::Set,
+            "WeakMap" => IntrinsicRoot::WeakMap,
+            "WeakSet" => IntrinsicRoot::WeakSet,
+            _ => return false,
+        };
+        self.dynamic_scope_owners.is_empty()
+            && !self
+                .mutated_intrinsic_roots
+                .contains(&IntrinsicRoot::GlobalObject)
+            && !self.mutated_intrinsic_roots.contains(&root)
+    }
+
+    fn set_iterable_intrinsics_are_unmodified(&self) -> bool {
+        self.collection_intrinsic_is_unmodified("Set")
+            && !self.mutated_intrinsic_roots.contains(&IntrinsicRoot::Array)
     }
 
     fn global_receiver_exposed(
