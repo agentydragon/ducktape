@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
@@ -9,20 +10,20 @@ use artifact::ChunkId;
 use artifact::load_js_chunks;
 use artifact::reports::ChunkDecompositionOutput;
 use emit_harness::emit_browser_harness;
-use graph_provenance::{GraphProvenance, InputCapture, ProvenanceRoots};
+use graph_provenance::{CurrentRoots, GraphProvenance, InputCapture, ProvenanceRoots};
 use lowering::{
     MaterializeLogicalModulesOptions, MaterializeSpecInputs, ReportEmission,
     materialize_logical_modules, naturalize_cross_chunk_imports,
 };
-use prepare_chunks::prepare_js_chunks;
+use prepare_chunks::{SourcePreparation, prepare_js_chunks};
 use prune_dead_imports::prune_dead_import_specifiers;
 use prune_module_exports::prune_unimported_module_exports;
 use reconstruction::{ReconstructionPlan, UnmatchedSpecClaim, VendorManifestOutput};
-use spec::TransformSpec;
+use spec::{ChunkExportPurity, TransformSpec};
 use spec_modules::read_flat_transform_spec;
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree, graph_module_roots};
 use vendor::{
-    VendorPlanOptions, VendorSwapsReport, apply_emission_rewrites_in_place,
+    VendorPlanOptions, VendorResolutionPlan, VendorSwapsReport, apply_emission_rewrites_in_place,
     build_partial_swap_resolutions, build_vendor_resolution_plan,
 };
 use write_tree::{WriteTreeInput, write_js_tree};
@@ -179,45 +180,94 @@ pub fn collect_package_roots(
 }
 
 pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Result<()> {
-    run_transform_inner(cli, options, None, |_| Ok(()), false, None)
+    let (spec, prepared) = prepare_transform(cli, &options, None)?;
+    run_prepared_transform(&spec, prepared, options, false)
 }
 
-/// Recompute full acceptance with one in-memory author-contract edit. The
-/// authored spec is checked against `expected_spec` before editing. A probe
-/// cannot emit dependency graphs: their original-file provenance would be
-/// false for the edited contract and could be misused by graph-backed edits.
-/// The caller compares captured provenance across its baseline and probes.
-pub fn run_transform_probe(
-    cli: &TransformCli,
-    expected_spec: &TransformSpec,
-    edit: impl FnOnce(&mut TransformSpec) -> Result<()>,
-    provenance_out: &mut Option<GraphProvenance>,
-) -> Result<()> {
-    run_transform_inner(
-        cli,
-        TransformRunOptions {
-            dry_run: true,
-            keep_going: false,
-            report_dir_override: None,
-            list_template_identifiers: false,
-        },
-        Some(expected_spec),
-        edit,
-        true,
-        Some(provenance_out),
-    )
+/// Input-only preparation shared by the baseline and independent contract probes.
+/// Each run gets its own mutable AST; vendor decisions remain read-only.
+#[derive(Clone)]
+struct PreparedTransform {
+    source: SourcePreparation,
+    vendor_plan: Arc<VendorResolutionPlan>,
+    provenance: GraphProvenance,
 }
 
-fn run_transform_inner(
+/// One accepted baseline and its immutable input preparation. Only the contract
+/// map may change between probes: other spec fields affect preparation.
+pub struct ContractAudit {
+    spec: TransformSpec,
+    prepared: PreparedTransform,
+}
+
+#[derive(Debug)]
+pub enum ContractProbeOutcome {
+    Accepted,
+    Rejected(anyhow::Error),
+    Inconclusive(anyhow::Error),
+}
+
+impl ContractAudit {
+    pub fn prepare(cli: &TransformCli, expected_spec: &TransformSpec) -> Result<Self> {
+        let (spec, prepared) = prepare_transform(cli, &audit_options(), Some(expected_spec))?;
+        run_prepared_transform(&spec, prepared.clone(), audit_options(), true)?;
+        prepared
+            .provenance
+            .verify(&CurrentRoots::default())
+            .context("audit inputs changed during baseline")?;
+        Ok(Self { spec, prepared })
+    }
+
+    pub fn provenance(&self) -> &GraphProvenance {
+        &self.prepared.provenance
+    }
+
+    /// Recompute all contract-dependent analysis and full reconstruction
+    /// acceptance. Input-verification failures abort the audit, including when
+    /// analysis rejects; they must never become a cached contract verdict.
+    /// No graph or output artifacts may escape an edited probe.
+    pub fn probe(
+        &self,
+        contracts: BTreeMap<String, ChunkExportPurity>,
+    ) -> Result<ContractProbeOutcome> {
+        self.provenance()
+            .verify(&CurrentRoots::default())
+            .context("audit inputs changed after baseline")?;
+        let mut spec = self.spec.clone();
+        spec.chunk_export_purity = contracts;
+        if let Err(error) = validate_transform_spec(&spec) {
+            return Ok(ContractProbeOutcome::Inconclusive(error));
+        }
+        let outcome = run_prepared_transform(&spec, self.prepared.clone(), audit_options(), true);
+        self.provenance()
+            .verify(&CurrentRoots::default())
+            .context("audit inputs changed between baseline and probe")?;
+        Ok(match outcome {
+            Ok(()) => ContractProbeOutcome::Accepted,
+            Err(error) if error.chain().any(|cause| cause.is::<std::io::Error>()) => {
+                ContractProbeOutcome::Inconclusive(error)
+            }
+            Err(error) => ContractProbeOutcome::Rejected(error),
+        })
+    }
+}
+
+fn audit_options() -> TransformRunOptions {
+    TransformRunOptions {
+        dry_run: true,
+        keep_going: false,
+        report_dir_override: None,
+        list_template_identifiers: false,
+    }
+}
+
+fn prepare_transform(
     cli: &TransformCli,
-    options: TransformRunOptions,
+    options: &TransformRunOptions,
     expected_spec: Option<&TransformSpec>,
-    edit: impl FnOnce(&mut TransformSpec) -> Result<()>,
-    suppress_reports: bool,
-    provenance_out: Option<&mut Option<GraphProvenance>>,
-) -> Result<()> {
+) -> Result<(TransformSpec, PreparedTransform)> {
     let (roots, modules_directory) = provenance_roots(cli)?;
-    let generation_command = canonical_generation_command(cli, &options, &roots)?;
+    let generation_command = canonical_generation_command(cli, options, &roots)?;
     let capture = InputCapture::start(roots, modules_directory, generation_command)?;
     if let TransformSpecSource::Tree(tree) = &cli.spec_source {
         // Capture the whole authored tree, including YAMLs outside the chunk
@@ -232,14 +282,13 @@ fn run_transform_inner(
             graph_provenance::read_bytes(path)?;
         }
     }
-    let mut spec = load_transform_spec_source(&cli.spec_source)?;
+    let spec = load_transform_spec_source(&cli.spec_source)?;
     if let Some(expected) = expected_spec {
         anyhow::ensure!(
             serde_json::to_vec(&spec)? == serde_json::to_vec(expected)?,
             "authored spec changed during contract audit"
         );
     }
-    edit(&mut spec)?;
     if let TransformSpecSource::Tree(tree) = &cli.spec_source {
         capture.set_tree_scope(&tree.config_path, graph_module_roots(&tree.config_path)?)?;
     }
@@ -254,13 +303,8 @@ fn run_transform_inner(
         preflight_output_roots(&spec)?;
     }
     let artifact = load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
-    let materialise_chunk_ids: Vec<String> = spec.materialize_chunk_ids().into_iter().collect();
-    let prepare_result = prepare_js_chunks(&spec, artifact)?;
-    let counts = prepare_result.counts;
-    let chunk_records = prepare_result.chunk_records;
-    let mut vendor_report = VendorSwapsReport::default();
-
-    let source_program = prepare_result.program;
+    let source = prepare_js_chunks(&spec, artifact)?;
+    let source_program = &source.program;
 
     // Single post-prepare vendor resolution pass: validates every mark,
     // resolves boundary mappings, swap targets, and partial-swap symbol
@@ -281,9 +325,35 @@ fn run_transform_inner(
         },
     )?;
     let graph_provenance = capture.finish()?;
-    if let Some(provenance_out) = provenance_out {
-        *provenance_out = Some(graph_provenance.clone());
-    }
+    Ok((
+        spec,
+        PreparedTransform {
+            source,
+            vendor_plan: Arc::new(vendor_plan),
+            provenance: graph_provenance,
+        },
+    ))
+}
+
+fn run_prepared_transform(
+    spec: &TransformSpec,
+    prepared: PreparedTransform,
+    options: TransformRunOptions,
+    suppress_reports: bool,
+) -> Result<()> {
+    let PreparedTransform {
+        source,
+        vendor_plan,
+        provenance,
+    } = prepared;
+    let SourcePreparation {
+        program: source_program,
+        counts,
+        chunk_records,
+    } = source;
+    let materialise_chunk_ids: Vec<String> = spec.materialize_chunk_ids().into_iter().collect();
+    let swap_cfg = &spec.swap_vendor_chunks;
+    let mut vendor_report = VendorSwapsReport::default();
     let write_vendor_outputs = swap_cfg.write && !options.dry_run;
 
     // Full swaps are an emission-set exclusion: the swapped chunks stay in
@@ -325,7 +395,7 @@ fn run_transform_inner(
             },
             &vendor_plan,
             MaterializeLogicalModulesOptions {
-                graph_provenance: Some(graph_provenance),
+                graph_provenance: Some(provenance),
                 config: spec.materialize_logical_modules.clone(),
                 chunk_ids: materialise_chunk_ids,
                 keep_going: options.keep_going,
@@ -709,6 +779,57 @@ mod tests {
         report_dir_override: None,
         list_template_identifiers: false,
     };
+
+    // This real-pipeline boundary test changes files between preparation and
+    // probing, which a black-box CLI test cannot synchronize without timing.
+    #[test]
+    fn prepared_contract_probes_abort_when_captured_inputs_change() -> Result<()> {
+        js_ast::with_swc_globals(|| {
+            #[derive(Serialize)]
+            struct AuditSpec<'a> {
+                inputs: PipelineSpecInputs<'a>,
+            }
+            let temp = tempfile::tempdir()?;
+            let root = temp.path();
+            let source = root.join("main.js");
+            let list = root.join("js-files.txt");
+            let spec_path = root.join("spec.yaml");
+            fs::write(&source, "export const answer = 42;\n")?;
+            fs::write(&list, "main.js\n")?;
+            fs::write(
+                &spec_path,
+                serde_yaml::to_string(&AuditSpec {
+                    inputs: PipelineSpecInputs {
+                        input_root: root,
+                        js_list_path: &list,
+                    },
+                })?,
+            )?;
+            let cli = TransformCli {
+                spec_source: TransformSpecSource::Flat {
+                    path: spec_path.clone(),
+                },
+                package_roots: HashMap::new(),
+                packages_root: None,
+            };
+            let spec = load_transform_spec_source(&cli.spec_source)?;
+            let audit = ContractAudit::prepare(&cli, &spec)?;
+            for path in [&source, &list, &spec_path] {
+                let original = fs::read(path)?;
+                let mut changed = original.clone();
+                changed.push(b'\n');
+                fs::write(path, changed)?;
+                let error = audit.probe(BTreeMap::new()).unwrap_err();
+                assert!(error.is::<graph_provenance::GraphMismatch>(), "{error:#}");
+                fs::write(path, original)?;
+                assert!(matches!(
+                    audit.probe(BTreeMap::new())?,
+                    ContractProbeOutcome::Accepted
+                ));
+            }
+            Ok(())
+        })
+    }
 
     #[test]
     fn reserved_package_root_name_is_rejected() -> Result<()> {

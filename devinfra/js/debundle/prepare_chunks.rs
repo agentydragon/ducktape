@@ -19,6 +19,7 @@ const CANONICALIZE_HEADER_LINES: &[&str] = &[
     "// Executable chunk entry.",
 ];
 
+#[derive(Clone)]
 pub struct SourcePreparation {
     pub program: SourceProgram,
     pub counts: ArtifactCounts,

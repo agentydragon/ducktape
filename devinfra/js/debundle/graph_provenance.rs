@@ -9,7 +9,7 @@ use std::fmt;
 use std::fs;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Context, Result, bail};
 use ring::digest::{self, SHA256};
@@ -948,8 +948,16 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 fn engine_sha256() -> Result<String> {
+    // The running engine is immutable for this process. Rehash source/package
+    // inputs on every verification, but hash the executable only once. A new
+    // process still computes its own digest before reusing saved provenance.
+    static ENGINE: OnceLock<String> = OnceLock::new();
+    if let Some(digest) = ENGINE.get() {
+        return Ok(digest.clone());
+    }
     let file = fs::File::open(std::env::current_exe()?)?;
-    sha256_reader(BufReader::new(file)).context("hashing debundle executable")
+    let digest = sha256_reader(BufReader::new(file)).context("hashing debundle executable")?;
+    Ok(ENGINE.get_or_init(|| digest).clone())
 }
 
 #[cfg(test)]

@@ -456,8 +456,13 @@ The command accepts the same flat `--spec` or tree inputs and package roots as
 `run`. Use `--kind`, `--export`, `--member`, and a typed JSON `--signature`
 (`{"argument_count":1,"callback_arguments":[0]}`) to narrow the target set.
 It starts with a passing full-pipeline baseline, then removes one target at a
-time in memory and recomputes full acceptance. Results beyond `--max-probes`
-are explicitly `budget_skipped`. `removable_under_remaining_assumptions` is
+time in memory and recomputes full acceptance. Within one invocation it reuses
+parsed source, preparation indexes, and read-only vendor resolution; each probe
+gets its own mutable AST and recomputes contract-dependent analysis, assignment,
+lowering, and final reconstruction checks. The captured inputs are reverified
+before and after probes; input changes abort the audit. See the
+[measurements and profiling recipe](../perf/contract_audit.md). Results beyond
+`--max-probes` are explicitly `budget_skipped`. `removable_under_remaining_assumptions` is
 conditional on every other authored contract and runtime premise, for this
 source and assignment only; it neither proves independent purity nor permits
 joint deletion of all passing targets. Failed probes report the acceptance

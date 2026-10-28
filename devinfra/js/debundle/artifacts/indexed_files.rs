@@ -66,6 +66,7 @@ impl ChunkBundle {
 /// from. Body-only mutations go through [`IndexedFiles::update_file_bodies`],
 /// which checks that their indexed layout is unchanged. This makes it a type
 /// error to keep a separate mutable artifact with stale indexes.
+#[derive(Clone)]
 pub(super) struct IndexedFiles {
     artifact: ChunkBundle,
     indexes: ArtifactIndexes,

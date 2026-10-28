@@ -728,3 +728,67 @@ fn audit_checkpoint_rechecks_tree_membership_source_and_effective_package_roots(
     assert_eq!(parsed(&unchanged)["independently_probed"], 1);
     assert!(String::from_utf8_lossy(&unchanged.stderr).contains("audit-progress probe reused"));
 }
+
+#[test]
+fn prepared_probes_match_independent_fresh_pipeline_runs() {
+    let policy = [ChunkExportPurityBuilder::new("static/peer")
+        .with_no_reentry_exports(&["makeSlot", "spare"])
+        .with_pure_exports(&["makeSlot", "spare"])
+        .build()];
+    let fixture = write_validate_fixture_spec(
+        FixtureOpts::new(SOURCE, split_modules())
+            .with_extra_chunks(PEER)
+            .with_chunk_export_purity(&policy),
+    );
+    // Both paths must validate final reconstruction without writing reports.
+    let mut original: serde_yaml::Value =
+        serde_yaml::from_slice(&fs::read(&fixture.spec_path).unwrap()).unwrap();
+    original["materialize_logical_modules"]["report_out_dir"] = serde_yaml::Value::Null;
+    let original_bytes = serde_yaml::to_string(&original).unwrap();
+    fs::write(&fixture.spec_path, &original_bytes).unwrap();
+    let report = parsed(&audit(&fixture.spec_path, &[]));
+    let rows = report["results"].as_array().unwrap();
+    assert_eq!(rows.len(), 4);
+    assert!(
+        rows.iter()
+            .any(|row| row["verdict"] == "failed_full_acceptance")
+    );
+    assert!(
+        rows.iter()
+            .any(|row| row["verdict"] == "removable_under_remaining_assumptions")
+    );
+
+    for row in rows {
+        let mut candidate = original.clone();
+        let kind = row["target"]["kind"].as_str().unwrap();
+        let export = row["target"]["export"].as_str().unwrap();
+        candidate["chunk_export_purity"]["static/peer"][kind]
+            .as_sequence_mut()
+            .unwrap()
+            .retain(|value| value.as_str() != Some(export));
+        fs::write(
+            &fixture.spec_path,
+            serde_yaml::to_string(&candidate).unwrap(),
+        )
+        .unwrap();
+        let fresh = run_debundle(&[
+            "run",
+            "--spec",
+            fixture.spec_path.to_str().unwrap(),
+            "--dry-run",
+        ]);
+        assert_eq!(
+            fresh.status.success(),
+            row["verdict"] == "removable_under_remaining_assumptions",
+            "target={:?}, fresh stderr={}",
+            row["target"],
+            String::from_utf8_lossy(&fresh.stderr)
+        );
+    }
+    fs::write(&fixture.spec_path, &original_bytes).unwrap();
+    assert_eq!(report, parsed(&audit(&fixture.spec_path, &[])));
+    assert_no_pipeline_artifacts(
+        &fixture.spec_path,
+        &fixture.spec_path.parent().unwrap().join("reports"),
+    );
+}

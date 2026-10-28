@@ -412,7 +412,7 @@ The dependency graph is the right abstraction for tooling:
 `debundle run` embeds a `GraphProvenance` inventory in each saved graph. It
 records SHA-256 of the bytes returned to the spec, source, and vendor readers,
 the complete YAML path membership of the authored module tree, absent optional
-inputs, the chunk-to-source-file mapping, the engine executable's SHA-256, and
+inputs, the chunk-to-source-file mapping, the engine executable's SHA-256 (computed once per process), and
 an absolute-path regeneration invocation and original working directory. Paths are relative to named
 spec, source, and package roots where possible, so the same inputs can be
 checked after those roots are explicitly relocated. A second read of one input
@@ -3051,6 +3051,19 @@ validated schedule; emission consumes that schedule. Avoid designs
 where emission discovers new graph edges or silently mutates the
 assignment, because that reintroduces hidden closure behavior and
 makes diagnostics disagree with emitted output.
+
+### Contract-audit preparation reuse
+
+`ContractAudit` retains one immutable preparation within an invocation: parsed
+source and its matching indexes, the read-only vendor plan, and captured input
+provenance. The only editable spec section at its probe boundary is
+`chunk_export_purity`; all preparation inputs remain fixed. Every independent
+probe clones the prepared source before mutation and recomputes facts, assignment,
+the gate, lowering, emission rewrites, and final reconstruction acceptance.
+No analysis result or edited AST is reused by another probe. The audit verifies
+source/spec/package bytes and path membership before and after probes and before
+publishing a report or checkpoint. Resume prepares again and validates a fresh
+baseline before reusing definitive checkpoint records.
 
 ## Vendor chunk swapping
 

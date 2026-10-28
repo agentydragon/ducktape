@@ -34,17 +34,20 @@ pub struct LoadedJsChunks {
     pub chunk_table: ChunkTable,
 }
 
+#[derive(Clone)]
 pub struct ChunkBundle {
     pub chunks: Vec<ChunkArtifact>,
     pub chunk_table: ChunkTable,
 }
 
+#[derive(Clone)]
 pub struct ChunkArtifact {
     pub chunk_id: ChunkId,
     pub js: JsChunk,
     pub analysis: ChunkAnalysisReport,
 }
 
+#[derive(Clone)]
 pub struct JsChunk {
     pub entry_file: String,
     pub files: Vec<JsFile>,
@@ -74,6 +77,7 @@ impl JsChunk {
     }
 }
 
+#[derive(Clone)]
 pub struct JsFile {
     pub path: String,
     pub body: JsFileBody,
@@ -101,6 +105,7 @@ pub struct JsFileAstParts {
     pub metadata: FileMetadata,
 }
 
+#[derive(Clone)]
 pub enum JsFileBody {
     Source(String),
     Ast(ParsedJsModule),

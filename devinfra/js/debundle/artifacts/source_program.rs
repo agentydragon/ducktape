@@ -5,6 +5,7 @@ use anyhow::Result;
 use super::indexed_files::IndexedFiles;
 use super::{ArtifactIndexes, ChunkBundle};
 
+#[derive(Clone)]
 pub struct SourceProgram {
     pub(super) indexed: IndexedFiles,
 }

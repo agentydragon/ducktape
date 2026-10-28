@@ -7,6 +7,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use artifact::reports::write_json;
@@ -58,7 +59,7 @@ pub struct UnmatchedSpecClaim {
 /// Diagnostic reports are separate from the accepted output tree.
 pub struct ReconstructionPlan {
     files: EmissionFiles,
-    vendor: VendorResolutionPlan,
+    vendor: Arc<VendorResolutionPlan>,
     vendor_manifest: Option<VendorManifestOutput>,
     unresolved_claims: Vec<UnmatchedSpecClaim>,
     browser_harness: Option<BrowserHarnessPlan>,
@@ -67,7 +68,7 @@ pub struct ReconstructionPlan {
 impl ReconstructionPlan {
     pub fn new(
         files: EmissionFiles,
-        vendor: VendorResolutionPlan,
+        vendor: Arc<VendorResolutionPlan>,
         unresolved_claims: Vec<UnmatchedSpecClaim>,
         browser_options: Option<&spec::EmitBrowserHarnessConfig>,
         vendor_manifest: Option<VendorManifestOutput>,
@@ -108,7 +109,7 @@ impl ReconstructionPlan {
 /// Only `ReconstructionPlan::validate` can construct this capability.
 pub struct ValidatedPlan {
     files: EmissionFiles,
-    vendor: VendorResolutionPlan,
+    vendor: Arc<VendorResolutionPlan>,
     vendor_manifest: Option<VendorManifestOutput>,
     excluded_chunk_ids: BTreeSet<ChunkId>,
     browser_harness: Option<BrowserHarnessPlan>,
