@@ -358,6 +358,8 @@ func (encoder *zapSlogArrayEncoder) AppendReflected(value interface{}) error {
 	return nil
 }
 
-var _ zapcore.ObjectEncoder = (*zapSlogObjectEncoder)(nil)
-var _ zapcore.ArrayEncoder = (*zapSlogArrayEncoder)(nil)
-var _ zapcore.Core = (*slogZapCore)(nil)
+var (
+	_ zapcore.ObjectEncoder = (*zapSlogObjectEncoder)(nil)
+	_ zapcore.ArrayEncoder  = (*zapSlogArrayEncoder)(nil)
+	_ zapcore.Core          = (*slogZapCore)(nil)
+)

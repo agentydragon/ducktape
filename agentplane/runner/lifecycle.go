@@ -47,6 +47,7 @@ func (r *lifecycleResource[T]) Spec() any                    { return &r.value }
 func (r *lifecycleResource[T]) DeepCopy() resource.Resource {
 	return &lifecycleResource[T]{metadata: r.metadata.Copy(), value: r.value}
 }
+
 func lifecycleResourceFor[T comparable](kind, id string, value T) *lifecycleResource[T] {
 	return &lifecycleResource[T]{metadata: resource.NewMetadata(lifecycleNamespace, kind, id, resource.VersionUndefined), value: value}
 }
@@ -70,6 +71,7 @@ func lifecycleRead[T comparable](ctx context.Context, reader lifecycleReader, ki
 	}
 	return typed.value, true, nil
 }
+
 func lifecycleWrite[T comparable](ctx context.Context, writer controller.ReaderWriter, kind, id string, value T) (bool, error) {
 	old, found, err := lifecycleRead[T](ctx, writer, kind, id)
 	if err != nil || found && old == value {
@@ -171,6 +173,7 @@ func (l *lifecycle) publishSeal(s *Session) error {
 	}
 	return publishLifecycle(l, journalSealType, s.id, value)
 }
+
 func (l *lifecycle) publishAck(id string, ack IngressAcknowledgement) error {
 	l.publishMu.Lock()
 	defer l.publishMu.Unlock()
@@ -236,6 +239,7 @@ func newLifecycle(r *Runner) (*lifecycle, error) {
 	}
 	return l, nil
 }
+
 func (l *lifecycle) run() {
 	defer close(l.done)
 	if err := l.engine.Run(l.runner.ctx); err != nil && !errors.Is(err, context.Canceled) {
@@ -259,6 +263,7 @@ func publishLifecycle[T comparable](l *lifecycle, kind, id string, value T) erro
 	r.metadata = old.Metadata().Copy()
 	return l.state.Update(l.runner.ctx, r, state.WithUpdateOwner("runner-host"))
 }
+
 func (l *lifecycle) goal() runnerGoalSpec {
 	value, _, err := lifecycleRead[runnerGoalSpec](l.runner.ctx, l.state, runnerGoalType, "runner")
 	if err != nil {
@@ -315,9 +320,11 @@ func (l *lifecycle) setGoal(mode runnerMode, sealUID string) error {
 	}
 	return publishLifecycle(l, runnerGoalType, "runner", goal)
 }
+
 func (l *lifecycle) accepting() bool {
 	return l.goal().Mode == runnerRunning && !l.runner.store.Lameduck()
 }
+
 func (l *lifecycle) touchRunner() {
 	l.runner.mu.Lock()
 	admissions := l.runner.admissions
@@ -333,6 +340,7 @@ func (l *lifecycle) touchRunner() {
 	input.Revision++
 	l.runner.fail(publishLifecycle(l, runnerInputType, "runner", input))
 }
+
 func (l *lifecycle) publishSession(s *Session, demand bool) {
 	l.publishMu.Lock()
 	defer l.publishMu.Unlock()
@@ -363,10 +371,12 @@ func (s *Session) runtimeState() sessionRuntimeSpec {
 	}
 	return value
 }
+
 func (s *Session) readyLocked() bool {
 	current := s.runtimeState()
 	return !operationDone(s.halting) && (current.Phase == executionReady || current.Phase == executionStopping) && current.ProcessID == s.processID && s.process != nil && s.process.Running()
 }
+
 func (s *Session) executionClosed() bool {
 	return !s.runner.lifecycle.accepting() || s.journal.SealState() != nil
 }
@@ -380,6 +390,7 @@ func (l *lifecycle) operationResult(session, kind string, op *sessionOperation, 
 	}
 	l.runner.fail(publishLifecycle(l, operationResultType, op.id, value))
 }
+
 func (l *lifecycle) forgetOperation(op *sessionOperation) {
 	if op == nil {
 		return
@@ -391,6 +402,7 @@ func (l *lifecycle) forgetOperation(op *sessionOperation) {
 		l.runner.fail(err)
 	}
 }
+
 func (s *Session) startOperation(slot **sessionOperation, kind string, work func(context.Context) error) {
 	s.mu.Lock()
 	if *slot != nil {
@@ -417,6 +429,7 @@ func (s *Session) startOperation(slot **sessionOperation, kind string, work func
 		s.runner.changed()
 	}()
 }
+
 func (s *Session) takeOperation(slot **sessionOperation) (*sessionOperation, bool) {
 	s.mu.Lock()
 	if !operationDone(*slot) {
@@ -445,6 +458,7 @@ func (*sessionLifecycleController) Settings() controller.QSettings {
 		Concurrency: optional.Some(uint(16)),
 	}
 }
+
 func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr controller.ReducedResourceMetadata) ([]resource.Pointer, error) {
 	if ptr.Type() == operationResultType {
 		result, found, err := lifecycleRead[operationResultSpec](ctx, r, operationResultType, ptr.ID())
@@ -463,6 +477,7 @@ func (c *sessionLifecycleController) MapInput(ctx context.Context, _ *zap.Logger
 	}
 	return result, nil
 }
+
 func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr resource.Pointer) error {
 	c.l.runner.mu.Lock()
 	s := c.l.runner.sessions[ptr.ID()]
@@ -702,9 +717,11 @@ func (*runnerLifecycleController) Inputs() []controller.Input {
 	}
 	return inputs
 }
+
 func (*runnerLifecycleController) Outputs() []controller.Output {
 	return []controller.Output{{Type: runnerRuntimeType, Kind: controller.OutputExclusive}}
 }
+
 func (c *runnerLifecycleController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
 	for {
 		select {
@@ -718,6 +735,7 @@ func (c *runnerLifecycleController) Run(ctx context.Context, r controller.Runtim
 		r.ResetRestartBackoff()
 	}
 }
+
 func (c *runnerLifecycleController) reconcile(ctx context.Context, r controller.Runtime) error {
 	goal, _, err := lifecycleRead[runnerGoalSpec](ctx, r, runnerGoalType, "runner")
 	if err != nil {
@@ -897,6 +915,7 @@ func (l *lifecycle) status() runnerRuntimeSpec {
 	}
 	return value
 }
+
 func (l *lifecycle) wait(ctx context.Context, minimum runnerStage) error {
 	for {
 		changed := l.runner.changesSince()
