@@ -98,9 +98,13 @@ live_openai_py_test(
         "//agentplane/x/central_sampler:sampler_pb2_grpc",
         "//util/testing:sqlalchemy_engines",
         "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",  # keep: mypy follows generated gRPC interfaces
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//types_grpcio",  # keep: mypy follows generated gRPC interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
 
