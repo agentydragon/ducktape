@@ -146,6 +146,13 @@ upstream's 1 MiB head and tail with an omission count, and can be consumed by an
 including after the old executor session expires. Unknown outcomes block continuation without
 advancing the retained read cursor. Truly running processes and live JS cells retain a runtime slot.
 
+A transport failure during cursor-based `process/read` permits one reconnect and retry
+within the call's deadline. The sampler resumes the retained exec-server session under the same
+Sandbox incarnation fence and reuses the read intent, process ID and cursor. The read does not
+consume remote output; only its durable result advances the sampler's cursor. An expired session,
+changed session ID, failed reconnect or second transport failure remains blocking. Process starts,
+stdin writes, signals and other effectful operations are never automatically retried.
+
 When a Session is blocked, `GetSession.blocked_reason` names the unresolved intent or live handle and
 points operators to the linked boundary evidence. V1 never replays uncertain provider or executor
 effects automatically; see [blocked Session recovery](docs/blocked_session_recovery.md).

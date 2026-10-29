@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"math/rand/v2"
 	"net/url"
@@ -43,6 +44,16 @@ func (s *gatewayExecutorSocket) Send(ctx context.Context, payload []byte) error 
 	}()
 	select {
 	case err := <-completed:
+		// gRPC Send reports EOF when the peer has already closed the stream.
+		// Recv carries the terminal status explaining that closure.
+		if errors.Is(err, io.EOF) {
+			for {
+				_, terminal := s.Receive(ctx)
+				if terminal != nil {
+					return terminal
+				}
+			}
+		}
 		return err
 	case <-ctx.Done():
 		s.cancel()
@@ -69,6 +80,9 @@ func (s *gatewayExecutorSocket) Receive(ctx context.Context) ([]byte, error) {
 		}
 		if message := result.frame.GetMessage(); message != nil && message.GetOpcode() == executorpb.ExecutorMessage_OPCODE_TEXT {
 			return message.GetPayload(), nil
+		}
+		if closed := result.frame.GetClose(); closed != nil {
+			return nil, fmt.Errorf("executor Gateway closed channel (%d): %s", closed.GetCode(), closed.GetReason())
 		}
 		return nil, fmt.Errorf("unexpected executor Gateway frame %T", result.frame.GetFrame())
 	case <-ctx.Done():
@@ -156,6 +170,9 @@ type Executor struct {
 	processMu    sync.Mutex
 	processLocks map[string]*sync.Mutex
 	rpcTimeout   time.Duration
+	lifetime     context.Context
+	openSocket   func(context.Context, context.Context) (executorSocket, func() error, error)
+	closeSocket  func() error
 }
 
 func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Session, settings Settings) (*Executor, func() error, error) {
@@ -163,63 +180,70 @@ func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Se
 	if err := unmarshalProto(session.Configuration, request); err != nil {
 		return nil, nil, fmt.Errorf("decode stored sampler Session: %w", err)
 	}
-	var socket executorSocket
-	var closeTransport func() error
-	if settings.GatewayTarget != "" {
-		address, err := settings.GatewayAddress(request.GetExecutor().GetOwner().GetNamespace(), request.GetExecutor().GetSandbox())
-		if err != nil {
-			return nil, nil, err
-		}
-		connection, err := bearer.Dial(address, settings.GatewayTokenFile, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
-		if err != nil {
-			return nil, nil, err
-		}
-		streamCtx, cancelStream := context.WithCancel(ctx)
-		stream, err := executorpb.NewExecutorGatewayClient(connection).Connect(streamCtx)
-		if err != nil {
-			cancelStream()
-			_ = connection.Close()
-			return nil, nil, err
-		}
-		socket = &gatewayExecutorSocket{stream: stream, cancel: cancelStream}
-		openCtx, cancelOpen := context.WithTimeout(ctx, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
-		open := &executorpb.ExecutorFrame{Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{
-			Destination: request.GetExecutor(), ExpectedIncarnationUid: request.GetExpectedIncarnationUid(), SessionId: session.ID,
-		}}}
-		if err := gatewayHandshakeSend(openCtx, stream, open, cancelStream); err != nil {
+	openSocket := func(lifetime, ctx context.Context) (executorSocket, func() error, error) {
+		var socket executorSocket
+		var closeTransport func() error
+		if settings.GatewayTarget != "" {
+			address, err := settings.GatewayAddress(request.GetExecutor().GetOwner().GetNamespace(), request.GetExecutor().GetSandbox())
+			if err != nil {
+				return nil, nil, err
+			}
+			connection, err := bearer.Dial(address, settings.GatewayTokenFile, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
+			if err != nil {
+				return nil, nil, err
+			}
+			streamCtx, cancelStream := context.WithCancel(lifetime)
+			stream, err := executorpb.NewExecutorGatewayClient(connection).Connect(streamCtx)
+			if err != nil {
+				cancelStream()
+				_ = connection.Close()
+				return nil, nil, err
+			}
+			socket = &gatewayExecutorSocket{stream: stream, cancel: cancelStream}
+			openCtx, cancelOpen := context.WithTimeout(ctx, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
+			open := &executorpb.ExecutorFrame{Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{
+				Destination: request.GetExecutor(), ExpectedIncarnationUid: request.GetExpectedIncarnationUid(), SessionId: session.ID,
+			}}}
+			if err := gatewayHandshakeSend(openCtx, stream, open, cancelStream); err != nil {
+				cancelOpen()
+				cancelStream()
+				_ = connection.Close()
+				return nil, nil, fmt.Errorf("send executor open to Runner Gateway: %w", err)
+			}
 			cancelOpen()
-			cancelStream()
-			_ = connection.Close()
-			return nil, nil, fmt.Errorf("send executor open to Runner Gateway: %w", err)
+			// Runner startup is lazy and can take longer than an individual RPC. The Runner and
+			// Gateway already bound readiness; keep this wait under the caller's setup/turn budget.
+			ready, err := gatewayHandshakeReceive(ctx, stream)
+			if err != nil {
+				cancelStream()
+				_ = connection.Close()
+				return nil, nil, fmt.Errorf("wait for Runner Gateway executor readiness: %w", err)
+			}
+			if ready.GetReady() == nil || !ready.GetReady().GetAccepted() {
+				cancelStream()
+				_ = connection.Close()
+				return nil, nil, errors.New("executor Gateway refused Sandbox connection")
+			}
+			closeTransport = func() error {
+				_ = socket.Close(context.Background())
+				cancelStream()
+				return connection.Close()
+			}
+		} else {
+			dialCtx, cancelDial := context.WithTimeout(ctx, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
+			connection, _, err := websocket.Dial(dialCtx, settings.DirectExecutorURL, nil)
+			cancelDial()
+			if err != nil {
+				return nil, nil, err
+			}
+			socket = &directExecutorSocket{connection: connection}
+			closeTransport = func() error { return socket.Close(context.Background()) }
 		}
-		cancelOpen()
-		// Runner startup is lazy and can take longer than an individual RPC. The Runner and
-		// Gateway already bound readiness; keep this wait under the caller's setup/turn budget.
-		ready, err := gatewayHandshakeReceive(ctx, stream)
-		if err != nil {
-			cancelStream()
-			_ = connection.Close()
-			return nil, nil, fmt.Errorf("wait for Runner Gateway executor readiness: %w", err)
-		}
-		if ready.GetReady() == nil || !ready.GetReady().GetAccepted() {
-			cancelStream()
-			_ = connection.Close()
-			return nil, nil, errors.New("executor Gateway refused Sandbox connection")
-		}
-		closeTransport = func() error {
-			_ = socket.Close(context.Background())
-			cancelStream()
-			return connection.Close()
-		}
-	} else {
-		dialCtx, cancelDial := context.WithTimeout(ctx, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
-		connection, _, err := websocket.Dial(dialCtx, settings.DirectExecutorURL, nil)
-		cancelDial()
-		if err != nil {
-			return nil, nil, err
-		}
-		socket = &directExecutorSocket{connection: connection}
-		closeTransport = func() error { return socket.Close(context.Background()) }
+		return socket, closeTransport, nil
+	}
+	socket, closeTransport, err := openSocket(ctx, ctx)
+	if err != nil {
+		return nil, nil, err
 	}
 	env, err := json.Marshal(map[string]any{"destination_ref": map[string]any{
 		"namespace": request.GetExecutor().GetOwner().GetNamespace(), "name": request.GetExecutor().GetSandbox(), "uid": request.GetExecutor().GetSandboxUid(),
@@ -229,37 +253,37 @@ func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Se
 		return nil, nil, err
 	}
 	executor := &Executor{
-		store: store, owner: owner, socket: socket, cwd: request.GetSpec().GetCwd(), codexPath: settings.ExecutorCodex,
+		store: store, owner: owner, socket: socket, lifetime: ctx, openSocket: openSocket, closeSocket: closeTransport, cwd: request.GetSpec().GetCwd(), codexPath: settings.ExecutorCodex,
 		environment: map[string]string{"AGENTPLANE_DESTINATION": string(env)}, processLocks: map[string]*sync.Mutex{},
 		rpcTimeout: time.Duration(settings.RPCTimeoutSeconds) * time.Second,
 	}
 	setupCtx, cancelSetup := context.WithTimeout(ctx, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
 	defer cancelSetup()
 	if err := executor.initialize(setupCtx); err != nil {
-		_ = closeTransport()
+		_ = executor.close()
 		return nil, nil, err
 	}
 	if !session.WorkspacePrepared {
 		input, err := json.Marshal(map[string]string{"cmd": "mkdir -p -- " + shellQuote(request.GetSpec().GetCwd()), "workdir": "/"})
 		if err != nil {
-			_ = closeTransport()
+			_ = executor.close()
 			return nil, nil, err
 		}
 		result, err := executor.execCommand(setupCtx, input)
 		if err != nil {
-			_ = closeTransport()
+			_ = executor.close()
 			return nil, nil, err
 		}
 		if result.ExitCode == nil || *result.ExitCode != 0 {
-			_ = closeTransport()
+			_ = executor.close()
 			return nil, nil, errors.New("executor workspace preparation did not complete")
 		}
 		if err := store.PreparedWorkspace(setupCtx, owner, session.ID); err != nil {
-			_ = closeTransport()
+			_ = executor.close()
 			return nil, nil, err
 		}
 	}
-	return executor, closeTransport, nil
+	return executor, executor.close, nil
 }
 
 func unmarshalProto(data []byte, message interface {
@@ -322,6 +346,10 @@ func (e *Executor) send(ctx context.Context, value any) error {
 func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvidence func(map[string]any) map[string]any) (json.RawMessage, error) {
 	e.rpcMu.Lock()
 	defer e.rpcMu.Unlock()
+	return e.rpcLocked(ctx, method, params, resultEvidence)
+}
+
+func (e *Executor) rpcLocked(ctx context.Context, method string, params any, resultEvidence func(map[string]any) map[string]any) (json.RawMessage, error) {
 	if e.rpcTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, e.rpcTimeout)
@@ -340,13 +368,62 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 	if err != nil {
 		return nil, err
 	}
-	if err := e.send(ctx, executorRequest[any]{ID: id, Method: method, Params: params}); err != nil {
+	reply, err := e.exchange(ctx, id, method, params)
+	var transport *executorTransportError
+	if method == "process/read" && errors.As(err, &transport) && ctx.Err() == nil && e.openSocket != nil {
+		if evidenceErr := e.store.ProtocolEvent(ctx, e.owner, intent, "executor", "reconnecting", map[string]any{"method": method, "reason": err.Error()}); evidenceErr != nil {
+			return nil, evidenceErr
+		}
+		if reconnectErr := e.reconnect(ctx); reconnectErr != nil {
+			return nil, fmt.Errorf("%w; resume executor session: %w", err, reconnectErr)
+		}
+		// process/read is cursor based and does not consume output. Reuse the
+		// intent, process ID and cursor; never start the shell command again.
+		reply, err = e.exchange(ctx, id, method, params)
+	}
+	if err != nil {
 		return nil, err
+	}
+	if reply.Error != nil {
+		rejection := map[string]any{"rejected": map[string]any{"code": reply.Error.Code, "message": reply.Error.Message}}
+		if err := e.store.FinishNested(ctx, e.owner, intent, rejection); err != nil {
+			return nil, err
+		}
+		return nil, &executorRejectedError{method: method, code: reply.Error.Code, message: reply.Error.Message}
+	}
+	var evidence map[string]any
+	if err := decodeProtocolObject(reply.Result, &evidence); err != nil {
+		return nil, fmt.Errorf("exec-server %s result: %w", method, err)
+	}
+	if resultEvidence != nil {
+		evidence = resultEvidence(evidence)
+	}
+	if err := e.store.FinishNested(ctx, e.owner, intent, evidence); err != nil {
+		return nil, err
+	}
+	return reply.Result, nil
+}
+
+type executorTransportError struct {
+	method string
+	phase  string
+	cause  error
+}
+
+func (e *executorTransportError) Error() string {
+	return fmt.Sprintf("exec-server %s %s failed; remote effect outcome may be unknown: %v", e.method, e.phase, e.cause)
+}
+
+func (e *executorTransportError) Unwrap() error { return e.cause }
+
+func (e *Executor) exchange(ctx context.Context, id, method string, params any) (*executorReply, error) {
+	if err := e.send(ctx, executorRequest[any]{ID: id, Method: method, Params: params}); err != nil {
+		return nil, &executorTransportError{method: method, phase: "send", cause: err}
 	}
 	for {
 		data, err := e.socket.Receive(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("exec-server reply lost for %s; remote effect outcome may be unknown: %w", method, err)
+			return nil, &executorTransportError{method: method, phase: "receive", cause: err}
 		}
 		var reply executorReply
 		if err := decodeProtocolObject(data, &reply); err != nil {
@@ -363,26 +440,44 @@ func (e *Executor) rpc(ctx context.Context, method string, params any, resultEvi
 		if *reply.ID != id {
 			return nil, fmt.Errorf("unexpected exec-server response ID for %s", method)
 		}
-		if reply.Error != nil {
-			// An error reply is a definite outcome: the request had no effect.
-			rejection := map[string]any{"rejected": map[string]any{"code": reply.Error.Code, "message": reply.Error.Message}}
-			if err := e.store.FinishNested(ctx, e.owner, intent, rejection); err != nil {
-				return nil, err
-			}
-			return nil, &executorRejectedError{method: method, code: reply.Error.Code, message: reply.Error.Message}
-		}
-		var evidence map[string]any
-		if err := decodeProtocolObject(reply.Result, &evidence); err != nil {
-			return nil, fmt.Errorf("exec-server %s result: %w", method, err)
-		}
-		if resultEvidence != nil {
-			evidence = resultEvidence(evidence)
-		}
-		if err := e.store.FinishNested(ctx, e.owner, intent, evidence); err != nil {
-			return nil, err
-		}
-		return reply.Result, nil
+		return &reply, nil
 	}
+}
+
+// reconnect resumes exactly the retained executor session, under the original
+// Sandbox incarnation fence. An expired session is a failure, never a new session.
+func (e *Executor) reconnect(ctx context.Context) error {
+	conversation, err := e.store.Read(ctx, e.owner)
+	if err != nil {
+		return err
+	}
+	if conversation.ExecutorSession == nil {
+		return errors.New("cannot resume executor without a retained session ID")
+	}
+	_ = e.closeSocket()
+	socket, closeSocket, err := e.openSocket(e.lifetime, ctx)
+	if err != nil {
+		return err
+	}
+	e.socket, e.closeSocket = socket, closeSocket
+	raw, err := e.rpcLocked(ctx, "initialize", executorInitialize{ClientName: "central-sampler", ResumeSessionID: conversation.ExecutorSession}, nil)
+	if err != nil {
+		return err
+	}
+	var initialized executorInitialized
+	if err := decodeProtocolObject(raw, &initialized); err != nil {
+		return err
+	}
+	if initialized.SessionID != *conversation.ExecutorSession {
+		return errors.New("exec-server resumed a different session")
+	}
+	return e.send(ctx, executorRequest[executorEmpty]{Method: "initialized", Params: executorEmpty{}})
+}
+
+func (e *Executor) close() error {
+	e.rpcMu.Lock()
+	defer e.rpcMu.Unlock()
+	return e.closeSocket()
 }
 
 // Invoke runs one nested tool call from JavaScript. A *toolError is reported to the cell as a
