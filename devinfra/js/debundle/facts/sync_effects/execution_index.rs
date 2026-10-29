@@ -1059,9 +1059,7 @@ fn native_operation_mutation_name(operation: NativeInputKind) -> &'static str {
     match operation {
         NativeInputKind::Operation(
             spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
-        ) => {
-            "global Symbol replacement or accessor installation"
-        }
+        ) => "global Symbol replacement or accessor installation",
         NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
             "global Promise replacement or Promise.resolve overwrite, accessor installation, or deletion"
         }
@@ -6776,7 +6774,9 @@ impl ExecutionIndex {
                 spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
             ) => {
                 let Some(symbol) = selected_symbol_binding(callee, operation) else {
-                    return Some("must select a direct uncomputed Symbol identifier call or Symbol.for dot call");
+                    return Some(
+                        "must select a direct uncomputed Symbol identifier call or Symbol.for dot call",
+                    );
                 };
                 if symbol.0.as_ref() != "Symbol" {
                     return Some("operation does not match the selected direct Symbol initializer");
@@ -6834,9 +6834,7 @@ impl ExecutionIndex {
         match operation {
             NativeInputKind::Operation(
                 spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor,
-            ) => {
-                self.known_global_symbol_mutation()
-            }
+            ) => self.known_global_symbol_mutation(),
             NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => [
                 NativeWriteSlot {
                     receiver: NativeReceiverPath::GlobalObject,
