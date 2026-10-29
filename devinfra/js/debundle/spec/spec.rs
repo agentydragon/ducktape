@@ -611,8 +611,6 @@ pub struct NativeOperationInputContract {
 pub struct CommutingStatementsContract {
     pub a: SourceUnitSelector,
     pub b: SourceUnitSelector,
-    /// SHA-256 of the parser input bytes recorded for this chunk.
-    pub audited_source_sha256: String,
     /// YAML-only author rationale. It does not strengthen the premise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
