@@ -102,10 +102,7 @@ py_library(
     name = "policy_sets",
     srcs = ["policy_sets.py"],
     deps = [
-        ":crd_group",
         ":subjects",
-        "//util:kubernetes",
-        "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
     ],
 )
@@ -128,10 +125,8 @@ py_test(
     srcs = ["test_policy_sets.py"],
     deps = [
         ":policy_sets",
-        ":subjects",
         "//:conftest",
         "@pypi//pydantic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

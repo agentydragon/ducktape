@@ -56,15 +56,12 @@ from hashlib import sha256
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from util.db_migrations import MigrationRunner
 from util.db_url import render_postgresql_url
 
-# The dialect is chosen by the admin_url scheme the caller passes (sync callers use
-# the postgresql:// default -> psycopg2, async callers postgresql+asyncpg://);
-# SQLAlchemy loads it at runtime, so gazelle cannot see either dependency.
-# gazelle:include_dep @pypi//asyncpg
+# The dialect is chosen by the admin_url scheme the caller passes; SQLAlchemy loads it at runtime,
+# so gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//psycopg
 # gazelle:include_dep @pypi//psycopg2_binary
 
@@ -164,39 +161,6 @@ def create_database_sync(
         force_drop_database_sync(admin_url, db_name)
         raise
     return db_url
-
-
-async def create_database_async(admin_url: str, db_name: str, *, template: str | None = None) -> str:
-    """Create a database and its URL, as an async SQLAlchemy URL.
-
-    When ``template`` is set, the database starts as a physical copy of that database.
-    """
-    _require_safe_db_name(db_name)
-    if template is not None:
-        _require_safe_db_name(template)
-    engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
-    try:
-        async with engine.connect() as conn:
-            template_clause = f' TEMPLATE "{template}"' if template is not None else ""
-            await conn.execute(text(f'CREATE DATABASE "{db_name}"{template_clause}'))
-    finally:
-        await engine.dispose()
-    return _database_url(admin_url, db_name)
-
-
-async def force_drop_database(admin_url: str, db_name: str) -> None:
-    """Terminate all connections to db_name and drop it (async).
-
-    Creates a temporary AUTOCOMMIT engine from admin_url. Intended for test teardown.
-    """
-    _require_safe_db_name(db_name)
-    engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
-    try:
-        async with engine.connect() as conn:
-            await conn.execute(_TERMINATE_SQL, {"db_name": db_name})
-            await conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-    finally:
-        await engine.dispose()
 
 
 def force_drop_database_sync(admin_url: str, db_name: str) -> None:

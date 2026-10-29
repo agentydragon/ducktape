@@ -1406,15 +1406,6 @@ http_file(
     urls = ["https://raw.githubusercontent.com/cert-manager/trust-manager/v0.25.0/deploy/crds/trust.cert-manager.io_bundles.yaml"],
 )
 
-# The combined release asset cluster/cdk8s/agent_sandbox.py's RELEASE installs; keep the URLs
-# equal. The bindings BUILD extracts SandboxTemplate.
-http_file(
-    name = "agent_sandbox_release_bundle",
-    downloaded_file_path = "sandbox-with-extensions.yaml",
-    sha256 = "aaa9d931acb8af90a0a458b6d72bd245d224faac7117e8a241f9e7086acc24e9",
-    urls = ["https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v0.5.5/sandbox-with-extensions.yaml"],
-)
-
 # Match the seaweedfs-operator chart version in cluster/cdk8s/seaweedfs/operator_release.py;
 # the chart's CRD template equals these per-kind files at the same tag.
 http_file(
@@ -1540,14 +1531,6 @@ http_file(
     downloaded_file_path = "volsync.backube_replicationsources.yaml",
     sha256 = "597e68a855277fe5bfb86f1239ab472dda1fe4660fca22fa932ff2f13b72d29b",
     urls = ["https://raw.githubusercontent.com/backube/volsync/v0.16.0/config/crd/bases/volsync.backube_replicationsources.yaml"],
-)
-
-# Match the external-snapshotter tag in cluster/cdk8s/flux_sources.py.
-http_file(
-    name = "external_snapshotter_volumesnapshotclass_crd",
-    downloaded_file_path = "snapshot.storage.k8s.io_volumesnapshotclasses.yaml",
-    sha256 = "75e6565aac2c0f2949ed13ea884bbaa388cb7be576b558b709cf1168e011828d",
-    urls = ["https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.6.0/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml"],
 )
 
 # The redis-operator chart's CRD bundle. Chart 0.26.1 (cluster/cdk8s/valkey.py) ships the same

@@ -127,11 +127,11 @@ Take `researcher` above with the list reversed, so a credential-less `open-inter
 Granting more would make GitHub start failing, which is what placeholder-directed matching below
 forecloses.
 
-Inside one binding the author chooses that order. Across bindings nobody does: `subject_bindings`
-walks `sorted(index.policy_bindings)`, so the **binding name** decides. A seed named `all-sandboxes-open`
-is consulted before `researcher-4m9tz` and produces exactly the refusal above; the same binding
-named `zz-open` is consulted after it and the request succeeds. The alphabet is not a policy
-decision.
+Inside one binding the author chooses that order. Across bindings nobody does: the policy reader
+index walks a subject's bindings in sorted binding-name order, so the **binding name** decides. A
+seed named `all-sandboxes-open` is consulted before `researcher-4m9tz` and produces exactly the
+refusal above; the same binding named `zz-open` is consulted after it and the request succeeds. The
+alphabet is not a policy decision.
 
 ## Decided: placeholder-directed matching
 

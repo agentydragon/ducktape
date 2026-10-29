@@ -12,8 +12,6 @@ from cluster.cdk8s.namespaces import Vpa
 
 CONTROLLER_DIR = f"{GENERATED_ROOT}/agents/agent-sandbox/controller"
 _VERSION = "v0.5.5"
-# MODULE.bazel's `agent_sandbox_release_bundle` pins the same asset, by SHA-256, for the CRD
-# bindings; keep the URLs equal.
 RELEASE = f"https://github.com/kubernetes-sigs/agent-sandbox/releases/download/{_VERSION}/sandbox-with-extensions.yaml"
 # Names the release manifest gives its namespace and controller.
 _NAMESPACE = "agent-sandbox-system"

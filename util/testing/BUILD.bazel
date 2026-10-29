@@ -71,7 +71,6 @@ py_library(
     deps = [
         "//util:db_migrations",
         "//util:db_url",
-        "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//psycopg2_binary",
         "@pypi//sqlalchemy",
@@ -376,11 +375,4 @@ py_library(
         "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],
-)
-
-py_library(
-    name = "postgres_schema",
-    srcs = ["postgres_schema.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//sqlalchemy"],
 )

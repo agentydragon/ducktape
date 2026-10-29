@@ -1,4 +1,4 @@
-"""The MCP edge serving workload, permissions and schema migration Job."""
+"""The MCP edge serving workload and permissions."""
 
 from __future__ import annotations
 
@@ -9,11 +9,8 @@ from cdk8s_plus_34 import (
     CpuResources,
     EnvValue,
     ImagePullPolicy,
-    Job,
     MemoryResources,
     PathMapping,
-    PodSecurityContextProps,
-    RestartPolicy,
     Role,
     RoleBinding,
     RolePolicyRule,
@@ -25,7 +22,7 @@ from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from agentplane.mcp_edge.settings import Settings
-from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, app as app_component, database
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.mcp_routes import add_public_route
@@ -33,7 +30,6 @@ from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -203,48 +199,4 @@ class McpEdge(Construct):
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             selector=ServiceMonitorSpecSelector(match_labels=endpoint.labels),
             endpoints=[Endpoint.plain(port=endpoint.port.name)],
-        )
-
-
-class SchemaMigration(Construct):
-    """Initialize the edge schema before transferring data or starting its serving workload."""
-
-    def __init__(self, scope: Construct, id: str, env: Environment, *, database_url: EnvValue) -> None:
-        super().__init__(scope, id)
-        name = "mcp-edge-schema-migrate"
-        labels = {"app.kubernetes.io/name": name}
-        account = ServiceAccount(
-            self, "account", metadata=ApiObjectMetadata(name=name, namespace=env.namespace), automount_token=False
-        )
-        job = Job(
-            self,
-            "job",
-            metadata=ApiObjectMetadata(
-                name=name, namespace=env.namespace, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}
-            ),
-            pod_metadata=ApiObjectMetadata(labels=labels),
-            select=False,
-            backoff_limit=3,
-            active_deadline=Duration.minutes(10),
-            restart_policy=RestartPolicy.NEVER,
-            service_account=account,
-            automount_service_account_token=False,
-            enable_service_links=False,
-            docker_registry_auth=forgejo_images_creds_secret_ref(self, "images-creds"),
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
-            containers=[
-                migrate_init_container(
-                    _MIGRATE_IMAGE, name="migrate", env_variables={env_name(Settings, "database_url"): database_url}
-                )
-            ],
-        )
-        pod_policy.place(job, node_scheduling.HIL_OVH)
-        pod_policy.harden(job)
-        NetworkPolicy(
-            self,
-            "network-policy",
-            metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-            endpoint_selector=labels,
-            ingress=[],
-            egress=[cilium.dns_egress(), database.egress(env.namespace)],
         )
