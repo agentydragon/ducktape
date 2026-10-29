@@ -443,6 +443,38 @@ pub struct ResolvedNativeOperationInput {
     pub spread_token_span: Option<Span>,
 }
 
+/// Stable reference to one `commuting_statements` entry of its defining chunk.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct CommutingStatementsRef {
+    pub defining_chunk: String,
+    pub input_index: usize,
+}
+
+/// One resolved endpoint of a commuting pair: the selector the author wrote
+/// and the single post-split source unit it selected.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CommutingEndpoint {
+    pub selector: spec::SourceUnitSelector,
+    pub source_unit: SourceUnitOrdinal,
+    /// Declared binding that identified the source unit; `None` for an
+    /// anonymous statement.
+    pub selected_binding: Option<String>,
+}
+
+/// Source-resolved author premise that two source units of one chunk commute
+/// during synchronous initialization. Both endpoints are distinct source units
+/// of `reference.defining_chunk`. This is an authored contract, never an
+/// inferred source fact; it grants no purity, no-reentry or receiver guarantee.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ResolvedCommutingStatements {
+    pub reference: CommutingStatementsRef,
+    pub spec_location: String,
+    pub audited_source_sha256: String,
+    pub a: CommutingEndpoint,
+    pub b: CommutingEndpoint,
+    pub note: Option<String>,
+}
+
 /// Source- and explicit-output-certified Set spread. This is independent,
 /// one-way evidence for the shared value-flow solve, not a result inferred from
 /// that solve or from the eventual dependency graph.
@@ -484,6 +516,10 @@ pub struct AnalysisAssumptions {
     pub native_operation_inputs: Vec<ResolvedNativeOperationInput>,
     /// Source-selected author premises for one exact local helper parameter.
     pub argument_inputs: Vec<ResolvedArgumentInput>,
+    /// Source-resolved author premises that two of this chunk's source units
+    /// commute during initialization. Resolved and validated only: no analysis
+    /// consumes them yet (SPEC.md § Commuting statements).
+    pub commuting_statements: Vec<ResolvedCommutingStatements>,
     /// Version-scoped author assertion for exact host operations.
     pub host_no_reentry: Option<spec::HostNoReentry>,
     /// Exact author-certified browser-global slots whose stored capabilities

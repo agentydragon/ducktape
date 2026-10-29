@@ -34,11 +34,11 @@ use serde_json::Value;
 /// `Member::with_purity` / `Member::with_effect` without a direct `spec` dep.
 pub use spec::{
     ArgumentInputContract, CapturedValueContract, CapturedValueKind, ChunkExportPurity,
-    ExecutionRuntime, HostNoReentry, HostNoReentryOperation, HostNoReentryRuntime,
-    InitializerPurity, MemberEffect, MemberPurity, NativeCallIdentityInputContract,
-    NativeCallIdentityKind, NativeOperationInputContract, NativeOperationInputSelector,
-    NativeOperationKind, NodeBuiltinModule, ResolvedMemberSelector, ValueInputContract,
-    VendorLevel, VendorMark,
+    CommutingStatementsContract, ExecutionRuntime, HostNoReentry, HostNoReentryOperation,
+    HostNoReentryRuntime, InitializerPurity, MemberEffect, MemberPurity,
+    NativeCallIdentityInputContract, NativeCallIdentityKind, NativeOperationInputContract,
+    NativeOperationKind, NodeBuiltinModule, ResolvedMemberSelector, SourceUnitSelector,
+    ValueInputContract, VendorLevel, VendorMark,
 };
 
 use std::collections::BTreeSet;

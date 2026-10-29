@@ -39,7 +39,7 @@ fn modules() -> Vec<LogicalModuleEntry> {
 
 fn spread_input(source: &str, declaration: &str) -> NativeOperationInputContract {
     NativeOperationInputContract {
-        selector: NativeOperationInputSelector::SourceMatch(
+        selector: SourceUnitSelector::SourceMatch(
             serde_yaml::from_str(&format!(
                 "match: {:?}\nbindings: [scopes]\n",
                 declaration.trim()

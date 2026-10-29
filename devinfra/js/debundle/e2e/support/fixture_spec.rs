@@ -722,6 +722,8 @@ pub struct FixtureOpts<'a> {
     /// Source-selected exact native callee identity premises keyed by provider.
     pub native_call_identity_inputs: Vec<(String, Vec<spec::NativeCallIdentityInputContract>)>,
     pub argument_inputs: Vec<(String, Vec<spec::ArgumentInputContract>)>,
+    /// Author-certified commuting source-unit pairs keyed by their chunk.
+    pub commuting_statements: Vec<(String, Vec<spec::CommutingStatementsContract>)>,
     /// Additional vendor marks keyed by chunk ID, for report and rewrite cases.
     pub vendor_marks: &'a [(&'a str, spec::VendorMark)],
     /// Keep only `chunk_id` in the materialization artifact while retaining
@@ -763,6 +765,7 @@ impl<'a> FixtureOpts<'a> {
             native_operation_inputs: Vec::new(),
             native_call_identity_inputs: Vec::new(),
             argument_inputs: Vec::new(),
+            commuting_statements: Vec::new(),
             vendor_marks: &[],
             prune_other_chunks: false,
             browser_harness: false,
@@ -840,6 +843,15 @@ impl<'a> FixtureOpts<'a> {
         inputs: Vec<spec::ArgumentInputContract>,
     ) -> Self {
         self.argument_inputs.push((chunk.into(), inputs));
+        self
+    }
+
+    pub fn with_commuting_statements(
+        mut self,
+        chunk: impl Into<String>,
+        pairs: Vec<spec::CommutingStatementsContract>,
+    ) -> Self {
+        self.commuting_statements.push((chunk.into(), pairs));
         self
     }
 
@@ -1167,12 +1179,14 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         || !opts.native_operation_inputs.is_empty()
         || !opts.native_call_identity_inputs.is_empty()
         || !opts.argument_inputs.is_empty()
+        || !opts.commuting_statements.is_empty()
     {
         BTreeMap::from([(
             chunk_id.to_string(),
             DependencyGraphOptions {
                 value_inputs: Vec::new(),
                 native_operation_inputs: Vec::new(),
+                commuting_statements: Vec::new(),
                 native_call_identity_inputs: Vec::new(),
                 argument_inputs: Vec::new(),
                 dataflow_aware_s_chain: opts.dataflow_aware_s_chain,
@@ -1243,6 +1257,12 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
             .entry(chunk.clone())
             .or_insert_with(DependencyGraphOptions::default)
             .argument_inputs = argument_inputs.clone();
+    }
+    for (chunk, commuting_statements) in &opts.commuting_statements {
+        chunk_analysis_options
+            .entry(chunk.clone())
+            .or_insert_with(DependencyGraphOptions::default)
+            .commuting_statements = commuting_statements.clone();
     }
 
     let chunk_export_purity: BTreeMap<String, spec::ChunkExportPurity> = opts

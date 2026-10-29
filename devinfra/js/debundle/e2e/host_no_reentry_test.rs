@@ -57,7 +57,7 @@ fn promise_input(source: &str, binding: &str) -> NativeOperationInputContract {
         .find(|line| line.starts_with(&format!("const {binding} =")))
         .expect("fixture has a direct Promise initializer");
     NativeOperationInputContract {
-        selector: NativeOperationInputSelector::SourceMatch(
+        selector: SourceUnitSelector::SourceMatch(
             serde_yaml::from_str(&format!(
                 "match: {:?}\nbindings: [{binding}]\n",
                 declaration.trim()

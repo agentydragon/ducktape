@@ -465,6 +465,12 @@ pub struct DependencyGraphOptions {
     /// docs/purity_soundness.md.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_operation_inputs: Vec<NativeOperationInputContract>,
+    /// Author-certified pairs of this chunk's source units whose synchronous
+    /// initialization effects are order-independent. Each endpoint selects
+    /// exactly one source unit; the pair is resolved and validated before
+    /// analysis. See SPEC.md § Commuting statements.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commuting_statements: Vec<CommutingStatementsContract>,
     /// Author-certified original native callee at one selected direct call in
     /// a top-level function body. This supplies identity only; the modeled
     /// operation must still pass its ordinary argument and effect guards.
@@ -587,7 +593,7 @@ pub struct ValueInputContract {
     into = "NativeOperationInputWire"
 )]
 pub struct NativeOperationInputContract {
-    pub selector: NativeOperationInputSelector,
+    pub selector: SourceUnitSelector,
     /// Operation whose original native binding the author has audited.
     pub operation: NativeOperationKind,
     /// SHA-256 of the parser input bytes recorded for this provider entry.
@@ -597,8 +603,30 @@ pub struct NativeOperationInputContract {
     pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum NativeOperationInputSelector {
+/// Author premise that two source units of one chunk commute: neither
+/// observes the other's synchronous initialization effect. Each endpoint
+/// selects exactly one source unit of the option's chunk.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CommutingStatementsContract {
+    pub a: SourceUnitSelector,
+    pub b: SourceUnitSelector,
+    /// SHA-256 of the parser input bytes recorded for this chunk.
+    pub audited_source_sha256: String,
+    /// YAML-only author rationale. It does not strengthen the premise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// One selected source unit of a provider chunk, shared by every author input
+/// that anchors to a source unit (`native_operation_inputs`,
+/// `commuting_statements`). Each consumer applies its own shape checks to the
+/// selected unit; this type fixes only the selector grammar.
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(try_from = "SourceUnitSelectorWire", into = "SourceUnitSelectorWire")]
+pub enum SourceUnitSelector {
+    /// A structural selector; `bindings` names at most one declared binding.
+    /// Without `bindings` it selects one anonymous (non-declaring) statement.
     SourceMatch(SourceMatchClaim),
     ResolvedMember(ResolvedMemberSelector),
 }
@@ -609,6 +637,42 @@ pub enum NativeOperationInputSelector {
 pub struct ResolvedMemberSelector {
     pub module: String,
     pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SourceUnitSelectorWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_match: Option<SourceMatchClaim>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolved_member: Option<ResolvedMemberSelector>,
+}
+
+impl TryFrom<SourceUnitSelectorWire> for SourceUnitSelector {
+    type Error = String;
+
+    fn try_from(wire: SourceUnitSelectorWire) -> std::result::Result<Self, Self::Error> {
+        match (wire.source_match, wire.resolved_member) {
+            (Some(source), None) => Ok(Self::SourceMatch(source)),
+            (None, Some(member)) => Ok(Self::ResolvedMember(member)),
+            _ => Err("exactly one of source_match or resolved_member is required".into()),
+        }
+    }
+}
+
+impl From<SourceUnitSelector> for SourceUnitSelectorWire {
+    fn from(selector: SourceUnitSelector) -> Self {
+        match selector {
+            SourceUnitSelector::SourceMatch(source) => Self {
+                source_match: Some(source),
+                resolved_member: None,
+            },
+            SourceUnitSelector::ResolvedMember(member) => Self {
+                source_match: None,
+                resolved_member: Some(member),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -628,13 +692,11 @@ impl TryFrom<NativeOperationInputWire> for NativeOperationInputContract {
     type Error = String;
 
     fn try_from(wire: NativeOperationInputWire) -> std::result::Result<Self, Self::Error> {
-        let selector = match (wire.source_match, wire.resolved_member) {
-            (Some(source), None) => NativeOperationInputSelector::SourceMatch(source),
-            (None, Some(member)) => NativeOperationInputSelector::ResolvedMember(member),
-            _ => return Err("exactly one of source_match or resolved_member is required".into()),
-        };
         Ok(Self {
-            selector,
+            selector: SourceUnitSelector::try_from(SourceUnitSelectorWire {
+                source_match: wire.source_match,
+                resolved_member: wire.resolved_member,
+            })?,
             operation: wire.operation,
             audited_source_sha256: wire.audited_source_sha256,
             note: wire.note,
@@ -644,10 +706,10 @@ impl TryFrom<NativeOperationInputWire> for NativeOperationInputContract {
 
 impl From<NativeOperationInputContract> for NativeOperationInputWire {
     fn from(contract: NativeOperationInputContract) -> Self {
-        let (source_match, resolved_member) = match contract.selector {
-            NativeOperationInputSelector::SourceMatch(source) => (Some(source), None),
-            NativeOperationInputSelector::ResolvedMember(member) => (None, Some(member)),
-        };
+        let SourceUnitSelectorWire {
+            source_match,
+            resolved_member,
+        } = contract.selector.into();
         Self {
             source_match,
             resolved_member,
