@@ -57,6 +57,18 @@ compare versioned specs or infer migrations between source snapshots. When a
 snapshot changes, authors review diagnostics and candidate selectors against the
 new input, then validate the resulting spec against that input.
 
+**Decision: single-version scope.** The exclusion of cross-version reasoning is
+a layering choice, not a judgment that version-to-version matching is unsound.
+Debundling one captured program against one spec must be a complete, sound
+problem on its own; anything that migrates a spec between snapshots is a
+separate heuristic layer that consumes this tool and produces spec edits for an
+author to review. Mixing the two would let migration heuristics leak into
+resolution or the gate and make the single-version contract harder to state and
+verify. Consequences: a spec's forward compatibility rests entirely on selector
+design, which is in scope here (structural selectors, selector-anchored author
+premises that fail loudly when their anchor no longer resolves), and a future
+migration layer must never give the engine two versions as input.
+
 ## Shared `var` declaration sites
 
 A module-scoped `var` has one binding cell and can have several declaration
