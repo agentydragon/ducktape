@@ -21,6 +21,9 @@ instructions, setup scripts and History export.
   of available Actions changes mid-Session, and how agents learn of additions and removals.
 - **Skills (medium priority):** Codex `SKILL.md` discovery and injection. Needs design first: where
   skills live and how their files reach the execution environment.
+- **Subagents and multi-agent:** build as Agentplane-level cross-Session messaging with privileges,
+  not a port. Use Codex multi-agent v2 and its agent message board, and Claude Code's subagents, as
+  reference designs.
 - **Session fork:** branch a Session's conversation into a new Session. Needs its own design across
   the sampler, History and the executor binding.
 - **Hosted web search:** maybe, depending on what the provider's hosted search offers over fetching
