@@ -1058,6 +1058,11 @@ pub struct AnonymousStatement {
     /// property names, and overall AST structure significant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_match: Option<SourceMatch>,
+    /// Author assertion that this exact top-level bare call statement cannot
+    /// synchronously invoke callbacks or read caller lexical state. Callback
+    /// arguments are still exposed after the call; this does not imply purity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_reentry_call: Option<NoReentryCall>,
     /// Optional YAML-only note. Use this for provenance,
     /// uncertainty, and other scratch reverse-engineering notes that
     /// should survive spec edits without appearing in generated JS.
@@ -1071,6 +1076,42 @@ pub struct AnonymousStatement {
     /// Prefer `note:` for scratch text that should stay YAML-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
+}
+
+/// Callback positions on one source-selected top-level call. The matched
+/// source supplies the argument count; every other argument must satisfy the
+/// existing inert-primitive syntax admission.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct NoReentryCall {
+    pub callback_arguments: Vec<usize>,
+}
+
+impl<'de> Deserialize<'de> for NoReentryCall {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct NoReentryCallFields {
+            callback_arguments: Vec<usize>,
+        }
+
+        let fields = NoReentryCallFields::deserialize(deserializer)?;
+        if fields.callback_arguments.is_empty() {
+            return Err(serde::de::Error::custom(
+                "no_reentry_call must list at least one callback argument position",
+            ));
+        }
+        let mut seen = BTreeSet::new();
+        for position in &fields.callback_arguments {
+            if !seen.insert(*position) {
+                return Err(serde::de::Error::custom(format!(
+                    "duplicate no_reentry_call callback argument position {position}"
+                )));
+            }
+        }
+        Ok(Self {
+            callback_arguments: fields.callback_arguments,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Default)]

@@ -1296,6 +1296,42 @@ invoke those callbacks. Sibling/operand evaluation and later invocation,
 publication or mutation retain their ordinary checks. The result stays opaque.
 This contract does not imply purity or any factory/constructor retention policy.
 
+An exact top-level anonymous call may carry the same timing premise directly
+when the audited call site is local to the spec:
+
+```yaml
+anonymous_statements:
+  - match: "register(callback);"
+    no_reentry_call:
+      callback_arguments: [0]
+```
+
+`callback_arguments` positions are zero-based, must be nonempty and unique, and
+must be within the matched call's argument list. The selector must resolve to
+one top-level bare call statement. Only a direct identifier callee or a static
+member callee on an identifier receiver is admitted. Optional or computed
+members, effectful receivers, spread arguments, and nested eager calls remain
+on the conservative path. Callback arguments must be ordinary stable local
+functions or closures; other positions must use the admitted inert primitive
+syntax above. Runtime values must still resolve to one stable callable
+identity at the call site.
+
+The author audits the exact callee lookup and invocation, including every
+provider/helper/type path and the callable identity that can reach this site.
+Neither lookup nor invocation may synchronously invoke supplied, caller-,
+importer-, or host-provided callbacks, read caller-owned lexical state, mutate
+supplied graphs, or inspect effectful properties/prototypes. Provider-private
+effects remain allowed, and the call may store callbacks in cross-call
+registries. Callee and receiver lookup, callback creation, argument evaluation,
+reads, throws, and source/emitted ordering retain their ordinary analysis; the
+assertion only suppresses synchronous callback reentry. After the call, every
+admitted callback and its capture graph becomes globally reachable, and later
+opaque calls may invoke it. This assertion establishes neither purity nor a
+return shape; ordinary analysis remains in force and may independently infer
+either. Unsupported source shapes or runtime callback values use the ordinary
+conservative path. This assertion is independent of purity and other callback
+factory/constructor contracts.
+
 ### Namespace and record calls without synchronous reentry
 
 `chunk_export_purity.<defining chunk>.no_reentry_members` asserts a narrower

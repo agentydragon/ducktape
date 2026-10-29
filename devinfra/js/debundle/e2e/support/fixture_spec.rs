@@ -409,6 +409,7 @@ impl FixtureAnonymousStatement {
         Self(AnonymousStatement {
             match_source: Some(match_source.into()),
             source_match: None,
+            no_reentry_call: None,
             comment: None,
             note: None,
         })
@@ -422,6 +423,7 @@ impl FixtureAnonymousStatement {
                 target_binding: None,
                 match_source: match_source.into(),
             }),
+            no_reentry_call: None,
             comment: None,
             note: None,
         })

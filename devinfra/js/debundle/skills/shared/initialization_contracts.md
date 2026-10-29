@@ -87,22 +87,32 @@ Full definition: [retaining callbacks in constructed instances](../../SPEC.md#re
 ### Registration and cross-call storage
 
 **Choose:** `no_reentry_callback_exports` for a direct imported call with exact
-argument-count/callback-position signatures. Callback inputs must resolve to
-stable local ordinary callable identities; retained factory-result graphs,
-callee aliases, namespace calls, spreads, and construction keep conservative
-timing. Other arguments must use the admitted inert primitive syntax.
+argument-count/callback-position signatures, or
+`anonymous_statements[].no_reentry_call` when the exact top-level call is
+selected by `match` / `source_match` in the caller's spec. The source assertion
+accepts a direct identifier callee or a static member on an identifier
+receiver, and its author audit covers every callable identity that can reach
+the exact call site. For `no_reentry_callback_exports`, callee aliases keep
+conservative timing. Callback inputs must resolve to one stable local ordinary
+callable identity; retained factory-result graphs, computed or optional
+members, effectful receivers, spreads, nested eager calls, and construction
+keep conservative timing. Other arguments must use the admitted inert
+primitive syntax.
 
 **Shape and timing:** the audited call avoids synchronous foreign reentry, but may
 store callbacks in a cross-call registry or return an opaque capability. After
 the call, the analysis treats every supplied callback and capture graph as
 globally reachable. Later opaque calls or protocol operations may invoke them.
-The result stays opaque.
+The source-selected assertion itself establishes neither purity nor a result
+shape; ordinary analysis remains in force and may independently infer either.
 
 **Audit:** provider/helper/type paths, callable identity, own/prototype surfaces,
 and aliases. The provider cannot synchronously invoke callbacks, mutate supplied
-graphs, inspect effectful properties/prototypes, or access importer-owned lexical
-state. Provider-private effects remain possible. Registration does not establish
-purity or a fresh-return/constructor retention policy.
+graphs, inspect effectful properties/prototypes, or access caller/importer-owned
+lexical state. A source-selected member callee also puts its exact property
+lookup under this premise; receiver and argument expressions still evaluate
+normally. Provider-private effects remain possible. Registration does not
+establish purity or a fresh-return/constructor retention policy.
 
 Full definition: [callback registration without synchronous reentry](../../SPEC.md#callback-registration-without-synchronous-reentry).
 

@@ -31,6 +31,8 @@ pub struct LogicalRequest {
 #[derive(Debug, Clone)]
 pub struct AnonymousStatementRequest {
     pub parsed_selector: source_match::ParsedSourceMatchSelector,
+    /// Optional timing premise for this exact selected anonymous call.
+    pub no_reentry_call: Option<spec::NoReentryCall>,
     /// Optional `comment:` text from the anonymous statement spec
     /// entry. `note:` is not emitted; it remains YAML scratch
     /// metadata.
@@ -189,6 +191,7 @@ pub fn logical_requests_for_chunk(
                     )?;
                     Ok(AnonymousStatementRequest {
                         parsed_selector,
+                        no_reentry_call: stmt.no_reentry_call.clone(),
                         comment: stmt.comment.clone(),
                     })
                 })

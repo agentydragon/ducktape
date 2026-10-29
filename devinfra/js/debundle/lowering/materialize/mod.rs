@@ -864,6 +864,36 @@ fn collect_analysis_assumptions(
             )?;
         }
     }
+    for (statement, assertion) in builder.no_reentry_calls() {
+        let Some(ModuleItem::Stmt(Stmt::Expr(expression_statement))) = module.body.get(statement.0)
+        else {
+            // An unsupported selected shape does not activate the premise.
+            // The ordinary synchronous-call analysis remains in force.
+            continue;
+        };
+        let Expr::Call(call) = expression_statement.expr.as_ref() else {
+            // Optional calls, wrapped expressions, and non-call statements
+            // remain on the conservative path.
+            continue;
+        };
+        let argument_count = call.args.len();
+        if let Some(position) = assertion
+            .callback_arguments
+            .iter()
+            .find(|position| **position >= argument_count)
+        {
+            bail!(
+                "no_reentry_call callback argument position {position} is out of range for the matched call with {argument_count} arguments"
+            );
+        }
+        assumptions.no_reentry_statement_calls.insert(
+            (call.span.lo.0, call.span.hi.0),
+            spec::RetainedCallbackSignature {
+                argument_count,
+                callback_arguments: assertion.callback_arguments.iter().copied().collect(),
+            },
+        );
+    }
     collect_chunk_rename_analysis_assumptions(chunk_renames, module, &mut assumptions)?;
     Ok(assumptions)
 }

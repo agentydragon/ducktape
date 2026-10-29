@@ -754,6 +754,8 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "duplicate_annotations_cli_test")
 
+debundle_e2e_test(name = "call_registration_contract_test")
+
 debundle_e2e_test(
     name = "match_selector_cli_test",
     deps = [

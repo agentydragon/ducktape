@@ -944,6 +944,7 @@ struct RetainedCallbackCall {
     signatures: Vec<spec::RetainedCallbackSignature>,
     argument_count: usize,
     callback_argument_exprs: BTreeMap<usize, ValueExpr>,
+    require_single_callback_identity: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -3361,11 +3362,16 @@ struct ExecutionIndex {
     retained_callback_factory_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     retained_callback_constructor_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     no_reentry_callback_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
+    no_reentry_statement_calls: BTreeMap<(u32, u32), spec::RetainedCallbackSignature>,
     retained_callback_factory_members:
         BTreeMap<Id, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
     retained_callback_calls: BTreeMap<CallSite, IndexedRetainedCallbackCall>,
     retained_constructor_calls: BTreeMap<CallSite, RetainedCallbackCall>,
     no_reentry_callback_calls: BTreeMap<CallSite, RetainedCallbackCall>,
+    /// Synthetic getter reads for a source-selected member callee. The map
+    /// lets runtime timing suppress only foreign-callback promotion when the
+    /// exact outer call's callback identities satisfy its contract.
+    no_reentry_accessor_calls: BTreeMap<CallSite, CallSite>,
     no_reentry_exports: BTreeSet<Id>,
     host_async_local_storage_imports: BTreeSet<Id>,
     host_promise_resolve: bool,
@@ -3506,10 +3512,12 @@ impl Default for ExecutionIndex {
             retained_callback_factory_imports: BTreeMap::new(),
             retained_callback_constructor_imports: BTreeMap::new(),
             no_reentry_callback_imports: BTreeMap::new(),
+            no_reentry_statement_calls: BTreeMap::new(),
             retained_callback_factory_members: BTreeMap::new(),
             retained_callback_calls: BTreeMap::new(),
             retained_constructor_calls: BTreeMap::new(),
             no_reentry_callback_calls: BTreeMap::new(),
+            no_reentry_accessor_calls: BTreeMap::new(),
             no_reentry_exports: BTreeSet::new(),
             host_async_local_storage_imports: BTreeSet::new(),
             host_promise_resolve: false,
@@ -4034,6 +4042,7 @@ impl ExecutionIndex {
             plain_array_bindings: plain_array_bindings.clone(),
             no_sync_callback_members: hints.assumptions.no_sync_callback_members.clone(),
             retained_record_factories: hints.assumptions.retained_record_factories.clone(),
+            no_reentry_statement_calls: hints.assumptions.no_reentry_statement_calls.clone(),
             host_promise_resolve: host_operations.is_some_and(|operations| {
                 operations.contains(&HostNoReentryOperation::PromiseResolve)
             }),
@@ -5619,7 +5628,15 @@ impl ExecutionIndex {
         }
     }
 
-    fn record_accessor_callee_lookup(&mut self, member: &MemberExpr) {
+    fn record_accessor_callee_lookup(
+        &mut self,
+        member: &MemberExpr,
+        no_reentry_call: Option<CallSite>,
+    ) {
+        if let Some(no_reentry_call) = no_reentry_call {
+            self.no_reentry_accessor_calls
+                .insert(CallSite::from(member.span), no_reentry_call);
+        }
         self.record_call(Call {
             kind: CallKind::AccessorCalleeLookup,
             callee: ValueExpr::Member(
@@ -5810,17 +5827,58 @@ impl ExecutionIndex {
     }
 
     fn no_reentry_callback_call(&self, call: &CallExpr) -> Option<RetainedCallbackCall> {
+        let imported = if let Callee::Expr(callee) = &call.callee
+            && let Expr::Ident(binding) = callee.unwrap_parens()
+        {
+            self.no_reentry_callback_imports
+                .get(&binding.to_id())
+                .and_then(|signatures| {
+                    Self::retained_callback_invocation(signatures, &call.args, None)
+                })
+        } else {
+            None
+        };
+        imported.or_else(|| self.source_no_reentry_callback_call(call))
+    }
+
+    fn source_no_reentry_callback_call(&self, call: &CallExpr) -> Option<RetainedCallbackCall> {
+        if call.args.iter().any(|argument| argument.spread.is_some()) {
+            return None;
+        }
+        let signature = self
+            .no_reentry_statement_calls
+            .get(&(call.span.lo.0, call.span.hi.0))?;
         let Callee::Expr(callee) = &call.callee else {
             return None;
         };
-        let Expr::Ident(binding) = callee.unwrap_parens() else {
-            return None;
+        let simple_callee = match callee.unwrap_parens() {
+            Expr::Ident(_) => true,
+            Expr::Member(member) => {
+                matches!(member.obj.unwrap_parens(), Expr::Ident(_))
+                    && matches!(member.prop, MemberProp::Ident(_))
+            }
+            _ => false,
         };
-        Self::retained_callback_invocation(
-            self.no_reentry_callback_imports.get(&binding.to_id())?,
-            &call.args,
-            None,
-        )
+        if !simple_callee
+            || signature.callback_arguments.iter().any(|position| {
+                !call.args.get(*position).is_some_and(|argument| {
+                    match argument.expr.unwrap_parens() {
+                        Expr::Ident(_) => true,
+                        Expr::Fn(function) => {
+                            !function.function.is_async && !function.function.is_generator
+                        }
+                        Expr::Arrow(arrow) => !arrow.is_async,
+                        _ => false,
+                    }
+                })
+            })
+        {
+            return None;
+        }
+        let mut invocation =
+            Self::retained_callback_invocation(std::slice::from_ref(signature), &call.args, None)?;
+        invocation.require_single_callback_identity = true;
+        Some(invocation)
     }
 
     fn retained_constructor_call(&self, allocation: &NewExpr) -> Option<RetainedCallbackCall> {
@@ -5877,6 +5935,7 @@ impl ExecutionIndex {
             signatures,
             argument_count: args.len(),
             callback_argument_exprs,
+            require_single_callback_identity: false,
         })
     }
 
@@ -7578,6 +7637,10 @@ impl Visit for ExecutionIndex {
         let callback_argument = self.inline_factory_callback_argument(call);
         let retained_call = self.retained_callback_call(call);
         let no_reentry_call = self.no_reentry_callback_call(call);
+        let no_reentry_accessor_call = no_reentry_call
+            .as_ref()
+            .is_some_and(|contract| contract.require_single_callback_identity)
+            .then(|| CallSite::from(call.span));
         let callback_arguments: BTreeSet<_> = callback_argument
             .into_iter()
             .chain(
@@ -7618,7 +7681,7 @@ impl Visit for ExecutionIndex {
             if let Callee::Expr(callee) = &call.callee
                 && let Expr::Member(member) = callee.unwrap_parens()
             {
-                self.record_accessor_callee_lookup(member);
+                self.record_accessor_callee_lookup(member, no_reentry_accessor_call);
             }
             for (index, argument) in call.args.iter().enumerate() {
                 if callback_arguments.contains(&index) {
@@ -7637,7 +7700,7 @@ impl Visit for ExecutionIndex {
             // typed event at that point so an applied getter can invalidate
             // receiver state before nested argument calls are analyzed.
             callee.visit_with(self);
-            self.record_accessor_callee_lookup(member);
+            self.record_accessor_callee_lookup(member, no_reentry_accessor_call);
             for argument in &call.args {
                 argument.visit_with(self);
             }

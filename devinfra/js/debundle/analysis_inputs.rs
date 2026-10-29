@@ -365,6 +365,10 @@ pub struct AnalysisAssumptions {
     /// Audited callback-bearing calls with no synchronous reentry; supplied
     /// callbacks become global roots after the call, independent of purity.
     pub no_reentry_callback_exports: BTreeMap<String, Vec<spec::RetainedCallbackSignature>>,
+    /// Exact source-selected top-level calls with the same callback reachability
+    /// contract, keyed by the parsed call span `(lo, hi)`. This is a local
+    /// timing premise, not a purity or known-result assertion.
+    pub no_reentry_statement_calls: BTreeMap<(u32, u32), spec::RetainedCallbackSignature>,
     /// Imported namespace members whose audited direct calls cannot reenter
     /// caller/importer/host code for primitive arguments. No purity claim.
     pub no_reentry_members: BTreeMap<String, BTreeSet<String>>,

@@ -3058,13 +3058,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .iter()
             .filter(|signature| {
                 signature.callback_arguments.iter().all(|position| {
-                    args[*position].iter().all(|value| {
+                    let Some(values) = args.get(*position) else {
+                        return false;
+                    };
+                    let is_ordinary_callable = |value: &AbstractValue| {
                         matches!(
                             value,
                             AbstractValue::Origin(ValueOrigin::Function(_))
                                 | AbstractValue::Closure(_, _)
                         )
-                    })
+                    };
+                    if contract.require_single_callback_identity {
+                        values.len() == 1 && values.iter().all(is_ordinary_callable)
+                    } else {
+                        values.iter().all(is_ordinary_callable)
+                    }
                 })
             })
             .cloned()
@@ -3074,6 +3082,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             signatures,
             argument_count: expressions.len(),
             callback_argument_exprs: BTreeMap::new(),
+            require_single_callback_identity: contract.require_single_callback_identity,
         };
         let callbacks = self.retained_callbacks(&contract, expressions, args)?;
         // Independently exported aliases and already exposed callbacks keep
@@ -3082,6 +3091,37 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         }
         Some(callbacks)
+    }
+
+    /// Check a source-selected member callee's runtime callback identities
+    /// before suppressing callback promotion from its synthetic accessor-read
+    /// event. Only admitted identifiers/function literals and inert primitive
+    /// expressions reach this path, so the abstract reads do not execute or
+    /// skip JavaScript argument evaluation; the real call transfer evaluates
+    /// all receiver and argument expressions in source order afterward.
+    fn no_reentry_member_lookup_admitted(
+        &mut self,
+        site: CallSite,
+        env: &Context,
+        captures: &Context,
+    ) -> bool {
+        let Some(contract) = self.inputs.index.no_reentry_callback_calls.get(&site) else {
+            return false;
+        };
+        let mut expressions = vec![ValueExpr::Unknown; contract.argument_count];
+        let mut args = vec![Values::new(); contract.argument_count];
+        for (position, expression) in &contract.callback_argument_exprs {
+            let Some(expression_slot) = expressions.get_mut(*position) else {
+                return false;
+            };
+            let Some(argument_slot) = args.get_mut(*position) else {
+                return false;
+            };
+            *expression_slot = expression.clone();
+            *argument_slot = self.evaluate(expression, env, captures);
+        }
+        self.no_reentry_callbacks(site, &expressions, &args)
+            .is_some()
     }
 
     fn retained_callbacks(
@@ -5449,7 +5489,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if accessor_getters.is_empty() {
                 return;
             }
-            self.promote_raw_callbacks(&accessor_getters, outcome);
+            let no_reentry_accessor_call = self
+                .inputs
+                .index
+                .no_reentry_accessor_calls
+                .get(&CallSite::from(call.span))
+                .copied();
+            let no_reentry_admitted = no_reentry_accessor_call
+                .is_some_and(|site| self.no_reentry_member_lookup_admitted(site, env, captures));
+            if !no_reentry_admitted {
+                self.promote_raw_callbacks(&accessor_getters, outcome);
+            }
             self.taint_objects(&values);
             if self.state.array_iteration_depth > 0 {
                 self.state.array_iteration_unsupported = true;

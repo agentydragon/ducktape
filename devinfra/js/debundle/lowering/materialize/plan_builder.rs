@@ -83,6 +83,10 @@ pub(super) struct ChunkPlanBuilder {
     /// (non-declared) top-level statements claimed by spec
     /// `anonymous_statements` entries.
     whole_statement_assignment: BTreeMap<StatementId, usize>,
+    /// Source-selected registration-call assertions, keyed by original
+    /// top-level body item. These stay attached to the canonical resolved
+    /// statement until analysis assumptions are built.
+    no_reentry_calls: BTreeMap<StatementId, spec::NoReentryCall>,
     /// The plans being constructed, in append order. Final indices
     /// stable: binding destinations and `whole_statement_assignment`
     /// hold positional references.
@@ -138,6 +142,7 @@ impl ChunkPlanBuilder {
     pub(super) fn new(fail_fast: bool, list_template_identifiers: bool) -> Self {
         Self {
             whole_statement_assignment: BTreeMap::new(),
+            no_reentry_calls: BTreeMap::new(),
             module_plans: Vec::new(),
             bindings_catalogue: HashMap::new(),
             residual_plan_index: None,
@@ -147,6 +152,10 @@ impl ChunkPlanBuilder {
             duplicate_deferred_binding_entities: BTreeSet::new(),
             outcomes: OutcomeSink::new(fail_fast, list_template_identifiers),
         }
+    }
+
+    pub(super) fn no_reentry_calls(&self) -> &BTreeMap<StatementId, spec::NoReentryCall> {
+        &self.no_reentry_calls
     }
 
     /// Process one explicit (non-residual) logical-module request:
@@ -382,6 +391,9 @@ impl ChunkPlanBuilder {
         plan.anonymous_statements.push(claim.body_index);
         plan.anonymous_statements.sort_unstable();
         plan.anonymous_statements.dedup();
+        if let Some(assertion) = claim.no_reentry_call.clone() {
+            self.no_reentry_calls.insert(claim.body_index, assertion);
+        }
         if let Some(comment) = &claim.comment {
             plan.anonymous_statement_comments
                 .insert(claim.body_index, comment.clone());
@@ -470,6 +482,9 @@ impl ChunkPlanBuilder {
                             body_index: StatementId(body_index),
                             comment: request.anonymous_statements[statement_index]
                                 .comment
+                                .clone(),
+                            no_reentry_call: request.anonymous_statements[statement_index]
+                                .no_reentry_call
                                 .clone(),
                         },
                     )?;
