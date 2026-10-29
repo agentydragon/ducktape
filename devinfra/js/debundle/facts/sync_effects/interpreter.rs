@@ -5092,7 +5092,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             {
                                 results.insert(instance);
                             } else {
+                                // Re-evaluation may lose the private instance proof after
+                                // constructor execution taints one of its inputs. Keep the
+                                // result opaque, but do not drop callbacks reachable from
+                                // the arguments: the unknown instance may retain them.
                                 results.insert(AbstractValue::Unknown);
+                                let callbacks: Values = successful_args
+                                    .iter()
+                                    .flat_map(|values| self.callback_values(values))
+                                    .collect();
+                                if !callbacks.is_empty() {
+                                    results.insert(self.deferred_callbacks(callbacks));
+                                }
                             }
                         }
                         AbstractValue::Unavailable => {

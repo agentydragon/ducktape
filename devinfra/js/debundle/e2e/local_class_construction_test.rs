@@ -35,6 +35,80 @@ fn registry_modules() -> Vec<LogicalModuleEntry> {
 }
 
 #[test]
+fn failed_constructor_value_proof_keeps_record_callbacks_across_cycle() {
+    let provider = r#"import { enter } from "./consumer.js";
+class Holder {
+  constructor(record) { this.record = record; this.missing = record.missing; }
+  run() { return this.record.execute(); }
+}
+function create(record) { return new Holder(record); }
+const prefix = new globalThis.Error();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 42;
+})({});
+const command = create({ execute: () => later });
+enter();
+const later = dynamic;
+export { command };
+"#;
+    let consumer = r#"import { command } from "./provider.js";
+export function enter() {
+  try { console.log(command.run()); }
+  catch (error) { console.log(error.name); }
+}
+"#;
+    let consumer_chunks = [("static/consumer", consumer)];
+
+    let co_located = run_fixture(
+        FixtureOpts::new(
+            provider,
+            vec![logical_module_with_anon(
+                "callbacks/wrapped",
+                &[
+                    Member::new("Holder"),
+                    Member::new("create"),
+                    Member::new("prefix"),
+                    Member::new("dynamic"),
+                    Member::new("command"),
+                    Member::new("later"),
+                ],
+                &["enter();"],
+            )],
+        )
+        .with_chunk_id("static/provider")
+        .with_extra_chunks(&consumer_chunks),
+    );
+    assert_preserved_entry_output(&co_located, "ReferenceError\n");
+
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            provider,
+            vec![
+                logical_module_with_anon(
+                    "callbacks/wrapped",
+                    &[
+                        Member::new("Holder"),
+                        Member::new("create"),
+                        Member::new("command"),
+                    ],
+                    &["enter();"],
+                ),
+                logical_module(
+                    "values/dynamic",
+                    &[Member::new("prefix"), Member::new("dynamic")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_chunk_id("static/provider")
+        .with_extra_chunks(&consumer_chunks),
+        &["callbacks/wrapped", "values/later"],
+        &["eager_use"],
+    );
+}
+
+#[test]
 fn inferred_implicit_class_construction_breaks_a_live_array_sequenced_cycle() {
     let fixture = assert_pure_cycle_break(
         REGISTRY_SOURCE,
