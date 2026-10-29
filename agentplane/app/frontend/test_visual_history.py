@@ -36,7 +36,9 @@ async def test_single_tool_expansion_reserves_height(view: VisualPage, app: Agen
     row = page.locator('[data-thread-anchor="7"]')
     following = page.locator('[data-thread-anchor="10"]')
     await expect(row.locator(".agentplane-disclosure-summary")).to_have_count(1)
-    control = row.get_by_role("button", name="Bash git branch -d stale", exact=True)
+    control = row.locator(
+        ".agentplane-step-details > .agentplane-disclosure-item > .agentplane-disclosure-heading > .agentplane-disclosure-summary"
+    ).first
     await expect(control).to_contain_text("git branch -d stale")
     await control.scroll_into_view_if_needed()
     await view.capture(name="single-tool-collapsed")
