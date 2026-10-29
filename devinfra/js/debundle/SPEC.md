@@ -548,6 +548,18 @@ closures are counted as request issues, with a bounded displayed prefix.
 Neither a path nor its absence asserts cache residency, runtime reachability,
 module purity, or loader behavior.
 
+`--include-host-loader-candidates` adds every direct literal
+`import.meta.require(...)` call from the same one-pass SWC source manifest to
+the request graph, including calls nested in functions. These are conditional
+source edges: the query does not establish that the host loader has its original
+identity, that a call executes during module initialization, or that it returns
+a cached namespace. The query does not add alias calls, dynamic arguments,
+global `require`, or CommonJS exports as resolved edges. Their typed source
+sites remain in the optional `--interop-census`, which counts every chunk and
+bounds detailed sites with `--max-interop-sites`. An absent path in the union
+graph excludes only paths through resolved ordinary static requests and these
+direct literal candidates; it does not clear any export-reentry blocker.
+
 Flat and tree specs accept `execution_runtime: generic` (the default) or
 `execution_runtime: native_browser_esm`. The latter declares execution through
 the browser's native ESM loader, with no synchronous host API that can obtain

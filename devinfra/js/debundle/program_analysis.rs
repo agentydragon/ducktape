@@ -2,15 +2,15 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use analysis::cross_module_values::resolve_primitive_binding_import_dependencies;
 use analysis::facts::module_has_top_level_await;
-use swc_common::{Spanned, SyntaxContext};
+use swc_common::{Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::FileRole;
 use artifact::reports::{
     ChunkAnalysisReport, ChunkCounts, ChunkFileRecord, ChunkModuleKind, ChunkRuntimeFacts,
-    ExportAliasRecord, ImportRecord, ImportSpecifierKind, ImportSpecifierRecord,
-    KeptTopLevelDeclarationRecord, StaticModuleRequest, StaticModuleRequestMode,
+    ExportAliasRecord, ImportRecord, ImportSpecifierKind, ImportSpecifierRecord, InteropUse,
+    InteropUseKind, KeptTopLevelDeclarationRecord, StaticModuleRequest, StaticModuleRequestMode,
     TopLevelDeclarationKind,
 };
 use binding_targets::{
@@ -85,6 +85,11 @@ fn is_host_require_member(member: &MemberExpr, unresolved_context: SyntaxContext
             Expr::Ident(ident) => ident.sym == *"globalThis" && ident.ctxt == unresolved_context,
             _ => false,
         }
+}
+
+fn is_import_meta_require_member(member: &MemberExpr) -> bool {
+    member_is_named(member, "require")
+        && matches!(&*member.obj, Expr::MetaProp(meta) if meta.kind == MetaPropKind::ImportMeta)
 }
 
 fn import_decl_has_runtime_request(import: &ImportDecl) -> bool {
@@ -345,13 +350,19 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         unresolved_context: SyntaxContext::empty().apply_mark(parsed.unresolved_mark),
         ..ModuleScanVisitor::default()
     };
-    parsed.module.visit_with(&mut module_scan);
+    // Assign each nested site its original top-level item while doing the
+    // same single SWC walk used for the other shallow facts.
+    for (index, item) in parsed.module.body.iter().enumerate() {
+        module_scan.item_index = index;
+        item.visit_with(&mut module_scan);
+    }
     let ModuleScanVisitor {
         dynamic_import_count,
         observable_module_effect,
         has_rewritable_specifier,
         has_cjs_interop: visitor_has_cjs_interop,
         has_own_cjs_export_surface: visitor_has_own_cjs_export_surface,
+        mut interop_uses,
         binding_declarations,
         binding_writes,
         dynamic_scope,
@@ -373,6 +384,20 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                 ModuleItem::ModuleDecl(ModuleDecl::TsExportAssignment(_))
             )
         });
+    for (item_index, item) in parsed.module.body.iter().enumerate() {
+        let kind = match item {
+            ModuleItem::ModuleDecl(ModuleDecl::TsImportEquals(_)) => {
+                Some(InteropUseKind::TsImportEquals)
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::TsExportAssignment(_)) => {
+                Some(InteropUseKind::TsExportAssignment)
+            }
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            interop_uses.push((item_index, item.span(), kind, None));
+        }
+    }
 
     let mut runtime_facts = ChunkRuntimeFacts {
         module_kind: if parsed.module.body.is_empty() {
@@ -387,6 +412,15 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         has_top_level_await: module_has_top_level_await(&parsed.module),
         has_cjs_interop,
         has_own_cjs_export_surface,
+        interop_uses: interop_uses
+            .into_iter()
+            .map(|(item_index, span, kind, specifier)| InteropUse {
+                item_index,
+                line: line_index.line_for_span(span),
+                kind,
+                specifier,
+            })
+            .collect(),
         ..ChunkRuntimeFacts::default()
     };
 
@@ -708,6 +742,9 @@ struct ModuleScanVisitor {
     has_rewritable_specifier: bool,
     has_cjs_interop: bool,
     has_own_cjs_export_surface: bool,
+    item_index: usize,
+    interop_uses: Vec<(usize, Span, InteropUseKind, Option<String>)>,
+    direct_call_members: BTreeSet<u32>,
     unresolved_context: SyntaxContext,
     binding_declarations: BTreeMap<Id, usize>,
     binding_writes: BTreeSet<Id>,
@@ -775,18 +812,47 @@ impl Visit for ModuleScanVisitor {
 
     fn visit_ident(&mut self, node: &Ident) {
         if node.ctxt == self.unresolved_context {
-            match node.sym.as_ref() {
-                "require" => self.has_cjs_interop = true,
+            let kind = match node.sym.as_ref() {
+                "require" => Some(InteropUseKind::UnboundRequire),
                 "module" | "exports" => {
-                    self.has_cjs_interop = true;
                     self.has_own_cjs_export_surface = true;
+                    Some(if node.sym == *"module" {
+                        InteropUseKind::UnboundModule
+                    } else {
+                        InteropUseKind::UnboundExports
+                    })
                 }
-                _ => {}
+                _ => None,
+            };
+            if let Some(kind) = kind {
+                self.has_cjs_interop = true;
+                self.interop_uses
+                    .push((self.item_index, node.span, kind, None));
             }
         }
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
+        if let Callee::Expr(callee) = &node.callee
+            && let Expr::Member(member) = callee.unwrap_parens()
+            && is_import_meta_require_member(member)
+        {
+            self.direct_call_members.insert(member.span.lo.0);
+            let literal = match node.args.as_slice() {
+                [arg] if arg.spread.is_none() => match arg.expr.unwrap_parens() {
+                    Expr::Lit(Lit::Str(value)) => Some(str_value(value)),
+                    _ => None,
+                },
+                _ => None,
+            };
+            let kind = if literal.is_some() {
+                InteropUseKind::ImportMetaRequireLiteralCall
+            } else {
+                InteropUseKind::ImportMetaRequireDynamicCall
+            };
+            self.interop_uses
+                .push((self.item_index, node.span, kind, literal));
+        }
         if matches!(&node.callee, Callee::Expr(expr) if matches!(expr.unwrap_parens(), Expr::Ident(id) if id.sym.as_ref() == "eval"))
         {
             self.dynamic_scope = true;
@@ -813,13 +879,47 @@ impl Visit for ModuleScanVisitor {
         // captured and called through an alias later.
         if is_host_require_member(node, self.unresolved_context) {
             self.has_cjs_interop = true;
+            if !self.direct_call_members.contains(&node.span.lo.0) {
+                let kind = if is_import_meta_require_member(node) {
+                    InteropUseKind::ImportMetaRequireReference
+                } else {
+                    InteropUseKind::GlobalThisRequire
+                };
+                self.interop_uses
+                    .push((self.item_index, node.span, kind, None));
+            }
         }
         if !self.observable_module_effect
             && member_root_sym(&node.obj).is_some_and(|sym| sym == "window" || sym == "document")
         {
             self.observable_module_effect = true;
         }
-        node.visit_children_with(self);
+        if matches!(&*node.obj, Expr::MetaProp(meta) if meta.kind == MetaPropKind::ImportMeta) {
+            if !member_is_named(node, "require") {
+                // A computed or otherwise unknown property can expose the
+                // host loader. Keep it as an explicit conservative site.
+                self.interop_uses.push((
+                    self.item_index,
+                    node.span,
+                    InteropUseKind::ImportMetaEscape,
+                    None,
+                ));
+            }
+            node.prop.visit_with(self);
+        } else {
+            node.visit_children_with(self);
+        }
+    }
+
+    fn visit_meta_prop_expr(&mut self, node: &MetaPropExpr) {
+        if node.kind == MetaPropKind::ImportMeta {
+            self.interop_uses.push((
+                self.item_index,
+                node.span,
+                InteropUseKind::ImportMetaEscape,
+                None,
+            ));
+        }
     }
 
     fn visit_import_decl(&mut self, node: &ImportDecl) {

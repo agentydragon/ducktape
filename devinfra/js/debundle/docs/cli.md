@@ -29,6 +29,15 @@ unresolved, nonordinary, or nonentry requests in the inspected closures.
 `--max-issues` limits displayed issues while `request_issue_count` retains the
 total. This is source-graph evidence, not a cache or runtime verdict.
 
+Add `--include-host-loader-candidates --interop-census` to include all direct
+literal `import.meta.require(...)` calls as conditional graph edges and report
+typed interop sites across every chunk. Calls inside deferred functions are
+included in the union graph; alias calls, dynamic targets, global loader forms,
+and CommonJS exports remain visible as sites without graph edges. The command
+does not assert the original host-loader identity or clear runtime blockers.
+`--max-interop-sites` limits detailed site rows while per-chunk kind counts
+remain complete.
+
 The README's [task chooser](../README.md#choose-a-task) links to the recipe for
 inspection, extraction, reorganization, naming, selector stabilization, gate
 diagnosis, or delegation.

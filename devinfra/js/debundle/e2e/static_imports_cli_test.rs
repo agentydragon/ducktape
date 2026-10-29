@@ -111,8 +111,8 @@ fn reports_transitive_witnesses_absence_and_distinct_cycles() {
     assert_eq!(
         report["targets"][0]["from_to_target"],
         json!([
-            {"from":"main", "specifier":"./middle.js", "resolution":"source_path", "target_file":"entry.js", "to":"middle"},
-            {"from":"middle", "specifier":"./target.js", "resolution":"source_path", "target_file":"entry.js", "to":"target"}
+            {"from":"main", "specifier":"./middle.js", "edge_kind":"ordinary_static_esm", "resolution":"source_path", "target_file":"entry.js", "to":"middle"},
+            {"from":"middle", "specifier":"./target.js", "edge_kind":"ordinary_static_esm", "resolution":"source_path", "target_file":"entry.js", "to":"target"}
         ])
     );
     assert_eq!(report["targets"][0]["target_to_from"], Value::Null);
@@ -178,4 +178,138 @@ fn rejects_target_absent_from_the_input_chunk_table() {
         .expect("run query");
     assert_eq!(output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&output.stderr).contains("unknown --target chunk"));
+}
+
+#[test]
+fn conditional_literal_loader_graph_includes_deferred_return_edge() {
+    let run = run_tree_fixture(
+        &TreeFixture {
+            chunks: &[
+                ("main", "import './middle.js'; export const value = 1;\n"),
+                (
+                    "middle",
+                    "const lazy = () => import.meta.require('./main.js'); export { lazy };\n",
+                ),
+            ],
+            module_roots: &[("main", "main")],
+            modules: &[],
+        },
+        &[],
+    );
+    let command = |include: bool| {
+        let mut command = Command::new(debundler_path());
+        command
+            .arg("static-imports")
+            .arg("--tree-config")
+            .arg(run.root().join("spec_config.yaml"))
+            .arg("--tree-modules")
+            .arg(run.root().join("modules"))
+            .arg("--tree-vendor-marks")
+            .arg(run.root().join("vendor_marks.yaml"))
+            .arg("--tree-source-root")
+            .arg(run.root())
+            .arg("--out-root")
+            .arg(&run.out_root)
+            .args(["--from", "middle", "--target", "main", "--format", "json"]);
+        if include {
+            command.args(["--include-host-loader-candidates", "--interop-census"]);
+        }
+        let output = command.output().expect("query");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<Value>(&output.stdout).expect("JSON report")
+    };
+    assert_eq!(command(false)["targets"][0]["from_to_target"], Value::Null);
+    let report = command(true);
+    let edge = &report["targets"][0]["from_to_target"][0];
+    assert_eq!(edge["edge_kind"], "conditional_import_meta_require");
+    assert_eq!(edge["to"], "main");
+    assert_eq!(edge["source_item"], 0);
+    assert_eq!(
+        report["targets"][0]["target_to_from"][0]["edge_kind"],
+        "ordinary_static_esm"
+    );
+    assert_eq!(report["interop_census"]["chunks"][0]["site_count"], 1);
+    assert_eq!(
+        report["interop_census"]["sites"][0]["resolved_target"],
+        "main/entry.js"
+    );
+}
+
+#[test]
+fn census_keeps_unknown_loader_forms_and_unresolved_literals_visible() {
+    let run = run_tree_fixture(
+        &TreeFixture {
+            chunks: &[
+                (
+                    "main",
+                    "const alias = import.meta.require; const dynamic = import.meta.require(name); const missing = import.meta.require('./missing.js'); const global = globalThis.require('./target.js'); const common = require('./target.js'); module.exports = alias; export { dynamic, missing, global, common };\n",
+                ),
+                ("target", "export const value = 1;\n"),
+            ],
+            module_roots: &[("main", "main")],
+            modules: &[],
+        },
+        &[],
+    );
+    let output = Command::new(debundler_path())
+        .arg("static-imports")
+        .arg("--tree-config")
+        .arg(run.root().join("spec_config.yaml"))
+        .arg("--tree-modules")
+        .arg(run.root().join("modules"))
+        .arg("--tree-vendor-marks")
+        .arg(run.root().join("vendor_marks.yaml"))
+        .arg("--tree-source-root")
+        .arg(run.root())
+        .arg("--out-root")
+        .arg(&run.out_root)
+        .args([
+            "--from",
+            "main",
+            "--target",
+            "target",
+            "--include-host-loader-candidates",
+            "--interop-census",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("query");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).expect("JSON report");
+    assert_eq!(report["targets"][0]["from_to_target"], Value::Null);
+    assert!(
+        report["request_issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|issue| issue["reason"] == "unresolved_host_loader_candidate")
+    );
+    let kinds = &report["interop_census"]["chunks"][0]["kinds"];
+    for kind in [
+        "import_meta_require_reference",
+        "import_meta_require_dynamic_call",
+        "import_meta_require_literal_call",
+        "global_this_require",
+        "unbound_require",
+        "unbound_module",
+    ] {
+        assert_eq!(kinds[kind], 1, "missing {kind}");
+    }
+    assert!(
+        report["interop_census"]["sites"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|site| site["kind"] == "import_meta_require_literal_call"
+                && site["resolution"] == "unresolved")
+    );
 }
