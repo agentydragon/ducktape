@@ -1,0 +1,611 @@
+# Abstract interpreter
+
+One abstract interpreter over one abstract domain, driven by one declarative
+table of builtin summaries. Every bespoke certificate rule in § 1 becomes a
+derived instance: the interpreter evaluates the shape under the domain and the
+table, and the former rule's conclusion is a projection of the resulting effect
+set. The iterative substrate stays: typed facts, program points, worklist,
+proof dependencies and `AnalysisAssumptions` axioms (`inference/iterative.rs`,
+<../docs/inference.md>).
+
+Precision is not the goal. The goal is one semantics, so a new bundle shape
+costs a table row or an axiom, not a rule. Where a current rule's precision
+cannot be reproduced by the domain, § 2.5 says so and names the author
+assertion that replaces it.
+
+Burn-down: each step in § 5 deletes the rule it replaces once the interpreter
+passes that rule's contract tests unchanged. Durable content graduates to
+`SPEC.md`, `docs/inference.md` and the table's own file; this plan is deleted
+when § 5 is empty.
+
+## 1. Inventory
+
+Test labels are `//devinfra/js/debundle/e2e:<name>` unless marked `unit`.
+"Proves" is the fact a consumer reads; "Premises" are what the rule checks
+itself (A1–A11 and the shared native census are implicit everywhere).
+
+### Structural facts (`facts/`, `graph/build.rs`)
+
+| #   | Family                                     | Files                                                                                                                                                                                                                                                      | Proves                                                                                                                                                                                 | Premises                                                                                                 | Contract tests                                                                                                                                                                                                                                                                | Docs                                                                                                                           |
+| --- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Statement fact collector                   | `facts/collector.rs`, `statement_facts.rs`, `lazy_boundary.rs`, `item_views.rs`, `analyze.rs`                                                                                                                                                              | Eager/lazy/first-order reads, rebinds, calls; `StatementEffectSummary` over `Binding`/`GlobalProp` cells; `dataflow_summarizable`, `cell_writes_summarizable`; top-level-await ordinal | Bail shapes: `with`, `Function(...)`, computed global key, member write through a binding, unproven call | `s_chain_dataflow_soundness`, `at_init_s_chain_dataflow`, `lemma_five_side_effect_order`, `repeated_var_loop`, `hoisted_var_declaration`                                                                                                                                      | design § Emission modes, § Shared `var` declaration sites                                                                      |
+| 2   | Global-object aliases and escape taint     | `facts/global_object.rs`                                                                                                                                                                                                                                   | Which alias names denote the global object; taint fixpoint that clears `dataflow_summarizable`                                                                                         | Alias not declared or imported at chunk top                                                              | `soundness_at_init_value_flow`, `at_init_s_chain_dataflow`                                                                                                                                                                                                                    | design § Emission modes                                                                                                        |
+| 3   | Dynamic scope                              | `facts/dynamic_scope.rs`                                                                                                                                                                                                                                   | Whole-chunk absence of direct `eval`/`with`; premise of every identity proof                                                                                                           | —                                                                                                        | `soundness_dynamic_scope`                                                                                                                                                                                                                                                     | design § A1                                                                                                                    |
+| 4   | Value flow                                 | `facts/value_flow.rs`                                                                                                                                                                                                                                      | Monotone `ValueOrigin` sets (`Function`, `Class`, `Object`, `NativeSet`, `Unknown`) for bindings, properties, returns, parameters; candidate-object reachability; call targets         | Intra-chunk, context-insensitive; `Unknown` absorbs                                                      | `soundness_at_init_value_flow`, `value_flow_sharing_scale`, `at_init_unresolved_callee`, `unknown_call_unescaped_callable`, `unknown_call_intermediate_availability`; unit `facts/value_flow_tests.rs`, `facts/value_set_tests.rs`                                            | inference § Scheduling                                                                                                         |
+| 5   | At-init call promotion and fallback        | `graph/build.rs::promote_at_init_calls`, `facts/at_init_fallback.rs`, `facts/source_unit_read_closure.rs`                                                                                                                                                  | Promoted `EagerUse` edges from at-init callers to callee lazy reads/rebinds; fallback read closure; plain-array / event-listener / `no_sync_callback_members` pruning                  | Callee bodies to first definite `await`; unresolved targets widen to the owner read closure              | `at_init_promotion_fndecl_direct_read`, `at_init_promotion_nested_closure`, `at_init_cross_module_call_body_reads`, `at_init_unresolved_callee`, `lemma_three_at_init_read`, `class_callback_reachability`, `unknown_call_export_reachability`, `unknown_call_export_reentry` | design § At-init call promotion; `graph/edge.rs`                                                                               |
+| 6   | Local effects                              | `facts/local_effects.rs`, `facts/local_effect_targets.rs`                                                                                                                                                                                                  | `effect: typescript_decorate_helper*` target-local mutation; metadata-only decorator summary                                                                                           | Author `known_effects`; exact helper call shape                                                          | `makes_decorate_call_lowering`, `metadata_decorator_timing`, `three_argument_metadata`                                                                                                                                                                                        | SPEC § Local-effect decorator annotations; purity_soundness § Local-effect decorator annotations                               |
+| 7   | Set iterable shapes                        | `facts/set_iterables.rs`                                                                                                                                                                                                                                   | `new Set([primitives])`, const-array alias chains, `set_from_set_spread` intervals                                                                                                     | Set/Array integrity or author input; every alias reference enumerated                                    | `set_iterable_reentry`, `native_operation_input`, `purity`                                                                                                                                                                                                                    | purity_soundness § `Set` from a chunk-top const array alias; SPEC § Native-operation inputs                                    |
+| 8   | Stable primitive array spreads             | `facts/array_spreads.rs`                                                                                                                                                                                                                                   | Contiguous multi-declarator spread of primitive arrays                                                                                                                                 | Array iterator integrity or author input; producer/consumer co-location                                  | `stable_array_spread`                                                                                                                                                                                                                                                         | SPEC § Native-operation inputs (`array_spread_from_primitive_arrays`)                                                          |
+| 9   | Local class construction                   | `facts/local_class_construction.rs`                                                                                                                                                                                                                        | Implicit constructor with inert fields and zero-argument native collection fields                                                                                                      | Unique class value in flow; native field identity through #12                                            | `local_class_construction`, `native_call_identity_input`                                                                                                                                                                                                                      | purity_soundness § Implicit local class construction; SPEC § Synchronous analysis limits                                       |
+| 10  | Fresh receiver and fresh record            | `facts/fresh_receiver.rs`, `purity/fresh_record.rs`                                                                                                                                                                                                        | Ordered writes to pre-existing own data fields of one fresh literal, then return                                                                                                       | Exact body shape; no aliases, calls or publication                                                       | `local_record_factory_contract`, `fresh_returned_record_destructuring`                                                                                                                                                                                                        | purity_soundness § Fresh local record field writes, § Source-composed returned records                                         |
+| 11  | Callable certificates                      | `facts/callable_inference.rs`, `facts/semantic_inference.rs` (`StableFunction`, `StableProvider`, `CallbackFactory`, `ReturnedRecord`, `NamespaceWrapper`, `ArgumentNoEscape`, `DescriptorCopyProvider`/`Call`), `facts/sync_effects/namespace_wrapper.rs` | Stable identity; return-only callback retention; zero-argument Map record factory; namespace facade; descriptor-copy wrapper; parameter non-escape                                     | No dynamic scope or rebind; exact body shapes; Object/WeakMap/Array/Function integrity                   | `imported_callback_timing`, `retained_callback_factory`, `retained_constructor_callback`, `namespace_wrapper`, `descriptor_copy_factory`, `argument_input`, `wrapper_argument_native_integrity`                                                                               | inference; SPEC §§ Inferred returned-record construction timing, Inferred namespace-wrapper timing, Audited callback factories |
+| 12  | Native integrity and identity certificates | `facts/semantic_inference.rs` (`NativeIntegrity`, `NativeCallIdentity`, `NativeOwnDataRead`, `EmptyCollection`, `EmptyCollectionSite`, `LocalClass`, `PrimitiveSetIteration`, `StablePrimitiveArraySpread`)                                                | Family-level intrinsic integrity; exact callee identity; fresh empty collection; getter-free own-data read                                                                             | Completed census; no dynamic scope; unshadowed binding or `globalThis` qualification                     | `native_constructor_identity_order`, `empty_collection_timing`, `native_own_data_read`, `prototype_property_integrity`, `intrinsic_alias_lowering`                                                                                                                            | inference; SPEC § Synchronous execution diagnostics; purity_soundness § Empty intrinsic collection construction                |
+| 13  | Heap content effects and frontier          | `facts/array_content_effects.rs`, `graph/build.rs` (`emit_heap_content_order`, `emit_cell_order_events`, `OneShotEagerAllocations`, `HeapContentRules`, `CellOrderBarrier`)                                                                                | `ArrayContents`/`SetContents` cell reads, writes, allocations; one-shot births; opaque barriers; RAW/WAW/WAR edges                                                                     | Value-flow identities; synchronous-call completeness; certified construction sites                       | `local_array_push_order`, `stable_array_spread`, `at_init_s_chain_dataflow`, `graph_provenance`; unit `graph/build.rs::array_heap_frontier_tests`                                                                                                                             | design § Emission modes                                                                                                        |
+| 14  | S-chain emission                           | `graph/build.rs::emit_s_chain`                                                                                                                                                                                                                             | Strict adjacent-impure chain or dataflow-aware cell edges                                                                                                                              | #1, #24 verdicts; `trusted_dataflow_summaries`                                                           | `lemma_five_side_effect_order`, `s_chain_dataflow_soundness`, `runtime_tdz_on_imported_class`                                                                                                                                                                                 | design § S — the side-effect order graph                                                                                       |
+
+### Synchronous execution (`facts/sync_effects/`)
+
+| #   | Family                                                                    | Files                                                                                                                                          | Proves                                                                                                                                                                                                                                                                                    | Premises                                                                                                  | Contract tests                                                                                                                                                                                                                                                                                                          | Docs                                                                                                                                                                    |
+| --- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 15  | Execution index                                                           | `execution_index.rs`; `execution_index/callback_arguments.rs`, `execution_index/prototype_properties.rs`                                       | Callables, roots, writes, source order; declaration/write census; callback-argument evidence; property-specific `Object.prototype` absence                                                                                                                                                | Source-only; precedes author-input validation                                                             | `synchronous_precision_report`, `prototype_property_integrity`, `wrapper_argument_native_integrity`                                                                                                                                                                                                                     | SPEC § Synchronous analysis limits; purity_soundness §§ Source callback arguments and unreachable native writes, Property absence                                       |
+| 16  | Native write census and key domains                                       | `execution_index.rs` (`NativeWriteCensus`, `NativePointEffects`, `PropertyKeyDomain`, `ConditionalIntrinsicWrite`, `NativeIntegrityRootRules`) | Mutated `NativeIntrinsic` families; exact-slot known writes; finite-string / Symbol / unknown key domains; closed-write fixed point across chunks                                                                                                                                         | A11 outside analyzed source                                                                               | `native_constructor_identity_order`, `native_operation_input`, `native_call_identity_input`, `empty_collection_timing`, `intrinsic_array_iteration`                                                                                                                                                                     | SPEC § Inferred native property-key domains; purity_soundness § Property-key domains in native writes; plans/native_receiver_identity.md                                |
+| 17  | Receiver flow and local receiver identity                                 | `execution_index.rs` (`ReceiverFlowRules`, `ReceiverFlowClosure`, `NativeReceiverRoot`), `receiver_identity.rs`                                | Fresh direct receiver dominated by an unconditional initializer; captured ordinary-object descendants                                                                                                                                                                                     | Reaching-definition kill; no loops/exceptions/async                                                       | `local_receiver_identity`, `captured_value_input`                                                                                                                                                                                                                                                                       | SPEC §§ Inferred local receiver identity, Captured ordinary-object values                                                                                               |
+| 18  | Namespace privacy, global membership, deferred publication, fresh `Error` | `execution_index.rs` (`NamespacePrivacy`, `GlobalMembershipProbe`, `DeferredGlobalPublication`, `FreshErrorWriteClaim`)                        | Namespace value never escapes except through listed members; literal-key `in` on an unshadowed root; one guarded global write; `Error(...)` sequence writes                                                                                                                               | Author `namespace_independent_members`, `non_reentrant_global_membership`, `deferred_global_publications` | `global_membership_reentry`, `native_browser_reentry`, `imported_callback_timing`, `retained_callback_factory`                                                                                                                                                                                                          | SPEC §§ Deferred browser-global publication, Audited builtin-global membership probes; design § Namespace capability privacy                                            |
+| 19  | Interpreter                                                               | `interpreter.rs`, `runtime_inference.rs`, `runtime_heap.rs`, `runtime_models.rs`, `runtime_callbacks.rs`                                       | Per-prefix `ExecutionState`; `Outcome` (effects, returns, `complete`, executed owners); evaluate/invoke/call/member-write/native transfers; callback promotion (raw, deferred, returned, possible); bounded fallback; `forEach`/`filter`/`map`; local class construction; `Object.assign` | Callable coverage to first definite `await`; budgets 64 depth / 256 invocations / 64 pool                 | `synchronous_precision_report`, `opaque_callback_scale`, `no_reentry_callback`, `call_registration_contract`, `imported_callback_timing`, `intrinsic_array_iteration`, `map_entry_callbacks`, `from_entries_callback_storage`, `optional_call_timing`, `host_no_reentry`, `export_reentry_report`, `imported_primitive` | SPEC §§ Synchronous analysis limits, Synchronous execution diagnostics, Native collection callback effects; design § At-init call promotion; debug/runtime_transfers.md |
+| 20  | Value model                                                               | `value_model.rs`                                                                                                                               | `AbstractValue` (17 variants), `ValueExpr`, `Values`, interned `Captured` contexts, object shapes in ECMAScript own-key order                                                                                                                                                             | —                                                                                                         | all of #19                                                                                                                                                                                                                                                                                                              | inference § Scheduling                                                                                                                                                  |
+| 21  | Native call models                                                        | `native_calls.rs`                                                                                                                              | Nine arms: `new Map/Set/WeakMap/WeakSet()`, `new FinalizationRegistry(f)`, `Math.{round,floor,ceil,trunc,abs,sign}`, `Object.{getOwnPropertyDescriptors,getOwnPropertyNames,defineProperties,freeze}`, `RegExp`, `Symbol`/`Symbol.for`; `CallInputs`, `CallReturn`, `NativeHeapEffect`    | Unshadowed intrinsic; family integrity; input shape                                                       | `native_call_summary`, `math_round_timing`, `fresh_freeze_callback_timing`, `empty_collection_timing`, `own_property_names`, `own_descriptor_inspection`                                                                                                                                                                | purity_soundness § Guarded native call summaries; SPEC § Inferred FinalizationRegistry callback retention                                                               |
+| 22  | Own-property projections                                                  | `property_inference.rs`                                                                                                                        | Source origin → static shape → prefix state → names / descriptor projection; application through `defineProperties`                                                                                                                                                                       | Untainted exact origin; own-key set equals indexed shape                                                  | `own_property_names`, `own_descriptor_inspection`, `namespace_wrapper`                                                                                                                                                                                                                                                  | SPEC § Ordinary own-property inspection; purity_soundness § Ordinary own-property inspection and descriptor application                                                 |
+
+### Purity (`purity/`, `cross_module_*.rs`)
+
+| #   | Family                            | Files                                                        | Proves                                                                                                                                                                                                                                                                | Premises                                                  | Contract tests                                                                                                                                | Docs                                                                                                                                                  |
+| --- | --------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 23  | Whitelists                        | `purity/whitelists.rs`                                       | Eleven tables (`PURE_STATIC_PROPS`, `PURE_STATIC_CALLS`, `PURE_GLOBAL_CALLS`, `PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS`, `PURE_BUILTIN_NEW_*`, `PURE_STATIC_FUNCTION_REFS`, `PURE_OBJECT_CALLS_ON_PLAIN_DATA`, `PLAIN_DATA_HOSTILE_BUILTINS`, `SHADOW_TRACKED_GLOBALS`) | ECMA-262 citation per entry; receiver unshadowed; A11     | `purity`, `object_plain_data_calls`, `proxy_constructor_purity`; unit `purity/classifier_tests.rs`                                            | purity_soundness §§ Admission rule, `PURE_STATIC_PROPS`, `PURE_STATIC_FUNCTION_REFS`, `PURE_OBJECT_CALLS_ON_PLAIN_DATA`, Native `Proxy`, `String.raw` |
+| 24  | Expression classifier             | `purity/classifier.rs`, `builtin_calls.rs`, `purity_type.rs` | `Purity` with `PurityRule` reasons: coercing operators, `ToPropertyKey`, iteration, destructuring, spreads, tagged templates, `new` shapes, member reads                                                                                                              | Syntactic; result-primitive gate for coercion             | `purity`, `initializer_purity`, `export_default_purity`, `dependency_graph_purity_reason`, `impure_call_reason_growth`, `repeated_var_purity` | purity_soundness § Declared purity — spec trust contracts                                                                                             |
+| 25  | Code graph and PlainData          | `purity/code_graph.rs`, `plain_data.rs`, `ts_enum_iife.rs`   | `ChunkBinding` kinds; PlainData escape/write scan; TS enum IIFE; exact enum member reads and computed keys                                                                                                                                                            | Name-based write scan plus value-flow alias check         | `object_plain_data_calls`, `plain_data_escape_scale`, `soundness_plain_data_escape`                                                           | purity_soundness § `ChunkBinding::PlainData`; SPEC § Synchronous analysis limits                                                                      |
+| 26  | Value classes                     | `purity/value_inference.rs`                                  | Fluent, plain-array, primitive, Symbol-const, stable numeric `var`                                                                                                                                                                                                    | Syntax matchers; whole-chunk write/escape gates in #25    | `purity`, `captured_value_input`                                                                                                              | purity_soundness § Immutable Symbol computed keys                                                                                                     |
+| 27  | Recursive and cross-module purity | `purity/effect_inference.rs`, `cross_module_purity.rs`       | Bottom-up function effects to closure across modules; pinned exports as axioms                                                                                                                                                                                        | Resolved import graph; absent export stays `unknown_call` | `cross_module_purity_scale`, `pure_members`, `purity`                                                                                         | inference § Scheduling                                                                                                                                |
+| 28  | Cross-module primitive values     | `cross_module_values.rs`                                     | Primitive import/re-export closure                                                                                                                                                                                                                                    | Provider ESM without CJS surface, `eval`, `with`          | `imported_primitive`                                                                                                                          | purity_soundness § Imported primitive coercion timing                                                                                                 |
+| 29  | Redundant hint probes (consumer)  | `purity/redundant_hints.rs`                                  | Diagnostics over #23–#27                                                                                                                                                                                                                                              | —                                                         | `purity_hint_diagnostics`                                                                                                                     | purity_soundness § Redundant purity hints                                                                                                             |
+
+### Admission and author inputs
+
+| #   | Family             | Files                                                        | Proves                                | Premises                              | Contract tests    | Docs                                         |
+| --- | ------------------ | ------------------------------------------------------------ | ------------------------------------- | ------------------------------------- | ----------------- | -------------------------------------------- |
+| 30  | Chunk admission    | `chunk_analysis/chunk_admission.rs`, `chunk_analysis/mod.rs` | A1/A3/A5 shapes rejected; A2 TLA bail | —                                     | `chunk_admission` | design § A1–A11, § Coverage gaps             |
+| 31  | Author assumptions | `analysis_inputs.rs::AnalysisAssumptions` (30 fields)        | Axioms consumed by #5–#27             | Author audit; `audited_source_sha256` | § 4               | design § Conditionally-correct optimizations |
+
+Consumers unchanged by this plan: the realizability gate (`gate.rs`,
+`realizability/`), quotient and edge roles (`graph/edge.rs`), reports.
+
+## 2. The abstract domain
+
+Defined once, in a new `facts/abstract/` package (`value.rs`, `heap.rs`,
+`effect.rs`, `lattice.rs`). `AbstractValue`, `ValueOrigin`, the purity value
+classes and the cross-module primitive facts are all projections of it after
+§ 5 step 3.
+
+### 2.1 Values
+
+```text
+Value   ::= Prim(kind, Const(literal) | Any)
+          | Alloc(site, kind, mult)            mult ∈ {One, Many}
+          | Intrinsic(path)                     e.g. %Set%, %Object.freeze%, %Array.prototype%
+          | Callable(body)                      body ∈ {Known(fn), Native(op), Unknown}
+          | Foreign(summary)                    imported capability token (returned record, deferred callbacks)
+          | Unavailable                         TDZ read: evaluation throws before a value
+          | Top
+kind    ::= Object | Array | Set | Map | WeakMap | WeakSet | Function | Class | Instance(class)
+          | Promise | RegExp | Registry | Proxy | Error
+```
+
+A value set is a finite join of these. `Intrinsic(path)` carries no integrity
+itself; integrity is a flag the heap answers per slot (§ 3.3). `Const` holds
+the literal needed by current rules: string/number/boolean/null/bigint
+literals, `Symbol.for` keys, enum member values. Two distinct constants join to
+`Any` of the same kind; distinct kinds join to `Top`.
+
+### 2.2 Heap
+
+```text
+Heap    ::= site → ObjectState
+ObjectState ::= { props: key → ValueSet,        key ∈ FiniteString | Symbol(site|wellknown) | UnknownKey
+                  dense: Known(len) | Unknown,  arrays only
+                  proto: Intrinsic(path) | Alloc(site) | Null | Unknown,
+                  escape: Private | Published(owners) | Global,
+                  integrity: Extensible | Frozen,
+                  taint: Clean | Tainted }
+```
+
+`UnknownKey` absorbs: a write with an unknown key sets `taint = Tainted` and
+`props` to `Top` for every key. `escape` is monotone `Private → Published →
+Global`; `Published(owners)` names the source units that can reach the
+allocation (today's `callback_source_units`, `exported_runtime_values`,
+`global_escaped_callbacks`). `Many` multiplicity means one site stands for
+several runtime objects; property maps then join across instances.
+
+### 2.3 Effects
+
+```text
+Cell    ::= Binding(id) | GlobalProp(name) | Prop(site, key) | Contents(site) | IntrinsicSlot(path)
+Effect  ::= Read(Cell) | Write(Cell) | Alloc(site) | Invoke(CallableSet) | Coerce(ValueSet, op)
+          | Havoc(reach)  reach ⊆ sites ∪ bindings reachable from the call's inputs and globals
+          | Throw
+```
+
+`Coerce(v, op)` for `op ∈ {ToPrimitive, ToPropertyKey, ToString, ToNumber,
+[[Get]], [[HasProperty]], Iterate}` resolves to nothing when every value in
+`v` is `Prim`, to `Invoke(unknown)` when any value is an allocation with an
+unknown prototype or `Tainted`, and to nothing when the allocation is a
+`Clean` ordinary object whose prototype is an intact intrinsic and the key is
+own data. This single resolution rule replaces #24's `CoercingOperator`,
+`ToPropertyKeyCoercion`, `IterationProtocol`, `DestructuringPattern` reasons,
+#19's `CallKind::ImplicitCoercion`/`ArraySpread`/`ObjectSpread` paths and
+#16's key-domain refinement.
+
+`Invoke(set)` with a `Known` body is expanded by the interpreter under budget;
+`Unknown` or over-budget becomes `Havoc(reach)`. `Havoc` is what the gate
+reads as an opaque barrier (#13 `CellOrderBarrier::AllPriorEvents`) and what
+purity reads as `UnknownCall`.
+
+### 2.4 Lattice and widening
+
+- Program state at a program point is one `(Env, Heap)`; paths join, never
+  split (today's `prefix_values` + `prefix_object_properties`). No
+  path-sensitivity.
+- Values: finite height by construction (`Const → Any → Top`; callable sets
+  widen to `Unknown` past `MAX_SYNCHRONOUS_CALLBACK_POOL`).
+- Heap: `props` keyed maps join pointwise; `UnknownKey` absorbs; `escape` and
+  `integrity` monotone; `mult` goes `One → Many` on a second birth of the same
+  site in one prefix (loops, repeated invocations). This is #13's
+  `OneShotEagerAllocations` and SPEC's "one source origin can represent
+  multiple runtime allocations".
+- Callables: one summary per `(body, abstract argument shapes)`; a second
+  distinct shape for the same body widens the arguments to `Top` and
+  re-summarizes once (today's `InvocationSignature` memo plus budgets
+  `MAX_SYNCHRONOUS_INVOCATION_DEPTH = 64`, `MAX_SYNCHRONOUS_INVOCATIONS = 256`).
+  Budget exhaustion is a widening to `Havoc`, recorded as today's
+  `precision_losses`.
+- Loops: one pass with `Many` multiplicity and joined state; no fixpoint over
+  loop bodies.
+- Statement boundary: the settled state after statement _n_ is the input of
+  statement _n+1_ and is never rewritten (inference § Dependency regions). A
+  statement's summary is `(effects, result)` over its input state.
+
+### 2.5 Current precision: kept, derived, or replaced by an axiom
+
+| Rule (§ 1)                                                                   | Relies on                                                 | In the domain                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #1 cell summaries, #2 taint                                                  | Syntactic `Binding`/`GlobalProp` cells; alias taint       | Derived: `Read/Write(Binding                                                                                                                                                                                                                                                                                      | GlobalProp)`; a global alias as a value is `Alloc(global)`with`escape = Global`, so reads through it are `Prop(global, …)` cells |
+| #4 value flow                                                                | Origin sets per binding/property/return                   | Derived: `Value` sets; `NativeSet` origin becomes `Alloc(site, Set)` with `proto = %Set.prototype%`                                                                                                                                                                                                               |
+| #5 promotion                                                                 | Callee lazy reads to first `await`; fallback read closure | Derived: `Invoke(Known)` expansion; `Havoc(reach)` carries the read closure. Kept.                                                                                                                                                                                                                                |
+| #7 Set from primitive array, #8 array spread                                 | Every alias reference enumerated; interval co-location    | Derived from `escape = Private` and `Iterate` resolution on a `Clean` dense array. Interval co-location stays a graph edge (#13).                                                                                                                                                                                 |
+| #9 local class, #10 fresh record                                             | Exact body shapes                                         | Derived: interpreting the constructor/factory body yields `Alloc(One)` with known props and `escape = Private`                                                                                                                                                                                                    |
+| #11 callback factory / returned record / namespace wrapper / descriptor copy | Exact body shapes plus native slots                       | Derived for local bodies; imported providers keep `Foreign(summary)` tokens whose summary rows are axioms (§ 4)                                                                                                                                                                                                   |
+| #12 native integrity, call identity                                          | Family-level census; unshadowed binding                   | Replaced by slot-level flags (§ 3.3). Identity is `Env(binding) = Intrinsic(path)` plus `IntrinsicSlot(path)` integrity                                                                                                                                                                                           |
+| #16 key domains                                                              | Finite-string / Symbol key refinement of native writes    | Derived: `Write(Prop(intrinsic, key))` with `key` from the value lattice                                                                                                                                                                                                                                          |
+| #17 local receiver identity                                                  | Reaching definitions with kills                           | **Dropped**: the domain joins paths. A receiver with both a fresh and a global-alias definition is `Top` → `Havoc`. Replacement: `captured_value_inputs` axiom on the binding (§ 4), or a `Private` initializer that dominates syntactically (straight-line prefix, which the joined state already distinguishes) |
+| #18 namespace privacy                                                        | Whole-chunk flow of one namespace value                   | Derived: `escape` of the namespace allocation; listed members read as `Prop(ns, member)`                                                                                                                                                                                                                          |
+| #19 callback pool, fallback, array iteration                                 | Budgets, interned contexts, bulk effect merge             | Kept as the interpreter core                                                                                                                                                                                                                                                                                      |
+| #21 native models, #22 own-property projections                              | Per-operation input/return/heap arms                      | Table rows (§ 3)                                                                                                                                                                                                                                                                                                  |
+| #23 whitelists, #24 classifier                                               | Per-operation purity tables; result-primitive gate        | Table rows; `Pure ⇔ effects ∩ {Write(observable), Invoke, Havoc} = ∅`. `Throw` stays allowed for purity, matching today's "fires no user code" contract                                                                                                                                                           |
+| #25 PlainData                                                                | Name-based write scan + alias escape scan                 | Derived: `escape = Private`, `taint = Clean`, props all `Prim`                                                                                                                                                                                                                                                    |
+| #26 fluent / plain-array / Symbol-const / stable numeric                     | Finite positive closures                                  | Derived: `Prim(Const)` tracking and `Alloc(Array)` with `Prim` elements; fluent stays an axiom (`fluent_exports`)                                                                                                                                                                                                 |
+| #27 recursive purity                                                         | Bottom-up effects over call obligations                   | Kept: callable summaries are the same worklist facts                                                                                                                                                                                                                                                              |
+| #28 imported primitives                                                      | Cross-module primitive closure                            | Derived: exported `Value` sets projected onto importers through the existing resolver                                                                                                                                                                                                                             |
+| #17 `set_from_set_spread` interval, #8 co-location                           | Source-order interval of certified declarators            | Kept as a graph co-location edge; the interpreter only certifies the values                                                                                                                                                                                                                                       |
+
+## 3. Builtin summary table
+
+One file, `facts/abstract/builtins.rs`, a `const` slice of rows keyed by
+intrinsic operation. The interpreter consults it at every `Invoke(Native(op))`
+and every protocol step (`Iterate`, `[[Get]]`, …) that lands on an intrinsic.
+Nothing else in the crate names a builtin.
+
+### 3.1 Schema
+
+```text
+Row {
+  op:        IntrinsicOp,                    // %Set% [[Construct]], %Object.freeze% [[Call]], %Array.prototype.push% [[Call]] …
+  cite:      &str,                            // ECMA-262 section anchor
+  arity:     RangeInclusive<usize>,           // admitted argument counts; spreads never admitted
+  coerces:   &[(ArgSel, CoerceOp)],           // which inputs go through ToPrimitive/ToPropertyKey/Iterate/[[Get]]…
+  invokes:   &[ArgSel],                       // arguments called synchronously (callbacks)
+  allocates: Option<(Kind, Multiplicity)>,    // fresh result allocation
+  mutates:   &[(ArgSel, Mutation)],           // Props(keys) | Integrity | Contents | Proto
+  returns:   Return,                          // Prim(kind) | Arg(i) | Fresh | Receiver | Unknown
+  throws:    Throws,                          // Never | OnCoercion | Always(kind)
+  requires:  &[IntrinsicSlot],                // slots whose integrity flag must be Intact or AuthorAsserted
+}
+ArgSel ::= This | Arg(i) | Rest(i) | Elements(Arg(i)) | Entries(Arg(i))
+```
+
+`coerces` is where user code can hide: a row with `coerces = []` and
+`invokes = []` fires no user code for any inputs; a row that coerces `Arg(0)`
+fires no user code only when the interpreter proves `Arg(0)` is `Prim` or a
+`Clean` ordinary object with intact prototype (§ 2.3). The old whitelist
+distinction `PURE_STATIC_CALLS` vs `PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS` vs
+`PURE_OBJECT_CALLS_ON_PLAIN_DATA` is exactly this one column evaluated against
+the argument lattice.
+
+### 3.2 Worked rows
+
+| op                                         | cite                                           | arity | coerces                                                                       | invokes                                          | allocates                                | mutates                                | returns                | throws                                           | requires                                                                                         |
+| ------------------------------------------ | ---------------------------------------------- | ----- | ----------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------- | -------------------------------------- | ---------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `%Symbol%` call                            | `sec-symbol-description`                       | 0..=1 | `Arg(0)`: ToString                                                            | —                                                | —                                        | —                                      | `Prim(Symbol)`         | OnCoercion                                       | `%Symbol%`                                                                                       |
+| `%Symbol.for%`                             | `sec-symbol.for`                               | 1     | `Arg(0)`: ToString                                                            | —                                                | —                                        | — (agent-local registry; unobservable) | `Prim(Symbol)`         | OnCoercion                                       | `%Symbol%`, `%Symbol.for%`                                                                       |
+| `%Set%` construct, no iterable             | `sec-set-iterable`                             | 0     | —                                                                             | —                                                | `(Set, One)`                             | —                                      | `Fresh`                | Never                                            | `%Set%`                                                                                          |
+| `%Set%` construct, iterable                | `sec-set-iterable`                             | 1     | `Arg(0)`: Iterate; `Elements(Arg(0))`: none (SameValueZero)                   | — (via Iterate)                                  | `(Set, One)`                             | `Fresh`: Contents                      | `Fresh`                | OnCoercion                                       | `%Set%`, `%Set.prototype.add%`, `%Array.prototype[@@iterator]%`, `%ArrayIteratorPrototype%.next` |
+| `%Map%` construct, iterable                | `sec-map-iterable`                             | 1     | `Arg(0)`: Iterate; `Entries(Arg(0))`: [[Get]] `0`,`1`                         | —                                                | `(Map, One)`                             | `Fresh`: Contents                      | `Fresh`                | OnCoercion                                       | `%Map%`, `%Map.prototype.set%`, Array iterator slots as above                                    |
+| `%WeakMap%`/`%WeakSet%` construct          | `sec-weakmap-iterable`, `sec-weakset-iterable` | 0..=1 | `Arg(0)`: Iterate (when present)                                              | —                                                | `(WeakMap, One)`                         | `Fresh`: Contents                      | `Fresh`                | OnCoercion; Always(TypeError) for primitive keys | `%WeakMap%`, `%WeakMap.prototype.set%`, Array iterator slots                                     |
+| `%Object.freeze%`                          | `sec-object.freeze`                            | 1     | `Arg(0)`: [[OwnPropertyKeys]], [[DefineOwnProperty]]                          | —                                                | —                                        | `Arg(0)`: Integrity                    | `Arg(0)`               | OnCoercion                                       | `%Object%`, `%Object.freeze%`                                                                    |
+| `%Object.defineProperty%`                  | `sec-object.defineproperty`                    | 3     | `Arg(1)`: ToPropertyKey; `Arg(2)`: [[Get]] of descriptor fields               | —                                                | —                                        | `Arg(0)`: Props(key)                   | `Arg(0)`               | OnCoercion                                       | `%Object%`, `%Object.defineProperty%`                                                            |
+| `%Object.defineProperties%`                | `sec-object.defineproperties`                  | 2     | `Arg(1)`: [[OwnPropertyKeys]], [[Get]] per key and descriptor field           | —                                                | —                                        | `Arg(0)`: Props(keys of `Arg(1)`)      | `Arg(0)`               | OnCoercion                                       | `%Object%`, `%Object.defineProperties%`                                                          |
+| `%Object.entries%`                         | `sec-object.entries`                           | 1     | `Arg(0)`: [[OwnPropertyKeys]], [[Get]] per key                                | —                                                | `(Array, One)` of fresh pairs            | —                                      | `Fresh`                | OnCoercion                                       | `%Object%`, `%Object.entries%`                                                                   |
+| `%Object.fromEntries%`                     | `sec-object.fromentries`                       | 1     | `Arg(0)`: Iterate; `Entries(Arg(0))`: [[Get]] `0`,`1`, ToPropertyKey on `[0]` | —                                                | `(Object, One)`                          | `Fresh`: Props                         | `Fresh`                | OnCoercion                                       | `%Object%`, `%Object.fromEntries%`, Array iterator slots                                         |
+| `%Array.prototype.push%`                   | `sec-array.prototype.push`                     | 0..   | `This`: [[Get]] `length`, [[Set]] indices                                     | —                                                | —                                        | `This`: Contents, Props(`length`)      | `Prim(Number)`         | OnCoercion                                       | `%Array.prototype.push%`                                                                         |
+| array spread `[...x]`                      | `sec-runtime-semantics-arrayaccumulation`      | —     | `x`: Iterate                                                                  | —                                                | (part of enclosing literal)              | —                                      | —                      | OnCoercion                                       | `%Array.prototype[@@iterator]%`, `%ArrayIteratorPrototype%.next` when `x` is an `Alloc(Array)`   |
+| `%Function.prototype.call%`                | `sec-function.prototype.call`                  | 0..   | —                                                                             | `This`                                           | —                                        | —                                      | result of `This`       | as callee                                        | `%Function.prototype.call%`                                                                      |
+| `%Promise.resolve%`                        | `sec-promise.resolve`                          | 0..=1 | `Arg(0)`: [[Get]] `then` when object; `This`: [[Get]] `constructor`           | `then` of `Arg(0)` if thenable, deferred via job | `(Promise, One)`                         | —                                      | `Fresh`                | OnCoercion                                       | `%Promise%`, `%Promise.resolve%`; host job hooks (`host_no_reentry` axiom, § 4)                  |
+| `%String.raw%` tag                         | `sec-string.raw`, `sec-gettemplateobject`      | —     | each substitution: ToString                                                   | —                                                | — (template object cached by the engine) | —                                      | `Prim(String)`         | OnCoercion                                       | `%String%`, `%String.raw%`                                                                       |
+| `%Math.round%` family                      | `sec-math.round` …                             | 1     | `Arg(0)`: ToNumber                                                            | —                                                | —                                        | —                                      | `Prim(Number)`         | OnCoercion                                       | `%Math%`, `%Math.round%` …                                                                       |
+| `%Array.prototype.forEach%`/`map`/`filter` | `sec-array.prototype.foreach` …                | 1..=2 | `This`: [[Get]] `length`, indices                                             | `Arg(0)` per element                             | `map`/`filter`: `(Array, One)`           | —                                      | `Fresh` or `undefined` | as callback                                      | `%Array.prototype.forEach%` …, `%Array%` (species)                                               |
+| `%FinalizationRegistry%` construct         | `sec-finalization-registry-constructor`        | 1     | —                                                                             | — (retains `Arg(0)`)                             | `(Registry, One)`                        | `Fresh`: Props(callback)               | `Fresh`                | Always(TypeError) if not callable                | `%FinalizationRegistry%`                                                                         |
+
+Rows reproduce today's conclusions as consequences, not as special cases:
+`Symbol.for("x")` is pure because `coerces` resolves to nothing on a
+`Prim(Const)` and `mutates` is empty (purity_soundness § Source-selected
+native-operation inputs); `new Set([1,2])` is pure because `Iterate` on a
+`Clean` dense `Alloc(Array)` of `Prim` resolves to nothing and the required
+slots are intact; `Object.freeze(fresh)` keeps its callbacks because `returns
+= Arg(0)` and `mutates` only touches `Integrity`; `push` invalidates the
+array's dense shape because `mutates` names `Contents`.
+
+### 3.3 Integrity flags from the census
+
+Today #16 computes `mutated: BTreeSet<NativeIntrinsic>` at family granularity
+and separately answers exact-slot known-write queries for the author inputs.
+The table consumes one function:
+
+```text
+integrity(slot) ∈ { Intact(census), AuthorAsserted(ref), Unknown }
+```
+
+`Intact` when the closed-write census has no known or possible write to that
+slot, its owning family root, or the global object; `AuthorAsserted` when an
+axiom (§ 4) covers the slot at this site; `Unknown` otherwise. A row whose
+`requires` has any `Unknown` slot evaluates as `Havoc(reach)` — exactly
+today's opaque fallback. The census stops being a per-rule premise
+(`context.require(NativeIntegrity(X))` in #12) and becomes a flag source the
+table reads. `NativeIntrinsic` grows from fifteen family roots to a slot
+enumeration; `NativeIntegrity`, `NativeCallIdentity`, `NativeOwnDataRead`,
+`EmptyCollection` and `EmptyCollectionSite` keys are deleted with #12.
+`prototype_properties.rs`'s per-property absence check is `integrity(%Object.prototype%[key])`.
+
+## 4. Author assertions as axioms
+
+Every `AnalysisAssumptions` field is one of six axiom forms over the same
+domain. The interpreter never special-cases an assumption; it reads an axiom
+where it would otherwise read a census flag, a value, or a callable summary.
+
+| Axiom form                       | Meaning                                                                                      | `AnalysisAssumptions` fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IntrinsicIntact(slots, scope)`  | `integrity(slot) = AuthorAsserted` at the selected site(s)                                   | `native_operation_inputs` (`symbol`, `symbol_for`, `promise_resolve`, `set_from_primitive_array`, `set_from_set_spread`, `object_own_data_function_read`, `array_spread_from_primitive_arrays`), `native_call_identity_inputs` (`object_freeze`, `set_empty_private_field`), `non_reentrant_global_membership` (host `[[HasProperty]]` on a root), `retained_record_factories` (prototype absence / own-data writes), `host_no_reentry` (host job hooks for `%Promise.resolve%`, `AsyncLocalStorage`, builtin module leaves)                                                                                      |
+| `ValueIs(binding, Value)`        | Seeds `Env(binding)` with an abstract value the source cannot prove                          | `captured_value_inputs` (`Alloc(site, Object)` with `proto = Unknown`, `escape = Published`, not an intrinsic)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `CallableSummary(callable, Row)` | A § 3.1 row for a non-native callable; the interpreter uses it instead of expanding the body | `declared_pure`, `declared_pure_new`, `declared_pure_members`, `fluent_bindings`, imported `pure_exports`; `no_reentry_exports`, `no_reentry_members`, `no_reentry_record_members`, `no_reentry_callback_exports`, `no_reentry_statement_calls`; `inline_callback_factories`, `callback_factory_members`, `retained_callback_factories`, `retained_callback_factory_members`, `retained_callback_constructors`; `descriptor_copy_factory` providers; `namespace_independent_members`; `known_effects` (decorate helpers); `no_sync_callback_members`; `argument_inputs` (one parameter's `mutates`/escape column) |
+| `CellUnobserved(cell, until)`    | A write to `cell` is not read by any init-time reader before `until`                         | `deferred_global_publications`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `EffectsDisjoint(unitA, unitB)`  | The two source units' effect sets commute; the gate drops the `Sequenced` edge between them  | `commuting_statements` (sibling PR; not yet landed)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `SummaryTrusted(unit)`           | The syntactic summary stands in for the interpreter's for this unit                          | `declared_pure_initializers`, `trusted_dataflow_summaries` (chunk-wide)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+
+The row form for author summaries is the same struct as a builtin row with
+`cite` replaced by the spec location and `audited_source_sha256`. A
+`no_reentry_*` contract is a row with `invokes = []` and `returns = Unknown`;
+a `callback_factory_*` contract is `invokes = []`, `returns = Fresh` with
+`Props(callback) ← Arg(i)`; `pure` is `invokes = [] ∧ mutates = [] ∧ coerces =
+[]`. The current per-contract admission checks (argument shapes, arity,
+spread rejection) become the row's `arity` and `coerces` columns evaluated
+against the call's abstract arguments. Proof dependencies stay typed:
+consuming an axiom records its `ProofDependencies` reference exactly as
+`context.assume` does today.
+
+## 5. Migration order
+
+Each step is one PR or a short native GitHub stack. A step lands only when
+the rule's contract tests pass unchanged on the interpreter path and the
+bespoke rule is deleted in the same change. Every step reruns the § 6
+measurements.
+
+### Step 0 — baseline
+
+Record `-c opt` profiles and output digests for the public scale controls and
+the private canonical inputs (§ 6). No code change.
+
+### Step 1 — domain and table seed
+
+- Add `facts/abstract/{value,heap,effect,lattice,builtins}.rs`. Port the nine
+  `native_call_model` arms (#21) to rows; `NativeCallModel`, `CallInputs`,
+  `CallReturn`, `NativeHeapEffect` are deleted and `resolve_native_call_transfer`
+  reads rows.
+- Tests: `native_call_summary`, `math_round_timing`, `fresh_freeze_callback_timing`,
+  `empty_collection_timing`, `own_property_names`, `own_descriptor_inspection`.
+- SPEC: § Native collection callback effects and purity_soundness § Guarded
+  native call summaries point at the table instead of enumerating operations.
+- Soundness: each row is the arm it replaces with its ECMA-262 citation moved
+  from prose to the `cite` column; the interpreter's input checks are unchanged.
+- Risk: low. The arms are already a table in disguise.
+
+### Step 2 — slot-level integrity flags
+
+- `NativeIntrinsic` becomes a slot enumeration; `NativeWriteCensus` exposes
+  `integrity(slot)` (§ 3.3). `native_operation_inputs` and
+  `native_call_identity_inputs` become `IntrinsicIntact` axioms resolved at
+  validation time, not consulted by rules. Delete `SemanticKey::{NativeIntegrity,
+NativeCallIdentity, NativeOwnDataRead, EmptyCollection, EmptyCollectionSite}`
+  and `prototype_properties.rs`.
+- Tests: `native_operation_input`, `native_call_identity_input`,
+  `native_own_data_read`, `native_constructor_identity_order`,
+  `wrapper_argument_native_integrity`, `prototype_property_integrity`,
+  `intrinsic_alias_lowering`.
+- SPEC: §§ Exact-site native-call identity inputs and Native-operation inputs
+  collapse to one § Native integrity inputs describing the slot axiom; the
+  per-operation prose moves to row comments.
+- Soundness: slot-level is at least as conservative as family-level when every
+  slot inherits its family's and the global object's writes; the author inputs
+  already reject known exact-slot writes, which is the same query.
+- Risk: medium. `UnknownGlobalValue` descendants (SPEC § Inferred native
+  property-key domains) must still poison every slot; add a control where a
+  global-slot read-back is mutated.
+
+### Step 3 — one value lattice
+
+- `AbstractValue`, `ValueOrigin`, `purity/value_inference.rs` classes and
+  `cross_module_values.rs` primitive facts become projections of
+  `facts/abstract/value.rs`. `ChunkValueFlow` keeps its worklist but stores
+  `Value` sets. `imported_primitives` is the exported `Value` set projected
+  through the import resolver. Delete `value_inference.rs` and
+  `cross_module_values.rs`; `stable_var_number_candidates` and the
+  Symbol-const class become `Prim(Const)` tracking.
+- Tests: `purity`, `imported_primitive`, `captured_value_input`,
+  `soundness_at_init_value_flow`, `value_flow_sharing_scale`,
+  `stable_array_spread` (enum keys).
+- SPEC: § Synchronous analysis limits paragraphs on enum member reads, stable
+  primitive imports and `Math` return facts become one paragraph on `Prim`
+  tracking.
+- Soundness: every old class is a subset of the new lattice with the same
+  write/escape gates (now `escape`/`taint`); joins only lose precision.
+- Risk: medium. Fluent values have no lattice meaning; keep them as the
+  `fluent_bindings` axiom and assert nothing new.
+
+### Step 4 — purity as empty effect set
+
+- `Purity::Pure ⇔` the statement's effect set has no `Write` to an observable
+  cell, no `Invoke`, no `Havoc`. `PurityRule` reasons become projections of
+  the offending effect (`Coerce` → `CoercingOperator`, `Havoc` → `UnknownCall`,
+  …) so `dependency_graph.json` wire shape is unchanged. Whitelists (#23)
+  become rows; `PURE_OBJECT_CALLS_ON_PLAIN_DATA` is the generic row plus the
+  `Clean` ordinary-object resolution; PlainData (#25) is `escape = Private ∧
+taint = Clean ∧ props ⊆ Prim`. Delete `whitelists.rs`, `builtin_calls.rs`,
+  `plain_data.rs`, `ts_enum_iife.rs` (the IIFE is interpreted), most of
+  `classifier.rs`; keep `purity_type.rs` as the projection and
+  `effect_inference.rs` as the cross-module worklist over summaries.
+- Stack: 4a whitelists → rows; 4b PlainData → heap state; 4c classifier →
+  projection.
+- Tests: `purity`, `object_plain_data_calls`, `proxy_constructor_purity`,
+  `initializer_purity`, `export_default_purity`, `pure_members`,
+  `cross_module_purity_scale`, `dependency_graph_purity_reason`,
+  `impure_call_reason_growth`, `plain_data_escape_scale`,
+  `soundness_plain_data_escape`, `repeated_var_purity`,
+  `purity_hint_diagnostics`; unit `purity/classifier_tests.rs` and
+  `graph_purity_tests.rs` are rewritten against effect sets or deleted where
+  they pin table membership.
+- SPEC/docs: purity_soundness.md shrinks to § Admission rule (now "how to add a
+  row"), § Declared purity and the redundant-hint section; per-operation
+  sections delete with their rules.
+- Soundness: the whitelist contract "fires no user code on any argument type"
+  is `coerces = [] ∧ invokes = []`; the primitive-arg and plain-data gates are
+  the `Coerce` resolution rule. A row admitting more than its old table entry
+  is the only way to weaken, so review is row-by-row.
+- Risk: high in volume, low in semantics. The classifier is 1,194 lines of
+  cases; the e2e suite, not the unit tests, is the contract.
+
+### Step 5 — native-operation and callable certificates
+
+- 5a collections: `set_iterables.rs`, `array_spreads.rs` → derived from
+  `Iterate` resolution on `Clean` dense arrays; the interval co-location check
+  stays in `graph/build.rs`. Tests `set_iterable_reentry`,
+  `stable_array_spread`, `native_operation_input`.
+- 5b local construction: `local_class_construction.rs`, `fresh_receiver.rs`,
+  `fresh_record.rs` → interpreting the constructor/factory body. Tests
+  `local_class_construction`, `local_record_factory_contract`,
+  `fresh_returned_record_destructuring`.
+- 5c callable summaries: `callable_inference.rs`, `namespace_wrapper.rs`,
+  `SemanticKey::{StableFunction, StableProvider, CallbackFactory,
+ReturnedRecord, NamespaceWrapper, ArgumentNoEscape, DescriptorCopy*}` → the
+  interpreter summarizes the exported body once; imported providers carry the
+  summary as `Foreign(summary)` through `imported_callables`. Tests
+  `imported_callback_timing`, `retained_callback_factory`,
+  `retained_constructor_callback`, `namespace_wrapper`,
+  `descriptor_copy_factory`, `argument_input`.
+- 5d own-property projections: `property_inference.rs` → `props` of a `Clean`
+  `Alloc(One)` in ECMAScript own-key order. Tests `own_property_names`,
+  `own_descriptor_inspection`.
+- After 5d `semantic_inference.rs` holds only the axiom entry points and is
+  renamed `facts/abstract/axioms.rs`.
+- SPEC: §§ Inferred returned-record construction timing, Inferred
+  namespace-wrapper timing, Ordinary own-property inspection, and the
+  source-derived half of § Audited callback factories become one § Derived
+  callable summaries stating the summary schema and the budgets.
+- Soundness: a derived summary is the interpreter's effect set over `Top`
+  arguments; it is weaker than or equal to each hand-written certificate
+  because the certificates were sufficient conditions for the same effect set
+  being empty.
+- Risk: high. These rules carry the private corpus' current acceptance; a
+  precision regression shows up as a red canonical gate. Mitigation: 5a–5d
+  land only after the private corpus replays accept the same assignments
+  (debug/runtime_transfers.md's paired-measurement protocol).
+
+### Step 6 — heap frontier from effect sets
+
+- `array_content_effects.rs` and `HeapContentEffects` are deleted;
+  `emit_heap_content_order` reads `Read/Write(Contents(site))`, `Alloc(site)`
+  with `mult = One`, and `Havoc` directly from statement summaries.
+  `OneShotEagerAllocations` is the `One` multiplicity; `CellOrderBarrier`
+  stays.
+- Tests: `local_array_push_order`, `stable_array_spread`,
+  `at_init_s_chain_dataflow`, `graph_provenance`, `s_chain_dataflow_soundness`,
+  `lemma_five_side_effect_order`; unit `array_heap_frontier_tests` stays.
+- SPEC/docs: design § Emission modes' array-content paragraphs become a
+  reference to the `Contents` cell.
+- Soundness: the frontier algorithm is unchanged; only its input cells change
+  source. An allocation the interpreter cannot see is `Havoc`, which is the
+  existing barrier.
+- Risk: medium. Edge counts must not grow (§ 6).
+
+### Step 7 — statement cell summaries and taint
+
+- `StatementEffectSummary`, `dataflow_summarizable`, `cell_writes_summarizable`
+  and `global_object.rs` taint become projections of the interpreter's effect
+  set (`Binding`/`GlobalProp` cells; a bail shape is a `Havoc`). `collector.rs`
+  keeps only syntax collection (declarations, lazy boundaries, TLA).
+- Tests: `s_chain_dataflow_soundness`, `soundness_at_init_value_flow`,
+  `at_init_s_chain_dataflow`, `repeated_var_loop`, `hoisted_var_declaration`.
+- Soundness: every current bail shape produces `Havoc` under the domain
+  (`with` and direct `eval` are already dynamic-scope; `Function(...)` is an
+  `Invoke(Unknown)`; computed global keys are `UnknownKey` on the global
+  allocation).
+- Risk: medium. `trusted_dataflow_summaries` must keep its exact meaning:
+  `SummaryTrusted` replaces `Havoc` from unproven calls by the syntactic cells
+  only, never `Havoc` from `UnknownKey`.
+
+### Step 8 — promotion and fallback
+
+- `at_init_fallback.rs` heuristics (`safe_plain_array_at_init_fallback_sources`,
+  `is_static_event_listener_registration`, `no_sync_member_argument_fallback_sources`)
+  become rows (`addEventListener` is `invokes = []` on the listener at call
+  time) or `Clean` array resolution. `promote_at_init_calls` consumes
+  `Invoke`/`Havoc(reach)` from summaries; `source_unit_read_closure.rs` stays
+  as the `reach` computation.
+- Tests: the #5 set.
+- Risk: low; this is already how the interpreter feeds promotion.
+
+### Step 9 — `EffectsDisjoint` and gate consumption
+
+- Land after the sibling `commuting_statements` PR: the axiom removes the
+  `Sequenced` edge between two units when their summarized effect sets are
+  disjoint and the author asserts the unsummarized remainder is. The gate reads
+  effect sets, not purity bits, for this decision.
+- Tests: new controls — two units with a shared `Contents` cell must keep
+  their edge despite the assertion.
+
+### Step 10 — graduation
+
+- `docs/inference.md` describes the interpreter, the domain and the table;
+  `SPEC.md` § Synchronous analysis limits onward lists axiom forms and the
+  summary schema; `purity_soundness.md` is the row-authoring rule. Delete this
+  plan.
+
+## 6. Scale and performance
+
+Sizing premise: canonical private inputs carry 2.3M–5.4M dependency edges and
+thousands of top-level statements; the public baseline is 106 s wall / 3.75 GiB
+peak RSS for the large web corpus (<../perf/large_web_corpus_baseline.md>).
+
+### 6.1 Measure before and after every step
+
+Per <../AGENTS.md> § Profiling: `-c opt` binary, pre-staged inputs,
+`perf_wrapper.sh`; keep `perf_record_stderr.txt`, `perf_report_flat_symbols.txt`
+and the children report. Record:
+
+- Wall, user CPU, peak RSS: three alternating pairs per control; budget +25%
+  CPU/RSS per step as in <../debug/runtime_transfers.md>.
+- Public controls: `opaque_callback_scale`, `value_flow_sharing_scale`,
+  `cross_module_purity_scale`, `plain_data_escape_scale`,
+  `conflict_diagnostics_scale`, `perf/gen_synth_corpus.py` (10k statements).
+- Private canonical inputs: gate verdict, atomic-group count, per-reason edge
+  counts in `dependency_graph.json`, `precision_losses` count by reason. Edge
+  counts and losses must not grow; the verdict must not change.
+- Flat-profile symbols already known hot: cloning `BTreeSet<Id>` and
+  source-owner sets (28% + 20% in the rejected replay prototype), copying
+  `BTreeSet<RuntimeKey>` (22% in the cached-fallback fanout). Any step that
+  touches these paths reports them explicitly.
+
+### 6.2 What keeps the interpreter per-statement
+
+The current code already summarizes at these points; the interpreter keeps
+every one of them:
+
+- One settled `ExecutionState` per prefix; statement _n+1_ consumes statement
+  _n_'s state and never rewrites it (`runtime_inference.rs`; inference
+  § Dependency regions).
+- Invocation memo per `InvocationSignature` with `read_final` dependencies, no
+  parent replay (`interpreter.rs::invocation_memos`; runtime_transfers.md
+  § Terminal transfers).
+- Budgets `MAX_SYNCHRONOUS_INVOCATION_DEPTH`, `MAX_SYNCHRONOUS_INVOCATIONS`,
+  `MAX_SYNCHRONOUS_CALLBACK_POOL` widening to `Havoc` with recorded losses.
+- Interned `Captured` contexts and callback sets (`value_model.rs`), batch
+  discovery of exports and arguments, bulk sorted effect-set merges
+  (debug/2026_10_24_callback_analysis_performance.md).
+- Persistent `OrdMap` state so per-prefix snapshots share structure.
+- Heap frontier reset at `CellOrderBarrier::HeapFrontier` so barriers stay
+  linear in the live frontier (`array_heap_frontier_tests::repeated_opaque_heap_barriers_keep_edges_linear_in_the_live_frontier`).
+- `SourceUnitReadClosure` shared SCC summaries for fallback reach.
+- Cross-module summaries: one worklist over `(body, abstract args)` facts
+  (`effect_inference.rs`, `cross_module_purity.rs`); importers consume
+  summaries, never provider bodies.
+
+New widening the domain adds: constants to `Any` after one distinct join;
+`One → Many` on repeated birth; argument shapes to `Top` after one distinct
+re-summary per body; `UnknownKey` absorbing a property map. Each is a
+finite-height guarantee, not a heuristic, so the worklist terminates without
+budgets; budgets remain for cost.
+
+### 6.3 Risks
+
+1. Step 5 precision regressions on the private corpus (red canonical gates).
+   The hand-written certificates encode exactly the shapes that corpus needed;
+   the domain must reproduce each as a consequence. Mitigation: replay-gated
+   landing, one certificate family per PR.
+2. Heap-state size. Property maps per allocation site across thousands of
+   statements, with persistent snapshots, can exceed today's
+   `prefix_object_properties`. Mitigation: `escape = Global` drops the map to
+   `Top`; measure RSS per step.
+3. Loss of #17's reaching-definition precision (§ 2.5). Sites that today pass
+   through `native_receiver_certificates` fall back to `Havoc` unless a
+   `captured_value_inputs` axiom is added. Count affected sites in the corpus
+   before step 2.
+
+## 7. Not in scope
+
+- No cross-version or multi-spec reasoning (design § Mission; AGENTS § Spec
+  authoring).
+- No runtime execution or runtime checks; the interpreter is static and its
+  conclusions are gated the same way (design § Why a static gate, not a runtime
+  check).
+- No weakening of the soundness contract (AGENTS § Soundness over
+  completeness): every step is accepted only when its conclusions are a subset
+  of the replaced rule's on the contract tests and the corpus replays. New
+  precision is not a goal and is not added.
+- No change to the gate algorithm, quotient, emission or selector resolution.
+- A11 stays an external author obligation; the census and the table narrow
+  what A11 must cover, they do not discharge it.
+
+## 8. Doc drift found while inventorying
+
+Fix during the step that touches the area; listed so they are not rediscovered.
+
+- `docs/inference.md` diagram omits `NativeOwnDataRead`, `StablePrimitiveArraySpread`,
+  `ArgumentNoEscape`, `StableProvider`, `DescriptorCopyProvider`/`DescriptorCopyFactory`,
+  all present in `SemanticKey` and `InferenceRule`.
+- `docs/inference.md` opens with "`inference.rs` provides a dependency
+  worklist"; the worklist is `inference/iterative.rs`, `inference.rs` only
+  defines `Judgment` and re-exports.
+- `docs/purity_soundness.md` § Source-selected native-operation inputs lists
+  six operations; `spec::NativeOperationKind` and SPEC § Native-operation inputs
+  have seven (`array_spread_from_primitive_arrays` missing).
+- `purity/whitelists.rs` names the `PURE_OBJECT_CALLS_ON_PLAIN_DATA` exclusion
+  shortlist as `Object.assign`, `Object.getOwnPropertyNames`, `Array.from`;
+  `docs/purity_soundness.md` lists `Object.assign`, `Object.getPrototypeOf` /
+  `getOwnPropertyDescriptor`, `Array.from`.
+- `facts/sync_effects/execution_index.rs` imports `NativeIntrinsic as IntrinsicRoot`
+  and `native_calls.rs` uses the alias; STYLE § General forbids import renames.
+  Step 2 renames the enum once and drops the alias.

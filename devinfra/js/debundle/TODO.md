@@ -17,6 +17,8 @@ plans and evidence live here:
 - <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
 - <plans/native_receiver_identity.md> — native receiver certificates and their
   descriptor, alias, method-receiver and initialization proof obligations.
+- <plans/abstract_interpreter.md> — migrate the bespoke semantic certificates
+  onto one abstract interpreter, domain and builtin summary table.
 - <ARCHITECTURE_BACKLOG.md> — unrelated deferred integrity and test/spec items.
 - `perf/` — measured performance notes. Update from real
   profiles before major matcher/index rewrites.
