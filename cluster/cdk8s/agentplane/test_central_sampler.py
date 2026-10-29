@@ -34,6 +34,7 @@ def _admits(policy: dict[str, Any], *, source: str, port: int) -> bool:
 
 def test_central_sampler_workload_and_cross_service_grants(staging_manifests: list[dict[str, Any]]) -> None:
     namespace = staging.ENV.namespace
+    assert _resource(staging_manifests, "Database", "central-sampler")["spec"]["databaseReclaimPolicy"] == "retain"
     deployment = _resource(staging_manifests, "Deployment", central_sampler.NAME)
     pod = deployment["spec"]["template"]["spec"]
     assert deployment["spec"]["replicas"] == 1

@@ -34,8 +34,8 @@ from util.settings_contract import env_name
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset"
 _CONFIG_PATH = "/etc/agentplane-central-sampler/settings.json"
-_GATEWAY_TOKEN_FILE = "/var/run/secrets/central-sampler/gateway"
-_HISTORY_TOKEN_FILE = "/var/run/secrets/central-sampler/history"
+_GATEWAY_TOKEN_FILE = Path("/var/run/secrets/central-sampler/gateway")
+_HISTORY_TOKEN_FILE = Path("/var/run/secrets/central-sampler/history")
 _LOGS_PATH = "/var/log/central-sampler"
 
 
@@ -91,7 +91,7 @@ class CentralSampler(Construct):
             turn_timeout_seconds=props.turn_timeout_seconds,
             rpc_timeout_seconds=props.rpc_timeout_seconds,
             lease_seconds=props.lease_seconds,
-            **({} if props.auto_compact_tokens is None else {"auto_compact_tokens": props.auto_compact_tokens}),
+            auto_compact_tokens=props.auto_compact_tokens,
         )
         settings_file = SettingsFile(
             self,

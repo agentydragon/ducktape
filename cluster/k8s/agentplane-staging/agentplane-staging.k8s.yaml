@@ -567,7 +567,7 @@ metadata:
 spec:
   cluster:
     name: postgres
-  databaseReclaimPolicy: delete
+  databaseReclaimPolicy: retain
   name: central_sampler
   owner: central_sampler
 ---
@@ -2886,7 +2886,8 @@ data:
       "host_rss_bytes": 536870912,
       "turn_timeout_seconds": 3600,
       "rpc_timeout_seconds": 30,
-      "lease_seconds": 60
+      "lease_seconds": 60,
+      "auto_compact_tokens": null
     }
 immutable: false
 ---

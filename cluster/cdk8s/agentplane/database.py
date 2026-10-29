@@ -145,5 +145,10 @@ class Db(Construct):
                 cluster=DatabaseSpecCluster(name=cluster.name),
                 name=role,
                 owner=role,
-                database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.DELETE,
+                # Disabling the optional sampler must preserve its authored conversations.
+                database_reclaim_policy=(
+                    DatabaseSpecDatabaseReclaimPolicy.RETAIN
+                    if role == "central_sampler"
+                    else DatabaseSpecDatabaseReclaimPolicy.DELETE
+                ),
             )
