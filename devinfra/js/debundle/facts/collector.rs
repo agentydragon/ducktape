@@ -273,6 +273,10 @@ fn expression_may_retain_parameter(expr: &Expr, parameter: &Id) -> bool {
     match expr.unwrap_parens() {
         Expr::Ident(id) => &id.to_id() == parameter,
         Expr::Member(member) => expression_may_retain_parameter(&member.obj, parameter),
+        Expr::OptChain(chain) => match &*chain.base {
+            OptChainBase::Member(member) => expression_may_retain_parameter(&member.obj, parameter),
+            OptChainBase::Call(_) => false,
+        },
         Expr::Cond(cond) => {
             expression_may_retain_parameter(&cond.cons, parameter)
                 || expression_may_retain_parameter(&cond.alt, parameter)
@@ -806,6 +810,11 @@ impl Visit for StatementFactsCollector {
         for element in node.elems.iter().flatten() {
             self.mark_parameter_value_escape(&element.expr);
         }
+        node.visit_children_with(self);
+    }
+
+    fn visit_spread_element(&mut self, node: &SpreadElement) {
+        self.mark_parameter_value_escape(&node.expr);
         node.visit_children_with(self);
     }
 

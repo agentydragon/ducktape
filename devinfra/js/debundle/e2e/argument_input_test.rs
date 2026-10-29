@@ -117,6 +117,8 @@ fn visible_mutation_return_and_capture_contradict_the_contract() {
         "function keys(input) { input.READY = 'wrong'; return []; }",
         "function keys(input) { Object.assign(input, { READY: 'wrong' }); return []; }",
         "function keys(input) { return input; }",
+        "function keys(input) { return input?.READY; }",
+        "function keys(input) { return {...input}; }",
         "function keys(input) { throw input; }",
         "function keys(input) { globalThis.retained = input; return []; }",
         "function keys(input) { const retained = input; return []; }",
