@@ -103,6 +103,7 @@ impl<'a> ModulePurityFacts<'a> {
         let plain_data_dependencies = structural.plain_data_dependencies;
         let plain_data_inference_uses = structural.plain_data_inference_uses;
         let source_semantic_facts = structural.source_semantic_facts;
+        let stable_array_spread_shapes = structural.stable_array_spread_shapes;
         let plain_array_bindings = collect_plain_array_bindings(&views, &shadowed);
         let set_iterable_proof = structural.set_iterable_shapes;
         let local_class_construction_proof = structural.local_class_shapes;
@@ -115,6 +116,7 @@ impl<'a> ModulePurityFacts<'a> {
                 crate::facts::sync_effects::execution_index::interpreter::PreparedSyncShapeInputs {
                     local_class_construction: &local_class_construction_proof,
                     set_iterable_shapes: set_iterable_proof,
+                    stable_array_spread_shapes,
                     shadowed: &shadowed,
                     source_facts: source_semantic_facts.as_deref(),
                 },
@@ -627,6 +629,7 @@ pub fn resolve_imported_callable_summaries(
         let mut prepared_module =
             crate::facts::sync_effects::execution_index::prepare_callable_capabilities(
                 &views,
+                crate::facts::StableArraySpreadShapes::collect(facts.body, &views),
                 locals,
                 selected_value_inputs
                     .get(module)
@@ -1509,6 +1512,7 @@ mod tests {
                 descriptor_copy_author_refs: Default::default(),
                 argument_input_refs: BTreeSet::new(),
                 argument_input_spec_locations: BTreeSet::new(),
+                native_operation_input_refs: BTreeSet::new(),
             },
         });
         let trusted_dependencies = value_input_dependencies("provider-values.js", 0);

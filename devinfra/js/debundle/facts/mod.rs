@@ -45,6 +45,7 @@ pub(crate) use crate::purity::{
 
 mod analyze;
 mod array_content_effects;
+mod array_spreads;
 mod at_init_fallback;
 mod callable_inference;
 mod collector;
@@ -70,6 +71,7 @@ mod value_set_tests;
 
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.
+pub(crate) use array_spreads::StableArraySpreadShapes;
 pub(crate) use at_init_fallback::*;
 pub(crate) use collector::*;
 pub(crate) use dynamic_scope::DynamicScopeFact;

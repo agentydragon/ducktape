@@ -14,6 +14,7 @@ use super::{
 };
 use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
 use crate::facts::ExportReentryPolicy;
+use crate::facts::StableArraySpreadShapes;
 use crate::facts::callable_inference::CallableInferenceInputs;
 use crate::facts::fresh_receiver::fresh_mutation_callables;
 use crate::facts::item_views::TopLevelItemView;
@@ -682,6 +683,25 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         dependencies: &ProofDependencies,
     ) {
         self.record_proof_dependencies(guard, dependencies);
+        for reference in &dependencies.native_operation_inputs {
+            if let Some(input) = self
+                .inputs
+                .index
+                .resolved_native_operation_inputs
+                .iter()
+                .find(|input| &input.evidence.reference == reference)
+            {
+                let span = input.initializer_span;
+                self.state.native_operation_input_uses.borrow_mut().insert(
+                    (span.lo.0, span.hi.0),
+                    crate::reports::schema::NativeOperationInputUse {
+                        evidence: input.evidence.clone(),
+                        source_location: input.evidence.initializer_location.clone(),
+                        span,
+                    },
+                );
+            }
+        }
         self.state.inference_uses.borrow_mut().insert(proof);
     }
 
@@ -5920,6 +5940,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, dependencies);
                 return;
             }
+            if call.caller.is_none()
+                && let Some(proof) = self
+                    .inputs
+                    .set_iterable_proof
+                    .stable_array_spread_inference_use(call.span)
+            {
+                self.record_inference_use(
+                    NativeIntegrityGuard::ArrayIntrinsics,
+                    proof,
+                    self.inputs
+                        .set_iterable_proof
+                        .stable_array_spread_dependencies(call.span)
+                        .expect("array spread certificate retains dependencies"),
+                );
+                return;
+            }
             if self.dense_source(&values).is_some() {
                 return;
             }
@@ -6586,6 +6622,7 @@ pub(crate) fn prepare_synchronous_call_index(
         PreparedSyncShapeInputs {
             local_class_construction,
             set_iterable_shapes,
+            stable_array_spread_shapes: StableArraySpreadShapes::default(),
             shadowed,
             source_facts: None,
         },
@@ -6595,6 +6632,7 @@ pub(crate) fn prepare_synchronous_call_index(
 pub(crate) struct PreparedSyncShapeInputs<'a> {
     pub(crate) local_class_construction: &'a LocalClassConstructionShapes,
     pub(crate) set_iterable_shapes: SetIterableShapes,
+    pub(crate) stable_array_spread_shapes: StableArraySpreadShapes,
     pub(crate) shadowed: &'a BTreeSet<&'static str>,
     pub(crate) source_facts: Option<&'a SemanticFacts>,
 }
@@ -6609,6 +6647,7 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
     let PreparedSyncShapeInputs {
         local_class_construction,
         set_iterable_shapes,
+        stable_array_spread_shapes,
         shadowed,
         source_facts,
     } = shapes;
@@ -6618,6 +6657,7 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
         Some(flow),
         plain_array_bindings,
         local_class_construction,
+        &stable_array_spread_shapes,
     );
     // The census is now complete. Publish its binding and mutation premises
     // into one immutable context shared by timing, purity and heap consumers.
@@ -6625,9 +6665,12 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
     let facts = index.prepare_semantic_facts(
         flow,
         shadowed,
-        classes,
-        set_iterable_shapes,
-        CallableInferenceInputs::default(),
+        super::SemanticShapeInputs {
+            classes,
+            sets: set_iterable_shapes,
+            array_spreads: &stable_array_spread_shapes,
+            callables: CallableInferenceInputs::default(),
+        },
         source_facts,
     );
     index.semantic_facts = Some(Arc::clone(&facts));
@@ -6644,8 +6687,12 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
         })
         .map(|(site, evidence)| (site.allocation_id(), evidence.clone()))
         .collect();
-    let set_iterable_proof =
-        SetIterableProof::new(facts, author_set_inputs, &hints.stable_set_spreads);
+    let set_iterable_proof = SetIterableProof::new(
+        facts,
+        author_set_inputs,
+        &hints.stable_set_spreads,
+        stable_array_spread_shapes.clone(),
+    );
     index.local_constructors.retain(|key, constructor| {
         !constructor.checked_default_fields
             || index.local_class_construction_proof.contains_class(*key)

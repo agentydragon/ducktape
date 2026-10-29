@@ -481,6 +481,7 @@ pub enum InferenceRule {
     EmptyCollectionConstruction,
     LocalClassConstruction,
     PrimitiveSetIteration,
+    StablePrimitiveArraySpread,
     StableFunction,
     StableProvider,
     ArgumentNoEscape,
@@ -508,6 +509,8 @@ pub struct InferenceUse {
     pub argument_input_refs: BTreeSet<crate::analysis_inputs::ArgumentInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub argument_input_spec_locations: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub native_operation_input_refs: BTreeSet<crate::analysis_inputs::NativeOperationInputRef>,
 }
 
 /// Completeness of the existing synchronous-effect inference, independent of purity.

@@ -2647,7 +2647,10 @@ fn observed_consumers_for(
                         scheduling_or_promoted_context.push(*edge);
                     }
                 }
-                DepKind::Sequenced | DepKind::CoDeclaration | DepKind::LocalEffect => {
+                DepKind::Sequenced
+                | DepKind::CoDeclaration
+                | DepKind::CoLocation
+                | DepKind::LocalEffect => {
                     scheduling_or_promoted_context.push(*edge);
                 }
             }

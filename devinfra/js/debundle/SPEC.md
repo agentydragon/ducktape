@@ -286,7 +286,8 @@ Filtering by `--direction` or repeated `--reason` flags happens before section
 totals and limits are computed. Direction filters dependency, atomic-group, and
 module-quotient edges. Reason values are the serialized `DepKind` names:
 `eager_use`, `lazy_use`, `hoisted_use`, `eager_rebind`, `lazy_rebind`,
-`deferred_rebind`, `sequenced`, `co_declaration`, and `local_effect`; repeated
+`deferred_rebind`, `sequenced`, `co_declaration`, `co_location`, and
+`local_effect`; repeated
 values are combined with OR. Rows have stable ID ordering, with the selected
 binding, source unit, atomic group, proposal, or diagnostic kept first in its
 matching section before truncation.
@@ -1139,7 +1140,8 @@ not resolve another source template. Both forms retain their actual selector
 provenance, parser-input SHA-256, spec location, selected binding and original
 site in the report. The digest uses the same parser-input provenance as
 `value_inputs`. The operation set accepts `symbol`, `symbol_for`,
-`set_from_primitive_array`, `set_from_set_spread`, and `object_own_data_function_read`.
+`set_from_primitive_array`, `set_from_set_spread`, `object_own_data_function_read`,
+and `array_spread_from_primitive_arrays`.
 The `symbol_for` operation selects `Symbol.for(...)` and asserts both original
 global `Symbol` identity and original direct `for` data-property identity.
 The selector must identify one direct top-level simple binding initializer
@@ -1209,6 +1211,7 @@ heap ordering graph, and proof dependencies on all required selected native
 operations. A different output, uncertified intervening source unit, or
 unselected seed rejects the input. Calls and mutations outside the interval
 retain ordinary ordering; this premise does not certify later Set operations.
+
 `object_own_data_function_read` selects one simple top-level binding whose
 entire initializer is an uncomputed, nonoptional `Object.<name>` member read.
 `Object` must be the unshadowed global binding and `<name>` must occur in the
@@ -1223,6 +1226,30 @@ certificate is consumed by purity, synchronous timing, and heap ordering at
 the exact read span. Receiver evaluation remains; an invocation of the read
 function still follows ordinary call effect analysis. The input grants no
 function-call purity, argument contract, or return shape.
+
+`array_spread_from_primitive_arrays` selects the receiving binding in a
+top-level multi-declarator `const` whose preceding declarators are dense arrays
+of primitive literals and whose initializer contains only primitive literals
+and direct spreads of those preceding bindings. No intervening declarator may
+evaluate user code or expose a producer. For example:
+
+```yaml
+source_match:
+  match: "const first = ['a'], second = ['b'], scopes = ['base', ...first, ...second];"
+  bindings: [scopes]
+operation: array_spread_from_primitive_arrays
+audited_source_sha256: "<64 hex characters for the parser input>"
+```
+
+The author asserts that the original Array iterator and iterator-next data
+operations remain intact throughout every possible initialization schedule.
+The parser-bound input can cover opaque writes, but positively identified
+Array-family or global Symbol writes contradict it. Without this input, the
+engine needs completed `Array` native integrity. The source-derived shape
+proves fresh dense elements and a closed, inert interval; the graph co-locates
+the producer and consumer statements to retain that interval in the emitted
+module. Other effects and reads retain ordinary analysis, and the input grants
+no family-wide Array integrity. The external A11 obligation still applies.
 
 ## Ordinary own-property inspection
 

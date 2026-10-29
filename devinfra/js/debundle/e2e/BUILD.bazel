@@ -226,6 +226,15 @@ debundle_e2e_test(name = "unknown_call_callback_storage_test")
 debundle_e2e_test(name = "set_iterable_reentry_test")
 
 debundle_e2e_test(
+    name = "stable_array_spread_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:sha2",
+    ],
+)
+
+debundle_e2e_test(
     name = "imported_callback_timing_test",
     deps = [
         "//devinfra/js/debundle:analysis",

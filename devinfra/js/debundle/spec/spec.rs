@@ -458,7 +458,7 @@ pub struct DependencyGraphOptions {
     /// construction and never select emission roots.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub value_inputs: Vec<ValueInputContract>,
-    /// Author-certified identity of one direct native operation initializer.
+    /// Author-certified native behavior for one exact initializer.
     /// The author audits the ordinary initial global binding and every
     /// synchronous initialization schedule admitted by emission. This is
     /// neither a source inference nor a whole-lifetime integrity claim. See
@@ -704,6 +704,7 @@ pub enum NativeOperationKind {
     SetFromSetSpread,
     /// One static own-data function property read on the original Object constructor.
     ObjectOwnDataFunctionRead,
+    ArraySpreadFromPrimitiveArrays,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]

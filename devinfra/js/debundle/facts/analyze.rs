@@ -114,6 +114,7 @@ where
     F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
     let body = top_level_item_views(items);
+    let stable_array_spread_shapes = StableArraySpreadShapes::collect(items, &body);
     let shadowed = compute_shadowed_globals(&body);
     let global_object_names = unshadowed_global_object_aliases(&body);
     let async_direct_function_bindings = collect_async_direct_function_bindings(&body);
@@ -214,6 +215,7 @@ where
     apply_global_escape_taint(&body, &global_object_names, &mut per_statement);
     StructuralChunkSourceFacts {
         body,
+        stable_array_spread_shapes,
         imported_bindings,
         shadowed,
         per_statement,
@@ -254,6 +256,7 @@ pub fn complete_chunk_structural_with_inputs<'a>(
 ) -> StructuralChunkAnalysis<'a> {
     let StructuralChunkSourceFacts {
         body,
+        stable_array_spread_shapes,
         imported_bindings,
         shadowed,
         per_statement,
@@ -309,6 +312,7 @@ pub fn complete_chunk_structural_with_inputs<'a>(
         LocalClassConstructionShapes::analyze(&body, &shadowed, &value_flow, dynamic_scope);
     StructuralChunkAnalysis {
         body,
+        stable_array_spread_shapes,
         imported_bindings,
         value_flow,
         dynamic_scope,
@@ -419,6 +423,7 @@ where
 {
     let StructuralChunkAnalysis {
         body,
+        stable_array_spread_shapes,
         imported_bindings,
         value_flow,
         dynamic_scope,
@@ -443,6 +448,7 @@ where
             super::sync_effects::execution_index::interpreter::PreparedSyncShapeInputs {
                 local_class_construction: &local_class_shapes,
                 set_iterable_shapes,
+                stable_array_spread_shapes,
                 shadowed: &shadowed,
                 source_facts: source_semantic_facts.as_deref(),
             },
@@ -577,6 +583,11 @@ where
             fact
         })
         .collect();
+    for fact in &mut facts {
+        if let Some(producers) = set_iterable_proof.stable_array_spread_producers(fact.ordinal) {
+            fact.stable_array_spread_producers = producers.clone();
+        }
+    }
     value_flow.augment_calls(&body, &mut facts);
     let local_class_heap_proof = prepared_sync_index.local_class_heap_proof();
     let fresh_freeze_heap_proof = prepared_sync_index.fresh_record_freeze_heap_proof();
@@ -912,6 +923,7 @@ fn assemble_statement_facts(
 
     StatementFacts {
         ordinal,
+        stable_array_spread_producers: BTreeSet::new(),
         source_location,
         callback_factory_barriers: Vec::new(),
         declared,

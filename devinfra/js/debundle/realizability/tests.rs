@@ -39,6 +39,7 @@ fn full_overlay_verdict_matches_pure_gate_across_typed_moves() {
         DepKind::Sequenced,
         DepKind::LocalEffect,
         DepKind::CoDeclaration,
+        DepKind::CoLocation,
         DepKind::EagerRebind,
         DepKind::LazyRebind,
         DepKind::DeferredRebind,
@@ -66,6 +67,7 @@ fn full_overlay_verdict_matches_pure_gate_across_typed_moves() {
                     | DepKind::Sequenced
                     | DepKind::LocalEffect
                     | DepKind::CoDeclaration
+                    | DepKind::CoLocation
             );
             let id = format!("edge:{seed}:{i}");
             edges.push(if i % 5 == 0 {

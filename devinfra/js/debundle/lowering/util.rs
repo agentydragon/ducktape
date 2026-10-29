@@ -160,6 +160,10 @@ pub(super) fn render_atomic_group_cause_guidance(conflicts: &[AtomicGroupConflic
                 "Shared var declaration: all source statements that declare the same `var` \
                  binding must materialize in one module. "
             }
+            DepKind::CoLocation => {
+                "Stable array spread: its primitive-array producers and consumer must \
+                 materialize in one module to retain their source interval. "
+            }
             DepKind::LazyUse | DepKind::HoistedUse => continue,
         });
     }

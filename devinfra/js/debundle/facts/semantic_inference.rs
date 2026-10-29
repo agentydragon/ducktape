@@ -44,6 +44,7 @@ pub(crate) enum SemanticKey {
     },
     LocalClass(u32),
     PrimitiveSetIteration(u32),
+    StablePrimitiveArraySpread(u32),
     StableFunction {
         binding: Id,
         function: u32,
@@ -85,6 +86,7 @@ impl SemanticKey {
             }
             Self::LocalClass(_) => InferenceRule::LocalClassConstruction,
             Self::PrimitiveSetIteration(_) => InferenceRule::PrimitiveSetIteration,
+            Self::StablePrimitiveArraySpread(_) => InferenceRule::StablePrimitiveArraySpread,
             Self::StableFunction { .. } => InferenceRule::StableFunction,
             Self::StableProvider { .. } => InferenceRule::StableProvider,
             Self::ArgumentNoEscape { .. } => InferenceRule::ArgumentNoEscape,
@@ -158,6 +160,8 @@ pub(crate) struct SemanticRules {
     pub(crate) descriptor_copy_providers: BTreeMap<Id, DescriptorCopyFactorySummary>,
     pub(crate) descriptor_copy_calls: BTreeMap<u32, DescriptorCopyCallCandidate>,
     pub(crate) argument_inputs: BTreeMap<(Id, u32, usize, usize), ArgumentInputRef>,
+    pub(crate) array_spreads: BTreeSet<u32>,
+    pub(crate) array_spread_inputs: BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
 }
 
 impl SemanticRules {
@@ -308,6 +312,19 @@ impl SemanticRules {
                 context.require(SemanticKey::DescriptorCopyProvider(
                     candidate.provider_binding.clone(),
                 ))?;
+            }
+            SemanticKey::StablePrimitiveArraySpread(initializer) => {
+                if !self.array_spreads.contains(initializer) || self.dynamic_scope {
+                    return None;
+                }
+                if let Some(reference) = self.array_spread_inputs.get(initializer) {
+                    context.assume(&ProofDependencies {
+                        native_operation_inputs: BTreeSet::from([reference.clone()]),
+                        ..ProofDependencies::default()
+                    });
+                } else {
+                    context.require(SemanticKey::NativeIntegrity(NativeIntrinsic::Array))?;
+                }
             }
             SemanticKey::ArgumentNoEscape {
                 binding,
@@ -494,6 +511,13 @@ impl SemanticFacts {
                     .copied()
                     .map(SemanticKey::PrimitiveSetIteration),
             )
+            .chain(
+                rules
+                    .array_spreads
+                    .iter()
+                    .copied()
+                    .map(SemanticKey::StablePrimitiveArraySpread),
+            )
             .collect();
         let inference = match source {
             Some(source) => {
@@ -548,6 +572,7 @@ impl SemanticFacts {
             descriptor_copy_author_refs: dependencies.descriptor_copy_authors.clone(),
             argument_input_refs: dependencies.argument_inputs.clone(),
             argument_input_spec_locations: BTreeSet::new(),
+            native_operation_input_refs: dependencies.native_operation_inputs.clone(),
         })
     }
 }

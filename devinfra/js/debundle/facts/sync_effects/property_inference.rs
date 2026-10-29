@@ -73,6 +73,7 @@ impl OwnPropertyProof {
             descriptor_copy_author_refs: self.dependencies.descriptor_copy_authors.clone(),
             argument_input_refs: self.dependencies.argument_inputs.clone(),
             argument_input_spec_locations: BTreeSet::new(),
+            native_operation_input_refs: self.dependencies.native_operation_inputs.clone(),
         }
     }
 }

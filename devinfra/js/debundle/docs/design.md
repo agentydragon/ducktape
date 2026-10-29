@@ -440,6 +440,9 @@ The micro dependency graph is a directed, labeled graph `G = (V, E)`:
   from a source unit that assigns a binding to the source unit that declares it.
 - **Co-declaration edges:** `co_declaration` in both directions between sites
   declaring one shared `var` binding, requiring one destination.
+- **Co-location edges:** `co_location` in both directions between a certified
+  primitive-array spread consumer and each same-declaration producer. This
+  retains the contiguous fresh-array source interval in one emitted module.
 - **Local-effect edges:** `local_effect` from a statement whose modeled
   mutation is local to a target source unit (A10).
 - **Side-effect order edges:** potential `U₂ -> U₁` (`sequenced`) constraints

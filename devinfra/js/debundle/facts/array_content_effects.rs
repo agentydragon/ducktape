@@ -533,6 +533,19 @@ impl Visit for ArrayContentCollector<'_> {
         node.expr.visit_with(self);
     }
 
+    fn visit_expr_or_spread(&mut self, node: &ExprOrSpread) {
+        if let Some(token) = node.spread {
+            // A certified primitive-array source reads its exact allocation
+            // contents. Unsupported iterables retain the opaque heap barrier.
+            let certified = self
+                .set_iterable_proof
+                .stable_array_spread_dependencies(token)
+                .is_some();
+            self.record_array_expr(&node.expr, true, false, !certified);
+        }
+        node.expr.visit_with(self);
+    }
+
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
         if matches!(node.name, Pat::Array(_) | Pat::Object(_))
             && let Some(init) = &node.init

@@ -482,6 +482,7 @@ rust_library(
         "cross_module_values.rs",
         "facts/analyze.rs",
         "facts/array_content_effects.rs",
+        "facts/array_spreads.rs",
         "facts/at_init_fallback.rs",
         "facts/callable_inference.rs",
         "facts/collector.rs",

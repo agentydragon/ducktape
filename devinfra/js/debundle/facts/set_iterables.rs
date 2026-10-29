@@ -12,6 +12,7 @@ use crate::analysis_inputs::{
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use anyhow::{Result, bail};
+use source_identity::SourceUnitOrdinal;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -202,6 +203,7 @@ pub(crate) struct SetIterableProof {
     author_inputs: BTreeMap<u32, NativeOperationInputEvidence>,
     author_dependencies: BTreeMap<u32, ProofDependencies>,
     stable_spreads: BTreeMap<u32, ProofDependencies>,
+    array_spreads: StableArraySpreadShapes,
 }
 
 impl SetIterableProof {
@@ -209,6 +211,7 @@ impl SetIterableProof {
         facts: Arc<SemanticFacts>,
         author_inputs: BTreeMap<u32, NativeOperationInputEvidence>,
         stable_spreads: &BTreeMap<u32, StableSetIterableUse>,
+        array_spreads: StableArraySpreadShapes,
     ) -> Self {
         let author_dependencies = author_inputs
             .iter()
@@ -237,6 +240,7 @@ impl SetIterableProof {
                         .map(|site| (site, stable.dependencies.clone()))
                 })
                 .collect(),
+            array_spreads,
         }
     }
 
@@ -264,6 +268,41 @@ impl SetIterableProof {
     ) -> Option<crate::reports::schema::InferenceUse> {
         self.facts
             .inference_use(&SemanticKey::PrimitiveSetIteration(span.lo.0))
+    }
+
+    pub(crate) fn stable_array_spread_dependencies(
+        &self,
+        token: Span,
+    ) -> Option<&ProofDependencies> {
+        let initializer = self.array_spreads.by_site.get(&token.lo.0)?;
+        self.facts
+            .dependencies(&SemanticKey::StablePrimitiveArraySpread(*initializer))
+    }
+
+    pub(crate) fn stable_array_spread_inference_use(
+        &self,
+        token: Span,
+    ) -> Option<crate::reports::schema::InferenceUse> {
+        let initializer = self.array_spreads.by_site.get(&token.lo.0)?;
+        self.facts
+            .inference_use(&SemanticKey::StablePrimitiveArraySpread(*initializer))
+    }
+
+    pub(crate) fn stable_array_spread_producers(
+        &self,
+        consumer: SourceUnitOrdinal,
+    ) -> Option<&BTreeSet<SourceUnitOrdinal>> {
+        self.array_spreads
+            .by_initializer
+            .iter()
+            .find_map(|(initializer, shape)| {
+                (shape.consumer == consumer
+                    && self
+                        .facts
+                        .dependencies(&SemanticKey::StablePrimitiveArraySpread(*initializer))
+                        .is_some())
+                .then_some(&shape.producers)
+            })
     }
 }
 

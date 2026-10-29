@@ -420,6 +420,7 @@ pub(crate) fn classify_fresh_array_spread_source(
         ),
         Expr::Ident(identifier) => graph
             .stable_set_spread_dependencies(identifier.span)
+            .or_else(|| graph.stable_array_spread_dependencies(identifier.span))
             .map(|dependencies| Purity::pure().with_dependencies(dependencies)),
         _ => None,
     }

@@ -51,6 +51,8 @@ impl PositionBucketed<BTreeSet<Id>> {
 #[derive(Debug, Clone)]
 pub struct StatementFacts {
     pub ordinal: SourceUnitOrdinal,
+    /// Exact stable-array spread producers that must remain in this module.
+    pub(crate) stable_array_spread_producers: BTreeSet<SourceUnitOrdinal>,
     pub source_location: Option<SourceLocation>,
     /// Matched retained callback-factory contracts rejected by a visible
     /// namespace guard for a top-level call in this source unit. These facts
@@ -474,6 +476,7 @@ pub struct StructuralChunkAnalysis<'a> {
     pub(crate) value_flow: super::ChunkValueFlow,
     pub(crate) dynamic_scope: super::DynamicScopeFact,
     pub(crate) set_iterable_shapes: super::SetIterableShapes,
+    pub(crate) stable_array_spread_shapes: super::StableArraySpreadShapes,
     pub(crate) local_class_shapes: super::LocalClassConstructionShapes,
     pub(crate) plain_data_bindings: Vec<String>,
     /// Top-level `var` binding IDs that pass the structural stability gates.
@@ -495,6 +498,7 @@ pub struct StructuralChunkAnalysis<'a> {
 /// value-flow roots supplied by validated author inputs are known.
 pub struct StructuralChunkSourceFacts<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
+    pub(crate) stable_array_spread_shapes: super::StableArraySpreadShapes,
     pub(crate) imported_bindings: BTreeSet<Id>,
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,

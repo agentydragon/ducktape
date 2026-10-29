@@ -213,6 +213,28 @@ pub fn build_dependency_graph_with(
             ));
         }
     }
+    for stmt in facts {
+        for producer in &stmt.stable_array_spread_producers {
+            let consumer = SourceUnitId(stmt.ordinal.0);
+            let producer = SourceUnitId(producer.0);
+            let binding = facts[producer.0]
+                .declared
+                .iter()
+                .next()
+                .expect("certified spread producer declares one binding")
+                .clone();
+            raw_edges.push((
+                consumer,
+                producer,
+                EdgeReason::co_location(stmt.ordinal, binding.clone()),
+            ));
+            raw_edges.push((
+                producer,
+                consumer,
+                EdgeReason::co_location(SourceUnitOrdinal(producer.0), binding),
+            ));
+        }
+    }
     // Look-aside table for "what statement owns this SourceUnitId" — shared
     // by the direct eager-read filter, at-init call promotion, and heap-content
     // call propagation.

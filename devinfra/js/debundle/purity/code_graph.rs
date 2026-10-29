@@ -615,6 +615,14 @@ impl ChunkCodeGraph {
         self.set_iterable_proof.stable_spread_dependencies(span)
     }
 
+    pub(crate) fn stable_array_spread_dependencies(
+        &self,
+        operand: Span,
+    ) -> Option<&ProofDependencies> {
+        self.set_iterable_proof
+            .stable_array_spread_dependencies(operand)
+    }
+
     pub(crate) fn local_class_construction_dependencies(
         &self,
         span: Span,

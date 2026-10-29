@@ -19,6 +19,8 @@
 //!   fires, init-time or later).
 //! * `CoDeclaration`: add both directions (all declaration sites of one
 //!   module-scoped var binding share a destination).
+//! * `CoLocation`: add both directions (a stable array spread's source
+//!   producers share its destination).
 //! * `LocalEffect`: add both directions (target-local mutation must
 //!   co-locate with its target source unit).
 //! * `Sequenced`: add `u → v`. Co-location is only forced when
@@ -98,7 +100,8 @@ pub fn compute_atomic_groups(dependency_graph: &DependencyGraph) -> Vec<AtomicGr
             | DepKind::LazyRebind
             | DepKind::DeferredRebind
             | DepKind::LocalEffect
-            | DepKind::CoDeclaration => {
+            | DepKind::CoDeclaration
+            | DepKind::CoLocation => {
                 g_atomic.add_edge(edge.from, edge.to, ());
                 g_atomic.add_edge(edge.to, edge.from, ());
             }

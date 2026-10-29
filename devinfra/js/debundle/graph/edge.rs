@@ -77,6 +77,8 @@ impl EdgeRole {
 /// - `CoDeclaration` is emitted in both directions between statements
 ///   declaring the same `var` binding. A split therefore forms a forbidden
 ///   constraining cycle; these edges express placement equality.
+/// - `CoLocation` keeps a spread's primitive-array producers with its
+///   consumer so the original same-declaration source interval is retained.
 /// - `Sequenced` contributes to `S` and constrains
 ///   realizability because source-order side effects require a
 ///   topological order.
@@ -147,6 +149,14 @@ impl EdgeReason {
     pub(crate) fn co_declaration(so: SourceUnitOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::CoDeclaration,
+            statement_ordinal: so,
+            binding: Some(b),
+            role: EdgeRole::Direct,
+        }
+    }
+    pub(crate) fn co_location(so: SourceUnitOrdinal, b: Id) -> Self {
+        Self {
+            kind: DepKind::CoLocation,
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
@@ -277,6 +287,9 @@ pub enum DepKind {
     /// both directions to require one destination without rewriting the AST.
     #[strum(message = "shared var declaration")]
     CoDeclaration,
+    /// A source-prefix proof needs the producer and consumer in one module.
+    #[strum(message = "stable array spread co-location")]
+    CoLocation,
     #[strum(message = "local-effect")]
     LocalEffect,
 }

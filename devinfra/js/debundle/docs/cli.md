@@ -389,7 +389,8 @@ module-quotient edges; neighbor source units are derived from the remaining
 dependency edges. Repeat `--reason KIND` to retain any of several dependency
 reasons, using the `edge_kind` spellings from `dependency_graph.json`:
 `eager_use`, `lazy_use`, `hoisted_use`, `eager_rebind`, `lazy_rebind`,
-`deferred_rebind`, `sequenced`, `co_declaration`, or `local_effect`. Both
+`deferred_rebind`, `sequenced`, `co_declaration`, `co_location`, or
+`local_effect`. Both
 filters are applied before totals and row limits.
 
 `cluster <binding>` also emits at most 20 incoming and 20 outgoing module
