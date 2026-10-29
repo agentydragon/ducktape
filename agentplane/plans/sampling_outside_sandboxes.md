@@ -344,7 +344,7 @@ Alternatives to compare:
 Operator agreement, 2026-10-27: implement and open a PR for an independent central code-mode
 sampler with its own database and standalone API. The shared sampler hosts a separately supervised,
 JS subprocess per live Session. Dispatcher admits/routes central commands directly
-to it; tools use sampler → Gateway → outbound Runner tunnel → loopback exec-server. Wrapped Codex
+to it; tools use sampler → Gateway → mTLS RunnerExec → loopback exec-server. Wrapped Codex
 and Claude keep execution and sampling together on their existing paths. Experimental code lives
 under `x/`; no deployment, default change or native-state migration is selected.
 

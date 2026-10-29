@@ -74,7 +74,7 @@ async def _address(core: k8s.CoreV1Api, service: str, port: int) -> str:
 
 async def _control_address(connection: k8s.ApiClient, sandbox: str, uid: str) -> str:
     # The control Service is headless and selector-less. Its Gateway-owned slice names
-    # the actual Runner-stream holder, including after the scenario's Gateway rollout.
+    # the Runner observation Lease holder, including after the scenario's Gateway rollout.
     slices = await k8s.DiscoveryV1Api(connection).list_namespaced_endpoint_slice(
         namespace(), label_selector=f"kubernetes.io/service-name={sandbox}-control"
     )

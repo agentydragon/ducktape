@@ -19,6 +19,12 @@ data:
         cert_file: /run/agentplane/runner-tls/tls.crt
         key_file: /run/agentplane/runner-tls/tls.key
         ca_file: /run/agentplane/runner-tls/ca.crt
+    central_samplers:
+      central-sampler:
+        target: central-sampler.agentplane-staging.svc.cluster.local:8080
+        token_file: /var/run/secrets/agentplane-runner-gateway/central-sampler
+    executor_callers:
+      - agentplane-staging/central-sampler
     wake_callers:
       - agentplane-staging/actions
       - agentplane-staging/app
@@ -218,6 +224,10 @@ spec:
                   audience: agentplane-runner-gateway
                   expirationSeconds: 3600
                   path: token
+              - serviceAccountToken:
+                  audience: central-sampler
+                  expirationSeconds: 3600
+                  path: central-sampler
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -372,6 +382,14 @@ spec:
         - ports:
             - port: "9090"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: central-sampler
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: runner-gateway
@@ -395,6 +413,14 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: runner-gateway
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: central-sampler
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:

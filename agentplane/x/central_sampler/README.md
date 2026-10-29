@@ -39,7 +39,7 @@ overrides `database_url` in the JSON settings, so database credentials can stay 
 environment variable. Gateway mode requires `gateway_target` and a rotating projected
 `gateway_token_file`. Configure
 `gateway_target` as `{sandbox}-control.{namespace}.svc:8080` for the per-Sandbox control Service:
-it selects the Gateway replica holding that Runner's outbound stream. A load-balanced Gateway
+it selects the Gateway replica holding that Runner's observation Lease. A load-balanced Gateway
 Service is unsuitable when there are multiple replicas. Fixed targets support single-process
 fixtures. Templates accept DNS-label executor names and only these two placeholders. A fixed
 `direct_executor_url` supports standalone fixtures without Gateway; choose exactly one transport.
