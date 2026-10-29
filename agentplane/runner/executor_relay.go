@@ -266,11 +266,13 @@ func (r *Runner) runExecutorRelay(
 	}()
 
 	first := <-finished
+	streamActive := ctx.Err() == nil
 	cancel()
 	_ = conn.Close(websocket.StatusNormalClosure, "executor channel closed")
 	<-finished
-	if first != nil && !errors.Is(first, context.Canceled) && ctx.Err() == nil {
-		slog.Debug("central executor channel ended", "session_id", relay.sessionID, "error", first)
+	if first != nil && !errors.Is(first, context.Canceled) && streamActive &&
+		websocket.CloseStatus(first) != websocket.StatusNormalClosure && websocket.CloseStatus(first) != websocket.StatusGoingAway {
+		slog.Warn("central executor channel ended", "session_id", relay.sessionID, "error", first)
 	}
 }
 

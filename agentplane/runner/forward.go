@@ -3,6 +3,8 @@ package runner
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -45,6 +47,15 @@ type directWatch struct {
 type directExecFrame struct {
 	frame *executor_gatewaypb.ExecutorFrame
 	done  chan error
+}
+
+func enqueueDirectExecutorFrame(ctx context.Context, queue chan<- directExecFrame, item directExecFrame) error {
+	select {
+	case queue <- item:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // forwardServer opens the Runner with its explicitly configured transport security.
@@ -268,7 +279,7 @@ func (r *Runner) markDirectWatchReady(watch *directWatch) error {
 
 func (r *Runner) Connect(
 	server grpc.BidiStreamingServer[executor_gatewaypb.ExecutorFrame, executor_gatewaypb.ExecutorFrame],
-) error {
+) (result error) {
 	watch, err := r.authorizeDirectCall(server.Context())
 	if err != nil {
 		return err
@@ -292,6 +303,12 @@ func (r *Runner) Connect(
 	if err := server.SendHeader(metadata.MD{}); err != nil {
 		return err
 	}
+	sessionID := ""
+	defer func() {
+		if result != nil && !errors.Is(result, io.EOF) && !errors.Is(result, context.Canceled) && status.Code(result) != codes.Canceled {
+			slog.Warn("Runner executor stream ended", "session_id", sessionID, "error", result)
+		}
+	}()
 	ctx, cancel := context.WithCancel(server.Context())
 	stopWatch := context.AfterFunc(watch.ctx, cancel)
 	defer func() {
@@ -335,11 +352,7 @@ func (r *Runner) Connect(
 		if endsStream {
 			item.done = make(chan error, 1)
 		}
-		select {
-		case sendQueue <- item:
-		default:
-			err := status.Error(codes.ResourceExhausted, "Runner executor send queue is full")
-			reportSendError(err)
+		if err := enqueueDirectExecutorFrame(ctx, sendQueue, item); err != nil {
 			return err
 		}
 		if endsStream {
@@ -357,7 +370,10 @@ func (r *Runner) Connect(
 	}
 	toExecutor := queueFrame
 	executor := r.openExecutorConnection(ctx, watch.epoch, toExecutor, toExecutor)
-	defer executor.Close()
+	defer func() {
+		cancel()
+		executor.Close()
+	}()
 	type incoming struct {
 		frame *executor_gatewaypb.ExecutorFrame
 		err   error
@@ -406,6 +422,7 @@ func (r *Runner) Connect(
 				if frame.GetOpen() == nil {
 					return status.Error(codes.InvalidArgument, "direct executor stream must start with ExecutorOpen")
 				}
+				sessionID = frame.GetOpen().GetSessionId()
 				opened = true
 				openTimer.Stop()
 			} else if frame.GetOpen() != nil || (frame.GetMessage() == nil && frame.GetClose() == nil) {
