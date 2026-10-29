@@ -14,7 +14,7 @@ use artifact::reports::{SelectedModuleLowering, StaticModuleRequest, StaticModul
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId};
 
 use output_layout::MODULES_REPORT;
-use reconstruction::UnmatchedSpecClaim;
+use reconstruction::{ChunkGateRejection, UnmatchedSpecClaim};
 
 use spec::{ChunkExportPurity, ChunkRenames, LogicalModule, UnassignedMode};
 
@@ -78,6 +78,10 @@ pub struct MaterializeLogicalModulesResult {
     /// Final validation rejects the full list before writing the output. See
     /// [`UnmatchedSpecClaim`].
     pub unmatched_spec_claims: Vec<UnmatchedSpecClaim>,
+    /// Chunks the realizability gate rejected but lowered anyway under
+    /// [`GateRejectionPolicy::LowerUnrunnable`]; empty under
+    /// [`GateRejectionPolicy::Refuse`], which fails the run instead.
+    pub gate_rejections: Vec<ChunkGateRejection>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -259,6 +263,19 @@ impl ReportEmission {
     }
 }
 
+/// What a chunk whose assignment the realizability gate rejected becomes.
+/// The gate's verdict and evidence reports are the same either way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GateRejectionPolicy {
+    /// Fail materialization with the rendered rejection.
+    Refuse,
+    /// Lower the rejected assignment anyway, with a banner comment on the
+    /// chunk's entry file, and report the rejection in
+    /// [`MaterializeLogicalModulesResult::gate_rejections`] for the caller to
+    /// mark and fail the run (`debundle run --emit-on-rejection`).
+    LowerUnrunnable,
+}
+
 #[derive(Debug, Clone)]
 pub struct MaterializeLogicalModulesOptions {
     pub graph_provenance: Option<graph_provenance::GraphProvenance>,
@@ -268,6 +285,7 @@ pub struct MaterializeLogicalModulesOptions {
     /// See `pipeline::TransformRunOptions::list_template_identifiers`.
     pub list_template_identifiers: bool,
     pub report_emission: ReportEmission,
+    pub gate_rejection: GateRejectionPolicy,
 }
 
 /// Spec-derived inputs to [`materialize_logical_modules`], all keyed by
@@ -387,6 +405,7 @@ pub fn materialize_logical_modules(
                                 keep_going: options.keep_going,
                                 list_template_identifiers: options.list_template_identifiers,
                                 report_emission: &options.report_emission,
+                                gate_rejection: options.gate_rejection,
                                 graph_provenance: options.graph_provenance.as_ref(),
                                 export_reentry_reports: &export_reentry_reports,
                                 vendor_import_oracle: vendor_import_oracle.as_ref(),
@@ -473,6 +492,7 @@ pub fn materialize_logical_modules(
     let mut reports = Vec::with_capacity(chunk_results.len());
     let mut applied = Vec::<SelectedModuleLowering>::new();
     let mut unmatched_spec_claims = Vec::<UnmatchedSpecClaim>::new();
+    let mut gate_rejections = Vec::<ChunkGateRejection>::new();
     let mut vendor_reference_rewrites = BTreeMap::<(ChunkId, String), usize>::new();
     for chunk_result in &chunk_results {
         if let Some(report_out_dir) = options.report_emission.full_dir() {
@@ -486,6 +506,7 @@ pub fn materialize_logical_modules(
         applied.extend(chunk_result.applied.iter().cloned());
         reports.push(chunk_result.report.clone());
         unmatched_spec_claims.extend(chunk_result.unmatched_spec_claims.iter().cloned());
+        gate_rejections.extend(chunk_result.gate_rejection.iter().cloned());
         for (key, count) in &chunk_result.vendor_reference_rewrites {
             *vendor_reference_rewrites.entry(key.clone()).or_insert(0) += count;
         }
@@ -499,6 +520,7 @@ pub fn materialize_logical_modules(
         module_count,
         vendor_reference_rewrites,
         unmatched_spec_claims,
+        gate_rejections,
     })
 }
 

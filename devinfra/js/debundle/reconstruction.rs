@@ -4,12 +4,15 @@
 //! order, and vendor replacements. The syntax in this plan includes those
 //! decisions. Final validation inspects that exact syntax; accepted plans expose
 //! no mutation path, so emission cannot change the program after validation.
+//! A gate-rejected program is frozen as a [`RejectedPlan`] instead, which only
+//! the marked reading-only tree writer consumes.
 
 use std::collections::BTreeSet;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, ensure};
 use artifact::reports::write_json;
 use artifact::{ChunkId, EmissionFiles};
 use serde::Serialize;
@@ -53,6 +56,56 @@ pub struct UnmatchedSpecClaim {
     pub module_path: spec::ModulePath,
     pub binding_name: String,
     pub export_name: String,
+}
+
+/// Which realizability-gate check rejected a chunk's assignment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GateVerdict {
+    /// Members of one atomic group were claimed by different modules.
+    AtomicGroupConflicts { count: usize },
+    /// Module-quotient SCCs with at-init / side-effect edges between members.
+    UnrealizableCycles { count: usize },
+}
+
+impl fmt::Display for GateVerdict {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AtomicGroupConflicts { count } => {
+                write!(f, "{count} atomic-group conflict(s)")
+            }
+            Self::UnrealizableCycles { count } => {
+                write!(f, "{count} unrealizable module SCC(s)")
+            }
+        }
+    }
+}
+
+/// A chunk the realizability gate rejected but lowering continued for, under
+/// `debundle run --emit-on-rejection`. Its files are readable, not runnable.
+#[derive(Debug, Clone)]
+pub struct ChunkGateRejection {
+    pub chunk_id: String,
+    pub verdict: GateVerdict,
+    /// `cycles.json` / `atomic_group_conflicts.json`, when the run has a
+    /// report directory.
+    pub evidence_report: Option<PathBuf>,
+    pub dependency_graph_report: Option<PathBuf>,
+    /// The rendered rejection the run fails with.
+    pub diagnostic: String,
+}
+
+impl ChunkGateRejection {
+    pub fn summary_line(&self) -> String {
+        let evidence = match &self.evidence_report {
+            Some(path) => format!("evidence: {}", path.display()),
+            None => "no report directory configured; see the run's stderr".to_string(),
+        };
+        format!(
+            "chunk {chunk}: {verdict}; {evidence}",
+            chunk = self.chunk_id,
+            verdict = self.verdict,
+        )
+    }
 }
 
 /// Ready-to-validate output syntax and replacement decisions for one program.
@@ -135,6 +188,80 @@ impl ValidatedPlan {
             write_json(&manifest.path, &manifest.report)?;
         }
         Ok(())
+    }
+}
+
+/// A program the realizability gate rejected, frozen for the reading-only tree
+/// `debundle run --emit-on-rejection` writes. It never reaches final program
+/// validation and exposes no browser harness or vendor replacement outputs:
+/// those describe a runnable bundle. The tree writer marks the output.
+pub struct RejectedPlan {
+    files: EmissionFiles,
+    excluded_chunk_ids: BTreeSet<ChunkId>,
+    rejections: Vec<ChunkGateRejection>,
+}
+
+impl RejectedPlan {
+    pub fn new(
+        files: EmissionFiles,
+        vendor: &VendorResolutionPlan,
+        rejections: Vec<ChunkGateRejection>,
+    ) -> Result<Self> {
+        ensure!(
+            !rejections.is_empty(),
+            "a rejected plan needs at least one gate rejection"
+        );
+        Ok(Self {
+            files,
+            excluded_chunk_ids: vendor.full_swap_chunk_ids(),
+            rejections,
+        })
+    }
+
+    pub fn files(&self) -> &EmissionFiles {
+        &self.files
+    }
+
+    pub fn excluded_chunk_ids(&self) -> &BTreeSet<ChunkId> {
+        &self.excluded_chunk_ids
+    }
+
+    pub fn rejections(&self) -> &[ChunkGateRejection] {
+        &self.rejections
+    }
+
+    /// Every chunk's rendered rejection, in chunk order: the error the run
+    /// fails with after writing the marked tree.
+    pub fn diagnostic(&self) -> String {
+        self.rejections
+            .iter()
+            .map(|rejection| rejection.diagnostic.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+/// What the tree writer may materialize. A rejected plan is written only with
+/// the gate-rejected marker and never with the browser harness or vendor assets.
+#[derive(Clone, Copy)]
+pub enum EmittablePlan<'a> {
+    Accepted(&'a ValidatedPlan),
+    Rejected(&'a RejectedPlan),
+}
+
+impl EmittablePlan<'_> {
+    pub fn files(&self) -> &EmissionFiles {
+        match self {
+            Self::Accepted(plan) => plan.files(),
+            Self::Rejected(plan) => plan.files(),
+        }
+    }
+
+    pub fn excluded_chunk_ids(&self) -> &BTreeSet<ChunkId> {
+        match self {
+            Self::Accepted(plan) => plan.excluded_chunk_ids(),
+            Self::Rejected(plan) => plan.excluded_chunk_ids(),
+        }
     }
 }
 

@@ -1,21 +1,22 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
+use std::fs;
 use std::path::Path;
 
 use anyhow::{Result, bail};
 
-use artifact::ChunkId;
 use artifact::metrics::DecompositionMetrics;
 use artifact::reports::{
     ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkDecompositionOutput, ChunksReport,
     PackageManifest, RootLogicalModulesSummary, SelectedModuleLowering, write_json,
 };
 use artifact::script_output::materialize_artifact_scripts;
+use artifact::{ChunkId, EmissionFiles};
 use identifier_rename_queue::compute_identifier_rename_queue;
-use output_layout::DebundleOutputLayout;
-use reconstruction::ValidatedPlan;
+use output_layout::{DebundleOutputLayout, GATE_REJECTED_MARKER};
+use reconstruction::{EmittablePlan, RejectedPlan};
 
 pub struct WriteTreeInput<'a> {
-    pub plan: &'a ValidatedPlan,
+    pub plan: EmittablePlan<'a>,
     pub out_dir: &'a Path,
     pub lowerings: &'a [SelectedModuleLowering],
     pub counts: &'a ArtifactCounts,
@@ -32,6 +33,14 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
     }
     let layout = DebundleOutputLayout::new(input.out_dir);
     layout.prepare()?;
+    // The marker precedes the files it describes, so an interrupted write
+    // never leaves an unmarked partial tree behind.
+    if let EmittablePlan::Rejected(rejected) = input.plan {
+        fs::write(
+            layout.gate_rejected_marker(),
+            render_gate_rejected_marker(rejected),
+        )?;
+    }
 
     let materialized = materialize_artifact_scripts(
         input.plan.files(),
@@ -52,7 +61,8 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
 
     write_common_emission_reports(
         &layout,
-        input.plan,
+        input.plan.files(),
+        input.plan.excluded_chunk_ids(),
         input.chunk_records,
         input.decomposition_by_chunk,
     )?;
@@ -71,17 +81,38 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
     Ok(())
 }
 
+/// The `GATE_REJECTED` marker: why the tree beside it is not runnable, and
+/// where the gate's evidence is.
+fn render_gate_rejected_marker(rejected: &RejectedPlan) -> String {
+    let mut text = format!(
+        "{GATE_REJECTED_MARKER}: this tree is NOT runnable.\n\
+         The realizability gate rejected the spec; `debundle run --emit-on-rejection` wrote the \
+         logical modules for reading only. No browser harness or vendor replacement assets were \
+         written. Fix the spec and rerun without the flag for runnable output.\n\n"
+    );
+    for rejection in rejected.rejections() {
+        text.push_str(&rejection.summary_line());
+        text.push('\n');
+        if let Some(path) = &rejection.dependency_graph_report {
+            text.push_str(&format!("  dependency graph: {}\n", path.display()));
+        }
+    }
+    text.push('\n');
+    text.push_str(&rejected.diagnostic());
+    text.push('\n');
+    text
+}
+
 /// The browser harness extends the same emitted tree with HTML and assets.
 /// Keep its chunks report, rename queue and package marker aligned with tree
 /// output.
 pub fn write_common_emission_reports(
     layout: &DebundleOutputLayout,
-    plan: &ValidatedPlan,
+    files: &EmissionFiles,
+    excluded_chunk_ids: &BTreeSet<ChunkId>,
     chunk_records: &[ArtifactChunkRecord],
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
 ) -> Result<()> {
-    let files = plan.files();
-    let excluded_chunk_ids = plan.excluded_chunk_ids();
     let queue = compute_identifier_rename_queue(files, decomposition_by_chunk, excluded_chunk_ids)?;
     write_json(layout.rename_queue_report(), &queue)?;
     write_json(

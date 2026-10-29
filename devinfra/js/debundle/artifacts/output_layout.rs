@@ -14,6 +14,9 @@ pub const SOURCE_ASSETS_REPORT: &str = "source_assets.json";
 pub const PROVENANCE_REPORT: &str = "provenance.json";
 pub const RENAME_QUEUE_REPORT: &str = "rename_queue.json";
 pub const VENDOR_SWAPS_REPORT: &str = "vendor_swaps.json";
+/// Written at the output root by `debundle run --emit-on-rejection` when the
+/// realizability gate rejected the spec: the tree beside it is not runnable.
+pub const GATE_REJECTED_MARKER: &str = "GATE_REJECTED";
 
 pub const CHUNK_REPORT: &str = "chunk.json";
 pub const MODULES_REPORT: &str = "modules.json";
@@ -89,6 +92,10 @@ impl DebundleOutputLayout {
 
     pub fn vendor_swaps_report(&self) -> PathBuf {
         self.reports_root().join(VENDOR_SWAPS_REPORT)
+    }
+
+    pub fn gate_rejected_marker(&self) -> PathBuf {
+        self.root.join(GATE_REJECTED_MARKER)
     }
 }
 

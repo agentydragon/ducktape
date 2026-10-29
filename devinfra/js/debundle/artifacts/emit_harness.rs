@@ -45,7 +45,13 @@ pub fn emit_browser_harness(
 
     fs::write(app_root.join("index.html"), &browser.index_html)?;
     fs::write(app_root.join("bootstrap.js"), &browser.bootstrap)?;
-    write_common_emission_reports(&layout, plan, chunk_records, decomposition_by_chunk)?;
+    write_common_emission_reports(
+        &layout,
+        files,
+        excluded_chunk_ids,
+        chunk_records,
+        decomposition_by_chunk,
+    )?;
     let runtime = HarnessRuntimeReport {
         app_root: format!("../{}", output_layout::APP_DIR),
         copied_assets,

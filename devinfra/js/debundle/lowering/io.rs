@@ -14,15 +14,19 @@ pub(super) fn prune_artifact_to_chunk_ids(artifact: &mut ChunkBundle, selected: 
     artifact.retain_chunks(|chunk_id| selected_ids.contains(&chunk_id));
 }
 
+pub(super) fn chunk_report_path(report_out_dir: &Path, chunk_id: &str, filename: &str) -> PathBuf {
+    report_out_dir
+        .join(chunk_id.split('/').collect::<PathBuf>())
+        .join(filename)
+}
+
 pub(super) fn write_chunk_report_json<T: Serialize>(
     report_out_dir: &Path,
     chunk_id: &str,
     filename: &str,
     value: &T,
 ) -> Result<()> {
-    let path = report_out_dir
-        .join(chunk_id.split('/').collect::<PathBuf>())
-        .join(filename);
+    let path = chunk_report_path(report_out_dir, chunk_id, filename);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }

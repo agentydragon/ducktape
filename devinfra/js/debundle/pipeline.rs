@@ -6,19 +6,21 @@ use std::sync::Arc;
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 
-use artifact::ChunkId;
 use artifact::load_js_chunks;
-use artifact::reports::ChunkDecompositionOutput;
+use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput};
+use artifact::{ChunkId, EmissionFiles};
 use emit_harness::emit_browser_harness;
 use graph_provenance::{CurrentRoots, GraphProvenance, InputCapture, ProvenanceRoots};
 use lowering::{
-    MaterializeLogicalModulesOptions, MaterializeSpecInputs, ReportEmission,
+    GateRejectionPolicy, MaterializeLogicalModulesOptions, MaterializeSpecInputs, ReportEmission,
     materialize_logical_modules, naturalize_cross_chunk_imports,
 };
 use prepare_chunks::{SourcePreparation, prepare_js_chunks};
 use prune_dead_imports::prune_dead_import_specifiers;
 use prune_module_exports::prune_unimported_module_exports;
-use reconstruction::{ReconstructionPlan, UnmatchedSpecClaim, VendorManifestOutput};
+use reconstruction::{
+    EmittablePlan, ReconstructionPlan, RejectedPlan, UnmatchedSpecClaim, VendorManifestOutput,
+};
 use spec::{ChunkExportPurity, TransformSpec};
 use spec_modules::read_flat_transform_spec;
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree, graph_module_roots};
@@ -35,9 +37,26 @@ pub struct TransformCli {
     pub packages_root: Option<PathBuf>,
 }
 
+/// What a run writes once the pipeline checks have run. The checks themselves
+/// (selectors, realizability gate, final program validation) are the same in
+/// every mode, as is the nonzero exit on rejection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunOutput {
+    /// Nothing on the accept path; a gate rejection still writes its
+    /// evidence reports.
+    DryRun,
+    /// The accepted tree, browser harness and vendor assets; a rejection
+    /// writes diagnostics only.
+    Accepted,
+    /// [`Self::Accepted`], and on a realizability-gate rejection the
+    /// logical-module tree anyway, marked unrunnable (`GATE_REJECTED` marker,
+    /// entry banner) and without browser harness or vendor assets.
+    EmitOnRejection,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransformRunOptions {
-    pub dry_run: bool,
+    pub output: RunOutput,
     pub keep_going: bool,
     /// Force per-chunk reports (dependency graph, selector diagnostics, …) to this
     /// directory, overriding the spec's `materialize_logical_modules.report_out_dir`.
@@ -95,6 +114,14 @@ pub struct TransformArgs {
     /// reported.
     #[arg(long)]
     pub dry_run: bool,
+    /// When the realizability gate rejects the spec, still write the
+    /// logical-module tree for reading — marked unrunnable by a
+    /// `GATE_REJECTED` file at the output root and a banner comment on each
+    /// rejected chunk's entry file — without the browser harness or vendor
+    /// assets. The gate reports are written as usual and the run still exits
+    /// nonzero. Accepted specs are unaffected.
+    #[arg(long = "emit-on-rejection", conflicts_with = "dry_run")]
+    pub emit_on_rejection: bool,
     /// Stop at the first supported diagnostic instead of collecting all
     /// findings from the pass. Broad runs otherwise aggregate every
     /// supported diagnostic — currently unresolved source-match
@@ -105,6 +132,17 @@ pub struct TransformArgs {
 }
 
 impl TransformArgs {
+    /// `--dry-run` / `--emit-on-rejection` as one output mode; Clap already
+    /// refuses both together.
+    pub fn run_output(&self) -> Result<RunOutput> {
+        match (self.dry_run, self.emit_on_rejection) {
+            (false, false) => Ok(RunOutput::Accepted),
+            (true, false) => Ok(RunOutput::DryRun),
+            (false, true) => Ok(RunOutput::EmitOnRejection),
+            (true, true) => bail!("--dry-run and --emit-on-rejection are mutually exclusive"),
+        }
+    }
+
     /// Collapse `--package-root` pairs into a `HashMap` and validate spec source.
     pub fn resolve(self) -> Result<TransformCli> {
         let spec_source = resolve_spec_source(&self)?;
@@ -254,7 +292,7 @@ impl ContractAudit {
 
 fn audit_options() -> TransformRunOptions {
     TransformRunOptions {
-        dry_run: true,
+        output: RunOutput::DryRun,
         keep_going: false,
         report_dir_override: None,
         list_template_identifiers: false,
@@ -299,7 +337,7 @@ fn prepare_transform(
     .unwrap_or_else(|| std::env::current_dir().expect("current directory"));
     capture.set_source_root(&source_root)?;
     validate_transform_spec(&spec)?;
-    if !options.dry_run {
+    if options.output != RunOutput::DryRun {
         preflight_output_roots(&spec)?;
     }
     let artifact = load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
@@ -352,9 +390,10 @@ fn run_prepared_transform(
         chunk_records,
     } = source;
     let materialise_chunk_ids: Vec<String> = spec.materialize_chunk_ids().into_iter().collect();
+    let dry_run = options.output == RunOutput::DryRun;
     let swap_cfg = &spec.swap_vendor_chunks;
     let mut vendor_report = VendorSwapsReport::default();
-    let write_vendor_outputs = swap_cfg.write && !options.dry_run;
+    let write_vendor_outputs = swap_cfg.write && !dry_run;
 
     // Full swaps are an emission-set exclusion: the swapped chunks stay in
     // the bundle — nothing removes them, and the dependency graph never
@@ -379,6 +418,8 @@ fn run_prepared_transform(
     // `references_rewritten` keeps counting emitted references across
     // both application sites.
     let mut vendor_lowering_rewrites: BTreeMap<(ChunkId, String), usize> = BTreeMap::new();
+    // Chunks the gate rejected but lowered anyway (`RunOutput::EmitOnRejection`).
+    let mut gate_rejections = Vec::new();
     let mut emission_files = if !materialise_chunk_ids.is_empty() {
         let report_out_dir = spec.materialize_logical_modules.report_out_dir.clone();
         let report_out_dir = options.report_dir_override.clone().or(report_out_dir);
@@ -407,15 +448,20 @@ fn run_prepared_transform(
                 // uses, so `debundle gate list/describe` works on
                 // the rejection that was just reported.
                 report_emission: match report_out_dir.filter(|_| !suppress_reports) {
-                    Some(dir) if options.dry_run => ReportEmission::OnRejection(dir),
+                    Some(dir) if dry_run => ReportEmission::OnRejection(dir),
                     Some(dir) => ReportEmission::Full(dir),
                     None => ReportEmission::None,
+                },
+                gate_rejection: match options.output {
+                    RunOutput::DryRun | RunOutput::Accepted => GateRejectionPolicy::Refuse,
+                    RunOutput::EmitOnRejection => GateRejectionPolicy::LowerUnrunnable,
                 },
             },
         )?;
         module_count = materialize_result.module_count;
         selected_lowerings = materialize_result.selected_lowerings;
         unmatched_spec_claims = materialize_result.unmatched_spec_claims;
+        gate_rejections = materialize_result.gate_rejections;
         vendor_lowering_rewrites = materialize_result.vendor_reference_rewrites;
         let outputs = materialize_result.output;
         decomposition_by_chunk = outputs.decomposition_by_chunk;
@@ -482,6 +528,30 @@ fn run_prepared_transform(
         Ok(())
     })?;
 
+    // A gate-rejected program never reaches final program validation (as
+    // without the flag, where the gate already failed the run): freeze it for
+    // the marked reading-only tree, write that tree, and fail the run with the
+    // gate's own diagnostic.
+    if !gate_rejections.is_empty() {
+        let rejected_plan = RejectedPlan::new(emission_files, &vendor_plan, gate_rejections)?;
+        if let Some(cfg) = &spec.write_js_tree {
+            write_js_tree(&WriteTreeInput {
+                plan: EmittablePlan::Rejected(&rejected_plan),
+                out_dir: &cfg.out_dir,
+                lowerings: &selected_lowerings,
+                counts: &counts,
+                chunk_records: &emitted_chunk_records(
+                    chunk_records,
+                    rejected_plan.files(),
+                    rejected_plan.excluded_chunk_ids(),
+                ),
+                module_count,
+                decomposition_by_chunk: &decomposition_by_chunk,
+            })?;
+        }
+        bail!("{}", rejected_plan.diagnostic());
+    }
+
     // Freeze the exact final syntax and replacement decisions before any
     // accepted-program output is written. Diagnostic reports may already exist.
     let validated_plan = ReconstructionPlan::new(
@@ -502,22 +572,12 @@ fn run_prepared_transform(
         validated_plan.write_vendor_outputs()?;
     }
 
-    // Chunk records of the emission set: records of excluded
-    // (fully-swapped) chunks are dropped from the emitted reports.
-    let excluded_chunk_names: BTreeSet<&str> = excluded_chunk_ids
-        .iter()
-        .map(|chunk_id| emission_files.files().chunk_table.name(*chunk_id))
-        .collect();
-    let emitted_chunk_records: Vec<_> = chunk_records
-        .into_iter()
-        .filter(|record| !excluded_chunk_names.contains(record.chunk_id.as_str()))
-        .collect();
+    let emitted_chunk_records =
+        emitted_chunk_records(chunk_records, emission_files, excluded_chunk_ids);
 
-    if !options.dry_run
-        && let Some(cfg) = &spec.write_js_tree
-    {
+    if !dry_run && let Some(cfg) = &spec.write_js_tree {
         write_js_tree(&WriteTreeInput {
-            plan: &validated_plan,
+            plan: EmittablePlan::Accepted(&validated_plan),
             out_dir: &cfg.out_dir,
             lowerings: &selected_lowerings,
             counts: &counts,
@@ -527,7 +587,7 @@ fn run_prepared_transform(
         })?;
     }
 
-    if !options.dry_run && validated_plan.browser_harness().is_some() {
+    if !dry_run && validated_plan.browser_harness().is_some() {
         emit_browser_harness(
             &validated_plan,
             &emitted_chunk_records,
@@ -536,6 +596,23 @@ fn run_prepared_transform(
     }
 
     Ok(())
+}
+
+/// Chunk records of the emission set: records of excluded (fully-swapped)
+/// chunks are dropped from the emitted reports.
+fn emitted_chunk_records(
+    chunk_records: Vec<ArtifactChunkRecord>,
+    emission_files: &EmissionFiles,
+    excluded_chunk_ids: &BTreeSet<ChunkId>,
+) -> Vec<ArtifactChunkRecord> {
+    let excluded_chunk_names: BTreeSet<&str> = excluded_chunk_ids
+        .iter()
+        .map(|chunk_id| emission_files.files().chunk_table.name(*chunk_id))
+        .collect();
+    chunk_records
+        .into_iter()
+        .filter(|record| !excluded_chunk_names.contains(record.chunk_id.as_str()))
+        .collect()
 }
 
 fn provenance_roots(cli: &TransformCli) -> Result<(ProvenanceRoots, Option<PathBuf>)> {
@@ -650,8 +727,10 @@ fn canonical_generation_command(
     if let Some(root) = &cli.packages_root {
         argv.extend(["--packages-root".to_string(), path_arg(root)?]);
     }
-    if options.dry_run {
-        argv.push("--dry-run".to_string());
+    match options.output {
+        RunOutput::DryRun => argv.push("--dry-run".to_string()),
+        RunOutput::EmitOnRejection => argv.push("--emit-on-rejection".to_string()),
+        RunOutput::Accepted => {}
     }
     if !options.keep_going {
         argv.push("--fail-fast".to_string());
@@ -809,7 +888,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     const KEEP_GOING_RUN: TransformRunOptions = TransformRunOptions {
-        dry_run: false,
+        output: RunOutput::Accepted,
         keep_going: true,
         report_dir_override: None,
         list_template_identifiers: false,
@@ -1160,7 +1239,7 @@ mod tests {
                     packages_root: None,
                 },
                 TransformRunOptions {
-                    dry_run: true,
+                    output: RunOutput::DryRun,
                     keep_going: false,
                     report_dir_override: None,
                     list_template_identifiers: false,

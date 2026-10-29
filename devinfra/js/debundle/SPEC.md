@@ -97,6 +97,33 @@ rewritten HTML, and enumerates copied assets. Invalid loading topology rejects
 the plan before any accepted output is written, including during a dry run.
 The browser writer materializes those decisions without rediscovering entries.
 
+### Reading-only output on gate rejection
+
+`debundle run --emit-on-rejection` changes only what a realizability-gate
+rejection writes; it is mutually exclusive with `--dry-run`. The selector pass,
+the gate and its evidence reports (`dependency_graph.json`, `cycles.json` /
+`atomic_group_conflicts.json` under `reports/tree/<chunk>/`) are unchanged,
+and the run still exits nonzero with the gate's diagnostic. An accepted spec
+produces exactly the output it produces without the flag.
+
+When the gate rejects a chunk, the rejected assignment is lowered anyway and
+the `write_js_tree` tree (entry and logical-module files, `package.json`, the
+tree reports) is written to its output directory, marked unrunnable:
+
+- a `GATE_REJECTED` file at the output root, written before any module file,
+  names each rejected chunk's verdict and the paths of its evidence report and
+  dependency graph, followed by the rendered diagnostic;
+- each rejected chunk's entry file opens with a `//` banner naming the
+  `GATE_REJECTED` marker, the verdict and the evidence report path.
+
+The rejected program never reaches final program validation, and no browser
+harness, bootstrap or rewritten HTML, vendor replacement asset or vendor
+manifest is written: those describe a runnable bundle. The emitted modules are
+for reading, naming and review; by construction their module graph has the
+TDZ or side-effect-ordering hazard the gate reported (<docs/design.md> § Why a
+static gate, not a runtime check), so nothing may load them as a program.
+Without `write_js_tree` configured the flag writes nothing extra.
+
 ## Dependency-graph array ordering
 
 The dependency graph preserves source order for content observations on array

@@ -18,7 +18,7 @@ mod report_builders;
 mod validation;
 
 pub use assignment_analysis::{
-    AssignmentAnalysis, AssignmentAnalysisBuildError, ValidatedAssignment,
+    AssignmentAnalysis, AssignmentAnalysisBuildError, RejectedAssignment, ValidatedAssignment,
 };
 pub use assignment_inputs::AssignmentInputs;
 pub use esm_import_order::EsmImportOrder;

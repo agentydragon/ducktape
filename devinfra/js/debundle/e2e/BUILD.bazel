@@ -87,6 +87,7 @@ rust_library(
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:artifact",
+        "//devinfra/js/debundle:output_layout",
         "//devinfra/js/debundle:spec",
         "@crates//:serde",
         "@crates//:serde_json",
@@ -453,6 +454,8 @@ debundle_e2e_test(name = "asymmetric_non_residual_cycle_test")
 debundle_e2e_test(name = "mediator_reaches_asymmetric_cycle_test")
 
 debundle_e2e_test(name = "namespace_aggregator_split_tdz_test")
+
+debundle_e2e_test(name = "emit_on_rejection_test")
 
 debundle_e2e_test(
     name = "pass_two_tdz_cut_diagnosis_test",

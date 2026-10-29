@@ -12,7 +12,7 @@ use std::io::Write;
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 
-use super::io::write_chunk_report_json;
+use super::io::{chunk_report_path, write_chunk_report_json};
 use super::util::{render_atomic_group_cause_guidance, target_file_for_request};
 use crate::chunk_ast::{ChunkAstAnalysis, analyze_chunk_ast};
 use crate::chunk_renames::collect_chunk_renames;
@@ -28,7 +28,7 @@ use crate::rebind_fold::compute_rebind_folds;
 use crate::rename_ledger::{RenameLedger, SealValidation};
 use crate::{
     ChunkModulesCounts, ChunkModulesReport, ExportReentryReport, FinalModuleContent,
-    ReportEmission, RequestedLogicalModule,
+    GateRejectionPolicy, ReportEmission, RequestedLogicalModule,
 };
 use analysis::facts::{ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::{
@@ -42,14 +42,15 @@ use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, Selecte
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile, get_chunk_entry_path};
 use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_analysis};
 use gate::{
-    AssignmentAnalysis, ValidatedAssignment, render_atomic_group_conflict_summary,
-    render_cycle_summary,
+    AssignmentAnalysis, RejectedAssignment, ValidatedAssignment,
+    render_atomic_group_conflict_summary, render_cycle_summary,
 };
-use js_ast::{ParsedJsModule, source_unit_ordinal_for_statement};
+use js_ast::{ParsedJsModule, format_comment_block_lines, source_unit_ordinal_for_statement};
 use output_layout::{
     ATOMIC_GROUP_CONFLICTS_REPORT, CYCLES_REPORT, DEPENDENCY_GRAPH_REPORT, EXPORT_REENTRY_REPORT,
-    SELECTOR_DIAGNOSTICS_REPORT,
+    GATE_REJECTED_MARKER, SELECTOR_DIAGNOSTICS_REPORT,
 };
+use reconstruction::{ChunkGateRejection, GateVerdict};
 use spec::{ChunkRenames, InitializerPurity, LogicalModule, MemberPurity, UnassignedMode};
 use spec_resolution::{
     LogicalRequest, MemberRequest, ProjectedChunk, ResolvedChunk, known_effect_from_member_effect,
@@ -90,6 +91,7 @@ pub(super) struct ChunkContext<'a> {
     pub(super) keep_going: bool,
     pub(super) list_template_identifiers: bool,
     pub(super) report_emission: &'a ReportEmission,
+    pub(super) gate_rejection: GateRejectionPolicy,
     pub(super) graph_provenance: Option<&'a graph_provenance::GraphProvenance>,
     pub(super) export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
     pub(super) export_reentry_reports: &'a BTreeMap<ChunkId, ExportReentryReport>,
@@ -136,6 +138,9 @@ pub(super) struct MaterializedLogicalChunk {
     /// these up across every chunk and fails the pipeline at the
     /// end with the full list.
     pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
+    /// The gate rejected this chunk and [`GateRejectionPolicy::LowerUnrunnable`]
+    /// lowered it anyway; its entry file carries the banner.
+    pub(super) gate_rejection: Option<ChunkGateRejection>,
 }
 
 /// Lowering state prepared before the shared spec-resolution service projects
@@ -438,6 +443,7 @@ pub(super) fn finish_logical_chunk(
         chunk_id,
         target_dir,
         report_emission,
+        gate_rejection: gate_rejection_policy,
         graph_provenance,
         vendor_import_oracle,
         export_reentry_policies,
@@ -756,21 +762,46 @@ pub(super) fn finish_logical_chunk(
         assignment_chunk_renames,
         entry_destination,
     )?;
-    let validated_assignment = validate_and_emit_reports(
+    let gate_outcome = validate_and_emit_reports(
         chunk_id,
         report_emission,
+        gate_rejection_policy,
         graph_provenance,
         &assignment_analysis,
         &export_reentry_reports[&chunk_id_interned],
     )?;
 
-    let placement = EmissionPlacement::from_validated(
-        &validated_assignment,
-        chunk_id_interned,
-        &runtime_ast.module.body,
-        module_plans.len(),
-        &whole_statement_assignment,
-    )?;
+    let (placement, header_lines, linker_order, gate_rejection) = match &gate_outcome {
+        GateOutcome::Accepted(validated) => (
+            EmissionPlacement::from_validated(
+                validated,
+                chunk_id_interned,
+                &runtime_ast.module.body,
+                module_plans.len(),
+                &whole_statement_assignment,
+            )?,
+            header_lines,
+            validated.report().linker_order.clone(),
+            None,
+        ),
+        GateOutcome::Rejected {
+            assignment,
+            rejection,
+        } => (
+            EmissionPlacement::from_rejected(
+                assignment,
+                chunk_id_interned,
+                &runtime_ast.module.body,
+                module_plans.len(),
+                &whole_statement_assignment,
+            )?,
+            // The banner leads the entry file so a reader (or a loader) meets
+            // it before any code; the chunk's own header follows.
+            [gate_rejected_banner_lines(rejection), header_lines].concat(),
+            assignment.report().linker_order.clone(),
+            Some(rejection.clone()),
+        ),
+    };
     if let Some(spreads) = cross_module_purities.stable_set_spreads.get(chunk_id) {
         for stable in spreads.values() {
             anyhow::ensure!(
@@ -835,9 +866,7 @@ pub(super) fn finish_logical_chunk(
         &entry_destination_report_target_file,
         &assignment_analysis,
     );
-    let validation = ChunkValidationSummary {
-        linker_order: validated_assignment.report().linker_order.clone(),
-    };
+    let validation = ChunkValidationSummary { linker_order };
     let report = ChunkModulesReport {
         chunk_id: chunk_id.to_string(),
         counts: ChunkModulesCounts {
@@ -868,7 +897,24 @@ pub(super) fn finish_logical_chunk(
         validation,
         report,
         vendor_reference_rewrites,
+        gate_rejection,
     })
+}
+
+/// `// …` lines announcing a gate-rejected chunk at the top of its entry file.
+fn gate_rejected_banner_lines(rejection: &ChunkGateRejection) -> Vec<String> {
+    format_comment_block_lines(&format!(
+        "{GATE_REJECTED_MARKER}: NOT RUNNABLE. The realizability gate rejected chunk \
+         `{chunk}` ({verdict}); `debundle run --emit-on-rejection` wrote this tree for \
+         reading only.\n{evidence}\nSee the {GATE_REJECTED_MARKER} marker at the output root.",
+        chunk = rejection.chunk_id,
+        verdict = rejection.verdict,
+        evidence = match &rejection.evidence_report {
+            Some(path) => format!("Evidence: {}", path.display()),
+            None => "No report directory was configured; the rejection is on the run's stderr."
+                .to_string(),
+        },
+    ))
 }
 
 /// Rebind-fold composer: fold rebind-only atomic groups into their
@@ -1222,9 +1268,22 @@ fn pattern_binds_name(pattern: &Pat, binding: &str) -> bool {
     }
 }
 
+/// The gate's judgement of one chunk's assignment, with the evidence reports
+/// already written.
+enum GateOutcome<'a> {
+    Accepted(ValidatedAssignment<'a>),
+    /// Only under [`GateRejectionPolicy::LowerUnrunnable`]; `Refuse` fails
+    /// with the rendered diagnostic instead.
+    Rejected {
+        assignment: RejectedAssignment<'a>,
+        rejection: ChunkGateRejection,
+    },
+}
+
 /// Write per-chunk validation reports (dependency graph, atomic-group
-/// conflicts, cycles) and bail with a human-readable summary when
-/// the spec is unrealizable.
+/// conflicts, cycles) and, when the spec is unrealizable, either bail with a
+/// human-readable summary or hand the rejected assignment back for the
+/// reading-only lowering of `debundle run --emit-on-rejection`.
 ///
 /// Under [`ReportEmission::OnRejection`] (the `debundle run
 /// --dry-run` mode) the accept path writes nothing, but a rejection
@@ -1233,14 +1292,15 @@ fn pattern_binds_name(pattern: &Pat, binding: &str) -> bool {
 fn validate_and_emit_reports<'a>(
     chunk_id: &str,
     report_emission: &ReportEmission,
+    policy: GateRejectionPolicy,
     graph_provenance: Option<&graph_provenance::GraphProvenance>,
     assignment_analysis: &'a AssignmentAnalysis,
     export_reentry_report: &ExportReentryReport,
-) -> Result<ValidatedAssignment<'a>> {
+) -> Result<GateOutcome<'a>> {
     let validation = assignment_analysis.validate_for_emission();
     let assignment_report = match &validation {
         Ok(assignment) => assignment.report(),
-        Err(report) => report,
+        Err(rejected) => rejected.report(),
     };
     let rejected = !assignment_report.atomic_group_conflicts.is_empty()
         || !assignment_report.cycles.is_empty();
@@ -1268,7 +1328,9 @@ fn validate_and_emit_reports<'a>(
             export_reentry_report,
         )?;
     }
-    if !assignment_report.atomic_group_conflicts.is_empty() {
+    // Atomic-group conflicts take precedence over cycles: a split atom
+    // already forces the cycle, so only its evidence is written and rendered.
+    let verdict = if !assignment_report.atomic_group_conflicts.is_empty() {
         if let Some(report_out_dir) = report_out_dir {
             // Project onto the wire shape: source units as `"unit:N"`,
             // modules as canonical `ModulePath` — the same entity
@@ -1295,18 +1357,21 @@ fn validate_and_emit_reports<'a>(
         let evidence = report_out_dir.map_or_else(String::new, |dir| {
             format!(
                 " Full evidence written to {}; dependency graph written to {}.",
-                dir.join(chunk_id)
-                    .join(ATOMIC_GROUP_CONFLICTS_REPORT)
-                    .display(),
-                dir.join(chunk_id).join(DEPENDENCY_GRAPH_REPORT).display(),
+                chunk_report_path(dir, chunk_id, ATOMIC_GROUP_CONFLICTS_REPORT).display(),
+                chunk_report_path(dir, chunk_id, DEPENDENCY_GRAPH_REPORT).display(),
             )
         });
-        bail!(
-            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-group conflict(s) — the spec assigns members of one atomic group to different destination modules, forming a cycle in the module dependency graph that the constraining-edge SCC analysis says is unrealizable. Atomic groups come from `G_atomic` SCCs over the dependency graph (docs/design.md §\"Two classes of atom\"); every member must co-locate. {causes}Resolve by reconciling each group's claims into one destination.{evidence} Summary:\n{summary}",
-            n = assignment_report.atomic_group_conflicts.len(),
-        );
-    }
-    if !assignment_report.cycles.is_empty() {
+        Some((
+            GateVerdict::AtomicGroupConflicts {
+                count: assignment_report.atomic_group_conflicts.len(),
+            },
+            ATOMIC_GROUP_CONFLICTS_REPORT,
+            format!(
+                "materialize_logical_modules: chunk {chunk_id} has {n} atomic-group conflict(s) — the spec assigns members of one atomic group to different destination modules, forming a cycle in the module dependency graph that the constraining-edge SCC analysis says is unrealizable. Atomic groups come from `G_atomic` SCCs over the dependency graph (docs/design.md §\"Two classes of atom\"); every member must co-locate. {causes}Resolve by reconciling each group's claims into one destination.{evidence} Summary:\n{summary}",
+                n = assignment_report.atomic_group_conflicts.len(),
+            ),
+        ))
+    } else if !assignment_report.cycles.is_empty() {
         if let Some(report_out_dir) = report_out_dir {
             // Trim the wire shape before writing: keep `id` (array
             // index), `modules`, `cut`. Per-edge evidence is
@@ -1321,19 +1386,44 @@ fn validate_and_emit_reports<'a>(
         let evidence = report_out_dir.map_or_else(String::new, |dir| {
             format!(
                 " Full per-cycle evidence at {}; dependency graph at {}.",
-                dir.join(chunk_id).join(CYCLES_REPORT).display(),
-                dir.join(chunk_id).join(DEPENDENCY_GRAPH_REPORT).display(),
+                chunk_report_path(dir, chunk_id, CYCLES_REPORT).display(),
+                chunk_report_path(dir, chunk_id, DEPENDENCY_GRAPH_REPORT).display(),
             )
         });
-        bail!(
-            "materialize_logical_modules: chunk {chunk_id} — spec is unrealizable: {n} module-quotient SCC(s) with at-init / side-effect edges between members. Each SCC names the binding pairs whose split forced the cycle; co-locate them or break a back-edge.{evidence} Summary:\n{summary}",
-            n = assignment_report.cycles.len(),
-        );
+        Some((
+            GateVerdict::UnrealizableCycles {
+                count: assignment_report.cycles.len(),
+            },
+            CYCLES_REPORT,
+            format!(
+                "materialize_logical_modules: chunk {chunk_id} — spec is unrealizable: {n} module-quotient SCC(s) with at-init / side-effect edges between members. Each SCC names the binding pairs whose split forced the cycle; co-locate them or break a back-edge.{evidence} Summary:\n{summary}",
+                n = assignment_report.cycles.len(),
+            ),
+        ))
+    } else {
+        None
+    };
+    if let Some((verdict, evidence_report, diagnostic)) = verdict {
+        return match (policy, validation) {
+            (GateRejectionPolicy::LowerUnrunnable, Err(assignment)) => Ok(GateOutcome::Rejected {
+                assignment,
+                rejection: ChunkGateRejection {
+                    chunk_id: chunk_id.to_string(),
+                    verdict,
+                    evidence_report: report_out_dir
+                        .map(|dir| chunk_report_path(dir, chunk_id, evidence_report)),
+                    dependency_graph_report: report_out_dir
+                        .map(|dir| chunk_report_path(dir, chunk_id, DEPENDENCY_GRAPH_REPORT)),
+                    diagnostic,
+                },
+            }),
+            _ => Err(anyhow::anyhow!(diagnostic)),
+        };
     }
     // Defense-in-depth on the accept path: a cross-destination
     // rebinding write (clause 2) always co-locates with its target in
     // one atomic factor group, so a spec splitting them must have
-    // produced an `atomic_group_conflicts` bail above. Reaching this
+    // produced an `atomic_group_conflicts` rejection above. Reaching this
     // point with a non-empty clause-2 verdict means the atomic-group
     // glue and the realizability gate disagree — refuse to emit
     // rather than materialize a bundle that reassigns an ESM import.
@@ -1344,11 +1434,12 @@ fn validate_and_emit_reports<'a>(
             rebinds = assignment_report.cross_rebinds.join("\n  "),
         );
     }
-    validation.map_err(|_| {
-        anyhow::anyhow!(
-            "chunk {chunk_id}: assignment validation rejected without a rendered diagnostic"
-        )
-    })
+    match validation {
+        Ok(validated) => Ok(GateOutcome::Accepted(validated)),
+        Err(_) => {
+            bail!("chunk {chunk_id}: assignment validation rejected without a rendered diagnostic")
+        }
+    }
 }
 
 /// Build the per-plan `FinalModuleContent` rows for `ChunkModulesReport`.

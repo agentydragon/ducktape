@@ -89,6 +89,25 @@ impl ValidatedAssignment<'_> {
     }
 }
 
+/// An immutable assignment the gate rejected. It still projects to syntax
+/// placement so `debundle run --emit-on-rejection` can lower it for reading;
+/// the report says why the result is not runnable.
+#[derive(Debug)]
+pub struct RejectedAssignment<'a> {
+    assignment_analysis: &'a AssignmentAnalysis,
+    report: AssignmentReport,
+}
+
+impl RejectedAssignment<'_> {
+    pub fn assignment_analysis(&self) -> &AssignmentAnalysis {
+        self.assignment_analysis
+    }
+
+    pub fn report(&self) -> &AssignmentReport {
+        &self.report
+    }
+}
+
 impl AssignmentAnalysis {
     pub fn inputs(&self) -> &AssignmentInputs {
         &self.inputs
@@ -234,13 +253,16 @@ impl AssignmentAnalysis {
         report
     }
 
-    pub fn validate_for_emission(&self) -> Result<ValidatedAssignment<'_>, AssignmentReport> {
+    pub fn validate_for_emission(&self) -> Result<ValidatedAssignment<'_>, RejectedAssignment<'_>> {
         let report = self.validate();
         if !report.atomic_group_conflicts.is_empty()
             || !report.cycles.is_empty()
             || !report.cross_rebinds.is_empty()
         {
-            return Err(report);
+            return Err(RejectedAssignment {
+                assignment_analysis: self,
+                report,
+            });
         }
         Ok(ValidatedAssignment {
             assignment_analysis: self,

@@ -23,7 +23,9 @@ use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 use output_layout::SELECTOR_DIAGNOSTICS_REPORT;
 use peel::{OutputFormat, print_report};
-use pipeline::{TransformArgs, TransformRunOptions, TransformSpecSource, run_transform_cli};
+use pipeline::{
+    RunOutput, TransformArgs, TransformRunOptions, TransformSpecSource, run_transform_cli,
+};
 use selector_codemod::source_input::resolve_chunk_source_file;
 use selector_outcome::{
     Entity, Outcome, Placement, SelectorKind, SelectorOutcome, SelectorOutcomeReport,
@@ -119,7 +121,7 @@ fn run_spec_validate(args: ValidateArgs) -> Result<SelectorOutcomeReport> {
     let pass = run_transform_cli(
         &cli,
         TransformRunOptions {
-            dry_run: true,
+            output: RunOutput::DryRun,
             keep_going,
             report_dir_override: Some(capture.path().to_path_buf()),
             list_template_identifiers: true,

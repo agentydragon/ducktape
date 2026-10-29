@@ -8,11 +8,11 @@ use spec::InitializerPurity;
 use spec::{
     AnonymousStatement, BindingAnnotation, BindingSelector, BindingSourceKind, ChunkRenameMember,
     ChunkRenameSelector, ChunkRenames, CrossRefSelector, DependencyGraphOptions,
-    IntrinsicAliasSelector, LoadJsChunksArgs, LogicalModule, MakesDecorateCallSelector,
-    MaterializeLogicalModulesConfig, Member as SpecMember, MemberOfModuleSelector, MemberSelector,
-    PassedToCallSelector, ReadsMemberSelector, SourceMatch, SourceMatchBinding,
-    SourceMatchBindingDetail, SourceMatchClaim, SourceMatchIdentifierMode, SwapVendorChunksConfig,
-    TransformSpec, UnassignedMode, WriteJsTreeConfig,
+    EmitBrowserHarnessConfig, IntrinsicAliasSelector, LoadJsChunksArgs, LogicalModule,
+    MakesDecorateCallSelector, MaterializeLogicalModulesConfig, Member as SpecMember,
+    MemberOfModuleSelector, MemberSelector, PassedToCallSelector, ReadsMemberSelector, SourceMatch,
+    SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim, SourceMatchIdentifierMode,
+    SwapVendorChunksConfig, TransformSpec, UnassignedMode, WriteJsTreeConfig,
 };
 use spec::{MemberEffect, MemberPurity};
 use std::collections::BTreeMap;
@@ -727,6 +727,9 @@ pub struct FixtureOpts<'a> {
     /// Keep only `chunk_id` in the materialization artifact while retaining
     /// the full chunk table, exercising incomplete-artifact fallback.
     pub prune_other_chunks: bool,
+    /// Configure `emit_browser_harness` over a snapshot `index.html` that
+    /// loads the entry chunk; the harness root is exposed on the run result.
+    pub browser_harness: bool,
 }
 
 impl<'a> FixtureOpts<'a> {
@@ -762,7 +765,14 @@ impl<'a> FixtureOpts<'a> {
             argument_inputs: Vec::new(),
             vendor_marks: &[],
             prune_other_chunks: false,
+            browser_harness: false,
         }
+    }
+
+    /// See [`Self::browser_harness`].
+    pub fn with_browser_harness(mut self) -> Self {
+        self.browser_harness = true;
+        self
     }
 
     /// Add analyzed-but-not-materialized sibling chunks (see `extra_chunks`),
@@ -1268,7 +1278,13 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         write_js_tree: Some(WriteJsTreeConfig {
             out_dir: setup.out_root.clone(),
         }),
-        emit_browser_harness: None,
+        emit_browser_harness: setup.browser_harness.as_ref().map(|harness| {
+            EmitBrowserHarnessConfig {
+                asset_summary_path: harness.asset_summary_path.clone(),
+                out_dir: harness.out_dir.clone(),
+                snapshot_root: setup.snapshot_root.clone(),
+            }
+        }),
     }
 }
 

@@ -23,7 +23,7 @@ use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand};
 use graph_provenance::{GraphMismatch, GraphMismatchReason};
 use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs, print_report};
-use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
+use pipeline::{RunOutput, TransformArgs, TransformRunOptions, run_transform_cli};
 use std::process::ExitCode;
 
 use crate::bindings_commands::BindingsNs;
@@ -456,19 +456,19 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
     };
     let result = match args.command {
         DebundleCommand::Run(args) => {
-            let dry_run = args.dry_run;
+            let output = args.run_output()?;
             let keep_going = !args.fail_fast;
             let cli = args.resolve()?;
             run_transform_cli(
                 &cli,
                 TransformRunOptions {
-                    dry_run,
+                    output,
                     keep_going,
                     report_dir_override: None,
                     list_template_identifiers: false,
                 },
             )?;
-            if dry_run {
+            if output == RunOutput::DryRun {
                 println!("dry-run: transform pipeline checks passed; no outputs written");
             }
             Ok(())

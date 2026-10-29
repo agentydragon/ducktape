@@ -24,6 +24,7 @@ pub use fixture_spec::{ChunkRenameEntry, chunk_rename, chunk_rename_with_purity,
 
 use analysis::DependencyGraphReport;
 use artifact::reports::PackageManifest;
+use output_layout::{APP_DIR, GATE_REJECTED_MARKER};
 use runfiles::{Runfiles, rlocation};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -61,6 +62,9 @@ pub struct Fixture {
     /// The debundler's stderr from the successful run, for asserting
     /// on warnings/notices (e.g. admission-override notices).
     pub stderr: String,
+    /// The `emit_browser_harness` output root; `Some` only for
+    /// [`FixtureOpts::with_browser_harness`].
+    pub harness_root: Option<PathBuf>,
     source_path: PathBuf,
     // Held to keep the tempdir alive for the duration of assertions.
     _root: TempDir,
@@ -77,6 +81,9 @@ pub struct RejectedFixture {
     /// The `write_js_tree` output root, exposed so dry-run callers can
     /// assert the no-output contract (only `reports/` may exist).
     pub out_root: PathBuf,
+    /// The `emit_browser_harness` output root; `Some` only for
+    /// [`FixtureOpts::with_browser_harness`].
+    pub harness_root: Option<PathBuf>,
     // Held to keep the tempdir alive for the duration of assertions.
     _root: TempDir,
 }
@@ -90,6 +97,27 @@ impl Fixture {
 impl RejectedFixture {
     pub fn dependency_graph(&self) -> DependencyGraphReport {
         self.read_report("dependency_graph.json")
+    }
+
+    /// Where `--emit-on-rejection` writes the logical-module tree.
+    pub fn app_root(&self) -> PathBuf {
+        self.out_root.join(APP_DIR)
+    }
+
+    pub fn entry_path(&self) -> PathBuf {
+        self.app_root()
+            .join(self.chunk_id.split('/').collect::<PathBuf>())
+            .join("entry.js")
+    }
+
+    pub fn gate_rejected_marker(&self) -> PathBuf {
+        self.out_root.join(GATE_REJECTED_MARKER)
+    }
+
+    /// The per-chunk gate evidence report (`cycles.json` or
+    /// `atomic_group_conflicts.json`).
+    pub fn report_path(&self, filename: &str) -> PathBuf {
+        self.report_root.join(&self.chunk_id).join(filename)
     }
 
     /// `cycles.json`: one entry per blocking SCC, with its `modules` and `cut`.
@@ -110,10 +138,7 @@ impl RejectedFixture {
     }
 
     fn read_report<T: DeserializeOwned>(&self, filename: &str) -> T {
-        read_json_with_stderr(
-            &self.report_root.join(&self.chunk_id).join(filename),
-            Some(&self.stderr),
-        )
+        read_json_with_stderr(&self.report_path(filename), Some(&self.stderr))
     }
 }
 
@@ -158,6 +183,7 @@ pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
         out_root: app_root,
         report_root: setup.report_root,
         stderr: result.stderr,
+        harness_root: setup.browser_harness.map(|harness| harness.out_dir),
         source_path: setup.snapshot_root.join(format!("{}.js", opts.chunk_id)),
         _root: setup.root,
     }
@@ -242,6 +268,37 @@ pub fn expect_rejection_containing_all(opts: FixtureOpts<'_>, tokens: &[&str]) {
 
 pub fn run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     run_rejection_fixture_with_args(opts, &[])
+}
+
+/// Like [`run_rejection_fixture`] but with `debundle run --emit-on-rejection`:
+/// the gate rejection still fails the run, and the logical-module tree is
+/// written under [`RejectedFixture::app_root`] marked unrunnable.
+pub fn run_emit_on_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
+    run_rejection_fixture_with_args(opts, &["--emit-on-rejection"])
+}
+
+/// Asserts `entry_path` is a parseable module that opens with the
+/// gate-rejected banner: a leading `//` comment block naming the
+/// `GATE_REJECTED` marker and `evidence_report`.
+pub fn assert_gate_rejected_banner(entry_path: &Path, evidence_report: &Path) {
+    let code = fs::read_to_string(entry_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", entry_path.display()));
+    parse_module(&code);
+    let banner: Vec<&str> = code
+        .lines()
+        .take_while(|line| line.starts_with("//"))
+        .collect();
+    assert!(
+        banner
+            .first()
+            .is_some_and(|line| line.contains(GATE_REJECTED_MARKER)),
+        "entry must open with the {GATE_REJECTED_MARKER} banner:\n{code}"
+    );
+    let evidence = evidence_report.to_str().unwrap();
+    assert!(
+        banner.iter().any(|line| line.contains(evidence)),
+        "banner must name {evidence}:\n{code}"
+    );
 }
 
 /// Like [`run_rejection_fixture`] but with `debundle run --dry-run`.
@@ -334,6 +391,7 @@ fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -
         modules_root: setup.modules_root,
         source_root: setup.snapshot_root,
         out_root: setup.out_root,
+        harness_root: setup.browser_harness.map(|harness| harness.out_dir),
         _root: setup.root,
     }
 }
@@ -798,6 +856,25 @@ struct PreparedFixture {
     snapshot_root: PathBuf,
     modules_root: PathBuf,
     js_list_path: PathBuf,
+    browser_harness: Option<BrowserHarnessFixture>,
+}
+
+/// `emit_browser_harness` inputs of a fixture: a snapshot `index.html`
+/// loading the entry chunk as a module script, and its asset summary.
+pub(crate) struct BrowserHarnessFixture {
+    pub(crate) asset_summary_path: PathBuf,
+    pub(crate) out_dir: PathBuf,
+}
+
+#[derive(Serialize)]
+struct AssetSummaryFixture<'a> {
+    #[serde(rename = "entryPoints")]
+    entry_points: AssetSummaryEntryPoints<'a>,
+}
+
+#[derive(Serialize)]
+struct AssetSummaryEntryPoints<'a> {
+    html: &'a str,
 }
 
 fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
@@ -811,6 +888,28 @@ fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
     fs::create_dir_all(&out_root).unwrap();
     fs::create_dir_all(&snapshot_root).unwrap();
     fs::create_dir_all(&modules_root).unwrap();
+
+    let browser_harness = opts.browser_harness.then(|| {
+        write_text_file(
+            &snapshot_root.join("index.html"),
+            &format!(
+                "<!doctype html>\n<script type=\"module\" src=\"./{}.js\"></script>\n",
+                opts.chunk_id
+            ),
+        );
+        let asset_summary_path = extracted_root.join("asset-summary.json");
+        write_text_file(
+            &asset_summary_path,
+            &serde_json::to_string(&AssetSummaryFixture {
+                entry_points: AssetSummaryEntryPoints { html: "index.html" },
+            })
+            .unwrap(),
+        );
+        BrowserHarnessFixture {
+            asset_summary_path,
+            out_dir: root.path().join("harness"),
+        }
+    });
 
     // Mark the snapshot tree as ESM so node loads emitted .js files as modules.
     write_text_file(
@@ -856,6 +955,7 @@ fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
         snapshot_root,
         modules_root,
         js_list_path,
+        browser_harness,
     };
     write_yaml_file(&setup.spec_path, &build_spec(opts, &setup));
     setup

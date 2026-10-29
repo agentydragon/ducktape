@@ -1,4 +1,4 @@
-//! Project syntax placement from the exact assignment accepted by the gate.
+//! Project syntax placement from the exact assignment the gate judged.
 //! Requested whole-statement moves are checked against that assignment before
 //! becoming emission instructions; binding destinations are read from source units.
 
@@ -7,12 +7,13 @@ use std::collections::{BTreeMap, HashMap};
 
 use analysis::{BindingKind, ChunkId, ModuleId, SourceUnitClass};
 use anyhow::{Context, Result, bail, ensure};
-use gate::{AssignmentAnalysis, ValidatedAssignment};
+use gate::{AssignmentAnalysis, RejectedAssignment, ValidatedAssignment};
 use js_ast::statements_for_source_unit_ordinals;
 use swc_ecma_ast::{Id, ModuleItem};
 
 /// Immutable placement instructions tied to the assignment that produced them.
-/// Only projection from a validated assignment constructs this type.
+/// Only projection from a gate-judged assignment constructs this type: a
+/// validated one, or a rejected one that `finish_logical_chunk` marks unrunnable.
 pub(super) struct EmissionPlacement<'a> {
     assignment_analysis: &'a AssignmentAnalysis,
     bindings: HashMap<Id, usize>,
@@ -27,7 +28,39 @@ impl<'a> EmissionPlacement<'a> {
         module_count: usize,
         requested_statements: &BTreeMap<StatementId, usize>,
     ) -> Result<Self> {
-        let assignment_analysis = validated.assignment_analysis();
+        Self::project(
+            validated.assignment_analysis(),
+            chunk_identity,
+            body,
+            module_count,
+            requested_statements,
+        )
+    }
+
+    /// Placement for the reading-only tree of `debundle run --emit-on-rejection`.
+    pub(super) fn from_rejected(
+        rejected: &'a RejectedAssignment<'_>,
+        chunk_identity: ChunkId,
+        body: &[ModuleItem],
+        module_count: usize,
+        requested_statements: &BTreeMap<StatementId, usize>,
+    ) -> Result<Self> {
+        Self::project(
+            rejected.assignment_analysis(),
+            chunk_identity,
+            body,
+            module_count,
+            requested_statements,
+        )
+    }
+
+    fn project(
+        assignment_analysis: &'a AssignmentAnalysis,
+        chunk_identity: ChunkId,
+        body: &[ModuleItem],
+        module_count: usize,
+        requested_statements: &BTreeMap<StatementId, usize>,
+    ) -> Result<Self> {
         let graph = assignment_analysis.inputs().dependency_graph();
         let assignment = assignment_analysis.assignment();
         let entry_module_id = assignment.entry_destination().module_id();
