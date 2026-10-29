@@ -40,6 +40,8 @@ instructions, setup scripts and History export.
 - `update_plan`: only as an Agentplane-wide feature, not a sampler-only tool.
 - Maybe, very low priority: lifecycle hooks (`hooks.json`), and `request_user_input` with async
   messages to the user.
+- AGENTS.md: Codex's root-to-cwd chain (one per Session, since the cwd never changes), and possibly
+  Claude-style nested discovery triggered by nested tool paths, which the sampler sees directly.
 - Very low priority: undo of turns.
 - Context-awareness tools, if wanted: Codex's `get_context_remaining`, `new_context_window`, and
   token-budget and current-time reminders in context.
