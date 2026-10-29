@@ -35,7 +35,9 @@ fn prototype_intrinsic_roots(
     )
     .into_iter()
     .filter_map(|root| match root {
-        NativeReceiverRoot::Intrinsic(root) => Some(root),
+        NativeReceiverRoot::Intrinsic(root)
+        | NativeReceiverRoot::IntrinsicPrototype(root)
+        | NativeReceiverRoot::IntrinsicDescendant(root) => Some(root),
         NativeReceiverRoot::OrdinaryDirect { .. }
         | NativeReceiverRoot::OrdinaryDescendant { .. } => None,
     })

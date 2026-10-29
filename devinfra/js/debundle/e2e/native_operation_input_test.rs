@@ -60,11 +60,11 @@ fn split_opts(input: Option<NativeOperationInputContract>) -> FixtureOpts<'stati
     }
 }
 
-fn rejected_opts(
-    source: &'static str,
+fn rejected_opts<'a>(
+    source: &'a str,
     selected_binding: &'static str,
     input: NativeOperationInputContract,
-) -> FixtureOpts<'static> {
+) -> FixtureOpts<'a> {
     FixtureOpts::new(
         source,
         vec![logical_module("selected", &[Member::new(selected_binding)])],
@@ -183,6 +183,14 @@ fn selected_symbol_call_removes_only_its_synthetic_reentry_barrier() {
             .as_array()
             .is_none_or(Vec::is_empty),
         "this premise must not refine the reflective helper's receiver: {graph}"
+    );
+    assert!(
+        unknown_receiver_witness["target_slots"]
+            .as_array()
+            .is_some_and(|slots| slots
+                .iter()
+                .any(|slot| { slot["receiver"] == "unknown" && slot["key"] == "unknown" })),
+        "the opaque reflective write must retain its unknown slot witness: {graph}"
     );
 }
 
@@ -308,6 +316,80 @@ fn known_symbol_replacement_in_another_analyzed_chunk_contradicts_the_input() {
     .with_extra_chunks(&[("static/mutation", MUTATION)])
     .with_native_operation_inputs("static/app", vec![input]);
     expect_rejection_containing_all(opts, &["global Symbol replacement", "static/mutation"]);
+}
+
+#[test]
+fn exact_global_symbol_slot_rejects_aliases_and_reflective_writes() {
+    for mutation in [
+        "const root = globalThis; root.Symbol = function replacement() {};",
+        "const root = globalThis; delete root.Symbol;",
+        "const root = globalThis; Object.defineProperty(root, 'Symbol', { get() { return function replacement() {}; } });",
+        "const root = globalThis; Object.assign(root, { Symbol: function replacement() {} });",
+        "const root = globalThis; Object.defineProperties(root, { Symbol: { value: function replacement() {} } });",
+    ] {
+        let source =
+            format!("const marker = Symbol('marker');\n{mutation}\nexport {{ marker }};\n");
+        expect_rejection_containing_all(
+            rejected_opts(&source, "marker", marker_input(&source)),
+            &["global Symbol replacement"],
+        );
+    }
+}
+
+#[test]
+fn unrelated_global_write_preserves_exact_symbol_input() {
+    let source = "const marker = Symbol('marker');\nconst root = globalThis;\nObject.assign(root, { unrelated: 1 });\nconsole.log(marker.description);\nexport { marker };\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs("static/app", vec![marker_input(source)]),
+    );
+    assert_preserved_entry_output(&fixture, "marker\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert_eq!(native_input_uses(&graph).len(), 1);
+    assert!(
+        graph["native_integrity_witnesses"]
+            .as_array()
+            .expect("native mutation witnesses")
+            .iter()
+            .any(
+                |witness| witness["target_slots"]
+                    .as_array()
+                    .is_some_and(|slots| slots.iter().any(|slot| {
+                        slot["receiver"] == "global_object" && slot["key"]["string"] == "unrelated"
+                    }))
+            )
+    );
+}
+
+#[test]
+fn native_slot_census_preserves_paths_keys_and_opaque_writes_across_chunks() {
+    let source = "import './mutation.js';\nconsole.log('ok');\n";
+    let mutation = "export function mutate() { const proto = Set.prototype; proto.add = function(value) { return value; }; Set.sibling = 1; Array.prototype[Symbol.iterator] = function* () {}; Object.defineProperty(proto, 'delete', { value: function() {} }); const unknown = globalThis.maybe; Object.defineProperty(unknown, 'add', { value: function() {} }); }\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/mutation", mutation)]),
+    );
+    assert_preserved_entry_output(&fixture, "ok\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let slots: Vec<_> = graph["native_integrity_witnesses"]
+        .as_array()
+        .expect("native mutation witnesses")
+        .iter()
+        .filter(|witness| witness["source_location"]["source_path"] == "static/mutation.js")
+        .flat_map(|witness| witness["target_slots"].as_array().into_iter().flatten())
+        .collect();
+    for expected in [
+        serde_json::json!({"receiver": {"prototype": "set"}, "key": {"string": "add"}}),
+        serde_json::json!({"receiver": {"constructor": "set"}, "key": {"string": "sibling"}}),
+        serde_json::json!({"receiver": {"prototype": "array"}, "key": "symbol_iterator"}),
+        serde_json::json!({"receiver": {"prototype": "set"}, "key": {"string": "delete"}}),
+        serde_json::json!({"receiver": "unknown", "key": {"string": "add"}}),
+    ] {
+        assert!(
+            slots.contains(&&expected),
+            "missing {expected} from {slots:?}"
+        );
+    }
 }
 
 #[test]

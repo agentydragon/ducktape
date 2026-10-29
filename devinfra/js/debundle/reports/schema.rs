@@ -254,6 +254,13 @@ pub struct NativeMutationWitness {
     pub receiver_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
     pub through_local_alias: bool,
     pub affected_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    /// Target paths and keys retained before family-wide integrity widening.
+    /// Unknown paths/keys remain visible but are not source-known slot writes.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub target_slots: BTreeSet<NativeWriteSlot>,
+    /// Native identities needed before a computed key can be trusted as exact.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub key_dependencies: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
     /// Native premises invalidating the property-key refinement, if any.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub invalidated_key_dependencies: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
@@ -269,6 +276,34 @@ pub struct NativeMutationWitness {
     pub unreachable_branch: Option<NativeUnreachableBranch>,
     #[serde(skip)]
     pub(crate) span: swc_common::Span,
+}
+
+/// A source-visible receiver path. Constructor/prototype paths identify the
+/// binding used by source; consumers still need native-identity evidence before
+/// treating that binding as the original intrinsic object.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeReceiverPath {
+    GlobalObject,
+    Constructor(crate::analysis_inputs::NativeIntrinsic),
+    Prototype(crate::analysis_inputs::NativeIntrinsic),
+    Descendant(crate::analysis_inputs::NativeIntrinsic),
+    Unknown,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativePropertyKey {
+    String(String),
+    SymbolIterator,
+    OtherSymbol,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct NativeWriteSlot {
+    pub receiver: NativeReceiverPath,
+    pub key: NativePropertyKey,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]

@@ -976,7 +976,12 @@ with zero or one syntactically primitive argument and no spread. Shadowed
 in-source writes to the global `Symbol` binding/property are rejected. The
 known-write check covers the analyzed initialization region, including
 deferred bodies, so replacement followed by restoration cannot be reordered
-around the selected call.
+around the selected call. It queries the shared native write census for the
+source-known global-object `Symbol` slot. The census also reports typed
+constructor, prototype, descendant, and unknown receiver paths with string,
+`Symbol.iterator`, other-symbol, and unknown keys. These details retain the
+existing family-wide guard effects; an opaque path or key is a witness rather
+than a source-known contradiction of the input.
 
 This is explicit author input, not an inferred source fact or a point-in-time
 snapshot. The author asserts that the direct callee remains the original native

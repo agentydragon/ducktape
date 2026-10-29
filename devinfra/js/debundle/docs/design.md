@@ -429,6 +429,16 @@ alone explains lost precision. Other eligibility conditions may also fail.
 source witnesses, bounding rows with the same total/emitted/truncated metadata as
 its other sections. Diagnostics do not
 change the census, guard verdicts, or dependency edges.
+Each witness also retains `target_slots`: source-derived receiver paths
+(`global_object`, constructor, prototype, descendant, or unknown) paired with
+string, `Symbol.iterator`, other-symbol, or unknown keys. This detail does not
+narrow the existing family-wide native-integrity guard. Exact-site native
+inputs can query a known receiver and key as a source contradiction; unknown
+paths and keys remain opaque witnesses. Slot evidence is collected from raw
+source aliases before author-conditioned receiver refinements, so an input
+cannot hide a write that would contradict itself. Computed keys retain their
+`key_dependencies`; an exact slot query treats them as opaque until those
+native identities are independently established.
 An exact native-operation input is reported independently at the call site that
 consumes it, with the selector, parser hash and author rationale. It does not
 erase or relabel any native write witness.

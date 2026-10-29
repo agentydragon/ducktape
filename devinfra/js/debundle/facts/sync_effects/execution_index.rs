@@ -39,8 +39,9 @@ use crate::facts::{LocalClassConstructionProof, LocalClassConstructionShapes, Se
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
-    NativeMutationOperation, NativeMutationWitness, NativePrototypeMutation,
-    NativePrototypeMutationKind, NativeReceiverCertificate, NativeReceiverOrigin, SourceLocation,
+    NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
+    NativePrototypeMutationKind, NativeReceiverCertificate, NativeReceiverOrigin,
+    NativeReceiverPath, NativeWriteSlot, SourceLocation,
 };
 use source_identity::SourceUnitOrdinal;
 use spec::{BuiltinGlobalRoot, HostNoReentryOperation, HostNoReentryRuntime};
@@ -1006,11 +1007,6 @@ fn native_call_identity_key(
     ))
 }
 
-fn value_has_symbol_property(value: &ValueExpr) -> bool {
-    matches!(value, ValueExpr::ObjectLiteral(_, properties)
-        if properties.iter().any(|(name, _)| name.as_deref() == Some("Symbol")))
-}
-
 fn shallow_data_pattern(pattern: &Pat) -> bool {
     fn leaf(pattern: &Pat) -> bool {
         matches!(pattern, Pat::Ident(_))
@@ -1431,6 +1427,8 @@ type IntrinsicRoots = BTreeSet<IntrinsicRoot>;
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 enum NativeReceiverRoot {
     Intrinsic(IntrinsicRoot),
+    IntrinsicPrototype(IntrinsicRoot),
+    IntrinsicDescendant(IntrinsicRoot),
     OrdinaryDirect {
         reference: ValueInputRef,
         available_after: SourceUnitOrdinal,
@@ -1564,7 +1562,9 @@ fn project_receiver_roots(
     let mut value_input_refs = BTreeSet::new();
     for root in roots {
         match root {
-            NativeReceiverRoot::Intrinsic(root) => {
+            NativeReceiverRoot::Intrinsic(root)
+            | NativeReceiverRoot::IntrinsicPrototype(root)
+            | NativeReceiverRoot::IntrinsicDescendant(root) => {
                 prior_roots.insert(*root);
                 effective_roots.insert(*root);
             }
@@ -1602,6 +1602,96 @@ fn project_receiver_roots(
         effective_roots,
         affected_roots,
         value_input_refs,
+    }
+}
+
+fn native_write_slots(
+    roots: &NativeReceiverRoots,
+    key: &PropertyKeyDomain,
+) -> BTreeSet<NativeWriteSlot> {
+    let keys: Vec<_> = match key {
+        PropertyKeyDomain::FiniteStrings(values) => values
+            .iter()
+            .cloned()
+            .map(NativePropertyKey::String)
+            .collect(),
+        PropertyKeyDomain::SymbolIterator => vec![NativePropertyKey::SymbolIterator],
+        PropertyKeyDomain::Symbol => vec![NativePropertyKey::OtherSymbol],
+        PropertyKeyDomain::Unknown => vec![NativePropertyKey::Unknown],
+    };
+    let roots = if roots.is_empty() {
+        BTreeSet::from([NativeReceiverRoot::Intrinsic(
+            IntrinsicRoot::UnknownGlobalValue,
+        )])
+    } else {
+        roots.clone()
+    };
+    roots
+        .iter()
+        .flat_map(|root| {
+            let receiver = match root {
+                NativeReceiverRoot::Intrinsic(IntrinsicRoot::GlobalObject) => {
+                    NativeReceiverPath::GlobalObject
+                }
+                NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue)
+                | NativeReceiverRoot::OrdinaryDirect { .. }
+                | NativeReceiverRoot::OrdinaryDescendant { .. } => NativeReceiverPath::Unknown,
+                NativeReceiverRoot::Intrinsic(root) => NativeReceiverPath::Constructor(*root),
+                NativeReceiverRoot::IntrinsicPrototype(root) => {
+                    NativeReceiverPath::Prototype(*root)
+                }
+                NativeReceiverRoot::IntrinsicDescendant(root) => {
+                    NativeReceiverPath::Descendant(*root)
+                }
+            };
+            keys.iter().cloned().map(move |key| NativeWriteSlot {
+                receiver: receiver.clone(),
+                key,
+            })
+        })
+        .collect()
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum NativeSlotOverlap {
+    Known(SourceUnitOrdinal),
+    Opaque,
+    Absent,
+}
+
+fn source_slot_overlap<'a>(
+    witnesses: impl Iterator<Item = &'a NativeMutationWitness>,
+    slot: &NativeWriteSlot,
+) -> NativeSlotOverlap {
+    let mut opaque = false;
+    for witness in witnesses {
+        // A direct constructor/prototype path is exact relative to the
+        // caller's native-identity premise. Descendant and cross-path aliases
+        // may reach that same object, but remain opaque here.
+        if matches!(
+            &slot.receiver,
+            NativeReceiverPath::GlobalObject
+                | NativeReceiverPath::Constructor(_)
+                | NativeReceiverPath::Prototype(_)
+        ) && witness.target_slots.contains(slot)
+            && matches!(
+                &slot.key,
+                NativePropertyKey::String(_) | NativePropertyKey::SymbolIterator
+            )
+            && witness.key_dependencies.is_empty()
+        {
+            return NativeSlotOverlap::Known(witness.statement_ordinal);
+        }
+        opaque |= witness.target_slots.iter().any(|candidate| {
+            !witness.key_dependencies.is_empty()
+                || candidate.key == slot.key
+                || candidate.key == NativePropertyKey::Unknown
+        });
+    }
+    if opaque {
+        NativeSlotOverlap::Opaque
+    } else {
+        NativeSlotOverlap::Absent
     }
 }
 
@@ -1699,7 +1789,9 @@ fn intrinsic_roots(
                         reference,
                         available_after,
                     } => Some((reference.clone(), *available_after)),
-                    NativeReceiverRoot::Intrinsic(_) => None,
+                    NativeReceiverRoot::Intrinsic(_)
+                    | NativeReceiverRoot::IntrinsicPrototype(_)
+                    | NativeReceiverRoot::IntrinsicDescendant(_) => None,
                 }));
                 if option_roots.is_empty()
                     && !matches!(
@@ -1759,15 +1851,26 @@ fn intrinsic_roots(
                         out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
                     }
                     NativeReceiverRoot::Intrinsic(root) => {
-                        // A member of a builtin constructor remains rooted in that
-                        // constructor: Array.prototype.map and Object.fromEntries
-                        // are mutations of their respective intrinsic families.
-                        out.insert(intrinsic(root));
+                        out.insert(if property.as_deref() == Some("prototype") {
+                            NativeReceiverRoot::IntrinsicPrototype(root)
+                        } else {
+                            NativeReceiverRoot::IntrinsicDescendant(root)
+                        });
                         // These paths can cross from one intrinsic family to
                         // another; computed keys can name either one. Preserve
                         // the known family and add an opaque root so writes
                         // through aliases conservatively invalidate all native
                         // proofs that may depend on the resolved object.
+                        if property
+                            .as_deref()
+                            .is_none_or(|property| matches!(property, "__proto__" | "constructor"))
+                        {
+                            out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+                        }
+                    }
+                    NativeReceiverRoot::IntrinsicPrototype(root)
+                    | NativeReceiverRoot::IntrinsicDescendant(root) => {
+                        out.insert(NativeReceiverRoot::IntrinsicDescendant(root));
                         if property
                             .as_deref()
                             .is_none_or(|property| matches!(property, "__proto__" | "constructor"))
@@ -1799,7 +1902,9 @@ fn intrinsic_roots(
                         reference,
                         available_after,
                     } => Some((reference.clone(), *available_after)),
-                    NativeReceiverRoot::Intrinsic(_) => None,
+                    NativeReceiverRoot::Intrinsic(_)
+                    | NativeReceiverRoot::IntrinsicPrototype(_)
+                    | NativeReceiverRoot::IntrinsicDescendant(_) => None,
                 }));
                 input_roots.extend(value_roots);
             }
@@ -2117,7 +2222,9 @@ impl IterativeRules for PostAuthorIntrinsicAliasRules<'_> {
                     reference,
                     available_after,
                 } => Some((reference.clone(), *available_after)),
-                NativeReceiverRoot::Intrinsic(_) => None,
+                NativeReceiverRoot::Intrinsic(_)
+                | NativeReceiverRoot::IntrinsicPrototype(_)
+                | NativeReceiverRoot::IntrinsicDescendant(_) => None,
             })
             .collect();
         if let Some(copy_owner) = stable_copy_owner {
@@ -2203,6 +2310,7 @@ fn close_post_author_intrinsic_aliases(
 #[derive(Debug, Clone)]
 enum PropertyKeyExpr {
     String(String),
+    SymbolIterator(Id),
     Binding(Id),
     SymbolFor(Id),
     EntriesKeys(Id, BTreeSet<String>),
@@ -2229,6 +2337,15 @@ impl PropertyKeyExpr {
                 Self::from_expr(&assignment.right)
             }
             Expr::Ident(ident) => Self::Binding(ident.to_id()),
+            Expr::Member(member)
+                if static_prop(&member.prop).as_deref() == Some("iterator")
+                    && matches!(member.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Symbol") =>
+            {
+                let Expr::Ident(symbol) = member.obj.unwrap_parens() else {
+                    unreachable!()
+                };
+                Self::SymbolIterator(symbol.to_id())
+            }
             Expr::Call(call)
                 if call.args.len() == 1
                     && call.args[0].spread.is_none()
@@ -2259,6 +2376,7 @@ impl PropertyKeyExpr {
 #[derive(Debug, Clone)]
 enum PropertyKeyDomain {
     FiniteStrings(BTreeSet<String>),
+    SymbolIterator,
     Symbol,
     Unknown,
 }
@@ -2302,6 +2420,12 @@ fn property_key_evidence<'a>(
                     dependencies: BTreeSet::new(),
                 };
             }
+            PropertyKeyExpr::SymbolIterator(namespace) if !declared.contains(namespace) => {
+                return PropertyKeyEvidence {
+                    domain: PropertyKeyDomain::SymbolIterator,
+                    dependencies: BTreeSet::from([IntrinsicRoot::Symbol]),
+                };
+            }
             PropertyKeyExpr::SymbolFor(namespace) if !declared.contains(namespace) => {
                 return PropertyKeyEvidence {
                     domain: PropertyKeyDomain::Symbol,
@@ -2333,6 +2457,7 @@ struct IntrinsicWriteTarget {
     operation: NativeMutationOperation,
     receiver: ValueExpr,
     key: Option<PropertyKeyExpr>,
+    additional_keys: Vec<PropertyKeyExpr>,
 }
 
 /// Conservative effects activated before a top-level item or callable body.
@@ -2411,6 +2536,7 @@ fn intrinsic_write_target(
         operation,
         receiver: ValueExpr::from_expr(&member.obj),
         key: Some(key),
+        additional_keys: Vec::new(),
     }
 }
 
@@ -2582,13 +2708,15 @@ fn resolve_native_integrity_roots(censuses: &[&NativeWriteCensus]) -> IntrinsicR
 #[cfg(test)]
 mod native_integrity_closure_tests {
     use super::{
-        ConditionalIntrinsicWrite, IntrinsicRoots, NativeWriteCensus, resolve_native_integrity,
+        ConditionalIntrinsicWrite, IntrinsicRoots, NativeSlotOverlap, NativeWriteCensus,
+        resolve_native_integrity, source_slot_overlap,
     };
     use crate::analysis_inputs::{
         CallbackFactoryEvidence, CallbackObjectArguments, NativeIntrinsic,
     };
     use crate::reports::schema::{
-        NativeMutationOperation, NativeMutationWitness, NativeUnreachableBranch,
+        NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativeReceiverPath,
+        NativeUnreachableBranch, NativeWriteSlot,
     };
     use source_identity::SourceUnitOrdinal;
     use std::collections::BTreeSet;
@@ -2610,6 +2738,8 @@ mod native_integrity_closure_tests {
                 receiver_roots: BTreeSet::new(),
                 through_local_alias: false,
                 affected_roots: BTreeSet::new(),
+                target_slots: BTreeSet::new(),
+                key_dependencies: BTreeSet::new(),
                 invalidated_key_dependencies: BTreeSet::new(),
                 value_input_refs: BTreeSet::new(),
                 value_input_evidence: Vec::new(),
@@ -2635,6 +2765,74 @@ mod native_integrity_closure_tests {
             fallback,
             dependencies,
         }
+    }
+
+    #[test]
+    fn slot_query_distinguishes_known_global_write_from_alias_or_key_uncertainty() {
+        let target = NativeWriteSlot {
+            receiver: NativeReceiverPath::GlobalObject,
+            key: NativePropertyKey::String("Symbol".to_owned()),
+        };
+        let mut witness = conditional_write(
+            1,
+            IntrinsicRoots::new(),
+            IntrinsicRoots::new(),
+            IntrinsicRoots::new(),
+            false,
+        )
+        .witness;
+        witness.target_slots.insert(target.clone());
+        assert_eq!(
+            source_slot_overlap(std::iter::once(&witness), &target),
+            NativeSlotOverlap::Known(SourceUnitOrdinal(1))
+        );
+
+        witness.key_dependencies.insert(NativeIntrinsic::Symbol);
+        assert_eq!(
+            source_slot_overlap(std::iter::once(&witness), &target),
+            NativeSlotOverlap::Opaque
+        );
+
+        witness.key_dependencies.clear();
+        witness.target_slots.clear();
+        witness.target_slots.insert(NativeWriteSlot {
+            receiver: NativeReceiverPath::Descendant(NativeIntrinsic::Set),
+            key: NativePropertyKey::String("Symbol".to_owned()),
+        });
+        assert_eq!(
+            source_slot_overlap(std::iter::once(&witness), &target),
+            NativeSlotOverlap::Opaque
+        );
+
+        let prototype_slot = NativeWriteSlot {
+            receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Set),
+            key: NativePropertyKey::String("add".to_owned()),
+        };
+        witness.target_slots.clear();
+        witness.target_slots.insert(prototype_slot.clone());
+        assert_eq!(
+            source_slot_overlap(std::iter::once(&witness), &prototype_slot),
+            NativeSlotOverlap::Known(SourceUnitOrdinal(1))
+        );
+        witness.target_slots.clear();
+        witness.target_slots.insert(NativeWriteSlot {
+            receiver: NativeReceiverPath::Descendant(NativeIntrinsic::Set),
+            key: NativePropertyKey::String("add".to_owned()),
+        });
+        assert_eq!(
+            source_slot_overlap(std::iter::once(&witness), &prototype_slot),
+            NativeSlotOverlap::Opaque
+        );
+        let wildcard = NativeWriteSlot {
+            receiver: NativeReceiverPath::GlobalObject,
+            key: NativePropertyKey::Unknown,
+        };
+        witness.target_slots.clear();
+        witness.target_slots.insert(wildcard.clone());
+        assert_eq!(
+            source_slot_overlap(std::iter::once(&witness), &wildcard),
+            NativeSlotOverlap::Opaque
+        );
     }
 
     #[test]
@@ -3735,7 +3933,9 @@ impl ExecutionIndex {
                     .iter()
                     .filter_map(|root| match root {
                         NativeReceiverRoot::Intrinsic(IntrinsicRoot::UnknownGlobalValue) => None,
-                        NativeReceiverRoot::Intrinsic(root) => Some(*root),
+                        NativeReceiverRoot::Intrinsic(root)
+                        | NativeReceiverRoot::IntrinsicPrototype(root)
+                        | NativeReceiverRoot::IntrinsicDescendant(root) => Some(*root),
                         NativeReceiverRoot::OrdinaryDirect { .. }
                         | NativeReceiverRoot::OrdinaryDescendant { .. } => None,
                     })
@@ -3878,6 +4078,8 @@ impl ExecutionIndex {
                 matches!(
                     root,
                     NativeReceiverRoot::Intrinsic(root)
+                        | NativeReceiverRoot::IntrinsicPrototype(root)
+                        | NativeReceiverRoot::IntrinsicDescendant(root)
                         if *root != IntrinsicRoot::UnknownGlobalValue
                 )
             });
@@ -4144,106 +4346,31 @@ impl ExecutionIndex {
         }
     }
 
-    fn known_global_symbol_mutation(&self) -> Option<SourceUnitOrdinal> {
-        let assignments: Vec<_> = self
-            .top_assignments
-            .iter()
-            .flatten()
-            .chain(
-                self.callables
-                    .values()
-                    .flat_map(|callable| callable.local_assignments.iter()),
-            )
-            .collect();
-        let raw_aliases = close_raw_intrinsic_aliases(&assignments, &self.global_object_names);
-        let declared: BTreeSet<_> = self
-            .property_key_declarations
-            .iter()
-            .chain(self.hoisted_bindings.keys())
-            .chain(self.imported_bindings.iter())
-            .chain(self.class_ids.iter())
-            .cloned()
-            .collect();
-        for write in &self.intrinsic_writes {
-            let roots = intrinsic_roots(
-                &write.receiver,
-                &raw_aliases,
-                &self.global_object_names,
-                &BTreeMap::new(),
-                &BTreeMap::new(),
-            );
-            if !roots.contains(&NativeReceiverRoot::Intrinsic(IntrinsicRoot::GlobalObject)) {
-                continue;
-            }
-            let key_is_symbol = write.key.as_ref().is_some_and(|key| {
-                matches!(
-                    property_key_evidence(key, &self.property_key_assignments, &declared).domain,
-                    PropertyKeyDomain::FiniteStrings(keys) if keys.contains("Symbol")
+    fn source_slot_overlap(&self, slot: &NativeWriteSlot) -> NativeSlotOverlap {
+        source_slot_overlap(
+            self.native_write_census
+                .witnesses
+                .iter()
+                .chain(
+                    self.native_write_census
+                        .conditional
+                        .iter()
+                        .map(|write| &write.witness),
                 )
-            });
-            if key_is_symbol {
-                return Some(write.owner);
-            }
-        }
+                .chain(self.native_integrity_witnesses.iter()),
+            slot,
+        )
+    }
 
-        let assignments = self
-            .top_assignments
-            .iter()
-            .enumerate()
-            .flat_map(|(owner, values)| {
-                values
-                    .iter()
-                    .map(move |(binding, _)| (SourceUnitOrdinal(owner), binding))
-            })
-            .chain(self.callables.values().flat_map(|callable| {
-                callable
-                    .local_assignments
-                    .iter()
-                    .map(move |(binding, _)| (callable.owner, binding))
-            }));
-        if let Some((owner, _)) = assignments.into_iter().find(|(_, binding)| {
-            binding.0.as_ref() == "Symbol" && !self.property_key_declarations.contains(binding)
-        }) {
-            return Some(owner);
+    fn known_global_symbol_mutation(&self) -> Option<SourceUnitOrdinal> {
+        let overlap = self.source_slot_overlap(&NativeWriteSlot {
+            receiver: NativeReceiverPath::GlobalObject,
+            key: NativePropertyKey::String("Symbol".to_owned()),
+        });
+        match overlap {
+            NativeSlotOverlap::Known(owner) => Some(owner),
+            NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
         }
-
-        if let Some(write) = self.intrinsic_writes.iter().find(|write| {
-            write.operation == NativeMutationOperation::Update
-                && matches!(&write.receiver, ValueExpr::Binding(binding)
-                    if binding.0.as_ref() == "Symbol"
-                        && !self.property_key_declarations.contains(binding))
-        }) {
-            return Some(write.owner);
-        }
-
-        for call in &self.prototype_calls {
-            let ValueExpr::Member(receiver, Some(method), _) = &call.callee else {
-                continue;
-            };
-            if !matches!(method.as_str(), "assign" | "defineProperties") {
-                continue;
-            }
-            let target_is_global = intrinsic_roots(
-                call.args.first().unwrap_or(receiver),
-                &raw_aliases,
-                &self.global_object_names,
-                &BTreeMap::new(),
-                &BTreeMap::new(),
-            )
-            .contains(&NativeReceiverRoot::Intrinsic(IntrinsicRoot::GlobalObject));
-            if !target_is_global {
-                continue;
-            }
-            let sources = if method == "assign" {
-                call.args.get(1..).unwrap_or_default()
-            } else {
-                call.args.get(1..2).unwrap_or_default()
-            };
-            if sources.iter().any(value_has_symbol_property) {
-                return Some(call.owner);
-            }
-        }
-        None
     }
 
     /// Map exact local callable return summaries through hoisted declarations
@@ -4671,11 +4798,6 @@ impl ExecutionIndex {
             &hints.assumptions.captured_value_inputs,
             &raw_intrinsic_aliases,
         );
-        index.validate_native_operation_inputs(
-            &hints.selected_native_operation_inputs,
-            &hints.assumptions.native_operation_inputs,
-            flow,
-        );
         let callable_return_inputs = index.callable_return_value_inputs(flow);
         let intrinsic_aliases = close_post_author_intrinsic_aliases(
             &index,
@@ -4753,6 +4875,15 @@ impl ExecutionIndex {
                         receiver_roots: BTreeSet::from([root]),
                         through_local_alias: false,
                         affected_roots: BTreeSet::from([root]),
+                        target_slots: if index.property_key_declarations.contains(id) {
+                            BTreeSet::new()
+                        } else {
+                            BTreeSet::from([NativeWriteSlot {
+                                receiver: NativeReceiverPath::GlobalObject,
+                                key: NativePropertyKey::String(id.0.to_string()),
+                            }])
+                        },
+                        key_dependencies: BTreeSet::new(),
                         invalidated_key_dependencies: BTreeSet::new(),
                         value_input_refs: BTreeSet::new(),
                         value_input_evidence: Vec::new(),
@@ -4776,6 +4907,36 @@ impl ExecutionIndex {
             .cloned()
             .collect();
         for write in &index.intrinsic_writes {
+            // Slot evidence is source-only: author-conditioned receiver
+            // refinements may narrow family roots, but cannot certify that
+            // their own native-operation premise was not contradicted.
+            let source_roots = intrinsic_roots(
+                &write.receiver,
+                &raw_intrinsic_aliases,
+                &index.global_object_names,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            );
+            let key_evidence = write
+                .key
+                .as_ref()
+                .map(|key| property_key_evidence(key, &index.property_key_assignments, &declared));
+            let additional_key_evidence: Vec<_> = write
+                .additional_keys
+                .iter()
+                .map(|key| property_key_evidence(key, &index.property_key_assignments, &declared))
+                .collect();
+            let mut target_slots = native_write_slots(
+                &source_roots,
+                &key_evidence
+                    .as_ref()
+                    .map_or(PropertyKeyDomain::Unknown, |evidence| {
+                        evidence.domain.clone()
+                    }),
+            );
+            for evidence in &additional_key_evidence {
+                target_slots.extend(native_write_slots(&source_roots, &evidence.domain));
+            }
             let receiver_roots = intrinsic_roots(
                 &write.receiver,
                 &intrinsic_aliases,
@@ -4855,13 +5016,21 @@ impl ExecutionIndex {
                     &intrinsic_aliases,
                 ),
                 affected_roots: projection.affected_roots,
+                target_slots,
+                key_dependencies: key_evidence
+                    .as_ref()
+                    .into_iter()
+                    .chain(&additional_key_evidence)
+                    .flat_map(|evidence| &evidence.dependencies)
+                    .copied()
+                    .collect(),
                 invalidated_key_dependencies: BTreeSet::new(),
                 value_input_refs: projection.value_input_refs,
                 value_input_evidence: input_evidence,
                 unreachable_branch: None,
                 span: write.span,
             };
-            let Some(key) = &write.key else {
+            let Some(_) = &write.key else {
                 if !witness.affected_roots.is_empty() || !witness.value_input_refs.is_empty() {
                     Arc::make_mut(&mut index.native_write_census.witnesses).push(witness);
                 }
@@ -4871,7 +5040,7 @@ impl ExecutionIndex {
                     .extend(native_mutation_roots(roots));
                 continue;
             };
-            let evidence = property_key_evidence(key, &index.property_key_assignments, &declared);
+            let evidence = key_evidence.expect("write with key has key evidence");
             let fallback = native_mutation_roots(roots.clone());
             let mut refined: IntrinsicRoots = roots
                 .iter()
@@ -4885,7 +5054,7 @@ impl ExecutionIndex {
                             refined.extend(IntrinsicRoot::for_global_binding(key));
                         }
                     }
-                    PropertyKeyDomain::Symbol => {}
+                    PropertyKeyDomain::Symbol | PropertyKeyDomain::SymbolIterator => {}
                     PropertyKeyDomain::Unknown => {
                         refined.extend(&fallback);
                     }
@@ -5584,6 +5753,14 @@ impl ExecutionIndex {
                 )
             })
             .collect();
+        // Native-operation inputs only annotate exact sites; they do not
+        // refine the native census. Validate against its completed source-only
+        // slot evidence so the premise cannot conceal its own contradiction.
+        index.validate_native_operation_inputs(
+            &hints.selected_native_operation_inputs,
+            &hints.assumptions.native_operation_inputs,
+            flow,
+        );
         index
     }
 
@@ -7764,6 +7941,7 @@ impl Visit for ExecutionIndex {
                 operation: NativeMutationOperation::Update,
                 receiver: ValueExpr::from_expr(&expression.arg),
                 key: None,
+                additional_keys: Vec::new(),
             });
         }
 
@@ -7947,7 +8125,7 @@ impl Visit for ExecutionIndex {
         {
             let receiver = ValueExpr::from_expr(&argument.expr);
             let method = static_prop(&member.prop);
-            let target = if matches!(
+            let mut target = if matches!(
                 method.as_deref(),
                 Some("set" | "defineProperty" | "deleteProperty")
             ) {
@@ -7966,6 +8144,7 @@ impl Visit for ExecutionIndex {
                                 PropertyKeyExpr::from_expr(&argument.expr)
                             }),
                     ),
+                    additional_keys: Vec::new(),
                 }
             } else {
                 IntrinsicWriteTarget {
@@ -7977,8 +8156,30 @@ impl Visit for ExecutionIndex {
                     operation: NativeMutationOperation::MutationCall,
                     receiver,
                     key: None,
+                    additional_keys: Vec::new(),
                 }
             };
+            if matches!(method.as_deref(), Some("assign" | "defineProperties")) {
+                let sources = if method.as_deref() == Some("assign") {
+                    call.args.get(1..).unwrap_or_default()
+                } else {
+                    call.args.get(1..2).unwrap_or_default()
+                };
+                for source in sources {
+                    if source.spread.is_some() {
+                        continue;
+                    }
+                    if let ValueExpr::ObjectLiteral(_, properties) =
+                        ValueExpr::from_expr(&source.expr)
+                    {
+                        for (key, _) in properties {
+                            if let Some(key) = key.filter(|key| key != "__proto__") {
+                                target.additional_keys.push(PropertyKeyExpr::String(key));
+                            }
+                        }
+                    }
+                }
+            }
             self.intrinsic_writes.push(target);
         }
 

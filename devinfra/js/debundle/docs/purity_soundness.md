@@ -335,6 +335,11 @@ write to the global `Symbol` binding or global-object `Symbol` slot anywhere in
 the analyzed initialization region contradicts the input, including a
 replacement later restored. Opaque receiver mutations are the uncertainty
 this premise may cover; they remain visible as their original census witnesses.
+The shared native write census retains receiver path and property key alongside
+its conservative native-family effects. The Symbol validator rejects only a
+source-known write to the global object's `Symbol` slot; unknown receivers or
+keys remain visible and are covered by the explicit premise. Alias and
+reflective writes with a source-known target still contradict it.
 
 This input does not mint `NativeCallIdentity` or native-integrity facts. It
 consumes the existing exact native `Symbol` model only at the selected call
