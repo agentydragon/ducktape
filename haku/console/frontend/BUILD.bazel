@@ -145,18 +145,6 @@ ts_library(
 )
 
 ts_library(
-    name = "agent_names",
-    srcs = ["agent_names.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "operator_login",
     srcs = ["operator_login.ts"],
     isolated_typecheck = True,
@@ -286,10 +274,6 @@ ts_library(
     srcs = ["periodic_refresh.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
 )
 
 ts_library(
@@ -600,7 +584,6 @@ ts_library(
         ":open_external",
         ":operator_login",
         ":operator_session",
-        ":periodic_refresh",
         ":routing",
         ":screenshot_capture",
         ":screenshot_grant",

@@ -3,20 +3,13 @@
 Provides mock implementations of OpenAIModelProto for unit tests:
 - FakeOpenAIModel: Returns predefined responses in sequence
 - CapturingOpenAIModel: Wraps any model and records all requests
-- LIVE sentinel: Used in parametrized tests to select real API
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any, Protocol
-
-from pydantic import BaseModel, ConfigDict
 
 from openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
-
-# Sentinel for selecting a real AsyncOpenAI client in parameterized tests
-LIVE = object()
 
 # Function type for a mocked OpenAI Responses API call
 ResponsesCreateFn = Callable[[ResponsesRequest], Awaitable[ResponsesResult]]
@@ -41,13 +34,6 @@ class CapturingOpenAIModel(OpenAIModelProto):
         self.captured.append(req)
         self.calls += 1
         return await self._inner.responses_create(req)
-
-
-class CapturedRequest(BaseModel):
-    """Pydantic wrapper for captured Responses.create kwargs used in tests."""
-
-    input: list[dict[str, Any]] | None = None
-    model_config = ConfigDict(extra="allow")
 
 
 class FakeOpenAIModel(OpenAIModelProto):
@@ -86,11 +72,6 @@ class FakeOpenAIModel(OpenAIModelProto):
         result = self._outputs[self.calls]
         self.calls += 1
         return result
-
-
-class OpenAIClient(Protocol):
-    @property
-    def responses(self) -> Any: ...
 
 
 def make_mock(responses_create_fn: ResponsesCreateFn) -> CapturingOpenAIModel:

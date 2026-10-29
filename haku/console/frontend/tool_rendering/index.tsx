@@ -102,7 +102,6 @@ type RegisteredArgsResultFixture = {
   [ServerId in keyof PreviewRegistry]: {
     [ToolName in keyof PreviewRegistry[ServerId]]: PreviewRegistry[ServerId][ToolName] extends ToolPreview<infer Schema>
       ? {
-          agentDisplayNames?: Record<string, string>;
           serverId: ServerId;
           toolName: ToolName;
           args: z.output<Schema>;
@@ -121,7 +120,6 @@ type RegisteredCallFixture = {
       infer ResultSchema
     >
       ? {
-          agentDisplayNames?: Record<string, string>;
           serverId: ServerId;
           toolName: ToolName;
           args: z.output<ArgsSchema>;

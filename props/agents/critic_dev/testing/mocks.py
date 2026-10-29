@@ -3,10 +3,7 @@
 from collections.abc import Generator
 from uuid import UUID
 
-from hamcrest import all_of, assert_that
-
-from agent_core.testing.responses import PlayGen, tool_roundtrip
-from mcp_infra.testing.matchers import exited_successfully, stdout_contains
+from agent_core.testing.responses import tool_roundtrip
 from openai_utils.model import FunctionCallItem, ResponsesRequest
 from props.agents.critic_dev.loop import ReportFailureArgs, WaitUntilCriticCompletedArgs, WaitUntilGradedToolArgs
 from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
@@ -50,19 +47,3 @@ class CriticDevMock(SubprocessExecMock):
         """Yield wait_until_graded_tool call, return GradingStatusResponse."""
         args = WaitUntilGradedToolArgs(critic_run_id=critic_run_id, timeout_seconds=timeout_seconds)
         return tool_roundtrip(self.tool_call("wait_until_graded_tool", args), GradingStatusResponse)
-
-
-def make_cli_test_mock(command: list[str], *, expected_output: str) -> CriticDevMock:
-    """Create a mock that runs a CLI command, checks output, then terminates.
-
-    Used by both optimize and improve test_e2e CLI helper tests.
-    """
-
-    @CriticDevMock.mock()
-    def mock(m: CriticDevMock) -> PlayGen:
-        yield None  # First request
-        result = yield from m.exec_roundtrip(command, timeout_ms=30000)
-        assert_that(result, all_of(exited_successfully(), stdout_contains(expected_output)))
-        yield m.report_failure(f"{command[1]} test completed")
-
-    return mock

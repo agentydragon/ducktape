@@ -67,8 +67,8 @@ permanently (dies with the row). Tolerance fixes the first; only a constraint fi
 Deciding question: could this value come from a newer commit than the reader? If no (request
 body, config file, pinned third-party vocabulary), an unknown value is a bug or
 attack — <../../STYLE.md> strict mapping applies. If yes, raising is the defect: decode to a named
-unknown (`util.enum_vocab.UnknownValue`), never `None` or a nearby member, so every consumer
-handles it; cross-replica payload models accept unknown fields. A version-negotiated seam may
+unknown variant, never `None` or a nearby member, so every consumer handles it; cross-replica
+payload models accept unknown fields. A version-negotiated seam may
 reject unknown kinds after its handshake; storage has no handshake.
 
 Writer rollout by vocabulary:
@@ -76,8 +76,8 @@ Writer rollout by vocabulary:
 - **Narration** — skippable, append-only (notification kinds, `ConsoleEvent.event_type`): a new
   value ships with its writer; skipped narration is the accepted cost.
 - **Decision** — drives behavior (identity, provenance, rejection statuses): the reader knowing
-  the new member ships one release before the writer. Columns stay strict (no `UnknownValue`
-  decoding): tolerance would not lift the two-release rule, since no consumer may guess.
+  the new member ships one release before the writer. Columns stay strict: tolerance would not lift
+  the two-release rule, since no consumer may guess.
 - **Required field added to an existing shape** — a narrowing, not an extension: expand/contract
   plus a constraint making the old writer fail rather than write a permanently misread row.
 

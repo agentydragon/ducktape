@@ -213,15 +213,6 @@ class PlaidLinkStorage:
             await session.commit()
         return _stored_link(row)
 
-    async def mark_link_revoked(self, item_id: str) -> None:
-        async with self._session_factory() as session:
-            row = await session.get(LinkRow, item_id)
-            if row is not None and row.status != "revoked":
-                row.status = "revoked"
-                row.updated_at = utcnow()
-                await _notify_spend_changed(session)
-                await session.commit()
-
     async def purge_link_data(self, item_id: str) -> None:
         security_ids = (
             select(HoldingSnapshotRow.security_id)

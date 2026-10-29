@@ -38,7 +38,7 @@ route-specific cache headers.
   `CallToolResult`) else raw JSON (result: detailed only).
 - `icons.tsx` — wrappers over **per-icon `@tabler` subpath imports, never the barrel** (OOMs
   esbuild on RBE at ~8.7 GB); ambient types in `tabler_icons.d.ts`.
-- `periodic_refresh.ts` — `usePeriodicRefresh`: load on mount, refresh every 30 s over REST.
+- `periodic_refresh.ts` — shared 30 s polling interval for Settings resources.
 - `index.html` — docroot template; `spa_bundle(fingerprint = True)` rewrites placeholders to hashed
   JS/CSS/logo URLs under `/_console/assets/`.
 

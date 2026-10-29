@@ -11,10 +11,8 @@ import (
 )
 
 const (
-	// MaxFrameLineBytes matches the native transport's maximum newline-delimited frame.
-	MaxFrameLineBytes = 64 * 1024 * 1024
-	ReadBatchBytes    = 64 * 1024
-	stderrTailBytes   = 4096
+	ReadBatchBytes  = 64 * 1024
+	stderrTailBytes = 4096
 )
 
 var (
@@ -305,12 +303,4 @@ func (r *tailReader) Tail() []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]byte(nil), r.tail...)
-}
-
-// ValidateFrameLine is useful to callers that implement their own batching policy.
-func ValidateFrameLine(line []byte) error {
-	if len(line) > MaxFrameLineBytes {
-		return fmt.Errorf("a harness stdout line exceeds %d bytes", MaxFrameLineBytes)
-	}
-	return nil
 }

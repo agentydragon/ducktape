@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Literal, overload
 
-from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 
 @dataclass(frozen=True)
@@ -64,29 +64,8 @@ def refusing_tcp_endpoint(host: str = "127.0.0.1") -> Iterator[tuple[str, int]]:
         sock.close()
 
 
-def wait_for_port(host: str, port: int, *, timeout_secs: float = 10.0, interval_secs: float = 0.25) -> None:
-    """Block until host:port accepts TCP connections or timeout.
-
-    Uses tenacity for robust retrying with configurable timeout and interval.
-    """
-
-    def _try_connect() -> None:
-        with socket.create_connection((host, int(port)), 0.5):
-            pass
-
-    try:
-        Retrying(
-            stop=stop_after_delay(timeout_secs),
-            wait=wait_fixed(interval_secs),
-            retry=retry_if_exception_type(OSError),
-            reraise=True,
-        )(_try_connect)
-    except OSError:
-        raise TimeoutError(f"port did not become ready: {host}:{port}")
-
-
 async def async_wait_for_port(host: str, port: int, *, timeout_secs: float = 10.0, interval_secs: float = 0.25) -> None:
-    """Async version of wait_for_port. Uses tenacity AsyncRetrying."""
+    """Wait asynchronously until host:port accepts TCP connections or timeout."""
 
     async def _try_connect() -> None:
         _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=0.5)
@@ -145,21 +124,8 @@ def pick_free_port(host: str = "127.0.0.1", *, preferred: int | None = None, max
     return preferred
 
 
-def bind_free_port(host: str = "127.0.0.1") -> socket.socket:
-    """A listening socket on an OS-assigned port, to hand to the server that will accept on it.
-
-    Unlike ``pick_free_port`` the port is held from the moment it's chosen, so nothing else on a busy
-    host can take it before the server binds; read it back with ``sock.getsockname()[1]``.
-    """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind((host, 0))
-    sock.listen()
-    return sock
-
-
 def reserve_free_port(host: str = "127.0.0.1") -> int:
-    """An OS-assigned port held for a server in another process, which can't take a socket from ``bind_free_port``.
+    """An OS-assigned port briefly held for a server in another process.
 
     The port is left in TIME_WAIT (about a minute): until then the kernel gives it to no other bind to
     port 0 or outgoing connection, as it would after ``pick_free_port``, while a server binding it with

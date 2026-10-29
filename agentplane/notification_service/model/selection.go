@@ -70,11 +70,6 @@ func GitHubCIEvents() []EventName {
 	return slices.Clone(ciEvents)
 }
 
-// GitHubReferenceEvents returns webhook events that describe branch reference changes.
-func GitHubReferenceEvents() []EventName {
-	return slices.Clone(refEvents)
-}
-
 // IsGitHubWebhookEvent reports whether event is a supported native GitHub webhook name.
 // Agentplane-generated observation selectors, such as mergeability_changed, are excluded.
 func IsGitHubWebhookEvent(event EventName) bool {

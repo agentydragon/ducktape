@@ -18,10 +18,7 @@ py_library(
     name = "openai_mock",
     srcs = ["openai_mock.py"],
     visibility = ["//:__subpackages__"],
-    deps = [
-        "//openai_utils:model",
-        "@pypi//pydantic",
-    ],
+    deps = ["//openai_utils:model"],
 )
 
 py_library(
