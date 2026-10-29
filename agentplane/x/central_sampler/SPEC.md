@@ -97,9 +97,9 @@ terminal responses, items and content parts. The public OpenAI SDK types do not 
 the sampler constructs those wire shapes directly. Buffered SSE framing retains events as raw
 JSON. Provider-owned fields remain opaque on items, content parts and terminal responses; durable
 continuation preserves image, audio, compaction and reasoning data and numeric precision.
-Sampling requests ask for `reasoning.summary: "auto"`, as wrapped Codex does for Agentplane's model
+Provider requests ask for `reasoning.summary: "auto"`, as wrapped Codex does for Agentplane's model
 routes; summary text streams to History as the reasoning item's text, its parts joined by newlines.
-Compaction requests carry no `reasoning` object.
+Compaction requests carry the same summary and context but no effort.
 
 Database-clock leases and generations fence stale sampler writes. They cannot atomically fence an
 external shell effect: a dispatched operation with no observed result is uncertain. The persisted
