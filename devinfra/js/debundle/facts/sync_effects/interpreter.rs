@@ -463,7 +463,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let ValueExpr::Member(receiver, Some(property), _) = value else {
             return false;
         };
-        let ValueExpr::Binding(binding) = receiver.as_ref() else {
+        self.closed_enum_member_parts(receiver, property)
+    }
+
+    fn closed_enum_member_parts(&self, receiver: &ValueExpr, property: &str) -> bool {
+        let ValueExpr::Binding(binding) = receiver else {
             return false;
         };
         self.state.initialized_bindings.contains(binding)
@@ -4773,6 +4777,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ValueExpr::Undefined => Values::from([AbstractValue::Undefined]),
             ValueExpr::NonCallable => Values::from([AbstractValue::NonCallable]),
             ValueExpr::Member(object, property, is_static_identifier) => {
+                if property
+                    .as_deref()
+                    .is_some_and(|property| self.closed_enum_member_parts(object, property))
+                {
+                    // The indexed PlainData enum proof establishes this exact
+                    // key as an own primitive field on the current initialized
+                    // binding. The read keeps its ordinary eager dependency,
+                    // but cannot retrieve a getter or callable value.
+                    return Values::from([AbstractValue::NonCallable]);
+                }
                 if let ValueExpr::Binding(id) = object.as_ref()
                     && *is_static_identifier
                     && property.as_ref().is_some_and(|property| {
@@ -5620,9 +5634,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return;
         }
         if call.kind == CallKind::LocalMemberRead {
-            if !self.state.private_constructor_result_owners.is_empty()
-                && self.closed_enum_member_read(&call.callee)
-            {
+            if self.closed_enum_member_read(&call.callee) {
                 return;
             }
             let ValueExpr::Member(receiver, property, _) = &call.callee else {

@@ -597,6 +597,15 @@ Ordinary eager reads and synchronous callback reads stay between the known
 preceding and following writes of the binding, including `var` initializers
 and later assignments, even when the eager reader's source unit is pure.
 
+Synchronous execution also completes an exact member read from a recognized
+single-initializer TS enum when the shared source index proves the initialized
+binding is stable `PlainData` and the static key is one of that initializer's
+own primitive fields. This proof suppresses only possible getter/callback
+reentry: the member read and its eager binding dependency remain. Mutation,
+opaque escape, reflective writes, accessors, unknown keys, and reads before the
+initializer keep the conservative member-read path. Purity of the initializer
+alone does not establish the receiver's property identity.
+
 Opaque calls holding a class or instance may invoke its constructor, field
 initializers, methods, and accessors. Their synchronous read closure stops at a
 definite `await` where retained callable coverage is complete; uncovered source units

@@ -42,6 +42,102 @@ fn complete_execution_has_no_precision_loss() {
 }
 
 #[test]
+fn initialized_enum_own_data_read_is_complete_and_keeps_eager_dependency() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"var Status = ((values) => ((values.READY = "ready"), values))(Status || {});
+const selected = [Status.READY];
+console.log(selected[0]);
+"#,
+        vec![],
+    ));
+
+    assert_preserved_entry_output(&fixture, "ready\n");
+    assert_eq!(
+        execution(&fixture, "selected"),
+        serde_json::json!({"complete": true, "precision_losses": []})
+    );
+
+    let graph = fixture.dependency_graph();
+    let read = source_unit_for_binding(&graph, "selected");
+    let initializer = source_unit_for_binding(&graph, "Status");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == read
+                && edge.target == initializer
+                && edge.binding.as_deref() == Some("Status")
+                && edge.edge_kind == analysis::DepKind::EagerUse
+                && edge.constrains_init_order
+        }),
+        "the member-read proof must keep the binding's eager initialization dependency"
+    );
+}
+
+#[test]
+fn enum_member_read_proof_rejects_mutation_escape_getter_unknown_key_and_reflection() {
+    let source = r#"var Changed = ((values) => ((values.READY = "ready"), values))(Changed || {});
+Changed.READY = "changed";
+const changed = [Changed.READY];
+
+var Escaped = ((values) => ((values.READY = "ready"), values))(Escaped || {});
+globalThis.consume = (value) => { globalThis.retained = value; };
+globalThis.consume(Escaped);
+const escaped = [Escaped.READY];
+
+const Accessor = { get READY() { return "getter"; } };
+const getter = [Accessor.READY];
+
+var Dynamic = ((values) => ((values.READY = "ready"), values))(Dynamic || {});
+const key = "READY";
+const dynamic = [Dynamic[key]];
+
+var Reflected = ((values) => ((values.READY = "ready"), values))(Reflected || {});
+Object.defineProperty(Reflected, "READY", { get() { return "reflected"; } });
+const reflected = [Reflected.READY];
+
+console.log(changed[0], escaped[0], getter[0], dynamic[0], reflected[0]);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    assert_preserved_entry_output(&fixture, "changed ready getter ready reflected\n");
+
+    for binding in ["changed", "escaped", "getter", "dynamic", "reflected"] {
+        let report = execution(&fixture, binding);
+        assert_eq!(report["complete"], false, "{binding}: {report}");
+        assert!(
+            report["precision_losses"].as_array().is_some_and(|losses| {
+                losses.iter().any(|loss| {
+                    loss["reason"]["code"] == "unsupported_operation"
+                        && loss["reason"]["operation"] == "member_read"
+                })
+            }),
+            "{binding} should retain the conservative member-read path: {report}"
+        );
+    }
+}
+
+#[test]
+fn enum_member_read_before_initializer_remains_a_throwing_read() {
+    let source = r#"const selected = [Status.READY];
+var Status = ((values) => ((values.READY = "ready"), values))(Status || {});
+console.log(selected[0]);
+"#;
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+
+    assert_preserved_entry_error(&fixture, "TypeError");
+
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("early", &[Member::new("selected")]),
+                logical_module("enum", &[Member::new("Status")]),
+            ],
+        ),
+        &["early", "enum"],
+        &["eager_use"],
+    );
+}
+
+#[test]
 fn nested_unknown_call_keeps_lexical_callsite_and_deduplicates_cached_execution() {
     let fixture = run_fixture(FixtureOpts::new(
         "function factory() { return Number('3'); }\nconst result = factory() + factory();\nconsole.log(result);",
