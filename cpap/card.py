@@ -91,10 +91,6 @@ class EZShareClient:
         base = urllib.parse.urlsplit(self._base)
         return urllib.parse.urlunsplit((base.scheme, base.netloc, parsed.path, parsed.query, parsed.fragment))
 
-    def _get_bytes(self, path: str, timeout: int = 30) -> bytes:
-        with urllib.request.urlopen(f"{self._base}{path}", timeout=timeout) as r:
-            data: bytes = r.read()
-        return data
 
     def _get_url_bytes(self, url: str, timeout: int = 30) -> bytes:
         with urllib.request.urlopen(url, timeout=timeout) as r:

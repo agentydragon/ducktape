@@ -151,7 +151,7 @@ mode would be novel.
 ## Implementation Order
 
 1. **Make `CLAUDE_CODE_SESSION_ID` available to the Rust hook's path computations** — thread
-   it from CallerContext through to path computation
+   it from the hook environment through to path computation
 2. **Stable bazelrc** — change path generation to use stable key
 3. **Bazel wrapper** — update `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR` to
    point to stable dir (or make wrapper resolve it)
