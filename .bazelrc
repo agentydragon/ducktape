@@ -119,10 +119,20 @@ common:quiet --show_progress_rate_limit=30
 # CI and AI agent modes both use quiet output.
 common:ci --config=quiet
 common:ci --announce_rc
-# Suppress action retries while outer-runner cancellation propagates. This also
-# disables recovery from transient remote errors; monitor CI infrastructure failures.
-# Evidence: devinfra/debug/ci_remote_cancellation/rpc_retry_trace.md.
-build:ci --remote_retries=0
+# Remote retry policy history. Bazel's default is 5. #12468 set 0 because a
+# retry resubmitted actions after the outer runner was cancelled (a fresh Execute
+# 105 ms after the CANCELLED result; devinfra/debug/ci_remote_cancellation/
+# rpc_retry_trace.md), so superseded runs kept burning executor time. Zero also
+# disables recovery from transient executor errors: the 2026-10-29 ci-reports
+# window had 16 of 225 PR and 2 of 66 devel test invocations fail on gRPC
+# Unavailable (Firecracker start timeout / pause refused, one CAS miss), each a red
+# head needing a re-push. One retry recovers those while bounding the
+# post-cancellation resubmission to a single extra attempt.
+# CLEANUP(added 2026-10-29): the resubmission itself is bazelbuild/bazel#30954,
+#   fixed upstream by 29b6ec37 (absent from 9.2.0 and 9.3.1; in 10.0.0-pre
+#   builds). Once .bazelversion pins a release containing it, drop this override
+#   and return to the default retry count.
+build:ci --remote_retries=1
 # Live targets remain part of CI builds so their remote lint/typecheck actions
 # stay covered. Only their credentialed test processes are excluded.
 test:ci --test_tag_filters=-live_openai_api,-manual
