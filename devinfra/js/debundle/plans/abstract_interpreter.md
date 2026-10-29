@@ -315,10 +315,19 @@ the rule's contract tests pass unchanged on the interpreter path and the
 bespoke rule is deleted in the same change. Every step reruns the § 6
 measurements.
 
+Canonical replays (hours at `-c opt`, both corpora) are required only for the
+steps that change what the gates can prove: 2, 5a–5d and 6. Steps 1, 3, 4, 7
+and 8 are covered by the public controls and the e2e suite.
+
 ### Step 0 — baseline
 
 Record `-c opt` profiles and output digests for the public scale controls and
-the private canonical inputs (§ 6). No code change.
+the private canonical inputs (§ 6). Count the canonical sites that today pass
+only through `native_receiver_certificates` (§ 6.3 risk 3); the decision
+whether those sites become `captured_value_inputs` axioms or keep a
+path-sensitive receiver rule is taken on that count, before step 2. No code
+change. Step 1 waits for this plan to land so the domain file layout is
+reviewed once.
 
 ### Step 1 — domain and table seed
 
@@ -490,10 +499,13 @@ ReturnedRecord, NamespaceWrapper, ArgumentNoEscape, DescriptorCopy*}` → the
 
 ### Step 9 — `EffectsDisjoint` and gate consumption
 
-- Land after the sibling `commuting_statements` PR: the axiom removes the
-  `Sequenced` edge between two units when their summarized effect sets are
-  disjoint and the author asserts the unsummarized remainder is. The gate reads
-  effect sets, not purity bits, for this decision.
+- Gate consumption of `commuting_statements` lands before this plan's steps,
+  against the current edge reasons: it removes a `Sequenced` edge only when at
+  least one endpoint's reason is opaque, and rejects an entry contradicting a
+  derived conflict. This step ports that check onto effect sets: the axiom
+  removes the `Sequenced` edge when the summarized effect sets are disjoint and
+  the author asserts the unsummarized remainder is. The gate reads effect sets,
+  not purity bits, for this decision.
 - Tests: new controls — two units with a shared `Contents` cell must keep
   their edge despite the assertion.
 
@@ -516,14 +528,19 @@ Per <../AGENTS.md> § Profiling: `-c opt` binary, pre-staged inputs,
 `perf_wrapper.sh`; keep `perf_record_stderr.txt`, `perf_report_flat_symbols.txt`
 and the children report. Record:
 
-- Wall, user CPU, peak RSS: three alternating pairs per control; budget +25%
-  CPU/RSS per step as in <../debug/runtime_transfers.md>.
+- Wall, user CPU, peak RSS: three alternating pairs per control. The budget is
+  cumulative against the step 0 baseline, not per step: at step 10 neither wall
+  nor peak RSS may exceed the baseline on any control or canonical input. A
+  single step may regress by at most 10%, and its PR names the later step that
+  recovers it.
 - Public controls: `opaque_callback_scale`, `value_flow_sharing_scale`,
   `cross_module_purity_scale`, `plain_data_escape_scale`,
   `conflict_diagnostics_scale`, `perf/gen_synth_corpus.py` (10k statements).
 - Private canonical inputs: gate verdict, atomic-group count, per-reason edge
-  counts in `dependency_graph.json`, `precision_losses` count by reason. Edge
-  counts and losses must not grow; the verdict must not change.
+  counts in `dependency_graph.json`, `precision_losses` count by reason. Both
+  gates reject today, so "verdict unchanged" is vacuous; the invariant is that
+  edge counts, atomic-group counts and losses never grow at any step, and the
+  public e2e suite passes unchanged.
 - Flat-profile symbols already known hot: cloning `BTreeSet<Id>` and
   source-owner sets (28% + 20% in the rejected replay prototype), copying
   `BTreeSet<RuntimeKey>` (22% in the cached-fallback fanout). Any step that
