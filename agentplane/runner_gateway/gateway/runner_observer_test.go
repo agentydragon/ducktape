@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -333,5 +334,52 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 	stale := &fencedRunnerConn{conn: second.direct.conn, identity: first.direct.identity}
 	if _, err := runnerservicepb.NewRunnerClient(stale).GetStatus(ctx, &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("old boot remained usable after reconnect: %v", err)
+	}
+}
+
+func TestRunnerDiscoveryWakesOnlyWhenARunnerBecomesReachable(t *testing.T) {
+	g := &Gateway{runnerWake: make(chan struct{}, 1)}
+	handler := g.RunnerDiscoveryHandler()
+	woke := func() bool {
+		select {
+		case <-g.runnerWake:
+			return true
+		default:
+			return false
+		}
+	}
+	pod := func(ready bool, ip string) *corev1.Pod {
+		status := corev1.ConditionFalse
+		if ready {
+			status = corev1.ConditionTrue
+		}
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "runner", Labels: map[string]string{sandboxapi.SandboxLabel: "box"}},
+			Status:     corev1.PodStatus{PodIP: ip, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: status}}},
+		}
+	}
+	handler.OnUpdate(pod(false, "10.0.0.1"), pod(false, "10.0.0.1"))
+	if woke() {
+		t.Fatal("an unchanged Pod woke discovery")
+	}
+	handler.OnUpdate(pod(false, "10.0.0.1"), pod(true, "10.0.0.1"))
+	if !woke() {
+		t.Fatal("a Sandbox Pod becoming Ready did not wake discovery")
+	}
+	unrelated := pod(true, "10.0.0.2")
+	unrelated.Labels = nil
+	handler.OnAdd(unrelated, false)
+	if woke() {
+		t.Fatal("a Pod without the Sandbox label woke discovery")
+	}
+	idle := &sandboxapi.Sandbox{}
+	handler.OnUpdate(idle, idle)
+	if woke() {
+		t.Fatal("a Sandbox without a new incarnation woke discovery")
+	}
+	started := &sandboxapi.Sandbox{Status: sandboxapi.SandboxStatus{Incarnation: &sandboxapi.Incarnation{Name: "runner", UID: "u1"}}}
+	handler.OnUpdate(idle, started)
+	if !woke() {
+		t.Fatal("a Sandbox gaining an incarnation did not wake discovery")
 	}
 }
