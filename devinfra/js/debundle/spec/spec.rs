@@ -956,7 +956,11 @@ pub struct LogicalModule {
     /// Module-level semantic annotations keyed by the final readable binding
     /// name. This keeps shared metadata out of repeated selector entries and
     /// lets source-match binding claims stay focused on ownership.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_unique_annotations",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
     pub annotations: BTreeMap<String, BindingAnnotation>,
     /// Anonymous (empty-`declared_bindings`) top-level statements
     /// the materializer must co-move into this module's body.
@@ -999,6 +1003,41 @@ impl LogicalModule {
     pub fn is_auto_deletable(&self) -> bool {
         self.is_structurally_empty() && self.comment.is_none() && self.note.is_none()
     }
+}
+
+fn deserialize_unique_annotations<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<String, BindingAnnotation>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct UniqueAnnotations;
+
+    impl<'de> serde::de::Visitor<'de> for UniqueAnnotations {
+        type Value = BTreeMap<String, BindingAnnotation>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a map with unique binding annotation names")
+        }
+
+        fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+        where
+            M: serde::de::MapAccess<'de>,
+        {
+            let mut annotations = BTreeMap::new();
+            while let Some(name) = map.next_key::<String>()? {
+                if annotations.contains_key(&name) {
+                    return Err(serde::de::Error::custom(format!(
+                        "duplicate annotation key {name:?}"
+                    )));
+                }
+                annotations.insert(name, map.next_value()?);
+            }
+            Ok(annotations)
+        }
+    }
+
+    deserializer.deserialize_map(UniqueAnnotations)
 }
 
 /// Co-mover spec for a top-level anonymous side-effect statement.

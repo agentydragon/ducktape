@@ -520,6 +520,11 @@ exports that binding, emitted output keeps the original chunk export name and
 adds the spec name as a second export of the same binding. The two ESM export
 names are live aliases; existing consumers therefore remain compatible.
 
+`annotations:` is keyed by the final readable binding name. Each key must be
+unique within its module YAML; duplicate keys are rejected while loading the
+spec instead of one annotation silently replacing another. Distinct keys retain
+their separate annotation data.
+
 Named imports in other processed chunks may import the readable alias and bind
 it locally under that readable name. This import-local change is conservative:
 a collision with an existing or nested binding, an ambiguous alias, or an
