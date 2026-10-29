@@ -142,6 +142,16 @@ not relay tools. Every provider request carries Codex's `gpt-6.1-sol` base instr
 `instructions`, whatever the model. Standing instructions are supported; remote
 AGENTS.md discovery, subagents, skills/MCP, approvals/hooks and a Claude sampler are deferred.
 
+The conversation carries Codex's `<environment_context>` user message: the Session cwd, the name of
+the executor-reported shell that `exec_command` launches (omitted for an executor that reports none,
+although `exec_command` then falls back to `/bin/sh`) and the sampler's local date. The full context
+precedes the first input; afterwards an update is recorded before a turn's input, or before a
+sampling step after that step's queued `notify()` outputs, whenever a value changed (a date rollover
+renders only the date), and compaction re-injects the full context before the compaction item. Timezone and
+Codex's network, filesystem, permission-profile and subagents sections are omitted; Agentplane owns
+those boundaries. **Deviation:** the executor connects lazily, so a shell first learned after the
+initial context renders an update; Codex resolves the shell before its first render.
+
 ## Evidence and continuation
 
 Provider requests/responses, tool intents/results, commands and context checkpoints commit in the

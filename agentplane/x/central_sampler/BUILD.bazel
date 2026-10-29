@@ -243,6 +243,7 @@ go_library(
         "codemode_host.go",
         "codemode_output.go",
         "codemode_protocol.go",
+        "environment_context.go",
         "evidence.go",
         "executor.go",
         "executor_protocol.go",
@@ -272,6 +273,7 @@ go_library(
         "schema/0001_sampler_state.sql",
         "schema/0002_sampler_notification.sql",
         "schema/0003_unified_exec_sessions.sql",
+        "schema/0004_environment_context.sql",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/x/central_sampler",
     deps = [
@@ -313,6 +315,7 @@ go_test(
         "codemode_output_test.go",
         "codemode_protocol_test.go",
         "codemode_test.go",
+        "environment_context_test.go",
         "executor_test.go",
         "exporter_test.go",
         "host_test.go",

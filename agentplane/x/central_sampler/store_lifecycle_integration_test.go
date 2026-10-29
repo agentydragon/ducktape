@@ -87,8 +87,9 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(conversation.Context()) != 1 || conversation.Context()[0].EncryptedContent != "opaque" {
-		t.Fatalf("compacted context=%#v", conversation.Context())
+	compacted := conversation.Context()
+	if len(compacted) == 0 || compacted[len(compacted)-1].EncryptedContent != "opaque" {
+		t.Fatalf("compacted context=%#v", compacted)
 	}
 }
 

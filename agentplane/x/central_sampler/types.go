@@ -30,6 +30,10 @@ type Conversation struct {
 	ContextItems    []ResponsesItem
 	Instructions    *string
 	ContextTokens   *int
+	// ExecutorShell is the shell name the bound exec-server last reported.
+	ExecutorShell *string
+	// EnvironmentContext is the last model-visible environment context.
+	EnvironmentContext *EnvironmentContext
 }
 
 func (c *Conversation) Context() []ResponsesItem {

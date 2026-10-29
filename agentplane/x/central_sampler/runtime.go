@@ -696,6 +696,9 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 		return "compact", nil
 	}
+	if conversation, err = r.store.RecordEnvironmentContext(ctx, owner); err != nil {
+		return "", err
+	}
 	body, err := RequestBody(session.Model, conversation.ID, conversation.Context(), conversation.Instructions, state)
 	if err != nil {
 		return "", err

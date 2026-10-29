@@ -298,10 +298,12 @@ func (e *Executor) initialize(ctx context.Context) error {
 	if sessionID == "" {
 		return errors.New("exec-server initialized without a session ID")
 	}
+	var shellName *string
 	if result.EnvironmentInfo != nil {
 		e.shell = &result.EnvironmentInfo.Shell
+		shellName = &e.shell.Name
 	}
-	if err := e.store.SetExecutorSession(ctx, e.owner, sessionID); err != nil {
+	if err := e.store.SetExecutorSession(ctx, e.owner, sessionID, shellName); err != nil {
 		return err
 	}
 	return e.send(ctx, executorRequest[executorEmpty]{Method: "initialized", Params: executorEmpty{}})

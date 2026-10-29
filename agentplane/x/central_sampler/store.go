@@ -34,9 +34,11 @@ type rowScanner interface {
 // Store owns the central sampler's durable conversation, Session and evidence records.
 type Store struct {
 	db *sql.DB
+	// now dates the model-visible environment context.
+	now func() time.Time
 }
 
-func New(db *sql.DB) *Store { return &Store{db: db} }
+func New(db *sql.DB) *Store { return &Store{db: db, now: time.Now} }
 
 func (s *Store) DB() *sql.DB { return s.db }
 
@@ -159,10 +161,21 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 		contextItems  []byte
 		instructions  sql.NullString
 		contextTokens sql.NullInt64
+		shell         sql.NullString
+		environment   []byte
 	)
 	if err := row.Scan(&conversation.ID, &conversation.Generation, &owner, &lease, &pending,
-		&conversation.Stopped, &executor, &contextItems, &instructions, &contextTokens); err != nil {
+		&conversation.Stopped, &executor, &contextItems, &instructions, &contextTokens, &shell, &environment); err != nil {
 		return nil, err
+	}
+	if shell.Valid {
+		conversation.ExecutorShell = &shell.String
+	}
+	if len(environment) != 0 {
+		conversation.EnvironmentContext = &EnvironmentContext{}
+		if err := json.Unmarshal(environment, conversation.EnvironmentContext); err != nil {
+			return nil, err
+		}
 	}
 	if owner.Valid {
 		conversation.Owner = &owner.String
@@ -194,7 +207,7 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 }
 
 const conversationColumns = `id::text, generation, owner::text, lease_until, pending, stopped,
-	executor_session, context_items, instructions, context_tokens`
+	executor_session, context_items, instructions, context_tokens, executor_shell, environment_context`
 
 func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
 	token, err := parseOwnerToken(owner)
@@ -846,9 +859,14 @@ func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversat
 	if conversation.ContextTokens != nil {
 		contextTokens = *conversation.ContextTokens
 	}
+	environment, err := marshal(conversation.EnvironmentContext)
+	if err != nil {
+		return err
+	}
 	_, err = tx.ExecContext(ctx, `UPDATE sampler_conversation SET pending=$2,stopped=$3,executor_session=$4,
-		context_items=$5,context_tokens=$6 WHERE id=$1`, conversation.ID, nullableJSON(pending), conversation.Stopped,
-		nullableString(conversation.ExecutorSession), contextItems, contextTokens)
+		context_items=$5,context_tokens=$6,executor_shell=$7,environment_context=$8 WHERE id=$1`, conversation.ID,
+		nullableJSON(pending), conversation.Stopped, nullableString(conversation.ExecutorSession), contextItems, contextTokens,
+		nullableString(conversation.ExecutorShell), nullableJSON(environment))
 	return err
 }
 
@@ -1128,7 +1146,18 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if err != nil {
 			return err
 		}
-		conversation.ContextItems = replacement
+		// Codex rust-v0.162.1 core/src/compact.rs insert_initial_context_before_last_real_user_or_summary:
+		// with no retained user message, the full context goes before the compaction item.
+		environment, err := s.environmentContext(conversation, session)
+		if err != nil {
+			return err
+		}
+		environmentItem, err := newResponsesMessage("user", environmentContextUpdate(nil, environment))
+		if err != nil {
+			return err
+		}
+		conversation.ContextItems = append([]ResponsesItem{environmentItem}, replacement...)
+		conversation.EnvironmentContext = &environment
 		conversation.ContextTokens = nil
 		conversation.Pending = nil
 		if err := updateConversation(ctx, tx, conversation); err != nil {
@@ -1268,7 +1297,8 @@ func (s *Store) RegisterModelProcess(ctx context.Context, owner Owner, processID
 	})
 }
 
-func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID string) error {
+// SetExecutorSession records the exec-server session and the shell it reported, if any.
+func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID string, shell *string) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
@@ -1288,8 +1318,67 @@ func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID s
 			}
 		}
 		conversation.ExecutorSession = &sessionID
+		conversation.ExecutorShell = shell
 		return updateConversation(ctx, tx, conversation)
 	})
+}
+
+// RecordEnvironmentContext appends an environment update before a sampling step, as Codex does
+// before each step, and returns the updated conversation.
+func (s *Store) RecordEnvironmentContext(ctx context.Context, owner Owner) (*Conversation, error) {
+	var conversation *Conversation
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		var err error
+		conversation, err = lockOwner(ctx, tx, owner)
+		if err != nil {
+			return err
+		}
+		if conversation.Pending != nil {
+			return &UnknownEffectError{Reason: "unresolved intent blocks an environment update; automatic replay is unsafe"}
+		}
+		session, err := sessionForConversation(ctx, tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		previous := conversation.EnvironmentContext
+		if err := s.recordEnvironmentContext(conversation, session); err != nil {
+			return err
+		}
+		if previous != nil && previous.equal(*conversation.EnvironmentContext) {
+			return nil
+		}
+		return updateConversation(ctx, tx, conversation)
+	})
+	return conversation, err
+}
+
+func (s *Store) environmentContext(conversation *Conversation, session *Session) (EnvironmentContext, error) {
+	request := &samplerpb.OpenSessionRequest{}
+	if err := proto.Unmarshal(session.Configuration, request); err != nil {
+		return EnvironmentContext{}, err
+	}
+	return currentEnvironmentContext(request.GetSpec().GetCwd(), conversation.ExecutorShell, s.now()), nil
+}
+
+// recordEnvironmentContext appends the update from the conversation's baseline to the Session's
+// current environment, then advances the baseline. The caller persists the conversation.
+func (s *Store) recordEnvironmentContext(conversation *Conversation, session *Session) error {
+	current, err := s.environmentContext(conversation, session)
+	if err != nil {
+		return err
+	}
+	if update := environmentContextUpdate(conversation.EnvironmentContext, current); update != "" {
+		item, err := newResponsesMessage("user", update)
+		if err != nil {
+			return err
+		}
+		conversation.Items = append(conversation.Items, item)
+		if conversation.ContextItems != nil {
+			conversation.ContextItems = append(conversation.ContextItems, item)
+		}
+	}
+	conversation.EnvironmentContext = &current
+	return nil
 }
 
 func persistSession(ctx context.Context, tx *sql.Tx, session *Session) error {
@@ -1480,6 +1569,10 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 		case payload.GetSubmitInput() != nil:
 			if conversation.Pending != nil {
 				return &UnknownEffectError{Reason: "unresolved intent blocks queued input; automatic replay is unsafe"}
+			}
+			// Codex records environment updates before the turn's user input.
+			if err := s.recordEnvironmentContext(conversation, session); err != nil {
+				return err
 			}
 			text := payload.GetSubmitInput().GetText()
 			item, err := newResponsesMessage("user", text)
