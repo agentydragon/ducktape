@@ -11298,7 +11298,7 @@
     "cache_or_transport": 1
   },
   "validation": {
-    "report_sha256": "97a541345acc011f7a555f344e7fe3d77861a5fcba6363be304275432b52e472",
+    "report_sha256": "259e768a492a22eb42635593598d9bfcde9a24506a735207807a0d00cbf9c406",
     "browser_review": {
       "tool": "google-chrome headless (local) with cdnjs assets reachable; screenshots at 1280 and 390 px; Chart.js initialised every canvas; headroom calculator output matches the static table; zero console errors; markup balanced",
       "limit": "screenshots were not eyeballed by the author in this session"
@@ -11310,5 +11310,5 @@
     "js": "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js",
     "note": "pinned cdnjs assets; the page degrades to plain HTML offline and the headroom calculator uses the embedded green-head rows"
   },
-  "published_site": "https://agentydragon.com/ducktape/"
+  "published_site": "https://agentydragon.github.io/ducktape/"
 }

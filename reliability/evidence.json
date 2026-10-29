@@ -266,12 +266,12 @@
     "CI-SOAK-3 retry policy": "now has 47 PR + 2 mainline REMOTE_ERROR invocations to classify (above)"
   },
   "validation": {
-    "report_sha256": "cc7cc9110efb178e61d93bf1766c4ddf219fae15e4f87b9d10a662eddb27059c",
+    "report_sha256": "49e8e4c223ac21a6e719712a573f77626e4717796a2a7a8f889c03f5e94a30a8",
     "browser_review": {
       "tool": "google-chrome headless (local) with cdnjs assets reachable; screenshots at 1280 and 390 px; Chart.js initialised every canvas; headroom calculator output matches the static table; zero console errors; markup balanced",
       "limit": "screenshots were not eyeballed by the author in this session"
     },
     "stock_recipes": "devinfra/ci/skills/ci_latency/scripts/evidence.sh executed on the merged snapshot (collect/merged/evidence_stock.json, local)"
   },
-  "published_site": "https://agentydragon.com/ducktape/"
+  "published_site": "https://agentydragon.github.io/ducktape/"
 }
