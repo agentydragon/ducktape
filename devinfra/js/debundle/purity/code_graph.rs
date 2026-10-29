@@ -28,17 +28,22 @@ pub struct ChunkCodeGraph {
     /// admitted as pure with args evaluated normally. Author-trust
     /// contract; see <docs/purity_soundness.md> "Declared purity".
     declared_pure_members: BTreeMap<String, BTreeSet<String>>,
-    /// Chunk-top `const X = <result-primitive init>` binding names.
-    /// `const` makes the binding immutable, and a primitive value
-    /// carries no user accessors, so a `ToString` / `ToNumber` /
-    /// `ToPropertyKey` coercion of a reference to `X` fires no user
-    /// code — `X` is admitted as result-primitive wherever it is not
-    /// locally shadowed. The init's own evaluation effects are
-    /// classified separately at its declaration site; only the
-    /// *value* class matters here. See `collect_const_value_classes`.
-    pub(crate) primitive_const_bindings: BTreeSet<String>,
+    /// Chunk-top consts with result-primitive values, plus stable top-level
+    /// numeric vars. Their values carry no user accessors, so coercion of a
+    /// reference fires no user code. Stable vars require retained declaration
+    /// and no-write facts plus a Number-only initializer proof. Init effects
+    /// remain classified separately. See `collect_binding_value_classes`.
+    pub(crate) primitive_bindings: BTreeSet<String>,
+    /// Bindings whose values are exactly Number (or BigInt). These preserve
+    /// the mixed-numeric exception check even when both operands are primitive.
+    pub(crate) number_bindings: BTreeSet<String>,
+    /// Number-valued consts plus stable numeric vars. A stable var is Number
+    /// after its initializer and `undefined` before it, so it is always
+    /// non-BigInt but is not an exact Number at every module position.
+    pub(crate) number_or_undefined_bindings: BTreeSet<String>,
+    pub(crate) bigint_bindings: BTreeSet<String>,
     /// Immutable Symbol-valued consts are safe only for ToPropertyKey.
-    /// They must not enter `primitive_const_bindings`: ToString(Symbol)
+    /// They must not enter `primitive_bindings`: ToString(Symbol)
     /// throws, unlike the result-primitive forms tracked there.
     pub(crate) symbol_const_bindings: BTreeSet<String>,
     /// Chunk-top `const X = [..]` bindings that remain static ordinary
@@ -96,6 +101,7 @@ pub(crate) struct PurityShapeInputs<'a> {
     pub(crate) local_class_construction_proof: &'a LocalClassConstructionProof,
     pub(crate) plain_data_bindings: &'a [String],
     pub(crate) plain_array_bindings: &'a BTreeSet<String>,
+    pub(crate) stable_var_number_candidates: &'a BTreeSet<Id>,
 }
 
 /// Source-module identity, policy, and inferred imported function targets for
@@ -189,6 +195,31 @@ impl ChunkCodeGraph {
         fluent_bindings: &BTreeSet<String>,
         locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
+        Self::build_full_with_locations_and_stable_vars(
+            body,
+            shadowed,
+            declared_pure,
+            declared_pure_new,
+            declared_pure_members,
+            imported_purities,
+            fluent_bindings,
+            &BTreeSet::new(),
+            locate,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn build_full_with_locations_and_stable_vars(
+        body: &[TopLevelItemView<'_>],
+        shadowed: &BTreeSet<&'static str>,
+        declared_pure: &BTreeSet<String>,
+        declared_pure_new: &BTreeSet<String>,
+        declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
+        imported_purities: &BTreeMap<String, Arc<Purity>>,
+        fluent_bindings: &BTreeSet<String>,
+        stable_var_number_candidates: &BTreeSet<Id>,
+        locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
+    ) -> Self {
         let candidate_roots = plain_data_candidate_roots(body);
         let value_flow =
             crate::facts::ChunkValueFlow::analyze_with_candidates(body, &candidate_roots);
@@ -217,7 +248,7 @@ impl ChunkCodeGraph {
         let local_class_construction_proof =
             prepared_sync_index.local_class_construction_proof().clone();
         let set_iterable_proof = prepared_sync_index.set_iterable_proof().clone();
-        Self::build_full_with_prepared_plain_data(
+        Self::build_full_with_prepared_plain_data_and_stable_vars(
             body,
             shadowed,
             declared_pure,
@@ -229,6 +260,7 @@ impl ChunkCodeGraph {
             &local_class_construction_proof,
             &plain_data_bindings,
             &plain_array_bindings,
+            stable_var_number_candidates,
             locate,
         )
     }
@@ -247,6 +279,42 @@ impl ChunkCodeGraph {
         local_class_construction_proof: &LocalClassConstructionProof,
         plain_data_bindings: &[String],
         plain_array_bindings: &BTreeSet<String>,
+        locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
+    ) -> Self {
+        Self::build_full_with_prepared_plain_data_and_stable_vars(
+            body,
+            shadowed,
+            declared_pure,
+            declared_pure_new,
+            declared_pure_members,
+            imported_purities,
+            fluent_bindings,
+            set_iterable_proof,
+            local_class_construction_proof,
+            plain_data_bindings,
+            plain_array_bindings,
+            &BTreeSet::new(),
+            locate,
+        )
+    }
+
+    /// Build with stable numeric-var bindings retained by the canonical
+    /// structural analysis. Other callers that do not own those facts use
+    /// `build_full_with_prepared_plain_data` and remain conservative.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn build_full_with_prepared_plain_data_and_stable_vars(
+        body: &[TopLevelItemView<'_>],
+        shadowed: &BTreeSet<&'static str>,
+        declared_pure: &BTreeSet<String>,
+        declared_pure_new: &BTreeSet<String>,
+        declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
+        imported_purities: &BTreeMap<String, Arc<Purity>>,
+        fluent_bindings: &BTreeSet<String>,
+        set_iterable_proof: &SetIterableProof,
+        local_class_construction_proof: &LocalClassConstructionProof,
+        plain_data_bindings: &[String],
+        plain_array_bindings: &BTreeSet<String>,
+        stable_var_number_candidates: &BTreeSet<Id>,
         mut locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
         let functions = collect_chunk_functions(body);
@@ -260,6 +328,7 @@ impl ChunkCodeGraph {
             local_class_construction_proof,
             plain_data_bindings,
             plain_array_bindings,
+            stable_var_number_candidates,
         };
         let local_targets = BTreeMap::new();
         let call_context = PurityCallContext {
@@ -399,8 +468,11 @@ impl ChunkCodeGraph {
                     )
                 })
                 .collect();
-        let (primitive_const_bindings, symbol_const_bindings) =
-            collect_const_value_classes(body, shape_inputs.shadowed);
+        let value_classes = collect_binding_value_classes(
+            body,
+            shape_inputs.shadowed,
+            shape_inputs.stable_var_number_candidates,
+        );
         let mut purity_call_targets = call_context.imported_targets.clone();
         purity_call_targets.extend(Self::inferred_function_keys(
             body,
@@ -418,8 +490,11 @@ impl ChunkCodeGraph {
                 .collect(),
             pure_new_constructors: shape_inputs.declared_pure_new.clone(),
             declared_pure_members: shape_inputs.declared_pure_members.clone(),
-            primitive_const_bindings,
-            symbol_const_bindings,
+            primitive_bindings: value_classes.primitive_bindings,
+            number_bindings: value_classes.number_bindings,
+            number_or_undefined_bindings: value_classes.number_or_undefined_bindings,
+            bigint_bindings: value_classes.bigint_bindings,
+            symbol_const_bindings: value_classes.symbol_const_bindings,
             plain_array_bindings: shape_inputs.plain_array_bindings.clone(),
             ts_enum_named_data_candidates,
             set_iterable_proof: shape_inputs.set_iterable_proof.clone(),

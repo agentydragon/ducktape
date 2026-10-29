@@ -72,7 +72,7 @@ pub(crate) fn classify_expr_purity(
             .iter()
             .map(|e| {
                 let p = classify_expr_purity(e, shadowed, local_shadowed, declared_pure, graph);
-                if is_result_primitive(e, &graph.primitive_const_bindings, local_shadowed) {
+                if is_result_primitive(e, &graph.primitive_bindings, local_shadowed) {
                     p
                 } else {
                     p.worst(Purity::from_reason_with_detail(
@@ -110,9 +110,19 @@ pub(crate) fn classify_expr_purity(
                 // `[Symbol.toPrimitive]`. Pure only when the
                 // operand is statically primitive-valued.
                 UnaryOp::Plus | UnaryOp::Minus | UnaryOp::Tilde => {
-                    if is_result_primitive(&u.arg, &graph.primitive_const_bindings, local_shadowed)
+                    if is_result_primitive(&u.arg, &graph.primitive_bindings, local_shadowed)
+                        && !(u.op == UnaryOp::Plus
+                            && is_bigint_expression(&u.arg, &graph.bigint_bindings, local_shadowed))
                     {
                         arg_purity
+                    } else if u.op == UnaryOp::Plus
+                        && is_bigint_expression(&u.arg, &graph.bigint_bindings, local_shadowed)
+                    {
+                        arg_purity.worst(Purity::from_reason_with_detail(
+                            PurityRule::Other,
+                            u.span,
+                            "unary + throws on a BigInt operand".to_string(),
+                        ))
                     } else {
                         arg_purity.worst(Purity::from_reason_with_detail(
                             PurityRule::CoercingOperator,
@@ -166,14 +176,18 @@ pub(crate) fn classify_expr_purity(
                 // on object operands. Pure only when both operands
                 // are statically primitive-valued.
                 _ => {
-                    if is_result_primitive(&b.left, &graph.primitive_const_bindings, local_shadowed)
-                        && is_result_primitive(
-                            &b.right,
-                            &graph.primitive_const_bindings,
-                            local_shadowed,
-                        )
+                    if is_result_primitive(&b.left, &graph.primitive_bindings, local_shadowed)
+                        && is_result_primitive(&b.right, &graph.primitive_bindings, local_shadowed)
                     {
-                        operands
+                        if binary_may_throw_on_numeric_mismatch(b, graph, local_shadowed) {
+                            operands.worst(Purity::from_reason_with_detail(
+                                PurityRule::Other,
+                                b.span,
+                                format!("binary {} can throw for mixed numeric primitives", b.op),
+                            ))
+                        } else {
+                            operands
+                        }
                     } else {
                         operands.worst(Purity::from_reason_with_detail(
                             PurityRule::CoercingOperator,
@@ -266,11 +280,7 @@ pub(crate) fn classify_expr_purity(
                             declared_pure,
                             graph,
                         );
-                        if is_result_primitive(
-                            expr,
-                            &graph.primitive_const_bindings,
-                            local_shadowed,
-                        ) {
+                        if is_result_primitive(expr, &graph.primitive_bindings, local_shadowed) {
                             purity
                         } else {
                             purity.worst(Purity::from_reason_with_detail(
@@ -465,7 +475,7 @@ fn classify_member_purity(
                     &computed.expr,
                     shadowed,
                     local_shadowed,
-                    &graph.primitive_const_bindings,
+                    &graph.primitive_bindings,
                     &graph.symbol_const_bindings,
                 ) {
                     key_purity
@@ -942,7 +952,7 @@ fn classify_propname_purity(
                 &c.expr,
                 shadowed,
                 local_shadowed,
-                &graph.primitive_const_bindings,
+                &graph.primitive_bindings,
                 &graph.symbol_const_bindings,
             ) {
                 key_purity
@@ -1099,4 +1109,67 @@ pub(crate) fn classify_class_static_purity(
         purity = purity.worst(member_purity);
     }
     purity
+}
+
+fn binary_may_throw_on_numeric_mismatch(
+    binary: &BinExpr,
+    graph: &ChunkCodeGraph,
+    local_shadowed: &BTreeSet<String>,
+) -> bool {
+    if !matches!(
+        binary.op,
+        BinaryOp::Add
+            | BinaryOp::Sub
+            | BinaryOp::Mul
+            | BinaryOp::Div
+            | BinaryOp::Mod
+            | BinaryOp::Exp
+            | BinaryOp::BitOr
+            | BinaryOp::BitXor
+            | BinaryOp::BitAnd
+            | BinaryOp::LShift
+            | BinaryOp::RShift
+            | BinaryOp::ZeroFillRShift
+    ) {
+        return false;
+    }
+
+    let left_number = is_number_expression(&binary.left, &graph.number_bindings, local_shadowed);
+    let right_number = is_number_expression(&binary.right, &graph.number_bindings, local_shadowed);
+    let left_non_bigint = is_definitely_non_bigint_expression(
+        &binary.left,
+        &graph.number_bindings,
+        &graph.number_or_undefined_bindings,
+        local_shadowed,
+    );
+    let right_non_bigint = is_definitely_non_bigint_expression(
+        &binary.right,
+        &graph.number_bindings,
+        &graph.number_or_undefined_bindings,
+        local_shadowed,
+    );
+    let left_bigint = is_bigint_expression(&binary.left, &graph.bigint_bindings, local_shadowed);
+    let right_bigint = is_bigint_expression(&binary.right, &graph.bigint_bindings, local_shadowed);
+
+    if binary.op == BinaryOp::ZeroFillRShift && (left_bigint || right_bigint) {
+        return true;
+    }
+    if (left_number && right_bigint) || (right_number && left_bigint) {
+        return true;
+    }
+    if left_bigint != right_bigint {
+        let other = if left_bigint {
+            &binary.right
+        } else {
+            &binary.left
+        };
+        if binary.op != BinaryOp::Add || !is_definitely_string_expression(other) {
+            return true;
+        }
+    }
+
+    if left_non_bigint && !right_non_bigint && !right_bigint {
+        return true;
+    }
+    right_non_bigint && !left_non_bigint && !left_bigint
 }

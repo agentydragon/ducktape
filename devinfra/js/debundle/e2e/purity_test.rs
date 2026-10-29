@@ -366,6 +366,38 @@ export { a1, a2, b1 };
 }
 
 #[test]
+fn immutable_numeric_var_chain_across_modules_emits_no_s_cycle() {
+    // A bundled top-level `var` declaration can hold literal numbers and
+    // immutable aliases just like the corresponding `const` form. The
+    // source-wide write census must establish that these bindings never
+    // change before arithmetic can skip user-defined ToPrimitive callbacks.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"var retry = 20000, delay = 15000, base = 5000, period = base;
+var first = delay + period + 2 * retry;
+var second = delay + period + 2 * retry;
+var third = delay + period + 2 * retry;
+console.log(first, second, third);
+export { first, second, third };
+"#,
+        vec![
+            logical_module(
+                "mod_a",
+                &[
+                    Member::new("retry"),
+                    Member::new("delay"),
+                    Member::new("base"),
+                    Member::new("period"),
+                    Member::new("first"),
+                    Member::new("third"),
+                ],
+            ),
+            logical_module("mod_b", &[Member::new("second")]),
+        ],
+    ));
+    assert_entry_output(&fixture, "60000 60000 60000\n");
+}
+
+#[test]
 fn destructuring_declarators_still_emit_s_edges() {
     // SOUNDNESS: `const { a1 } = src` fires `src`'s getters at
     // declaration time — the statements stay side-effecting and

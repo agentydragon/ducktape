@@ -131,6 +131,15 @@ where
                 !shadowed.contains("Promise"),
             );
             item.visit_with(&mut collector);
+            let top_level_var_initializer_candidates = var_decl_of_item(item)
+                .filter(|var| var.kind == VarDeclKind::Var)
+                .into_iter()
+                .flat_map(|var| &var.decls)
+                .filter_map(|decl| match (&decl.name, decl.init.as_deref()) {
+                    (Pat::Ident(binding), Some(_)) => Some(binding.id.to_id()),
+                    _ => None,
+                })
+                .collect();
             let constructor = class_of_item(item).map(|class| {
                 collect_constructor_facts(
                     class,
@@ -164,6 +173,9 @@ where
                     .intersection(&declared)
                     .cloned()
                     .collect(),
+                var_declaration_counts: collector.var_declaration_counts,
+                var_initializer_counts: collector.var_initializer_counts,
+                top_level_var_initializer_candidates,
                 local_bindings: collector
                     .binding_idents
                     .difference(&declared)
@@ -228,6 +240,8 @@ pub fn complete_chunk_structural_with_native_allocations<'a>(
     let plain_data_bindings =
         crate::purity::collect_plain_data_bindings(&body, &shadowed, &value_flow);
     let dynamic_scope = DynamicScopeFact::analyze(&body);
+    let stable_var_number_candidates =
+        stable_top_level_var_candidates(&per_statement, dynamic_scope);
     let set_iterable_proof = SetIterableShapes::analyze(
         &body,
         &shadowed,
@@ -244,10 +258,59 @@ pub fn complete_chunk_structural_with_native_allocations<'a>(
         set_iterable_shapes: set_iterable_proof,
         local_class_shapes: local_class_construction_proof,
         plain_data_bindings,
+        stable_var_number_candidates,
         shadowed,
         per_statement,
         top_level_await,
     }
+}
+
+/// Derive stable top-level `var` candidates from facts retained by the normal
+/// per-statement collector. This does not walk syntax or run another census:
+/// declaration multiplicity and eager/lazy rebinds came from the same visitor
+/// pass that produced each statement's other structural facts.
+fn stable_top_level_var_candidates(
+    statements: &[StructuralStatementFacts],
+    dynamic_scope: DynamicScopeFact,
+) -> BTreeSet<Id> {
+    if dynamic_scope.present {
+        return BTreeSet::new();
+    }
+
+    let mut candidates = BTreeSet::new();
+    let mut declaration_counts = BTreeMap::<Id, usize>::new();
+    let mut initializer_counts = BTreeMap::<Id, usize>::new();
+    let mut declared_counts = BTreeMap::<Id, usize>::new();
+    let mut nested_bindings = BTreeSet::new();
+    let mut rebinds = BTreeSet::new();
+    for statement in statements {
+        candidates.extend(
+            statement
+                .top_level_var_initializer_candidates
+                .iter()
+                .cloned(),
+        );
+        for (id, count) in &statement.var_declaration_counts {
+            *declaration_counts.entry(id.clone()).or_default() += count;
+        }
+        for (id, count) in &statement.var_initializer_counts {
+            *initializer_counts.entry(id.clone()).or_default() += count;
+        }
+        for id in &statement.declared {
+            *declared_counts.entry(id.clone()).or_default() += 1;
+        }
+        nested_bindings.extend(statement.local_bindings.iter().cloned());
+        rebinds.extend(statement.rebinds.eager.iter().cloned());
+        rebinds.extend(statement.rebinds.lazy.iter().cloned());
+    }
+    candidates.retain(|id| {
+        declaration_counts.get(id) == Some(&1)
+            && initializer_counts.get(id) == Some(&1)
+            && declared_counts.get(id) == Some(&1)
+            && !nested_bindings.contains(id)
+            && !rebinds.contains(id)
+    });
+    candidates
 }
 
 /// Compute the policy-dependent half of the chunk analysis from the
@@ -301,6 +364,7 @@ where
         set_iterable_shapes,
         local_class_shapes,
         plain_data_bindings,
+        stable_var_number_candidates,
         shadowed,
         per_statement,
         top_level_await,
@@ -340,7 +404,7 @@ where
                 start_column: Some(start_column),
             })
         };
-        ChunkCodeGraph::build_full_with_prepared_plain_data(
+        ChunkCodeGraph::build_full_with_prepared_plain_data_and_stable_vars(
             &body,
             &shadowed,
             &hints.assumptions.declared_pure,
@@ -352,6 +416,7 @@ where
             &local_class_construction_proof,
             &plain_data_bindings,
             &plain_array_bindings,
+            &stable_var_number_candidates,
             Some(&mut locate),
         )
     };
@@ -665,6 +730,9 @@ fn assemble_statement_facts(
         local_bindings,
         var_declared,
         var_initializers,
+        var_declaration_counts: _,
+        var_initializer_counts: _,
+        top_level_var_initializer_candidates: _,
         reads,
         rebinds,
         member_write_roots,

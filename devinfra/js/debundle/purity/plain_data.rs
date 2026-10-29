@@ -336,36 +336,36 @@ pub(crate) fn collect_plain_array_bindings(
         .collect()
 }
 
-/// Chunk-top `const` names whose init evaluates to either a
-/// ToString-safe primitive or a Symbol, resolving earlier const aliases.
-/// `const` guarantees the binding never rebinds, and a primitive
-/// carries no user accessors. Symbols are kept separate because
-/// ToPropertyKey accepts them but ToString throws. The init's own
-/// evaluation effects are classified at its declaration site; only
-/// the resulting value class matters here. `let` / `var`
-/// are excluded: a later non-primitive rebind would invalidate the
-/// claim.
+/// Chunk-top `const` value classes plus stable top-level numeric `var`
+/// bindings. Symbols stay separate because `ToPropertyKey` accepts them but
+/// `ToString` throws. Stable numeric vars require one direct initialization,
+/// retained whole-chunk declaration/rebind facts, no dynamic scope, and a
+/// Number-only initializer. Their module-wide value class is Number after the
+/// initializer and primitive `undefined` before it, so they are not published
+/// as exact Number bindings. Initializer effects remain classified at the
+/// declaration site.
 ///
 /// Source-prefix inference: a const resolves only references to consts
 /// declared before it — exactly the set visible without hitting the
 /// temporal dead zone. Function/arrow inits never reach here
 /// (`plain_data_var_candidates` filters them) and are not primitive anyway.
-pub(crate) fn collect_const_value_classes(
+pub(crate) fn collect_binding_value_classes(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
-) -> (BTreeSet<String>, BTreeSet<String>) {
+    stable_var_number_candidates: &BTreeSet<Id>,
+) -> BindingValueClasses {
     let mut symbol_write = SymbolGlobalWriteFinder::default();
     for item in body {
         item.as_module_item().visit_with(&mut symbol_write);
     }
-    let (primitives, mut symbols) = infer_const_value_classes(body, shadowed);
+    let mut classes = infer_const_value_classes(body, shadowed, stable_var_number_candidates);
     if symbol_write.hit {
         // A visible replacement can make `Symbol(...)` return an object.
         // Discard even earlier candidates so later computed-key uses cannot
         // rely on source-order assumptions about an untracked global cell.
-        symbols.clear();
+        classes.symbol_const_bindings.clear();
     }
-    (primitives, symbols)
+    classes
 }
 
 #[derive(Default)]
@@ -491,7 +491,7 @@ pub(crate) fn is_symbol_const_init(
 /// init's own evaluation effects — impure arguments anywhere in the
 /// chain — are classified separately at the declaration site by
 /// `classify_fluent_chain`. This mirrors the
-/// `primitive_const_bindings` value-class/evaluation split.
+/// primitive-binding value-class/evaluation split.
 ///
 /// Positive closure rather than a single source pass so a chain rooted
 /// in a later-declared const still closes; bounded by one fact per

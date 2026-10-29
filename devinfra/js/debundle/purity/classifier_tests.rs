@@ -4,7 +4,7 @@ use super::*;
 use crate::analysis_inputs::{ProofDependencies, ValueInputRef};
 use crate::facts::{
     ChunkValueFlow, DynamicScopeFact, LocalClassConstructionProof, SetIterableProof,
-    compute_shadowed_globals, top_level_item_views,
+    analyze_chunk_structural, compute_shadowed_globals, top_level_item_views,
 };
 use swc_common::{FileName, sync::Lrc};
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
@@ -1330,11 +1330,33 @@ fn object_calls_shadowed_receiver_stays_unknown() {
 
 /// Classify `expr_src` against a fully built `ChunkCodeGraph` for the
 /// wrapping `prefix` module, so chunk-top binding facts — including the
-/// primitive-`const` set — are populated.
+/// primitive binding facts — are populated.
 fn classify_built(prefix: &str, expr_src: &str) -> Purity {
-    classify_with_graph(prefix, expr_src, |body, shadowed| {
-        ChunkCodeGraph::build(body, shadowed, &BTreeSet::new())
-    })
+    let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
+    let structural = analyze_chunk_structural(&module, None, |_| None);
+    let body = &structural.body;
+    let shadowed = &structural.shadowed;
+    let graph = ChunkCodeGraph::build_full_with_locations_and_stable_vars(
+        body,
+        shadowed,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeSet::new(),
+        &structural.stable_var_number_candidates,
+        None,
+    );
+    let ModuleItem::Stmt(Stmt::Decl(Decl::Var(result))) = module.body.last().unwrap() else {
+        panic!("expected final initializer");
+    };
+    classify_expr_purity(
+        result.decls[0].init.as_deref().unwrap(),
+        shadowed,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &graph,
+    )
 }
 
 #[test]
@@ -1369,6 +1391,91 @@ fn coercion_of_let_or_var_binding_stays_unknown() {
     // not provably primitive and the coercion stays conservative.
     assert!(!classify_built("let s = \"x\";", "`${s}`").is_pure());
     assert!(!classify_built("var s = \"x\";", "`${s}`").is_pure());
+}
+
+#[test]
+fn stable_numeric_var_candidates_are_narrow_and_keep_throwing_arithmetic_unknown() {
+    let numeric_chain = "var retry = 20000, delay = 15000, base = 5000, period = base, total = delay + period + 2 * retry;";
+    assert!(classify_built(numeric_chain, "total + 1").is_pure());
+    assert!(classify_built("var base = 2;", "base + 2 * base").is_pure());
+    assert!(classify_built("var value = 1;", "`${value}`").is_pure());
+    assert!(classify_built("var value = 1;", "value + 'x'").is_pure());
+    assert!(!classify_built("var value = 1;", "value + object").is_pure());
+    assert!(!classify_built("var value = 1;", "value + (flag ? 1n : 2)").is_pure());
+
+    let module = parse("var value = 1;");
+    let structural = analyze_chunk_structural(&module, None, |_| None);
+    let graph = ChunkCodeGraph::build_full_with_locations_and_stable_vars(
+        &structural.body,
+        &structural.shadowed,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeSet::new(),
+        &structural.stable_var_number_candidates,
+        None,
+    );
+    assert!(graph.primitive_bindings.contains("value"));
+    assert!(!graph.number_bindings.contains("value"));
+    assert!(graph.number_or_undefined_bindings.contains("value"));
+
+    let redeclared_module = parse("var value = 1; function value() {}");
+    let redeclared_structure = analyze_chunk_structural(&redeclared_module, None, |_| None);
+    let redeclared_graph = ChunkCodeGraph::build_full_with_locations_and_stable_vars(
+        &redeclared_structure.body,
+        &redeclared_structure.shadowed,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeSet::new(),
+        &redeclared_structure.stable_var_number_candidates,
+        None,
+    );
+    assert!(!redeclared_graph.primitive_bindings.contains("value"));
+
+    assert!(!classify_built("var value = 1; value = object;", "value + 1").is_pure());
+    assert!(
+        !classify_built(
+            "var value = 1; function replace() { value = object; }",
+            "value + 1"
+        )
+        .is_pure()
+    );
+    assert!(!classify_built("var value = 1; eval('value = object');", "value + 1").is_pure());
+    assert!(!classify_built("var value = 1; var value;", "value + 1").is_pure());
+    assert!(!classify_built("var value = 1;", "value + 1n").is_pure());
+    assert!(
+        !classify_built(
+            "var value = 1; const bigint = 1n; const alias = bigint;",
+            "value + alias"
+        )
+        .is_pure()
+    );
+    assert!(!classify_built("var value = 1n + 1;", "value + 1").is_pure());
+}
+
+#[test]
+fn stable_numeric_var_facts_do_not_cross_function_shadowing() {
+    let module = parse("var value = 1; function read(value) { return value + 1; }");
+    let structural = analyze_chunk_structural(&module, None, |_| None);
+    let graph = ChunkCodeGraph::build_full_with_locations_and_stable_vars(
+        &structural.body,
+        &structural.shadowed,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeSet::new(),
+        &structural.stable_var_number_candidates,
+        None,
+    );
+    assert!(
+        graph
+            .function_purity("read")
+            .is_some_and(|purity| !purity.is_pure())
+    );
 }
 
 #[test]

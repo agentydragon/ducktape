@@ -72,8 +72,22 @@ pub(crate) use fresh_record::*;
 pub(crate) use plain_data::*;
 pub(crate) use redundant_hints::*;
 pub(crate) use ts_enum_iife::*;
+
+#[derive(Default)]
+pub(crate) struct BindingValueClasses {
+    pub(crate) primitive_bindings: BTreeSet<String>,
+    pub(crate) symbol_const_bindings: BTreeSet<String>,
+    pub(crate) number_bindings: BTreeSet<String>,
+    pub(crate) bigint_bindings: BTreeSet<String>,
+    /// Stable `var` bindings are Number after initialization and `undefined`
+    /// before it, so callers must not treat these as exact Number facts.
+    pub(crate) number_or_undefined_bindings: BTreeSet<String>,
+}
+
 use value_inference::{
     infer_const_value_classes, infer_fluent_const_bindings, infer_plain_array_candidates,
+    is_bigint_expression, is_definitely_non_bigint_expression, is_definitely_string_expression,
+    is_number_expression,
 };
 
 // Public API: importable at `purity::<item>` exactly as before the split.

@@ -29,6 +29,10 @@ pub(crate) struct StatementFactsCollector {
     pub(crate) binding_idents: BTreeSet<Id>,
     pub(crate) var_declared: BTreeSet<Id>,
     pub(crate) var_initializers: BTreeSet<Id>,
+    /// Multiplicity for `var` declarations and initializer writes, collected
+    /// in the same visitor pass as reads and rebinds.
+    pub(crate) var_declaration_counts: BTreeMap<Id, usize>,
+    pub(crate) var_initializer_counts: BTreeMap<Id, usize>,
     pub(crate) reads: PositionBucketed<BTreeSet<Id>>,
     pub(crate) rebinds: PositionBucketed<BTreeSet<Id>>,
     /// Direct writes through a binding, including lazy bodies. A trusted
@@ -704,13 +708,19 @@ impl Visit for StatementFactsCollector {
     }
 
     fn visit_var_decl(&mut self, node: &VarDecl) {
-        if self.lazy_depth == 0 && node.kind == VarDeclKind::Var {
+        if node.kind == VarDeclKind::Var {
             for decl in &node.decls {
-                self.var_declared
-                    .extend(binding_targets::binding_names(&decl.name));
-                if decl.init.is_some() {
-                    self.var_initializers
-                        .extend(binding_targets::binding_names(&decl.name));
+                for id in binding_targets::binding_names(&decl.name) {
+                    *self.var_declaration_counts.entry(id.clone()).or_default() += 1;
+                    if decl.init.is_some() {
+                        *self.var_initializer_counts.entry(id.clone()).or_default() += 1;
+                    }
+                    if self.lazy_depth == 0 {
+                        self.var_declared.insert(id.clone());
+                        if decl.init.is_some() {
+                            self.var_initializers.insert(id);
+                        }
+                    }
                 }
             }
         }

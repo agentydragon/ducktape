@@ -359,6 +359,7 @@ pub fn resolve_imported_purities(
             local_class_construction_proof: &prepared_facts.local_class_construction_proof,
             plain_data_bindings: &prepared_facts.plain_data_bindings,
             plain_array_bindings: &prepared_facts.plain_array_bindings,
+            stable_var_number_candidates: &BTreeSet::new(),
         };
         let call_context = crate::purity::PurityCallContext {
             module,

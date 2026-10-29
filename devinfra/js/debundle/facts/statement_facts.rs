@@ -411,6 +411,14 @@ pub struct StructuralStatementFacts {
     pub var_declared: BTreeSet<Id>,
     /// Actual initializer writes; a bare `var x;` does not reset x.
     pub var_initializers: BTreeSet<Id>,
+    /// All `var` declaration and initializer occurrences in this statement,
+    /// including nested lazy syntax. Retained to prove unique stable bindings
+    /// without another AST census.
+    pub(crate) var_declaration_counts: BTreeMap<Id, usize>,
+    pub(crate) var_initializer_counts: BTreeMap<Id, usize>,
+    /// Direct top-level `var name = ...` candidates. Initializer type is
+    /// checked later; this records only source shape and hygienic identity.
+    pub(crate) top_level_var_initializer_candidates: BTreeSet<Id>,
     pub reads: PositionBucketed<BTreeSet<Id>>,
     pub rebinds: PositionBucketed<BTreeSet<Id>>,
     pub(crate) member_write_roots: BTreeSet<Id>,
@@ -451,6 +459,11 @@ pub struct StructuralChunkAnalysis<'a> {
     pub(crate) set_iterable_shapes: super::SetIterableShapes,
     pub(crate) local_class_shapes: super::LocalClassConstructionShapes,
     pub(crate) plain_data_bindings: Vec<String>,
+    /// Top-level `var` binding IDs that pass the structural stability gates.
+    /// Value inference admits only candidates with a proven Number initializer;
+    /// at arbitrary module positions the resulting value class is Number or
+    /// pre-initialization `undefined`, never exact Number.
+    pub(crate) stable_var_number_candidates: BTreeSet<Id>,
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,
     pub top_level_await: Option<SourceUnitOrdinal>,
