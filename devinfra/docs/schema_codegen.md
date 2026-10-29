@@ -49,9 +49,10 @@ them in one commit. Wait for the #12232 pilot before adding another mechanism.
 
 ## Rules
 
-- **Export from the production route graph.** OpenAPI and JSON Schema exporters build the real app or MCP server and
-  read its advertised contract; never a schema-only app or a fake-dependency exporter. The Go exporter registers routes
-  with placeholder services because Huma reads operation declarations without invoking handlers.
+- **Export from the production route graph.** Exporters register the real routes and models and read the advertised
+  contract without acquiring runtime resources (databases, clients, config files); never a schema-only app or a
+  fake-dependency exporter. The Go exporter registers routes with nil services; the Python app factories expose a
+  routes-only constructor the exporter calls.
 - **Import generated names directly.** See [STYLE.md § TypeScript](../../STYLE.md#typescript).
 - **Gotcha:** every TypeScript converter and `quicktype_codegen` runs under `//devinfra/js:schema_remote_fetch_guard`,
   which answers any HTTP `$ref` with a 400 during generation. A schema that resolves a remote reference fails the build;
