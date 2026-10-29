@@ -214,6 +214,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     assert native_session_id
     assert len(active.processes) == 1
     await runner.restart()
+    await gateway_service.wait_for_runner(remote, sandbox.destination)
     await wait_for_entries(
         runner, session, entries[-1].cursor, lambda tail: any(events.kind(entry) == "harness_exited" for entry in tail)
     )
@@ -223,8 +224,6 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     (stopped_session,) = [row for row in stopped.sessions if row.session_id == session]
     assert stopped_session.native_session_id == native_session_id
     assert stopped_session.execution_state == runner_pb2.SESSION_EXECUTION_STATE_DORMANT
-    # The restarted process reconnects through the Gateway before the next routed call.
-    await gateway_service.wait_for_runner(remote, sandbox.destination)
     resumed_entries = await complete_turn(remote, runner, sandbox.destination, model, session, "grpc-resumed")
     destination = remote.runner(sandbox.destination)
     resumed_starts = events.of_kind(resumed_entries, "harness_started")

@@ -108,7 +108,7 @@ class GatewayProcess:
                 await client.list_sessions(destination)
                 return
             except ServiceError as error:
-                if error.code != grpc.StatusCode.UNAVAILABLE:
+                if error.code not in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.ABORTED):
                     raise
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
