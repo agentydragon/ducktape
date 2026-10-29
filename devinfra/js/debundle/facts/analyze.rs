@@ -404,7 +404,7 @@ where
                 start_column: Some(start_column),
             })
         };
-        ChunkCodeGraph::build_full_with_prepared_plain_data_and_stable_vars(
+        ChunkCodeGraph::build_full_with_prepared_plain_data(
             &body,
             &shadowed,
             &hints.assumptions.declared_pure,

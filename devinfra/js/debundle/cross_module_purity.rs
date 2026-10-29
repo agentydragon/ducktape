@@ -172,6 +172,7 @@ impl<'a> ModulePurityFacts<'a> {
             &prepared.local_class_construction_proof,
             &prepared.plain_data_bindings,
             &prepared.plain_array_bindings,
+            &BTreeSet::new(),
             Some(&mut locate),
         )
     }

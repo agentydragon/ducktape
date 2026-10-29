@@ -248,7 +248,7 @@ impl ChunkCodeGraph {
         let local_class_construction_proof =
             prepared_sync_index.local_class_construction_proof().clone();
         let set_iterable_proof = prepared_sync_index.set_iterable_proof().clone();
-        Self::build_full_with_prepared_plain_data_and_stable_vars(
+        Self::build_full_with_prepared_plain_data(
             body,
             shadowed,
             declared_pure,
@@ -265,44 +265,11 @@ impl ChunkCodeGraph {
         )
     }
 
-    /// Reuse the chunk-wide escape scan when only imported purities change.
+    /// Reuse prepared chunk facts, including stable numeric-var candidates from
+    /// the canonical structural analysis. Callers without those candidates pass
+    /// an empty set and remain conservative.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_full_with_prepared_plain_data(
-        body: &[TopLevelItemView<'_>],
-        shadowed: &BTreeSet<&'static str>,
-        declared_pure: &BTreeSet<String>,
-        declared_pure_new: &BTreeSet<String>,
-        declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
-        imported_purities: &BTreeMap<String, Arc<Purity>>,
-        fluent_bindings: &BTreeSet<String>,
-        set_iterable_proof: &SetIterableProof,
-        local_class_construction_proof: &LocalClassConstructionProof,
-        plain_data_bindings: &[String],
-        plain_array_bindings: &BTreeSet<String>,
-        locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
-    ) -> Self {
-        Self::build_full_with_prepared_plain_data_and_stable_vars(
-            body,
-            shadowed,
-            declared_pure,
-            declared_pure_new,
-            declared_pure_members,
-            imported_purities,
-            fluent_bindings,
-            set_iterable_proof,
-            local_class_construction_proof,
-            plain_data_bindings,
-            plain_array_bindings,
-            &BTreeSet::new(),
-            locate,
-        )
-    }
-
-    /// Build with stable numeric-var bindings retained by the canonical
-    /// structural analysis. Other callers that do not own those facts use
-    /// `build_full_with_prepared_plain_data` and remain conservative.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn build_full_with_prepared_plain_data_and_stable_vars(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
