@@ -132,6 +132,12 @@ def test_changed_digest_is_pushed() -> None:
     ]
 
 
+def test_an_image_whose_gate_push_ci_already_failed_gets_no_job() -> None:
+    decision = decide(image(test="//airlock:test"), {"airlock": "sha256:new"}, FakeCrane({}))
+    assert decision.needs_push
+    assert matrix_include([decision], blocked_tests={"//airlock:test"}) == []
+
+
 def test_the_matrix_serializes_the_registry_as_the_name_the_workflow_compares() -> None:
     """`push-images.yml` gates its credential step on `matrix.registry == 'forgejo'`,
     so the enum must reach GitHub as its bare value, not its member name."""

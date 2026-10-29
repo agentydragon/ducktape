@@ -68,6 +68,41 @@ def _normalized_explicit_args(args: tuple[str, ...]) -> Counter[str] | None:
     return Counter(values) if values else None
 
 
+def _push_invocation_problem(
+    invocation: Invocation,
+    *,
+    invocation_id_value: str,
+    source_commit: str,
+    current_commit: str,
+    run_id: str,
+    run_attempt: str,
+    event_name: str,
+    rbe_image: str | None,
+) -> str | None:
+    """Why this invocation is not the normal push workflow's own full-sweep test of this source."""
+    if event_name != "push":
+        return "only push-CI evidence can be reused"
+    if not invocation_id_value or not run_id or not run_attempt:
+        return "test invocation identity is incomplete"
+    expected_id = str(invocation_id(run_id=run_id, attempt=run_attempt, role="test"))
+    if invocation_id_value != expected_id:
+        return "test invocation id does not match this workflow run"
+    if not source_commit or source_commit != current_commit or invocation.commit_sha != current_commit:
+        return "test invocation source revision does not match publication source"
+    if not rbe_image:
+        return "effective RBE image is unknown"
+    if invocation.command != "test":
+        return "BuildBuddy stream is not a Bazel test invocation"
+    if invocation.requested_patterns != ("//...",):
+        return "test invocation did not request the full workspace sweep"
+    if invocation.explicit_cmd_line is None:
+        return "test invocation has no unambiguous explicit command line"
+    actual_options = _normalized_explicit_args(invocation.explicit_cmd_line)
+    if not any(actual_options == expected for expected in _explicit_ci_options(invocation_id_value, rbe_image)):
+        return "test invocation Bazel or RBE configuration differs from publication"
+    return None
+
+
 def verified_test_summaries(
     invocation: Invocation | None,
     *,
@@ -87,33 +122,72 @@ def verified_test_summaries(
     """
     if invocation is None:
         return {}, "test invocation is unavailable"
-    if event_name != "push":
-        return {}, "only push-CI evidence can be reused"
-    if not invocation_id_value or not run_id or not run_attempt:
-        return {}, "test invocation identity is incomplete"
-    expected_id = str(invocation_id(run_id=run_id, attempt=run_attempt, role="test"))
-    if invocation_id_value != expected_id:
-        return {}, "test invocation id does not match this workflow run"
-    if not source_commit or source_commit != current_commit or invocation.commit_sha != current_commit:
-        return {}, "test invocation source revision does not match publication source"
-    if not rbe_image:
-        return {}, "effective RBE image is unknown"
+    problem = _push_invocation_problem(
+        invocation,
+        invocation_id_value=invocation_id_value,
+        source_commit=source_commit,
+        current_commit=current_commit,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        event_name=event_name,
+        rbe_image=rbe_image,
+    )
+    if problem is not None:
+        return {}, problem
     if not invocation.finished or not invocation.successful:
         return {}, "test invocation has no successful terminal BuildFinished event"
-    if invocation.command != "test":
-        return {}, "BuildBuddy stream is not a Bazel test invocation"
-    if invocation.requested_patterns != ("//...",):
-        return {}, "test invocation did not request the full workspace sweep"
-    if invocation.explicit_cmd_line is None:
-        return {}, "test invocation has no unambiguous explicit command line"
-    actual_options = _normalized_explicit_args(invocation.explicit_cmd_line)
-    if not any(actual_options == expected for expected in _explicit_ci_options(invocation_id_value, rbe_image)):
-        return {}, "test invocation Bazel or RBE configuration differs from publication"
 
     summaries: dict[str, list[TestSummary]] = defaultdict(list)
     for summary in invocation.test_summaries:
         summaries[summary.label].append(summary)
     return summaries, None
+
+
+# Verdicts a publication job's own `bazel test` of the same source and configuration repeats:
+# the test ran (or its build failed) deterministically. Infrastructure outcomes such as
+# REMOTE_FAILURE or INCOMPLETE keep the job's gate, which may succeed on retry.
+_REPEATABLE_FAILURES = frozenset({"FAILED", "TIMEOUT", "FAILED_TO_BUILD"})
+
+
+def recorded_test_failures(
+    invocation: Invocation | None,
+    *,
+    invocation_id_value: str,
+    source_commit: str,
+    current_commit: str,
+    run_id: str,
+    run_attempt: str,
+    event_name: str,
+    rbe_image: str | None,
+) -> frozenset[str]:
+    """Literal test labels whose verified push-CI verdict on this source is a repeatable failure.
+
+    The invocation only needs to have finished, not succeeded: a failed sweep is exactly
+    when these verdicts matter. Identity and configuration checks are the ones reuse makes.
+    """
+    if invocation is None or not invocation.finished:
+        return frozenset()
+    problem = _push_invocation_problem(
+        invocation,
+        invocation_id_value=invocation_id_value,
+        source_commit=source_commit,
+        current_commit=current_commit,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        event_name=event_name,
+        rbe_image=rbe_image,
+    )
+    if problem is not None:
+        return frozenset()
+    return frozenset(summary.label for summary in invocation.test_summaries if summary.status in _REPEATABLE_FAILURES)
+
+
+def selector_already_failed(selector: str, failed_labels: frozenset[str]) -> tuple[bool, str]:
+    """Whether a literal test in one publication selector already failed in push CI on this source."""
+    failed = [label for label in dict.fromkeys(selector.split()) if label in failed_labels]
+    if failed:
+        return True, f"{', '.join(failed)} failed in bazel-ci on this source"
+    return False, "no recorded bazel-ci failure"
 
 
 def selector_is_covered(selector: str, summaries: Mapping[str, list[TestSummary]]) -> tuple[bool, str]:

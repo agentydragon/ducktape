@@ -45,7 +45,13 @@ from pathlib import Path
 
 from devinfra.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob, merge, read
 from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, registry_digest, repo_for
-from devinfra.ci.publication_test_verdicts import effective_rbe_image, selector_is_covered, verified_test_summaries
+from devinfra.ci.publication_test_verdicts import (
+    effective_rbe_image,
+    recorded_test_failures,
+    selector_already_failed,
+    selector_is_covered,
+    verified_test_summaries,
+)
 from util.crane import Crane
 
 
@@ -171,11 +177,15 @@ def plan(images: list[Image], decider: Callable[[Image], Decision], workers: int
         return list(pool.map(decider, images))
 
 
-def matrix_include(decisions: list[Decision], reusable_tests: set[str] | None = None) -> list[dict[str, str]]:
+def matrix_include(
+    decisions: list[Decision], reusable_tests: set[str] | None = None, blocked_tests: set[str] | None = None
+) -> list[dict[str, str]]:
+    """Matrix rows for pushes; an image whose test gate push CI already failed never starts a job."""
     reusable_tests = reusable_tests or set()
+    blocked_tests = blocked_tests or set()
     rows = []
     for decision in decisions:
-        if not decision.needs_push:
+        if not decision.needs_push or decision.image.test in blocked_tests:
             continue
         row = {
             "image_name": decision.image.name,
@@ -248,12 +258,29 @@ def main(argv: list[str] | None = None) -> None:
         rbe_image=effective_rbe_image(args.rbe_container_image),
     )
 
+    failed_labels = recorded_test_failures(
+        test_invocation,
+        invocation_id_value=args.test_invocation_id,
+        source_commit=args.test_source_commit,
+        current_commit=os.environ.get("GITHUB_SHA", ""),
+        run_id=os.environ.get("GITHUB_RUN_ID", ""),
+        run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+        event_name=os.environ.get("GITHUB_EVENT_NAME", ""),
+        rbe_image=effective_rbe_image(args.rbe_container_image),
+    )
+
     crane = Crane(args.crane)
     decisions = plan(images, lambda image: decide(image, digests, crane), args.workers)
     reusable_tests = set()
+    blocked_tests = set()
     for decision in decisions:
         selector = decision.image.test
         if not decision.needs_push or not selector:
+            continue
+        blocked, why = selector_already_failed(selector, failed_labels)
+        if blocked:
+            blocked_tests.add(selector)
+            print(f"::warning::{decision.image.name}: not pushed, {why}", file=sys.stderr)
             continue
         covered, reason = (
             selector_is_covered(selector, summaries) if evidence_problem is None else (False, evidence_problem)
@@ -263,10 +290,10 @@ def main(argv: list[str] | None = None) -> None:
             print(f"::notice::{decision.image.name}: reusing the verified bazel-ci test verdict", file=sys.stderr)
         else:
             print(f"::notice::{decision.image.name}: retaining its test gate ({reason})", file=sys.stderr)
-    include = matrix_include(decisions, reusable_tests)
+    include = matrix_include(decisions, reusable_tests, blocked_tests)
 
     for d in sorted(decisions, key=lambda d: d.image.name):
-        marker = "PUSH" if d.needs_push else "skip"
+        marker = "PUSH" if d.needs_push and d.image.test not in blocked_tests else "skip"
         print(f"{marker:>4}  {d.image.name:<32} {d.reason}", file=sys.stderr)
     print(f"\n{len(include)} of {len(decisions)} images need a push.", file=sys.stderr)
 

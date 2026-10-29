@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import subprocess
 from pathlib import Path
@@ -128,6 +129,12 @@ def test_published_release_is_dropped() -> None:
 def test_unpublished_release_is_kept() -> None:
     decided = plan([make_release()], by_label_a(), lambda _: False, workers=2)
     assert [row["pkg"] for row in matrix_include(decided)] == ["pkg"]
+
+
+def test_a_release_whose_tests_push_ci_already_failed_gets_no_job() -> None:
+    release = dataclasses.replace(make_release(), tests="//:a_test")
+    decided = plan([release], by_label_a(), lambda _: False, workers=2)
+    assert matrix_include(decided, blocked_tests={"//:a_test"}) == []
 
 
 def test_the_tag_looked_up_is_the_content_tag() -> None:

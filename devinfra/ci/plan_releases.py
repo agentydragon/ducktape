@@ -50,7 +50,13 @@ from pathlib import Path
 from urllib.parse import quote
 
 from devinfra.ci.bes import BuildBuddyError, Invocation, Output, artifact_output, merge, read
-from devinfra.ci.publication_test_verdicts import effective_rbe_image, selector_is_covered, verified_test_summaries
+from devinfra.ci.publication_test_verdicts import (
+    effective_rbe_image,
+    recorded_test_failures,
+    selector_already_failed,
+    selector_is_covered,
+    verified_test_summaries,
+)
 from devinfra.ci.release_content_hash import release_content_hash_from_digests
 
 TAG_HASH_LENGTH = 12
@@ -196,11 +202,15 @@ def plan(
     return list(zip(releases, published, strict=True))
 
 
-def matrix_include(decided: list[tuple[Release, bool]], reusable_tests: set[str] | None = None) -> list[dict[str, str]]:
+def matrix_include(
+    decided: list[tuple[Release, bool]], reusable_tests: set[str] | None = None, blocked_tests: set[str] | None = None
+) -> list[dict[str, str]]:
+    """Matrix rows for releases; one whose tests push CI already failed never starts a job."""
     reusable_tests = reusable_tests or set()
+    blocked_tests = blocked_tests or set()
     rows = []
     for release, published in decided:
-        if published:
+        if published or (release.tests and release.tests in blocked_tests):
             continue
         row = release.as_matrix_row()
         if release.uses_default_config and release.tests and release.tests in reusable_tests:
@@ -271,10 +281,29 @@ def main(argv: list[str] | None = None) -> None:
         rbe_image=effective_rbe_image(args.rbe_container_image),
     )
 
+    failed_labels = recorded_test_failures(
+        test_invocation,
+        invocation_id_value=args.test_invocation_id,
+        source_commit=args.test_source_commit,
+        current_commit=os.environ.get("GITHUB_SHA", ""),
+        run_id=os.environ.get("GITHUB_RUN_ID", ""),
+        run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+        event_name=os.environ.get("GITHUB_EVENT_NAME", ""),
+        rbe_image=effective_rbe_image(args.rbe_container_image),
+    )
+
     decided = plan(releases, by_label, gh_tag_exists, args.workers)
     reusable_tests = set()
-    for release, _published in decided:
-        if not release.uses_default_config or not release.tests:
+    blocked_tests = set()
+    for release, published in decided:
+        if published or not release.tests:
+            continue
+        blocked, why = selector_already_failed(release.tests, failed_labels)
+        if blocked:
+            blocked_tests.add(release.tests)
+            print(f"::warning::{release.pkg}: not released, {why}", file=sys.stderr)
+            continue
+        if not release.uses_default_config:
             continue
         covered, reason = (
             selector_is_covered(release.tests, summaries) if evidence_problem is None else (False, evidence_problem)
@@ -284,10 +313,11 @@ def main(argv: list[str] | None = None) -> None:
             print(f"::notice::{release.pkg}: reusing the verified bazel-ci test verdict", file=sys.stderr)
         else:
             print(f"::notice::{release.pkg}: retaining its test gate ({reason})", file=sys.stderr)
-    include = matrix_include(decided, reusable_tests)
+    include = matrix_include(decided, reusable_tests, blocked_tests)
 
     for release, published in sorted(decided, key=lambda d: d[0].pkg):
-        print(f"{'skip' if published else 'RELEASE':>7}  {release.pkg}", file=sys.stderr)
+        skipped = published or (release.tests and release.tests in blocked_tests)
+        print(f"{'skip' if skipped else 'RELEASE':>7}  {release.pkg}", file=sys.stderr)
     print(f"\n{len(include)} of {len(decided)} releases need publishing.", file=sys.stderr)
 
     _write_github_output(matrix=json.dumps({"include": include}), count=str(len(include)))
