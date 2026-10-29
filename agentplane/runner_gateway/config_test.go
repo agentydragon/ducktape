@@ -14,8 +14,6 @@ const databaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL=postgres://user:
 
 const requiredFile = `dispatcher_callers: [agentplane/app, agentplane/notifications]
 gateway_callers: [agentplane/runner-gateway]
-runner_transports: [forward, reverse]
-runner_listen_address: ":8090"
 runner_tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}
 `
 
@@ -142,29 +140,6 @@ func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
 		if _, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+writeSettings(t, contents))); err == nil {
 			t.Fatalf("ran with %s", name)
 		}
-	}
-}
-
-func TestRunnerTransportSelectionIsExplicitAndListenerMatchesReverseMode(t *testing.T) {
-	for _, extra := range []string{
-		"runner_transports: []\n",
-		"runner_transports: [auto]\n",
-		"runner_transports: [reverse, reverse]\n",
-		"runner_transports: [forward]\nrunner_listen_address: ':8090'\n",
-		"runner_transports: [reverse]\nrunner_listen_address: ''\n",
-	} {
-		// Replace the deployment's transport keys rather than relying on YAML duplicate-key handling.
-		base := "dispatcher_callers: [agentplane/app]\ngateway_callers: [agentplane/runner-gateway]\nrunner_tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}\n"
-		if _, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+writeSettings(t, base+extra))); err == nil {
-			t.Fatalf("invalid transport configuration accepted: %s", extra)
-		}
-	}
-	base := "dispatcher_callers: [agentplane/app]\ngateway_callers: [agentplane/runner-gateway]\nrunner_tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}\n"
-	if _, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+writeSettings(t, base))); err == nil {
-		t.Fatal("missing runner transport selection was accepted")
-	}
-	if _, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+writeSettings(t, base+"runner_transports: [forward]\n"))); err != nil {
-		t.Fatalf("explicit forward mode should not open a reverse listener: %v", err)
 	}
 }
 

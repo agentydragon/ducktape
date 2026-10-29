@@ -25,10 +25,8 @@ const (
 	ControlServiceSuffix   = "-control"
 	ControlServicePortName = "grpc"
 	ControlServicePort     = 8080
-	// RunnerServicePort is the Pod or KubeVirt guest port used when the SandboxTemplate selects
-	// forward transport. The KubeVirt launcher exposes this guest port through masquerade.
+	// RunnerServicePort is the runner's mTLS listener port in a Pod or KubeVirt guest.
 	RunnerServicePort     = 9090
-	RunnerTransportLabel  = "agentplane.allegedly.works/runner-transport"
 	RunnerCredentialLabel = "agentplane.allegedly.works/runner-credential"
 )
 

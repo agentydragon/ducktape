@@ -16,10 +16,7 @@ NAMESPACE = "sandbox-admission"
 
 
 def _template_spec(*, pod: bool = False, vm: bool = True) -> dict[str, Any]:
-    spec: dict[str, Any] = {
-        "runnerTransport": "reverse",
-        "stateVolume": {"name": "state", "claim": {}, "layout": {"type": "DirectoryTree"}},
-    }
+    spec: dict[str, Any] = {"stateVolume": {"name": "state", "claim": {}, "layout": {"type": "DirectoryTree"}}}
     if pod:
         spec["pod"] = {}
     if vm:
@@ -54,13 +51,6 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
             [(True, False, True), (False, True, True), (False, False, False), (True, True, False)]
         ):
             await _create(api, "sandboxtemplates", f"kind-{index}", _template_spec(pod=pod, vm=vm), valid)
-
-        missing_transport = _template_spec()
-        del missing_transport["runnerTransport"]
-        await _create(api, "sandboxtemplates", "missing-runner-transport", missing_transport, False)
-        invalid_transport = _template_spec()
-        invalid_transport["runnerTransport"] = "automatic"
-        await _create(api, "sandboxtemplates", "invalid-runner-transport", invalid_transport, False)
 
         workspace_cases: list[tuple[dict[str, str], str | None, bool]] = [
             ({"type": "DirectoryTree"}, None, True),

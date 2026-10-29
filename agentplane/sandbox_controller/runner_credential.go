@@ -78,10 +78,6 @@ func (r *Reconciler) ensureRunnerCredential(ctx context.Context, sandbox *sandbo
 			w.runnerIncarnationPublished = previouslyPublishedRunnerIncarnation(sandbox, w)
 			return w, &unready{reason: "RunnerCredentialMissing", message: fmt.Sprintf("Pod %s has no controller-issued runner credential", w.pod.Name)}, nil
 		}
-		if !validRunnerTransport(w.pod.Labels[sandboxapi.RunnerTransportLabel]) {
-			w.runnerIncarnationPublished = previouslyPublishedRunnerIncarnation(sandbox, w)
-			return w, &unready{reason: "RunnerTransportMissing", message: fmt.Sprintf("Pod %s has no explicit runner transport", w.pod.Name)}, nil
-		}
 		boundID := sandbox.Annotations[RunnerCredentialIDAnnotation]
 		boundPodUID := sandbox.Annotations[RunnerCredentialPodUIDAnnotation]
 		if w.pod.UID == "" {
@@ -227,9 +223,6 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 
 	if w.vmi != nil {
 		vmiCredentialID := w.vmi.Labels[sandboxapi.RunnerCredentialLabel]
-		if !validRunnerTransport(w.vmi.Labels[sandboxapi.RunnerTransportLabel]) {
-			return w, &unready{reason: "RunnerTransportMissing", message: fmt.Sprintf("VMI %s has no explicit runner transport", w.vmi.Name)}, nil
-		}
 		switch {
 		case vmiCredentialID != id:
 			// A replacement VMI observed during credential rotation may still be terminating with its
@@ -419,7 +412,7 @@ func runnerCertificateObject(sandbox *sandboxapi.Sandbox, issuer, credentialID s
 				"group": runnerCertificateGroup,
 			},
 			"uris":       []interface{}{runnerCertificateURI(sandbox, credentialID)},
-			"usages":     []interface{}{"digital signature", "client auth", "server auth"},
+			"usages":     []interface{}{"digital signature", "server auth"},
 			"privateKey": map[string]interface{}{"algorithm": "ECDSA", "size": int64(256), "rotationPolicy": "Always"},
 			"secretTemplate": map[string]interface{}{"labels": map[string]interface{}{
 				sandboxapi.SandboxLabel:          sandbox.Name,
@@ -596,10 +589,6 @@ func validRunnerCredentialID(id string) bool {
 		return false
 	}
 	return true
-}
-
-func validRunnerTransport(transport string) bool {
-	return transport == string(sandboxapi.RunnerTransportForward) || transport == string(sandboxapi.RunnerTransportReverse)
 }
 
 func withRunnerTLS(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, spec *corev1.PodSpec, credentialID string) *unready {

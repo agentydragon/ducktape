@@ -54,15 +54,7 @@ func newConnectionRecords(
 	return &connectionRecords{coordination: coordination, discovery: discovery, namespace: namespace, holder: holder}, nil
 }
 
-func (r *connectionRecords) accept(ctx context.Context, sandbox sandboxreader.Identity, podUID, bootID string) (uint64, error) {
-	return r.acceptConnection(ctx, sandbox, podUID, bootID, false)
-}
-
-func (r *connectionRecords) claimForward(ctx context.Context, sandbox sandboxreader.Identity, podUID string) (uint64, error) {
-	return r.acceptConnection(ctx, sandbox, podUID, "", true)
-}
-
-func (r *connectionRecords) acceptConnection(ctx context.Context, sandbox sandboxreader.Identity, podUID, bootID string, exclusive bool) (uint64, error) {
+func (r *connectionRecords) claim(ctx context.Context, sandbox sandboxreader.Identity, podUID string) (uint64, error) {
 	leaseName := sandbox.Name + sandboxlease.RunnerLeaseSuffix
 	var epoch uint64
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -77,10 +69,10 @@ func (r *connectionRecords) acceptConnection(ctx context.Context, sandbox sandbo
 			if !ownsSandbox(current.OwnerReferences, sandbox) || !current.DeletionTimestamp.IsZero() {
 				return fmt.Errorf("refusing to adopt Lease %s: foreign or being deleted", leaseName)
 			}
-			if exclusive && current.Spec.HolderIdentity != nil && *current.Spec.HolderIdentity != r.holder.name &&
+			if current.Spec.HolderIdentity != nil && *current.Spec.HolderIdentity != r.holder.name &&
 				current.Spec.RenewTime != nil && current.Spec.LeaseDurationSeconds != nil &&
 				time.Now().Before(current.Spec.RenewTime.Add(time.Duration(*current.Spec.LeaseDurationSeconds)*time.Second)) {
-				return errForwardOwned
+				return errRunnerOwned
 			}
 			if current.Spec.LeaseTransitions != nil {
 				if *current.Spec.LeaseTransitions == math.MaxInt32 {
@@ -96,7 +88,7 @@ func (r *connectionRecords) acceptConnection(ctx context.Context, sandbox sandbo
 			ObjectMeta: metav1.ObjectMeta{
 				Name: leaseName, Namespace: r.namespace,
 				Labels:          map[string]string{sandboxlease.ConnectionLabel: "true"},
-				Annotations:     map[string]string{sandboxlease.PodUIDAnnotation: podUID, sandboxlease.RunnerBootIDAnnotation: bootID},
+				Annotations:     map[string]string{sandboxlease.PodUIDAnnotation: podUID},
 				OwnerReferences: []metav1.OwnerReference{sandboxOwnerReference(sandbox)},
 			},
 			Spec: coordinationv1.LeaseSpec{

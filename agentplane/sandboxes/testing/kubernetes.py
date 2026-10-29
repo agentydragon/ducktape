@@ -28,7 +28,6 @@ from util.kubernetes import CustomObjectsClient
 SANDBOX = "test-runner"
 _MERGE_PATCH = "application/merge-patch+json"
 _RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/runner-credential"
-_RUNNER_TRANSPORT_LABEL = "agentplane.allegedly.works/runner-transport"
 _RUNNER_CREDENTIAL_ID = "test-runner-credential"
 
 
@@ -144,7 +143,7 @@ async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -
         k8s_client.V1Pod(
             metadata=k8s_client.V1ObjectMeta(
                 name=name,
-                labels={_RUNNER_CREDENTIAL_LABEL: _RUNNER_CREDENTIAL_ID, _RUNNER_TRANSPORT_LABEL: "reverse"},
+                labels={_RUNNER_CREDENTIAL_LABEL: _RUNNER_CREDENTIAL_ID},
                 owner_references=[
                     k8s_client.V1OwnerReference(
                         api_version=sandbox_resource.SANDBOX_API_VERSION,

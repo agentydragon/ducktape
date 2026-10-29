@@ -12,7 +12,7 @@ not redesign storage, the History Service, or policy.
 1. **Run a Sandbox.** Reconcile the `Sandbox` CR into a state volume and, while running, one Pod
    or VM. Kind (`pod` or `vm`) comes from the template.
 2. **Reach its runner.** Callers address `<sandbox>-control`; the replica holding the runner's
-   dial-out connection answers.
+   observation Lease answers.
 3. **Say what state it is in.** Created, starting, booting, connected, ready, quiescing,
    suspended, tearing down, and why it is stuck when it is.
 4. **Quiesce** (today's "seal"; one operation, names in D3). Before a Pod or VM goes away (suspend or delete), stop admitting work,
@@ -33,12 +33,12 @@ not redesign storage, the History Service, or policy.
   gateway's runner proxy and records `status.quiescedIncarnation` on any quiesce and sets `Quiesced` on a deleting Sandbox only (`finalize`), beside the older sealed names. It
   reads the connection Lease's facts. `Ready` is `WorkloadReady` AND `RunnerConnected`. `QuiesceResponse.stage` has
   one reader, the controller.
-- **Runner Gateway** (`runner_gateway/`): the `RunnerControl.Connect` listener and proxy of the runner's `Runner` service. It writes per-Sandbox Leases and EndpointSlices; it does not create the `<sandbox>-control` Service (its `services` RBAC rule stays until the controller's image is pinned). Session openings and durable commands belong to the Dispatcher; the Gateway owns no Session registry or database.
+- **Runner Gateway** (`runner_gateway/`): state observation and proxy of the runner's private `Runner` service. It writes per-Sandbox Leases and EndpointSlices; it does not create the `<sandbox>-control` Service (its `services` RBAC rule stays until the controller's image is pinned). Session openings and durable commands belong to the Dispatcher; the Gateway owns no Session registry or database.
 - **Integration app** (`app/`): submits Sandbox desired state and operator-owned grants through the
   Kubernetes API, reads Sandbox views, and attaches the output-only VM console. It acts as the
   requesting operator; the Sandbox Controller owns status and reconciled resources.
 - **Runner**: harnesses, journal, command admission, `Quiesce` (a durable lameduck keyed to the incarnation UID,
-  dropped on a `Welcome` carrying another). It publishes its quiesce stage and bootstrap result on its heartbeat. It starts the Sandbox's `bootstrap` at runner start, and `OpenSession`
+  dropped when `WatchState` adopts another). It publishes its quiesce stage and bootstrap result on `WatchState`. It starts the Sandbox's `bootstrap` at runner start, and `OpenSession`
   still waits for it. The per-command RPCs refuse work in lameduck with `ABORTED`.
 - **History Service**: ingress (journals pushed by runners, acked by cursor), raw log, fold, reads; records which
   Sandbox wrote each Session. Folds `last_model_activity_at`.
@@ -149,36 +149,14 @@ CRs do not edit them"). A gateway rollout drops every connection at once; the co
 treat the reconnect window as connectivity lost, not as a Sandbox failure, and must not replace or
 restart anything because of it (no automatic spec replacement).
 
-**etcd write cost of runner facts.** The gateway already renews every connected Sandbox's Lease: its loop wakes every `heartbeat_s` (10 s) and
-renews once `touch_s` (15 s) has passed, so the effective cadence is 20 s and each connected Sandbox costs
-about three etcd writes a minute before this design adds anything. `idleSince` therefore adds no writes: the gateway holds the latest value in memory and
-puts it on the Lease in the next scheduled renewal, so the annotation change rides a write that happens
-anyway. `idleSince` changes whenever the runner goes idle, which can be frequent while an agent works, which
-is why it is not written on its own; the controller needs it only to minutes of precision, so up to one renewal
-interval of lag is harmless. Cost on the reading side: the controller's Lease watch already sees a renewal event every 20 s per
-connected Sandbox and must filter on annotation or holder changes rather than reconcile on each. Revisit only if the renewal write rate itself becomes a problem, and then lengthen `touch_s`
-before adding a second channel.
+**Runner facts and Lease writes.** `Runner.WatchState` publishes complete snapshots on fact
+changes and periodically. The Gateway records the facts with authenticated liveness on the Lease;
+readers use them only while the Lease names the current incarnation and remains live. Claiming a
+new observation clears previous facts until the runner reports again. The controller filters Lease
+watch events on facts and ownership changes rather than reconciling every renewal. Revisit write
+cadence only if measured etcd pressure requires it.
 
-**How the runner's facts reach the gateway: on its heartbeat, event driven.**
-The runner's facts (quiesce stage, `idleSince`, bootstrap result, the running-setups fact of D3) ride the
-runner's heartbeat as `optional RunnerFacts facts`. `Heartbeat {}` is shared with the gateway's own heartbeat
-(`ServiceFrame.heartbeat`), so the field goes on a runner-only `RunnerHeartbeat`, which `RunnerFrame.heartbeat`
-takes under the same field number: wire-compatible both ways, and a gateway that predates the field ignores it
-(reader before writer). The runner sends one immediately when a fact changes and with its first after each
-connect, so nothing polls and a reconnect republishes.
-
-- `facts`, when present, is the runner's whole current state. A heartbeat without `facts` repeats nothing; inside
-  `facts`, `idleSince` absent means busy, so there is no separate `busy` fact.
-- The gateway holds each connection's latest facts and every Lease write, renewals included, carries them. A
-  runner that sends only on change never resends, so a failed immediate write (a stage change, the bootstrap
-  result) is retried from the gateway's copy, not by the runner. The copy is per connection, so a new
-  connection starts empty. `accept()` rebuilds the Lease with only the pod UID and boot ID annotations, and the
-  facts come back with the runner's first heartbeat on the new connection (a different incarnation starts with
-  none, D3 Outside the runner).
-- Stage transitions and the bootstrap result are written to the Lease at once. Only `idleSince` is coalesced into
-  the regular renewal.
-
-### D3. Quiescing is one operation; names say which stage a Sandbox is in
+## D3. Quiescing is one operation; names say which stage a Sandbox is in
 
 **Quiescing is one operation on the whole runner, not on its Sessions**. It
 puts the runner in a durable lameduck state, in which it accepts only the operations that drain it,
@@ -200,21 +178,19 @@ reboot in the same VMI) keeps the runner quiesced; a new incarnation on the same
 runner records the state under configured `state_dir`, which is the state volume and therefore outlives the incarnation, so the
 marker names the incarnation it was entered in:
 
-- **Incarnation identity.** The runner does not choose it. The gateway already authenticates the
-  connecting Pod and refuses one that is not the Sandbox's current incarnation
-  (`runner_gateway/gateway/control.go`); its `Welcome` carries that incarnation's UID (the Pod, or a
-  VM's virt-launcher Pod, as `status.incarnation` names it). `runner_boot_id` cannot serve: it
-  changes on every runner process start, restarts included.
-- **Keying.** Entering lameduck writes the marker with the incarnation UID the runner last saw in a
-  `Welcome`. The runner serves nothing before it connects, since every call arrives over the control
-  stream, so on each `Welcome` it compares: same UID, the marker stands and the runner stays
-  quiesced across the restart; different UID, the marker belongs to an earlier incarnation and is
-  removed before any call is accepted, and the runner starts unquiesced.
+- **Incarnation identity.** The Gateway resolves the Sandbox's current Pod or virt-launcher
+  incarnation and authenticates the runner certificate before observing `Runner.WatchState`.
+  Its request carries that incarnation's UID. `runner_boot_id` cannot serve: it changes on every
+  runner process start, restarts included.
+- **Keying.** Entering lameduck writes the marker with the adopted incarnation UID. The runner
+  refuses normal calls before `WatchState` adopts an incarnation. Same UID preserves the marker
+  and keeps the runner quiesced across restart; a different UID drops the marker before accepting
+  calls, so the new incarnation starts unquiesced.
 - **Journals.** Each Session's journal sealed at its final cursor in the earlier incarnation. The
   new incarnation continues it after that cursor with an entry recording that it resumed;
   [Reopening a sealed journal](#reopening-a-sealed-journal) decides how.
 - **Outside the runner.** Runner facts on the Lease are valid only while its `pod-uid` names the incarnation:
-  the gateway's `accept()` (`connection_records.py`) rebuilds the Lease with only `pod-uid` and `runner-boot-id` on every
+  the Gateway's observation claim (`runner_gateway/gateway/records.go`) rebuilds the Lease with only `pod-uid` and `runner-boot-id` on every
   accepted connection, and the controller's shared Lease facts decoder (`sandboxes/lease/facts.go`) accepts facts only while `pod-uid`
   equals the incarnation, so a stale `Quiesced` is never read for the new one. The controller's `quiescedIncarnation` is compared with
   the current `status.incarnation`; after a resume they differ, which is what makes the new
@@ -333,7 +309,7 @@ the invariant that makes `Quiesced` safe, and option 2 would need option 1's pat
   (gateway outage) looks the same on the current Lease, so `NeverRan` reads the `pod-uid` annotation the gateway
   writes on the Sandbox-owned Lease at each accepted connection: the Pod UID of the runner that last connected, or
   empty if none ever did. No separate "set once" fact is needed.
-- _Two incarnations on one volume._ A `Welcome` with a different UID drops the earlier lameduck marker, which is
+- _Two incarnations on one volume._ `WatchState` adoption of a different UID drops the earlier lameduck marker, which is
   safe only if incarnation N is gone before N+1's runner writes. That holds by structure: the Pod is named after the
   Sandbox, so N+1 cannot exist while N does, and a halted VM's VMI blocks the next start. It is an invariant; giving
   incarnations unique names would need the wait added back.

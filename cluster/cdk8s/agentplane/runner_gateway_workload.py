@@ -1,7 +1,7 @@
 """The Gateway workload and its Goose migration init container.
 
-The public API, private runner mTLS listener and stable Service addresses are defined in
-`runner_gateway.py`; this module wires their listener and network-policy boundaries."""
+The public API and stable Service address are defined in `runner_gateway.py`; this module wires
+the Gateway's public listeners and direct mTLS connections to runner Pods."""
 
 from __future__ import annotations
 
@@ -80,42 +80,20 @@ def dispatcher_service(namespace: str) -> ServiceRef:
     )
 
 
-def runner_control_service(namespace: str, *, port: Port | None = None) -> ServiceRef:
-    """The shared listener behind a caller-selected control Service port."""
-    control = runner_gateway.runner_control(namespace)
-    return control if port is None else replace(control, port=port)
-
-
 def _account(account: ServiceAccountRef) -> str:
     return f"{account.namespace}/{account.name}"
 
 
-def add_stable_services(scope: Construct, env: Environment, *, control: ServiceRef | None = None) -> None:
+def add_stable_services(scope: Construct, env: Environment) -> None:
     """Keep stable Services in their root Flux owner, targeting the shared listener."""
     proxy = runner_gateway.service(env.namespace)
-    control = control or runner_control_service(env.namespace)
     dispatcher = dispatcher_service(env.namespace)
     dispatcher_http = session_dispatcher.http_service(env.namespace)
     k8s.KubeService(
         scope,
         "runner-gateway-service",
         metadata=k8s.ObjectMeta(name=proxy.name, namespace=env.namespace, labels=proxy.labels),
-        spec=k8s.ServiceSpec(
-            selector=proxy.pods.selector,
-            ports=(
-                [proxy.port.k8s_service_port()]
-                if control.port.number == proxy.port.number
-                else [
-                    proxy.port.k8s_service_port(),
-                    k8s.ServicePort(
-                        name=control.port.name,
-                        port=control.port.number,
-                        target_port=k8s.IntOrString.from_number(control.pod_port),
-                        protocol="TCP",
-                    ),
-                ]
-            ),
-        ),
+        spec=k8s.ServiceSpec(selector=proxy.pods.selector, ports=[proxy.port.k8s_service_port()]),
     )
     k8s.KubeService(
         scope,
@@ -139,7 +117,7 @@ def add_stable_services(scope: Construct, env: Environment, *, control: ServiceR
 
 
 class RunnerGateway(Construct):
-    """One workload with public gRPC, dispatcher HTTP and private runner mTLS listeners."""
+    """One workload with public gRPC, dispatcher HTTP and an mTLS client for runner Pods."""
 
     def __init__(
         self,
@@ -153,7 +131,6 @@ class RunnerGateway(Construct):
         gateway_callers: Mapping[ServiceAccountRef, Pods],
         wake_callers: frozenset[ServiceAccountRef],
         sandbox_controller: tuple[ServiceAccountRef, Pods],
-        control: ServiceRef | None = None,
         registry_secret_name: str | None = "forgejo-images-creds",
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         container_env: Mapping[str, EnvValue] | None = None,
@@ -171,8 +148,6 @@ class RunnerGateway(Construct):
         self.dispatcher_callers = dispatcher_callers
         self.sandbox_controller_pods = sandbox_controller[1]
         proxy = runner_gateway.service(namespace)
-        control = control or runner_control_service(namespace)
-        self.control = control
         dispatcher_http = session_dispatcher.http_service(namespace)
         own_account = ServiceAccountRef(namespace=namespace, name=runner_gateway.NAME)
         # A delivery worker may run on a different replica from the holder. It calls
@@ -189,7 +164,6 @@ class RunnerGateway(Construct):
                 "dispatcher_audience": session_dispatcher.TOKEN_AUDIENCE,
                 "gateway_audience": runner_gateway.TOKEN_AUDIENCE,
                 "runner_control_target_template": runner_gateway.control_target(namespace),
-                "runner_listen_address": "0.0.0.0:8090",
                 "sandbox_controller_account": _account(sandbox_controller[0]),
             }.items()
         }
@@ -200,7 +174,6 @@ class RunnerGateway(Construct):
         content = {
             "dispatcher_callers": dispatcher_accounts,
             "gateway_callers": gateway_accounts,
-            "runner_transports": ["forward", "reverse"],
             "runner_tls": {"cert_file": _RUNNER_TLS_CERT, "key_file": _RUNNER_TLS_KEY, "ca_file": _RUNNER_TLS_CA},
             **({"wake_callers": wake_accounts} if wake_accounts else {}),
         }
@@ -214,7 +187,7 @@ class RunnerGateway(Construct):
         workload = add_service_workload(
             self,
             env,
-            serves=[proxy, control],
+            serves=[proxy],
             extra_ports=[dispatcher_http.container_port()],
             container="runner-gateway",
             image=image,
@@ -302,16 +275,13 @@ class RunnerGateway(Construct):
                     pods.admit(dispatcher.pod_port, dispatcher_http.pod_port)
                     for pods in self.dispatcher_callers.values()
                 ),
-                runner_sandbox.reverse_pods(namespace).admit(self.control.pod_port),
             ],
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(namespace),
                 proxy.egress(),
-                EgressRule.to_endpoints(
-                    runner_sandbox.forward_pods(namespace).cilium, runner_sandbox.RUNNER_SERVICE_PORT
-                ),
+                EgressRule.to_endpoints(runner_sandbox.pods(namespace).cilium, runner_sandbox.RUNNER_SERVICE_PORT),
             ],
         )
 

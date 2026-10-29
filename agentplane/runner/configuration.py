@@ -57,23 +57,9 @@ def _valid_host_port(value: str, field: str) -> str:
     return value
 
 
-class ReverseControl(BaseModel):
+class RunnerControl(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    mode: Literal["reverse"]
-    target: str = Field(min_length=1, description="Private Runner Gateway host:port.")
-    tls: RunnerTransportTLS
-
-    @field_validator("target")
-    @classmethod
-    def valid_target(cls, value: str) -> str:
-        return _valid_host_port(value, "control.target")
-
-
-class ForwardControl(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    mode: Literal["forward"]
     listen_address: str = Field(min_length=1, description="Runner gRPC listener host:port.")
     tls: RunnerTransportTLS
 
@@ -81,9 +67,6 @@ class ForwardControl(BaseModel):
     @classmethod
     def valid_listen_address(cls, value: str) -> str:
         return _valid_host_port(value, "control.listen_address")
-
-
-RunnerControl = Annotated[ReverseControl | ForwardControl, Field(discriminator="mode")]
 
 
 class ResourceLimits(BaseModel):

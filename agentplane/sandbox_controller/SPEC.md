@@ -65,14 +65,13 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   already sealed to new work, and the Sandbox is to run.
 - Each incarnation reads `spec.template` and the template as they are when it starts. Editing
   either never changes a running Pod or VM, its kind included.
-- Every `SandboxTemplate` must set `spec.runnerTransport` to `forward` or `reverse`; there is no
-  default or fallback. The controller copies that choice and a fresh runner credential ID onto the
-  live Pod or VM template as labels, so the Gateway authorizes the workload's stored choice rather
-  than rereading a mutable template.
+- Runner control always uses the runner as an mTLS server and the Runner Gateway as its client. The
+  controller exposes no transport choice on a `SandboxTemplate` and labels workloads only with the
+  fresh credential ID used to bind each incarnation to its certificate.
 - Before starting a new workload, the controller creates a cert-manager `Certificate` named
   `runner-<credential-id>` and waits for its generated TLS Secret. The leaf URI SAN is exactly
-  `spiffe://agentplane/runner/<namespace>/<Sandbox UID>/<credential-id>` and has client and server
-  authentication usages. The namespace Issuer signs it; cert-manager owns key generation and
+  `spiffe://agentplane/runner/<namespace>/<Sandbox UID>/<credential-id>` and has server
+  authentication usage. The namespace Issuer signs it; cert-manager owns key generation and
   renewal. Runner TLS files mount from that generation's unique Secret, and the shared trust-manager
   CA bundle supplies the root. A renewed key can update only its own generation's Secret.
 - A Pod UID is bound to its credential before the controller publishes its incarnation. A VM's
@@ -135,8 +134,7 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 
 Every Sandbox has a headless, selector-less `<sandbox>-control` Service on the Runner Gateway's
 public proxy port, 8080. Callers use their workload bearers to reach the connection holder through
-this Service. Reverse runners dial the stable private mTLS Gateway Service on port 8090.
-The controller repairs the per-Sandbox Service's managed fields; the Gateway owns its EndpointSlice.
+this Service. The Gateway connects directly to the current workload's mTLS runner listener on port 9090. The controller repairs the per-Sandbox Service's managed fields; the Gateway owns its EndpointSlice.
 A foreign same-name Service blocks new workload starts.
 
 ## Launch
@@ -176,7 +174,7 @@ virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunni
 (`VMRunning`). Otherwise it is False, with reason `Stopped`, `Starting`, `PullingImage`, `Stopping`, `PodEnded`,
 `VMEnded`, `SuspendPending`, `Quiescing`, `Deleting`,
 `TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `VolumeLayoutMismatch`,
-`RunnerTransportMissing`, `RunnerCredentialMissing`, `RunnerCredentialRequired`,
+`RunnerCredentialMissing`, `RunnerCredentialRequired`,
 `RunnerCredentialPending`, `RunnerCredentialMismatch`, `RunnerCredentialCleanupPending`,
 `RunnerCertificateIssuerMissing`, `CertificatePending`, `CertificateConflict`,
 `CertificateIdentityConflict`, `CertificateSecretPending`, `CertificateSecretConflict`,
@@ -197,7 +195,7 @@ with the reason and message of `Running`.
 incarnation's Pod and was renewed within its duration plus a grace, so a connection from an earlier
 incarnation never counts and a gateway rollout's brief drop does not. It is False with `NeverConnected`,
 `AwaitingRunner`, `ConnectionLost`, `ConnectionPending` or `WorkloadNotReady`. `ConnectionPending`
-means the authenticated forward connection has not reported its runner boot ID, so it is not yet a
+means the authenticated Gateway connection has not reported its runner boot ID, so it is not yet a
 live connection. Losing the connection restarts and replaces nothing. A controller not configured to
 read Leases omits it.
 

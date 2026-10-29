@@ -129,13 +129,12 @@ async def start_runner(
         harness_env: Sequence[str] = (),
         runner_binary: Path | None = None,
     ) -> RunnerProcess:
-        connections = gateway.control.connections
         process = await asyncio.create_subprocess_exec(
             *launches.runner_command(
                 harness,
                 endpoint.origin,
                 state_dir=tmp_path / "state",
-                gateway=gateway.endpoint,
+                control=gateway.endpoint,
                 ingress=ingress,
                 test_debug_checkpoint=test_debug_checkpoint,
                 bootstrap=bootstrap,
@@ -148,9 +147,23 @@ async def start_runner(
         )
         runner = RunnerProcess(process, tmp_path / "state")
         started.append(runner)
-        await gateway.control.wait_ready(connections + 1)
+        connected = asyncio.create_task(gateway.control.connect(gateway.endpoint, launches.SANDBOX.uid))
+        exited = asyncio.create_task(process.wait())
+        try:
+            done, _ = await asyncio.wait((connected, exited), return_when=asyncio.FIRST_COMPLETED)
+            if exited in done:
+                raise RuntimeError(f"Go runner exited with {exited.result()}")
+            await connected
+        except BaseException:
+            await runner.stop()
+            raise
+        finally:
+            connected.cancel()
+            exited.cancel()
+            await asyncio.gather(connected, exited, return_exceptions=True)
         return runner
 
     yield start
     for runner in started:
         await runner.stop()
+    await gateway.control.disconnect()

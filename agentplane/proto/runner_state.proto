@@ -1,0 +1,35 @@
+// Runner state published by WatchState and recorded on the connection Lease.
+syntax = "proto3";
+
+package agentplane.proto;
+
+import "agentplane/proto/sandboxes.proto";
+import "google/protobuf/timestamp.proto";
+
+// What the runner publishes about itself, for the Runner Gateway to record on the Sandbox's connection
+// Lease.
+message RunnerFacts {
+  enum QuiesceStage {
+    QUIESCE_STAGE_UNSPECIFIED = 0;  // not quiescing
+    QUIESCE_STAGE_DRAINING = 1;     // refusing new work, stopping harnesses
+    QUIESCE_STAGE_FLUSHING = 2;     // journals final, ingress acknowledgements pending
+    QUIESCE_STAGE_QUIESCED = 3;     // every final cursor acknowledged
+  }
+  enum Bootstrap {
+    BOOTSTRAP_UNSPECIFIED = 0;  // the Sandbox has none, or it has not started
+    BOOTSTRAP_RUNNING = 1;
+    BOOTSTRAP_SUCCEEDED = 2;
+    BOOTSTRAP_FAILED = 3;
+    BOOTSTRAP_INTERRUPTED = 4;
+  }
+
+  QuiesceStage quiesce_stage = 1;
+  // When the whole Sandbox became idle: active turns, pending commands, setup, activation, bootstrap,
+  // command admission and connected executor relays make it busy. Absent while busy, and from a runner
+  // that does not track it.
+  google.protobuf.Timestamp idle_since = 2;
+  Bootstrap bootstrap = 3;
+  // Some Session's setup script is running. A suspend waits for it to finish.
+  bool setups_running = 4;
+  repeated agentplane.proto.AutosuspendBlocker autosuspend_blockers = 5;
+}

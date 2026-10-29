@@ -434,7 +434,7 @@ Sandbox -> Pod, PVC               v
                     Session Dispatcher
                          | runner proxy
                          Runner Gateway
-                            |  RunnerControl stream
+                            |  mTLS Runner gRPC
                     runner process, state dir on the PVC
                     claude / codex child per session
                     model traffic to LiteLLM through the egress proxy, which holds the key
@@ -643,9 +643,9 @@ one. Which lists the service enforces is its contract
 
 ## Decisions
 
-- **Connection direction:** the runner dials out, to the Runner Gateway's
-  [control stream](../docs/runner_control.md) and to its Event ingress; runner Pods admit no
-  connections, so Pod replacement changes nothing a caller holds.
+- **Connection direction:** the Runner Gateway dials the runner's private mTLS gRPC server
+  ([runner control](../docs/runner_control.md)); the runner pushes journals to Event ingress.
+  Callers use the per-Sandbox control Service across Pod replacements.
 - **Model credentials:** staging uses a dedicated key for OpenAI/Claude subscription and local
   Ollama chat routes; testing uses the `cheap-experiments` LiteLLM key. The Pod holds no
   key or workload token: a harness sends the inert placeholder the `agentplane-workload`

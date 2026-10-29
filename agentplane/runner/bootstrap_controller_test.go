@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
-	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 )
 
 func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
@@ -98,7 +98,7 @@ func TestBootstrapRuntimeFailureDoesNotLeaveLogDerivedBusyFact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if facts.Bootstrap != controlpb.RunnerFacts_BOOTSTRAP_FAILED {
+	if facts.Bootstrap != runnerstatepb.RunnerFacts_BOOTSTRAP_FAILED {
 		t.Fatalf("bootstrap fact = %v, want failed", facts.Bootstrap)
 	}
 	for _, blocker := range facts.AutosuspendBlockers {

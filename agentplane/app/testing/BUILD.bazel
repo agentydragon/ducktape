@@ -198,7 +198,7 @@ py_library(
         "//agentplane/proto:event_pb2",
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway/testing:gateway_process",
-        "//agentplane/runner_gateway/testing:runner_connection",
+        "//agentplane/runner_gateway/testing:runner_server",
         "//agentplane/sandboxes/testing:kubernetes",
         "//util/bazel:runfiles",
         "//util/testing:frontend_visual",

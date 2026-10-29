@@ -1,4 +1,4 @@
-"""Both explicit runner-control mTLS directions reach one Gateway and preserve admitted work."""
+"""Runner mTLS certificates authenticate Pod and VM sessions across incarnation changes."""
 
 from __future__ import annotations
 
@@ -16,14 +16,19 @@ from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.sandbox_resource import OperatingMode
-from agentplane.system_tests.agent import TURN_SECONDS, Agent, Turn
+from agentplane.system_tests.agent import TURN_SECONDS, WORKING_DIRECTORY, Agent, Turn
 from agentplane.system_tests.cluster import kubectl
-from agentplane.system_tests.conftest import FORWARD_POD_TEMPLATE, POD_TEMPLATE, Sandboxes, wait_until_running
+from agentplane.system_tests.conftest import (
+    POD_TEMPLATE,
+    VM_TEMPLATE,
+    VM_WORKING_DIRECTORY,
+    Sandboxes,
+    wait_until_running,
+)
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 _RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/runner-credential"
-_RUNNER_TRANSPORT_LABEL = "agentplane.allegedly.works/runner-transport"
 _SANDBOX_LABEL = "agentplane.allegedly.works/sandbox"
 
 
@@ -80,11 +85,11 @@ async def _history(client: Client, thread_id: UUID, *, completed_turns: int) -> 
     return entries
 
 
-async def _identity(name: str) -> tuple[str, str, str]:
-    pod = json.loads(await kubectl("get", "pod", name, "-o", "json"))
+async def _identity(pod_name: str) -> tuple[str, str]:
+    pod = json.loads(await kubectl("get", "pod", pod_name, "-o", "json"))
     metadata = pod["metadata"]
     labels = metadata["labels"]
-    return (metadata["uid"], labels[_RUNNER_CREDENTIAL_LABEL], labels[_RUNNER_TRANSPORT_LABEL])
+    return (metadata["uid"], labels[_RUNNER_CREDENTIAL_LABEL])
 
 
 async def _ready_certificate(
@@ -94,7 +99,7 @@ async def _ready_certificate(
     spec = certificate["spec"]
     assert spec["secretName"] == f"runner-{credential_id}"
     assert spec["uris"] == [f"spiffe://agentplane/runner/{namespace}/{sandbox_uid}/{credential_id}"]
-    assert set(spec["usages"]) >= {"client auth", "server auth"}
+    assert set(spec["usages"]) == {"digital signature", "server auth"}
     assert any(
         condition["type"] == "Ready" and condition["status"] == "True"
         for condition in certificate["status"]["conditions"]
@@ -128,8 +133,10 @@ async def _wait_suspended(client: Client, name: str) -> None:
             assert view.pod is None
 
 
-async def _open_agent(client: Client, name: str, harness: runner_pb2.Harness, model_name: str) -> Agent:
-    agent = await Agent.open(client, sandbox=name, harness=harness, model=model_name)
+async def _open_agent(
+    client: Client, name: str, harness: runner_pb2.Harness, model_name: str, *, cwd: str = WORKING_DIRECTORY
+) -> Agent:
+    agent = await Agent.open(client, sandbox=name, harness=harness, model=model_name, cwd=cwd)
     await client.wait_for_thread_feed(agent.thread_id, timeout_s=REQUEST_SECONDS)
     return agent
 
@@ -149,7 +156,7 @@ async def test_cert_manager_reissues_a_deleted_tls_secret() -> None:
                 "issuerRef": {"name": "agentplane-runner-ca", "kind": "Issuer"},
                 "uris": [f"spiffe://agentplane/test-reissue/{name}"],
                 "privateKey": {"algorithm": "ECDSA", "size": 256, "rotationPolicy": "Always"},
-                "usages": ["digital signature", "client auth", "server auth"],
+                "usages": ["digital signature", "server auth"],
             },
         },
     )
@@ -177,72 +184,37 @@ async def test_cert_manager_reissues_a_deleted_tls_secret() -> None:
 
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
-async def test_forward_and_reverse_mtls_share_gateway_and_forward_resume_keeps_history(
+async def test_pod_mtls_session_survives_replacement_and_keeps_history(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
 ) -> None:
-    reverse, forward = await asyncio.gather(
-        sandbox(f"systest-transport-reverse-{uuid4().hex[:8]}", template=POD_TEMPLATE),
-        sandbox(f"systest-transport-forward-{uuid4().hex[:8]}", template=FORWARD_POD_TEMPLATE),
-    )
-    assert reverse.pod is not None
-    assert forward.pod is not None
-    reverse_identity, forward_identity = await asyncio.gather(_identity(reverse.name), _identity(forward.name))
-    assert reverse_identity[2] == "reverse"
-    assert forward_identity[2] == "forward"
-    await asyncio.gather(
-        _ready_certificate(
-            f"runner-{reverse_identity[1]}", reverse.name, str(reverse.uid), reverse_identity[1], reverse.namespace
-        ),
-        _ready_certificate(
-            f"runner-{forward_identity[1]}", forward.name, str(forward.uid), forward_identity[1], forward.namespace
-        ),
-    )
+    view = await sandbox(f"systest-runner-pod-{uuid4().hex[:8]}", template=POD_TEMPLATE)
+    assert view.pod is not None
+    old_pod_uid, old_credential_id = await _identity(view.pod.name)
+    await _ready_certificate(f"runner-{old_credential_id}", view.name, str(view.uid), old_credential_id, view.namespace)
 
-    reverse_agent, forward_agent = await asyncio.gather(
-        _open_agent(client, reverse.name, harness, offered_model),
-        _open_agent(client, forward.name, harness, offered_model),
+    agent = await _open_agent(client, view.name, harness, offered_model)
+    model = scripted.model(view.pod.name, harness)
+    marker = f"POD_CONTEXT_{uuid4().hex}"
+    turn, history_before, _ = await _turn(
+        client,
+        agent,
+        model=model,
+        command_id=f"pod-{uuid4().hex}",
+        prompt=f"Remember this invented non-secret code for our next turn: {marker}. Run a shell check.",
+        shell_command="printf 'POD_MTLS_OK\\n'",
+        response="POD_MTLS_OK",
     )
-    reverse_model = scripted.model(reverse.pod.name, harness)
-    forward_model = scripted.model(forward.pod.name, harness)
-    marker = f"FORWARD_CONTEXT_{uuid4().hex}"
-    (reverse_turn, _, _), (forward_turn, _, _) = await asyncio.gather(
-        _turn(
-            client,
-            reverse_agent,
-            model=reverse_model,
-            command_id=f"reverse-{uuid4().hex}",
-            prompt="Run the reverse transport check.",
-            shell_command="printf 'REVERSE_MTLS_OK\\n'",
-            response="REVERSE_MTLS_OK",
-        ),
-        _turn(
-            client,
-            forward_agent,
-            model=forward_model,
-            command_id=f"forward-{uuid4().hex}",
-            prompt=(
-                f"Remember this invented non-secret code for our next turn: {marker}. Run the forward transport check."
-            ),
-            shell_command="printf 'FORWARD_MTLS_OK\\n'",
-            response="FORWARD_MTLS_OK",
-        ),
-    )
-    assert "REVERSE_MTLS_OK" in "\n".join(reverse_turn.tool_outputs)
-    assert "FORWARD_MTLS_OK" in "\n".join(forward_turn.tool_outputs)
+    assert "POD_MTLS_OK" in "\n".join(turn.tool_outputs)
 
-    old_pod_uid, old_credential_id, old_transport = await _identity(forward.name)
-    assert old_transport == "forward"
-    history_before = await _history(client, forward_agent.thread_id, completed_turns=1)
-    await client.suspend_sandbox(forward.name)
-    await _wait_suspended(client, forward.name)
-    await client.resume_sandbox(forward.name)
-    resumed = await wait_until_running(client, forward.name)
-    assert resumed.uid == forward.uid
+    await client.suspend_sandbox(view.name)
+    await _wait_suspended(client, view.name)
+    await client.resume_sandbox(view.name)
+    resumed = await wait_until_running(client, view.name)
+    assert resumed.uid == view.uid
     assert resumed.pod is not None
-    new_pod_uid, new_credential_id, new_transport = await _identity(forward.name)
+    new_pod_uid, new_credential_id = await _identity(resumed.pod.name)
     assert new_pod_uid != old_pod_uid
     assert new_credential_id != old_credential_id
-    assert new_transport == "forward"
     await _ready_certificate(
         f"runner-{new_credential_id}", resumed.name, str(resumed.uid), new_credential_id, resumed.namespace
     )
@@ -250,7 +222,7 @@ async def test_forward_and_reverse_mtls_share_gateway_and_forward_resume_keeps_h
     resumed_model = scripted.model(resumed.pod.name, harness)
     turn, history_after, recall = await _turn(
         client,
-        forward_agent,
+        agent,
         model=resumed_model,
         command_id=f"resume-{uuid4().hex}",
         prompt="Recall the invented code from our earlier conversation. Reply with only that code.",
@@ -263,6 +235,33 @@ async def test_forward_and_reverse_mtls_share_gateway_and_forward_resume_keeps_h
     history_before_serialized = [entry.SerializeToString() for entry in history_before]
     assert [entry.SerializeToString() for entry in history_after[: len(history_before)]] == history_before_serialized
     assert len(history_after) > len(history_before)
+
+
+@pytest.mark.vm_sandboxes
+@pytest.mark.scripted_model
+@pytest.mark.timeout(600)
+async def test_vm_mtls_certificate_authenticates_a_session(
+    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, offered_model: str, scripted: ScriptedUpstream
+) -> None:
+    view = await sandbox(f"systest-runner-vm-{uuid4().hex[:8]}", template=VM_TEMPLATE)
+    assert view.pod is not None
+    pod_uid, credential_id = await _identity(view.pod.name)
+    await _ready_certificate(f"runner-{credential_id}", view.name, str(view.uid), credential_id, view.namespace)
+
+    agent = await _open_agent(client, view.name, harness, offered_model, cwd=VM_WORKING_DIRECTORY)
+    model = scripted.model(view.pod.name, harness)
+    turn, _, _ = await _turn(
+        client,
+        agent,
+        model=model,
+        command_id=f"vm-{uuid4().hex}",
+        prompt="Run a shell check in the VM runner.",
+        shell_command="printf 'VM_MTLS_OK\\n'",
+        response="VM_MTLS_OK",
+    )
+    assert "VM_MTLS_OK" in "\n".join(turn.tool_outputs)
+    current_pod_uid, current_credential_id = await _identity(view.pod.name)
+    assert (current_pod_uid, current_credential_id) == (pod_uid, credential_id)
 
 
 if __name__ == "__main__":

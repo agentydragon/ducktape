@@ -7,7 +7,6 @@ import (
 
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	executor_gatewaypb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/go/auth"
 	"google.golang.org/grpc"
@@ -19,9 +18,8 @@ import (
 )
 
 // Config contains the per-process Gateway role wiring. Public callers use TokenReview;
-// runner transports use certificate identities on separate private connections.
+// runner connections use certificate identities and incarnation-fenced metadata.
 type Config struct {
-	RunnerTransports         []string
 	RunnerTLS                runner_transport.Config
 	Namespace                string
 	CallerAccounts           []auth.Account
@@ -30,7 +28,7 @@ type Config struct {
 	HolderIP                 string
 	ProxyPort                int32
 	ControlTiming            ControlTiming
-	// ExecutorCallers enables the opt-in raw executor WebSocket tunnel independently from the
+	// ExecutorCallers enables the opt-in raw executor WebSocket stream independently from the
 	// Runner proxy's caller allowlist. An empty set leaves the public RPC unregistered.
 	ExecutorCallers []auth.Account
 }
@@ -72,8 +70,7 @@ func validateControlTiming(timing ControlTiming) error {
 	return nil
 }
 
-// Gateway serves the per-Sandbox Runner proxy and accepts runner-initiated connections on the
-// separately registered control listener.
+// Gateway serves the per-Sandbox Runner proxy and dials each Runner's authenticated gRPC server.
 type Gateway struct {
 	config          Config
 	callerAuth      *auth.Resolver
@@ -96,16 +93,6 @@ func New(
 ) (*Gateway, error) {
 	if config.Namespace == "" || len(config.CallerAccounts) == 0 || callerAuth == nil {
 		return nil, fmt.Errorf("Gateway namespace, caller policy and token resolvers are required")
-	}
-	if len(config.RunnerTransports) == 0 {
-		return nil, fmt.Errorf("runner transports must explicitly select forward, reverse, or both")
-	}
-	seen := make(map[string]bool)
-	for _, mode := range config.RunnerTransports {
-		if (mode != "forward" && mode != "reverse") || seen[mode] {
-			return nil, fmt.Errorf("invalid or duplicate runner transport %q", mode)
-		}
-		seen[mode] = true
 	}
 	if config.HolderName == "" || config.HolderIP == "" || config.ProxyPort < 1 {
 		return nil, fmt.Errorf("Gateway holder Pod name, IP and proxy port are required")
@@ -153,8 +140,7 @@ func New(
 	}, nil
 }
 
-// RegisterProxy installs the per-Sandbox Runner proxy. RunnerControl.Connect is deliberately
-// registered on a separate listener.
+// RegisterProxy installs the per-Sandbox Runner proxy.
 func (g *Gateway) RegisterProxy(server *grpc.Server) {
 	runnerservicepb.RegisterRunnerServer(server, &runnerProxy{gateway: g})
 }
@@ -166,16 +152,6 @@ func (g *Gateway) RegisterExecutorGateway(server *grpc.Server) {
 		return
 	}
 	executor_gatewaypb.RegisterExecutorGatewayServer(server, &executorGatewayServer{gateway: g})
-}
-
-// RegisterRunnerControl serves the runner-initiated bidirectional connection on the private
-// mTLS listener when reverse transport is enabled.
-func (g *Gateway) RegisterRunnerControl(server *grpc.Server) {
-	for _, mode := range g.config.RunnerTransports {
-		if mode == "reverse" {
-			runnercontrolpb.RegisterRunnerControlServer(server, &runnerControlServer{gateway: g})
-		}
-	}
 }
 
 // WatchConnectionLeases must sync before the public gRPC services start accepting requests.

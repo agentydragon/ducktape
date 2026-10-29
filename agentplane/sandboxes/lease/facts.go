@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
+	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 )
 
@@ -57,30 +57,30 @@ type RunnerFacts struct {
 	AutosuspendBlockers []sandboxapi.AutosuspendBlocker
 }
 
-// FromProto converts RunnerControl's facts into the Lease protocol. Unknown enum values are errors
+// FromProto converts the runner's state facts into the Lease protocol. Unknown enum values are errors
 // at the writer boundary; the decoder below names unknown values from a newer Gateway.
-func FromProto(message *runnercontrolpb.RunnerFacts) (RunnerFacts, error) {
+func FromProto(message *runnerstatepb.RunnerFacts) (RunnerFacts, error) {
 	var facts RunnerFacts
 	switch message.GetQuiesceStage() {
-	case runnercontrolpb.RunnerFacts_QUIESCE_STAGE_UNSPECIFIED:
-	case runnercontrolpb.RunnerFacts_QUIESCE_STAGE_DRAINING:
+	case runnerstatepb.RunnerFacts_QUIESCE_STAGE_UNSPECIFIED:
+	case runnerstatepb.RunnerFacts_QUIESCE_STAGE_DRAINING:
 		facts.Stage = QuiesceDraining
-	case runnercontrolpb.RunnerFacts_QUIESCE_STAGE_FLUSHING:
+	case runnerstatepb.RunnerFacts_QUIESCE_STAGE_FLUSHING:
 		facts.Stage = QuiesceFlushing
-	case runnercontrolpb.RunnerFacts_QUIESCE_STAGE_QUIESCED:
+	case runnerstatepb.RunnerFacts_QUIESCE_STAGE_QUIESCED:
 		facts.Stage = QuiesceQuiesced
 	default:
 		return RunnerFacts{}, fmt.Errorf("unknown runner quiesce stage %d", message.GetQuiesceStage())
 	}
 	switch message.GetBootstrap() {
-	case runnercontrolpb.RunnerFacts_BOOTSTRAP_UNSPECIFIED:
-	case runnercontrolpb.RunnerFacts_BOOTSTRAP_RUNNING:
+	case runnerstatepb.RunnerFacts_BOOTSTRAP_UNSPECIFIED:
+	case runnerstatepb.RunnerFacts_BOOTSTRAP_RUNNING:
 		facts.Bootstrap = BootstrapRunning
-	case runnercontrolpb.RunnerFacts_BOOTSTRAP_SUCCEEDED:
+	case runnerstatepb.RunnerFacts_BOOTSTRAP_SUCCEEDED:
 		facts.Bootstrap = BootstrapSucceeded
-	case runnercontrolpb.RunnerFacts_BOOTSTRAP_FAILED:
+	case runnerstatepb.RunnerFacts_BOOTSTRAP_FAILED:
 		facts.Bootstrap = BootstrapFailed
-	case runnercontrolpb.RunnerFacts_BOOTSTRAP_INTERRUPTED:
+	case runnerstatepb.RunnerFacts_BOOTSTRAP_INTERRUPTED:
 		facts.Bootstrap = BootstrapInterrupted
 	default:
 		return RunnerFacts{}, fmt.Errorf("unknown runner bootstrap state %d", message.GetBootstrap())

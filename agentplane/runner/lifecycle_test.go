@@ -14,11 +14,11 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
-	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -331,7 +331,7 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if facts.QuiesceStage != controlpb.RunnerFacts_QUIESCE_STAGE_FLUSHING {
+	if facts.QuiesceStage != runnerstatepb.RunnerFacts_QUIESCE_STAGE_FLUSHING {
 		t.Fatalf("facts after under-cursor acknowledgement = %s, want FLUSHING", facts.QuiesceStage)
 	}
 	if current := r.lifecycle.status(); current.Stage != runnerlifecycle.Flushing {
@@ -350,7 +350,7 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if facts.QuiesceStage != controlpb.RunnerFacts_QUIESCE_STAGE_QUIESCED {
+	if facts.QuiesceStage != runnerstatepb.RunnerFacts_QUIESCE_STAGE_QUIESCED {
 		t.Fatalf("facts after exact sealed cursor acknowledgement = %s, want QUIESCED", facts.QuiesceStage)
 	}
 }

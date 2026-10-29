@@ -1,4 +1,4 @@
-"""Client for the Runner Gateway's opt-in central Codex executor tunnel."""
+"""Client for the Runner Gateway's opt-in central Codex executor stream."""
 
 from __future__ import annotations
 

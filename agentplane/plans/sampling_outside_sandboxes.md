@@ -81,7 +81,7 @@ comparable nested-call latency remain open. No deployment changes.
 The app-server dials each exec-server over WebSocket; a bearer needs `wss://` or loopback. The other
 direction, the exec-server registering itself, either uses a Noise relay to OpenAI's environment
 registry or, in "direct" mode, requires AWS SigV4 ([exec-server README][es-readme]). Neither fits
-Agentplane, whose runners dial out and admit no connections ([runner control](../docs/runner_control.md)).
+Agentplane, whose runners expose private mTLS gRPC servers ([runner control](../docs/runner_control.md)).
 What fits is a byte tunnel: the Runner Gateway serves a per-Sandbox WebSocket endpoint, carries it over
 the runner's existing outbound connection to the loopback exec-server, and the central harness
 `environment/add`s that endpoint with a per-Sandbox bearer.

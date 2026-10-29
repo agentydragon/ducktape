@@ -43,7 +43,7 @@ from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
-from agentplane.runner_gateway.testing.runner_connection import runner_connection
+from agentplane.runner_gateway.testing.runner_server import runner_server
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import deterministic_browser_context, disable_animations_script
@@ -162,10 +162,8 @@ async def scripted_runner(
     tmp_path: Path,
 ) -> AsyncIterator[None]:
     """`source`'s scripted runner, connected to the Runner Gateway as `sandbox`'s runner."""
-    if gateway_service.runner_target is None:
-        raise AssertionError("reverse Runner transport did not open its private listener")
-    async with runner_connection(
-        gateway_service.runner_target,
+    async with runner_server(
+        "127.0.0.1:9090",
         gateway_service.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
         partial(add_replication_source, source),
     ):

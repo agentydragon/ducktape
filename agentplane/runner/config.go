@@ -4,6 +4,7 @@ package runner
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,11 +60,8 @@ type Endpoint struct {
 	Bearer string `json:"bearer"`
 }
 
-// RunnerControlConfiguration is a required, explicit transport selection. Only one of Target or
-// ListenAddress is valid for the selected mode; every mode uses certificate authentication.
+// RunnerControlConfiguration exposes the Runner as a Gateway-dialed mTLS gRPC server.
 type RunnerControlConfiguration struct {
-	Mode          string                 `json:"mode"`
-	Target        string                 `json:"target"`
 	ListenAddress string                 `json:"listen_address"`
 	TLS           runnertransport.Config `json:"tls"`
 }
@@ -84,10 +82,10 @@ type Config struct {
 }
 
 func validateControlIdentity(config Config) error {
-	if config.Control.Mode == "" {
+	if config.Control.TLS.CertFile == "" {
 		return nil // Unit tests may construct a Runner without the executable's file configuration.
 	}
-	identity, err := config.Control.TLS.LocalIdentity()
+	identity, err := config.Control.TLS.LocalIdentity(x509.ExtKeyUsageServerAuth)
 	if err != nil {
 		return fmt.Errorf("Runner control certificate: %w", err)
 	}

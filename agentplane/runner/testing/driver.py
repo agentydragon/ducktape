@@ -1,5 +1,4 @@
-"""Drive a runner as the Runner Gateway and its clients do: calls to its `Runner` service over the
-runner's control stream, and each session's Events as its ingress committed them."""
+"""Drive a Runner through its mTLS control listener and read Events from History ingress."""
 
 from __future__ import annotations
 
@@ -17,13 +16,12 @@ from agentplane.history_service import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.settled_cursors import unstored_ranges
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, wait_for_history_session
-from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, runner_pb2, runner_state_pb2
 from agentplane.runner import runner_service_pb2
 from agentplane.runner.configuration import Endpoint
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.process import RunningRunner
-from agentplane.runner_gateway import runner_control_pb2
 
 # The `Runner` stub types its calls; mypy reads stubs only from direct deps.
 # gazelle:include_dep //agentplane/runner:runner_service_pb2_grpc
@@ -277,7 +275,7 @@ class RunnerDriver:
         runner = await self.gateway.control.runner()
         response = await runner.Quiesce(runner_pb2.QuiesceRequest())
         await self.gateway.control.wait_for_facts(
-            runner_control_pb2.RunnerFacts(quiesce_stage=runner_control_pb2.RunnerFacts.QUIESCE_STAGE_QUIESCED)
+            runner_state_pb2.RunnerFacts(quiesce_stage=runner_state_pb2.RunnerFacts.QUIESCE_STAGE_QUIESCED)
         )
         sessions = await runner.ListSessions(runner_pb2.ListSessionsRequest())
         for session in sessions.sessions:

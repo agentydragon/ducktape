@@ -284,7 +284,7 @@ The central-sampling portion is now owned by active `CENTRAL_SAMPLER_V1` in
 the completed Codex placement and Postgres harness spikes (operator, 2026-10-27). Do not create a competing authority
 decision here. A standalone redesign of legacy Sandbox-hosted runners remains deferred until explicitly
 selected. Central-admission implementation still waits for the reviewed authority design. Transport direction
-is settled separately by the [runner control stream](../docs/runner_control.md), which currently retains
+is settled separately by the [runner control](../docs/runner_control.md), which currently retains
 runner durability.
 
 ### `RUNNER_JOURNAL_SETTLEMENT` — settle deltas in the runner journal too
@@ -305,7 +305,7 @@ Conditional on the authority decision. Durable central admission/redelivery is d
 
 ### `RUNNER_OUTBOUND_CUTOVER` — migrate to thin, outbound-connected adapters
 
-Only if the thin-adapter/central-authority design is selected, after its per-harness catch-up and safe image transition. Runner dial-out is a separate, existing transport ([runner control stream](../docs/runner_control.md)).
+Only if the thin-adapter/central-authority design is selected, after its per-harness catch-up and safe image transition. Runner control currently uses private mTLS gRPC ([runner control](../docs/runner_control.md)).
 
 ### `COMMAND_QUEUE_DECISION` — where submission becomes durable
 

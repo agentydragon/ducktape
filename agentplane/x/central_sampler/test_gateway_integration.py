@@ -72,7 +72,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 dispatcher_audience="test-central-dispatcher",
                 gateway_audience=gateway_audience,
                 runner_proxy_token_file=gateway_token,
-                runner_transports=("reverse",),
             ) as gateway,
             go_history_service(
                 history_database,
@@ -92,18 +91,20 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 codex_executor_socket=codex_exec_server_container.socket,
             )
             config = replace(config, launch=replace(config.launch, sandbox=sandbox.identity))
-            if gateway.runner_target is None:
-                raise AssertionError("reverse Runner transport did not open its private listener")
-            control = configuration.ReverseControl(
-                mode="reverse",
-                target=gateway.runner_target,
+            control = configuration.RunnerControl(
+                listen_address="127.0.0.1:9090",
                 tls=gateway.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
             )
             ingress = configuration.Endpoint(
                 target=history.ingress_target, bearer=await history.writer_token(sandbox.owner)
             )
             async with RunningRunner(
-                config, runner_gateway, history=history.reader, ingress_endpoint=ingress, control_endpoint=control
+                config,
+                runner_gateway,
+                history=history.reader,
+                ingress_endpoint=ingress,
+                control_endpoint=control,
+                observe_control=False,
             ) as running_runner:
                 await gateway.wait_for_runner(gateway.gateway_client(gateway_token), sandbox.destination)
                 values = settings(

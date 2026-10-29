@@ -6,11 +6,11 @@ import (
 	"sort"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	sandboxpb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
-	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -164,7 +164,7 @@ func runnerLifecycleBlocker(blocker runnerlifecycle.Blocker) *runnerpb.RunnerLif
 	}
 }
 
-func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
+func (r *Runner) facts() (*runnerstatepb.RunnerFacts, error) {
 	sessions := r.sessions.Inventory()
 	var blockers []*sandboxpb.AutosuspendBlocker
 	setup := false
@@ -175,7 +175,7 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 		}
 		blockers = append(blockers, sessionBlockers...)
 	}
-	facts := &controlpb.RunnerFacts{SetupsRunning: setup}
+	facts := &runnerstatepb.RunnerFacts{SetupsRunning: setup}
 	if r.bootstrapHost.Configured() {
 		input, requested, err := bootstrap.ReadInput(r.ctx, r.lifecycle.state)
 		if err != nil {
@@ -187,16 +187,16 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 				return nil, err
 			}
 			if !hasRuntime || runtime.Phase == bootstrap.Dormant || runtime.Phase == bootstrap.Running {
-				facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_RUNNING
+				facts.Bootstrap = runnerstatepb.RunnerFacts_BOOTSTRAP_RUNNING
 				blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendBootstrap})
 			} else {
 				switch runtime.Phase {
 				case bootstrap.Succeeded:
-					facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_SUCCEEDED
+					facts.Bootstrap = runnerstatepb.RunnerFacts_BOOTSTRAP_SUCCEEDED
 				case bootstrap.Failed:
-					facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_FAILED
+					facts.Bootstrap = runnerstatepb.RunnerFacts_BOOTSTRAP_FAILED
 				case bootstrap.Interrupted:
-					facts.Bootstrap = controlpb.RunnerFacts_BOOTSTRAP_INTERRUPTED
+					facts.Bootstrap = runnerstatepb.RunnerFacts_BOOTSTRAP_INTERRUPTED
 				default:
 					return nil, fmt.Errorf("unknown bootstrap phase %d", runtime.Phase)
 				}
@@ -237,12 +237,12 @@ func (r *Runner) facts() (*controlpb.RunnerFacts, error) {
 	})
 	facts.AutosuspendBlockers = blockers
 	if r.store.Lameduck() {
-		facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_DRAINING
+		facts.QuiesceStage = runnerstatepb.RunnerFacts_QUIESCE_STAGE_DRAINING
 		current, desiredState := r.lifecycle.status(), r.lifecycle.desiredState()
 		if current.Generation == desiredState.Generation && current.Stage >= runnerlifecycle.Flushing {
-			facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_FLUSHING
+			facts.QuiesceStage = runnerstatepb.RunnerFacts_QUIESCE_STAGE_FLUSHING
 			if current.Stage == runnerlifecycle.Quiesced {
-				facts.QuiesceStage = controlpb.RunnerFacts_QUIESCE_STAGE_QUIESCED
+				facts.QuiesceStage = runnerstatepb.RunnerFacts_QUIESCE_STAGE_QUIESCED
 			}
 		}
 	}

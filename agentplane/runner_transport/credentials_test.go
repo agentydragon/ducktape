@@ -18,20 +18,20 @@ import (
 	"google.golang.org/grpc/peer"
 )
 
-func TestMutualTLSAuthenticatesBothDirections(t *testing.T) {
+func TestGatewayClientAuthenticatesRunnerServer(t *testing.T) {
 	ca := runnertransporttesting.NewCA(t)
 	runnerURI, err := runner_transport.RunnerURI("agent-ns", "sandbox-uid", "pod-uid")
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := ca.Issue(t, runnerURI)
-	gateway := ca.Issue(t, runner_transport.GatewayURI)
+	runner := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth)
+	gateway := ca.IssueWithUsage(t, runner_transport.GatewayURI, x509.ExtKeyUsageClientAuth)
 
-	clientCredentials, err := runner.ClientCredentials(runner_transport.GatewayURI)
+	clientCredentials, err := gateway.ClientCredentials(runnerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverCredentials, err := gateway.ServerCredentials("")
+	serverCredentials, err := runner.ServerCredentials(runner_transport.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,16 +39,16 @@ func TestMutualTLSAuthenticatesBothDirections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := runner_transport.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: clientInfo})); err != nil || got != runner_transport.GatewayURI {
+	if got, err := runner_transport.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: clientInfo})); err != nil || got != runnerURI {
 		t.Fatalf("client saw peer identity %q, error %v", got, err)
 	}
-	if got, err := runner_transport.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: serverInfo})); err != nil || got != runnerURI {
+	if got, err := runner_transport.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: serverInfo})); err != nil || got != runner_transport.GatewayURI {
 		t.Fatalf("server saw peer identity %q, error %v", got, err)
 	}
-	if got, err := runner.LocalIdentity(); err != nil || got != runnerURI {
+	if got, err := runner.LocalIdentity(x509.ExtKeyUsageServerAuth); err != nil || got != runnerURI {
 		t.Fatalf("local identity is %q, error %v", got, err)
 	}
-	if got, err := gateway.LocalIdentity(); err != nil || got != runner_transport.GatewayURI {
+	if got, err := gateway.LocalIdentity(x509.ExtKeyUsageClientAuth); err != nil || got != runner_transport.GatewayURI {
 		t.Fatalf("Gateway local identity is %q, error %v", got, err)
 	}
 }
@@ -63,13 +63,13 @@ func TestClientPinsExactPeerURI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := ca.Issue(t, runnerURI)
-	gateway := ca.Issue(t, runner_transport.GatewayURI)
-	clientCredentials, err := runner.ClientCredentials(otherRunnerURI)
+	runner := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth)
+	gateway := ca.IssueWithUsage(t, runner_transport.GatewayURI, x509.ExtKeyUsageClientAuth)
+	clientCredentials, err := gateway.ClientCredentials(otherRunnerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverCredentials, err := gateway.ServerCredentials("")
+	serverCredentials, err := runner.ServerCredentials(runner_transport.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,21 +79,24 @@ func TestClientPinsExactPeerURI(t *testing.T) {
 	}
 }
 
-func TestServerWildcardAcceptsOnlyRunnerIdentities(t *testing.T) {
+func TestRunnerServerRejectsAnotherRunnerAsClient(t *testing.T) {
 	ca := runnertransporttesting.NewCA(t)
-	gateway := ca.Issue(t, runner_transport.GatewayURI)
-	client := ca.Issue(t, runner_transport.GatewayURI)
-	clientCredentials, err := client.ClientCredentials(runner_transport.GatewayURI)
+	runnerURI, err := runner_transport.RunnerURI("agent-ns", "sandbox-uid", "credential-id")
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverCredentials, err := gateway.ServerCredentials("")
+	runner := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth)
+	client := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageClientAuth)
+	clientCredentials, err := client.ClientCredentials(runnerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = handshake(t, clientCredentials, serverCredentials)
-	if err == nil {
-		t.Fatal("server accepted a Gateway identity in its Runner-only wildcard mode")
+	serverCredentials, err := runner.ServerCredentials(runner_transport.GatewayURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := handshake(t, clientCredentials, serverCredentials); err == nil {
+		t.Fatal("runner accepted another runner as its Gateway")
 	}
 }
 
@@ -106,11 +109,11 @@ func TestCredentialsRejectUntrustedRootsAndMissingEKU(t *testing.T) {
 	}
 	runner := trustedCA.Issue(t, runnerURI)
 	gateway := otherCA.Issue(t, runner_transport.GatewayURI)
-	clientCredentials, err := runner.ClientCredentials(runner_transport.GatewayURI)
+	clientCredentials, err := gateway.ClientCredentials(runnerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverCredentials, err := gateway.ServerCredentials("")
+	serverCredentials, err := runner.ServerCredentials(runner_transport.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,13 +143,13 @@ func TestCredentialsRejectExpiredLeafAndRootCertificates(t *testing.T) {
 		x509.ExtKeyUsageClientAuth,
 		x509.ExtKeyUsageServerAuth,
 	)
-	if _, err := expiredLeaf.ClientCredentials(runner_transport.GatewayURI); err == nil {
-		t.Fatal("client credentials accepted an expired leaf certificate")
+	if _, err := expiredLeaf.ServerCredentials(runner_transport.GatewayURI); err == nil {
+		t.Fatal("server credentials accepted an expired leaf certificate")
 	}
 
 	expiredCA := runnertransporttesting.NewCAWithValidity(t, now.Add(-2*time.Hour), now.Add(-time.Hour))
-	gateway := expiredCA.Issue(t, runner_transport.GatewayURI)
-	if _, err := gateway.ServerCredentials(""); err == nil {
+	runner := expiredCA.Issue(t, runnerURI)
+	if _, err := runner.ServerCredentials(runner_transport.GatewayURI); err == nil {
 		t.Fatal("server credentials accepted an expired CA certificate")
 	}
 }
@@ -160,15 +163,15 @@ func TestCredentialsReloadRotatedCertificateAndRoots(t *testing.T) {
 	}
 	runner := oldCA.Issue(t, runnerURI)
 	gateway := oldCA.Issue(t, runner_transport.GatewayURI)
-	clientCredentials, err := runner.ClientCredentials(runner_transport.GatewayURI)
+	clientCredentials, err := gateway.ClientCredentials(runnerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverCredentials, err := gateway.ServerCredentials("")
+	serverCredentials, err := runner.ServerCredentials(runner_transport.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, beforeInfo, err := handshake(t, clientCredentials, serverCredentials)
+	beforeInfo, _, err := handshake(t, clientCredentials, serverCredentials)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,15 +190,15 @@ func TestCredentialsReloadRotatedCertificateAndRoots(t *testing.T) {
 	copyFile(t, rotatedRunner.CertFile, runner.CertFile)
 	copyFile(t, rotatedRunner.KeyFile, runner.KeyFile)
 
-	_, afterInfo, err := handshake(t, clientCredentials, serverCredentials)
+	afterInfo, _, err := handshake(t, clientCredentials, serverCredentials)
 	if err != nil {
 		t.Fatal(err)
 	}
 	afterLeaf := peerLeaf(t, afterInfo)
 	if string(beforeLeaf.Raw) == string(afterLeaf.Raw) {
-		t.Fatal("second handshake used the old client certificate")
+		t.Fatal("second handshake used the old server certificate")
 	}
-	if got, err := runner.LocalIdentity(); err != nil || got != runnerURI {
+	if got, err := runner.LocalIdentity(x509.ExtKeyUsageServerAuth); err != nil || got != runnerURI {
 		t.Fatalf("rotated local identity is %q, error %v", got, err)
 	}
 }

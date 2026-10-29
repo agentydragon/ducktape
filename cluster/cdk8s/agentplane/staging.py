@@ -554,7 +554,6 @@ def chart(app: App) -> Chart:
         ),
         runner_name=POD_TEMPLATE,
         runner_image=_RUNNER_IMAGE,
-        runner_transport="reverse",
         runner_key_files=(_BUILDBUDDY_KEY,),
     )
     NetworkPolicy(

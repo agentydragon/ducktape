@@ -48,7 +48,6 @@ func testTemplate(image string) *sandboxapi.SandboxTemplate {
 	return &sandboxapi.SandboxTemplate{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: templateName},
 		Spec: sandboxapi.SandboxTemplateSpec{
-			RunnerTransport: sandboxapi.RunnerTransportReverse,
 			Pod: &corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/name": "test-runner"}},
 				Spec: corev1.PodSpec{Containers: []corev1.Container{{

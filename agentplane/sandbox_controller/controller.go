@@ -459,9 +459,6 @@ func (r *Reconciler) template(ctx context.Context, sandbox *sandboxapi.Sandbox) 
 	if (template.Spec.Pod == nil) == (template.Spec.VM == nil) {
 		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s must set exactly one of pod and vm", template.Name)}, nil
 	}
-	if !validRunnerTransport(string(template.Spec.RunnerTransport)) {
-		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s must select forward or reverse runner transport", template.Name)}, nil
-	}
 	if blocked := validateStateVolume(&template); blocked != nil {
 		return nil, blocked, nil
 	}
@@ -618,7 +615,6 @@ func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, c
 	}
 	annotations[RenderedSpecAnnotation] = renderedSpec(spec)
 	labels := withSandboxLabel(template.Spec.Pod.Labels, sandbox)
-	labels[sandboxapi.RunnerTransportLabel] = string(template.Spec.RunnerTransport)
 	labels[sandboxapi.RunnerCredentialLabel] = credentialID
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

@@ -35,9 +35,6 @@ func TestVMCertificateRequiresCurrentLauncherVMIAndSandboxOwnerChain(t *testing.
 		"stale credential": func(_ *sandboxapi.Sandbox, _ *corev1.Pod, vmi *kubevirtv1.VirtualMachineInstance, _ *kubevirtv1.VirtualMachine) {
 			vmi.Labels[sandboxapi.RunnerCredentialLabel] = "new-credential"
 		},
-		"wrong mode": func(_ *sandboxapi.Sandbox, _ *corev1.Pod, vmi *kubevirtv1.VirtualMachineInstance, _ *kubevirtv1.VirtualMachine) {
-			vmi.Labels[sandboxapi.RunnerTransportLabel] = "reverse"
-		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			sandbox := &sandboxapi.Sandbox{
@@ -51,7 +48,7 @@ func TestVMCertificateRequiresCurrentLauncherVMIAndSandboxOwnerChain(t *testing.
 			vmi := &kubevirtv1.VirtualMachineInstance{ObjectMeta: metav1.ObjectMeta{
 				Name: sandbox.Name, Namespace: sandbox.Namespace, UID: "vmi-uid",
 				OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(vm, kubevirtv1.VirtualMachineGroupVersionKind)},
-				Labels:          map[string]string{sandboxapi.SandboxLabel: sandbox.Name, sandboxapi.RunnerCredentialLabel: "current-credential", sandboxapi.RunnerTransportLabel: "forward"},
+				Labels:          map[string]string{sandboxapi.SandboxLabel: sandbox.Name, sandboxapi.RunnerCredentialLabel: "current-credential"},
 			}}
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -78,7 +75,7 @@ func TestVMCertificateRequiresCurrentLauncherVMIAndSandboxOwnerChain(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			identity, podUID, err := g.certificatePeer(t.Context(), uri, "forward")
+			identity, podUID, err := g.certificatePeer(t.Context(), uri)
 			if name != "current" {
 				if err == nil {
 					t.Fatal("stale or foreign VM credential was accepted")

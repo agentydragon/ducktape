@@ -204,7 +204,7 @@ implemented and its negative cases are covered.
 
 The Go Runner Gateway combines Dispatcher admission and delivery with runner connections and the
 control proxy in one process and Deployment. Dispatcher owns durable admission, ordering, retries,
-delivery status and guarded wake; the connection role owns the reverse stream and proxy. The stable
+delivery status and guarded wake; the connection role owns runner state observation and the proxy. The stable
 `agentplane-session-dispatcher` and `agentplane-runner-gateway` Services retain their token audiences.
 One gRPC listener serves distinct authenticated Dispatcher, Runner proxy and runner `Connect`
 surfaces. App and Notification may submit to Dispatcher v0, with a narrower wake allowlist;

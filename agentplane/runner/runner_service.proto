@@ -7,12 +7,12 @@ package agentplane.runner;
 
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/runner.proto";
-import "agentplane/runner_gateway/runner_control.proto";
+import "agentplane/proto/runner_state.proto";
 
 // Served by the Runner over its configured control transport. Sessions are durable;
 // process startup, native readiness and reconciliation are runner-owned after admission.
 service Runner {
-  // Forward-mode liveness and state watch. The Gateway supplies the current Sandbox and workload
+  // Liveness and state watch. The Gateway supplies the current Sandbox and workload
   // incarnation and its Lease epoch. The Runner adopts that incarnation before publishing facts.
   rpc WatchState(WatchStateRequest) returns (stream WatchStateResponse);
   rpc ListSessions(agentplane.proto.ListSessionsRequest)
@@ -50,7 +50,7 @@ message WatchStateResponse {
   string incarnation_uid = 2;
   string runner_boot_id = 3;
   uint64 connection_epoch = 4;
-  agentplane.runner_gateway.RunnerFacts facts = 5;
+  agentplane.proto.RunnerFacts facts = 5;
 }
 
 message OpenSessionRequest {

@@ -31,7 +31,7 @@ func TestForwardRunnerServesHealthAndFencesStateAndDirectCalls(t *testing.T) {
 	gatewayTLS := ca.Issue(t, runnertransport.GatewayURI)
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
 	config.Control = RunnerControlConfiguration{
-		Mode: "forward", ListenAddress: "127.0.0.1:0", TLS: runnerTLS,
+		ListenAddress: "127.0.0.1:0", TLS: runnerTLS,
 	}
 	r := newLifecycleRunner(t, config)
 	listener, server, err := r.forwardServer()
@@ -119,7 +119,7 @@ func TestRunnerRejectsControlCertificateForAnotherSandbox(t *testing.T) {
 		StateDir: t.TempDir(),
 		Launch:   SandboxLaunch{Sandbox: SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}},
 		Control: RunnerControlConfiguration{
-			Mode: "reverse", Target: "gateway.test:8090", TLS: ca.Issue(t, wrongURI),
+			ListenAddress: "127.0.0.1:8090", TLS: ca.Issue(t, wrongURI),
 		},
 	}
 	if _, err := New(config); err == nil {
@@ -138,7 +138,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	runnerTLS := ca.Issue(t, runnerURI)
 	gatewayTLS := ca.Issue(t, runnertransport.GatewayURI)
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.Control = RunnerControlConfiguration{Mode: "forward", ListenAddress: "127.0.0.1:0", TLS: runnerTLS}
+	config.Control = RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", TLS: runnerTLS}
 	r := newLifecycleRunner(t, config)
 	listener, server, err := r.forwardServer()
 	if err != nil {
@@ -272,7 +272,7 @@ func TestForwardRunnerBoundsDirectExecutorStreams(t *testing.T) {
 	runnerTLS := ca.Issue(t, runnerURI)
 	gatewayTLS := ca.Issue(t, runnertransport.GatewayURI)
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
-	config.Control = RunnerControlConfiguration{Mode: "forward", ListenAddress: "127.0.0.1:0", TLS: runnerTLS}
+	config.Control = RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", TLS: runnerTLS}
 	r := newLifecycleRunner(t, config)
 	listener, server, err := r.forwardServer()
 	if err != nil {
@@ -329,13 +329,13 @@ func TestForwardRunnerBoundsDirectExecutorStreams(t *testing.T) {
 		t.Fatalf("rejected executor stream ended with %v, want EOF", err)
 	}
 
-	closeStreams := make([]func() error, 0, maxExecutorChannelsPerRunner)
+	closeStreams := make([]func() error, 0, maxExecutorStreamsPerRunner)
 	defer func() {
 		for _, closeStream := range closeStreams {
 			_ = closeStream()
 		}
 	}()
-	for i := 0; i < maxExecutorChannelsPerRunner; i++ {
+	for i := 0; i < maxExecutorStreamsPerRunner; i++ {
 		stream, err := executorClient.Connect(callContext)
 		if err != nil {
 			t.Fatalf("open direct executor stream %d: %v", i, err)

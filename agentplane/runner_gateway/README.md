@@ -1,16 +1,16 @@
 # Runner Gateway
 
 The Runner Gateway combines durable Session Dispatcher admission and delivery with a
-Sandbox-fenced Runner proxy. Its required `runner_transports` setting explicitly admits `forward`,
-`reverse`, or both; there is no default. In forward mode it dials the runner's native gRPC server.
-In reverse mode it accepts `RunnerControl.Connect` on the separate `runner_listen_address` mTLS
-listener. The public `listen_address` serves Dispatcher, Runner proxy and optional ExecutorGateway
-with the existing caller authorization. The Sandbox Controller owns `Sandbox.status`.
+Sandbox-fenced Runner proxy. The Gateway dials each Runner's native gRPC server on private port
+`9090`. Its public `listen_address` serves Dispatcher, Runner proxy and optional
+ExecutorGateway with the existing
+caller authorization. The Sandbox Controller owns `Sandbox.status`.
 
-Both runner transports use certificates from cert-manager and roots distributed by trust-manager.
-`runner_tls` names the Gateway's `cert_file`, `key_file` and `ca_file`. The Gateway identity is
-`spiffe://agentplane/runner-gateway`; runner identities bind the Sandbox UID and its current
-controller-assigned credential ID. See [control transport authentication](../docs/runner_control.md#authentication-and-incarnation-binding).
+The Gateway and Runners use certificates from cert-manager and roots distributed by trust-manager.
+`runner_tls` names the Gateway's client `cert_file`, `key_file` and `ca_file`. The Gateway identity
+is `spiffe://agentplane/runner-gateway`; runner identities bind the Sandbox UID and its current
+controller-assigned credential ID. Mutual TLS plus Sandbox, incarnation, Runner boot and Lease
+epoch metadata fences every direct Runner RPC.
 
 The Dispatcher role retains its PostgreSQL queue, command IDs, per-Sandbox delivery Leases
 and database ownership generations. The connection role keeps separate connection Leases and
@@ -55,8 +55,8 @@ The migration image is `//agentplane/runner_gateway/migrations:image`. Each new 
 runs it as an init container before the Gateway starts. Goose's PostgreSQL session lock
 serializes migrations when replicas start together. Restarting only the main container does
 not rerun the init container; another Pod creation is required to apply migrations after a
-database replacement. Integration tests exercise real PostgreSQL and queue-to-runner tunnels
-on RBE.
+database replacement. Integration tests exercise real PostgreSQL and queue-to-Runner delivery over
+the direct mTLS connection on RBE.
 The cross-language Notification acceptance runs a real Kubernetes API server and etcd through
 `envtest`, installs the Agentplane CRDs and issues Pod-bound ServiceAccount tokens. Narrow
 consumer tests continue using lightweight gRPC peers.
@@ -88,8 +88,9 @@ continue through ProxyRunner. Central controls bypass executor readiness/wake ch
 The existing Sandbox UID/incarnation binding is fixed; v1 requires the bound Sandbox object.
 
 The separate, default-empty `executor_callers` policy enables `ExecutorGateway.Connect` for trusted
-samplers. It relays pinned Codex exec-server frames over the selected Runner transport
-to a configured loopback executor, with UID/incarnation fencing and bounded flow control. It does
+samplers. It relays pinned Codex exec-server frames over the Runner's authenticated
+`RunnerExec.Connect` stream to a configured loopback executor, with UID/incarnation fencing and
+bounded flow control. It does
 not interpret or replay tools. Active executor relays participate in Runner activity and quiesce.
 The Dispatcher is absent from this tool path. See the
 [central sampler contract](../x/central_sampler/SPEC.md).

@@ -63,7 +63,7 @@ func TestRunnerCertificateSpecMatchesCertManagerDefaults(t *testing.T) {
 		},
 		"secret name": func(spec map[string]interface{}) { spec["secretName"] = "shared-runner-secret" },
 		"extra usage": func(spec map[string]interface{}) {
-			spec["usages"] = []interface{}{"digital signature", "client auth", "server auth", "code signing"}
+			spec["usages"] = []interface{}{"digital signature", "server auth", "code signing"}
 		},
 		"rotation policy": func(spec map[string]interface{}) {
 			spec["privateKey"].(map[string]interface{})["rotationPolicy"] = "Never"
@@ -167,7 +167,6 @@ func TestUnexpectedVMReplacementRotatesCredentialAndHaltsVM(t *testing.T) {
 			Namespace: sandbox.Namespace, Name: sandbox.Name, UID: "vmi-new",
 			Labels: map[string]string{
 				sandboxapi.RunnerCredentialLabel: runnerCredentialTestID,
-				sandboxapi.RunnerTransportLabel:  string(sandboxapi.RunnerTransportReverse),
 			},
 			OwnerReferences: []metav1.OwnerReference{{APIVersion: kubevirtv1.GroupVersion.String(), Kind: "VirtualMachine", Name: vm.Name, UID: vm.UID, Controller: runnerCredentialTestPtr(true)}},
 		},
@@ -240,7 +239,6 @@ func TestAcceptedVMRunnerCredentialPublishesIncarnation(t *testing.T) {
 		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: "vmi-current",
 		Labels: map[string]string{
 			sandboxapi.RunnerCredentialLabel: runnerCredentialTestID,
-			sandboxapi.RunnerTransportLabel:  string(sandboxapi.RunnerTransportReverse),
 		},
 	}}
 	certificate := runnerCertificateObject(sandbox, "runner-issuer", runnerCredentialTestID)
@@ -378,7 +376,6 @@ func TestPodCredentialMismatchDoesNotPublishReplacementDuringFinalization(t *tes
 		Namespace: sandbox.Namespace, Name: sandbox.Name, UID: "pod-replacement",
 		Labels: map[string]string{
 			sandboxapi.RunnerCredentialLabel: runnerCredentialTestID,
-			sandboxapi.RunnerTransportLabel:  string(sandboxapi.RunnerTransportReverse),
 		},
 	}}
 	c := fake.NewClientBuilder().WithScheme(runnerCredentialTestScheme(t)).WithObjects(sandbox, pod).Build()

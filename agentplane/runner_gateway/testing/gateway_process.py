@@ -10,7 +10,6 @@ from collections.abc import AsyncIterator, Awaitable, Sequence
 from contextlib import ExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 from uuid import uuid4
 
 import grpc
@@ -25,7 +24,7 @@ from agentplane.runner.configuration import RunnerTransportTLS
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import RunnerTLS, Settings
 from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.tls import RUNNER_GATEWAY_TEST_DNS, CertificateAuthority, issue_workload_leaf, make_ca, write_ca
+from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import listen_tcp
 from util.settings_contract import env_name
@@ -73,7 +72,6 @@ class GatewayProcess:
     # The Dispatcher's generated HTTP/JSON facade.
     http_url: str
     log_path: Path
-    runner_target: str | None
     runner_ca: CertificateAuthority
     runner_ca_file: Path
 
@@ -213,7 +211,6 @@ async def run_gateway(
     dispatcher_callers: Sequence[ServiceAccountRef],
     gateway_callers: Sequence[ServiceAccountRef],
     executor_callers: Sequence[ServiceAccountRef] = (),
-    runner_transports: Sequence[Literal["forward", "reverse"]],
     dispatcher_audience: str,
     gateway_audience: str,
     runner_proxy_token_file: Path,
@@ -223,7 +220,7 @@ async def run_gateway(
 
     The Kubernetes API and PostgreSQL database are owned by the caller. The Goose migration
     runner applies the schema before the server starts. Platform gRPC and HTTP use the public
-    listeners; runner control uses a separate mTLS listener when reverse mode is enabled.
+    listeners; Runner connections use each active Sandbox's direct mTLS gRPC server.
     """
     migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
     await asyncio.to_thread(_migrate, database_url, migration_log)
@@ -235,14 +232,12 @@ async def run_gateway(
     with ExitStack() as listeners:
         grpc_listener = listeners.enter_context(listen_tcp())
         http_listener = listeners.enter_context(listen_tcp())
-        runner_listener = listeners.enter_context(listen_tcp()) if "reverse" in runner_transports else None
-        runner_target = f"{runner_listener.host}:{runner_listener.port}" if runner_listener is not None else None
         with tempfile.TemporaryDirectory() as settings_dir, log_path.open("wb") as log_file:
             settings_directory = Path(settings_dir)
             runner_ca = make_ca("runner transport test CA")
             runner_ca_file, _ = write_ca(runner_ca, settings_directory, "runner-ca")
             gateway_cert, gateway_key = issue_workload_leaf(
-                runner_ca, "spiffe://agentplane/runner-gateway", settings_directory, dns_name=RUNNER_GATEWAY_TEST_DNS
+                runner_ca, "spiffe://agentplane/runner-gateway", settings_directory
             )
             runner_tls = RunnerTLS(cert_file=str(gateway_cert), key_file=str(gateway_key), ca_file=str(runner_ca_file))
             effective_settings = Settings(
@@ -258,11 +253,7 @@ async def run_gateway(
                 runner_control_target_template=f"{grpc_listener.host}:{grpc_listener.port}",
                 dispatcher_audience=dispatcher_audience,
                 gateway_audience=gateway_audience,
-                runner_transports=set(runner_transports),
                 runner_tls=runner_tls,
-                runner_listen_address=(
-                    f"fd:{runner_listener.socket.fileno()}" if runner_listener is not None else None
-                ),
                 dispatcher_callers={f"{account.namespace}/{account.name}" for account in dispatcher_callers},
                 gateway_callers={f"{account.namespace}/{account.name}" for account in gateway_callers},
                 executor_callers={f"{account.namespace}/{account.name}" for account in executor_callers},
@@ -276,7 +267,6 @@ async def run_gateway(
                 exclude_unset=True,
                 exclude={"dispatcher_database_url", "pod_name", "pod_ip"},
             )
-            settings["runner_transports"] = sorted(settings["runner_transports"])
             for caller_list in ("dispatcher_callers", "gateway_callers", "executor_callers", "wake_callers"):
                 settings[caller_list] = sorted(settings[caller_list])
             settings_path = settings_directory / "settings.yaml"
@@ -291,8 +281,6 @@ async def run_gateway(
                 env_name(Settings, "pod_ip"): "192.0.2.10",
             }
             pass_fds = [grpc_listener.socket.fileno(), http_listener.socket.fileno()]
-            if runner_listener is not None:
-                pass_fds.append(runner_listener.socket.fileno())
             spawn = asyncio.create_task(
                 asyncio.create_subprocess_exec(
                     str(binary), env=environment, stdout=log_file, stderr=subprocess.STDOUT, pass_fds=pass_fds
@@ -307,7 +295,6 @@ async def run_gateway(
                     target=f"{grpc_listener.host}:{grpc_listener.port}",
                     http_url=f"http://{http_listener.host}:{http_listener.port}",
                     log_path=log_path,
-                    runner_target=runner_target,
                     runner_ca=runner_ca,
                     runner_ca_file=runner_ca_file,
                 )
@@ -320,14 +307,11 @@ async def run_gateway(
                 raise
             grpc_listener.socket.close()
             http_listener.socket.close()
-            if runner_listener is not None:
-                runner_listener.socket.close()
             service = GatewayProcess(
                 process=process,
                 target=f"{grpc_listener.host}:{grpc_listener.port}",
                 http_url=f"http://{http_listener.host}:{http_listener.port}",
                 log_path=log_path,
-                runner_target=runner_target,
                 runner_ca=runner_ca,
                 runner_ca_file=runner_ca_file,
             )

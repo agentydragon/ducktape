@@ -14,7 +14,7 @@ launcher.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Literal
+from typing import Any
 
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
 from cdk8s_plus_34 import ConfigMap
@@ -39,21 +39,13 @@ from agentplane.runner.configuration import (
     KUBECONFIG,
     Configuration,
     Endpoint,
-    ForwardControl,
     Harness,
-    ReverseControl,
+    RunnerControl,
     RunnerTransportTLS,
     VMEnvironment,
     VMExecutor,
 )
-from cluster.cdk8s.agentplane import (
-    launcher_relay,
-    llm_ingress,
-    platform_routes,
-    runner_gateway,
-    sandbox_pod,
-    telemetry,
-)
+from cluster.cdk8s.agentplane import launcher_relay, llm_ingress, platform_routes, sandbox_pod, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE_KEY as RUNNER_TRUST_BUNDLE_KEY
 from cluster.cdk8s.config_format import yaml_config
@@ -66,7 +58,7 @@ _CONFIG_MAP_NAME = "runner-vm-config"
 _RUNNER_ENV_FILE = "runner.env"
 _WORKSPACE = "workspace"
 # A listed port keeps masquerade from forwarding every other port, including kubelet's probe of
-# the relay's readiness port. Forward mode also lists the Runner listener below.
+# the relay's readiness port, while exposing the Runner mTLS listener.
 _UNUSED_GUEST_PORT = 22
 _RUNNER_PORT = 9090
 _RUNNER_TLS_PATH = "/run/agentplane/runner-tls"
@@ -96,7 +88,6 @@ class RunnerVmTemplate(Construct):
         workspace_volume: dict[str, Any],
         platform_instructions: str,
         harness_env: Mapping[str, str],
-        runner_transport: Literal["forward", "reverse"],
         session_reconcile_concurrency: int | None = None,
     ) -> None:
         super().__init__(scope, id)
@@ -118,26 +109,13 @@ class RunnerVmTemplate(Construct):
             state_dir="/state",
             workspace_root="/state/workspaces",
             initialization_cwd="/state/workspaces",
-            control=(
-                ReverseControl(
-                    mode="reverse",
-                    target=f"{runner_gateway.runner_control(namespace).fqdn}:{runner_gateway.RUNNER_CONTROL_PORT}",
-                    tls=RunnerTransportTLS(
-                        cert_file=f"{_RUNNER_TLS_PATH}/tls.crt",
-                        key_file=f"{_RUNNER_TLS_PATH}/tls.key",
-                        ca_file=f"{_RUNNER_TRUST_PATH}/{RUNNER_TRUST_BUNDLE_KEY}",
-                    ),
-                )
-                if runner_transport == "reverse"
-                else ForwardControl(
-                    mode="forward",
-                    listen_address=f"0.0.0.0:{_RUNNER_PORT}",
-                    tls=RunnerTransportTLS(
-                        cert_file=f"{_RUNNER_TLS_PATH}/tls.crt",
-                        key_file=f"{_RUNNER_TLS_PATH}/tls.key",
-                        ca_file=f"{_RUNNER_TRUST_PATH}/{RUNNER_TRUST_BUNDLE_KEY}",
-                    ),
-                )
+            control=RunnerControl(
+                listen_address=f"0.0.0.0:{_RUNNER_PORT}",
+                tls=RunnerTransportTLS(
+                    cert_file=f"{_RUNNER_TLS_PATH}/tls.crt",
+                    key_file=f"{_RUNNER_TLS_PATH}/tls.key",
+                    ca_file=f"{_RUNNER_TRUST_PATH}/{RUNNER_TRUST_BUNDLE_KEY}",
+                ),
             ),
             ingress=Endpoint(
                 target=_guest_address(platform_routes.ingress(namespace).listen_port),
@@ -204,11 +182,7 @@ class RunnerVmTemplate(Construct):
             ),
             ports=[
                 VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(port=_UNUSED_GUEST_PORT),
-                *(
-                    [VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(port=_RUNNER_PORT)]
-                    if runner_transport == "forward"
-                    else []
-                ),
+                VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(port=_RUNNER_PORT),
             ],
             disks={
                 "agentplane-config": VirtualMachineSpecTemplateSpecVolumes(
@@ -240,13 +214,5 @@ class RunnerVmTemplate(Construct):
             kind="SandboxTemplate",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
         ).add_json_patch(
-            JsonPatch.add(
-                "/spec",
-                {
-                    "vm": vm,
-                    "stateVolume": state_volume,
-                    "workspaceVolume": workspace_volume,
-                    "runnerTransport": runner_transport,
-                },
-            )
+            JsonPatch.add("/spec", {"vm": vm, "stateVolume": state_volume, "workspaceVolume": workspace_volume})
         )

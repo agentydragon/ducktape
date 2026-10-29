@@ -76,7 +76,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     assert _resource(docs, "Issuer", "agentplane-runner-ca")["spec"]["ca"]["secretName"] == "agentplane-runner-ca"
     gateway_certificate = _resource(docs, "Certificate", "agentplane-runner-gateway")
     assert gateway_certificate["spec"]["uris"] == ["spiffe://agentplane/runner-gateway"]
-    assert set(gateway_certificate["spec"]["usages"]) >= {"client auth", "server auth"}
+    assert set(gateway_certificate["spec"]["usages"]) == {"digital signature", "client auth"}
     trust_bundle = _resource(docs, "Bundle", "cluster-internal-ca-bundle")
     root = _resource(docs, "Certificate", "test-runner-root")
     assert trust_bundle["spec"]["sources"] == [{"secret": {"name": root["spec"]["secretName"], "key": "ca.crt"}}]
@@ -163,11 +163,7 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     pod = gateway["spec"]["template"]["spec"]
     container = pod["containers"][0]
     assert container["image"] == fixture_chart.RUNNER_GATEWAY_IMAGE
-    assert {port["name"]: port["containerPort"] for port in container["ports"]} == {
-        "grpc": 8080,
-        "http": 8081,
-        "runner-control": 8090,
-    }
+    assert {port["name"]: port["containerPort"] for port in container["ports"]} == {"grpc": 8080, "http": 8081}
     database_env = next(
         entry for entry in container["env"] if entry["name"] == "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
     )
@@ -377,16 +373,20 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     assert workspace["claim"]["storageClassName"] == STORAGE_CLASS
     assert workspace["claim"]["volumeMode"] == "Block"
 
-    forward = _resource(fixture.objects, "SandboxTemplate", fixture_chart.FORWARD_VM_TEMPLATE)["spec"]
-    assert forward["runnerTransport"] == "forward"
-    vm_spec = forward["vm"]["template"]["spec"]
+    vm_template = _resource(fixture.objects, "SandboxTemplate", "runner-vm")["spec"]
+    vm_spec = vm_template["vm"]["template"]["spec"]
     interface = next(item for item in vm_spec["domain"]["devices"]["interfaces"] if item["name"] == "default")
     assert {"port": 9090} in interface["ports"]
-    config_name = next(volume["configMap"]["name"] for volume in vm_spec["volumes"] if "configMap" in volume)
-    config_map = _resource(fixture.objects, "ConfigMap", config_name)
+    config_map = _resource(fixture.objects, "ConfigMap", "runner-vm-config")
     config = json.loads(config_map["data"]["runner.json"])
-    assert config["control"]["mode"] == "forward"
-    assert config["control"]["listen_address"] == "0.0.0.0:9090"
+    assert config["control"] == {
+        "listen_address": "0.0.0.0:9090",
+        "tls": {
+            "cert_file": "/run/agentplane/runner-tls/tls.crt",
+            "key_file": "/run/agentplane/runner-tls/tls.key",
+            "ca_file": "/run/agentplane/runner-trust/ca-certificates.crt",
+        },
+    }
 
 
 if __name__ == "__main__":

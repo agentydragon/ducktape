@@ -10,14 +10,12 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # gazelle:resolve py agentplane.proto.command_pb2 //agentplane/proto:command_pb2
 # gazelle:resolve py agentplane.proto.event_log_pb2 //agentplane/proto:event_log_pb2
 # gazelle:resolve py agentplane.proto.event_pb2 //agentplane/proto:event_pb2
+# gazelle:resolve py agentplane.proto.runner_state_pb2 //agentplane/proto:runner_state_pb2
 # gazelle:resolve py agentplane.proto.runner_pb2 //agentplane/proto:runner_pb2
-# gazelle:resolve py agentplane.runner_gateway.runner_control_pb2 //agentplane/runner_gateway:runner_control_pb2
-# gazelle:resolve py agentplane.runner_gateway.runner_control_pb2_grpc //agentplane/runner_gateway:runner_control_pb2_grpc
 # gazelle:resolve py agentplane.history_service.runner_ingress_pb2 //agentplane/history_service:runner_ingress_pb2
 # gazelle:resolve py agentplane.history_service.runner_ingress_pb2_grpc //agentplane/history_service:runner_ingress_pb2_grpc
 # gazelle:resolve py agentplane.runner.runner_service_pb2 //agentplane/runner:runner_service_pb2
 # gazelle:resolve py agentplane.runner.runner_service_pb2_grpc //agentplane/runner:runner_service_pb2_grpc
-# gazelle:resolve py agentplane.proto.grpc_tunnel_pb2 //agentplane/proto:grpc_tunnel_pb2
 # gazelle:resolve py agentplane.runner_gateway.dispatcher.session_dispatcher_pb2 //agentplane/runner_gateway/dispatcher:session_dispatcher_pb2
 # gazelle:resolve py agentplane.runner_gateway.dispatcher.session_dispatcher_pb2_grpc //agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc
 # gazelle:resolve py agentplane.action_service.action_service_pb2 //agentplane/action_service:action_service_pb2

@@ -13,9 +13,6 @@ data:
       - agentplane-staging/app
       - agentplane-staging/notifications
       - agentplane-staging/runner-gateway
-    runner_transports:
-      - forward
-      - reverse
     runner_tls:
       cert_file: /run/agentplane/runner-tls/tls.crt
       key_file: /run/agentplane/runner-tls/tls.key
@@ -78,8 +75,6 @@ spec:
               value: agentplane-runner-gateway
             - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_CONTROL_TARGET_TEMPLATE
               value: "{sandbox}-control.{namespace}.svc:8080"
-            - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_LISTEN_ADDRESS
-              value: 0.0.0.0:8090
             - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_CONTROLLER_ACCOUNT
               value: agentplane-staging/sandbox-controller
             - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL
@@ -117,9 +112,6 @@ spec:
           ports:
             - containerPort: 8080
               name: grpc
-              protocol: TCP
-            - containerPort: 8090
-              name: runner-control
               protocol: TCP
             - containerPort: 8081
               name: http
@@ -372,7 +364,6 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            agentplane.allegedly.works/runner-transport: forward
             app.kubernetes.io/name: agentplane-runner
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
@@ -444,13 +435,4 @@ spec:
             - port: "8080"
               protocol: TCP
             - port: "8081"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            agentplane.allegedly.works/runner-transport: reverse
-            app.kubernetes.io/name: agentplane-runner
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8090"
               protocol: TCP

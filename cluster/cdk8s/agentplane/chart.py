@@ -3,8 +3,8 @@ adds its environment-only objects to what it returns; that is what generate_mani
 disk) and the tests (synthesize it in memory via `cdk8s.Testing`) build.
 
 The caller names the Pod execution environment the chart offers and the image it runs
-(`runner_name`, `runner_image`), the explicit runner control transport, plus any Secret a runner
-workload reads as a file (`runner_key_files`). The chart provisions the shared cert-manager Issuer
+(`runner_name`, `runner_image`), plus any Secret a runner workload reads as a file
+(`runner_key_files`). The chart provisions the shared cert-manager Issuer
 and Gateway certificate; the Sandbox Controller provisions a unique leaf Certificate for each
 workload incarnation.
 """
@@ -12,7 +12,6 @@ workload incarnation.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Literal
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cert_manager_crds.io.cert_manager import (
@@ -110,11 +109,7 @@ def add_runner_certificates(scope: Construct, env: Environment) -> None:
         duration="24h",
         renew_before="8h",
         private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
-        usages=[
-            CertificateSpecUsages.DIGITAL_SIGNATURE,
-            CertificateSpecUsages.CLIENT_AUTH,
-            CertificateSpecUsages.SERVER_AUTH,
-        ],
+        usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.CLIENT_AUTH],
         issuer_ref=CertificateSpecIssuerRef(name=RUNNER_CERTIFICATE_ISSUER, kind="Issuer"),
     )
 
@@ -126,7 +121,6 @@ def environment_chart(
     db: database.DbProps,
     runner_name: str,
     runner_image: str,
-    runner_transport: Literal["forward", "reverse"],
     runner_key_files: Sequence[runner_sandbox.KeyFile] = (),
 ) -> Chart:
     """The shared objects. The fleet rules attach as a synth-time validation, so a caller
@@ -216,7 +210,6 @@ def environment_chart(
         image=runner_image,
         key_files=runner_key_files,
         image_pull_secret_name=sandbox_pod.SECRET_NAME,
-        runner_transport=runner_transport,
         egress_api_service=egress.agent_api(env.namespace),
     ).add_platform_resources()
     sandbox_controller.SandboxController(

@@ -49,24 +49,10 @@ type WorkspaceVolume struct {
 	Layout VolumeLayout                     `json:"layout"`
 }
 
-// RunnerTransport is the direction the Runner Gateway and runner use to establish control RPCs.
-// There is deliberately no default: each SandboxTemplate selects its transport explicitly.
-// +kubebuilder:validation:Enum=forward;reverse
-type RunnerTransport string
-
-const (
-	RunnerTransportForward RunnerTransport = "forward"
-	RunnerTransportReverse RunnerTransport = "reverse"
-)
-
-// SandboxTemplateSpec sets the Sandbox's kind: exactly one of Pod and VM, and chooses its runner
-// control transport explicitly.
+// SandboxTemplateSpec sets the Sandbox's kind: exactly one of Pod and VM.
 // +kubebuilder:validation:ExactlyOneOf=pod;vm
 // +kubebuilder:validation:XValidation:rule="!has(self.workspaceVolume) || !has(self.pod) || self.workspaceVolume.layout.type == 'DirectoryTree'",message="Pod workspaces require DirectoryTree layout"
 type SandboxTemplateSpec struct {
-	// RunnerTransport is required and has no default: the live workload carries this choice as a
-	// label so the Runner Gateway does not reread a mutable template during authentication.
-	RunnerTransport RunnerTransport `json:"runnerTransport"`
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Type=object

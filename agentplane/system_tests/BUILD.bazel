@@ -15,7 +15,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # gazelle:exclude test_suspend_resume.py
 # gazelle:exclude test_thread_stream.py
 # gazelle:exclude test_runner_systemd.py
-# gazelle:exclude test_runner_transports.py
+# gazelle:exclude test_runner_credentials.py
 # gazelle:exclude test_vm_sandbox.py
 # gazelle:exclude test_vm_workspace_ownership.py
 
@@ -272,12 +272,13 @@ system_test(
     ],
 )
 
-# Run both explicit mTLS directions against one Gateway, then replace a forward runner Pod and
-# verify the rotated workload identity still resumes its native context and retains Thread history.
+# Exercise real cert-manager issuance and reissuance, runner mTLS sessions on Pods and VMs, and
+# verify a replacement Pod resumes its native context and retains Thread history.
 system_test(
-    name = "test_runner_transports",
-    srcs = ["test_runner_transports.py"],
+    name = "test_runner_credentials",
+    srcs = ["test_runner_credentials.py"],
     k3s = "scripted",
+    vm_sandboxes = "ci",
     deps = [
         ":agent",
         ":cluster",

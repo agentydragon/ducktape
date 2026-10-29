@@ -197,8 +197,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		t.Fatal(err)
 	}
 	template := &sandboxapi.SandboxTemplate{ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: ns}, Spec: sandboxapi.SandboxTemplateSpec{
-		RunnerTransport: sandboxapi.RunnerTransportReverse,
-		Pod:             &corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: RunnerContainer, Image: "example.invalid/runner:v1"}}}},
+		Pod: &corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: RunnerContainer, Image: "example.invalid/runner:v1"}}}},
 		StateVolume: sandboxapi.StateVolume{Name: "state", Layout: sandboxapi.VolumeLayout{Type: sandboxapi.DirectoryTree}, Claim: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources:   corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}},

@@ -6,14 +6,17 @@ load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 proto_library(
-    name = "grpc_tunnel_proto",
-    srcs = ["grpc_tunnel.proto"],
-    deps = ["@protobuf//:duration_proto"],
+    name = "runner_state_proto",
+    srcs = ["runner_state.proto"],
+    deps = [
+        ":sandboxes_proto",
+        "@protobuf//:timestamp_proto",
+    ],
 )
 
 py_proto_library_with_mypy_stubs(
-    name = "grpc_tunnel_pb2",
-    deps = [":grpc_tunnel_proto"],
+    name = "runner_state_pb2",
+    deps = [":runner_state_proto"],
 )
 
 proto_library(
@@ -156,9 +159,10 @@ go_proto_library(
 )
 
 go_proto_library(
-    name = "grpc_tunnel_go_proto",
-    importpath = "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel",
-    proto = ":grpc_tunnel_proto",
+    name = "runner_state_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb",
+    proto = ":runner_state_proto",
+    deps = [":sandboxes_go_proto"],
 )
 
 go_proto_library(

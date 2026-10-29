@@ -1,4 +1,4 @@
-"""The Gateway keeps stable Service addresses for one authenticated gRPC listener."""
+"""The Gateway keeps one public Service and uses mTLS client connections to runner Pods."""
 
 from pathlib import PurePosixPath
 from typing import Any, cast
@@ -61,7 +61,7 @@ def test_environment_provisions_cert_manager_runner_issuer_and_gateway_identity(
     assert spec["secretName"] == runner_gateway.GATEWAY_TLS_SECRET
     assert spec["issuerRef"] == {"kind": "Issuer", "name": runner_gateway.RUNNER_CERTIFICATE_ISSUER}
     assert spec["uris"] == ["spiffe://agentplane/runner-gateway"]
-    assert set(spec["usages"]) == {"digital signature", "client auth", "server auth"}
+    assert set(spec["usages"]) == {"digital signature", "client auth"}
     assert spec["privateKey"]["rotationPolicy"] == "Always"
 
 
@@ -77,14 +77,12 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
     assert container["image"].startswith("git.allegedly.works/ducktape-ci/agentplane-runner-gateway:")
     assert pod["serviceAccountName"] == runner_gateway.NAME
     http = session_dispatcher.http_service(staging.ENV.namespace)
-    assert {p["containerPort"] for p in container["ports"]} == {8080, 8090, http.pod_port}
+    assert {p["containerPort"] for p in container["ports"]} == {8080, http.pod_port}
     settings = _gateway_settings(docs, container)
     assert settings["listen_address"] == "0.0.0.0:8080"
     assert settings["http_listen_address"] == f"0.0.0.0:{http.pod_port}"
     assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
     assert settings["gateway_audience"] == runner_gateway.TOKEN_AUDIENCE
-    assert settings["runner_transports"] == ["forward", "reverse"]
-    assert settings["runner_listen_address"] == "0.0.0.0:8090"
     assert settings["runner_tls"] == {
         "cert_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.crt",
         "key_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.key",
@@ -104,8 +102,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
         "DATABASE_URL": {"secretKeyRef": {"name": "postgres-session-dispatcher", "key": "uri"}}
     }
     assert _resource(root_docs, "Service", runner_gateway.NAME)["spec"]["ports"] == [
-        {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080},
-        {"name": "runner-control", "port": 8090, "protocol": "TCP", "targetPort": 8090},
+        {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080}
     ]
     assert _resource(root_docs, "Service", session_dispatcher.NAME)["spec"]["ports"] == [
         {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080},
@@ -128,14 +125,14 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
     assert (runner_gateway.NAME, "8080") in ingress
     assert (sandbox_controller.NAME, "8080") in ingress
     runner_label = runner_sandbox.pods(staging.ENV.namespace).selector["app.kubernetes.io/name"]
-    assert (runner_label, "8090") in ingress
-    forward_egress = {
-        (endpoint["matchLabels"].get(runner_sandbox.RUNNER_TRANSPORT_LABEL), str(port["port"]))
+    assert (runner_label, "8090") not in ingress
+    runner_egress = {
+        (endpoint["matchLabels"].get("app.kubernetes.io/name"), str(port["port"]))
         for rule in policy["egress"]
         for endpoint in rule.get("toEndpoints", [])
         for port in rule.get("toPorts", [{}])[0].get("ports", [])
     }
-    assert ("forward", str(runner_sandbox.RUNNER_SERVICE_PORT)) in forward_egress
+    assert (runner_label, str(runner_sandbox.RUNNER_SERVICE_PORT)) in runner_egress
     role = _resource(docs, "Role", runner_gateway.NAME.removeprefix("agentplane-"))
     assert {resource for rule in role["rules"] for resource in rule["resources"]} >= {
         "pods",
@@ -179,15 +176,15 @@ def test_runner_mtls_is_direct_and_outside_platform_routes(staging_manifests: li
     assert runner_gateway.NAME not in routed_services
 
     gateway = _resource(staging_manifests, "CiliumNetworkPolicy", "runner-gateway")["spec"]
-    reverse_port = str(runner_gateway.RUNNER_CONTROL_PORT)
-    assert any(
-        endpoint["matchLabels"].get(runner_sandbox.RUNNER_TRANSPORT_LABEL) == "reverse"
-        and any(port["port"] == reverse_port for target in rule.get("toPorts", []) for port in target["ports"])
+    assert all(
+        port["port"] != "8090"
         for rule in gateway["ingress"]
-        for endpoint in rule.get("fromEndpoints", [])
+        for target in rule.get("toPorts", [])
+        for port in target["ports"]
     )
+    runner_label = runner_sandbox.pods(staging.ENV.namespace).selector["app.kubernetes.io/name"]
     assert any(
-        endpoint["matchLabels"].get(runner_sandbox.RUNNER_TRANSPORT_LABEL) == "forward"
+        endpoint["matchLabels"].get("app.kubernetes.io/name") == runner_label
         and any(
             port["port"] == str(runner_sandbox.RUNNER_SERVICE_PORT)
             for target in rule.get("toPorts", [])
@@ -195,6 +192,18 @@ def test_runner_mtls_is_direct_and_outside_platform_routes(staging_manifests: li
         )
         for rule in gateway["egress"]
         for endpoint in rule.get("toEndpoints", [])
+    )
+    runner_listener = _resource(staging_manifests, "CiliumNetworkPolicy", "runner-listener")["spec"]
+    gateway_label = runner_gateway.service(staging.ENV.namespace).pods.selector["app.kubernetes.io/name"]
+    assert any(
+        endpoint["matchLabels"].get("app.kubernetes.io/name") == gateway_label
+        and any(
+            port["port"] == str(runner_sandbox.RUNNER_SERVICE_PORT)
+            for target in rule.get("toPorts", [])
+            for port in target["ports"]
+        )
+        for rule in runner_listener["ingress"]
+        for endpoint in rule.get("fromEndpoints", [])
     )
 
 

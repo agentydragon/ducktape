@@ -57,7 +57,7 @@ func TestConnectionRecordsRejectForeignObjects(t *testing.T) {
 					t.Fatal(err)
 				}
 				if kind == "Lease" {
-					_, err = records.accept(context.Background(), sandbox, testPodUID, "boot")
+					_, err = records.claim(context.Background(), sandbox, testPodUID)
 				} else {
 					err = records.pointControlEndpoints(context.Background(), sandbox, 1)
 				}
@@ -82,7 +82,7 @@ func TestConnectionRenewPublishesAndClearsAutosuspendBlockers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	epoch, err := records.accept(context.Background(), identity, testPodUID, "test-runner-boot")
+	epoch, err := records.claim(context.Background(), identity, testPodUID)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,8 +1,8 @@
 # Thread, runner, and harness layering
 
 Status: **cross-layer design under review.** The app opens Sessions and submits commands through
-Session Dispatcher; History owns retained Session/Thread views; Runner Gateway owns the reverse
-control stream and authorized live Runner proxy. The materialized Thread projection and Electric-backed
+Session Dispatcher; History owns retained Session/Thread views; Runner Gateway owns runner
+state observation and the authorized live Runner proxy. The materialized Thread projection and Electric-backed
 conversation sync described in [Thread view synchronization](thread_view_sync.md) are implemented;
 remaining acceptance gates are in [conversation acceptance](../debug/conversation_acceptance.md).
 This document covers identity, durability, command handling and presentation, while the
@@ -60,7 +60,7 @@ flowchart LR
     SD -->|runner operations through proxy| G[Runner Gateway]
     A -->|placement and live checks| G
     A -->|Sandbox desired state and lifecycle| K[Kubernetes Sandbox state]
-    G -->|RunnerControl stream| R[Runner journal and scheduler]
+    G -->|Runner gRPC| R[Runner journal and scheduler]
     R --> C[Claude adapter]
     R --> D[Codex adapter]
     C <--> H1[Claude native process]

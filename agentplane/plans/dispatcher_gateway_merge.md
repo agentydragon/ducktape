@@ -21,17 +21,12 @@ wait.
 
 ## Today
 
-One binary and one Deployment serve three gRPC services on one listener (`runner_gateway/main.go:211-216`), yet
-callers and operators still see them as separate:
-
-|                                        | Dispatcher                                                                                 | Runner proxy                                                                             | Runner control               |
-| -------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | ---------------------------- |
-| Service                                | `SessionDispatcher`                                                                        | `agentplane.runner.Runner`                                                               | `RunnerControl.Connect`      |
-| Token audience (`main.go:149,154,159`) | `session-dispatcher`                                                                       | `agentplane-runner-gateway`                                                              | the runner's                 |
-| Reached at                             | `session-dispatcher`, any replica                                                          | `<sandbox>-control`, the replica holding the runner                                      | the sidecar's platform route |
-| Lease                                  | `dispatcher-<uid>` plus the Postgres `sandbox_ownership` fence (`dispatcher/ownership.go`) | `<sandbox>-runner` plus EndpointSlice (`gateway/connections.go`)                         | writes the same Lease        |
-| Callers                                | app, Notification                                                                          | app and Notification (live reads), Sandbox Controller (`Quiesce`), the Dispatcher itself | the runner                   |
-| Database                               | Postgres                                                                                   | none                                                                                     | none                         |
+One binary and Deployment serve the Dispatcher, per-Sandbox Runner proxy and executor gateway.
+The Gateway dials private runner mTLS gRPC servers and observes `Runner.WatchState` under each
+Sandbox's `<sandbox>-runner` Lease. The Dispatcher separately uses `dispatcher-<uid>` plus its
+Postgres `sandbox_ownership` fence. Dispatcher callers use `session-dispatcher`; proxy callers use
+`agentplane-runner-gateway`. The runner connection uses certificate identities rather than those
+public caller tokens.
 
 The Dispatcher delivers by dialing `<sandbox>-control` with the Gateway's own token (`ProxyRunner`,
 `dispatcher/runner_client.go:19`, wired at `main.go:188`), because the replica owning a Sandbox's queue is
@@ -42,8 +37,7 @@ account. The ADR row "The Dispatcher is its own service, not part of the gateway
 ## One service
 
 `RunnerGateway`, in package `agentplane.runner_gateway`, replaces `SessionDispatcher` and the caller-visible
-`Runner` proxy. `RunnerControl` stays separate: its caller is the runner, it is runner-initiated and it
-authenticates a different principal.
+`Runner` proxy. The private runner mTLS connection stays separate from public caller authentication.
 
 | RPC                                                                                       | Caller                  | Queue on                                                                     | Queue off                                |
 | ----------------------------------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------- | ---------------------------------------- |

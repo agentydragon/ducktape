@@ -71,8 +71,8 @@ points operators to the linked boundary evidence. V1 never replays uncertain pro
 effects automatically; see [blocked Session recovery](docs/blocked_session_recovery.md).
 
 The JS broker uses `ExecutorGateway.Connect` to send exec-server frames through the Runner's
-existing outbound stream. Its configured target template selects the per-Sandbox control Service
-and thus the Gateway replica holding that stream. Gateway authorizes the sampler account and checks
+private mTLS `RunnerExec.Connect` stream. Its configured target template selects the per-Sandbox
+control Service and thus the Gateway replica holding that runner's observation Lease. Gateway authorizes the sampler account and checks
 Sandbox UID and incarnation; Runner only reaches its configured loopback executor. No caller-chosen
 executor URL crosses that API. The relay bounds each message to 1 MiB and each Runner to eight channels;
 oversized tool messages fail the channel rather than being silently truncated. An open relay

@@ -497,7 +497,7 @@ proto_library(
     deps = [
         "//agentplane/proto:event_log_proto",
         "//agentplane/proto:runner_proto",
-        "//agentplane/runner_gateway:runner_control_proto",
+        "//agentplane/proto:runner_state_proto",
     ],
 )
 
@@ -558,7 +558,7 @@ go_proto_library(
     deps = [
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
-        "//agentplane/runner_gateway:runner_control_go_proto",
+        "//agentplane/proto:runner_state_go_proto",
     ],
 )
 
@@ -594,13 +594,13 @@ go_library(
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:runner_state_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/runner:runner_exec_go_proto",
         "//agentplane/runner:runner_service_go_proto",
         "//agentplane/runner/bootstrap",
         "//agentplane/runner/codexappserver",
         "//agentplane/runner/codexexecserver",
-        "//agentplane/runner/control",
         "//agentplane/runner/cosi",
         "//agentplane/runner/executor",
         "//agentplane/runner/harness",
@@ -614,7 +614,6 @@ go_library(
         "//agentplane/runner/supervision",
         "//agentplane/runner/workspace",
         "//agentplane/runner_gateway:executor_gateway_go_proto",
-        "//agentplane/runner_gateway:runner_control_go_proto",
         "//agentplane/runner_transport",
         "@com_github_coder_websocket//:websocket",
         "@com_github_cosi_project_runtime//pkg/controller",
@@ -655,8 +654,8 @@ go_test(
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:grpc_tunnel_go_proto",
         "//agentplane/proto:runner_go_proto",
+        "//agentplane/proto:runner_state_go_proto",
         "//agentplane/proto:sandboxes_go_proto",
         "//agentplane/runner:runner_exec_go_proto",
         "//agentplane/runner:runner_service_go_proto",
@@ -665,7 +664,6 @@ go_test(
         "//agentplane/runner/codex",
         "//agentplane/runner/codexappserver",
         "//agentplane/runner/codexexecserver",
-        "//agentplane/runner/control",
         "//agentplane/runner/executor/control",
         "//agentplane/runner/harness",
         "//agentplane/runner/journal",
@@ -675,7 +673,6 @@ go_test(
         "//agentplane/runner/session",
         "//agentplane/runner/supervision",
         "//agentplane/runner_gateway:executor_gateway_go_proto",
-        "//agentplane/runner_gateway:runner_control_go_proto",
         "//agentplane/runner_transport",
         "//agentplane/runner_transport/testing",
         "//agentplane/sandboxes/lease",

@@ -5,47 +5,46 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
-	"github.com/agentydragon/ducktape/agentplane/runner/control"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
-	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/coder/websocket"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 const (
-	maxExecutorChannelsPerRunner = 8
-	executorQueueDepth           = 4
-	maxExecutorMessageBytes      = 1 << 20
-	executorDialTimeout          = 20 * time.Second
+	maxExecutorStreamsPerRunner = 8
+	executorQueueDepth          = 4
+	maxExecutorMessageBytes     = 1 << 20
+	executorDialTimeout         = 20 * time.Second
 )
 
-// Each executor connection owns its cancellation scope, replay counter and workers.
+// Each direct executor stream owns its cancellation scope, relay and workers.
 type executorConnection struct {
 	runner   *Runner
 	ctx      context.Context
 	cancel   context.CancelFunc
-	epoch    uint64
-	lastOpen uint64
-	send     func(*controlpb.RunnerFrame) error
-	sendData func(*controlpb.RunnerFrame) error
+	id       string
+	opened   bool
+	send     func(*executorpb.ExecutorFrame) error
+	sendData func(*executorpb.ExecutorFrame) error
 	workers  sync.WaitGroup
 }
 
-func (r *Runner) openExecutorConnection(ctx context.Context, epoch uint64, send, sendData func(*controlpb.RunnerFrame) error) control.ExecutorConnection {
+func (r *Runner) openExecutorConnection(ctx context.Context, epoch uint64, send, sendData func(*executorpb.ExecutorFrame) error) *executorConnection {
 	ctx, cancel := context.WithCancel(ctx)
-	return &executorConnection{runner: r, ctx: ctx, cancel: cancel, epoch: epoch, send: send, sendData: sendData}
+	sequence := r.directExecSequence.Add(1)
+	id := strconv.FormatUint(epoch, 10) + "-" + strconv.FormatUint(sequence, 10)
+	return &executorConnection{runner: r, ctx: ctx, cancel: cancel, id: id, send: send, sendData: sendData}
 }
 
 func (c *executorConnection) Route(frame *executorpb.ExecutorFrame) error {
-	return c.runner.routeExecutorFrame(c.ctx, frame, c.epoch, &c.lastOpen, c.send, c.sendData, &c.workers)
+	return c.runner.routeExecutorFrame(c.ctx, frame, c.id, &c.opened, c.send, c.sendData, &c.workers)
 }
 
 func (c *executorConnection) Close() {
@@ -73,28 +72,28 @@ func newExecutorRelay(id, sessionID string, cancel context.CancelFunc) *executor
 
 func (r *Runner) startExecutorRelay(
 	streamCtx context.Context,
-	channelID string,
+	relayID string,
 	open *executorpb.ExecutorOpen,
-	send func(*controlpb.RunnerFrame) error,
-	sendData func(*controlpb.RunnerFrame) error,
+	send func(*executorpb.ExecutorFrame) error,
+	sendData func(*executorpb.ExecutorFrame) error,
 	workers *sync.WaitGroup,
 ) error {
 	if r.codexExecServer == nil {
 		return status.Error(codes.FailedPrecondition, "Runner has no configured Codex executor")
 	}
-	if channelID == "" || open.GetSessionId() == "" {
-		return status.Error(codes.InvalidArgument, "executor channel ID and Session ID are required")
+	if relayID == "" || open.GetSessionId() == "" {
+		return status.Error(codes.InvalidArgument, "executor relay ID and Session ID are required")
 	}
 	r.mu.Lock()
 	if r.closing || !r.lifecycle.accepting() {
 		r.mu.Unlock()
 		return status.Error(codes.FailedPrecondition, "Runner is quiescing")
 	}
-	if len(r.executorRelays) >= maxExecutorChannelsPerRunner {
+	if len(r.executorRelays) >= maxExecutorStreamsPerRunner {
 		r.mu.Unlock()
 		return status.Error(codes.ResourceExhausted, "Runner has too many executor channels")
 	}
-	if _, exists := r.executorRelays[channelID]; exists {
+	if _, exists := r.executorRelays[relayID]; exists {
 		r.mu.Unlock()
 		return status.Error(codes.AlreadyExists, "executor channel was already opened")
 	}
@@ -103,8 +102,8 @@ func (r *Runner) startExecutorRelay(
 		return status.Errorf(codes.FailedPrecondition, "request Codex executor: %v", err)
 	}
 	ctx, cancel := context.WithCancel(streamCtx)
-	relay := newExecutorRelay(channelID, open.GetSessionId(), cancel)
-	r.executorRelays[channelID] = relay
+	relay := newExecutorRelay(relayID, open.GetSessionId(), cancel)
+	r.executorRelays[relayID] = relay
 	r.mu.Unlock()
 	r.changed()
 	workers.Add(1)
@@ -118,8 +117,8 @@ func (r *Runner) startExecutorRelay(
 func (r *Runner) runExecutorRelay(
 	ctx context.Context,
 	relay *executorRelay,
-	send func(*controlpb.RunnerFrame) error,
-	sendData func(*controlpb.RunnerFrame) error,
+	send func(*executorpb.ExecutorFrame) error,
+	sendData func(*executorpb.ExecutorFrame) error,
 ) {
 	defer func() {
 		relay.cancel()
@@ -149,7 +148,7 @@ func (r *Runner) runExecutorRelay(
 			"executor_supervision_start_refusal", last.process.StartRefusal,
 			"executor_supervision_exit_error", last.process.ExitError,
 		)
-		_ = sendExecutorReady(send, relay.id, false)
+		_ = sendExecutorReady(send, false)
 		return
 	}
 	dialCtx, cancelDial := context.WithTimeout(ctx, executorDialTimeout)
@@ -157,7 +156,7 @@ func (r *Runner) runExecutorRelay(
 	cancelDial()
 	if err != nil {
 		slog.Warn("central executor channel could not connect", "session_id", relay.sessionID, "error", err)
-		_ = sendExecutorReady(send, relay.id, false)
+		_ = sendExecutorReady(send, false)
 		return
 	}
 	conn.SetReadLimit(maxExecutorMessageBytes)
@@ -168,10 +167,10 @@ func (r *Runner) runExecutorRelay(
 		return
 	}
 	// After connection, Close can use the ordered inbound queue. Do not hold
-	// readyMu while sending: frame routing must never wait on tunnel writes.
+	// readyMu while sending: frame routing must never wait on control stream writes.
 	relay.ready = true
 	relay.readyMu.Unlock()
-	if err := sendExecutorReady(send, relay.id, true); err != nil {
+	if err := sendExecutorReady(send, true); err != nil {
 		_ = conn.Close(websocket.StatusGoingAway, "Runner control stream ended")
 		return
 	}
@@ -182,10 +181,9 @@ func (r *Runner) runExecutorRelay(
 	closeOnce := sync.Once{}
 	sendClose := func(code uint32, reason string) {
 		closeOnce.Do(func() {
-			_ = send(&controlpb.RunnerFrame{Frame: &controlpb.RunnerFrame_Executor{Executor: &executorpb.ExecutorFrame{
-				ChannelId: relay.id,
-				Frame:     &executorpb.ExecutorFrame_Close{Close: &executorpb.ExecutorClose{Code: code, Reason: reason}},
-			}}})
+			_ = send(&executorpb.ExecutorFrame{
+				Frame: &executorpb.ExecutorFrame_Close{Close: &executorpb.ExecutorClose{Code: code, Reason: reason}},
+			})
 		})
 	}
 	defer sendClose(uint32(websocket.StatusGoingAway), "Runner executor channel closed")
@@ -214,12 +212,11 @@ func (r *Runner) runExecutorRelay(
 			if messageType == websocket.MessageBinary {
 				opcode = executorpb.ExecutorMessage_OPCODE_BINARY
 			}
-			frame := &controlpb.RunnerFrame{Frame: &controlpb.RunnerFrame_Executor{Executor: &executorpb.ExecutorFrame{
-				ChannelId: relay.id,
+			frame := &executorpb.ExecutorFrame{
 				Frame: &executorpb.ExecutorFrame_Message{Message: &executorpb.ExecutorMessage{
 					Opcode: opcode, Payload: payload,
 				}},
-			}}}
+			}
 			if err := sendData(frame); err != nil {
 				finished <- err
 				return
@@ -321,11 +318,10 @@ func (r *Runner) waitForExecutorReadiness(ctx context.Context) (executorReadines
 	return last, err
 }
 
-func sendExecutorReady(send func(*controlpb.RunnerFrame) error, id string, accepted bool) error {
-	return send(&controlpb.RunnerFrame{Frame: &controlpb.RunnerFrame_Executor{Executor: &executorpb.ExecutorFrame{
-		ChannelId: id,
-		Frame:     &executorpb.ExecutorFrame_Ready{Ready: &executorpb.ExecutorReady{Accepted: accepted}},
-	}}})
+func sendExecutorReady(send func(*executorpb.ExecutorFrame) error, accepted bool) error {
+	return send(&executorpb.ExecutorFrame{
+		Frame: &executorpb.ExecutorFrame_Ready{Ready: &executorpb.ExecutorReady{Accepted: accepted}},
+	})
 }
 
 func normalizeExecutorCloseCode(code uint32) uint32 {
@@ -350,41 +346,27 @@ func validExecutorCloseCode(code uint32) bool {
 	}
 }
 
-func parseExecutorChannelID(value string, epoch, previous uint64) (uint64, error) {
-	parts := strings.Split(value, "-")
-	if len(parts) != 2 {
-		return 0, status.Error(codes.InvalidArgument, "invalid executor channel ID")
-	}
-	frameEpoch, err := strconv.ParseUint(parts[0], 10, 64)
-	if err != nil || frameEpoch != epoch {
-		return 0, status.Error(codes.InvalidArgument, "executor channel belongs to another connection epoch")
-	}
-	sequence, err := strconv.ParseUint(parts[1], 10, 64)
-	if err != nil || sequence == 0 || sequence <= previous {
-		return 0, status.Error(codes.AlreadyExists, "executor channel ID was replayed")
-	}
-	return sequence, nil
-}
-
-func (r *Runner) routeExecutorFrame(ctx context.Context, frame *executorpb.ExecutorFrame, epoch uint64, lastOpen *uint64, send func(*controlpb.RunnerFrame) error, sendData func(*controlpb.RunnerFrame) error, workers *sync.WaitGroup) error {
-	if frame.GetChannelId() == "" {
-		return status.Error(codes.InvalidArgument, "Gateway executor frame has no channel ID")
+func (r *Runner) routeExecutorFrame(ctx context.Context, frame *executorpb.ExecutorFrame, relayID string, opened *bool, send func(*executorpb.ExecutorFrame) error, sendData func(*executorpb.ExecutorFrame) error, workers *sync.WaitGroup) error {
+	if frame == nil || frame.GetFrame() == nil {
+		return status.Error(codes.InvalidArgument, "executor frame is empty")
 	}
 	switch body := frame.GetFrame().(type) {
 	case *executorpb.ExecutorFrame_Open:
-		sequence, err := parseExecutorChannelID(frame.GetChannelId(), epoch, *lastOpen)
-		if err != nil {
-			return err
+		if *opened {
+			return status.Error(codes.InvalidArgument, "executor stream already opened")
 		}
-		*lastOpen = sequence
-		if err := r.startExecutorRelay(ctx, frame.GetChannelId(), body.Open, send, sendData, workers); err != nil {
+		*opened = true
+		if err := r.startExecutorRelay(ctx, relayID, body.Open, send, sendData, workers); err != nil {
 			slog.Debug("central executor channel refused", "session_id", body.Open.GetSessionId(), "error", err)
-			return sendExecutorReady(send, frame.GetChannelId(), false)
+			return sendExecutorReady(send, false)
 		}
 		return nil
 	case *executorpb.ExecutorFrame_Message, *executorpb.ExecutorFrame_Close:
+		if !*opened {
+			return status.Error(codes.InvalidArgument, "executor stream must start with ExecutorOpen")
+		}
 		r.mu.Lock()
-		relay := r.executorRelays[frame.GetChannelId()]
+		relay := r.executorRelays[relayID]
 		r.mu.Unlock()
 		if relay == nil {
 			return nil // delayed data after a channel close cannot be replayed onto a later channel

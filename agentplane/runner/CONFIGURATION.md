@@ -38,38 +38,25 @@ Runner environment changes or state ownership begins.
 
 `runner.json` is a strict JSON object with `version: 2`.
 
-| Field                           | Meaning                                                                                                                                                                     |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_reconcile_concurrency` | Optional positive count of concurrent Session COSI reconciliations; defaults to `16` and does not limit Session admission.                                                  |
-| `state_dir`                     | Required absolute persistent state path; deployed as `/state`.                                                                                                              |
-| `initialization_cwd`            | Required absolute bootstrap working directory.                                                                                                                              |
-| `workspace_root`                | Optional absolute directory constraining Session working directories. Omission permits requested absolute paths directly.                                                   |
-| `control`                       | Required transport union. `mode: "reverse"` uses `target` and mTLS `tls`; `mode: "forward"` uses `listen_address` and the same mTLS `tls` object. There is no default mode. |
-| `ingress`                       | Required History ingress endpoint with `target` (`host:port`) and `bearer`; it remains independent of control mode.                                                         |
-| `platform_instructions`         | Required deployment-wide Session guidance, rendered from `platform_instructions.j2`.                                                                                        |
-| `runner_environment`            | Optional `inherit` names and `values` map applied to Runner itself.                                                                                                         |
-| `harness_environment`           | Required `inherit` names and `values` map defining the native process environment.                                                                                          |
-| `claude`, `codex`               | Optional provider objects: absolute `binary`, HTTP(S) `base_url`, and `token_env`. An omitted provider is disabled.                                                         |
-| `environment`                   | Required tagged Pod or VM policy, including the optional executor.                                                                                                          |
-| `debug_checkpoint`              | Optional test-only object containing nonempty `name` and `command_id`.                                                                                                      |
+| Field                           | Meaning                                                                                                                    |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `session_reconcile_concurrency` | Optional positive count of concurrent Session COSI reconciliations; defaults to `16` and does not limit Session admission. |
+| `state_dir`                     | Required absolute persistent state path; deployed as `/state`.                                                             |
+| `initialization_cwd`            | Required absolute bootstrap working directory.                                                                             |
+| `workspace_root`                | Optional absolute directory constraining Session working directories. Omission permits requested absolute paths directly.  |
+| `control`                       | Required Runner listener with `listen_address` (`host:port`) and mTLS `tls` certificate, key and trust roots.              |
+| `ingress`                       | Required History ingress endpoint with `target` (`host:port`) and `bearer`; it remains independent of Runner control.      |
+| `platform_instructions`         | Required deployment-wide Session guidance, rendered from `platform_instructions.j2`.                                       |
+| `runner_environment`            | Optional `inherit` names and `values` map applied to Runner itself.                                                        |
+| `harness_environment`           | Required `inherit` names and `values` map defining the native process environment.                                         |
+| `claude`, `codex`               | Optional provider objects: absolute `binary`, HTTP(S) `base_url`, and `token_env`. An omitted provider is disabled.        |
+| `environment`                   | Required tagged Pod or VM policy, including the optional executor.                                                         |
+| `debug_checkpoint`              | Optional test-only object containing nonempty `name` and `command_id`.                                                     |
 
-`control` has exactly one discriminator, `mode`. Both variants require absolute TLS paths:
-
-```json
-{
-  "mode": "reverse",
-  "target": "runner-gateway.namespace.svc:8090",
-  "tls": {
-    "cert_file": "/run/agentplane/runner-tls/tls.crt",
-    "key_file": "/run/agentplane/runner-tls/tls.key",
-    "ca_file": "/run/agentplane/runner-tls/ca.crt"
-  }
-}
-```
+`control` requires absolute TLS paths and always serves the Runner protocol:
 
 ```json
 {
-  "mode": "forward",
   "listen_address": "0.0.0.0:9090",
   "tls": {
     "cert_file": "/run/agentplane/runner-tls/tls.crt",
@@ -79,13 +66,12 @@ Runner environment changes or state ownership begins.
 }
 ```
 
-The variants reject fields from the other mode. Runner verifies that its certificate URI names the
-Sandbox namespace and UID from `launch.json`; the Gateway presents the fixed
-`spiffe://agentplane/runner-gateway` identity. Both directions require mTLS. Runner control has no
-bearer credential; the `ingress.bearer` remains scoped to History ingress.
+Runner verifies that its server certificate URI names the Sandbox namespace and UID from `launch.json`;
+the Gateway presents the fixed `spiffe://agentplane/runner-gateway` identity. Both directions require
+mTLS. Runner control has no bearer credential; the `ingress.bearer` remains scoped to History ingress.
 
-Forward mode serves the standard gRPC health API on the control listener and reports `SERVING` once
-local Runner startup completes, before a Gateway state watch connects. The Gateway starts
+The control listener serves the standard gRPC health API and reports `SERVING` once local Runner
+startup completes, before a Gateway state watch connects. The Gateway starts
 `Runner.WatchState` with the Sandbox UID, current workload incarnation UID and Lease connection epoch.
 The Runner adopts that incarnation before sending facts, then sends changed state and a ten-second
 heartbeat. Unary calls and executor streams carry the Sandbox UID, incarnation UID, Runner boot ID

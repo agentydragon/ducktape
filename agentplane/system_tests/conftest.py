@@ -68,9 +68,7 @@ AUDIENCE = "agentplane"
 # staging names its Pod one `runner-ducktape`. The system tests import neither cdk8s module, so a
 # rename lands in both places.
 POD_TEMPLATE = "runner"
-FORWARD_POD_TEMPLATE = "runner-forward"
 VM_TEMPLATE = "runner-vm"
-FORWARD_VM_TEMPLATE = "runner-vm-forward"
 # A VM Sandbox's working directory: the guest's runner takes only a child of its workspace root.
 VM_WORKING_DIRECTORY = "/state/workspaces/accept"
 

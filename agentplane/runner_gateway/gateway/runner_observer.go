@@ -21,32 +21,24 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var errForwardOwned = status.Error(codes.Unavailable, connectionHeldByAnotherReplica)
+var errRunnerOwned = status.Error(codes.Unavailable, connectionHeldByAnotherReplica)
 
-type forwardClientConn struct {
+type fencedRunnerConn struct {
 	conn     *grpc.ClientConn
 	identity metadata.MD
 }
 
-func (c *forwardClientConn) Invoke(ctx context.Context, method string, args, reply any, opts ...grpc.CallOption) error {
+func (c *fencedRunnerConn) Invoke(ctx context.Context, method string, args, reply any, opts ...grpc.CallOption) error {
 	return c.conn.Invoke(metadata.NewOutgoingContext(ctx, c.identity.Copy()), method, args, reply, opts...)
 }
 
-func (c *forwardClientConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+func (c *fencedRunnerConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 	return c.conn.NewStream(metadata.NewOutgoingContext(ctx, c.identity.Copy()), desc, method, opts...)
 }
 
-// RunForward supervises one observer per local forward runner. The existing Lease elects
+// RunRunnerObservers supervises one observer per active Runner. The existing Lease elects
 // one Gateway replica; connection availability never chooses command queue ownership.
-func (g *Gateway) RunForward(ctx context.Context) error {
-	enabled := false
-	for _, mode := range g.config.RunnerTransports {
-		enabled = enabled || mode == "forward"
-	}
-	if !enabled {
-		<-ctx.Done()
-		return ctx.Err()
-	}
+func (g *Gateway) RunRunnerObservers(ctx context.Context) error {
 	type activeRunner struct {
 		destination runnerDestination
 		cancel      context.CancelFunc
@@ -65,12 +57,12 @@ func (g *Gateway) RunForward(ctx context.Context) error {
 	for {
 		var resources sandboxapi.SandboxList
 		if err := g.objects.List(ctx, &resources, client.InNamespace(g.config.Namespace)); err != nil {
-			return fmt.Errorf("list forward Sandboxes: %w", err)
+			return fmt.Errorf("list Sandboxes for Runner observation: %w", err)
 		}
 		wanted := make(map[string]runnerDestination)
 		for i := range resources.Items {
 			destination, err := g.runnerDestination(ctx, &resources.Items[i])
-			if err == nil && destination.mode == "forward" {
+			if err == nil {
 				wanted[destination.identity.UID] = destination
 			}
 		}
@@ -98,8 +90,8 @@ func (g *Gateway) RunForward(ctx context.Context) error {
 				defer workers.Done()
 				defer close(done)
 				defer cancel()
-				if err := g.observeForward(workerCtx, destination); err != nil && workerCtx.Err() == nil && !errors.Is(err, errForwardOwned) {
-					slog.Warn("forward runner observer ended", "sandbox", destination.identity.Name, "error", err)
+				if err := g.observeRunner(workerCtx, destination); err != nil && workerCtx.Err() == nil && !errors.Is(err, errRunnerOwned) {
+					slog.Warn("runner observer ended", "sandbox", destination.identity.Name, "error", err)
 				}
 			}()
 		}
@@ -116,7 +108,7 @@ type observedState struct {
 	err      error
 }
 
-func (g *Gateway) observeForward(ctx context.Context, destination runnerDestination) error {
+func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestination) error {
 	timing := g.config.ControlTiming
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -131,7 +123,7 @@ func (g *Gateway) observeForward(ctx context.Context, destination runnerDestinat
 	}
 	defer conn.Close()
 	claimCtx, release := context.WithTimeout(ctx, timing.LivenessTimeout)
-	epoch, err := g.records.claimForward(claimCtx, destination.identity, destination.podUID)
+	epoch, err := g.records.claim(claimCtx, destination.identity, destination.podUID)
 	release()
 	if err != nil {
 		return err
@@ -163,7 +155,7 @@ func (g *Gateway) observeForward(ctx context.Context, destination runnerDestinat
 	var connection *runnerConnection
 	defer func() {
 		if connection != nil {
-			g.connections.remove(connection, status.Error(codes.Unavailable, "forward runner observation ended"))
+			g.connections.remove(connection, status.Error(codes.Unavailable, "runner observation ended"))
 		}
 	}()
 	for {
@@ -171,7 +163,7 @@ func (g *Gateway) observeForward(ctx context.Context, destination runnerDestinat
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-liveness.C:
-			return status.Error(codes.Unavailable, "forward runner state timed out")
+			return status.Error(codes.Unavailable, "runner state timed out")
 		case <-maximumAge.C:
 			return status.Error(codes.Unavailable, "maximum connection age reached")
 		case received := <-responses:
@@ -180,20 +172,20 @@ func (g *Gateway) observeForward(ctx context.Context, destination runnerDestinat
 			}
 			response := received.response
 			if identity, err := runner_transport.PeerIdentity(watch.Context()); err != nil || identity != destination.peerURI {
-				return status.Error(codes.Unauthenticated, "forward runner certificate is no longer valid")
+				return status.Error(codes.Unauthenticated, "runner certificate is no longer valid")
 			}
 			if response.GetRunnerBootId() == "" || response.GetSandboxUid() != destination.identity.UID || response.GetIncarnationUid() != destination.podUID || response.GetConnectionEpoch() != epoch || response.GetFacts() == nil {
-				return status.Error(codes.InvalidArgument, "forward runner state has invalid identity or facts")
+				return status.Error(codes.InvalidArgument, "runner state has invalid identity or facts")
 			}
 			if connection != nil && connection.bootID != response.RunnerBootId {
 				return status.Error(codes.Aborted, "runner boot changed")
 			}
 			facts, err := sandboxlease.FromProto(response.GetFacts())
 			if err != nil {
-				return status.Error(codes.InvalidArgument, "forward runner sent invalid facts")
+				return status.Error(codes.InvalidArgument, "runner sent invalid facts")
 			}
 			validateCtx, release := context.WithTimeout(ctx, timing.LivenessTimeout)
-			_, currentUID, err := g.certificatePeer(validateCtx, destination.peerURI, "forward")
+			_, currentUID, err := g.certificatePeer(validateCtx, destination.peerURI)
 			if err == nil && currentUID != destination.podUID {
 				err = status.Error(codes.PermissionDenied, "runner incarnation changed")
 			}
@@ -208,7 +200,7 @@ func (g *Gateway) observeForward(ctx context.Context, destination runnerDestinat
 				return err
 			}
 			if connection == nil {
-				direct := &forwardClientConn{conn: conn, identity: metadata.Pairs(
+				direct := &fencedRunnerConn{conn: conn, identity: metadata.Pairs(
 					"agentplane-sandbox-uid", destination.identity.UID,
 					"agentplane-incarnation-uid", destination.podUID,
 					"agentplane-runner-boot-id", response.RunnerBootId,

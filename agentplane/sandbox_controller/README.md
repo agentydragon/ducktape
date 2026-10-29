@@ -4,8 +4,9 @@ Reconciles `Sandbox` into retained state and optional workspace PVCs, its own Se
 `PolicyBinding`, and, while running, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel). The integration app submits Sandbox desired state and
 operator grants through the Kubernetes API; this controller reconciles each Sandbox and owns its
-status. Runner control uses the template's explicitly selected `forward` or `reverse` mTLS transport;
-History and telemetry use the egress sidecar's platform routes. `spec.bootstrap` and the Sandbox's identity reach its runner
+status. Each runner serves mTLS on its workload network, and the Runner Gateway connects to the
+current incarnation using its per-incarnation certificate. History and telemetry use the egress
+sidecar's platform routes. `spec.bootstrap` and the Sandbox's identity reach its runner
 through the Sandbox's launch ConfigMap (a Pod mounts it, a VM gets it as a disk). Session launch
 defaults live in the app's preset catalog and are resolved before an opening reaches the Dispatcher.
 Deletion first has the runner seal every

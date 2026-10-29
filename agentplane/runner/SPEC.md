@@ -13,9 +13,9 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 Every Pod and VM starts `agentplane-runner --config PATH --launch-file PATH`. The executable name
 has no effect on configuration. Both flags are required; the shared version-2 JSON configuration
 rejects unknown fields, unsupported versions and contradictory policy before state ownership.
-`control.mode` must explicitly select `reverse` or `forward`; there is no default. Both variants
-use mTLS, and Runner verifies its certificate URI against the Sandbox namespace and UID in the
-separate controller-owned launch file. Templates own paths, endpoints, providers, explicit
+Runner serves control from the mTLS listener at `control.listen_address`; its server certificate URI
+must name the Sandbox namespace and UID in the separate controller-owned launch file. Templates own
+paths, endpoints, providers, explicit
 environment allowlists, platform instructions, isolation settings, and the configurable Session
 reconciliation worker count (default 16). That worker count does not cap Session admission. The
 launch file contains only Sandbox identity and optional bootstrap source.
@@ -166,28 +166,22 @@ budget remains authoritative across all of its native services.
   attempt without blocking the Runner control stream. A refused launch or terminal fencing failure
   rejects readiness; it never enables local execution.
 
-## Runner control transports
+## Runner control
 
-- In `reverse` mode Runner dials the Runner Gateway's [control stream](../docs/runner_control.md)
-  at `control.target` and reconnects after loss. In `forward` mode Runner listens on
-  `control.listen_address` and the Gateway dials its mTLS `Runner` and `RunnerExec` services. The
-  Runner certificate URI binds the Sandbox namespace, Sandbox UID and credential ID; the Gateway
-  presents `spiffe://agentplane/runner-gateway`. Runner control has no bearer credential. History
-  ingress remains a separate outbound bearer-authenticated connection.
-- Forward mode exposes the standard gRPC health API and reports local startup as `SERVING` before
-  state observation begins. The Gateway's `WatchState` request supplies the Sandbox UID, current Pod
+- Runner listens on `control.listen_address` and the Gateway dials its mTLS `Runner` and `RunnerExec`
+  services. The Runner certificate URI binds the Sandbox namespace, Sandbox UID and credential ID;
+  the Gateway presents `spiffe://agentplane/runner-gateway`. Runner control has no bearer credential.
+  History ingress remains a separate outbound bearer-authenticated connection.
+- The control listener exposes the standard gRPC health API and reports local startup as `SERVING`
+  before state observation begins. The Gateway's `WatchState` request supplies the Sandbox UID, current Pod
   or virt-launcher incarnation UID, and Lease connection epoch. Runner adopts that incarnation
   before publishing its first facts snapshot, then sends changed facts and a ten-second heartbeat.
   Cancelling or superseding the watch changes observer readiness but does not cancel already
   admitted durable work.
-- Every forward unary call and direct executor stream is fenced with the Sandbox UID, incarnation
+- Every unary call and direct executor stream is fenced with the Sandbox UID, incarnation
   UID, Runner boot ID and connection epoch. A stale epoch cannot authorize a call or clear a newer
-  observer's readiness. `RunnerExec.Connect` carries one executor channel per stream; it uses the
-  existing Runner executor relay and its per-Runner channel and message limits. Closing one stream
-  leaves sibling executor channels running.
-- Reverse control writes are serialized and bounded. A write that exceeds its bound cancels that
-  `Connect` stream so blocked writes and relayed calls can join before reconnect; reconnect never
-  replays calls from the lost stream.
+  observer's readiness. `RunnerExec.Connect` carries one executor relay per stream and applies the
+  per-Runner stream and message limits. Closing one stream leaves other executor relays running.
 - `OpenSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
   `last_cursor`, and the active turn id as of that position. `GetStatus` returns one snapshot with a
   runner boot UUID, each harness process (its per-spawn UUID and the Sessions it hosts), session
@@ -239,13 +233,13 @@ budget remains authoritative across all of its native services.
   another writer's, or whose first acknowledgement is beyond the journal, retries at the maximum.
   These remote failures do not hold up another session, a command or a lifecycle request: the journal is the buffer.
 - The ingress bearer is a placeholder the egress proxy substitutes for the ingress's own audience;
-  it is independent of Runner control transport and never authenticates to the Gateway.
+  it is independent of Runner control and never authenticates to the Gateway.
 
 ## Teardown quiesce
 
 - `Quiesce` is for Sandbox teardown only. The runner first records, durably, that the Sandbox is in
-  lameduck in this incarnation, naming the incarnation UID from its latest authenticated reverse
-  `Welcome` or forward `WatchState`; from then on,
+  lameduck in this incarnation, naming the incarnation UID from its latest authenticated
+  `WatchState`; from then on,
   including after a restart in the same incarnation, it is in lameduck: `OpenSession` and every
   delivered command except an interrupt are refused with `ABORTED`, which a sender reads as "retry
   after the Sandbox resumes". An admitted command whose dispatch marker was not committed is

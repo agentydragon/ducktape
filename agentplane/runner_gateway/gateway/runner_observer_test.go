@@ -3,17 +3,18 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"net"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	sandboxespb "github.com/agentydragon/ducktape/agentplane/proto/sandboxes"
 	runnerexecpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
@@ -31,40 +32,11 @@ type observedRunner struct {
 	calls  atomic.Int32
 }
 
-func TestReverseControlHasNoBearerAuthenticationFallback(t *testing.T) {
-	f := newSandboxFixture(t)
-	g := f.newGateway(t, "test-auth-gateway", "192.0.2.31")
-	listener := newBufconnListener()
-	// Even a misregistered plaintext listener must not turn a valid workload bearer into
-	// a runner identity. Production additionally requires mTLS at the private listener.
-	server := grpc.NewServer()
-	g.RegisterRunnerControl(server)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	conn, err := grpc.NewClient("passthrough:///test-runner-auth", grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	for _, token := range []string{"", f.runnerToken} {
-		ctx, cancel := context.WithTimeout(metadata.AppendToOutgoingContext(t.Context(), "authorization", "Bearer "+token), time.Second)
-		stream, err := runnercontrolpb.NewRunnerControlClient(conn).Connect(ctx)
-		if err == nil {
-			_, err = stream.Recv()
-		}
-		cancel()
-		if status.Code(err) != codes.Unauthenticated {
-			t.Fatalf("runner without a verified certificate was accepted: %v", err)
-		}
-	}
-}
-
 func (r *observedRunner) WatchState(request *runnerservicepb.WatchStateRequest, stream grpc.ServerStreamingServer[runnerservicepb.WatchStateResponse]) error {
 	if err := stream.Send(&runnerservicepb.WatchStateResponse{
 		SandboxUid:   request.SandboxUid,
 		RunnerBootId: r.bootID, IncarnationUid: request.IncarnationUid, ConnectionEpoch: request.ConnectionEpoch,
-		Facts: &runnercontrolpb.RunnerFacts{Bootstrap: runnercontrolpb.RunnerFacts_BOOTSTRAP_SUCCEEDED},
+		Facts: &runnerstatepb.RunnerFacts{Bootstrap: runnerstatepb.RunnerFacts_BOOTSTRAP_SUCCEEDED},
 	}); err != nil {
 		return err
 	}
@@ -77,20 +49,15 @@ func (r *observedRunner) GetStatus(ctx context.Context, _ *runnerpb.GetStatusReq
 	if len(md.Get("agentplane-runner-boot-id")) != 1 || md.Get("agentplane-runner-boot-id")[0] != r.bootID ||
 		len(md.Get("agentplane-sandbox-uid")) != 1 || len(md.Get("agentplane-incarnation-uid")) != 1 ||
 		len(md.Get("agentplane-connection-epoch")) != 1 {
-		return nil, status.Error(codes.PermissionDenied, "missing forward request fence")
+		return nil, status.Error(codes.PermissionDenied, "missing Runner request fence")
 	}
 	r.calls.Add(1)
 	return &runnerpb.RunnerStatus{}, nil
 }
 
-func TestForwardObserverPublishesFactsAndFencesRPCsWithoutReverseControl(t *testing.T) {
+func TestRunnerObserverPublishesFactsAndFencesRPCs(t *testing.T) {
 	f := newSandboxFixture(t)
-	pod := f.pod.DeepCopy()
-	pod.Labels[sandboxapi.RunnerTransportLabel] = "forward"
-	if _, err := api.Clientset.CoreV1().Pods(f.namespace).Update(t.Context(), pod, metav1.UpdateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	g := f.newGateway(t, "test-forward-gateway", "192.0.2.30", executorAccount)
+	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
 	destination, err := g.runnerDestination(t.Context(), f.sandbox)
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +71,7 @@ func TestForwardObserverPublishesFactsAndFencesRPCsWithoutReverseControl(t *test
 		t.Fatal(err)
 	}
 	server := grpc.NewServer(grpc.Creds(creds))
-	runner := &observedRunner{bootID: "test-forward-boot"}
+	runner := &observedRunner{bootID: "test-runner-boot"}
 	runnerservicepb.RegisterRunnerServer(server, runner)
 	runnerexecpb.RegisterRunnerExecServer(server, &echoForwardExecutor{})
 	go func() { _ = server.Serve(listener) }()
@@ -113,7 +80,7 @@ func TestForwardObserverPublishesFactsAndFencesRPCsWithoutReverseControl(t *test
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	finished := make(chan error, 1)
-	go func() { finished <- g.observeForward(ctx, destination) }()
+	go func() { finished <- g.observeRunner(ctx, destination) }()
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 	poll := time.NewTicker(time.Millisecond)
@@ -122,9 +89,9 @@ func TestForwardObserverPublishesFactsAndFencesRPCsWithoutReverseControl(t *test
 	for connection == nil {
 		select {
 		case err := <-finished:
-			t.Fatalf("forward observer stopped: %v", err)
+			t.Fatalf("Runner observer stopped: %v", err)
 		case <-deadline.C:
-			t.Fatal("forward runner never became callable")
+			t.Fatal("Runner never became callable")
 		case <-poll.C:
 			connection, _ = g.connections.holder(string(f.sandbox.UID))
 		}
@@ -133,7 +100,7 @@ func TestForwardObserverPublishesFactsAndFencesRPCsWithoutReverseControl(t *test
 		t.Fatal(err)
 	}
 	if runner.calls.Load() != 1 {
-		t.Fatal("forward call did not reach runner")
+		t.Fatal("Runner call did not reach server")
 	}
 	publicListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -159,13 +126,13 @@ func TestForwardObserverPublishesFactsAndFencesRPCsWithoutReverseControl(t *test
 			Sandbox: f.sandbox.Name, SandboxUid: string(f.sandbox.UID),
 			Owner: &sandboxespb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
 		},
-		ExpectedIncarnationUid: string(f.pod.UID), SessionId: "test-forward-exec-session",
+		ExpectedIncarnationUid: string(f.pod.UID), SessionId: "test-runner-exec-session",
 	}}}); err != nil {
 		t.Fatal(err)
 	}
 	ready, err := exec.Recv()
 	if err != nil || !ready.GetReady().GetAccepted() {
-		t.Fatalf("forward executor was not ready: %v %v", ready, err)
+		t.Fatalf("Runner executor was not ready: %v %v", ready, err)
 	}
 	payload := []byte{0, 1, 2, 255}
 	if err := exec.Send(&executorpb.ExecutorFrame{Frame: &executorpb.ExecutorFrame_Message{Message: &executorpb.ExecutorMessage{
@@ -174,8 +141,8 @@ func TestForwardObserverPublishesFactsAndFencesRPCsWithoutReverseControl(t *test
 		t.Fatal(err)
 	}
 	echo, err := exec.Recv()
-	if err != nil || !bytes.Equal(echo.GetMessage().GetPayload(), payload) || echo.GetChannelId() != "" {
-		t.Fatalf("forward executor changed the message: %v %v", echo, err)
+	if err != nil || !bytes.Equal(echo.GetMessage().GetPayload(), payload) {
+		t.Fatalf("Runner executor changed the message: %v %v", echo, err)
 	}
 	stopExec()
 	lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(t.Context(), testSandbox+sandboxlease.RunnerLeaseSuffix, metav1.GetOptions{})
@@ -183,20 +150,20 @@ func TestForwardObserverPublishesFactsAndFencesRPCsWithoutReverseControl(t *test
 		t.Fatal(err)
 	}
 	if lease.Annotations[sandboxlease.RunnerBootIDAnnotation] != runner.bootID || lease.Annotations[sandboxlease.PodUIDAnnotation] != string(f.pod.UID) {
-		t.Fatalf("forward connection did not publish its identities: %v", lease.Annotations)
+		t.Fatalf("Runner connection did not publish its identities: %v", lease.Annotations)
 	}
 	other := f.newGateway(t, "test-other-gateway", "192.0.2.31")
-	if _, err := other.records.claimForward(t.Context(), destination.identity, destination.podUID); status.Code(err) != codes.Unavailable {
-		t.Fatalf("another live Gateway stole forward ownership: %v", err)
+	if _, err := other.records.claim(t.Context(), destination.identity, destination.podUID); status.Code(err) != codes.Unavailable {
+		t.Fatalf("another live Gateway stole Runner ownership: %v", err)
 	}
 	cancel()
 	select {
 	case <-finished:
 	case <-time.After(time.Second):
-		t.Fatal("forward observation did not stop")
+		t.Fatal("Runner observation did not stop")
 	}
 	if _, err := g.connections.holder(string(f.sandbox.UID)); status.Code(err) != codes.Unavailable {
-		t.Fatalf("closed forward connection remained callable: %v", err)
+		t.Fatalf("closed Runner connection remained callable: %v", err)
 	}
 }
 
@@ -209,7 +176,7 @@ func (*echoForwardExecutor) Connect(stream grpc.BidiStreamingServer[executorpb.E
 	if err != nil {
 		return err
 	}
-	if first.GetOpen() == nil || first.GetChannelId() != "" {
+	if first.GetOpen() == nil {
 		return status.Error(codes.InvalidArgument, "expected a private executor open")
 	}
 	md, _ := metadata.FromIncomingContext(stream.Context())
@@ -230,14 +197,14 @@ func (*echoForwardExecutor) Connect(stream grpc.BidiStreamingServer[executorpb.E
 	}
 }
 
-func TestRunnerCertificateCannotFollowReplacementCredentialsOrTransport(t *testing.T) {
+func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
 	f := newSandboxFixture(t)
 	g := f.newGateway(t, "test-gateway", "192.0.2.31")
-	uri, err := f.runnerTLS.LocalIdentity()
+	uri, err := f.runnerTLS.LocalIdentity(x509.ExtKeyUsageServerAuth)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := g.certificatePeer(t.Context(), uri, "reverse"); err != nil {
+	if _, _, err := g.certificatePeer(t.Context(), uri); err != nil {
 		t.Fatal(err)
 	}
 	pod := f.pod.DeepCopy()
@@ -245,14 +212,14 @@ func TestRunnerCertificateCannotFollowReplacementCredentialsOrTransport(t *testi
 	if _, err := api.Clientset.CoreV1().Pods(f.namespace).Update(t.Context(), pod, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := g.certificatePeer(t.Context(), uri, "reverse"); status.Code(err) != codes.PermissionDenied {
+	if _, _, err := g.certificatePeer(t.Context(), uri); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("old certificate followed replacement: %v", err)
 	}
 	newURI, err := runner_transport.RunnerURI(f.namespace, string(f.sandbox.UID), "test-replacement-credential")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := g.certificatePeer(t.Context(), newURI, "forward"); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("wrong transport was accepted: %v", err)
+	if _, _, err := g.certificatePeer(t.Context(), newURI); err != nil {
+		t.Fatalf("current credential was rejected: %v", err)
 	}
 }

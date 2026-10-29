@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 import pytest
 import pytest_bazel
@@ -40,7 +40,6 @@ def _runner_pod(
     isolated_executor: bool,
     runner_resources: k8s.ResourceRequirements,
     executor_resources: k8s.ResourceRequirements | None,
-    runner_transport: Literal["forward", "reverse"],
     session_reconcile_concurrency: int | None = None,
 ) -> dict[str, Any]:
     app = Cdk8sTesting.app()
@@ -51,7 +50,6 @@ def _runner_pod(
         replace(staging.ENV, isolated_codex_executor=isolated_executor),
         name="test-runner",
         image="example.invalid/runner",
-        runner_transport=runner_transport,
         runner_resources=runner_resources,
         executor_resources=executor_resources,
         session_reconcile_concurrency=session_reconcile_concurrency,
@@ -166,12 +164,7 @@ def test_runner_template_can_override_executor_resources_independently() -> None
         requests={"cpu": k8s.Quantity.from_string("43m"), "memory": k8s.Quantity.from_string("509Mi")},
         limits={"cpu": k8s.Quantity.from_string("71m"), "memory": k8s.Quantity.from_string("997Mi")},
     )
-    pod = _runner_pod(
-        isolated_executor=True,
-        runner_resources=runner_resources,
-        executor_resources=executor_resources,
-        runner_transport="reverse",
-    )
+    pod = _runner_pod(isolated_executor=True, runner_resources=runner_resources, executor_resources=executor_resources)
     containers = {container["name"]: container for container in pod["containers"]}
     assert containers["runner"]["resources"]["requests"] == {"cpu": "17m", "memory": "127Mi"}
     assert containers["runner"]["resources"]["limits"] == {"cpu": "31m", "memory": "251Mi"}
@@ -184,9 +177,7 @@ def test_environment_can_keep_codex_execution_inside_the_runner() -> None:
         requests={"cpu": k8s.Quantity.from_string("17m"), "memory": k8s.Quantity.from_string("127Mi")},
         limits={"cpu": k8s.Quantity.from_string("31m"), "memory": k8s.Quantity.from_string("251Mi")},
     )
-    pod = _runner_pod(
-        isolated_executor=False, runner_resources=runner_resources, executor_resources=None, runner_transport="reverse"
-    )
+    pod = _runner_pod(isolated_executor=False, runner_resources=runner_resources, executor_resources=None)
     containers = {container["name"]: container for container in pod["containers"]}
     assert "codex-executor" not in containers
     assert containers["runner"]["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
@@ -201,7 +192,6 @@ def test_runner_template_configures_session_reconcile_concurrency() -> None:
         staging.ENV,
         name="test-runner",
         image="example.invalid/runner",
-        runner_transport="reverse",
         session_reconcile_concurrency=2048,
     )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
@@ -213,34 +203,20 @@ def test_runner_template_configures_session_reconcile_concurrency() -> None:
 def test_environment_cannot_configure_resources_for_a_disabled_executor() -> None:
     resources = k8s.ResourceRequirements(limits={"memory": k8s.Quantity.from_string("1Gi")})
     with pytest.raises(ValueError, match="executor_resources cannot be set"):
-        _runner_pod(
-            isolated_executor=False,
-            runner_resources=resources,
-            executor_resources=resources,
-            runner_transport="reverse",
-        )
+        _runner_pod(isolated_executor=False, runner_resources=resources, executor_resources=resources)
 
 
-def test_forward_runner_template_renders_mtls_listener() -> None:
-    chart = Chart(Cdk8sTesting.app(), "forward-runner-template-test")
-    RunnerTemplate(
-        chart,
-        "runner-template",
-        staging.ENV,
-        name="test-forward-runner",
-        image="example.invalid/runner",
-        runner_transport="forward",
-    )
+def test_runner_template_renders_mtls_server_listener() -> None:
+    chart = Chart(Cdk8sTesting.app(), "runner-template-test")
+    RunnerTemplate(chart, "runner-template", staging.ENV, name="test-runner", image="example.invalid/runner")
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
     pod = template["spec"]["pod"]["spec"]
     runner = one(container for container in pod["containers"] if container["name"] == "runner")
     config = _runner_configuration(docs, pod)
 
-    assert template["spec"]["runnerTransport"] == "forward"
     assert runner["ports"] == [{"name": "runner-control", "containerPort": 9090}]
     assert config["control"] == {
-        "mode": "forward",
         "listen_address": "0.0.0.0:9090",
         "tls": {
             "cert_file": "/run/agentplane/runner-tls/tls.crt",

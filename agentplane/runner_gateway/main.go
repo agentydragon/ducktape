@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -134,7 +135,7 @@ func listenAndServe(ctx context.Context, c config) error {
 
 // serve uses supplied listeners; a nil HTTP listener disables the facade.
 func serve(ctx context.Context, c config, listener, httpListener net.Listener) error {
-	identity, err := c.RunnerTLS.LocalIdentity()
+	identity, err := c.RunnerTLS.LocalIdentity(x509.ExtKeyUsageClientAuth)
 	if err != nil {
 		return err
 	}
@@ -188,7 +189,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		return err
 	}
 	g, err := gateway.New(gateway.Config{
-		RunnerTransports: c.RunnerTransports, RunnerTLS: c.RunnerTLS,
+		RunnerTLS: c.RunnerTLS,
 		Namespace: c.Namespace, CallerAccounts: c.GatewayCallers, ExecutorCallers: c.ExecutorCallers,
 		SandboxControllerAccount: c.ControllerAccount,
 		HolderName:               c.PodName, HolderIP: c.PodIP, ProxyPort: int32(c.ProxyPort),
@@ -254,25 +255,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(listener)) }()
-	go func() { reportUnexpected(ctx, failed, "forward runner supervisor", g.RunForward(ctx)) }()
-	var runnerServer *grpc.Server
-	if c.RunnerListenAddress != "" {
-		credentials, err := c.RunnerTLS.ServerCredentials("")
-		if err != nil {
-			return err
-		}
-		runnerListener, err := netlistener.Open(c.RunnerListenAddress)
-		if err != nil {
-			return err
-		}
-		defer runnerListener.Close()
-		runnerServer = grpc.NewServer(grpc.Creds(credentials), observability.GRPCServerOption(),
-			grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionAge: time.Hour, MaxConnectionAgeGrace: 5 * time.Second}),
-			grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{MinTime: 30 * time.Second}))
-		g.RegisterRunnerControl(runnerServer)
-		defer runnerServer.Stop()
-		go func() { reportUnexpected(ctx, failed, "runner mTLS listener", runnerServer.Serve(runnerListener)) }()
-	}
+	go func() { reportUnexpected(ctx, failed, "Runner observer supervisor", g.RunRunnerObservers(ctx)) }()
 
 	var facadeServer *http.Server
 	if httpListener != nil {

@@ -18,7 +18,7 @@ from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import bearer, dial
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
-from agentplane.runner.configuration import Endpoint, ReverseControl
+from agentplane.runner.configuration import Endpoint, RunnerControl
 from agentplane.runner.testing.config import RunnerTestConfig
 from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.gateway import Gateway
@@ -82,7 +82,6 @@ async def gateway_service(
         dispatcher_audience=DISPATCHER_AUDIENCE,
         gateway_audience=GATEWAY_AUDIENCE,
         runner_proxy_token_file=token_file,
-        runner_transports=("reverse",),
     ) as service:
         yield service
 
@@ -133,17 +132,19 @@ async def runner(
     """The production Go runner as `sandbox`'s, taking control through the Go Runner Gateway; it still
     pushes its journal directly to the Go History Service ingress. Failed tests retain native
     evidence."""
-    if gateway_service.runner_target is None:
-        raise AssertionError("reverse Runner transport did not open its private listener")
-    control = ReverseControl(
-        mode="reverse",
-        target=gateway_service.runner_target,
+    control = RunnerControl(
+        listen_address="127.0.0.1:9090",
         tls=gateway_service.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
     )
     ingress = Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(sandbox.owner))
     launched = replace(config, launch=replace(config.launch, sandbox=sandbox.identity))
     async with RunningRunner(
-        launched, runner_gateway, history=history_service.reader, control_endpoint=control, ingress_endpoint=ingress
+        launched,
+        runner_gateway,
+        history=history_service.reader,
+        control_endpoint=control,
+        ingress_endpoint=ingress,
+        observe_control=False,
     ) as started:
         await gateway_service.wait_for_runner(sandbox_control, sandbox.destination)
         yield started

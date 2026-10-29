@@ -105,6 +105,6 @@ def gateway(runner_gateway: Gateway) -> Gateway:
 
 @pytest.fixture
 async def driver(runner: RunningRunner, history_service: GoHistoryService) -> AsyncIterator[RunnerDriver]:
-    """Drive the running Go executable through its control tunnel."""
+    """Drive the running Go executable through its mTLS control listener."""
     async with RunnerDriver(runner.gateway, history_service.reader) as started:
         yield started

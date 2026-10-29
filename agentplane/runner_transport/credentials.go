@@ -1,5 +1,5 @@
 // Package runner_transport provides the mTLS credentials shared by the Runner
-// and Runner Gateway control transports.
+// and Runner Gateway connection.
 package runner_transport
 
 import (
@@ -30,7 +30,7 @@ const (
 	identityPrefix = "spiffe://agentplane/runner/"
 )
 
-// Config names the projected client certificate, private key, and trust roots.
+// Config names the projected certificate, private key, and trust roots.
 // The files are read again during every TLS handshake so projected-secret
 // rotations are picked up without restarting the process.
 type Config struct {
@@ -108,7 +108,7 @@ func (c Config) ClientCredentials(expectedPeerURI string) (credentials.Transport
 		return nil, err
 	}
 	verify := func(peerCertificates []*x509.Certificate) ([][]*x509.Certificate, error) {
-		return c.verifyPeer(peerCertificates, x509.ExtKeyUsageServerAuth, expectedPeerURI, false)
+		return c.verifyPeer(peerCertificates, x509.ExtKeyUsageServerAuth, expectedPeerURI)
 	}
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS12,
@@ -134,21 +134,17 @@ func (c Config) ClientCredentials(expectedPeerURI string) (credentials.Transport
 	}, nil
 }
 
-// ServerCredentials creates mTLS server credentials. A non-empty expected URI
-// pins the client identity; an empty value accepts any structurally valid
-// RunnerURI so the Gateway can authorize it against live workload state.
+// ServerCredentials creates mTLS server credentials pinned to the expected client URI.
 func (c Config) ServerCredentials(expectedPeerURI string) (credentials.TransportCredentials, error) {
-	if expectedPeerURI != "" {
-		if err := validateIdentityURI(expectedPeerURI); err != nil {
-			return nil, fmt.Errorf("invalid expected peer URI: %w", err)
-		}
+	if err := validateIdentityURI(expectedPeerURI); err != nil {
+		return nil, fmt.Errorf("invalid expected peer URI: %w", err)
 	}
 	localIdentity, err := c.validateLocalCertificate(x509.ExtKeyUsageServerAuth)
 	if err != nil {
 		return nil, err
 	}
 	verify := func(peerCertificates []*x509.Certificate) ([][]*x509.Certificate, error) {
-		return c.verifyPeer(peerCertificates, x509.ExtKeyUsageClientAuth, expectedPeerURI, expectedPeerURI == "")
+		return c.verifyPeer(peerCertificates, x509.ExtKeyUsageClientAuth, expectedPeerURI)
 	}
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS12,
@@ -171,25 +167,10 @@ func (c Config) ServerCredentials(expectedPeerURI string) (credentials.Transport
 	}, nil
 }
 
-// LocalIdentity returns the current Gateway or Runner URI from this Config's
-// certificate. A Runner uses the returned RunnerURI to fence its control
-// stream; Gateway startup uses it to verify its fixed service identity.
-func (c Config) LocalIdentity() (string, error) {
-	certificate, err := c.loadKeyPair(x509.ExtKeyUsageClientAuth)
-	if err != nil {
-		return "", err
-	}
-	if err := c.verifyLocalChain(certificate, x509.ExtKeyUsageClientAuth); err != nil {
-		return "", err
-	}
-	identity, err := certificateIdentity(certificate.Leaf)
-	if err != nil {
-		return "", err
-	}
-	if err := validateIdentityURI(identity); err != nil {
-		return "", fmt.Errorf("local certificate has an unsupported identity: %w", err)
-	}
-	return identity, nil
+// LocalIdentity returns the certificate URI after validating its chain and the
+// caller's required authentication usage.
+func (c Config) LocalIdentity(usage x509.ExtKeyUsage) (string, error) {
+	return c.validateLocalCertificate(usage)
 }
 
 // PeerIdentity returns the sole verified SPIFFE URI SAN in a gRPC TLS peer.
@@ -285,7 +266,7 @@ func (c Config) verifyLocalChain(certificate tls.Certificate, usage x509.ExtKeyU
 	if err != nil {
 		return err
 	}
-	_, err = c.verifyPeer(chain, usage, identity, false)
+	_, err = c.verifyPeer(chain, usage, identity)
 	return err
 }
 
@@ -357,7 +338,7 @@ func readRoots(path string) (*x509.CertPool, error) {
 	return pool, nil
 }
 
-func (c Config) verifyPeer(certificates []*x509.Certificate, usage x509.ExtKeyUsage, expected string, runnerOnly bool) ([][]*x509.Certificate, error) {
+func (c Config) verifyPeer(certificates []*x509.Certificate, usage x509.ExtKeyUsage, expected string) ([][]*x509.Certificate, error) {
 	if len(certificates) == 0 || certificates[0] == nil {
 		return nil, errors.New("peer did not present a certificate")
 	}
@@ -369,16 +350,8 @@ func (c Config) verifyPeer(certificates []*x509.Certificate, usage x509.ExtKeyUs
 	if err != nil {
 		return nil, fmt.Errorf("peer certificate identity: %w", err)
 	}
-	if expected != "" {
-		if identity != expected {
-			return nil, fmt.Errorf("peer identity %q does not match expected identity %q", identity, expected)
-		}
-	} else if runnerOnly {
-		if _, _, _, err := ParseRunnerURI(identity); err != nil {
-			return nil, fmt.Errorf("peer identity is not a Runner workload URI: %w", err)
-		}
-	} else if err := validateIdentityURI(identity); err != nil {
-		return nil, fmt.Errorf("unsupported peer identity: %w", err)
+	if identity != expected {
+		return nil, fmt.Errorf("peer identity %q does not match expected identity %q", identity, expected)
 	}
 
 	roots, err := c.loadRoots()

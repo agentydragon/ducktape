@@ -6,20 +6,21 @@ in a Pod. The Sandbox Controller owns the lifecycle
 [`runner/vm.nix`](../runner/vm.nix) and its shared configuration schema is [`runner/configuration.py`](../runner/configuration.py);
 the template is [`runner_vm.py`](../../cluster/cdk8s/agentplane/runner_vm.py) and the egress relay is
 [`launcher_relay.py`](../../cluster/cdk8s/agentplane/launcher_relay.py). The traffic diagram is in
-[`agentplane/README.md`](../README.md). Control is the runner's outbound stream
-([runner control](runner_control.md)); the guest accepts no connections.
+[`agentplane/README.md`](../README.md). The Gateway dials the guest's private mTLS gRPC listener through KubeVirt's forwarded runner port
+([runner control](runner_control.md)).
 
 This document holds the constraints that bite an editor of those files, and the alternatives that
 lost.
 
-## Credentials stay outside the guest
+## Upstream bearer credentials stay outside the guest
 
 - KubeVirt derives a launcher's ServiceAccount from a VMI `serviceAccount` volume and automounts its
   token. That volume presents the credential to the guest, so a VM never has one.
   The launcher policy sets the account and disables automount instead.
 - The projected tokens are mounted into the relay container and nowhere else in the launcher Pod:
   not `compute`, not the disk helpers. The guest sees only the public config disk, the trust disk and
-  placeholder bearers; real upstream credentials stay at the egress gateway.
+  placeholder bearers; real upstream credentials stay at the egress gateway. The guest receives its own runner mTLS
+  certificate and private key through the mounted credential Secret.
 - A launcher is admitted only when KubeVirt's controller creates it for a live VMI of a live
   VirtualMachine controlled by one of our Sandboxes, and the same Sandbox controls the ServiceAccount.
   Each link is read live and UID-checked: labels and annotations never select an identity.
@@ -39,7 +40,7 @@ lost.
   guest, including kubelet's probe of the relay's readiness port.
 - A guest can open TCP to the egress gateway itself; an unauthenticated request there is refused.
   Proxy environment variables in the guest are convenience, not the boundary.
-- The Go runner dials its control and ingress routes directly (they are the relay's own listeners) and
+- The Go runner dials its ingress route directly (the relay's listener) and
   everything else through the proxy; harness children proxy everything except loopback.
 - With Kyverno unavailable, only VM launches in the namespace fail: the policy has its own webhook,
   narrowed by `matchConditions` to launcher creates and to updates of Pods carrying the token volume.
@@ -78,7 +79,7 @@ lost.
   one, and a zero-scan helper that refused it was dropped for that.
 - Stopping and starting a VM creates a new VMI on the same VM and disks. The VM supports neither live
   migration nor RAM suspension.
-- Commands reach a VM Sandbox only through the control stream. There is no guest exec path; `virt-launcher`
+- Commands reach a VM Sandbox through the runner's private gRPC server. There is no guest exec path; `virt-launcher`
   is not the guest. The operator console is output-only: the integration app attaches the VMI's serial
   console with its own `virtualmachineinstances/console` permission and relays it to a logged-in operator.
   KubeVirt serves one attached client per VMI, so a viewer holds out anyone else, and nothing is replayed.

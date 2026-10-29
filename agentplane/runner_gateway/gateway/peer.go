@@ -20,7 +20,6 @@ type runnerDestination struct {
 	podUID   string
 	peerURI  string
 	target   string
-	mode     string
 }
 
 // runnerDestination derives identity and address from the active workload, never a caller's target.
@@ -40,7 +39,6 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 		return runnerDestination{}, status.Error(codes.Unavailable, "runner Pod is unavailable")
 	}
 	credentialID := pod.Labels[sandboxapi.RunnerCredentialLabel]
-	mode := pod.Labels[sandboxapi.RunnerTransportLabel]
 	owner := metav1.GetControllerOf(pod)
 	if owner.APIVersion == sandboxVMIAPIVer && owner.Kind == sandboxVMIKind {
 		var vmi kubevirtv1.VirtualMachineInstance
@@ -62,10 +60,6 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 			return runnerDestination{}, status.Error(codes.PermissionDenied, "runner VM is not owned by its Sandbox")
 		}
 		credentialID = vmi.Labels[sandboxapi.RunnerCredentialLabel]
-		mode = vmi.Labels[sandboxapi.RunnerTransportLabel]
-	}
-	if mode != "forward" && mode != "reverse" {
-		return runnerDestination{}, status.Error(codes.FailedPrecondition, "runner transport was not explicitly selected")
 	}
 	uri, err := runner_transport.RunnerURI(sandbox.Namespace, string(sandbox.UID), credentialID)
 	if err != nil {
@@ -73,11 +67,11 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 	}
 	return runnerDestination{
 		identity: view.identity, podUID: ref.UID, peerURI: uri,
-		target: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(sandboxapi.RunnerServicePort)), mode: mode,
+		target: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(sandboxapi.RunnerServicePort)),
 	}, nil
 }
 
-func (g *Gateway) certificatePeer(ctx context.Context, peerURI, mode string) (sandboxreader.Identity, string, error) {
+func (g *Gateway) certificatePeer(ctx context.Context, peerURI string) (sandboxreader.Identity, string, error) {
 	namespace, sandboxUID, _, err := runner_transport.ParseRunnerURI(peerURI)
 	if err != nil || namespace != g.config.Namespace {
 		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "certificate does not identify an admitted runner")
@@ -94,8 +88,8 @@ func (g *Gateway) certificatePeer(ctx context.Context, peerURI, mode string) (sa
 		if err != nil {
 			return sandboxreader.Identity{}, "", err
 		}
-		if destination.peerURI != peerURI || destination.mode != mode {
-			return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "runner certificate or transport is stale")
+		if destination.peerURI != peerURI {
+			return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "runner certificate is stale")
 		}
 		return destination.identity, destination.podUID, nil
 	}

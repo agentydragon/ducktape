@@ -28,8 +28,8 @@ import (
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -761,7 +761,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 		return err == nil && settled
 	}, "reconstructed bootstrap outcome")
 	facts, err = restarted.facts()
-	if err != nil || facts.Bootstrap != controlpb.RunnerFacts_BOOTSTRAP_SUCCEEDED {
+	if err != nil || facts.Bootstrap != runnerstatepb.RunnerFacts_BOOTSTRAP_SUCCEEDED {
 		t.Fatalf("restarted bootstrap state = %v, %v", facts, err)
 	}
 }

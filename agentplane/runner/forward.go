@@ -13,7 +13,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
-	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -255,12 +254,11 @@ func (r *Runner) Connect(
 		r.directMu.Unlock()
 		return status.Error(codes.Aborted, "executor stream belongs to a stale connection epoch")
 	}
-	if r.directExecStreams >= maxExecutorChannelsPerRunner {
+	if r.directExecStreams >= maxExecutorStreamsPerRunner {
 		r.directMu.Unlock()
 		return status.Error(codes.ResourceExhausted, "Runner has too many direct executor streams")
 	}
 	r.directExecStreams++
-	sequence := r.directExecSequence.Add(1)
 	r.directMu.Unlock()
 	defer func() {
 		r.directMu.Lock()
@@ -270,8 +268,6 @@ func (r *Runner) Connect(
 	if err := server.SendHeader(metadata.MD{}); err != nil {
 		return err
 	}
-	internalChannelID := strconv.FormatUint(watch.epoch, 10) + "-" + strconv.FormatUint(sequence, 10)
-
 	ctx, cancel := context.WithCancel(server.Context())
 	stopWatch := context.AfterFunc(watch.ctx, cancel)
 	defer func() {
@@ -310,11 +306,7 @@ func (r *Runner) Connect(
 		}
 	}()
 	queueFrame := func(frame *executor_gatewaypb.ExecutorFrame) error {
-		if frame.GetChannelId() != internalChannelID {
-			return errors.New("runner executor relay returned a different channel ID")
-		}
-		wireFrame := &executor_gatewaypb.ExecutorFrame{Frame: frame.GetFrame()}
-		item := directExecFrame{frame: wireFrame}
+		item := directExecFrame{frame: frame}
 		endsStream := frame.GetClose() != nil || frame.GetReady() != nil && !frame.GetReady().GetAccepted()
 		if endsStream {
 			item.done = make(chan error, 1)
@@ -339,12 +331,7 @@ func (r *Runner) Connect(
 		}
 		return nil
 	}
-	toExecutor := func(frame *runnercontrolpb.RunnerFrame) error {
-		if frame.GetExecutor() == nil {
-			return errors.New("runner executor relay produced a non-executor frame")
-		}
-		return queueFrame(frame.GetExecutor())
-	}
+	toExecutor := queueFrame
 	executor := r.openExecutorConnection(ctx, watch.epoch, toExecutor, toExecutor)
 	defer executor.Close()
 	type incoming struct {
@@ -388,8 +375,8 @@ func (r *Runner) Connect(
 				return err
 			}
 			frame := message.frame
-			if frame == nil || frame.GetFrame() == nil || frame.GetChannelId() != "" {
-				return status.Error(codes.InvalidArgument, "direct executor frames must omit channel ID and contain a frame")
+			if frame == nil || frame.GetFrame() == nil {
+				return status.Error(codes.InvalidArgument, "direct executor frames must contain a frame")
 			}
 			if !opened {
 				if frame.GetOpen() == nil {
@@ -408,8 +395,7 @@ func (r *Runner) Connect(
 					return status.Error(codes.InvalidArgument, "unknown executor message opcode")
 				}
 			}
-			internalFrame := &executor_gatewaypb.ExecutorFrame{ChannelId: internalChannelID, Frame: frame.GetFrame()}
-			if err := executor.Route(internalFrame); err != nil {
+			if err := executor.Route(frame); err != nil {
 				return err
 			}
 			if frame.GetClose() != nil {

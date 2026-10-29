@@ -165,7 +165,6 @@ func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate,
 	})
 	// The VMI and its virt-launcher Pod carry the Sandbox label too.
 	spec.Template.ObjectMeta.Labels = withSandboxLabel(spec.Template.ObjectMeta.Labels, sandbox)
-	spec.Template.ObjectMeta.Labels[sandboxapi.RunnerTransportLabel] = string(template.Spec.RunnerTransport)
 	spec.Template.ObjectMeta.Labels[sandboxapi.RunnerCredentialLabel] = credentialID
 	always := kubevirtv1.RunStrategyAlways
 	spec.Running, spec.RunStrategy = nil, &always

@@ -125,7 +125,7 @@ to runners. Thread identities do not travel in Runner control-stream metadata.
   Session.
 - **One Session ID everywhere,** minted by the client: runner, Gateway, History Service and app use the same
   UUID.
-- **Runners only dial out.** No runner listens for connections.
+- **Runner control is private.** The Gateway dials each runner's mTLS gRPC listener; only Gateway workloads may reach it.
 - **The app is a facade.** It stores browser sessions, operator-set Thread metadata and the Thread → Session
   link, and asks the History Service where a Session runs.
 - **Coordination lives in Kubernetes** (Leases, Services), except a fence that must commit in the same
@@ -182,7 +182,7 @@ state and operator grants through the Kubernetes API as the requesting operator;
 Controller reconciles `spec` and owns `status`.
 
 Shared read-only Sandbox projections may be used by the app, notifications and Runner Gateway. They
-carry no create/delete/grant/session authority. RunnerControl and History protobuf/client types remain
+carry no create/delete/grant/session authority. Runner and History protobuf/client types remain
 service-owned APIs; the Gateway-specific Session API and the Sandbox Service API have no client here.
 
 Thread launch defaults live in the app's configured preset catalog and are selected by the preset

@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from collections.abc import Set
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal
+from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints
 from pydantic_settings import SettingsConfigDict
 
 from util.yaml_file_settings import YamlFileSettings
@@ -66,13 +66,7 @@ class Settings(YamlFileSettings):
     )
     dispatcher_audience: str = Field(min_length=1, description="Dispatcher caller TokenReview audience.")
     gateway_audience: str = Field(min_length=1, description="Gateway caller TokenReview audience.")
-    runner_transports: Set[Literal["forward", "reverse"]] = Field(
-        min_length=1, description="Explicitly admitted runner transports."
-    )
     runner_tls: RunnerTLS
-    runner_listen_address: str | None = Field(
-        default=None, min_length=1, description="Private mTLS listener; required exactly when reverse mode is enabled."
-    )
     dispatcher_callers: Set[ServiceAccountName] = Field(
         min_length=1, description="ServiceAccounts admitted as Dispatcher callers, as namespace/name."
     )
@@ -97,13 +91,5 @@ class Settings(YamlFileSettings):
         default_factory=dict, description="Enabled named central services; empty disables central Session admission."
     )
     executor_callers: Set[ServiceAccountName] = Field(
-        default_factory=frozenset, description="ServiceAccounts allowed to open fixed exec-server tunnels."
+        default_factory=frozenset, description="ServiceAccounts allowed to open fixed exec-server streams."
     )
-
-    @model_validator(mode="after")
-    def validate_runner_transport(self) -> Settings:
-        if ("reverse" in self.runner_transports) != (self.runner_listen_address is not None):
-            raise ValueError("runner_listen_address must be supplied exactly when reverse mode is enabled")
-        if self.runner_listen_address == self.listen_address:
-            raise ValueError("runner and public listeners must be separate")
-        return self

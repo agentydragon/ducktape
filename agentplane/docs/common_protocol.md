@@ -14,7 +14,7 @@ separate facts; the app does not own a server-side command queue.
 ## What the runner seam owns
 
 - Session lifecycle requests and idempotent command delivery over the
-  [runner control stream](runner_control.md) the runner dials, plus replayable sequenced Events
+  [runner gRPC API](runner_control.md) the Gateway dials, plus replayable sequenced Events
   pushed to its ingress.
 - Durable command-journal admission represented by `CommandAdmitted`, before causal effect/outcome
   Events afterwards. It does not call an unsupported native operation successful.

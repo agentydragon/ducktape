@@ -18,13 +18,11 @@ import (
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
-	runnercontrol "github.com/agentydragon/ducktape/agentplane/runner/control"
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/runner/executor/control"
 	"github.com/agentydragon/ducktape/agentplane/runner/harness"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
-	controlpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/runner_controlpb"
 	"github.com/coder/websocket"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"google.golang.org/grpc/codes"
@@ -57,11 +55,11 @@ func TestClosingExecutorStreamPreservesSiblingInSameEpoch(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), codexExecServerTestTimeout)
 	defer cancel()
 	frames := []chan *executorpb.ExecutorFrame{make(chan *executorpb.ExecutorFrame, 8), make(chan *executorpb.ExecutorFrame, 8)}
-	connections := make([]runnercontrol.ExecutorConnection, 0, 2)
-	for i, channelID := range []string{"7-1", "7-2"} {
-		send := func(frame *controlpb.RunnerFrame) error {
+	connections := make([]*executorConnection, 0, 2)
+	for i, sessionID := range []string{"session-1", "session-2"} {
+		send := func(frame *executorpb.ExecutorFrame) error {
 			select {
-			case frames[i] <- frame.GetExecutor():
+			case frames[i] <- frame:
 				return nil
 			case <-ctx.Done():
 				return ctx.Err()
@@ -71,15 +69,14 @@ func TestClosingExecutorStreamPreservesSiblingInSameEpoch(t *testing.T) {
 		defer connection.Close()
 		connections = append(connections, connection)
 		if err := connection.Route(&executorpb.ExecutorFrame{
-			ChannelId: channelID,
-			Frame:     &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: "session-" + channelID}},
+			Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: sessionID}},
 		}); err != nil {
 			t.Fatal(err)
 		}
 		select {
 		case ready := <-frames[i]:
 			if !ready.GetReady().GetAccepted() {
-				t.Fatalf("executor %s readiness = %v", channelID, ready)
+				t.Fatalf("executor %s readiness = %v", sessionID, ready)
 			}
 		case <-ctx.Done():
 			t.Fatal("executor did not become ready")
@@ -88,7 +85,6 @@ func TestClosingExecutorStreamPreservesSiblingInSameEpoch(t *testing.T) {
 	connections[0].Close()
 	want := []byte{0, 1, 2, 255}
 	if err := connections[1].Route(&executorpb.ExecutorFrame{
-		ChannelId: "7-2",
 		Frame: &executorpb.ExecutorFrame_Message{Message: &executorpb.ExecutorMessage{
 			Opcode: executorpb.ExecutorMessage_OPCODE_BINARY, Payload: want,
 		}},
@@ -163,18 +159,17 @@ func TestExecutorRelayGatewayCloseCancelsBlockedReadiness(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}, nil)
-	frames := make(chan *controlpb.RunnerFrame, 2)
-	send := func(frame *controlpb.RunnerFrame) error {
+	frames := make(chan *executorpb.ExecutorFrame, 2)
+	send := func(frame *executorpb.ExecutorFrame) error {
 		frames <- frame
 		return nil
 	}
-	var workers sync.WaitGroup
-	var lastOpen uint64
+	connection := r.openExecutorConnection(context.Background(), 7, send, send)
+	defer connection.Close()
 	open := &executorpb.ExecutorFrame{
-		ChannelId: "7-1",
-		Frame:     &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: "session-1"}},
+		Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: "session-1"}},
 	}
-	if err := r.routeExecutorFrame(context.Background(), open, 7, &lastOpen, send, send, &workers); err != nil {
+	if err := connection.Route(open); err != nil {
 		t.Fatalf("open executor relay: %v", err)
 	}
 	select {
@@ -183,16 +178,15 @@ func TestExecutorRelayGatewayCloseCancelsBlockedReadiness(t *testing.T) {
 		t.Fatal("executor start did not block as expected")
 	}
 	r.mu.Lock()
-	relay := r.executorRelays[open.GetChannelId()]
+	relay := r.executorRelays[connection.id]
 	r.mu.Unlock()
 	if relay == nil {
 		t.Fatal("executor relay disappeared before Gateway close")
 	}
 	closeFrame := &executorpb.ExecutorFrame{
-		ChannelId: open.GetChannelId(),
-		Frame:     &executorpb.ExecutorFrame_Close{Close: &executorpb.ExecutorClose{Code: 1001}},
+		Frame: &executorpb.ExecutorFrame_Close{Close: &executorpb.ExecutorClose{Code: 1001}},
 	}
-	if err := r.routeExecutorFrame(context.Background(), closeFrame, 7, &lastOpen, send, send, &workers); err != nil {
+	if err := connection.Route(closeFrame); err != nil {
 		t.Fatalf("close executor relay: %v", err)
 	}
 	select {
@@ -200,11 +194,9 @@ func TestExecutorRelayGatewayCloseCancelsBlockedReadiness(t *testing.T) {
 	case <-time.After(codexExecServerTestTimeout):
 		t.Fatal("Gateway close did not drain readiness wait")
 	}
-	workers.Wait()
 	select {
 	case frame := <-frames:
-		executor := frame.GetExecutor()
-		if executor == nil || executor.GetReady() == nil || executor.GetReady().GetAccepted() {
+		if frame.GetReady() == nil || frame.GetReady().GetAccepted() {
 			t.Fatalf("relay readiness response = %v, want rejected readiness after close", frame)
 		}
 	case <-time.After(codexExecServerTestTimeout):
@@ -433,8 +425,8 @@ func TestExecutorRelayAdmissionClosesWhenRunnerQuiesces(t *testing.T) {
 
 	var workers sync.WaitGroup
 	err := r.startExecutorRelay(context.Background(), "1-1", &executorpb.ExecutorOpen{SessionId: "session-1"},
-		func(*controlpb.RunnerFrame) error { return nil },
-		func(*controlpb.RunnerFrame) error { return nil }, &workers)
+		func(*executorpb.ExecutorFrame) error { return nil },
+		func(*executorpb.ExecutorFrame) error { return nil }, &workers)
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("relay admission after quiesce = %v, want FailedPrecondition", err)
 	}

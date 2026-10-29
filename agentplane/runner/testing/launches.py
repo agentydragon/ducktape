@@ -18,7 +18,6 @@ from agentplane.runner.configuration import (
     EnvironmentVariables,
     Harness,
     PodEnvironment,
-    ReverseControl,
     RunnerControl,
 )
 from agentplane.runner.testing.config import NativeLaunch, RunnerTestConfig, SandboxLaunch
@@ -91,7 +90,7 @@ def runner_command(
     endpoint: str,
     *,
     state_dir: Path,
-    gateway: ReverseControl,
+    control: RunnerControl,
     ingress: Endpoint,
     test_debug_checkpoint: tuple[str, str] | None = None,
     bootstrap: str | None = None,
@@ -122,7 +121,7 @@ def runner_command(
         environment=PodEnvironment(supervision="subprocess"),
         state_dir=str(state_dir),
         initialization_cwd=str(state_dir),
-        control=gateway,
+        control=control,
         ingress=ingress,
         platform_instructions=PLATFORM_INSTRUCTIONS,
         harness_environment=EnvironmentVariables(inherit=inherited, values=values),

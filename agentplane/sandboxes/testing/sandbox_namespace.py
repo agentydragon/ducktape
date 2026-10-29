@@ -65,7 +65,6 @@ class SandboxNamespace:
             "SandboxTemplate",
             TEMPLATE,
             {
-                "runnerTransport": "reverse",
                 "pod": {"spec": {"containers": [{"name": "runner", "image": RUNNER_IMAGE}]}},
                 "stateVolume": {"name": "state", "claim": {}, "layout": {"type": "DirectoryTree"}},
             },

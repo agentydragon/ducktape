@@ -258,26 +258,10 @@ func validateRunnerControl(control RunnerControlConfiguration) error {
 		!filepath.IsAbs(control.TLS.CertFile) || !filepath.IsAbs(control.TLS.KeyFile) || !filepath.IsAbs(control.TLS.CAFile) {
 		return errors.New("control TLS cert_file, key_file, and ca_file must be absolute paths")
 	}
-	address := control.Target
-	field := "control.target"
-	switch control.Mode {
-	case "reverse":
-		if control.Target == "" || control.ListenAddress != "" {
-			return errors.New("reverse control requires target and forbids listen_address")
-		}
-	case "forward":
-		address = control.ListenAddress
-		field = "control.listen_address"
-		if control.ListenAddress == "" || control.Target != "" {
-			return errors.New("forward control requires listen_address and forbids target")
-		}
-	default:
-		return errors.New("control.mode must explicitly select forward or reverse")
-	}
-	host, port, err := net.SplitHostPort(address)
+	host, port, err := net.SplitHostPort(control.ListenAddress)
 	number, numberErr := strconv.Atoi(port)
 	if err != nil || host == "" || numberErr != nil || number < 1 || number > 65535 {
-		return fmt.Errorf("%s must be a valid host:port", field)
+		return errors.New("control.listen_address must be a valid host:port")
 	}
 	return nil
 }

@@ -5,20 +5,18 @@ package agentplane.runner_gateway;
 
 import "agentplane/proto/sandboxes.proto";
 
-// The Gateway assigns a private channel ID and carries these frames over the Sandbox's existing
-// authenticated RunnerControl.Connect stream. Callers choose only a Sandbox identity and Session.
+// Relays frames to the Sandbox's configured executor through its authenticated RunnerExec.Connect
+// stream. Callers choose only a Sandbox identity and Session.
 service ExecutorGateway {
   rpc Connect(stream ExecutorFrame) returns (stream ExecutorFrame);
 }
 
 message ExecutorFrame {
-  // Empty on the public RPC. The Gateway sets this only on RunnerControl frames.
-  string channel_id = 1;
   oneof frame {
-    ExecutorOpen open = 2;  // first frame from the caller
-    ExecutorReady ready = 3;  // first response after the Runner opens its configured endpoint
-    ExecutorMessage message = 4;
-    ExecutorClose close = 5;
+    ExecutorOpen open = 1;  // first frame from the caller
+    ExecutorReady ready = 2;  // first response after the Runner opens its configured endpoint
+    ExecutorMessage message = 3;
+    ExecutorClose close = 4;
   }
 }
 

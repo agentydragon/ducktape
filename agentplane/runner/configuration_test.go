@@ -16,7 +16,7 @@ func configurationFixture(t *testing.T) (map[string]any, string, string) {
 	value := map[string]any{
 		"environment": map[string]any{"kind": "pod", "supervision": "subprocess"},
 		"version":     2, "state_dir": filepath.Join(directory, "state"), "initialization_cwd": directory,
-		"control": map[string]any{"mode": "reverse", "target": "gateway.test:7100", "tls": map[string]string{
+		"control": map[string]any{"listen_address": "127.0.0.1:8090", "tls": map[string]string{
 			"cert_file": "/run/test/tls.crt", "key_file": "/run/test/tls.key", "ca_file": "/run/test/ca.crt",
 		}},
 		"ingress":               map[string]string{"target": "history.test:8081", "bearer": "ingress-placeholder"},
@@ -72,7 +72,7 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 					t.Fatal("executor limits differ from VM resource policy")
 				}
 			}
-			if config.Control.Target != "gateway.test:7100" || ingress.Target != "history.test:8081" {
+			if config.Control.ListenAddress != "127.0.0.1:8090" || ingress.Target != "history.test:8081" {
 				t.Fatalf("endpoints = %v %v", config.Control, ingress)
 			}
 			want := map[string]string{"PATH": "/image/bin", "TOOL_ROUTE": "http://tools.test", "HOME": filepath.Dir(path)}
@@ -111,13 +111,12 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		{"relative state", func(v map[string]any) { v["state_dir"] = "relative" }},
 		{"missing initialization cwd", func(v map[string]any) { delete(v, "initialization_cwd") }},
 		{"empty workspace root", func(v map[string]any) { v["workspace_root"] = "" }},
-		{"missing control mode", func(v map[string]any) { v["control"] = map[string]any{"target": "gateway.test:7100"} }},
+		{"missing listen address", func(v map[string]any) { delete(v["control"].(map[string]any), "listen_address") }},
+		{"legacy target rejected", func(v map[string]any) { v["control"].(map[string]any)["target"] = "gateway.test:7100" }},
 		{"legacy bearer control", func(v map[string]any) {
 			v["control"] = map[string]string{"target": "gateway.test:7100", "bearer": "old-token"}
 		}},
-		{"reverse with listen address", func(v map[string]any) {
-			v["control"].(map[string]any)["listen_address"] = "0.0.0.0:8090"
-		}},
+		{"bad listen address", func(v map[string]any) { v["control"].(map[string]any)["listen_address"] = "host:notaport" }},
 		{"missing mTLS material", func(v map[string]any) {
 			v["control"].(map[string]any)["tls"] = map[string]string{"cert_file": "/run/test/tls.crt", "key_file": "/run/test/tls.key"}
 		}},

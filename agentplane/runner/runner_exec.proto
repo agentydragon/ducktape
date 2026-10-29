@@ -1,5 +1,4 @@
-// Direct Runner executor relay for forward control mode. The frames and startup behavior are shared
-// with the reverse RunnerControl stream.
+// Direct Runner executor relay. The Gateway opens one stream per executor channel.
 syntax = "proto3";
 
 package agentplane.runner;
