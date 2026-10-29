@@ -1211,22 +1211,7 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-staging
-    central_sampler_accounts:
-      - agentplane-staging/central-sampler
-    log_llm_requests: true
-    models: []
     attribution:
-      json_headers:
-        - name: x-litellm-spend-logs-metadata
-          fields:
-            - key: agentplane.namespace
-              source: namespace
-            - key: agentplane.service_account
-              source: service_account
-            - key: agentplane.pod_name
-              source: pod_name
-            - key: agentplane.pod_uid
-              source: pod_uid
       baggage:
         - key: litellm.metadata.spend_logs_metadata.agentplane.namespace
           source: namespace
@@ -1236,7 +1221,25 @@ data:
           source: pod_name
         - key: litellm.metadata.spend_logs_metadata.agentplane.pod_uid
           source: pod_uid
+      json_headers:
+        - fields:
+            - key: agentplane.namespace
+              source: namespace
+            - key: agentplane.service_account
+              source: service_account
+            - key: agentplane.pod_name
+              source: pod_name
+            - key: agentplane.pod_uid
+              source: pod_uid
+          name: x-litellm-spend-logs-metadata
+    central_sampler_accounts:
+      - agentplane-staging/central-sampler
     codex_model_catalog_file: /etc/agentplane-llm-ingress-codex/codex_models.json
+    host: 0.0.0.0
+    litellm_url: http://litellm.litellm.svc.cluster.local:4000
+    log_llm_requests: true
+    port: 8080
+    token_audience: agentplane-egress
 immutable: false
 ---
 apiVersion: apps/v1
@@ -1273,14 +1276,6 @@ spec:
       automountServiceAccountToken: true
       containers:
         - env:
-            - name: AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE
-              value: agentplane-egress
-            - name: AGENTPLANE_LLM_INGRESS_LITELLM_URL
-              value: http://litellm.litellm.svc.cluster.local:4000
-            - name: AGENTPLANE_LLM_INGRESS_HOST
-              value: 0.0.0.0
-            - name: AGENTPLANE_LLM_INGRESS_PORT
-              value: "8080"
             - name: OTEL_SERVICE_NAME
               value: llm-ingress
             - name: OTEL_RESOURCE_ATTRIBUTES
@@ -4413,22 +4408,22 @@ metadata:
   namespace: agentplane-staging
 data:
   settings.yaml: |
-    proxy_host: egress.agentplane-staging.svc.cluster.local
-    proxy_port: 8888
-    token_file: /var/run/agentplane-egress/token
     audience_token_files:
-      https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
       agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
+      https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
     platform_routes:
       ingress:
         listen_address: 127.0.0.1:3131
-        upstream: history-service.agentplane-staging.svc.cluster.local:8081
         token_file: /var/run/agentplane-egress/runner-ingress-token
+        upstream: history-service.agentplane-staging.svc.cluster.local:8081
       telemetry:
         listen_address: 127.0.0.1:3132
         upstream: alloy.monitoring.svc.cluster.local:4317
+    proxy_host: egress.agentplane-staging.svc.cluster.local
+    proxy_port: 8888
     readiness_listen_address: 0.0.0.0:3129
+    token_file: /var/run/agentplane-egress/token
 immutable: false
 ---
 apiVersion: v1
@@ -4810,23 +4805,23 @@ metadata:
   namespace: agentplane-staging
 data:
   settings.yaml: |
-    proxy_host: egress.agentplane-staging.svc.cluster.local
-    proxy_port: 8888
-    token_file: /var/run/agentplane-egress/token
     audience_token_files:
-      https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
       agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
+      https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
+    listen_address: 0.0.0.0:3128
     platform_routes:
       ingress:
         listen_address: 0.0.0.0:3131
-        upstream: history-service.agentplane-staging.svc.cluster.local:8081
         token_file: /var/run/agentplane-egress/runner-ingress-token
+        upstream: history-service.agentplane-staging.svc.cluster.local:8081
       telemetry:
         listen_address: 0.0.0.0:3132
         upstream: alloy.monitoring.svc.cluster.local:4317
-    listen_address: 0.0.0.0:3128
+    proxy_host: egress.agentplane-staging.svc.cluster.local
+    proxy_port: 8888
     readiness_listen_address: 0.0.0.0:3129
+    token_file: /var/run/agentplane-egress/token
 immutable: false
 ---
 apiVersion: kyverno.io/v1
@@ -7896,14 +7891,14 @@ metadata:
   namespace: agentplane-staging
 data:
   settings.yaml: |
-    proxy_host: egress.agentplane-staging.svc.cluster.local
-    proxy_port: 8888
-    token_file: /var/run/agentplane-egress/token
     audience_token_files:
-      https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
       agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
+      https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
+    proxy_host: egress.agentplane-staging.svc.cluster.local
+    proxy_port: 8888
     readiness_listen_address: 0.0.0.0:3129
+    token_file: /var/run/agentplane-egress/token
 immutable: false
 ---
 apiVersion: v1

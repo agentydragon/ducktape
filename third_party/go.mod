@@ -57,6 +57,9 @@ require (
 
 // Direct dependencies for Agentplane service configuration
 require (
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.1
+	buf.build/go/protovalidate v1.4.0
+	buf.build/go/protoyaml v0.7.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/spf13/viper v1.21.0
 )
@@ -68,7 +71,10 @@ require github.com/danielgtaylor/huma/v2 v2.39.1
 require github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0
 
 // Direct dependencies for Agentplane YAML consumers
-require gopkg.in/yaml.v3 v3.0.1
+require (
+	go.yaml.in/yaml/v3 v3.0.5
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 // Direct dependencies for agentplane/egress/go
 require (
@@ -283,7 +289,6 @@ require (
 	github.com/siderolabs/go-pointer v1.0.1 // indirect
 	github.com/siderolabs/protoenc v0.2.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
@@ -323,6 +328,9 @@ require (
 )
 
 require (
+	cel.dev/cel-go v0.32.0 // indirect
+	cel.dev/expr v0.25.3 // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.10.3 // indirect
 	github.com/cilium/ebpf v0.16.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.7.0

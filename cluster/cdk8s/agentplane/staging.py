@@ -28,7 +28,7 @@ from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
 from agentplane.app.model_catalog import CentralSamplerChoice
-from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
+from agentplane.llm_ingress.configpb import config_pb2
 from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
@@ -410,31 +410,33 @@ ENV = Environment(
         models=model_configs(STAGING_APP_MODELS),
         codex_routes=STAGING_APP_MODELS.codex,
         log_llm_requests=True,
-        attribution=AttributionConfig(
+        attribution=config_pb2.AttributionConfig(
             json_headers=[
-                AttributionJsonHeader(
+                config_pb2.AttributionJsonHeader(
                     name="x-litellm-spend-logs-metadata",
                     fields=[
-                        AttributionField(key="agentplane.namespace", source=VerifiedClaim.NAMESPACE),
-                        AttributionField(key="agentplane.service_account", source=VerifiedClaim.SERVICE_ACCOUNT),
-                        AttributionField(key="agentplane.pod_name", source=VerifiedClaim.POD_NAME),
-                        AttributionField(key="agentplane.pod_uid", source=VerifiedClaim.POD_UID),
+                        config_pb2.AttributionField(key="agentplane.namespace", source=config_pb2.namespace),
+                        config_pb2.AttributionField(
+                            key="agentplane.service_account", source=config_pb2.service_account
+                        ),
+                        config_pb2.AttributionField(key="agentplane.pod_name", source=config_pb2.pod_name),
+                        config_pb2.AttributionField(key="agentplane.pod_uid", source=config_pb2.pod_uid),
                     ],
                 )
             ],
             baggage=[
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.namespace", source=VerifiedClaim.NAMESPACE
+                config_pb2.AttributionField(
+                    key="litellm.metadata.spend_logs_metadata.agentplane.namespace", source=config_pb2.namespace
                 ),
-                AttributionField(
+                config_pb2.AttributionField(
                     key="litellm.metadata.spend_logs_metadata.agentplane.service_account",
-                    source=VerifiedClaim.SERVICE_ACCOUNT,
+                    source=config_pb2.service_account,
                 ),
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.pod_name", source=VerifiedClaim.POD_NAME
+                config_pb2.AttributionField(
+                    key="litellm.metadata.spend_logs_metadata.agentplane.pod_name", source=config_pb2.pod_name
                 ),
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.pod_uid", source=VerifiedClaim.POD_UID
+                config_pb2.AttributionField(
+                    key="litellm.metadata.spend_logs_metadata.agentplane.pod_uid", source=config_pb2.pod_uid
                 ),
             ],
         ),

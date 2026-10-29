@@ -51,6 +51,7 @@ py_library(
         "//agentplane/crds:policybinding",
         "//agentplane/crds:policyset",
         "//agentplane/egress:sidecar_config",
+        "//agentplane/egress/sidecar/configpb:config_pb2",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
@@ -65,9 +66,12 @@ py_library(
         "//cluster/cdk8s/providers/agentplane:policy_binding",
         "//cluster/cdk8s/providers/agentplane:policy_set",
         "//cluster/cdk8s/providers/cilium:network_policy",
+        "//util:protobuf",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@pypi//protobuf",
+        "@pypi//protovalidate",
     ],
 )
 

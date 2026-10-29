@@ -88,7 +88,7 @@ One library per job. An unlisted job reuses what other Go services import before
 | Job        | Use                                                                                                                                                            |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Logging    | `log/slog` JSON on stderr; controller-runtime via `ctrl.SetLogger(logr.FromSlogHandler(...))`. Agentplane runner uses `zap` directly because COSI requires it. |
-| Settings   | `spf13/viper` layered; `yaml.v3` with `KnownFields(true)` for file-only settings with literal keys.                                                            |
+| Settings   | `spf13/viper` layered; `yaml.v3` with `KnownFields(true)` for file-only settings with literal keys; `protoyaml` + `protovalidate` for shared protobuf schemas. |
 | HTTP       | Stdlib `net/http`; no router.                                                                                                                                  |
 | OpenAPI    | `danielgtaylor/huma/v2` with the `humago` adapter over `net/http.ServeMux` for typed app routes.                                                               |
 | Tests      | Stdlib `testing`.                                                                                                                                              |

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from agentplane.llm_ingress.models import ModelConfig
+from agentplane.llm_ingress.configpb import config_pb2
 from model_catalog.catalog import (
     ANTIGRAVITY_GEMINI_38_FLASH_HIGH,
     ANTIGRAVITY_GEMINI_FLASH,
@@ -64,9 +64,9 @@ RUNNER_CONTEXT_OVERRIDES = {
 }
 
 
-def model_configs(models: HarnessRoutes) -> list[ModelConfig]:
+def model_configs(models: HarnessRoutes) -> list[config_pb2.ModelConfig]:
     return [
-        ModelConfig(model=route.id, total_context_budget_tokens=RUNNER_CONTEXT_OVERRIDES[route])
+        config_pb2.ModelConfig(model=route.id, total_context_budget_tokens=RUNNER_CONTEXT_OVERRIDES[route])
         for route in sorted(models.claude, key=lambda route: route.id)
         if route in RUNNER_CONTEXT_OVERRIDES
     ]

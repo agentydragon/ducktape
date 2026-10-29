@@ -1,7 +1,7 @@
 # Agentplane LLM workload ingress
 
-This is the authenticated Sandbox-facing hop in front of the existing LiteLLM deployment. Its runtime is a Go binary; Python models remain for deployment
-authoring and the runner-facing model-config contract. The
+This is the authenticated Sandbox-facing hop in front of the existing LiteLLM deployment. Its Go runtime and Python deployment authors share the generated messages and Protovalidate
+annotations in `configpb/config.proto`. The
 central egress proxy substitutes the caller's already-authenticated Pod-bound workload token into
 an ordinary `Authorization: Bearer` header. This service resolves that bearer with the shared
 Go workload-auth resolver, removes it, and forwards the request to LiteLLM with one
@@ -106,15 +106,14 @@ route an entry only where a context window is configured. The pinned Codex must 
 (nixpkgs' `codex`, `runner/image.nix`). Codex behavior behind this endpoint, with source citations and test
 results: [`debug/codex_model_catalog.md`](../debug/codex_model_catalog.md).
 
-For targeted debugging, set `log_llm_requests: true` in the ingress settings (or
-`AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=true`). The ingress logs each request body and every raw
+For targeted debugging, set `log_llm_requests: true` in the ingress settings. The ingress logs each request body and every raw
 response chunk with a per-request ID and chunk number, plus whether the stream completed. This can
 include prompts, reasoning, generated text, and tool arguments; keep it disabled by default and
 restrict access and retention while enabled. Authorization and other request headers are not logged.
 
 Each environment projects its Claude routes through the explicit runner budget map
-into `LlmIngressProps.models` (Codex budgets are catalog entries, above), then `settings.py`'s configuration schema. `models.py` owns the lightweight
-`ModelConfig` API contract shared by ingress, runner, and config generation.
+into `LlmIngressProps.models` (Codex budgets are catalog entries, above), then the generated protobuf configuration. `configpb/config.proto` owns the lightweight
+`ModelConfig` record; the HTTP endpoint keeps its existing snake_case JSON and numeric budget.
 These are configured harness overrides, not a catalog of every known model capacity.
 
 ## Contract tests
@@ -122,13 +121,28 @@ These are configured harness overrides, not a catalog of every known model capac
 The Go ingress tests exercise request filtering, TokenReview response policy, proxy errors, streaming,
 and cancellation with `httptest` servers. A typed TokenReview fake is used for handler behavior;
 it checks ingress interpretation and does not establish Kubernetes token-validation or Pod-binding
-semantics. One smoke test starts the Bazel-built binary with YAML and environment settings against a
+semantics. One smoke test starts the Bazel-built binary with a YAML settings file and runtime Secret against a
 narrow TokenReview HTTP fixture and fake LiteLLM, covering client-go wiring and the real listener
 configuration path.
 
 ```sh
 bbr test //agentplane/llm_ingress/...
 ```
+
+## Configuration
+
+`AGENTPLANE_LLM_INGRESS_CONFIG_FILE` names the required YAML/JSON protobuf settings file.
+All nonsecret settings come from this file. `AGENTPLANE_LLM_INGRESS_LITELLM_KEY` supplies the
+required runtime credential. Unknown and duplicate file keys are rejected.
+The Go loader adds the runtime credential, applies omitted listener and attribution defaults,
+and validates the completed config.
+Python synthesis validates the complete nested model and attribution values, including header
+restrictions and uniqueness, then serializes the file fragment. It does not manufacture missing
+credentials to claim full validation. The LiteLLM key remains a Kubernetes
+Secret reference and is never serialized into the ConfigMap; config errors omit values.
+
+Model budgets are `int64`: canonical protobuf JSON writes them as decimal strings in YAML, while
+`GET /agentplane/model-config` retains numeric JSON for the runner.
 
 ## Trusted central Session attribution
 

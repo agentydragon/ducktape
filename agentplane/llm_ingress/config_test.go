@@ -5,20 +5,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/llm_ingress/configpb"
 )
 
-func loadTestConfig(t *testing.T, environ []string) (config, error) {
+const testRuntimeSecret = "test-runtime-secret-never-include-in-errors"
+
+func loadTestConfig(t *testing.T, path string) (*configpb.Config, error) {
 	t.Helper()
-	for _, entry := range os.Environ() {
-		name, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(name, settingPrefix) {
-			t.Setenv(name, "")
-		}
-	}
-	for _, entry := range environ {
-		name, value, _ := strings.Cut(entry, "=")
-		t.Setenv(name, value)
-	}
+	t.Setenv(configFileEnv, path)
+	t.Setenv(litellmKeyEnv, testRuntimeSecret)
 	return loadConfig()
 }
 
@@ -31,11 +27,10 @@ func writeSettings(t *testing.T, contents string) string {
 	return path
 }
 
-func TestLoadConfigPrecedence(t *testing.T) {
+func TestLoadConfigReadsFileAndRuntimeSecret(t *testing.T) {
 	path := writeSettings(t, `allowed_service_account_namespaces: [yaml-namespace]
 token_audience: yaml-audience
 litellm_url: http://127.0.0.1:8100/prefix
-litellm_key: yaml-secret
 log_llm_requests: true
 port: 6060
 codex_model_catalog_file: /yaml/codex_models.json
@@ -43,21 +38,15 @@ models:
   - model: test/model
     total_context_budget_tokens: 8192
 `)
-	c, err := loadTestConfig(t, []string{
-		configFileEnv + "=" + path,
-		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=env-audience",
-		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=env-secret",
-		"AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=false",
-		"AGENTPLANE_LLM_INGRESS_PORT=7070",
-	})
+	c, err := loadTestConfig(t, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.TokenAudience != "env-audience" || c.Port != 7070 || c.LiteLLMKey != "env-secret" || c.LogLLMRequests ||
+	if c.TokenAudience != "yaml-audience" || c.GetPort() != 6060 || c.LitellmKey != testRuntimeSecret || !c.GetLogLlmRequests() ||
 		len(c.AllowedServiceAccountNamespaces) != 1 || c.AllowedServiceAccountNamespaces[0] != "yaml-namespace" ||
-		c.LiteLLMURL != "http://127.0.0.1:8100/prefix" || len(c.Models) != 1 || c.Models[0].TotalContextBudgetTokens != 8192 ||
+		c.LitellmUrl != "http://127.0.0.1:8100/prefix" || len(c.Models) != 1 || c.Models[0].TotalContextBudgetTokens != 8192 ||
 		c.CodexModelCatalogFile != "/yaml/codex_models.json" {
-		t.Fatalf("unexpected merged config: %+v", c)
+		t.Fatal("settings file and runtime Secret were not loaded correctly")
 	}
 }
 
@@ -65,7 +54,6 @@ func TestAttributionConfig(t *testing.T) {
 	base := `allowed_service_account_namespaces: [test-namespace]
 token_audience: test-audience
 litellm_url: http://127.0.0.1:8100
-litellm_key: test-secret
 `
 	for _, test := range []struct {
 		name  string
@@ -84,7 +72,7 @@ litellm_key: test-secret
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			path := writeSettings(t, base+test.yaml)
-			c, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
+			c, err := loadTestConfig(t, path)
 			if test.fails {
 				if err == nil {
 					t.Fatalf("invalid attribution accepted: %+v", c.Attribution)
@@ -96,16 +84,16 @@ litellm_key: test-secret
 			}
 			switch test.name {
 			case "default":
-				if len(c.Attribution.JSONHeaders) != 1 || c.Attribution.JSONHeaders[0].Name != "x-litellm-spend-logs-metadata" || len(c.Attribution.Baggage) != 0 {
+				if len(c.Attribution.JsonHeaders) != 1 || c.Attribution.JsonHeaders[0].Name != "x-litellm-spend-logs-metadata" || len(c.Attribution.Baggage) != 0 {
 					t.Fatalf("default attribution = %+v", c.Attribution)
 				}
 			case "baggage only":
-				if len(c.Attribution.JSONHeaders) != 0 || len(c.Attribution.Baggage) != 1 || c.Attribution.Baggage[0].Key != "Custom.PodUid" {
+				if len(c.Attribution.JsonHeaders) != 0 || len(c.Attribution.Baggage) != 1 || c.Attribution.Baggage[0].Key != "Custom.PodUid" {
 					t.Fatalf("baggage-only attribution = %+v", c.Attribution)
 				}
 			case "mixed-case custom key":
-				if len(c.Attribution.JSONHeaders) != 1 || c.Attribution.JSONHeaders[0].Name != "X-Custom-Verified" ||
-					c.Attribution.JSONHeaders[0].Fields[0].Key != "Agentplane.PodName" {
+				if len(c.Attribution.JsonHeaders) != 1 || c.Attribution.JsonHeaders[0].Name != "X-Custom-Verified" ||
+					c.Attribution.JsonHeaders[0].Fields[0].Key != "Agentplane.PodName" {
 					t.Fatalf("custom attribution lost spelling: %+v", c.Attribution)
 				}
 			}
@@ -119,10 +107,9 @@ func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
 			path := writeSettings(t, "allowed_service_account_namespaces: [test-namespace]\n"+
 				"token_audience: test-audience\n"+
 				"litellm_url: http://127.0.0.1:8100\n"+
-				"litellm_key: never-include-this-secret\n"+
 				"models:\n  - model: test/model\n    total_context_budget_tokens: "+value+"\n")
-			_, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
-			if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
+			_, err := loadTestConfig(t, path)
+			if err == nil || strings.Contains(err.Error(), testRuntimeSecret) {
 				t.Fatalf("got unsafe or missing config error: %v", err)
 			}
 		})
@@ -133,13 +120,54 @@ func TestLoadConfigRejectsUnknownFileSettingsWithoutEchoingValues(t *testing.T) 
 	base := `allowed_service_account_namespaces: [test-namespace]
 token_audience: test-audience
 litellm_url: http://127.0.0.1:8100
-litellm_key: never-include-this-secret
 models: []
 `
 	path := writeSettings(t, base+`unknown_setting: never-include-this-secret
 `)
-	_, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
-	if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
+	_, err := loadTestConfig(t, path)
+	if err == nil || strings.Contains(err.Error(), "never-include-this-secret") || strings.Contains(err.Error(), testRuntimeSecret) {
 		t.Fatalf("got unsafe or missing config error: %v", err)
+	}
+}
+
+func TestLoadConfigDefaultsAndInvalidFileSettings(t *testing.T) {
+	const base = "allowed_service_account_namespaces: [test-namespace]\ntoken_audience: test-audience\nlitellm_url: http://backend.example.test:4000\n"
+	for _, test := range []struct {
+		name, yaml string
+		port       int32
+		fails      bool
+	}{
+		{name: "omitted defaults", port: 8080},
+		{name: "ephemeral port", yaml: "port: 0\n", port: 0},
+		{name: "duplicate YAML key", yaml: "host: other.example.test\nhost: never-include-this-secret\n", fails: true},
+		{name: "empty host", yaml: "host: ''\n", fails: true},
+		{name: "port outside range", yaml: "port: 65536\n", fails: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := writeSettings(t, base+test.yaml)
+			c, err := loadTestConfig(t, path)
+			if test.fails {
+				if err == nil || strings.Contains(err.Error(), "never-include-this-secret") || strings.Contains(err.Error(), testRuntimeSecret) {
+					t.Fatalf("unsafe or missing config error: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.GetHost() != "0.0.0.0" || c.GetPort() != test.port || c.GetLogLlmRequests() || c.AllowedServiceAccountNamespaces[0] != "test-namespace" {
+				t.Fatal("omitted listener settings must use defaults and explicit zero must remain zero")
+			}
+		})
+	}
+}
+
+func TestLoadConfigRequiresRuntimeSecret(t *testing.T) {
+	path := writeSettings(t, "allowed_service_account_namespaces: [test-namespace]\n"+
+		"token_audience: test-audience\nlitellm_url: http://backend.example.test:4000\n")
+	t.Setenv(configFileEnv, path)
+	t.Setenv(litellmKeyEnv, "")
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("startup accepted a missing runtime Secret")
 	}
 }

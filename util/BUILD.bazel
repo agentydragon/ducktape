@@ -459,3 +459,21 @@ py_wheel(
     visibility = ["//visibility:public"],
     deps = [":network_monitor_pkg"],
 )
+
+py_library(
+    name = "protobuf",
+    srcs = ["protobuf.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//protobuf"],
+)
+
+py_test(
+    name = "test_protobuf",
+    srcs = ["test_protobuf.py"],
+    deps = [
+        ":protobuf",
+        "//:conftest",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)

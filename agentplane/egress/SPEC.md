@@ -260,6 +260,16 @@ GitOps gates and live rollout acceptance remain separate operational requirement
   egress path. This does not change the remote-runner boundary for any future `bb remote` client;
   the boundary and candidate rewrite are in <../docs/buildbuddy_remote_auth.md>.
 
+## Sidecar configuration
+
+The sidecar reads only the file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE`.
+YAML and JSON use the protobuf schema in `sidecar/configpb/config.proto`. Python authors use
+generated messages, and ConfigMap synthesis and the Go runtime enforce its validation annotations. Duplicate keys, unknown fields,
+invalid ports, empty required values and incomplete platform routes prevent startup.
+Omitted `proxy_port`, `listen_address` and `readiness_listen_address` default to `8888`,
+`127.0.0.1:3128` and `0.0.0.0:3129`; explicit zero and empty strings are invalid.
+Audience and route map keys retain their case and punctuation.
+
 ## Sidecar platform routes
 
 - The sidecar may also serve platform routes. A platform route is a loopback gRPC listener per

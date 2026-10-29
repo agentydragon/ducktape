@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/llm_ingress/configpb"
+
 	"go.opentelemetry.io/otel/baggage"
 
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -79,18 +81,18 @@ func workloadToken(t *testing.T, name string) string {
 	return token
 }
 
-func newIngressTestServer(t *testing.T, reviews auth.TokenReviews, backendURL string, models ...modelConfig) *httptest.Server {
+func newIngressTestServer(t *testing.T, reviews auth.TokenReviews, backendURL string, models ...*configpb.ModelConfig) *httptest.Server {
 	t.Helper()
-	return newConfiguredIngressTestServer(t, reviews, config{
-		LiteLLMURL: backendURL,
-		LiteLLMKey: testBackendKey,
+	return newConfiguredIngressTestServer(t, reviews, &configpb.Config{
+		LitellmUrl: backendURL,
+		LitellmKey: testBackendKey,
 		Models:     models,
 	})
 }
 
-func newConfiguredIngressTestServer(t *testing.T, reviews auth.TokenReviews, c config, options ...auth.Option) *httptest.Server {
+func newConfiguredIngressTestServer(t *testing.T, reviews auth.TokenReviews, c *configpb.Config, options ...auth.Option) *httptest.Server {
 	t.Helper()
-	if len(c.Attribution.JSONHeaders) == 0 && len(c.Attribution.Baggage) == 0 {
+	if c.Attribution == nil {
 		c.Attribution = defaultAttribution()
 	}
 	resolver, err := auth.NewResolver(reviews, testAudience, []string{testNamespace}, options...)
@@ -410,8 +412,8 @@ func TestModelConfigLookupIsAuthenticatedAndAnsweredFromConfiguration(t *testing
 	tokenA := workloadToken(t, "test-sandbox-a")
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
-	ingress := newIngressTestServer(t, api.TokenReviews(), backendServer.URL, modelConfig{
-		Model: model, TotalContextBudgetTokens: 256 * 1024,
+	ingress := newIngressTestServer(t, api.TokenReviews(), backendServer.URL, &configpb.ModelConfig{
+		Model: model, TotalContextBudgetTokens: 3000000000,
 	})
 	client := testClient()
 	defer client.CloseIdleConnections()
@@ -422,7 +424,7 @@ func TestModelConfigLookupIsAuthenticatedAndAnsweredFromConfiguration(t *testing
 	unauthenticatedBody, _ := io.ReadAll(unauthenticated.Body)
 	_ = unauthenticated.Body.Close()
 	missingParameter, missingParameterBody := request(t, client, http.MethodGet, ingress.URL+"/agentplane/model-config", "", bearer(tokenA))
-	if found.StatusCode != http.StatusOK || string(foundBody) != `{"model":"`+model+`","total_context_budget_tokens":262144}`+"\n" ||
+	if found.StatusCode != http.StatusOK || string(foundBody) != `{"model":"`+model+`","total_context_budget_tokens":3000000000}`+"\n" ||
 		missing.StatusCode != http.StatusOK || string(missingBody) != "null" ||
 		unauthenticated.StatusCode != http.StatusUnauthorized ||
 		missingParameter.StatusCode != http.StatusUnprocessableEntity ||
@@ -548,11 +550,11 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 		PodName: "sandbox-a", PodUID: "pod-a-uid",
 	}
 	attribution := defaultAttribution()
-	attribution.Baggage = []attributionField{
-		{Key: "litellm.metadata.spend_logs_metadata.agentplane.namespace", Source: verifiedNamespace},
-		{Key: "litellm.metadata.spend_logs_metadata.agentplane.service_account", Source: verifiedServiceAccount},
-		{Key: "litellm.metadata.spend_logs_metadata.agentplane.pod_name", Source: verifiedPodName},
-		{Key: "litellm.metadata.spend_logs_metadata.agentplane.pod_uid", Source: verifiedPodUID},
+	attribution.Baggage = []*configpb.AttributionField{
+		{Key: "litellm.metadata.spend_logs_metadata.agentplane.namespace", Source: configpb.VerifiedClaim_namespace},
+		{Key: "litellm.metadata.spend_logs_metadata.agentplane.service_account", Source: configpb.VerifiedClaim_service_account},
+		{Key: "litellm.metadata.spend_logs_metadata.agentplane.pod_name", Source: configpb.VerifiedClaim_pod_name},
+		{Key: "litellm.metadata.spend_logs_metadata.agentplane.pod_uid", Source: configpb.VerifiedClaim_pod_uid},
 	}
 	forwarded, err := forwardedRequestHeaders(headers, principal, testBackendKey, attribution)
 	if err != nil {
@@ -580,12 +582,12 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name              string
-		attribution       attributionConfig
+		attribution       *configpb.AttributionConfig
 		wantSpendMetadata bool
 		wantBaggage       bool
 	}{
 		{name: "spend only", attribution: defaultAttribution(), wantSpendMetadata: true},
-		{name: "baggage only", attribution: attributionConfig{Baggage: attribution.Baggage}, wantBaggage: true},
+		{name: "baggage only", attribution: &configpb.AttributionConfig{Baggage: attribution.Baggage}, wantBaggage: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			only, err := forwardedRequestHeaders(headers, principal, testBackendKey, test.attribution)
@@ -598,9 +600,9 @@ func TestHopByHopAndCredentialHeadersAreFilteredByCopyHelpers(t *testing.T) {
 			}
 		})
 	}
-	custom := attributionConfig{
-		JSONHeaders: []attributionJSONHeader{{Name: "X-Custom-Verified", Fields: []attributionField{{Key: "Pod.Name", Source: verifiedPodName}}}},
-		Baggage:     []attributionField{{Key: "custom.PodUid", Source: verifiedPodUID}},
+	custom := &configpb.AttributionConfig{
+		JsonHeaders: []*configpb.AttributionJsonHeader{{Name: "X-Custom-Verified", Fields: []*configpb.AttributionField{{Key: "Pod.Name", Source: configpb.VerifiedClaim_pod_name}}}},
+		Baggage:     []*configpb.AttributionField{{Key: "custom.PodUid", Source: configpb.VerifiedClaim_pod_uid}},
 	}
 	headers.Set("X-Custom-Verified", `{"Pod.Name":"forged"}`)
 	customForwarded, err := forwardedRequestHeaders(headers, principal, testBackendKey, custom)
@@ -669,7 +671,7 @@ func TestRevokedAndDisallowedNamespaceTokensAreRefused(t *testing.T) {
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
 	// The resolver reviews every call, so the revocation shows on the next request.
-	ingress := newConfiguredIngressTestServer(t, reviews, config{LiteLLMURL: backendServer.URL, LiteLLMKey: testBackendKey},
+	ingress := newConfiguredIngressTestServer(t, reviews, &configpb.Config{LitellmUrl: backendServer.URL, LitellmKey: testBackendKey},
 		auth.WithVerdictTTL(0))
 	client := testClient()
 	defer client.CloseIdleConnections()
@@ -747,14 +749,12 @@ func TestDependencyOutagesAreSanitizedAndDoNotForwardWorkloadCredentials(t *test
 	})
 }
 
-func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
+func TestRealBinaryStartsWithYAMLAndRuntimeSecret(t *testing.T) {
 	binary, err := runfiles.Rlocation("ducktape/agentplane/llm_ingress/server_/server")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The token is only good for the environment's audience, so the API server accepting it shows
-	// the environment overrode the YAML audience.
-	_, tokenA := workload(t, "test-sandbox-a", "test-environment-audience")
+	_, tokenA := workload(t, "test-sandbox-a", "test-file-audience")
 	target, _, err := rest.DefaultServerUrlFor(api.Config)
 	if err != nil {
 		t.Fatal(err)
@@ -799,32 +799,26 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 	if err := os.WriteFile(kubeconfig, []byte(kubeconfigYAML), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	settings := filepath.Join(directory, "settings.yaml")
-	settingsYAML := "allowed_service_account_namespaces: [" + testNamespace + "]\n" +
-		"token_audience: test-yaml-audience\n" +
-		"models:\n  - model: configured/model\n    total_context_budget_tokens: 8192\n" +
-		"log_levels:\n  root: INFO\n"
-	if err := os.WriteFile(settings, []byte(settingsYAML), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	_ = listener.Close()
+	settings := writeSettings(t, "allowed_service_account_namespaces: ["+testNamespace+"]\n"+
+		"token_audience: test-file-audience\n"+
+		"host: 127.0.0.1\nport: "+strconv.Itoa(port)+"\n"+
+		"kubeconfig: "+kubeconfig+"\n"+
+		"litellm_url: "+backendServer.URL+"\n"+
+		"models:\n  - model: configured/model\n    total_context_budget_tokens: 8192\n"+
+		"log_levels:\n  root: INFO\n")
 
 	var logs bytes.Buffer
 	command := exec.Command(binary)
 	command.Env = []string{
 		"OTEL_SDK_DISABLED=true",
 		configFileEnv + "=" + settings,
-		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=" + testBackendKey,
-		"AGENTPLANE_LLM_INGRESS_HOST=127.0.0.1",
-		"AGENTPLANE_LLM_INGRESS_PORT=" + strconv.Itoa(port),
-		"AGENTPLANE_LLM_INGRESS_KUBECONFIG=" + kubeconfig,
-		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=test-environment-audience",
-		"AGENTPLANE_LLM_INGRESS_LITELLM_URL=" + backendServer.URL,
+		litellmKeyEnv + "=" + testBackendKey,
 	}
 	command.Stdout = &logs
 	command.Stderr = &logs
@@ -911,8 +905,8 @@ func TestCentralSessionAttributionRequiresTrustedProducer(t *testing.T) {
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
 	defer backendServer.Close()
-	server := newConfiguredIngressTestServer(t, api.TokenReviews(), config{
-		LiteLLMURL: backendServer.URL, LiteLLMKey: testBackendKey,
+	server := newConfiguredIngressTestServer(t, api.TokenReviews(), &configpb.Config{
+		LitellmUrl: backendServer.URL, LitellmKey: testBackendKey,
 		CentralSamplerAccounts: []string{testNamespace + "/trusted-sampler"},
 	})
 	const sessionID = "00000000-0000-4000-8000-000000000055"

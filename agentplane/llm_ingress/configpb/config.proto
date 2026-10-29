@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package agentplane.llm_ingress;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/agentydragon/ducktape/agentplane/llm_ingress/configpb";
+
+message Config {
+  repeated string allowed_service_account_namespaces = 1 [(buf.validate.field).repeated = {
+    min_items: 1, items: {string: {min_len: 1}}
+  }];
+  string token_audience = 2 [(buf.validate.field).string.min_len = 1];
+  optional bool log_llm_requests = 3;
+  repeated ModelConfig models = 4;
+  // Absence uses the four agentplane.* claims in x-litellm-spend-logs-metadata.
+  AttributionConfig attribution = 5;
+  string codex_model_catalog_file = 6;
+  string litellm_url = 7 [(buf.validate.field).string = {
+    uri: true, pattern: "^https?://[^/?#@]+(/[^?#]*)?$"
+  }];
+  // Runtime credential supplied by AGENTPLANE_LLM_INGRESS_LITELLM_KEY after reading the file.
+  string litellm_key = 8 [(buf.validate.field).string.min_len = 1];
+  map<string, string> log_levels = 9 [(buf.validate.field).map.values.string = {
+    in: ["DEBUG", "INFO", "WARNING", "ERROR"]
+  }];
+  // Absence uses 0.0.0.0:8080; an explicitly configured port zero binds an ephemeral port.
+  optional string host = 10 [(buf.validate.field).string.min_len = 1];
+  optional int32 port = 11 [(buf.validate.field).int32 = {gte: 0, lte: 65535}];
+  // Path to a kubeconfig for the Kubernetes client that authenticates callers via
+  // TokenReview. Empty uses in-cluster ServiceAccount credentials; an explicit
+  // path supports running outside Kubernetes, including process integration tests.
+  string kubeconfig = 12;
+  // Authenticated namespace/name accounts that may assert x-agentplane-session-id.
+  repeated string central_sampler_accounts = 13 [(buf.validate.field).repeated.items.string.min_len = 1];
+}
+
+message ModelConfig {
+  // TODO(#9574): separate exposed route IDs from backend model IDs as one coordinated wire change.
+  string model = 1 [(buf.validate.field).string.min_len = 1];
+  // Input + output total for the harness, not independently verified provider capacity.
+  int64 total_context_budget_tokens = 2 [(buf.validate.field).int64.gt = 0];
+}
+
+// Spellings preserve the existing YAML source values.
+enum VerifiedClaim {
+  VERIFIED_CLAIM_UNSPECIFIED = 0;
+  namespace = 1;
+  service_account = 2;
+  pod_name = 3;
+  pod_uid = 4;
+}
+
+message AttributionField {
+  string key = 1 [(buf.validate.field).string.min_len = 1];
+  VerifiedClaim source = 2 [(buf.validate.field).enum = {defined_only: true, not_in: [0]}];
+}
+
+message AttributionJsonHeader {
+  option (buf.validate.message).cel = {
+    id: "attribution.json_keys.unique"
+    message: "JSON output keys must be unique"
+    expression: "this.fields.all(f, this.fields.filter(other, other.key == f.key).size() == 1)"
+  };
+  string name = 1 [
+    (buf.validate.field).string.pattern = "^[xX]-[!#$%&'*+.^_`|~0-9A-Za-z-]*$",
+    (buf.validate.field).cel = {
+      id: "attribution.header.safe"
+      message: "attribution cannot replace credential, routing or identity headers"
+      expression: "!(this.lowerAscii() in ['x-api-key', 'x-litellm-api-key', 'x-real-ip', 'x-http-method-override', 'x-litellm-agent-id', 'x-litellm-customer-id']) && !this.lowerAscii().startsWith('x-forwarded-') && !this.lowerAscii().startsWith('x-original-')"
+    }
+  ];
+  repeated AttributionField fields = 2 [(buf.validate.field).repeated.min_items = 1];
+}
+
+message AttributionConfig {
+  option (buf.validate.message).cel = {
+    id: "attribution.outputs.nonempty"
+    message: "attribution must configure at least one output"
+    expression: "this.json_headers.size() > 0 || this.baggage.size() > 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "attribution.headers.unique"
+    message: "JSON header names must be unique ignoring case"
+    expression: "this.json_headers.all(h, this.json_headers.filter(other, other.name.lowerAscii() == h.name.lowerAscii()).size() == 1)"
+  };
+  option (buf.validate.message).cel = {
+    id: "attribution.baggage.unique"
+    message: "baggage output keys must be unique"
+    expression: "this.baggage.all(f, this.baggage.filter(other, other.key == f.key).size() == 1)"
+  };
+  option (buf.validate.message).cel = {
+    id: "attribution.baggage.token"
+    message: "baggage output keys must be HTTP tokens"
+    expression: "this.baggage.all(f, f.key.matches(\"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$\"))"
+  };
+  repeated AttributionJsonHeader json_headers = 1;
+  repeated AttributionField baggage = 2;
+}

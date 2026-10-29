@@ -13,16 +13,16 @@ Kubernetes JSON a template holds.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import Any
 
+import protovalidate
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, Role, RolePolicyRule, k8s
 from constructs import Construct
 
 from agentplane.egress import sidecar_config
-from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.egress.resources import placeholder_of
+from agentplane.egress.sidecar.configpb import config_pb2
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner.configuration import CA_BUNDLE, JAVA_TRUST_STORE, KUBECONFIG
 from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
@@ -32,6 +32,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.settings_file import PodWiring, SettingsFile
+from util.protobuf import message_dict
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _EGRESS_SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
@@ -223,29 +224,27 @@ def add_sidecar_settings(
     env: Environment,
     *,
     name: str,
-    platform_routes: Mapping[str, PlatformRoute],
+    platform_routes: Mapping[str, config_pb2.PlatformRoute],
     listen_address: str | None = None,
 ) -> SettingsFile:
     """The ConfigMap `name` holding the settings of the egress sidecar of one Pod template, which
     `pod_spec` mounts. Every Pod of a template gets the same file; nothing in it is per Pod."""
-    settings = sidecar_config.Settings(
+    config = config_pb2.Config(
         proxy_host=egress.proxy(env.namespace).fqdn,
         proxy_port=egress.PROXY_PORT,
         readiness_listen_address=sidecar_config.READINESS_LISTEN_ADDRESS,
-        token_file=Path(_EGRESS_TOKEN_DIR) / "token",
-        audience_token_files={
-            audience: Path(audience_token_file(audience)) for audience in _SUBSTITUTABLE_AUDIENCE_FILES
-        },
+        token_file=f"{_EGRESS_TOKEN_DIR}/token",
+        audience_token_files={audience: audience_token_file(audience) for audience in _SUBSTITUTABLE_AUDIENCE_FILES},
+        platform_routes=platform_routes,
     )
     if listen_address is not None:
-        settings.listen_address = listen_address
-    if platform_routes:
-        settings.platform_routes = dict(platform_routes)
+        config.listen_address = listen_address
+    protovalidate.validate(config)
     return SettingsFile(
         scope,
         f"{name}-settings",
         metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
-        content=yaml_config(settings, exclude_none=True),
+        content=yaml_config(message_dict(config)),
         path=_SIDECAR_SETTINGS_PATH,
     )
 
@@ -347,9 +346,7 @@ def pod_spec(
     are Pod volumes the workload mounts beyond the egress path's own. `node_selector` is the optional
     placement restriction for this template. `disable_otel_sdk` avoids a sidecar export attempt in a
     hermetic fixture with no collector."""
-    settings = sidecar_settings.pod_wiring(
-        volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.Settings.config_file_env
-    )
+    settings = sidecar_settings.pod_wiring(volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.CONFIG_FILE_ENV)
     return k8s.PodSpec(
         # The workload first: with no default-container annotation, the first container is the one
         # `kubectl exec` and the sandbox Actions run a command in.
