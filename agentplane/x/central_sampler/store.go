@@ -1013,7 +1013,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 			if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, stringValue(intent.Request["kind"]), "rejected", result); err != nil {
 				return err
 			}
-			return s.settleFailure(ctx, tx, conversation, session, session.ActiveCommand, failure)
+			return s.settleFailure(ctx, tx, owner, conversation, session, session.ActiveCommand, failure)
 		}
 		outputs := notDispatchedOutputs(conversation.Items)
 		result := map[string]any{"status": "rejected", "not_dispatched": outputs}
@@ -1043,7 +1043,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 		if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, stringValue(intent.Request["kind"]), "rejected", result); err != nil {
 			return err
 		}
-		return s.settleFailure(ctx, tx, conversation, session, session.ActiveCommand, failure)
+		return s.settleFailure(ctx, tx, owner, conversation, session, session.ActiveCommand, failure)
 	})
 }
 
@@ -1617,6 +1617,10 @@ func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, comma
 			return nil
 		}
 		session.ActiveCommand = nil
+		// Codex records pending turn input when a turn finishes and clears it when the turn aborts.
+		if _, err := s.settleNotifications(ctx, tx, owner, conversation, session, result == "done"); err != nil {
+			return err
+		}
 		outcome := samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED
 		if result == "effects_unknown" {
 			outcome = samplerpb.CommandOutcome_COMMAND_OUTCOME_UNKNOWN
@@ -1770,7 +1774,7 @@ func (s *Store) FailExecution(ctx context.Context, owner Owner, sessionID string
 		if err != nil {
 			return err
 		}
-		return s.settleFailure(ctx, tx, conversation, session, commandID, failure)
+		return s.settleFailure(ctx, tx, owner, conversation, session, commandID, failure)
 	})
 }
 
@@ -1810,7 +1814,7 @@ func blockedReason(ctx context.Context, tx *sql.Tx, conversation *Conversation, 
 	return fmt.Sprintf("%s; session is blocked because %s. Inspect the linked boundary evidence and reconcile external effects before manual recovery. Automatic effect replay is disabled.", summary, cause), nil
 }
 
-func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session,
+func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
 	commandID *string, failure *KnownFailureError,
 ) error {
 	var command *Command
@@ -1846,6 +1850,11 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, conversation *Con
 	}
 	session.Blocked = failure == nil || conversation.Pending != nil || unresolved || liveCell || liveProcess
 	session.ActiveCommand = nil
+	// Deviation: Codex records pending input after a failed turn; a failed turn here may still hold
+	// an unresolved intent whose output must precede it, so queued notify() outputs are discarded.
+	if _, err := s.settleNotifications(ctx, tx, owner, conversation, session, false); err != nil {
+		return err
+	}
 	reason := "execution stopped; inspect durable boundary evidence"
 	if failure != nil {
 		reason = DisplayText(failure.Error())

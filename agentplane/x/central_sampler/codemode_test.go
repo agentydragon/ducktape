@@ -86,10 +86,15 @@ func (p *fakeCodeModePeer) send(value any) error {
 	return writeHostFrame(p.output, payload)
 }
 
+// sendDelegate sends a blank notification: a store-free delegate round trip.
 func (p *fakeCodeModePeer) sendDelegate(id int64, sessionID string) error {
+	return p.sendNotification(id, sessionID, "cell-1", " ")
+}
+
+func (p *fakeCodeModePeer) sendNotification(id int64, sessionID, cellID, text string) error {
 	return p.send(codeFrame{
 		Type: codeDelegateRequest, ID: &id, SessionID: sessionID,
-		Request: &codeDelegate{Type: "notification/send", CallID: "notify", Text: "hello"},
+		Request: &codeDelegate{Type: "notification/send", CallID: "exec-call", CellID: cellID, Text: text},
 	})
 }
 

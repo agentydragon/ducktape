@@ -245,6 +245,7 @@ go_library(
         "exporter.go",
         "host.go",
         "migration.go",
+        "notification.go",
         "provider.go",
         "responses.go",
         "runtime.go",
@@ -254,7 +255,10 @@ go_library(
         "tool_protocol.go",
         "types.go",
     ],
-    embedsrcs = ["schema/0001_sampler_state.sql"],
+    embedsrcs = [
+        "schema/0001_sampler_state.sql",
+        "schema/0002_sampler_notification.sql",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/x/central_sampler",
     deps = [
         ":sampler_go_proto",
@@ -295,6 +299,7 @@ go_test(
         "exporter_test.go",
         "host_test.go",
         "integration_testmain_test.go",
+        "notification_test.go",
         "provider_test.go",
         "runtime_lifecycle_test.go",
         "service_test.go",

@@ -103,6 +103,20 @@ class Store:
             conversation_owner=row.owner,
         )
 
+    async def queued_notifications(self, session_id: str) -> list[str]:
+        async with self.engine.connect() as connection:
+            texts = (
+                await connection.scalars(
+                    text(
+                        "SELECT n.text FROM sampler_notification n "
+                        "JOIN sampler_session s ON s.conversation_id=n.conversation_id "
+                        "WHERE s.id=:session_id ORDER BY n.sequence"
+                    ),
+                    {"session_id": session_id},
+                )
+            ).all()
+        return list(texts)
+
     async def events(self, session_id: str, after: int, *, limit: int = 256) -> list[event_log_pb2.EventEntry]:
         async with self.engine.connect() as connection:
             entries = (

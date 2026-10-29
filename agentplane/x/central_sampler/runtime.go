@@ -362,7 +362,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner) (*
 				if err != nil || result == "done" || result == "interrupted" || result == "effects_unknown" {
 					break
 				}
-				if result == "cell" || result == "sample" || result == "compact" {
+				if result == "cell" || result == "sample" || result == "compact" || result == "notification" {
 					continue
 				}
 			}
@@ -677,6 +677,13 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 		return "cell", nil
 	}
+	drained, err := r.store.DrainNotifications(ctx, owner)
+	if err != nil {
+		return "", err
+	}
+	if drained {
+		return "notification", nil
+	}
 	if len(conversation.Items) > 0 {
 		last := conversation.Items[len(conversation.Items)-1]
 		if last.Type == ResponsesItemMessage && last.Role == "assistant" {
@@ -857,8 +864,9 @@ func checkPairs(items []ResponsesItem) error {
 			seen[callID] = struct{}{}
 			pending[callID] = struct{}{}
 		case ResponsesItemCustomToolOutput:
+			// notify() adds outputs for an exec call that may already have its own.
 			callID := item.CallID
-			if _, exists := pending[callID]; !exists {
+			if _, exists := seen[callID]; !exists {
 				return &UnknownEffectError{Reason: "orphan tool output " + callID}
 			}
 			delete(pending, callID)

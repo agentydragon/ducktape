@@ -155,7 +155,21 @@ func (r *CodeMode) delegate(id int64, frame *codeFrame, journaled <-chan error) 
 		return
 	}
 	if frame.Request.Type == "notification/send" {
-		response := codeDelegateResponse{Type: "delegate/response", ID: id, Result: codeDelegateResult{Status: "ok", Value: &codeToolResult{Type: "notification/delivered"}}}
+		// Codex rust-v0.162.1 core/src/tools/code_mode/delegate.rs CoreTurnHost::notify: blank text
+		// is a no-op success; otherwise acknowledge only once the output is durably queued.
+		result := codeDelegateResult{Status: "ok", Value: &codeToolResult{Type: "notification/delivered"}}
+		if strings.TrimSpace(frame.Request.Text) != "" {
+			err := r.store.QueueNotification(ctx, r.owner, frame.Request.CallID, r.cellHandle(frame.Request.CellID), frame.Request.Text)
+			if errors.Is(err, ErrPrecondition) {
+				result = codeDelegateResult{Status: "error", Message: fmt.Sprintf("failed to inject exec notify message for cell %s: no active turn", frame.Request.CellID)}
+			} else if err != nil {
+				if ctx.Err() == nil {
+					r.fail(err)
+				}
+				return
+			}
+		}
+		response := codeDelegateResponse{Type: "delegate/response", ID: id, Result: result}
 		if err := r.send(ctx, id, response); err != nil && r.bindingCtx.Err() == nil {
 			r.fail(err)
 		}

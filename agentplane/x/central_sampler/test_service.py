@@ -551,6 +551,116 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
             assert process.buffered_output == b""
 
 
+def tool_outputs(body: dict[str, Any]) -> list[tuple[str, str]]:
+    return [
+        (item["call_id"], "".join(part["text"] for part in item["output"]))
+        for item in body["input"]
+        if item["type"] == "custom_tool_call_output"
+    ]
+
+
+async def test_notify_outputs_follow_the_step_that_emitted_them(
+    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    async with Endpoint() as endpoint:
+        config = settings(
+            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        request = open_request(tmp_path)
+        async with service(config) as stub:
+            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="notify", text="Notify from cells."
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                await exchange.send(
+                    *response_stream(
+                        [CustomToolCall("completed", "exec", 'notify("progress"); text("final");')], model="test-model"
+                    ).events
+                )
+            async with await endpoint.next() as exchange:
+                assert tool_outputs(exchange.request.body) == [("completed", "final"), ("completed", "progress")]
+                source = (
+                    '// @exec: {"yield_time_ms": 10}\n'
+                    "await new Promise((resolve) => setTimeout(resolve, 1500));\n"
+                    'notify("late");\n'
+                    'text("done");'
+                )
+                await exchange.send(
+                    *response_stream([CustomToolCall("yielded", "exec", source)], model="test-model").events
+                )
+            async with await endpoint.next() as exchange:
+                outputs = tool_outputs(exchange.request.body)
+                assert "late" not in json.dumps(outputs)
+                match = re.search(r"cell ID ([A-Za-z0-9_:-]+)", outputs[-1][1])
+                assert match is not None
+                arguments = json.dumps({"cell_id": match[1], "yield_time_ms": 10000})
+                await exchange.send(
+                    *response_stream([CustomToolCall("wait", "wait", arguments)], model="test-model").events
+                )
+            async with await endpoint.next() as exchange:
+                # The yielded cell's notification belongs to its exec call but follows the wait output.
+                assert tool_outputs(exchange.request.body)[-2:] == [("wait", "done"), ("yielded", "late")]
+                await exchange.send(*response_stream([Message("notified")], model="test-model").events)
+            assert (await completed(stub, "notify", request.session_id)).status == event_pb2.TURN_STATUS_COMPLETED
+
+
+async def test_interrupt_discards_queued_notify_output(
+    database_url: str, executor_url: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+) -> None:
+    async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
+        store = Store(engine)
+        config = settings(
+            database_url, endpoint.origin, executor_url, codex_binary, code_mode_host, undeclared_outputs_dir()
+        )
+        request = open_request(tmp_path)
+        async with service(config) as stub:
+            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.SubmitInput(
+                runner_service_pb2.SubmitInputRequest(
+                    session_id=request.session_id, command_id="interrupted", text="Notify, then get interrupted."
+                ),
+                metadata=METADATA,
+                timeout=10,
+            )
+            async with await endpoint.next() as exchange:
+                source = (
+                    '// @exec: {"yield_time_ms": 10}\n'
+                    "await new Promise((resolve) => setTimeout(resolve, 100));\n"
+                    'notify("discarded");\n'
+                    "await new Promise(() => {});"
+                )
+                await exchange.send(
+                    *response_stream([CustomToolCall("pending", "exec", source)], model="test-model").events
+                )
+            async with await endpoint.next() as exchange:
+                # Holding this sampling step keeps the notification queued until the interrupt.
+                async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.01), reraise=True):
+                    with attempt:
+                        assert await store.queued_notifications(request.session_id) == ["discarded"]
+                await stub.InterruptTurn(
+                    runner_service_pb2.InterruptTurnRequest(
+                        session_id=request.session_id, command_id="interrupt", turn_id="interrupted"
+                    ),
+                    metadata=METADATA,
+                    timeout=10,
+                )
+                assert (
+                    await completed(stub, "interrupted", request.session_id)
+                ).status == event_pb2.TURN_STATUS_INTERRUPTED
+            assert await store.queued_notifications(request.session_id) == []
+        settled = [
+            entry.event.boundary_record.direction
+            for entry in await store.events(request.session_id, 0, limit=10000)
+            if entry.event.boundary_record.boundary == "notification"
+        ]
+        assert settled == ["discarded"]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
 

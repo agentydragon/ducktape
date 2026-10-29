@@ -48,11 +48,12 @@ func verifySchema(ctx context.Context, db *sql.DB) error {
 		"sampler_command":           {"session_id": "character varying", "id": "character varying", "payload": "bytea", "admission": "integer", "outcome": "integer", "failure_reason": "character varying"},
 		"sampler_event":             {"session_id": "character varying", "sequence": "integer", "entry": "bytea"},
 		"sampler_export_checkpoint": {"session_id": "character varying", "destination": "character varying", "cursor": "integer"},
+		"sampler_notification":      {"conversation_id": "uuid", "sequence": "bigint", "call_id": "character varying", "cell_id": "character varying", "text": "text"},
 	}
 	rows, err := db.QueryContext(ctx, `SELECT table_name,column_name,data_type FROM information_schema.columns
 		WHERE table_schema=current_schema() AND table_name IN (
 		'sampler_conversation','sampler_conversation_item','sampler_intent','sampler_process','sampler_cell','sampler_interrupt',
-		'sampler_session','sampler_command','sampler_event','sampler_export_checkpoint')`)
+		'sampler_session','sampler_command','sampler_event','sampler_export_checkpoint','sampler_notification')`)
 	if err != nil {
 		return err
 	}

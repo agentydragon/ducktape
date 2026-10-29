@@ -67,7 +67,8 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 		"Use tools.write_stdin({session_id, chars?, eof?, yield_time_ms?}) to send input or poll. " +
 		`An exec first-line // @exec: {"yield_time_ms": 10} yields an active JS cell; ` +
 		"call wait with JSON {cell_id, yield_time_ms?, terminate?} to observe it. " +
-		"Process session_id and JavaScript cell_id are distinct. No notify or persistent JS store. Await all tool calls. "
+		"Process session_id and JavaScript cell_id are distinct. No persistent JS store. " +
+		"notify(value) injects an extra custom_tool_call_output for the current exec call. Await all tool calls. "
 	definitionBytes, err := json.Marshal(toolDefinitions())
 	if err != nil {
 		return ResponsesRequest{}, err

@@ -50,6 +50,15 @@ continuation. Model-facing `exec` and `wait`, yielded process handles, stdin and
 use the pinned upstream protocol. Process handles inherit
 upstream's detached retention limits.
 
+`notify(value)` follows Codex: the host's `notification/delivered` acknowledgement is sent only after
+the text is durably queued for the active turn; without one it is rejected as "no active turn", and
+blank text is a no-op. Queued outputs become extra `custom_tool_call_output` items for the emitting
+`exec` call, after the current step's own tool outputs and before the next provider request, with
+Codex's 12,000-token middle truncation. Outputs queued after the last step are appended when the
+turn completes; an interrupted or effect-uncertain turn discards them, as Codex does on abort.
+**Deviation:** a failed turn also discards them, because its unresolved intent must precede any
+later output. Boundary evidence records each output as `recorded` or `discarded`.
+
 TODO: Evaluate a stronger kernel-enforced isolation boundary for cells or Sessions if aggregate
 container limits prove insufficient.
 

@@ -4,7 +4,8 @@ An independent, opt-in runner type backed by its own PostgreSQL database. The sa
 Responses API loop and lazily starts one shared pinned **Codex 0.162.1** JavaScript host for many
 logical Sessions. `store()` / `load()` values persist across cells and idle turns in that host's
 memory. Each code-mode cell runs in a fresh V8 isolate with no JavaScript globals shared between
-cells, and provider continuation remains in the sampler. Shell, stdin, patch and filesystem
+cells, and provider continuation remains in the sampler. `notify()` outputs are queued durably and
+enter the conversation where Codex would place them ([SPEC.md](SPEC.md)). Shell, stdin, patch and filesystem
 operations go through Gateway to a Sandbox's loopback exec-server. Existing wrapped Codex and Claude
 retain their current paths. The optional Agentplane cdk8s construct deploys the service when an
 environment configures it; existing native Sessions are not migrated.
