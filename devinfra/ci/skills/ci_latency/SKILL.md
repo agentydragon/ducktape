@@ -478,9 +478,10 @@ an older run replace a newer snapshot; rebase or rebuild on that tip and republi
 when the new run is later. Never reset, amend, or force-push history. Review the report and diff for
 credentials, identities, raw logs, payloads and personal data before publishing.
 History updates go through a PR to `ci-reports`; changes to this skill or
-its scripts go through a normal source PR. GitHub does not serve branch HTML as a hosted page:
-download/open the artifact locally, or use the raw URL; don't imply Pages is
-deployed.
+its scripts go through a normal source PR. GitHub Pages serves the branch at
+<https://agentydragon.github.io/ducktape/> (`latency/`, `reliability/`,
+`visual-reliability/`; root `index.html` is the landing page): link the published
+page, and note that it redeploys only when the PR merges.
 
 ### Quantifying who triggered work
 

@@ -179,6 +179,7 @@ Open the report PR against `ci-reports`, never `devel`. Fetch the branch again b
 publishing; compare windows within `reliability/` and do not replace a newer snapshot
 with an older one. Integrate concurrent latency changes without overwriting them.
 Git history holds previous snapshots; do not add dated run trees or force-push
-history. Skill/tool changes belong in a separate source PR to devel. This branch
-does not deploy GitHub Pages: give repository/download links without claiming a
-hosted report. State what remains unknown and the next observation that could resolve it.
+history. Skill/tool changes belong in a separate source PR to devel. GitHub Pages
+serves the branch at <https://agentydragon.github.io/ducktape/reliability/>; link
+that page and note it redeploys only when the PR merges. State what remains unknown
+and the next observation that could resolve it.
