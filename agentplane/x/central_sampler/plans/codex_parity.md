@@ -8,6 +8,7 @@ instructions, setup scripts and History export.
 
 - **Mid-turn steering:** deliver user input submitted during an active turn at the next boundary,
   as Codex does, instead of queueing it until the turn ends.
+- **Reasoning summaries:** request them like Codex, so History can show reasoning.
 
 ## Later
 
@@ -15,17 +16,25 @@ instructions, setup scripts and History export.
   as a Codex-specific port.
 - **Agent access to sampler persistence:** let agents read retained conversation and evidence
   records, with explicitly granted privileges.
+- **Actions as tools:** expose Action Service Actions (including MCP-backed ones) as nested tools,
+  deferred behind tool search like Codex's MCP tools. Needs design first: what happens when the set
+  of available Actions changes mid-Session, and how agents learn of additions and removals.
+- **Hosted web search:** maybe, depending on what the provider's hosted search offers over fetching
+  from the Sandbox.
 
 ## Low priority
 
 - Realtime/voice.
 - Browser use, computer use and dictation.
+- `update_plan`: only as an Agentplane-wide feature, not a sampler-only tool.
 
 ## Not porting
 
 - Sandboxing, execpolicy, approvals and the network proxy: the Sandbox, egress proxy and Action
   Service own these boundaries.
 - Codex local persistence (rollout files, thread store, state DB): PostgreSQL and History replace it.
+- Turn diffs, desktop in-app panes and fast mode.
+- Image generation: a different API; if wanted, an Agentplane Action instead.
 - Shell plumbing (shell snapshots, zsh fork, login-shell PATH, PowerShell), worktree management and
   external-agent migration.
 - TUI, cloud tasks and ChatGPT-backend features (login/keyring, PSP, plan analytics, access
