@@ -9,7 +9,7 @@ const SOURCE_INFERRED: &str = "const sentinel = [1];\nconst before = Math.random
 
 fn input(source: &str, declaration: &str) -> NativeOperationInputContract {
     NativeOperationInputContract {
-        selector: NativeOperationInputSelector::SourceMatch(
+        selector: SourceUnitSelector::SourceMatch(
             serde_yaml::from_str(&format!(
                 "match: {:?}\nbindings: [alias]\n",
                 declaration.trim()
@@ -95,7 +95,7 @@ fn relational_opts<'a>(source: &'a str, input: NativeOperationInputContract) -> 
 
 fn relational_input(source: &str, module: &str, name: &str) -> NativeOperationInputContract {
     NativeOperationInputContract {
-        selector: NativeOperationInputSelector::ResolvedMember(ResolvedMemberSelector {
+        selector: SourceUnitSelector::ResolvedMember(ResolvedMemberSelector {
             module: module.to_owned(),
             name: name.to_owned(),
         }),
@@ -221,7 +221,7 @@ fn native_input_requires_exactly_one_selector_variant() {
         serde_yaml::from_str::<NativeOperationInputContract>(&legacy)
             .unwrap()
             .selector,
-        NativeOperationInputSelector::SourceMatch(_)
+        SourceUnitSelector::SourceMatch(_)
     ));
 }
 

@@ -1296,6 +1296,65 @@ the producer and consumer statements to retain that interval in the emitted
 module. Other effects and reads retain ordinary analysis, and the input grants
 no family-wide Array integrity. The external A11 obligation still applies.
 
+## Commuting statements
+
+`chunk_analysis_options.<chunk>.commuting_statements` certifies that two source
+units of that chunk are order-independent during synchronous initialization:
+neither observes the other's effect, so emission may schedule them in either
+order.
+
+```yaml
+chunk_analysis_options:
+  static/app:
+    commuting_statements:
+      - a:
+          source_match:
+            match: "decorate([], Widget.prototype, 'state', 2);"
+        b:
+          resolved_member: { module: app/settings, name: settings }
+        audited_source_sha256: "<64 hex characters for the parser input>"
+        note: "The decorator installs an own property the settings initializer never reads."
+```
+
+Each endpoint (`a`, `b`) is exactly one selector in the `native_operation_inputs`
+grammar: `source_match` or
+`resolved_member: { module: <logical module path>, name: <public member name> }`.
+A `source_match` without `bindings` selects one anonymous (non-declaring)
+top-level statement; with one binding it selects that binding's declaration,
+which inside a comma declaration is the one declarator the binding belongs to.
+`resolved_member` reuses the member's canonical selector result in the same
+chunk. Every endpoint resolves through the shared selector engine and must
+identify exactly one post-split source unit of the option's chunk. An endpoint
+that does not resolve, resolves to several source units, or names a member of
+another chunk is a spec error that fails `spec validate` and `run` with a
+diagnostic naming the entry and endpoint (`commuting_statements[<i>].a`). A
+pair whose endpoints are one source unit, and a pair repeating another entry's
+unordered source-unit set, are errors. `audited_source_sha256` is the parser
+input digest of `value_inputs` and `native_operation_inputs`; a stale digest
+fails. When a selector no longer resolves on a new snapshot, validation fails
+like any member's; the premise is never silently kept.
+
+The premise removes only `sequenced` (side-effect ordering) constraining edges
+between the two selected source units. It never removes `eager_use` edges: an
+at-init read is a dataflow dependence whose reordering changes behavior, and
+the remedy there remains co-location. An entry is accepted only when at least
+one endpoint's effect on the edge is opaque to the analysis (an unknown call, an
+escaped receiver); when the engine has derived that the two effects definitely
+conflict, the entry is rejected as contradicting a source fact. An entry whose
+endpoints resolve but which removes no edge is reported as unused and fails
+validation. This is explicit author input, not an inferred fact: A1–A11 and
+every other contract still apply, and it grants no purity, no-reentry or
+receiver guarantee.
+
+Current state: the schema, endpoint resolution, exactly-one and duplicate
+checks, and `AnalysisAssumptions.commuting_statements` land first; the gate
+does not yet consume a pair, and the known-conflict and unused-entry checks
+are not yet enforced.
+
+<!-- CLEANUP(added 2026-10-29): delete the "Current state" paragraph once the
+realizability gate consumes `AnalysisAssumptions.commuting_statements` and
+enforces the known-conflict and unused-entry checks. -->
+
 ## Ordinary own-property inspection
 
 A guarded `Object.getOwnPropertyNames` or `Object.getOwnPropertyDescriptors`

@@ -515,6 +515,11 @@ pub(super) fn finish_logical_chunk(
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
+        inputs.assumptions.commuting_statements = cross_module_purities
+            .commuting_statements
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
         inputs.assumptions.host_no_reentry = host_no_reentry.cloned();
         inputs.imported_purities = cross_module_purities
             .bindings
@@ -655,6 +660,7 @@ pub(super) fn finish_logical_chunk(
         dependency_graph_options.native_operation_inputs.clear();
         dependency_graph_options.native_call_identity_inputs.clear();
         dependency_graph_options.argument_inputs.clear();
+        dependency_graph_options.commuting_statements.clear();
         inputs
     };
     // Chunk analysis: hint-sensitive facts, dependency graph, and structural

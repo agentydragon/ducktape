@@ -20,7 +20,7 @@ fn source_hash(source: &str) -> String {
 
 fn input_for(source: &str, declaration: &str) -> NativeOperationInputContract {
     NativeOperationInputContract {
-        selector: NativeOperationInputSelector::SourceMatch(
+        selector: SourceUnitSelector::SourceMatch(
             serde_yaml::from_str(&format!(
                 "match: {:?}\nbindings: [marker]\n",
                 declaration.trim()
@@ -53,7 +53,7 @@ fn primitive_set_input(source: &str) -> NativeOperationInputContract {
         .find(|line| line.starts_with("const made = new Set("))
         .expect("fixture has a direct Set initializer");
     NativeOperationInputContract {
-        selector: NativeOperationInputSelector::SourceMatch(
+        selector: SourceUnitSelector::SourceMatch(
             serde_yaml::from_str(&format!(
                 "match: {:?}\nbindings: [made]\n",
                 declaration.trim()
@@ -73,7 +73,7 @@ fn selected_set_input(
     operation: NativeOperationKind,
 ) -> NativeOperationInputContract {
     NativeOperationInputContract {
-        selector: NativeOperationInputSelector::SourceMatch(
+        selector: SourceUnitSelector::SourceMatch(
             serde_yaml::from_str(&format!(
                 "match: {:?}\nbindings: [{binding}]\n",
                 declaration.trim()
@@ -1093,7 +1093,7 @@ fn source_selected_symbol_input_rejects_unsupported_or_contradicted_facts() {
         };
         let mut input = input_for(source, declaration);
         if selected_name == "selected" {
-            input.selector = NativeOperationInputSelector::SourceMatch(
+            input.selector = SourceUnitSelector::SourceMatch(
                 serde_yaml::from_str(&format!(
                     "match: {:?}\nbindings: [selected]\n",
                     declaration.trim()
