@@ -10,10 +10,6 @@ The integration app is a client of the backend services, never their dependency
   provisioning and backend-required prompt/context construction. Extract what another service needs
   into its owning service or a neutral shared package, never a temporary app-owned backend API.
   Operator approval stays with its backend authority; the app only presents it.
-- Owners: the app submits Sandbox desired state and operator grants through Kubernetes; the Sandbox
-  Controller reconciles them and owns Sandbox status; the Session Dispatcher owns command admission;
-  the Runner Gateway owns the reverse control stream and Runner proxy; runners own Sessions, native
-  execution and canonical command/Event evidence; Notifications owns subscriptions and inboxes.
 - Backend responsibilities still inside the app are extraction work, not precedent. Distinguish
   planned boundaries from implemented ones.
 - Acceptance for an extracted backend path runs with the app unavailable. Never add a command queue,
