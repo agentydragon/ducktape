@@ -447,7 +447,7 @@ configuration, and each launch sends only resolved concrete fields to the runtim
 
 ## External-client consent
 
-The Action Service's OAuth adapter sends a validated authorization request to
+The [MCP edge](../mcp_edge/README.md#authority)'s OAuth server sends a validated authorization request to
 `/#/connection-enrollments/{handle}`. The hash route survives the app's existing operator
 login. The page shows the client-supplied name, client ID, and validated redirect as text,
 asks for a new Connection name or existing Connection and a labeled caller ServiceAccount, and
@@ -473,9 +473,9 @@ The frontend parses generated protobuf JSON and adapts its field names and enum 
 existing page model. Preview combines the enrollment metadata with the service-account and
 Connection lists; the server-held continuation is not returned to the browser.
 
-Authorize resumes only the server-held continuation returned by the authenticated Actions
-authority; no client or browser-provided URL is accepted. Deny grants nothing and leaves a
-terminal page. Completing consent alone does not activate a grant: the OAuth adapter still
+Authorize follows only the server-held continuation returned by the authenticated Connection
+Service; no client or browser-provided URL is accepted. Deny grants nothing and leaves a
+terminal page. Completing consent alone does not activate a grant: the MCP edge's OAuth server still
 verifies the same upstream operator and completes issuance. Operator credentials never
 reach the external client. An external-client Action is auto-approved only by an
 PolicyBinding naming its ServiceAccount, otherwise by the operator; clients sharing a
@@ -499,7 +499,8 @@ submission and owner-scoped reads use the service's `/v1/action-requests` API, n
 Staging configures federation: the Deployment reads `AGENTPLANE_ACTION_FEDERATION` from the
 Git-owned `agentplane-action-federation` ConfigMap (built from the `action_federation`/
 `operator_oidc` dicts in `cluster/cdk8s/generate_manifests.py`), and the app's network
-policy admits Authentik by TLS SNI and the Action Service on 8080. The app composes a request-bound
+policies admit Authentik by TLS SNI, the Action Service on 8080, and the MCP edge's Connection
+Service on 8080. The app composes a request-bound
 JWT-bearer exchanger; the service independently validates the exchanged operator JWT. No static BFF
 bearer or workload-token promotion is used. Missing configuration is specifically
 `503 detail.code=operator_federation_not_configured`; token callers get 403.
@@ -516,9 +517,9 @@ has no dedicated route of its own. The one exception is `/#/mcp-servers`, the MC
 callback's redirect target (see below): landing there opens the modal pre-selected to that tab
 instead of showing the Threads landing view as if the linkage completed silently.
 
-The OAuth clients tab lists the Action Service's runtime named Connections, each row showing its
-most recent grant's OAuth client ID and its current bound ServiceAccount; superseded grants stay
-in the Action Service's own history but are not listed here. The operator can select an eligible
+The OAuth clients tab lists the MCP edge's Connections, each row showing its most recent grant's
+OAuth client ID and its current bound ServiceAccount; superseded grants stay in the MCP edge's
+history but are not listed here. The operator can select an eligible
 ServiceAccount and explicitly confirm rebinding: the existing client token remains usable, but
 future Actions act as the new account. The version-checked update never silently retries a stale
 choice. Unlink instead revokes active/pending authority without deleting history or stopping
@@ -546,9 +547,10 @@ operator-authorized retarget of an existing token. Policy editing and deployment
 surface.
 
 The app connects to the Connection Service through the separately configured `connection_service_url`
-and to the Action Service gRPC APIs through `action_federation.service_url`. The public MCP OAuth
-callback remains a narrow HTTP call to the Action Service. Staging and testing currently configure
-both service endpoints to Actions. Each service has its own gRPC health probe.
+and to the Action Service gRPC APIs through `action_federation.service_url`. The public MCP-linkage
+OAuth callback remains a narrow HTTP call to the Action Service. Staging points
+`connection_service_url` at the MCP edge and `action_federation.service_url` at the Action Service.
+Each service has its own gRPC health probe.
 
 The MCP servers tab lists the Action Service's OAuth-linked MCP server groups and links or
 disconnects each one. It follows independent gRPC `WatchMcpServers` and `WatchActionGroups` streams
