@@ -874,8 +874,20 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	admitInput(t, store, session.ID, "after-model", "next turn text")
+	// A running cell's unresolved intent still reports the input, so its observation can yield, but
+	// the input only joins once the intent has an outcome.
+	intent, err := store.Begin(t.Context(), owner, map[string]any{"kind": "cell"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if found, err := store.HasSteeringInput(t.Context(), owner, session.ID); err != nil || !found {
-		t.Fatalf("steering input found=%v err=%v", found, err)
+		t.Fatalf("steering input during a running cell found=%v err=%v", found, err)
+	}
+	if drained, err := store.DrainSteeringInput(t.Context(), owner, session.ID); err != nil || drained {
+		t.Fatalf("drain during a running cell=%v err=%v", drained, err)
+	}
+	if err := store.Finish(t.Context(), owner, intent, map[string]any{"output": "fixture"}, nil, nil); err != nil {
+		t.Fatal(err)
 	}
 	if drained, err := store.DrainSteeringInput(t.Context(), owner, session.ID); err != nil || !drained {
 		t.Fatalf("first drain=%v err=%v", drained, err)
@@ -892,8 +904,20 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := conversation.Items[len(conversation.Items)-1]; canonicalJSON(got) != canonicalJSON(expected) {
-		t.Fatalf("last conversation item=%s, want %s", canonicalJSON(got), canonicalJSON(expected))
+	// Stored and freshly built items serialize their keys in different orders.
+	normalized := func(item ResponsesItem) string {
+		var fields map[string]any
+		if err := json.Unmarshal([]byte(canonicalJSON(item)), &fields); err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := json.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(encoded)
+	}
+	if got, want := normalized(conversation.Items[len(conversation.Items)-1]), normalized(expected); got != want {
+		t.Fatalf("last conversation item=%s, want %s", got, want)
 	}
 	for id, want := range map[string]samplerpb.CommandOutcome{
 		"steer-a":     samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED,

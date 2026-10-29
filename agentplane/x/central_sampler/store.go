@@ -1650,7 +1650,7 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 // admission order, that can join its active input turn. Other queued commands keep their order: input
 // admitted after one waits for a later turn. A pending interrupt of the turn takes precedence.
 func steeringInputs(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session) ([]*Command, []*commandpb.SubmitInput, error) {
-	if session.ActiveTurn == nil || session.ActiveCommand == nil || *session.ActiveCommand != *session.ActiveTurn || conversation.Pending != nil {
+	if session.ActiveTurn == nil || session.ActiveCommand == nil || *session.ActiveCommand != *session.ActiveTurn {
 		return nil, nil, nil
 	}
 	var interrupting bool
@@ -1691,7 +1691,8 @@ func steeringInputs(ctx context.Context, tx *sql.Tx, conversation *Conversation,
 	return commands, inputs, rows.Err()
 }
 
-// HasSteeringInput reports whether queued user input can join the session's active turn.
+// HasSteeringInput reports whether queued user input can join the session's active turn. A running
+// cell's unresolved intent does not hide it: that is when a foreground observation should yield.
 func (s *Store) HasSteeringInput(ctx context.Context, owner Owner, sessionID string) (bool, error) {
 	found := false
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
@@ -1725,6 +1726,10 @@ func (s *Store) DrainSteeringInput(ctx context.Context, owner Owner, sessionID s
 		_, session, err := lockSession(ctx, tx, sessionID)
 		if err != nil {
 			return err
+		}
+		// Input joins only at a step boundary, never between an intent and its outcome.
+		if conversation.Pending != nil {
+			return nil
 		}
 		commands, inputs, err := steeringInputs(ctx, tx, conversation, session)
 		if err != nil || len(commands) == 0 {
