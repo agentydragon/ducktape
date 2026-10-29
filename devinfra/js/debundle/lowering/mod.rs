@@ -133,6 +133,32 @@ pub struct ExportReentryReport {
     pub policy: ExportReentryPolicy,
     pub global_blockers: Vec<ExportReentryGlobalBlocker>,
     pub closure_blockers: Vec<ExportReentryClosureBlocker>,
+    /// Exact author-audited executable identity, present only when a selected
+    /// host builtin leaf was consumed in this target's static closure.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_builtin_runtime: Option<spec::HostNoReentryRuntime>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub host_builtin_leaves: Vec<ExportReentryHostBuiltinLeaf>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportReentryHostBuiltinLeaf {
+    pub source_chunk: String,
+    pub specifier: String,
+    pub builtin: spec::NodeBuiltinModule,
+    pub request_count: usize,
+}
+
+#[derive(Default)]
+struct ExportReentryClosureInspection {
+    blockers: Vec<ExportReentryClosureBlocker>,
+    host_builtin_leaves: Vec<ExportReentryHostBuiltinLeaf>,
+}
+
+#[derive(Clone, Copy)]
+struct ExportReentryRuntimeContext<'a> {
+    execution_runtime: spec::ExecutionRuntime,
+    host_no_reentry: Option<&'a spec::HostNoReentry>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -300,7 +326,10 @@ pub fn materialize_logical_modules(
     let export_reentry_reports = export_reentry_reports(
         &artifact,
         &artifact_indexes,
-        execution_runtime,
+        ExportReentryRuntimeContext {
+            execution_runtime,
+            host_no_reentry,
+        },
         vendor_plan,
         &vendor_affected_chunk_ids,
         &selected_chunk_ids,
@@ -476,12 +505,16 @@ pub fn materialize_logical_modules(
 fn export_reentry_reports(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
-    execution_runtime: spec::ExecutionRuntime,
+    runtime_context: ExportReentryRuntimeContext<'_>,
     vendor_plan: &vendor::VendorResolutionPlan,
     vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
     selected_chunk_names: &[String],
     include_closure_diagnostics: bool,
 ) -> Result<BTreeMap<ChunkId, ExportReentryReport>> {
+    let ExportReentryRuntimeContext {
+        execution_runtime,
+        host_no_reentry,
+    } = runtime_context;
     // An incomplete artifact cannot certify incoming host/nonordinary edges.
     let all_chunks_present = artifact.chunks.len() == artifact.chunk_table.len();
     let mut global_blockers = Vec::new();
@@ -522,24 +555,34 @@ fn export_reentry_reports(
         let Some(target) = artifact.chunk_table.get(name) else {
             continue;
         };
-        let closure_blockers = if artifact.has_chunk(target)
+        let closure = if artifact.has_chunk(target)
             && (include_closure_diagnostics || !global_proof_is_blocked)
         {
             collect_closure_blockers(
                 target,
                 artifact,
                 indexes,
-                execution_runtime,
+                runtime_context,
                 vendor_plan,
                 vendor_affected_chunk_ids,
             )?
         } else {
-            Vec::new()
+            ExportReentryClosureInspection::default()
         };
-        let policy = if !global_proof_is_blocked && closure_blockers.is_empty() {
+        let policy = if !global_proof_is_blocked && closure.blockers.is_empty() {
             ExportReentryPolicy::NoStaticImporterReentry
         } else {
             ExportReentryPolicy::Conservative
+        };
+        let host_builtin_runtime = if closure.host_builtin_leaves.is_empty() {
+            None
+        } else {
+            Some(
+                host_no_reentry
+                    .expect("consumed builtin leaves require an author host assertion")
+                    .runtime
+                    .clone(),
+            )
         };
         reports.insert(
             target,
@@ -547,7 +590,9 @@ fn export_reentry_reports(
                 execution_runtime,
                 policy,
                 global_blockers: global_blockers.clone(),
-                closure_blockers,
+                closure_blockers: closure.blockers,
+                host_builtin_runtime,
+                host_builtin_leaves: closure.host_builtin_leaves,
             },
         );
     }
@@ -558,16 +603,22 @@ fn collect_closure_blockers(
     target: ChunkId,
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
-    execution_runtime: spec::ExecutionRuntime,
+    runtime_context: ExportReentryRuntimeContext<'_>,
     vendor_plan: &vendor::VendorResolutionPlan,
     vendor_affected_chunk_ids: &BTreeSet<ChunkId>,
-) -> Result<Vec<ExportReentryClosureBlocker>> {
+) -> Result<ExportReentryClosureInspection> {
+    let ExportReentryRuntimeContext {
+        execution_runtime,
+        host_no_reentry,
+    } = runtime_context;
     // Follow resolved static requests even when another blocker is present,
     // so the report exposes independent predicates and structural cycles.
     let mut outgoing = BTreeMap::<ChunkId, BTreeSet<ChunkId>>::new();
     let mut closure = BTreeSet::from([target]);
     let mut pending = vec![target];
     let mut blockers = Vec::new();
+    let mut host_builtin_leaf_counts =
+        BTreeMap::<(String, String, spec::NodeBuiltinModule), usize>::new();
     while let Some(source) = pending.pop() {
         let chunk = artifact.chunk(source)?;
         let runtime = &chunk.analysis.runtime_facts;
@@ -615,6 +666,15 @@ fn collect_closure_blockers(
                 &chunk.analysis.entry_file,
                 &artifact.chunk_table,
             ) else {
+                if request.mode == StaticModuleRequestMode::OrdinaryEsm
+                    && let Some(builtin) =
+                        selected_host_builtin_leaf(&request.specifier, host_no_reentry)
+                {
+                    *host_builtin_leaf_counts
+                        .entry((source_name.clone(), request.specifier.clone(), builtin))
+                        .or_default() += 1;
+                    continue;
+                }
                 blockers.push(ExportReentryClosureBlocker::UnresolvedStaticRequest {
                     source_chunk: source_name.clone(),
                     specifier: request.specifier.clone(),
@@ -686,7 +746,38 @@ fn collect_closure_blockers(
             target_chunk: artifact.chunk_table.name(target).to_string(),
         });
     }
-    Ok(blockers)
+    Ok(ExportReentryClosureInspection {
+        blockers,
+        host_builtin_leaves: host_builtin_leaf_counts
+            .into_iter()
+            .map(|((source_chunk, specifier, builtin), request_count)| {
+                ExportReentryHostBuiltinLeaf {
+                    source_chunk,
+                    specifier,
+                    builtin,
+                    request_count,
+                }
+            })
+            .collect(),
+    })
+}
+
+fn selected_host_builtin_leaf(
+    specifier: &str,
+    host_no_reentry: Option<&spec::HostNoReentry>,
+) -> Option<spec::NodeBuiltinModule> {
+    let assertion = host_no_reentry?;
+    if !matches!(
+        &assertion.runtime,
+        spec::HostNoReentryRuntime::BunStandaloneBuild { .. }
+    ) {
+        return None;
+    }
+    let builtin = spec::NodeBuiltinModule::from_static_specifier(specifier)?;
+    assertion
+        .node_builtin_module_leaves
+        .contains(&builtin)
+        .then_some(builtin)
 }
 
 fn resolve_report_target(

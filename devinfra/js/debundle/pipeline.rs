@@ -668,6 +668,17 @@ pub fn load_transform_spec_source(source: &TransformSpecSource) -> Result<Transf
 
 fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
     if let Some(spec::HostNoReentry {
+        runtime: spec::HostNoReentryRuntime::BunStandalone1_3_10,
+        node_builtin_module_leaves,
+        ..
+    }) = &spec.host_no_reentry
+    {
+        anyhow::ensure!(
+            node_builtin_module_leaves.is_empty(),
+            "host_no_reentry.node_builtin_module_leaves requires an exact bun_standalone_build identity"
+        );
+    }
+    if let Some(spec::HostNoReentry {
         runtime:
             spec::HostNoReentryRuntime::BunStandaloneBuild {
                 version,

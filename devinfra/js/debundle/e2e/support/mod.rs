@@ -35,8 +35,8 @@ pub use spec::{
     CapturedValueContract, CapturedValueKind, ChunkExportPurity, ExecutionRuntime, HostNoReentry,
     HostNoReentryOperation, HostNoReentryRuntime, InitializerPurity, MemberEffect, MemberPurity,
     NativeCallIdentityInputContract, NativeCallIdentityKind, NativeOperationInputContract,
-    NativeOperationInputSelector, NativeOperationKind, ResolvedMemberSelector, ValueInputContract,
-    VendorLevel, VendorMark,
+    NativeOperationInputSelector, NativeOperationKind, NodeBuiltinModule, ResolvedMemberSelector,
+    ValueInputContract, VendorLevel, VendorMark,
 };
 
 use std::collections::BTreeSet;

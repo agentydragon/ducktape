@@ -1774,9 +1774,10 @@ calls, and visible root replacement retain the conservative publication guard.
 
 ## Version-scoped host call timing
 
-`host_no_reentry` is an optional author assertion for two exact zero-argument
-operations in an audited Bun standalone runtime. The existing Bun 1.3.10 profile
-is:
+`host_no_reentry` holds independent author assertions for two exact
+zero-argument operations and, with an exact audited Bun standalone build,
+selected Node builtin static-module leaves. The existing Bun 1.3.10 profile
+certifies only the operations:
 
 ```yaml
 host_no_reentry:
@@ -1795,6 +1796,7 @@ host_no_reentry:
       revision: "<40 hexadecimal characters from Bun.revision>"
       executable_sha256: "<64 hexadecimal characters for the audited executable>"
   operations: [async_local_storage_construct, promise_resolve]
+  node_builtin_module_leaves: [path, fs/promises]
 ```
 
 Replace the identity placeholders with measured values. All three identity
@@ -1815,6 +1817,23 @@ and dynamic scope disable the Promise contract. The assertions only suppress
 the opaque synchronous callback-reentry fallback after the callee and
 arguments have evaluated. Purity, ordering, possible throws, return shape,
 later method calls, and module-loader reentry retain their ordinary analysis.
+
+`node_builtin_module_leaves` is separate from `operations` and requires the
+`bun_standalone_build` identity above; the legacy `bun_standalone_1_3_10`
+identity rejects a nonempty leaf set. The author asserts that, for that exact
+Bun executable, each selected builtin ID's explicitly recognized bare and
+`node:` static-import spellings resolve to the host builtin and cannot
+synchronously reenter an application chunk during module evaluation. The
+analyzer does not authenticate the executable or infer this from a version.
+Only ordinary static ESM requests that the artifact resolver did not resolve
+may use the closed Node builtin list. The export-reentry report records the
+exact author runtime identity once, plus each consumed source chunk,
+specifier, builtin ID, and request count. Unselected names, unknown bare
+packages, and Bun package replacements such as `ws` stay unresolved. This
+leaf rule grants no purity, call safety, return shape, or later callback fact;
+CommonJS/application loader, non-ESM, vendor, unsupported-request, and cycle
+blockers retain their normal rules. The closed set is specific to the audited
+host assertion, not a promise about future runtimes or all Node modules.
 Omitting this field keeps generic/Node behavior conservative.
 
 The author must verify that the analyzed program actually runs under the

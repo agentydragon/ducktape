@@ -83,8 +83,8 @@ pub struct TransformSpec {
     /// can produce a buggy debundle; soundness shifts to the spec author.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
-    /// Version-scoped author assertion about host callback timing. This does
-    /// not change module-loader policy, purity, throws, or return values.
+    /// Version-scoped author assertions about exact host call timing and
+    /// separately selected builtin static-module leaves. Neither grants purity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_no_reentry: Option<HostNoReentry>,
 
@@ -119,6 +119,11 @@ pub struct HostNoReentry {
     pub runtime: HostNoReentryRuntime,
     #[serde(default)]
     pub operations: BTreeSet<HostNoReentryOperation>,
+    /// Closed Node builtin IDs whose bare and `node:` static import spellings
+    /// the author audited for resolver identity and no synchronous app reentry
+    /// in this exact Bun executable. Independent of `operations`.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub node_builtin_module_leaves: BTreeSet<NodeBuiltinModule>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
@@ -141,6 +146,96 @@ pub enum HostNoReentryRuntime {
 pub enum HostNoReentryOperation {
     AsyncLocalStorageConstruct,
     PromiseResolve,
+}
+
+/// Exact Node builtin module identities admitted by the host-leaf assertion.
+/// Unknown bare packages and Bun package replacements (including `ws`) are
+/// intentionally absent.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeBuiltinModule {
+    AsyncHooks,
+    Buffer,
+    ChildProcess,
+    Crypto,
+    Dns,
+    #[serde(rename = "dns/promises")]
+    DnsPromises,
+    Events,
+    Fs,
+    #[serde(rename = "fs/promises")]
+    FsPromises,
+    Http,
+    Http2,
+    Https,
+    Net,
+    Os,
+    Path,
+    #[serde(rename = "path/posix")]
+    PathPosix,
+    #[serde(rename = "path/win32")]
+    PathWin32,
+    PerfHooks,
+    Process,
+    Readline,
+    Stream,
+    #[serde(rename = "stream/consumers")]
+    StreamConsumers,
+    #[serde(rename = "stream/promises")]
+    StreamPromises,
+    StringDecoder,
+    #[serde(rename = "timers/promises")]
+    TimersPromises,
+    Tls,
+    Tty,
+    Url,
+    Util,
+    #[serde(rename = "util/types")]
+    UtilTypes,
+    Vm,
+    Zlib,
+}
+
+impl NodeBuiltinModule {
+    /// Recognize only exact audited static-import spellings. This is not a
+    /// bare-package or `node:` prefix fallback resolver.
+    pub fn from_static_specifier(specifier: &str) -> Option<Self> {
+        Some(match specifier {
+            "async_hooks" | "node:async_hooks" => Self::AsyncHooks,
+            "buffer" | "node:buffer" => Self::Buffer,
+            "child_process" | "node:child_process" => Self::ChildProcess,
+            "crypto" | "node:crypto" => Self::Crypto,
+            "dns" | "node:dns" => Self::Dns,
+            "dns/promises" | "node:dns/promises" => Self::DnsPromises,
+            "events" | "node:events" => Self::Events,
+            "fs" | "node:fs" => Self::Fs,
+            "fs/promises" | "node:fs/promises" => Self::FsPromises,
+            "http" | "node:http" => Self::Http,
+            "http2" | "node:http2" => Self::Http2,
+            "https" | "node:https" => Self::Https,
+            "net" | "node:net" => Self::Net,
+            "os" | "node:os" => Self::Os,
+            "path" | "node:path" => Self::Path,
+            "path/posix" | "node:path/posix" => Self::PathPosix,
+            "path/win32" | "node:path/win32" => Self::PathWin32,
+            "perf_hooks" | "node:perf_hooks" => Self::PerfHooks,
+            "process" | "node:process" => Self::Process,
+            "readline" | "node:readline" => Self::Readline,
+            "stream" | "node:stream" => Self::Stream,
+            "stream/consumers" | "node:stream/consumers" => Self::StreamConsumers,
+            "stream/promises" | "node:stream/promises" => Self::StreamPromises,
+            "string_decoder" | "node:string_decoder" => Self::StringDecoder,
+            "timers/promises" | "node:timers/promises" => Self::TimersPromises,
+            "tls" | "node:tls" => Self::Tls,
+            "tty" | "node:tty" => Self::Tty,
+            "url" | "node:url" => Self::Url,
+            "util" | "node:util" => Self::Util,
+            "util/types" | "node:util/types" => Self::UtilTypes,
+            "vm" | "node:vm" => Self::Vm,
+            "zlib" | "node:zlib" => Self::Zlib,
+            _ => return None,
+        })
+    }
 }
 
 impl TransformSpec {

@@ -2,6 +2,7 @@
 
 use debundle_e2e_support::*;
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 const CHUNK_ID: &str = "static/provider";
@@ -18,6 +19,183 @@ fn has_reason(report: &Value, group: &str, reason: &str, source_chunk: Option<&s
                 && source_chunk.is_none_or(|source| blocker["source_chunk"] == source)
         })
     })
+}
+
+fn builtin_policy(leaves: &[NodeBuiltinModule]) -> HostNoReentry {
+    HostNoReentry {
+        runtime: HostNoReentryRuntime::BunStandaloneBuild {
+            version: "1.3.10".to_string(),
+            revision: "a".repeat(40),
+            executable_sha256: "b".repeat(64),
+        },
+        operations: BTreeSet::new(),
+        node_builtin_module_leaves: leaves.iter().copied().collect(),
+    }
+}
+
+#[test]
+fn selected_builtin_leaves_are_reported_with_exact_identity_and_source_uses() {
+    let policy = builtin_policy(&[NodeBuiltinModule::Path, NodeBuiltinModule::FsPromises]);
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { join } from 'path';\nimport { readFile } from 'node:fs/promises';\nexport const value = join('a', 'b');\n",
+            vec![],
+        )
+        .with_chunk_id(CHUNK_ID)
+        .with_host_no_reentry(policy.clone()),
+    );
+    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    assert_eq!(report["policy"], "no_static_importer_reentry");
+    assert_eq!(report["closure_blockers"], Value::Array(vec![]));
+    assert_eq!(
+        report["host_builtin_runtime"]["bun_standalone_build"]["version"],
+        "1.3.10"
+    );
+    assert_eq!(
+        report["host_builtin_runtime"]["bun_standalone_build"]["revision"],
+        "a".repeat(40)
+    );
+    assert_eq!(
+        report["host_builtin_runtime"]["bun_standalone_build"]["executable_sha256"],
+        "b".repeat(64)
+    );
+    assert_eq!(report["host_builtin_leaves"].as_array().unwrap().len(), 2);
+    assert_eq!(report["host_builtin_leaves"][0]["source_chunk"], CHUNK_ID);
+    assert_eq!(
+        report["host_builtin_leaves"][0]["specifier"],
+        "node:fs/promises"
+    );
+    assert_eq!(report["host_builtin_leaves"][0]["builtin"], "fs/promises");
+    assert_eq!(report["host_builtin_leaves"][0]["request_count"], 1);
+    assert_eq!(report["host_builtin_leaves"][1]["specifier"], "path");
+    assert_eq!(report["host_builtin_leaves"][1]["builtin"], "path");
+    assert_eq!(report["host_builtin_leaves"][1]["request_count"], 1);
+    assert_eq!(policy.operations.len(), 0);
+    let graph = fixture.dependency_graph();
+    let value = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "value")
+        })
+        .expect("exported imported-call unit");
+    assert!(
+        !value.purity.is_pure(),
+        "builtin leaf must not grant call purity"
+    );
+}
+
+#[test]
+fn unselected_bare_and_replacement_packages_remain_unresolved() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import 'node:path';\nimport 'unknown_package';\nimport 'ws';\nexport const value = 1;\n",
+            vec![],
+        )
+        .with_chunk_id(CHUNK_ID)
+        .with_host_no_reentry(builtin_policy(&[NodeBuiltinModule::Path])),
+    );
+    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    assert_eq!(report["policy"], "conservative");
+    assert_eq!(report["host_builtin_leaves"][0]["specifier"], "node:path");
+    let unresolved: Vec<_> = report["closure_blockers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|blocker| blocker["reason"] == "unresolved_static_request")
+        .map(|blocker| blocker["specifier"].as_str().unwrap())
+        .collect();
+    assert_eq!(unresolved, ["unknown_package", "ws"]);
+}
+
+#[test]
+fn attributed_builtin_request_remains_unsupported() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import 'path' with { type: 'javascript' };\nexport const value = 1;\n",
+            vec![],
+        )
+        .with_chunk_id(CHUNK_ID)
+        .with_host_no_reentry(builtin_policy(&[NodeBuiltinModule::Path])),
+    );
+    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    assert_eq!(report["policy"], "conservative");
+    assert!(has_reason(
+        &report,
+        "global_blockers",
+        "non_ordinary_static_request",
+        Some(CHUNK_ID)
+    ));
+    assert!(has_reason(
+        &report,
+        "closure_blockers",
+        "unsupported_static_request",
+        Some(CHUNK_ID)
+    ));
+    assert!(report.get("host_builtin_leaves").is_none());
+}
+
+#[test]
+fn builtin_leaf_requires_exact_identity_and_unused_assertion_is_not_evidence() {
+    assert!(serde_json::from_str::<NodeBuiltinModule>("\"ws\"").is_err());
+    assert!(serde_json::from_str::<NodeBuiltinModule>("\"unknown_package\"").is_err());
+    let mut legacy = builtin_policy(&[NodeBuiltinModule::Path]);
+    legacy.runtime = HostNoReentryRuntime::BunStandalone1_3_10;
+    expect_rejection_containing_all(
+        FixtureOpts::new("export const value = 1;", vec![]).with_host_no_reentry(legacy),
+        &["node_builtin_module_leaves", "bun_standalone_build"],
+    );
+    let mut malformed = builtin_policy(&[NodeBuiltinModule::Path]);
+    if let HostNoReentryRuntime::BunStandaloneBuild { revision, .. } = &mut malformed.runtime {
+        *revision = "bad".to_string();
+    }
+    expect_rejection_containing_all(
+        FixtureOpts::new("export const value = 1;", vec![]).with_host_no_reentry(malformed),
+        &["bun_standalone_build.revision", "40 hexadecimal characters"],
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new("export const value = 1;", vec![])
+            .with_chunk_id(CHUNK_ID)
+            .with_host_no_reentry(builtin_policy(&[NodeBuiltinModule::Path])),
+    );
+    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    assert!(report.get("host_builtin_runtime").is_none());
+    assert!(report.get("host_builtin_leaves").is_none());
+}
+
+#[test]
+fn builtin_leaf_does_not_remove_application_require_or_static_cycle_blockers() {
+    let extra_chunks = [(
+        "static/other",
+        "import './provider.js';\nexport const other = 1;\n",
+    )];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import 'path';\nimport './other.js';\nconst load = import.meta.require('./other.js');\nexport const value = 1;\n",
+            vec![],
+        )
+        .with_chunk_id(CHUNK_ID)
+        .with_extra_chunks(&extra_chunks)
+        .with_admission_overrides(&["a5_import_meta"])
+        .with_host_no_reentry(builtin_policy(&[NodeBuiltinModule::Path])),
+    );
+    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    assert_eq!(report["policy"], "conservative");
+    assert_eq!(report["host_builtin_leaves"][0]["specifier"], "path");
+    assert!(has_reason(
+        &report,
+        "global_blockers",
+        "common_js_interop",
+        Some(CHUNK_ID)
+    ));
+    assert!(has_reason(
+        &report,
+        "closure_blockers",
+        "target_cycle",
+        None
+    ));
 }
 
 #[test]

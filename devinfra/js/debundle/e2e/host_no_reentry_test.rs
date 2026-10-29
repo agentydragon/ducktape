@@ -7,6 +7,7 @@ fn policy(operations: &[HostNoReentryOperation]) -> HostNoReentry {
     HostNoReentry {
         runtime: HostNoReentryRuntime::BunStandalone1_3_10,
         operations: operations.iter().copied().collect::<BTreeSet<_>>(),
+        node_builtin_module_leaves: BTreeSet::new(),
     }
 }
 
