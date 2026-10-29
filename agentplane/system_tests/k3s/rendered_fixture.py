@@ -106,6 +106,7 @@ class RenderedFixture(BaseModel):
     backend: Backend
     # The stack then installs KubeVirt and Kyverno, which the objects' VM template and launcher relay need.
     vm_sandboxes: bool
+    central_sampler: bool = False
     namespace: str
     app_origin: str
     browser_services: list[BrowserService]

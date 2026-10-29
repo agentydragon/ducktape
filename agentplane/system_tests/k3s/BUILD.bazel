@@ -169,6 +169,8 @@ py_test(
     size = "medium",
     srcs = ["test_render.py"],
     data = [
+        ":rendered/central-sampler.json",
+        ":rendered/central-sampler-vm.json",
         ":rendered/local-model-mcp-fixtures.json",
         ":rendered/local-model-vm.json",
         "@nodejs_linux_amd64//:bin/node",
@@ -177,6 +179,8 @@ py_test(
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-mcp-fixtures.json)",
         "K3S_VM_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-vm.json)",
+        "K3S_CENTRAL_SAMPLER_FIXTURE_RLOCATION": "$(rlocationpath :rendered/central-sampler.json)",
+        "K3S_CENTRAL_SAMPLER_VM_FIXTURE_RLOCATION": "$(rlocationpath :rendered/central-sampler-vm.json)",
     },
     deps = [
         ":block_storage",
@@ -185,11 +189,18 @@ py_test(
         ":namespaces",
         ":rendered_fixture",
         "//:conftest",
+        "//agentplane/app:model_catalog",
         "//agentplane/app:settings",
         "//agentplane/mcp_edge:oauth_settings",
         "//agentplane/mcp_edge:settings",
+        "//agentplane/runner:harness",
         "//agentplane/runner_gateway:settings",
         "//agentplane/system_tests:conftest",
+        "//agentplane/workload_auth:audience",
+        "//agentplane/x/central_sampler:settings",
+        "//cluster/cdk8s/agentplane:central_sampler",
+        "//cluster/cdk8s/agentplane:history_service",
+        "//cluster/cdk8s/agentplane:llm_ingress",
         "//cluster/cdk8s/agentplane:runner_gateway",
         "//util:settings_contract",
         "//util/bazel:runfiles",
@@ -266,6 +277,7 @@ py_library(
         "//agentplane:subjects",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service/sandbox:binding",
+        "//agentplane/app:model_catalog",
         "//agentplane/app:settings",
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:policyset",
@@ -274,6 +286,7 @@ py_library(
         "//agentplane/system_tests:probe_credential",
         "//agentplane/system_tests:runtime_grant",
         "//agentplane/system_tests:send_grant",
+        "//agentplane/x/central_sampler:settings",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s:secret_ref",
@@ -281,6 +294,7 @@ py_library(
         "//cluster/cdk8s/agentplane:actions",
         "//cluster/cdk8s/agentplane:app",
         "//cluster/cdk8s/agentplane:app_settings",
+        "//cluster/cdk8s/agentplane:central_sampler_workload",
         "//cluster/cdk8s/agentplane:chart",
         "//cluster/cdk8s/agentplane:command_sandbox",
         "//cluster/cdk8s/agentplane:egress",
@@ -415,6 +429,30 @@ genrule(
 )
 
 genrule(
+    name = "render_central_sampler",
+    testonly = True,
+    outs = ["rendered/central-sampler.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=central-sampler K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
+    tools = [
+        ":render_fixture_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/system_tests:__pkg__"],
+)
+
+genrule(
+    name = "render_central_sampler_vm",
+    testonly = True,
+    outs = ["rendered/central-sampler-vm.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=central-sampler-vm K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
+    tools = [
+        ":render_fixture_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/system_tests:__pkg__"],
+)
+
+genrule(
     name = "render_public_litellm",
     testonly = True,
     outs = ["rendered/public-litellm.json"],
@@ -443,6 +481,7 @@ py_library(
     srcs = ["fixture_database.py"],
     data = [
         "bootstrap.sql",
+        "bootstrap_central_sampler.sql",
         "postgres_entrypoint.sh",
     ],
     deps = [

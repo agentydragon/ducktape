@@ -677,11 +677,13 @@ acceptance coverage, including recovery, fencing and native harness coexistence.
 
 ### `CENTRAL_SAMPLER_DEPLOYMENT` — opt-in runtime deployment
 
-**Unscheduled; technically after `CENTRAL_SAMPLER_PRODUCTION_IMPL`; requires operator selection.** Deploy an
-isolated database, sampler workload, delegated per-host resource boundary, audience/token and
-allowlists, configured provider route, History ingress network path and optional app offering.
+**In flight; Codex, operator requested 2026-10-28.** Deploy an
+isolated database, optional shared cdk8s sampler workload, audience/token and
+allowlists, configured provider route, History ingress network path and staging app offering.
+Operator selected concurrent JS host subprocesses in one container with aggregate Pod limits;
+stronger per-host isolation is deferred.
 Preserve existing native Session identities, history, state and wrapped harness operation. Validate
-the deployed cgroup delegation and trusted Session attribution; scripted wire fixtures alone do not
+the shared chart through k3s and trusted Session attribution; scripted wire fixtures alone do not
 establish live endpoint/model compaction support. No default switch, native data conversion or
 executor replacement implied. Exit: bounded new-Session acceptance and data-preserving rollback.
 

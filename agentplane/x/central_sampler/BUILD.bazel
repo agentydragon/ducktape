@@ -44,7 +44,7 @@ py_library(
     srcs = ["testing.py"],
     data = ["//agentplane/x/central_sampler/cmd:main_bin"],
     deps = [
-        ":testing_config",
+        ":settings",
         "//agentplane/native/testing:model_endpoint",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandboxes_pb2",
@@ -129,8 +129,8 @@ py_test(
     ],
     deps = [
         ":conftest",
+        ":settings",
         ":testing",
-        ":testing_config",
         ":testing_store",
         "//:conftest",
         "//agentplane:subjects",
@@ -213,10 +213,12 @@ py_test(
 )
 
 py_library(
-    name = "testing_config",
-    testonly = True,
-    srcs = ["testing_config.py"],
-    deps = ["@pypi//pydantic"],
+    name = "settings",
+    srcs = ["settings.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
 )
 
 py_library(
@@ -266,12 +268,10 @@ go_library(
         "//agentplane/runner_gateway:executor_gateway_go_proto",
         "//agentplane/workload_auth/go/auth",
         "@com_github_coder_websocket//:websocket",
-        "@com_github_containerd_cgroups_v3//cgroup2",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",
-        "@com_github_sethvargo_go_retry//:go-retry",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",
@@ -291,6 +291,7 @@ go_test(
         "codemode_test.go",
         "executor_test.go",
         "exporter_test.go",
+        "host_test.go",
         "integration_testmain_test.go",
         "provider_test.go",
         "runtime_lifecycle_test.go",

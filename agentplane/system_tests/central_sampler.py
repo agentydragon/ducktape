@@ -1,8 +1,4 @@
-"""A sampler Pod connected to the disposable k3s stack's real service boundaries.
-
-This fixture runs the Go sampler binary with real TokenReview. Fixture mode omits delegated
-host cgroups; the production entrypoint requires them.
-"""
+"""A chart-deployed sampler Pod connected to the disposable k3s stack's service boundaries."""
 
 import asyncio
 import json
@@ -16,24 +12,21 @@ from uuid import uuid4
 import yaml
 from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
-from pydantic import SecretStr
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import dial
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2_grpc
-from agentplane.runner_gateway.settings import CentralSamplerTarget
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cluster import api_client, kubectl
 from agentplane.system_tests.conftest import namespace
 from agentplane.x.central_sampler import sampler_pb2_grpc
-from agentplane.x.central_sampler.testing_config import Provider, Settings
+from model_catalog.catalog import GPT6_LUNA_RESPONSES
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-SERVICE = "test-central-sampler"
-MODEL = "test-central-model"
-PROVIDER = "test-central-provider"
+SERVICE = "central-sampler"
+MODEL = GPT6_LUNA_RESPONSES.id
+PROVIDER = "responses"
 HISTORY_READER_AUDIENCE = "agentplane-history-service"
 
 
@@ -48,6 +41,7 @@ class CentralStack:
     sandbox_uid: str
     incarnation_uid: str
     control_target: str
+    sampler_pod_name: str
 
 
 async def _bound_token(core: k8s.CoreV1Api, account: str, pod: k8s.V1Pod, audience: str) -> str:
@@ -95,71 +89,6 @@ async def _control_address(connection: k8s.ApiClient, sandbox: str, uid: str) ->
     return f"{address}:{port.port}"
 
 
-async def _configure_services(core: k8s.CoreV1Api, target: str) -> None:
-    # Only this scenario's freshly rendered stack is patched. The address is allocated by the
-    # node's gRPC listener, so it cannot be rendered into the build-time fixture chart.
-    gateway = await core.read_namespaced_config_map("runner-gateway-settings", namespace())
-    settings = yaml.safe_load(gateway.data["settings.yaml"])
-    settings["central_samplers"] = {
-        SERVICE: CentralSamplerTarget(
-            target=target, token_file=Path("/var/run/secrets/test-central-sampler/token")
-        ).model_dump(mode="json")
-    }
-    settings["executor_callers"] = [f"{namespace()}/{SERVICE}"]
-    gateway.data["settings.yaml"] = yaml.safe_dump(settings)
-    await core.replace_namespaced_config_map(gateway.metadata.name, namespace(), gateway)
-    await kubectl(
-        "patch",
-        "deployment/runner-gateway",
-        "--type=strategic",
-        "-p",
-        json.dumps(
-            {
-                "spec": {
-                    # This single-node fixture lacks xt_statistic, which kube-proxy needs
-                    # for the multiple endpoints present during a rolling update.
-                    "strategy": {"type": "Recreate", "rollingUpdate": None},
-                    "template": {
-                        "spec": {
-                            "volumes": [
-                                {
-                                    "name": SERVICE,
-                                    "projected": {
-                                        "sources": [{"serviceAccountToken": {"audience": SERVICE, "path": "token"}}]
-                                    },
-                                }
-                            ],
-                            "containers": [
-                                {
-                                    "name": "runner-gateway",
-                                    "volumeMounts": [
-                                        {
-                                            "name": SERVICE,
-                                            "mountPath": "/var/run/secrets/test-central-sampler",
-                                            "readOnly": True,
-                                        }
-                                    ],
-                                }
-                            ],
-                        }
-                    },
-                }
-            }
-        ),
-    )
-    history = await core.read_namespaced_config_map("history-service-config", namespace())
-    settings = yaml.safe_load(history.data["config.yaml"])
-    settings["ingress"]["sampler_accounts"] = [{"namespace": namespace(), "name": SERVICE}]
-    history.data["config.yaml"] = yaml.safe_dump(settings)
-    await core.replace_namespaced_config_map(history.metadata.name, namespace(), history)
-    await kubectl("rollout", "restart", "deployment/runner-gateway")
-    await kubectl("rollout", "restart", "deployment/history-service")
-    await asyncio.gather(
-        kubectl("rollout", "status", "deployment/runner-gateway", "--timeout=180s"),
-        kubectl("rollout", "status", "deployment/history-service", "--timeout=180s"),
-    )
-
-
 async def _delete_sandbox(name: str, uid: str) -> None:
     await kubectl(
         "patch",
@@ -197,140 +126,35 @@ async def _diagnostics() -> None:
         )
 
 
-async def capture_sampler_diagnostics() -> Path:
+async def capture_sampler_diagnostics(core: k8s.CoreV1Api | None = None) -> Path:
     """Retain this sampler Pod's logs before another scenario replaces the Pod."""
-    state = await kubectl("get", f"pod/{SERVICE}", "-o", "json")
-    uid = str(json.loads(state)["metadata"]["uid"])
+    if core is None:
+        async with api_client() as connection:
+            return await capture_sampler_diagnostics(k8s.CoreV1Api(connection))
+
+    pod = await _pod(core, SERVICE)
+    state = await kubectl("get", "pod", pod.metadata.name, "-o", "json")
+    uid = str(pod.metadata.uid)
     output = undeclared_outputs_dir() / "central-sampler-pods" / uid
     output.mkdir(parents=True, exist_ok=True)
     (output / "pod.json").write_text(state)
-    async with api_client() as connection:
-        core = k8s.CoreV1Api(connection)
-        for container in ("initialize", "sampler"):
-            try:
-                log = await core.read_namespaced_pod_log(SERVICE, namespace(), container=container)
-            except ApiException as error:
-                log = f"Container logs unavailable: {error}"
-            (output / f"{container}.log").write_text(log)
-    # The test owns this k3s node; preserve the Pod's EmptyDir before deletion removes it.
+    containers = [container.name for container in pod.spec.containers]
+    containers.extend(container.name for container in pod.spec.init_containers or [])
+    for container in containers:
+        try:
+            log = await core.read_namespaced_pod_log(pod.metadata.name, namespace(), container=container)
+        except ApiException as error:
+            log = f"Container logs unavailable: {error}"
+        (output / f"{container}.log").write_text(log)
+    # Preserve the Pod's EmptyDir before the disposable k3s stack tears it down.
     logs = Path(f"/var/lib/kubelet/pods/{uid}/volumes/kubernetes.io~empty-dir/logs")
     if await asyncio.to_thread(logs.exists):
         await asyncio.to_thread(shutil.copytree, logs, output / "sessions", dirs_exist_ok=True)
     return output
 
 
-async def _delete_sampler() -> None:
-    await kubectl(
-        "delete",
-        f"pod/{SERVICE}",
-        f"service/{SERVICE}",
-        f"configmap/{SERVICE}",
-        f"serviceaccount/{SERVICE}",
-        f"clusterrole/{SERVICE}",
-        f"clusterrolebinding/{SERVICE}",
-        "--ignore-not-found",
-        "--wait=true",
-        "--timeout=60s",
-    )
-
-
-async def _create_sampler(connection: k8s.ApiClient, config: Settings) -> None:
-    core = k8s.CoreV1Api(connection)
-    await core.create_namespaced_service_account(
-        namespace(), k8s.V1ServiceAccount(metadata=k8s.V1ObjectMeta(name=SERVICE))
-    )
-    rbac = k8s.RbacAuthorizationV1Api(connection)
-    await rbac.create_cluster_role(
-        k8s.V1ClusterRole(
-            metadata=k8s.V1ObjectMeta(name=SERVICE),
-            rules=[
-                k8s.V1PolicyRule(api_groups=["authentication.k8s.io"], resources=["tokenreviews"], verbs=["create"])
-            ],
-        )
-    )
-    await rbac.create_cluster_role_binding(
-        k8s.V1ClusterRoleBinding(
-            metadata=k8s.V1ObjectMeta(name=SERVICE),
-            role_ref=k8s.V1RoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name=SERVICE),
-            subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name=SERVICE, namespace=namespace())],
-        )
-    )
-    values = config.model_dump(mode="json", exclude_none=True)
-    for name, provider in config.providers.items():
-        values["providers"][name]["credential"] = provider.credential.get_secret_value()
-    await core.create_namespaced_config_map(
-        namespace(),
-        k8s.V1ConfigMap(metadata=k8s.V1ObjectMeta(name=SERVICE), data={"settings.json": json.dumps(values)}),
-    )
-    image = "git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset"
-    settings_mount = k8s.V1VolumeMount(name="settings", mount_path="/etc/central-sampler", read_only=True)
-    await core.create_namespaced_pod(
-        namespace(),
-        k8s.V1Pod(
-            metadata=k8s.V1ObjectMeta(name=SERVICE, labels={"app.kubernetes.io/name": SERVICE}),
-            spec=k8s.V1PodSpec(
-                service_account_name=SERVICE,
-                automount_service_account_token=True,
-                security_context=k8s.V1PodSecurityContext(
-                    run_as_non_root=True, run_as_user=1000, run_as_group=1000, fs_group=1000
-                ),
-                init_containers=[
-                    k8s.V1Container(
-                        name="initialize",
-                        image=image,
-                        image_pull_policy="Never",
-                        args=["--config", "/etc/central-sampler/settings.json", "--initialize"],
-                        volume_mounts=[settings_mount],
-                    )
-                ],
-                containers=[
-                    k8s.V1Container(
-                        name="sampler",
-                        image=image,
-                        image_pull_policy="Never",
-                        # This scenario still omits per-host delegated cgroups.
-                        args=["--config", "/etc/central-sampler/settings.json", "--fixture"],
-                        ports=[k8s.V1ContainerPort(name="grpc", container_port=8080)],
-                        readiness_probe=k8s.V1Probe(grpc=k8s.V1GRPCAction(port=8080), period_seconds=1),
-                        resources=k8s.V1ResourceRequirements(
-                            requests={"cpu": "100m", "memory": "128Mi"}, limits={"memory": "2Gi"}
-                        ),
-                        volume_mounts=[
-                            settings_mount,
-                            k8s.V1VolumeMount(name="logs", mount_path="/var/log/central-sampler"),
-                            k8s.V1VolumeMount(
-                                name="credentials", mount_path="/var/run/secrets/central-sampler", read_only=True
-                            ),
-                        ],
-                    )
-                ],
-                volumes=[
-                    k8s.V1Volume(name="settings", config_map=k8s.V1ConfigMapVolumeSource(name=SERVICE)),
-                    k8s.V1Volume(name="logs", empty_dir=k8s.V1EmptyDirVolumeSource()),
-                    k8s.V1Volume(
-                        name="credentials",
-                        projected=k8s.V1ProjectedVolumeSource(
-                            sources=[
-                                k8s.V1VolumeProjection(
-                                    service_account_token=k8s.V1ServiceAccountTokenProjection(
-                                        path=path, audience=audience, expiration_seconds=3600
-                                    )
-                                )
-                                for path, audience in (
-                                    ("gateway", "agentplane-runner-gateway"),
-                                    ("history", RUNNER_INGRESS_AUDIENCE),
-                                )
-                            ]
-                        ),
-                    ),
-                ],
-            ),
-        ),
-    )
-
-
 @asynccontextmanager
-async def central_stack(directory: Path, model_origin: str, *, template: str) -> AsyncIterator[CentralStack]:
+async def central_stack(directory: Path, *, template: str) -> AsyncIterator[CentralStack]:
     async with AsyncExitStack() as cleanup, AsyncExitStack() as stack:
         stack.push_async_callback(_diagnostics)
         connection = await stack.enter_async_context(api_client())
@@ -339,24 +163,6 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
         caller_token = await _bound_token(core, "app", app, "session-dispatcher")
         reader_token = directory / "history-reader-token"
         reader_token.write_text(await _bound_token(core, "app", app, HISTORY_READER_AUDIENCE))
-        database_name = "central_sampler_test_" + uuid4().hex
-        for statement in (
-            f"CREATE ROLE {database_name} LOGIN PASSWORD 'test-central-database-password'",
-            f"CREATE DATABASE {database_name} OWNER {database_name}",
-        ):
-            await kubectl(
-                "exec",
-                "deployment/postgres",
-                "--",
-                "psql",
-                "--host=/tmp",
-                "--username=fixture_admin",
-                "--dbname=postgres",
-                "--set=ON_ERROR_STOP=1",
-                "--command",
-                statement,
-            )
-        database = await _address(core, "postgres-primary", 5432)
         app_config = await core.read_namespaced_config_map("app-config", namespace())
         policies = yaml.safe_load(app_config.data["config.yaml"])["default_policy_sets"]
         sandbox = "systest-central-" + uuid4().hex[:8]
@@ -380,20 +186,9 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
         await kubectl("wait", f"sandbox/{sandbox}", "--for=condition=Ready=True", "--timeout=300s")
         ready = json.loads(await kubectl("get", "sandbox", sandbox, "-o", "json"))
         incarnation = ready["status"]["incarnation"]["uid"]
-        history_target = await _address(core, "history-service", 8081)
-        stack.push_async_callback(_delete_sampler)
-        service = await core.create_namespaced_service(
-            namespace(),
-            k8s.V1Service(
-                metadata=k8s.V1ObjectMeta(name=SERVICE),
-                spec=k8s.V1ServiceSpec(
-                    selector={"app.kubernetes.io/name": SERVICE},
-                    ports=[k8s.V1ServicePort(name="grpc", port=8080, target_port=8080)],
-                ),
-            ),
-        )
-        target = f"{service.spec.cluster_ip}:8080"
-        await _configure_services(core, target)
+        target = await _address(core, SERVICE, 8080)
+        sampler_pod = await _pod(core, SERVICE)
+        stack.push_async_callback(capture_sampler_diagnostics, core)
         gateway_pod = await _pod(core, "runner-gateway")
         await kubectl(
             "wait",
@@ -403,36 +198,6 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
         )
         # The per-Sandbox Service selects the replica holding this Sandbox's Runner stream.
         control_target = await _control_address(connection, sandbox, uid)
-        config = Settings(
-            database_url=f"postgresql://{database_name}:test-central-database-password@{database}/{database_name}?sslmode=disable",
-            listen="0.0.0.0:8080",
-            service_name=SERVICE,
-            providers={
-                PROVIDER: Provider(
-                    endpoint=model_origin + "/v1/responses",
-                    credential=SecretStr("test-provider-key"),
-                    models={MODEL},
-                    reasoning_efforts={""},
-                )
-            },
-            audience=SERVICE,
-            allowed_accounts={f"{namespace()}/runner-gateway"},
-            code_mode_host=Path("/usr/local/bin/codex-code-mode-host"),
-            executor_codex="/usr/bin/codex",
-            logs=Path("/var/log/central-sampler"),
-            gateway_target=control_target,
-            gateway_token_file=Path("/var/run/secrets/central-sampler/gateway"),
-            history_target=history_target,
-            history_token_file=Path("/var/run/secrets/central-sampler/history"),
-            max_live_sessions=1,
-            host_rss_bytes=1024 * 1024 * 1024,
-            turn_timeout_seconds=60,
-            rpc_timeout_seconds=10,
-            lease_seconds=60,
-        )
-        await _create_sampler(connection, config)
-        stack.push_async_callback(capture_sampler_diagnostics)
-        await kubectl("wait", f"pod/{SERVICE}", "--for=condition=Ready", "--timeout=60s")
         sampler_token = await _bound_token(core, "runner-gateway", gateway_pod, SERVICE)
         sampler_channel = await stack.enter_async_context(dial(target))
         dispatcher_channel = await stack.enter_async_context(dial(await _address(core, "session-dispatcher", 8080)))
@@ -452,6 +217,7 @@ async def central_stack(directory: Path, model_origin: str, *, template: str) ->
             sandbox_uid=uid,
             incarnation_uid=incarnation,
             control_target=control_target,
+            sampler_pod_name=sampler_pod.metadata.name,
         )
 
 

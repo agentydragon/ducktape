@@ -10,6 +10,7 @@ from pathlib import Path
 from pydantic import AnyHttpUrl
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
+from agentplane.app.model_catalog import CentralSamplerChoice
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.app.settings import AppSettingsConfig, FrontendConfig, LangfuseSearchSettings, TraceSearchSettings
@@ -104,11 +105,13 @@ def config(
     models: HarnessRoutes,
     action_federation: ActionFederationSettings,
     connection_service_url: HttpEndpointUrl,
+    central_sampler: CentralSamplerChoice | None = None,
 ) -> AppSettingsConfig:
     cfg = settings(
         namespace=namespace,
         sandbox_template=sandbox_template,
         models=models,
+        central_sampler=central_sampler,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
         connection_service_url=connection_service_url,

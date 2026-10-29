@@ -343,7 +343,7 @@ Alternatives to compare:
 
 Operator agreement, 2026-10-27: implement and open a PR for an independent central code-mode
 sampler with its own database and standalone API. The shared sampler hosts a separately supervised,
-resource-limited JS process per live Session. Dispatcher admits/routes central commands directly
+JS subprocess per live Session. Dispatcher admits/routes central commands directly
 to it; tools use sampler → Gateway → outbound Runner tunnel → loopback exec-server. Wrapped Codex
 and Claude keep execution and sampling together on their existing paths. Experimental code lives
 under `x/`; no deployment, default change or native-state migration is selected.
@@ -351,7 +351,12 @@ under `x/`; no deployment, default change or native-state migration is selected.
 Operator request, 2026-10-28: rewrite the sampler in Go. This includes the service, provider/tool
 loop, persistence and History exporter. Preserve the prototype's API, PostgreSQL state,
 persistence/failure semantics and acceptance scenarios. The upstream JS host remains a separately
-supervised process. Opt-in deployment is a separate DAG outcome.
+supervised process.
+
+Operator selection, 2026-10-28: enable the optional shared cdk8s workload in staging, offering the
+existing Codex models, and use that construct in k3s acceptance tests. Multiple Session hosts run
+as subprocesses in the same container under aggregate Pod CPU/memory limits. Mandatory delegated
+per-host cgroups are removed; stronger per-host isolation can be reconsidered if needed.
 
 The selected provider scope is OpenAI-shaped Responses/code mode with pinned Codex 0.162.1 host
 and executor. Compaction, wait, stdin and interrupts are required. Standing instructions are

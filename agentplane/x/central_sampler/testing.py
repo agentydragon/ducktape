@@ -19,7 +19,7 @@ from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchang
 from agentplane.proto import runner_pb2, sandboxes_pb2
 from agentplane.testing.go_process import go_process
 from agentplane.x.central_sampler import sampler_pb2, sampler_pb2_grpc
-from agentplane.x.central_sampler.testing_config import Provider, Settings
+from agentplane.x.central_sampler.settings import Provider, Settings
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import listen_tcp
 
@@ -150,9 +150,11 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
     """Run the same Go binary and initialization path used outside tests."""
     await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
     binary = get_required_path(own_repo_rlocation("agentplane/x/central_sampler/cmd/main_bin_/main_bin"))
+    if config.database_url is None:
+        raise ValueError("system-test sampler settings require database_url")
     with listen_tcp() as bound:
         fd = bound.socket.fileno()
-        values = config.model_dump(mode="json")
+        values = config.model_dump(mode="json", exclude_none=True)
         values["database_url"] = (
             make_url(config.database_url)
             .set(drivername="postgresql")
@@ -162,7 +164,8 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
         values["listen"] = f"fd:{fd}"
         values["kubeconfig"] = str(kubeconfig)
         for name, provider in config.providers.items():
-            values["providers"][name]["credential"] = provider.credential.get_secret_value()
+            if provider.credential is not None:
+                values["providers"][name]["credential"] = provider.credential.get_secret_value()
         config_path = directory / "sampler-config.json"
         config_path.write_text(json.dumps(values))
         migration = await asyncio.to_thread(
@@ -178,7 +181,7 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
         assert migration.returncode == 0, migration.stdout + migration.stderr
         async with go_process(
             binary,
-            env={"AGENTPLANE_CENTRAL_SAMPLER_CONFIG": str(config_path), "AGENTPLANE_CENTRAL_SAMPLER_FIXTURE": "true"},
+            env={"AGENTPLANE_CENTRAL_SAMPLER_CONFIG": str(config_path)},
             stderr=directory / "sampler.log",
             health_port=bound.port,
             grace_s=10,

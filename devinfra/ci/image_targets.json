@@ -229,6 +229,11 @@
       "test": "//agentplane/action_service/...",
       "registry": "forgejo"
     },
+    "agentplane-central-sampler": {
+      "target": "//agentplane/x/central_sampler/cmd:service_image",
+      "test": "//agentplane/x/central_sampler/...",
+      "registry": "forgejo"
+    },
     "agentplane-mcp-edge-migrate": {
       "target": "//agentplane/mcp_edge/migrations:image",
       "registry": "forgejo"

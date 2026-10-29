@@ -4438,6 +4438,10 @@ spec:
       kind: Database
       name: session-dispatcher
       namespace: agentplane-staging
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: central-sampler
+      namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
       name: electric
@@ -4453,6 +4457,10 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: history-service
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: central-sampler
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment

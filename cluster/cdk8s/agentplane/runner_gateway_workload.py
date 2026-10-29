@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
+from pathlib import Path
 from typing import cast
 
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
@@ -31,13 +32,14 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
-from agentplane.runner_gateway.settings import Settings
+from agentplane.runner_gateway.settings import CentralSamplerTarget, Settings
 from agentplane.runner_transport.configuration import MTLS, TLS
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
+    central_sampler,
     database,
     notifications,
     runner_gateway,
@@ -171,6 +173,20 @@ class RunnerGateway(Construct):
         dispatcher_accounts = sorted(map(_account, dispatcher_callers))
         gateway_accounts = sorted(map(_account, proxy_callers))
         wake_accounts = sorted(map(_account, wake_callers))
+        central_sampler_account = ServiceAccountRef(namespace=namespace, name=central_sampler.NAME)
+        central_sampler_settings = (
+            {
+                "central_samplers": {
+                    central_sampler.NAME: CentralSamplerTarget(
+                        target=central_sampler.target(namespace),
+                        token_file=Path("/var/run/secrets/agentplane-runner-gateway/central-sampler"),
+                    )
+                },
+                "executor_callers": [_account(central_sampler_account)],
+            }
+            if env.central_sampler is not None
+            else {}
+        )
         # Lists are file-only settings.
         content = {
             "dispatcher_callers": dispatcher_accounts,
@@ -178,6 +194,7 @@ class RunnerGateway(Construct):
             "runner_security": MTLS(
                 mode="mtls", tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)
             ).model_dump(mode="json"),
+            **central_sampler_settings,
             **({"wake_callers": wake_accounts} if wake_accounts else {}),
         }
         settings = SettingsFile(
@@ -253,11 +270,10 @@ class RunnerGateway(Construct):
                 k8s.VolumeMount(name="runner-tls", mount_path=runner_gateway.GATEWAY_TLS_MOUNT_PATH, read_only=True),
             )
         )
-        workload.project_tokens(
-            "runner-gateway-token",
-            "/var/run/secrets/agentplane-runner-gateway",
-            {"token": runner_gateway.TOKEN_AUDIENCE},
-        )
+        gateway_tokens = {"token": runner_gateway.TOKEN_AUDIENCE}
+        if env.central_sampler is not None:
+            gateway_tokens["central-sampler"] = central_sampler.TOKEN_AUDIENCE
+        workload.project_tokens("runner-gateway-token", "/var/run/secrets/agentplane-runner-gateway", gateway_tokens)
         self._add_rbac(workload.account, namespace)
 
     def add_platform_resources(self) -> None:
@@ -273,6 +289,11 @@ class RunnerGateway(Construct):
             endpoint_selector=proxy.pods.selector,
             ingress=[
                 *(pods.admit(proxy.pod_port) for pods in self.proxy_callers.values()),
+                *(
+                    [central_sampler.pods(namespace).admit(proxy.pod_port)]
+                    if self.env.central_sampler is not None
+                    else []
+                ),
                 self.sandbox_controller_pods.admit(proxy.pod_port),
                 *(
                     pods.admit(dispatcher.pod_port, dispatcher_http.pod_port)
@@ -285,6 +306,7 @@ class RunnerGateway(Construct):
                 database.egress(namespace),
                 proxy.egress(),
                 EgressRule.to_endpoints(runner_sandbox.pods(namespace).cilium, runner_sandbox.RUNNER_SERVICE_PORT),
+                *([central_sampler.service(namespace).egress()] if self.env.central_sampler is not None else []),
             ],
         )
 

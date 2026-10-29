@@ -27,7 +27,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-func run(ctx context.Context, settings centralsampler.Settings, initialize, fixture bool) error {
+func run(ctx context.Context, settings centralsampler.Settings, initialize bool) error {
 	databaseURL := strings.Replace(settings.DatabaseURL, "postgresql+asyncpg://", "postgresql://", 1)
 	// Allow session state writes and lease renewals, eight exporter workers, and sixteen RPCs.
 	db, err := postgres.Open(ctx, databaseURL, 2*settings.MaxLiveSessions+8+16, 16)
@@ -37,9 +37,6 @@ func run(ctx context.Context, settings centralsampler.Settings, initialize, fixt
 	defer db.Close()
 	if initialize {
 		return centralsampler.Migrate(ctx, db)
-	}
-	if settings.HostCgroupRoot == "" && !fixture {
-		return errors.New("service requires delegated host_cgroup_root for hard resource limits")
 	}
 	if err := os.MkdirAll(settings.Logs, 0700); err != nil {
 		return err
@@ -125,13 +122,12 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	configuration := flag.String("config", os.Getenv("AGENTPLANE_CENTRAL_SAMPLER_CONFIG"), "JSON settings path")
 	initialize := flag.Bool("initialize", false, "Apply isolated sampler schema migrations")
-	fixture := flag.Bool("fixture", os.Getenv("AGENTPLANE_CENTRAL_SAMPLER_FIXTURE") == "true", "Allow test fixture without a delegated cgroup")
 	flag.Parse()
 	settings, err := centralsampler.LoadSettings(*configuration)
 	if err == nil {
 		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer cancel()
-		err = run(ctx, settings, *initialize, *fixture)
+		err = run(ctx, settings, *initialize)
 	}
 	if err != nil {
 		slog.Error("central sampler stopped", "error_type", fmt.Sprintf("%T", err))

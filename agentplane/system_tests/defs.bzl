@@ -26,6 +26,8 @@ _MCP_FIXTURE_LAYOUTS = [
 
 # The `_vm` target's manifest: the local model's, with VM Sandboxes.
 _VM_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model-vm.json"
+_CENTRAL_SAMPLER_FIXTURE = "//agentplane/system_tests/k3s:rendered/central-sampler.json"
+_CENTRAL_SAMPLER_VM_FIXTURE = "//agentplane/system_tests/k3s:rendered/central-sampler-vm.json"
 
 # The `_real_model` target's manifest: LLM ingress forwarding to the public LiteLLM with BuildBuddy's
 # live-test key (`OPENAI_API_KEY`), decrypted into the test action alone, as for `live_openai_py_test`.
@@ -35,7 +37,7 @@ _REAL_MODEL_SECRET = "OPENAI_API_KEY"
 _CERT_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:cert_manager_install_yaml"
 _TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml"
 
-def system_test(name, srcs, deps, data = [], k3s = None, vm_sandboxes = None, real_model = False, mcp_fixtures = False, vm_systemd_proof = False):
+def system_test(name, srcs, deps, data = [], k3s = None, vm_sandboxes = None, real_model = False, mcp_fixtures = False, vm_systemd_proof = False, central_sampler = False):
     """Generates `name` when `k3s` names its scenarios' kind, `name + "_vm"` when `vm_sandboxes` says
     where it runs, and `name + "_real_model"` when `real_model` is True.
 
@@ -71,7 +73,7 @@ def system_test(name, srcs, deps, data = [], k3s = None, vm_sandboxes = None, re
         _k3s_test(
             name = name,
             runner_layout = _RUNNER_LAYOUTS[k3s],
-            fixture = _MCP_FIXTURE if mcp_fixtures else _FIXTURE,
+            fixture = _MCP_FIXTURE if mcp_fixtures else (_CENTRAL_SAMPLER_FIXTURE if central_sampler else _FIXTURE),
             layouts = _MCP_FIXTURE_LAYOUTS if mcp_fixtures else [],
             **common
         )
@@ -83,7 +85,7 @@ def system_test(name, srcs, deps, data = [], k3s = None, vm_sandboxes = None, re
             name = name + "_vm",
             # The guest's runner comes from the runner disk; no Sandbox runs the Pod runner image.
             runner_layout = None,
-            fixture = _VM_FIXTURE,
+            fixture = _CENTRAL_SAMPLER_VM_FIXTURE if central_sampler else _VM_FIXTURE,
             layouts = [],
             data = K3S_VM_DATA + [guest_root],
             env = K3S_VM_ENV | {"K3S_VM_GUEST_ROOT_RLOCATION": "$(rlocationpath " + guest_root + ")"},

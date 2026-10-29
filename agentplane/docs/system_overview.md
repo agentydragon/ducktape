@@ -4,9 +4,9 @@ Per-path detail for the [README system overview](../README.md#system-overview), 
 API arrows point caller to callee, labels like `response` or `replication` show data on that edge,
 dashed arrows are runner-initiated platform routes.
 
-The experimental central sampler runs as its own Pod and Service in the
-[k3s acceptance scenarios](../system_tests/README.md#central-sampler), with its own image and
-projected service-account credentials. It is not deployed by default.
+The optional central sampler runs as its own Deployment and Service in staging and the
+[k3s acceptance scenarios](../system_tests/README.md#central-sampler), using the shared cdk8s
+construct, its own image and projected service-account credentials.
 
 ## Session delivery
 
@@ -51,7 +51,8 @@ flowchart LR
     sampler -->|Session identity| llm --> provider
 ```
 
-The JS host runs beside the sampler, one supervised resource-limited process per live Session.
+The JS hosts run as subprocesses in the sampler container, one supervised process per live Session.
+The Pod has aggregate CPU/memory limits; individual hosts have no dedicated kernel resource boundary.
 Gateway relays the pinned upstream exec-server protocol without interpreting tools. Dispatcher
 is absent from that tool path. Sandbox UID and incarnation fence the executor binding; v1 does
 not replace an executor. An unavailable executor does not remove the sampler's persisted history

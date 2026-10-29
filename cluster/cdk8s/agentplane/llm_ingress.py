@@ -28,7 +28,7 @@ from constructs import Construct
 from agentplane.llm_ingress.settings import Settings
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import telemetry
+from cluster.cdk8s.agentplane import central_sampler, telemetry
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
@@ -120,6 +120,11 @@ class LlmIngress(Construct):
         # Settings this deployment supplies as YAML rather than flags, so a list is a list.
         content = {
             "allowed_service_account_namespaces": [env.namespace],
+            **(
+                {"central_sampler_accounts": [f"{env.namespace}/{central_sampler.NAME}"]}
+                if env.central_sampler is not None
+                else {}
+            ),
             "log_llm_requests": env.llm_ingress.log_llm_requests,
             "models": [item.model_dump(mode="json") for item in env.llm_ingress.models],
             "attribution": env.llm_ingress.attribution.model_dump(mode="json"),
@@ -241,7 +246,12 @@ class LlmIngress(Construct):
                 # egress.py imports this module, so the proxy's Pods are named here.
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels(self.env.namespace, "egress"), ports=[self.service.pod_port]
-                )
+                ),
+                *(
+                    [central_sampler.pods(self.env.namespace).admit(self.service.pod_port)]
+                    if self.env.central_sampler is not None
+                    else []
+                ),
             ],
             egress=[
                 cilium.dns_egress(),

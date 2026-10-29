@@ -326,6 +326,46 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
+  name: postgres-central-sampler-generator
+  namespace: agentplane-staging
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: postgres-central-sampler
+  namespace: agentplane-staging
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: postgres-central-sampler-generator
+  refreshInterval: 8760h
+  target:
+    name: postgres-central-sampler
+    template:
+      data:
+        dbname: central_sampler
+        host: postgres-rw.agentplane-staging.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://central_sampler:{{ .password }}@postgres-rw.agentplane-staging.svc:5432/central_sampler
+        username: central_sampler
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
+      type: kubernetes.io/basic-auth
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
   name: postgres-electric-generator
   namespace: agentplane-staging
 spec:
@@ -416,6 +456,11 @@ spec:
         name: session_dispatcher
         passwordSecret:
           name: postgres-session-dispatcher
+      - ensure: present
+        login: true
+        name: central_sampler
+        passwordSecret:
+          name: postgres-central-sampler
       - ensure: present
         login: true
         name: electric
@@ -513,6 +558,18 @@ spec:
   databaseReclaimPolicy: delete
   name: session_dispatcher
   owner: session_dispatcher
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: central-sampler
+  namespace: agentplane-staging
+spec:
+  cluster:
+    name: postgres
+  databaseReclaimPolicy: delete
+  name: central_sampler
+  owner: central_sampler
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1154,6 +1211,8 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-staging
+    central_sampler_accounts:
+      - agentplane-staging/central-sampler
     log_llm_requests: true
     models: []
     attribution:
@@ -1366,6 +1425,14 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: central-sampler
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -2430,6 +2497,9 @@ data:
       token_audience: agentplane-runner-ingress
       writer_namespaces:
         - agentplane-staging
+      sampler_accounts:
+        - namespace: agentplane-staging
+          name: central-sampler
       listen_address: 0.0.0.0:8081
       settle_deltas: true
 immutable: false
@@ -2708,6 +2778,14 @@ spec:
         - ports:
             - port: "8081"
               protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: central-sampler
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -2727,6 +2805,330 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: egress
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-staging-central-sampler-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-central-sampler-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-central-sampler-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: central-sampler
+    namespace: agentplane-staging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: central-sampler-settings
+  namespace: agentplane-staging
+data:
+  settings.json: |
+    {
+      "listen": "0.0.0.0:8080",
+      "service_name": "central-sampler",
+      "providers": {
+        "responses": {
+          "endpoint": "http://llm-ingress.agentplane-staging.svc:8080/v1/responses",
+          "credential_file": "/var/run/secrets/central-sampler/llm",
+          "models": [
+            "antigravity/ant-messages/claude-opus-4-6-thinking",
+            "antigravity/ant-messages/claude-sonnet-4-6",
+            "antigravity/ant-messages/gemini-3-flash",
+            "antigravity/ant-messages/gemini-3.5-flash-lite",
+            "antigravity/ant-messages/gemini-3.8-flash-high",
+            "chatgpt-sub/oai-responses/gpt-6-astra",
+            "chatgpt-sub/oai-responses/gpt-6-luna",
+            "chatgpt-sub/oai-responses/gpt-6.1-sol",
+            "ollama/oai-chat/gemma4-31b-it-q8_0-128k",
+            "ollama/oai-chat/gpt-oss-120b-128k",
+            "ollama/oai-chat/gpt-oss-20b-128k",
+            "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k"
+          ],
+          "reasoning_efforts": [
+            "",
+            "high",
+            "low",
+            "max",
+            "medium",
+            "minimal",
+            "xhigh"
+          ]
+        }
+      },
+      "audience": "central-sampler",
+      "allowed_accounts": [
+        "agentplane-staging/runner-gateway"
+      ],
+      "code_mode_host": "/usr/local/bin/codex-code-mode-host",
+      "executor_codex": "codex",
+      "logs": "/var/log/central-sampler",
+      "history_target": "history-service.agentplane-staging.svc.cluster.local:8081",
+      "history_token_file": "/var/run/secrets/central-sampler/history",
+      "gateway_target": "{sandbox}-control.{namespace}.svc:8080",
+      "gateway_token_file": "/var/run/secrets/central-sampler/gateway",
+      "max_live_sessions": 32,
+      "host_rss_bytes": 536870912,
+      "turn_timeout_seconds": 3600,
+      "rpc_timeout_seconds": 30,
+      "lease_seconds": 60
+    }
+immutable: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: central-sampler
+  namespace: agentplane-staging
+automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    configmap.reloader.stakater.com/reload: central-sampler-settings
+  labels:
+    app.kubernetes.io/name: central-sampler
+  name: central-sampler
+  namespace: agentplane-staging
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-central-sampler-deployment-c84b5474
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: central-sampler
+        cdk8s.io/metadata.addr: agentplane-central-sampler-deployment-c84b5474
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - env:
+            - name: AGENTPLANE_CENTRAL_SAMPLER_CONFIG
+              value: /etc/agentplane-central-sampler/settings.json
+            - name: AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-central-sampler
+          image: git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            grpc:
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          name: central-sampler
+          ports:
+            - containerPort: 8080
+              name: grpc
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            grpc:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 2000m
+              memory: 4096Mi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/agentplane-central-sampler
+              name: central-sampler-settings
+              readOnly: true
+            - mountPath: /var/log/central-sampler
+              name: logs
+            - mountPath: /var/run/secrets/central-sampler
+              name: caller-tokens
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - args:
+            - --initialize
+          env:
+            - name: AGENTPLANE_CENTRAL_SAMPLER_CONFIG
+              value: /etc/agentplane-central-sampler/settings.json
+            - name: AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-central-sampler
+          image: git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset
+          imagePullPolicy: IfNotPresent
+          name: initialize-database
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/agentplane-central-sampler
+              name: central-sampler-settings
+              readOnly: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: central-sampler
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - configMap:
+            name: central-sampler-settings
+          name: central-sampler-settings
+        - emptyDir: {}
+          name: logs
+        - name: caller-tokens
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-egress
+                  expirationSeconds: 3600
+                  path: llm
+              - serviceAccountToken:
+                  audience: agentplane-runner-gateway
+                  expirationSeconds: 3600
+                  path: gateway
+              - serviceAccountToken:
+                  audience: agentplane-runner-ingress
+                  expirationSeconds: 3600
+                  path: history
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: central-sampler
+  name: central-sampler
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: grpc
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-central-sampler-deployment-c84b5474
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: central-sampler
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: postgres
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: runner-gateway
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: history-service
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: llm-ingress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: central-sampler
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: runner-gateway
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -2833,6 +3235,22 @@ data:
           - ollama/oai-chat/gpt-oss-20b-128k
           - ollama/oai-chat/gpt-oss-120b-128k
           - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+        HARNESS_CENTRAL_SAMPLER:
+          - chatgpt-sub/oai-responses/gpt-6-astra
+          - chatgpt-sub/oai-responses/gpt-6-luna
+          - chatgpt-sub/oai-responses/gpt-6.1-sol
+          - antigravity/ant-messages/claude-opus-4-6-thinking
+          - antigravity/ant-messages/claude-sonnet-4-6
+          - antigravity/ant-messages/gemini-3-flash
+          - antigravity/ant-messages/gemini-3.5-flash-lite
+          - antigravity/ant-messages/gemini-3.8-flash-high
+          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+          - ollama/oai-chat/gpt-oss-20b-128k
+          - ollama/oai-chat/gpt-oss-120b-128k
+          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+      central_sampler:
+        service: central-sampler
+        provider: responses
     thread_presets:
       public-coder-codex:
         title: Public coder / Codex

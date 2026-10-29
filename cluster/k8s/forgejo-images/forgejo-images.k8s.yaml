@@ -83,6 +83,11 @@ spec:
       name: agentplane-app-migrate
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-central-sampler'
+      kind: ImageRepository
+      name: agentplane-central-sampler
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-egress-history-migrate'
       kind: ImageRepository
       name: agentplane-egress-history-migrate

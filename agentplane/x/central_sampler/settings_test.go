@@ -2,13 +2,15 @@ package centralsampler
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func fixtureSettings() Settings {
 	return Settings{
-		DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", ServiceName: "fixture", Providers: map[string]Provider{"responses": {Endpoint: "https://model.invalid/responses", Credential: "test-credential", Models: []string{"test-model"}, ReasoningEfforts: []string{"", "high"}}}, Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorURL: "ws://executor.invalid", MaxLiveSessions: 2, HostRSSBytes: 1024 * 1024, HostPids: 64, HostCPUQuotaUS: 100000, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
+		DatabaseURL: "postgresql://fixture.invalid/sampler", Listen: "127.0.0.1:0", ServiceName: "fixture", Providers: map[string]Provider{"responses": {Endpoint: "https://model.invalid/responses", Credential: "test-credential", Models: []string{"test-model"}, ReasoningEfforts: []string{"", "high"}}}, Audience: "test-sampler", AllowedAccounts: []string{"test/client"}, CodeModeHost: "/fixture/host", ExecutorCodex: "/fixture/codex", Logs: "/fixture/logs", DirectExecutorURL: "ws://executor.invalid", MaxLiveSessions: 2, HostRSSBytes: 1024 * 1024, TurnTimeoutSeconds: 40, RPCTimeoutSeconds: 10, LeaseSeconds: 60,
 	}
 }
 
@@ -25,6 +27,16 @@ func TestSettingsRejectPartialAndUnknownConfiguration(t *testing.T) {
 		},
 		"zero capacity":   func(s *Settings) { s.MaxLiveSessions = 0 },
 		"invalid account": func(s *Settings) { s.AllowedAccounts = []string{"test/client/other"} },
+		"provider credential missing": func(s *Settings) {
+			provider := s.Providers["responses"]
+			provider.Credential = ""
+			s.Providers["responses"] = provider
+		},
+		"provider credentials duplicated": func(s *Settings) {
+			provider := s.Providers["responses"]
+			provider.CredentialFile = "/fixture/token"
+			s.Providers["responses"] = provider
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s := fixtureSettings()
@@ -49,6 +61,61 @@ func TestSettingsRejectPartialAndUnknownConfiguration(t *testing.T) {
 	}
 	if _, err := DecodeSettings(strings.NewReader(string(encoded) + ` {}`)); err == nil {
 		t.Fatal("accepted a second configuration object")
+	}
+}
+
+func TestLoadSettingsUsesDatabaseURLEnvironmentOverride(t *testing.T) {
+	settings := fixtureSettings()
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var values map[string]any
+	if err := json.Unmarshal(encoded, &values); err != nil {
+		t.Fatal(err)
+	}
+	delete(values, "database_url")
+	encoded, err = json.Marshal(values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	want := "postgresql://rotated-user:rotated-password@database.invalid/sampler"
+	t.Setenv("AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL", want)
+	got, err := LoadSettings(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DatabaseURL != want {
+		t.Fatalf("database URL=%q, want environment override %q", got.DatabaseURL, want)
+	}
+}
+
+func TestProviderReadsRotatingCredentialFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte("first-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	provider := Provider{CredentialFile: path}
+	first, err := provider.ReadCredential()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != "first-token" {
+		t.Fatalf("first credential=%q", first)
+	}
+	if err := os.WriteFile(path, []byte("second-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	second, err := provider.ReadCredential()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second != "second-token" {
+		t.Fatalf("second credential=%q after projected file rotation", second)
 	}
 }
 

@@ -485,7 +485,7 @@ func (r *Runtime) connectHost(ctx context.Context, sessionID string, owner Owner
 		return nil, err
 	}
 	logPath := filepath.Join(r.settings.Logs, session.SourceID+".log")
-	host, err := StartHost(ctx, r.settings.CodeModeHost, logPath, r.settings)
+	host, err := StartHost(ctx, r.settings.CodeModeHost, logPath)
 	if err != nil {
 		_ = closeTransport()
 		return nil, err
@@ -507,6 +507,7 @@ func (r *Runtime) connectHost(ctx context.Context, sessionID string, owner Owner
 	return live, nil
 }
 
+// TODO: Revisit per-host kernel limits if aggregate container limits prove insufficient.
 func (r *Runtime) superviseHost(ctx context.Context, live *liveHost) {
 	defer close(live.monitorDone)
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -740,6 +741,10 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	}
 	body.ClientMetadata = ResponsesClientMetadata{SessionID: metadata.SessionID, ThreadID: metadata.ThreadID, TurnID: metadata.TurnID}
 	body.PromptCacheKey = metadata.SessionID
+	credential, err := provider.ReadCredential()
+	if err != nil {
+		return "", err
+	}
 	intentID, err := r.store.Begin(ctx, owner, map[string]any{"kind": "sampling", "body": body})
 	if err != nil {
 		return "", err
@@ -748,7 +753,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
-	response, err := Sample(ctx, client, provider.Endpoint, provider.Credential, body,
+	response, err := Sample(ctx, client, provider.Endpoint, credential, body,
 		&ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, headers, false)
 	if err != nil {
 		var known *KnownFailureError
@@ -812,6 +817,10 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, provider Provider, m
 	body.ClientMetadata = ResponsesClientMetadata{SessionID: metadata.SessionID, ThreadID: metadata.ThreadID, TurnID: metadata.TurnID}
 	body.PromptCacheKey = metadata.SessionID
 	body.Input = append(body.Input, ResponsesItem{Type: ResponsesItemCompactionTrigger})
+	credential, err := provider.ReadCredential()
+	if err != nil {
+		return err
+	}
 	intentID, err := r.store.BeginCompaction(ctx, owner, map[string]any{"kind": "compaction", "body": body}, original)
 	if err != nil {
 		return err
@@ -821,7 +830,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, provider Provider, m
 	if err != nil {
 		return err
 	}
-	response, err := Sample(ctx, client, provider.Endpoint, provider.Credential, body,
+	response, err := Sample(ctx, client, provider.Endpoint, credential, body,
 		&ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, headers, true)
 	if err != nil {
 		var known *KnownFailureError

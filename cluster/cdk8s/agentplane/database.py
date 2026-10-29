@@ -92,8 +92,9 @@ class Db(Construct):
     def __init__(self, scope: Construct, id: str, env: Environment, props: DbProps) -> None:
         super().__init__(scope, id)
         cluster = postgres(env)
+        roles = [*_ROLE_NAMES, *(["central_sampler"] if env.central_sampler is not None else [])]
 
-        for role in _ROLE_NAMES:
+        for role in roles:
             _role_credentials(self, f"role-credentials-{role}", cluster=cluster, role=role)
         _role_credentials(self, "role-credentials-electric", cluster=cluster, role=_ELECTRIC_ROLE, database_name="app")
 
@@ -122,7 +123,7 @@ class Db(Construct):
                         login=True,
                         password_secret=ClusterSpecManagedRolesPasswordSecret(name=_role_secret_name(role)),
                     )
-                    for role in _ROLE_NAMES
+                    for role in roles
                 ]
                 + [
                     ClusterSpecManagedRoles(
@@ -136,7 +137,7 @@ class Db(Construct):
             ),
         )
 
-        for role in _ROLE_NAMES:
+        for role in roles:
             Database(
                 self,
                 f"database-{role}",

@@ -27,6 +27,8 @@ from agentplane.system_tests.k3s.rendered_fixture import (
 class FixtureVariant(StrEnum):
     LOCAL_MODEL = "local-model"
     LOCAL_MODEL_VM = "local-model-vm"
+    CENTRAL_SAMPLER = "central-sampler"
+    CENTRAL_SAMPLER_VM = "central-sampler-vm"
     PUBLIC_LITELLM = "public-litellm"
 
 
@@ -43,11 +45,14 @@ def write_fixture(path: Path, fixture: RenderedFixture, *, models: Models, mcp: 
     path.write_text(text)
 
 
-def _render(output: Path, variant: FixtureVariant, backend: Backend, *, vm_sandboxes: bool) -> None:
+def _render(
+    output: Path, variant: FixtureVariant, backend: Backend, *, vm_sandboxes: bool, central_sampler: bool = False
+) -> None:
     models = MODEL_PLACEHOLDERS[backend]
     fixture = RenderedFixture(
         backend=backend,
         vm_sandboxes=vm_sandboxes,
+        central_sampler=central_sampler,
         namespace=NAMESPACE,
         app_origin=fixture_chart.APP_ORIGIN,
         browser_services=[
@@ -58,7 +63,9 @@ def _render(output: Path, variant: FixtureVariant, backend: Backend, *, vm_sandb
             )
         ],
         mcp_fixtures=None,
-        objects=fixture_chart.objects(**asdict(PLACEHOLDERS), models=models, vm_sandboxes=vm_sandboxes),
+        objects=fixture_chart.objects(
+            **asdict(PLACEHOLDERS), models=models, vm_sandboxes=vm_sandboxes, central_sampler=central_sampler
+        ),
     )
     write_fixture(output / f"{variant}.json", fixture, models=models, mcp=None)
 
@@ -69,6 +76,10 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False)
         case FixtureVariant.LOCAL_MODEL_VM:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=True)
+        case FixtureVariant.CENTRAL_SAMPLER:
+            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False, central_sampler=True)
+        case FixtureVariant.CENTRAL_SAMPLER_VM:
+            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=True, central_sampler=True)
         case FixtureVariant.PUBLIC_LITELLM:
             _render(output, variant, Backend.PUBLIC_LITELLM, vm_sandboxes=False)
 

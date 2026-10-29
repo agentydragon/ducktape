@@ -21,6 +21,7 @@ from agentplane.app.settings import AppSettingsConfig
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.runner.configuration import GuestResources
 from agentplane.subjects import ServiceAccountRef
+from agentplane.x.central_sampler.settings import Provider
 from model_catalog.catalog import Route
 
 
@@ -43,6 +44,19 @@ class LlmIngressProps:
     codex_routes: Sequence[Route]
     attribution: AttributionConfig = field(default_factory=default_attribution)
     log_llm_requests: bool = False
+
+
+@dataclass(frozen=True)
+class CentralSamplerProps:
+    """The opt-in central code-mode service's provider routes and runtime limits."""
+
+    providers: Mapping[str, Provider]
+    max_live_sessions: int
+    host_rss_bytes: int
+    turn_timeout_seconds: int
+    rpc_timeout_seconds: int
+    lease_seconds: int
+    auto_compact_tokens: int | None = None
 
 
 @dataclass(frozen=True)
@@ -176,6 +190,8 @@ class Environment:
     # Whether this environment has VM Sandboxes: the runner VM template (runner_vm.py) and the egress
     # relay for their KubeVirt launchers (launcher_relay.py).
     vm_sandboxes: bool
+    # None keeps the central code-mode service, its route, and its cross-service grants absent.
+    central_sampler: CentralSamplerProps | None = None
     # Optional StorageClass for both claims owned by a VM Sandbox. If unset, they use the runner
     # template's state claim class.
     vm_storage_class: str | None = None

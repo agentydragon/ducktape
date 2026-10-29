@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import AnyHttpUrl
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
-from agentplane.app.model_catalog import ModelCatalog, ModelOption
+from agentplane.app.model_catalog import CentralSamplerChoice, ModelCatalog, ModelOption
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.settings import AppSettingsConfig, FrontendConfig
 from agentplane.runner.harness import Harness
@@ -73,7 +73,7 @@ def _reasoning_efforts(route: Route, models: HarnessRoutes) -> list[str]:
     return list(efforts)
 
 
-def model_catalog(models: HarnessRoutes) -> ModelCatalog:
+def model_catalog(models: HarnessRoutes, *, central_sampler: CentralSamplerChoice | None = None) -> ModelCatalog:
     return ModelCatalog(
         models=[
             ModelOption(
@@ -83,9 +83,11 @@ def model_catalog(models: HarnessRoutes) -> ModelCatalog:
             )
             for route in models.all
         ],
+        central_sampler=central_sampler,
         harnesses={
             Harness.CLAUDE: [route.id for route in models.claude],
             Harness.CODEX: [route.id for route in models.codex],
+            **({Harness.CENTRAL_SAMPLER: [route.id for route in models.codex]} if central_sampler is not None else {}),
         },
     )
 
@@ -101,12 +103,13 @@ def settings(
     public_coder_policy_sets: list[str],
     default_policy_sets: Set[str],
     frontend_config: FrontendConfig | None = None,
+    central_sampler: CentralSamplerChoice | None = None,
 ) -> AppSettingsConfig:
     optional_configuration: dict[str, object] = {}
     if frontend_config is not None:
         optional_configuration["frontend_config"] = frontend_config
     return AppSettingsConfig(
-        models=model_catalog(models),
+        models=model_catalog(models, central_sampler=central_sampler),
         default_policy_sets=default_policy_sets,
         connection_service_url=connection_service_url,
         # App-owned launch-form presets. The browser expands one into editable concrete

@@ -12,6 +12,7 @@ and standalone edge use loopback HTTP origins for OAuth callbacks, served by por
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
@@ -51,6 +52,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
+from agentplane.app.model_catalog import CentralSamplerChoice
 from agentplane.app.settings import AppSettingsConfig
 from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.subjects import ServiceAccountRef
@@ -58,11 +60,13 @@ from agentplane.system_tests import launch_preset, probe_credential, runtime_gra
 from agentplane.system_tests.k3s import block_storage, dex, fixture_database
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, Models, PublicLiteLLM
+from agentplane.x.central_sampler.settings import Provider
 from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
     app_settings,
+    central_sampler_workload,
     command_sandbox,
     egress,
     history_service,
@@ -90,6 +94,7 @@ from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
+    CentralSamplerProps,
     EgressProps,
     Environment,
     LlmIngressProps,
@@ -216,17 +221,38 @@ def linkage_client(app_origin: str) -> dex.StaticClient:
     return replace(_MCP_LINKAGE, redirect_uri=f"{app_origin}/mcp-linkage/callback")
 
 
-def environment(*, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORIGIN) -> Environment:
+def environment(
+    *, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORIGIN, central_sampler: bool = False
+) -> Environment:
     """Build the common fixture settings; MCP renderers add their servers and Dex resources separately."""
     app_login = login_client(app_origin)
     operator_oidc = dex.operator_oidc(issuer=DEX_ISSUER, app_client_id=app_login.id)
     routes = _PUBLIC_LITELLM_MODELS if isinstance(models, PublicLiteLLM) else _LOCAL_MODEL_MODELS
+    central_sampler_props = None
+    central_sampler_choice = None
+    if central_sampler:
+        central_sampler_props = CentralSamplerProps(
+            providers={
+                "responses": Provider(
+                    endpoint=f"{llm_ingress.proxied_url(NAMESPACE)}/v1/responses",
+                    credential_file=Path("/var/run/secrets/central-sampler/llm"),
+                    models={GPT6_LUNA_RESPONSES.id},
+                    reasoning_efforts={"", *GPT6_LUNA_RESPONSES.reasoning_efforts},
+                )
+            },
+            max_live_sessions=1,
+            host_rss_bytes=1024 * _MIB,
+            turn_timeout_seconds=60,
+            rpc_timeout_seconds=10,
+            lease_seconds=60,
+        )
+        central_sampler_choice = CentralSamplerChoice(service="central-sampler", provider="responses")
     return Environment(
         namespace=NAMESPACE,
         description="Agentplane k3s fixture",
         replicas=_ONE_REPLICA,
         app_config=AppSettingsConfig(
-            models=app_settings.model_catalog(routes),
+            models=app_settings.model_catalog(routes, central_sampler=central_sampler_choice),
             default_policy_sets=set(egress.DEFAULT_POLICIES),
             connection_service_url=AnyHttpUrl(MCP_EDGE_SERVICE.url),
             thread_presets={launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)},
@@ -239,6 +265,7 @@ def environment(*, vm_sandboxes: bool, models: Models, app_origin: str = APP_ORI
             action_federation=dex.action_federation(operator_oidc),
         ),
         settle_deltas=True,
+        central_sampler=central_sampler_props,
         llm_ingress=LlmIngressProps(
             litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(routes), codex_routes=routes.codex
         ),
@@ -331,10 +358,17 @@ def _add_runner_root(chart: Chart) -> None:
 
 
 def objects(
-    *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, vm_sandboxes: bool
+    *,
+    ca_cert: str,
+    ca_key: str,
+    system_roots: str,
+    cluster_ca: str,
+    models: Models,
+    vm_sandboxes: bool,
+    central_sampler: bool = False,
 ) -> list[dict[str, Any]]:
     """Synthesize the common one-node fixture, optionally replacing the production guest for VM tests."""
-    env = environment(vm_sandboxes=vm_sandboxes, models=models)
+    env = environment(vm_sandboxes=vm_sandboxes, models=models, central_sampler=central_sampler)
     fixture = build_chart(
         ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
     )
@@ -457,6 +491,15 @@ def build_chart(
         memory_limit=None,
     )
     control_target = runner_gateway.control_target(NAMESPACE)
+    if env.central_sampler is not None:
+        sampler_database_url = (
+            SecretRef(namespace=NAMESPACE, name="postgres-central-sampler")
+            .key("uri")
+            .env_value(chart, "central-sampler-database-url")
+        )
+        central_sampler_workload.CentralSampler(
+            chart, "central-sampler", env, database_url=sampler_database_url, placement=None, registry_secret_name=None
+        )
     history_service.HistoryService(
         chart,
         "history-service",

@@ -11,16 +11,21 @@ import pytest_bazel
 import yaml
 from pydantic import AnyHttpUrl
 
+from agentplane.app.model_catalog import ModelCatalog
+
 # Each service module exports `Settings`; aliases keep their separate config contracts explicit.
 from agentplane.app.settings import Settings as AppSettings
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
+from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.settings import Settings
 from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendered_fixture
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
-from cluster.cdk8s.agentplane import runner_gateway
+from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
+from agentplane.x.central_sampler.settings import Settings as CentralSamplerSettings
+from cluster.cdk8s.agentplane import central_sampler, history_service, llm_ingress, runner_gateway
 from util.bazel.runfiles import get_required_path
 from util.settings_contract import env_name
 
@@ -51,8 +56,21 @@ def _filled_fixture() -> rendered_fixture.RenderedFixture:
     )
 
 
+def _filled_central_sampler_fixture(path: str) -> rendered_fixture.RenderedFixture:
+    cached = rendered_fixture.read(get_required_path(os.environ[path]))
+    return rendered_fixture.fill(
+        cached,
+        RuntimeInputs(
+            ca_cert="fixture-ca\n", ca_key="fixture-key\n", system_roots="system-roots\n", cluster_ca="cluster-ca\n"
+        ),
+        LocalModel(url="http://scripted-model.k3s-fixture.invalid:4000"),
+        None,
+    )
+
+
 def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     fixture = _filled_fixture()
+    assert not fixture.central_sampler
     assert "k3s-env-placeholder-" not in fixture.model_dump_json()
     docs = fixture.objects
     assert all(
@@ -399,6 +417,88 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
             },
         },
     }
+
+
+def test_central_sampler_fixtures_render_app_ingress_gateway_and_history_wiring() -> None:
+    for env_name_, vm in (
+        ("K3S_CENTRAL_SAMPLER_FIXTURE_RLOCATION", False),
+        ("K3S_CENTRAL_SAMPLER_VM_FIXTURE_RLOCATION", True),
+    ):
+        fixture = _filled_central_sampler_fixture(env_name_)
+        assert fixture.central_sampler
+        assert fixture.vm_sandboxes is vm
+        docs = fixture.objects
+        if vm:
+            assert _resource(docs, "SandboxTemplate", "runner-vm")
+
+        app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
+        catalog = ModelCatalog.model_validate(app_config["models"])
+        assert catalog.central_sampler is not None
+        assert catalog.central_sampler.service == central_sampler.NAME
+        assert catalog.central_sampler.provider == "responses"
+        assert catalog.harnesses[Harness.CENTRAL_SAMPLER] == [fixture_chart.GPT6_LUNA_RESPONSES.id]
+
+        deployment = _resource(docs, "Deployment", central_sampler.NAME)
+        pod = deployment["spec"]["template"]["spec"]
+        assert pod["serviceAccountName"] == central_sampler.NAME
+        container = next(container for container in pod["containers"] if container["name"] == central_sampler.NAME)
+        database_env = next(
+            entry for entry in container["env"] if entry["name"] == env_name(CentralSamplerSettings, "database_url")
+        )
+        assert database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-central-sampler"
+        settings = CentralSamplerSettings.model_validate_json(
+            _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
+        )
+        provider = settings.providers["responses"]
+        assert provider.endpoint == f"{llm_ingress.proxied_url(NAMESPACE)}/v1/responses"
+        assert str(provider.credential_file) == "/var/run/secrets/central-sampler/llm"
+        assert provider.models == {fixture_chart.GPT6_LUNA_RESPONSES.id}
+        assert any(
+            mount["name"] == "caller-tokens" and mount["mountPath"] == "/var/run/secrets/central-sampler"
+            for mount in container["volumeMounts"]
+        )
+        token_reviewer = _resource(docs, "ClusterRole", f"{NAMESPACE}-central-sampler-token-reviewer")
+        assert token_reviewer["rules"] == [
+            {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
+        ]
+        database_uri = urlsplit(_resource(docs, "Secret", "postgres-central-sampler")["stringData"]["uri"])
+        assert database_uri.username == "central_sampler"
+        assert database_uri.path == "/central_sampler"
+        assert database_uri.hostname == f"{fixture_database.SERVICE}.{NAMESPACE}.svc"
+
+        projected = next(
+            volume["projected"]["sources"] for volume in pod["volumes"] if volume["name"] == "caller-tokens"
+        )
+        token_audiences = {
+            source["serviceAccountToken"]["path"]: source["serviceAccountToken"]["audience"] for source in projected
+        }
+        assert token_audiences == {
+            "llm": WORKLOAD_TOKEN_AUDIENCE,
+            "gateway": runner_gateway.TOKEN_AUDIENCE,
+            "history": history_service.RUNNER_INGRESS_AUDIENCE,
+        }
+        assert _resource(docs, "Service", central_sampler.NAME)["spec"]["ports"][0]["port"] == central_sampler.PORT
+
+        llm_config = yaml.safe_load(_resource(docs, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
+        assert llm_config["central_sampler_accounts"] == [f"{NAMESPACE}/{central_sampler.NAME}"]
+        gateway_config = yaml.safe_load(
+            _resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"]
+        )
+        assert gateway_config["central_samplers"][central_sampler.NAME]["target"] == central_sampler.target(NAMESPACE)
+        assert f"{NAMESPACE}/{central_sampler.NAME}" in gateway_config["executor_callers"]
+        gateway_pod = _resource(docs, "Deployment", "runner-gateway")["spec"]["template"]["spec"]
+        gateway_tokens = next(
+            volume["projected"]["sources"]
+            for volume in gateway_pod["volumes"]
+            if volume["name"] == "runner-gateway-token"
+        )
+        assert any(
+            source["serviceAccountToken"]["audience"] == central_sampler.TOKEN_AUDIENCE
+            and source["serviceAccountToken"]["path"] == "central-sampler"
+            for source in gateway_tokens
+        )
+        history_config = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
+        assert {"namespace": NAMESPACE, "name": central_sampler.NAME} in history_config["ingress"]["sampler_accounts"]
 
 
 if __name__ == "__main__":

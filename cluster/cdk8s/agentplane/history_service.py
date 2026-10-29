@@ -27,7 +27,7 @@ from constructs import Construct
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE, IngressSettings, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import database, egress
+from cluster.cdk8s.agentplane import central_sampler, database, egress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
@@ -123,6 +123,15 @@ class HistoryService(Construct):
                 token_audience=RUNNER_INGRESS_AUDIENCE,
                 # Sandboxes run in the environment's own namespace.
                 writer_namespaces=frozenset((env.namespace,)),
+                **(
+                    {
+                        "sampler_accounts": frozenset(
+                            (ServiceAccountRef(namespace=env.namespace, name=central_sampler.NAME),)
+                        )
+                    }
+                    if env.central_sampler is not None
+                    else {}
+                ),
                 listen_address=f"0.0.0.0:{ingress.pod_port}",
                 settle_deltas=env.settle_deltas,
             ),
@@ -186,6 +195,11 @@ class HistoryService(Construct):
             ingress=[
                 *(pods.admit(endpoint.pod_port) for pods in self.callers.values()),
                 proxy.pods.admit(ingress.pod_port),
+                *(
+                    [central_sampler.pods(env.namespace).admit(ingress.pod_port)]
+                    if env.central_sampler is not None
+                    else []
+                ),
             ],
             egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER), database.egress(env.namespace)],
         )

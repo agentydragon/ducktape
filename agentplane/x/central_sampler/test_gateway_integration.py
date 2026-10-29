@@ -27,8 +27,8 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.x.central_sampler import sampler_pb2
+from agentplane.x.central_sampler.settings import Settings
 from agentplane.x.central_sampler.testing import METADATA, Endpoint, open_request, service, settings
-from agentplane.x.central_sampler.testing_config import Settings
 from agentplane.x.central_sampler.testing_store import Store
 from util.testing.postgres import create_temporary_database
 from util.testing.sqlalchemy_engines import postgres_async_engine

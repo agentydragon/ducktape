@@ -31,12 +31,20 @@ completion acknowledgement. Successful setup is not repeated when later commands
 
 ## Runtime and effects
 
-One shared service runs the provider loop; one separately supervised, resource-limited upstream
-JS host serves each live Session. Completed-cell state is checkpointed in PostgreSQL. Model-facing
+One shared service runs the provider loop; one separately supervised upstream JS host serves each
+live Session. The host runs in the sampler container. The RSS supervisor samples its leader every
+100 ms and kills its process group when `host_rss_bytes` is exceeded; descendants are not included
+in that sample. Pod CPU and memory limits are aggregate bounds for the Go service and all Session
+hosts together, so container memory exhaustion can interrupt every live Session. Ordinary host
+shutdown kills its process group; descendants that create a new session can remain until the
+container stops. Completed-cell state is checkpointed in PostgreSQL. Model-facing
 `exec` and `wait`, yielded process handles, stdin and external interrupts use the pinned upstream
 protocol. Live JavaScript state is process memory and cannot be restored from PostgreSQL. Lost
 live cells or uncertain effects block automatic continuation; requests/tools are never replayed
 merely because a transport failed. Process handles inherit upstream's detached retention limits.
+
+TODO: Revisit per-host kernel-enforced resource limits if the shared container boundary proves
+insufficient.
 
 The provider boundary uses a small typed adapter for Codex Responses requests, streamed events,
 terminal responses, items and content parts. The public OpenAI SDK types do not model Codex's

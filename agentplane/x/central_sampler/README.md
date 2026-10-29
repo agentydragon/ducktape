@@ -27,12 +27,17 @@ initialization retains Session identities, conversation state, evidence and outb
 `//agentplane/x/central_sampler/cmd:service_image` packages the service and pinned code-mode host.
 The [k3s acceptance scenarios](../../system_tests/README.md#central-sampler) run that image in its
 own Pod, initialize its DB with an init container, and use projected service-account tokens for
-Gateway and History. They keep fixture mode's omission of delegated per-host cgroup limits.
+Gateway and History. The sampler and all of its JavaScript hosts share the Pod container's
+aggregate CPU and memory limits.
 
 Server-owned configuration names the service, provider routes (endpoint, credential placeholder,
 model and reasoning-effort allowlists), TokenReview audience and allowed caller accounts,
-code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Gateway
-mode requires `gateway_target` and a rotating projected `gateway_token_file`. Configure
+code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Providers
+use exactly one of `credential` or `credential_file`; the service reads the file before each
+request so projected service-account tokens can rotate. `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`
+overrides `database_url` in the JSON settings, so database credentials can stay in a Secret-backed
+environment variable. Gateway mode requires `gateway_target` and a rotating projected
+`gateway_token_file`. Configure
 `gateway_target` as `{sandbox}-control.{namespace}.svc:8080` for the per-Sandbox control Service:
 it selects the Gateway replica holding that Runner's outbound stream. A load-balanced Gateway
 Service is unsuitable when there are multiple replicas. Fixed targets support single-process
@@ -40,12 +45,17 @@ fixtures. Templates accept DNS-label executor names and only these two placehold
 `direct_executor_url` supports standalone fixtures without Gateway; choose exactly one transport.
 Optional `history_target` and `history_token_file` enable retained History export.
 
-The production entrypoint requires a delegated cgroup v2 `host_cgroup_root`. It creates a fresh
-child per host, sets memory/swap, PID and CPU limits, and enters it before exec. Keep the sampler
-and database outside those host cgroups and the executor's resource/storage domain. The fixture
-can omit the cgroup root to run without delegated kernel controllers; it exercises host-exit and
-RSS supervision, not the deployed kernel boundary. A delegated hierarchy remains a deployment
-requirement, not permission to run an unbounded production host.
+`max_live_sessions` bounds the number of concurrent Session hosts. The service samples each host
+leader's RSS every 100 ms and kills its process group when the configured `host_rss_bytes` limit is
+exceeded. This is a supervisor guard, not a kernel-enforced per-host memory limit; descendants are
+not included in the RSS sample. Configure CPU and memory limits on the sampler container. Those
+limits cover the Go service and every live host together, so container memory exhaustion can stop
+all Sessions in the Pod. PostgreSQL retains durable conversation and effect records, but live
+JavaScript cells cannot be restored after the service or host exits. Ordinary shutdown kills a
+host's process group; descendants that create a new session may remain until the container stops.
+
+TODO: Revisit a delegated per-host kernel boundary if shared container limits stop meeting the
+production resource contract.
 
 ## Agentplane opt in
 

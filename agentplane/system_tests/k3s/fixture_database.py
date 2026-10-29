@@ -62,6 +62,7 @@ def _database_secret(
 def add_database(scope: Construct, env: Environment) -> Construct:
     """Build the fixture database and its connection Secrets."""
     db_scope = Construct(scope, "db")
+    roles = _ROLES + (("central_sampler",) if env.central_sampler is not None else ())
 
     Secret(
         db_scope,
@@ -69,17 +70,17 @@ def add_database(scope: Construct, env: Environment) -> Construct:
         metadata=ApiObjectMetadata(name=f"{NAME}-bootstrap-credentials", namespace=env.namespace),
         string_data={"password": _PASSWORD},
     )
-    for role in _ROLES:
+    for role in roles:
         _database_secret(db_scope, env, role=role, database=role, password=_PASSWORD, async_uri=role == "app")
 
+    bootstrap_sql = _fixture_file("bootstrap.sql")
+    if env.central_sampler is not None:
+        bootstrap_sql += "\n" + _fixture_file("bootstrap_central_sampler.sql")
     bootstrap = ConfigMap(
         db_scope,
         "bootstrap-config",
         metadata=ApiObjectMetadata(name=f"{NAME}-bootstrap", namespace=env.namespace),
-        data={
-            "bootstrap.sql": _fixture_file("bootstrap.sql"),
-            "postgres_entrypoint.sh": _fixture_file("postgres_entrypoint.sh"),
-        },
+        data={"bootstrap.sql": bootstrap_sql, "postgres_entrypoint.sh": _fixture_file("postgres_entrypoint.sh")},
     )
     labels = _LABELS
     deployment = Deployment(
@@ -99,7 +100,7 @@ def add_database(scope: Construct, env: Environment) -> Construct:
         .key("password")
         .env_value(db_scope, "postgres-bootstrap-password"),
     }
-    for role in _ROLES:
+    for role in roles:
         env_variables[f"AGENTPLANE_DB_PASSWORD_{role.upper()}"] = (
             SecretRef(namespace=env.namespace, name=f"postgres-{role.replace('_', '-')}")
             .key("password")

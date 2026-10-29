@@ -27,10 +27,12 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
+from agentplane.app.model_catalog import CentralSamplerChoice
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
 from agentplane.runner.configuration import GuestResources, ResourceLimits
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
+from agentplane.x.central_sampler.settings import Provider
 from cluster.cdk8s import (
     agent_access_profiles,
     cilium,
@@ -43,7 +45,9 @@ from cluster.cdk8s import (
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
+    central_sampler,
     command_sandbox,
+    llm_ingress,
     mcp_edge,
     notifications,
     policy_controller,
@@ -65,6 +69,7 @@ from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
     BearerMcpMount,
+    CentralSamplerProps,
     EgressProps,
     Environment,
     GitHubAppProps,
@@ -376,8 +381,27 @@ ENV = Environment(
         namespace=STAGING_NAMESPACE,
         sandbox_template=POD_TEMPLATE,
         models=STAGING_APP_MODELS,
+        central_sampler=CentralSamplerChoice(service=central_sampler.NAME, provider="responses"),
         action_federation=_ACTION_FEDERATION,
         connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
+    ),
+    central_sampler=CentralSamplerProps(
+        providers={
+            "responses": Provider(
+                endpoint=f"{llm_ingress.service(STAGING_NAMESPACE).url}/v1/responses",
+                credential_file=Path("/var/run/secrets/central-sampler/llm"),
+                models={route.id for route in STAGING_APP_MODELS.codex},
+                reasoning_efforts={
+                    "",
+                    *(effort for route in STAGING_APP_MODELS.codex for effort in route.reasoning_efforts),
+                },
+            )
+        },
+        max_live_sessions=32,
+        host_rss_bytes=512 * 1024 * 1024,
+        turn_timeout_seconds=3600,
+        rpc_timeout_seconds=30,
+        lease_seconds=60,
     ),
     settle_deltas=True,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),

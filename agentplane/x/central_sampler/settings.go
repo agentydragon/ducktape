@@ -14,6 +14,7 @@ import (
 type Provider struct {
 	Endpoint         string   `json:"endpoint"`
 	Credential       string   `json:"credential"`
+	CredentialFile   string   `json:"credential_file"`
 	Models           []string `json:"models"`
 	ReasoningEfforts []string `json:"reasoning_efforts"`
 }
@@ -35,9 +36,6 @@ type Settings struct {
 	DirectExecutorURL  string              `json:"direct_executor_url"`
 	MaxLiveSessions    int                 `json:"max_live_sessions"`
 	HostRSSBytes       int64               `json:"host_rss_bytes"`
-	HostCgroupRoot     string              `json:"host_cgroup_root"`
-	HostPids           int                 `json:"host_pids"`
-	HostCPUQuotaUS     int                 `json:"host_cpu_quota_us"`
 	TurnTimeoutSeconds int                 `json:"turn_timeout_seconds"`
 	RPCTimeoutSeconds  int                 `json:"rpc_timeout_seconds"`
 	LeaseSeconds       int                 `json:"lease_seconds"`
@@ -51,14 +49,29 @@ func LoadSettings(path string) (Settings, error) {
 		return Settings{}, err
 	}
 	defer file.Close()
-	return DecodeSettings(file)
+	settings, err := decodeSettings(file)
+	if err != nil {
+		return Settings{}, err
+	}
+	if databaseURL, ok := os.LookupEnv("AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL"); ok {
+		settings.DatabaseURL = databaseURL
+	}
+	return settings, settings.Validate()
 }
 
 func DecodeSettings(reader io.Reader) (Settings, error) {
-	settings := Settings{HostPids: 64, HostCPUQuotaUS: 100000}
+	settings, err := decodeSettings(reader)
+	if err != nil {
+		return Settings{}, err
+	}
+	return settings, settings.Validate()
+}
+
+func decodeSettings(reader io.Reader) (Settings, error) {
 	// Deviation: preserve the sampler's existing strict JSON configuration contract during the Go rewrite.
 	decoder := json.NewDecoder(reader)
 	decoder.DisallowUnknownFields()
+	var settings Settings
 	if err := decoder.Decode(&settings); err != nil {
 		return Settings{}, err
 	}
@@ -66,7 +79,7 @@ func DecodeSettings(reader io.Reader) (Settings, error) {
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return Settings{}, errors.New("configuration must contain exactly one JSON object")
 	}
-	return settings, settings.Validate()
+	return settings, nil
 }
 
 func (s Settings) Validate() error {
@@ -79,8 +92,8 @@ func (s Settings) Validate() error {
 		return errors.New("providers and allowed_accounts must not be empty")
 	}
 	for name, provider := range s.Providers {
-		if name == "" || provider.Endpoint == "" || provider.Credential == "" || len(provider.Models) == 0 || len(provider.ReasoningEfforts) == 0 {
-			return errors.New("provider endpoint, credential, models and reasoning_efforts are required")
+		if name == "" || provider.Endpoint == "" || (provider.Credential == "") == (provider.CredentialFile == "") || len(provider.Models) == 0 || len(provider.ReasoningEfforts) == 0 {
+			return errors.New("provider endpoint, exactly one credential source, models and reasoning_efforts are required")
 		}
 	}
 	for _, account := range s.AllowedAccounts {
@@ -103,13 +116,28 @@ func (s Settings) Validate() error {
 	if strings.ContainsAny(remaining, "{}") {
 		return errors.New("gateway target supports only namespace and sandbox placeholders")
 	}
-	if s.MaxLiveSessions <= 0 || s.HostRSSBytes <= 0 || s.HostPids <= 0 || s.HostCPUQuotaUS <= 0 || s.TurnTimeoutSeconds <= 0 || s.RPCTimeoutSeconds <= 0 || s.LeaseSeconds <= 30 {
+	if s.MaxLiveSessions <= 0 || s.HostRSSBytes <= 0 || s.TurnTimeoutSeconds <= 0 || s.RPCTimeoutSeconds <= 0 || s.LeaseSeconds <= 30 {
 		return errors.New("resource limits and timeouts must be positive; lease_seconds must exceed 30")
 	}
 	if s.AutoCompactTokens != nil && *s.AutoCompactTokens <= 0 {
 		return errors.New("auto_compact_tokens must be positive")
 	}
 	return nil
+}
+
+func (p Provider) ReadCredential() (string, error) {
+	if p.CredentialFile == "" {
+		return p.Credential, nil
+	}
+	data, err := os.ReadFile(p.CredentialFile)
+	if err != nil {
+		return "", fmt.Errorf("read provider credential file: %w", err)
+	}
+	credential := strings.TrimSpace(string(data))
+	if credential == "" {
+		return "", errors.New("provider credential file is empty")
+	}
+	return credential, nil
 }
 
 var executorDNSLabel = regexp.MustCompile(`^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$`)

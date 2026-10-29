@@ -146,9 +146,46 @@ py_library(
 )
 
 py_library(
+    name = "central_sampler",
+    srcs = ["central_sampler.py"],
+    deps = [
+        "//cluster/cdk8s:service_ref",
+    ],
+)
+
+py_library(
+    name = "central_sampler_workload",
+    srcs = ["central_sampler_workload.py"],
+    deps = [
+        ":central_sampler",
+        ":database",
+        ":environment",
+        ":history_service",
+        ":llm_ingress",
+        ":runner_gateway",
+        ":service_workload",
+        "//agentplane:subjects",
+        "//agentplane/workload_auth:audience",
+        "//agentplane/x/central_sampler:settings",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:settings_file",
+        "//cluster/cdk8s:token_reviewer_rbac",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//util:settings_contract",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "history_service",
     srcs = ["history_service.py"],
     deps = [
+        ":central_sampler",
         ":database",
         ":egress",
         ":environment",
@@ -274,6 +311,7 @@ py_library(
     name = "llm_ingress",
     srcs = ["llm_ingress.py"],
     deps = [
+        ":central_sampler",
         ":codex_models",
         ":environment",
         ":telemetry",
@@ -664,6 +702,7 @@ py_library(
         "//agentplane/app:settings",
         "//agentplane/llm_ingress:models",
         "//agentplane/runner:configuration",
+        "//agentplane/x/central_sampler:settings",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//model_catalog:catalog",
         "@pypi//cdk8s",
@@ -690,6 +729,7 @@ py_library(
     deps = [
         ":actions",
         ":app",
+        ":central_sampler_workload",
         ":database",
         ":egress",
         ":electric",
@@ -730,6 +770,7 @@ py_library(
     deps = [
         ":actions",
         ":actions_staging_policies",
+        ":central_sampler",
         ":chart",
         ":command_sandbox",
         ":database",
@@ -737,6 +778,7 @@ py_library(
         ":egress_staging_credentials",
         ":environment",
         ":generation",
+        ":llm_ingress",
         ":mcp_edge",
         ":namespaces",
         ":notifications",
@@ -752,7 +794,9 @@ py_library(
         "//agentplane/action_service/sandbox:binding",
         "//agentplane/action_service/sandbox/contract:actions",
         "//agentplane/app:action_federation_settings",
+        "//agentplane/app:model_catalog",
         "//agentplane/runner:configuration",
+        "//agentplane/x/central_sampler:settings",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:cnpg",
@@ -869,6 +913,28 @@ py_test(
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s/clickhouse:client",
         "//model_catalog:catalog",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_central_sampler",
+    size = "medium",
+    srcs = ["test_central_sampler.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":central_sampler",
+        ":conftest",
+        ":history_service",
+        ":llm_ingress",
+        ":runner_gateway",
+        ":staging",
+        "//agentplane/workload_auth:audience",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -1021,8 +1087,8 @@ py_library(
     deps = [
         ":actions",
         ":app",
+        ":central_sampler",
         ":database",
-        ":egress",
         ":environment",
         ":migrate_container",
         ":notifications",
@@ -1033,8 +1099,8 @@ py_library(
         ":session_dispatcher",
         "//agentplane:crd_group",
         "//agentplane:subjects",
-        "//agentplane/runner_gateway:api",
         "//agentplane/runner_gateway:settings",
+        "//agentplane/runner_transport:configuration",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",

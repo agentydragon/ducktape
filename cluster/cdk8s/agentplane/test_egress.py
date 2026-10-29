@@ -3,6 +3,7 @@ the Kubernetes access every sandbox gets rather than the ones that opted in."""
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -193,6 +194,15 @@ def test_claude_picker_offers_environment_models_and_keeps_ingress(staging_manif
     assert all(preset["harness"] == "HARNESS_CODEX" for preset in config["thread_presets"].values())
     # The Anthropic Messages endpoint remains available to Claude sessions.
     assert any(doc["kind"] == "Service" and doc["metadata"]["name"] == "llm-ingress" for doc in staging_manifests)
+
+
+def test_central_sampler_offers_the_codex_models(staging_manifests: list[dict[str, Any]]) -> None:
+    config = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    catalog = config["models"]
+    assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == catalog["harnesses"]["HARNESS_CODEX"]
+    assert catalog["central_sampler"] == {"service": "central-sampler", "provider": "responses"}
+    sampler = json.loads(_by_name(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
+    assert set(sampler["providers"]["responses"]["models"]) == set(catalog["harnesses"]["HARNESS_CODEX"])
 
 
 def test_haku_launches_on_codex_with_the_wider_qwen_context_window(staging_manifests: list[dict[str, Any]]) -> None:

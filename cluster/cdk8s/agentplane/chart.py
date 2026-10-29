@@ -27,6 +27,7 @@ from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
+    central_sampler_workload,
     database,
     egress,
     electric,
@@ -191,6 +192,20 @@ def environment_chart(
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()
+    if env.central_sampler is not None:
+        sampler_database_url = (
+            SecretRef(namespace=env.namespace, name="postgres-central-sampler")
+            .key("uri")
+            .env_value(chart, "central-sampler-database-url")
+        )
+        central_sampler_workload.CentralSampler(
+            chart,
+            "central-sampler",
+            env,
+            database_url=sampler_database_url,
+            placement=node_scheduling.HIL_OVH,
+            registry_secret_name=REGISTRY_SECRET_NAME,
+        ).add_platform_resources()
     app_component.App(
         chart,
         "app",

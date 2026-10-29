@@ -12,7 +12,6 @@ import pytest_bazel
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
-from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, Reasoning, response_stream
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.system_tests.central_sampler import (
@@ -25,9 +24,10 @@ from agentplane.system_tests.central_sampler import (
 )
 from agentplane.system_tests.cluster import kubectl
 from agentplane.system_tests.conftest import POD_TEMPLATE, VM_TEMPLATE, VM_WORKING_DIRECTORY
-from agentplane.system_tests.k3s.stack import node_ip
+from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.testing.codex_model import CodexModel
+from agentplane.testing.scripted_model import Reasoning, ShellCall, Text
 from agentplane.x.central_sampler import sampler_pb2
-from agentplane.x.central_sampler.testing import Endpoint
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
@@ -122,17 +122,16 @@ async def _wait_for_setup(deployed: CentralStack, session_id: str) -> None:
         raise TimeoutError("History watch ended before sampler setup finished")
 
 
-async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) -> None:
+async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, *, template: str, cwd: str) -> None:
     session_id, command_id = str(uuid4()), str(uuid4())
     prompt = "Read the setup marker and report the result."
     reasoning = "I will read the marker created during setup."
     answer = "The executor returned prepared-on-executor."
     is_vm = template == VM_TEMPLATE
     vm_execution: dict[str, str | int] | None = None
-    async with (
-        Endpoint(bind_host=node_ip()) as endpoint,
-        central_stack(tmp_path, endpoint.origin, template=template) as deployed,
-    ):
+    async with central_stack(tmp_path, template=template) as deployed:
+        model = scripted.model(deployed.sampler_pod_name, runner_pb2.HARNESS_CODEX)
+        assert isinstance(model, CodexModel)
         opening = await deployed.dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(
                 session_id=session_id,
@@ -189,62 +188,50 @@ async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) 
             changes.cancel()
         try:
             await _wait_for_setup(deployed, session_id)
-            first_exchange = await endpoint.next()
+            request = await model.request()
         except Exception:
             await _capture_session_diagnostics(
                 deployed, session_id, command_id, admission, phase="setup_or_initial_model_request"
             )
             raise
-        async with first_exchange as exchange:
-            assert any(item.get("content") == prompt for item in exchange.request.body["input"])
-            assert exchange.request.body["client_metadata"]["session_id"] == session_id
-            tool_command = "set -eu; cat prepared.txt; printf tool-on-executor > result.txt"
-            if is_vm:
-                tool_command = (
-                    "set -eu; printf 'VM_PID1 %s\\n' \"$(cat /proc/1/comm)\"; "
-                    "printf 'VM_EXECUTOR_UID %s\\n' \"$(id -u)\"; "
-                    "printf 'VM_EXECUTOR_CGROUP %s\\n' \"$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)\"; "
-                    "cat prepared.txt; printf tool-on-executor > result.txt"
-                )
-            await exchange.send(
-                *response_stream(
-                    [
-                        Reasoning(reasoning, "test-opaque-central-reasoning"),
-                        CustomToolCall(
-                            "read-prepared-marker",
-                            "exec",
-                            f"text(await tools.exec_command({json.dumps({'cmd': tool_command})}));",
-                        ),
-                    ],
-                    model=MODEL,
-                ).events
+        assert request.model == MODEL
+        assert request.native.client_metadata.session_id == session_id
+        assert prompt in request.user_texts
+        tool_command = (
+            "set -eu; cat prepared.txt; printf 'tool-on-executor\\n' | tee result.txt; printf 'CENTRAL_EXECUTOR_OK\\n'"
+        )
+        if is_vm:
+            tool_command = (
+                "set -eu; printf 'VM_PID1 %s\\n' \"$(cat /proc/1/comm)\"; "
+                "printf 'VM_EXECUTOR_UID %s\\n' \"$(id -u)\"; "
+                "printf 'VM_EXECUTOR_CGROUP %s\\n' \"$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)\"; "
+                "cat prepared.txt; printf 'tool-on-executor\\n' | tee result.txt; "
+                "printf 'CENTRAL_EXECUTOR_OK\\n'"
             )
         try:
-            async with await endpoint.next() as exchange:
-                outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
-                result = json.loads(outputs[-1]["output"][0]["text"])
-                assert result["exit_code"] == 0
-                if is_vm:
-                    assert "prepared-on-executor\n" in result["output"]
-                    assert "VM_PID1 systemd\n" in result["output"]
-                    assert "VM_EXECUTOR_UID 107\n" in result["output"]
-                    (cgroup_line,) = [
-                        line for line in result["output"].splitlines() if line.startswith("VM_EXECUTOR_CGROUP ")
-                    ]
-                    executor_cgroup = cgroup_line.removeprefix("VM_EXECUTOR_CGROUP ")
-                    assert executor_cgroup.startswith(
-                        "/agentplane.slice/agentplane-executors.slice/agentplane-native-"
-                    ), executor_cgroup
-                    assert executor_cgroup.count("/") == 3, executor_cgroup
-                    assert executor_cgroup.endswith(".service"), executor_cgroup
-                    vm_execution = {"pid1": "systemd", "uid": 107, "executor_cgroup": executor_cgroup}
-                else:
-                    assert result["output"] == "prepared-on-executor\n"
-                assert any(
-                    item.get("encrypted_content") == "test-opaque-central-reasoning"
-                    for item in exchange.request.body["input"]
+            await model.reply(request, Reasoning(reasoning), ShellCall("read-prepared-marker", tool_command))
+            request = await model.request()
+            (tool_output,) = request.tool_outputs
+            output = "\n".join(tool_output.blocks)
+            assert "CENTRAL_EXECUTOR_OK" in output
+            if is_vm:
+                assert "prepared-on-executor\n" in output
+                assert "VM_PID1 systemd\n" in output
+                assert "VM_EXECUTOR_UID 107\n" in output
+                (cgroup_line,) = [line for line in output.splitlines() if line.startswith("VM_EXECUTOR_CGROUP ")]
+                executor_cgroup = cgroup_line.removeprefix("VM_EXECUTOR_CGROUP ")
+                assert executor_cgroup.startswith("/agentplane.slice/agentplane-executors.slice/agentplane-native-"), (
+                    executor_cgroup
                 )
-                await exchange.send(*response_stream([Message(answer)], model=MODEL).events)
+                assert executor_cgroup.count("/") == 3, executor_cgroup
+                assert executor_cgroup.endswith(".service"), executor_cgroup
+                vm_execution = {"pid1": "systemd", "uid": 107, "executor_cgroup": executor_cgroup}
+            else:
+                assert "prepared-on-executor\n" in output
+                assert "tool-on-executor\n" in output
+                assert "CENTRAL_EXECUTOR_OK\n" in output
+            assert any(item.encrypted_content for item in request.native.reasoning)
+            await model.reply(request, Text(answer))
         except Exception as error:
             try:
                 await _capture_session_diagnostics(
@@ -346,7 +333,7 @@ async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) 
                     "sandbox_uid": deployed.sandbox_uid,
                     "incarnation_uid": deployed.incarnation_uid,
                     "template": template,
-                    "tool_output": result["output"],
+                    "tool_output": output,
                     "vm_execution": vm_execution,
                     "control_target": deployed.control_target,
                     "source_id": terminal.origin.source_id,
@@ -363,17 +350,23 @@ async def _central_sampler_scenario(tmp_path: Path, *, template: str, cwd: str) 
 
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
-async def test_dispatcher_central_setup_tool_and_retained_answer(k3s_deployment: None, tmp_path: Path) -> None:
+async def test_dispatcher_central_setup_tool_and_retained_answer(
+    k3s_deployment: None, tmp_path: Path, scripted: ScriptedUpstream
+) -> None:
     del k3s_deployment  # This scenario is only valid on its own disposable stack, never against staging.
-    await _central_sampler_scenario(tmp_path, template=POD_TEMPLATE, cwd="/state/workspaces/central-acceptance")
+    await _central_sampler_scenario(
+        tmp_path, scripted, template=POD_TEMPLATE, cwd="/state/workspaces/central-acceptance"
+    )
 
 
 @pytest.mark.vm_sandboxes
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
-async def test_dispatcher_central_setup_tool_and_retained_answer_vm(k3s_deployment: None, tmp_path: Path) -> None:
+async def test_dispatcher_central_setup_tool_and_retained_answer_vm(
+    k3s_deployment: None, tmp_path: Path, scripted: ScriptedUpstream
+) -> None:
     del k3s_deployment  # This scenario is only valid on its own disposable stack, never against staging.
-    await _central_sampler_scenario(tmp_path, template=VM_TEMPLATE, cwd=VM_WORKING_DIRECTORY)
+    await _central_sampler_scenario(tmp_path, scripted, template=VM_TEMPLATE, cwd=VM_WORKING_DIRECTORY)
 
 
 if __name__ == "__main__":
