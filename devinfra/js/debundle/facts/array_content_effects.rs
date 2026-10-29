@@ -51,6 +51,17 @@ pub(crate) fn annotate_heap_content_effects(
             may_skip_await_depth: 0,
         };
         item.as_module_item().visit_with(&mut collector);
+        if let Some(declaration) = var_decl_of_item(item.as_module_item())
+            && let [declarator] = declaration.decls.as_slice()
+            && matches!(declarator.name, Pat::Ident(_))
+            && let Some(initializer) = &declarator.init
+            && let Expr::Array(array) = initializer.unwrap_parens()
+        {
+            collector
+                .effects
+                .one_shot_allocations
+                .insert(EffectCell::ArrayContents(array.span.lo.0));
+        }
         fact.heap_contents = collector.effects;
         fact.heap_native_integrity_uses =
             collector.heap_native_integrity_uses.into_iter().collect();

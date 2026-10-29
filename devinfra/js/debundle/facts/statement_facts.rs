@@ -346,6 +346,10 @@ pub(crate) struct HeapContentEffects {
     /// Fresh allocations seed later observations without overwriting a prior
     /// content timeline: source-span identities can denote many runtime arrays.
     pub allocations: PositionBucketed<BTreeSet<EffectCell>>,
+    /// One eager, whole top-level literal site whose allocation cannot have
+    /// run before this source unit. Used only to discharge an older heap
+    /// frontier for precise observations of that newly born cell.
+    pub one_shot_allocations: BTreeSet<EffectCell>,
     pub reads: PositionBucketed<BTreeSet<EffectCell>>,
     pub writes: PositionBucketed<BTreeSet<EffectCell>>,
     pub opaque: PositionBucketed<bool>,

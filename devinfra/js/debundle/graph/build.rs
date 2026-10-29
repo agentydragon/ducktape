@@ -427,6 +427,11 @@ fn emit_heap_content_order(
     stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
     raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
 ) {
+    // Only one eager occurrence with no deferred occurrence proves that a
+    // cell was born at this source position. A literal inside a callable may
+    // have allocated before an intervening opaque call, even if invoked again
+    // afterwards, so its site cannot discharge the old frontier.
+    let unique_eager_allocations = OneShotEagerAllocations::from_facts(facts);
     let rebound: BTreeSet<_> = facts
         .iter()
         .flat_map(|stmt| stmt.rebinds.eager.iter().chain(&stmt.rebinds.lazy).cloned())
@@ -545,7 +550,12 @@ fn emit_heap_content_order(
         .filter(|(_, _, reason)| reason.kind == super::DepKind::Sequenced)
         .map(|(from, to, _)| (*from, *to))
         .collect();
-    emit_cell_order_events(events, raw_edges, &mut sequence_pairs);
+    emit_cell_order_events(
+        events,
+        raw_edges,
+        &mut sequence_pairs,
+        Some(&unique_eager_allocations),
+    );
 }
 
 fn heap_content_cells(
@@ -573,6 +583,37 @@ fn heap_content_cells(
             })
             .cloned()
             .collect(),
+    }
+}
+
+/// A source allocation site that can occur only in one eager top-level owner.
+/// The graph may use its birth after an opaque frontier as negative alias
+/// evidence for that earlier frontier. A lazy or duplicate site is excluded.
+struct OneShotEagerAllocations(BTreeSet<EffectCell>);
+
+impl OneShotEagerAllocations {
+    fn from_facts(facts: &[StatementFacts]) -> Self {
+        let lazy: BTreeSet<_> = facts
+            .iter()
+            .flat_map(|stmt| stmt.heap_contents.allocations.lazy.iter().cloned())
+            .collect();
+        let mut eager_counts = BTreeMap::<EffectCell, usize>::new();
+        for cell in facts
+            .iter()
+            .flat_map(|stmt| stmt.heap_contents.one_shot_allocations.iter().cloned())
+        {
+            *eager_counts.entry(cell).or_default() += 1;
+        }
+        Self(
+            eager_counts
+                .into_iter()
+                .filter_map(|(cell, count)| (count == 1 && !lazy.contains(&cell)).then_some(cell))
+                .collect(),
+        )
+    }
+
+    fn contains(&self, cell: &EffectCell) -> bool {
+        self.0.contains(cell)
     }
 }
 
@@ -747,6 +788,7 @@ fn emit_s_chain(
             }),
         raw_edges,
         &mut sequence_pairs,
+        None,
     );
 }
 
@@ -764,6 +806,7 @@ fn emit_cell_order_events(
     >,
     raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
     sequence_pairs: &mut BTreeSet<(SourceUnitId, SourceUnitId)>,
+    unique_eager_allocations: Option<&OneShotEagerAllocations>,
 ) {
     let mut last_writer: BTreeMap<EffectCell, SourceUnitId> = BTreeMap::new();
     let mut readers_since_last_write: BTreeMap<EffectCell, BTreeSet<SourceUnitId>> =
@@ -771,9 +814,15 @@ fn emit_cell_order_events(
     let mut prior_source_units: Vec<SourceUnitId> = Vec::new();
     let mut opaque_barrier: Option<SourceUnitId> = None;
     let mut pending_allocations: BTreeMap<EffectCell, BTreeSet<SourceUnitId>> = BTreeMap::new();
+    let mut born_after_barrier = BTreeSet::new();
     for (from, ordinal, effects, barrier_mode) in events {
         if barrier_mode == CellOrderBarrier::HeapAllocation {
             for cell in effects.writes {
+                if opaque_barrier.is_some()
+                    && unique_eager_allocations.is_some_and(|unique| unique.contains(&cell))
+                {
+                    born_after_barrier.insert(cell.clone());
+                }
                 pending_allocations.entry(cell).or_default().insert(from);
             }
             continue;
@@ -794,7 +843,14 @@ fn emit_cell_order_events(
                 }
             }
             // Unknown effects are barriers for subsequent summarized events.
-            if let Some(barrier) = opaque_barrier {
+            if let Some(barrier) = opaque_barrier
+                && (barrier_mode != CellOrderBarrier::None
+                    || effects
+                        .reads
+                        .iter()
+                        .chain(&effects.writes)
+                        .any(|cell| !born_after_barrier.contains(cell)))
+            {
                 targets.insert(barrier);
             }
         }
@@ -803,6 +859,7 @@ fn emit_cell_order_events(
             // and become a barrier for later summarized events.
             targets.extend(prior_source_units.iter().copied());
             opaque_barrier = Some(from);
+            born_after_barrier.clear();
         } else if barrier_mode == CellOrderBarrier::HeapFrontier {
             // An opaque heap operation only needs the live cell frontier.
             // Every earlier read/write is either on that frontier or already
@@ -821,6 +878,7 @@ fn emit_cell_order_events(
                     .flat_map(|readers| readers.iter().copied()),
             );
             opaque_barrier = Some(from);
+            born_after_barrier.clear();
             last_writer.clear();
             readers_since_last_write.clear();
         }
@@ -1580,7 +1638,7 @@ mod array_heap_frontier_tests {
         ];
         let mut edges = Vec::new();
         let mut pairs = BTreeSet::new();
-        emit_cell_order_events(events, &mut edges, &mut pairs);
+        emit_cell_order_events(events, &mut edges, &mut pairs, None);
         assert!(!pairs.contains(&(SourceUnitId(1), SourceUnitId(0))));
         assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(1))));
         assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(0))));
@@ -1598,7 +1656,7 @@ mod array_heap_frontier_tests {
         ];
         let mut edges = Vec::new();
         let mut pairs = BTreeSet::new();
-        emit_cell_order_events(events, &mut edges, &mut pairs);
+        emit_cell_order_events(events, &mut edges, &mut pairs, None);
         assert!(pairs.contains(&(SourceUnitId(4), SourceUnitId(1))));
         assert!(pairs.contains(&(SourceUnitId(4), SourceUnitId(3))));
         assert!(pairs.contains(&(SourceUnitId(5), SourceUnitId(2))));
@@ -1616,7 +1674,7 @@ mod array_heap_frontier_tests {
         ];
         let mut edges = Vec::new();
         let mut pairs = BTreeSet::new();
-        emit_cell_order_events(events, &mut edges, &mut pairs);
+        emit_cell_order_events(events, &mut edges, &mut pairs, None);
         assert!(pairs.contains(&(SourceUnitId(1), SourceUnitId(0))));
         assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(1))));
         assert!(pairs.contains(&(SourceUnitId(3), SourceUnitId(2))));
@@ -1666,7 +1724,7 @@ mod array_heap_frontier_tests {
 
         let mut edges = Vec::new();
         let mut sequence_pairs = BTreeSet::new();
-        emit_cell_order_events(events, &mut edges, &mut sequence_pairs);
+        emit_cell_order_events(events, &mut edges, &mut sequence_pairs, None);
 
         // First barrier follows the 1,024 live readers. The following 15
         // barriers form a chain, and the final readers follow the last one.

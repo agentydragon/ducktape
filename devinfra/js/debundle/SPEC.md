@@ -123,6 +123,13 @@ analyzer. Key enumeration (`for-in`), optional calls, and tagged templates are
 also barriers when their array effects are not represented precisely. Barriers
 constrain the preceding array-content frontier and later array observations.
 
+An exact whole top-level array literal initializer is a one-shot eager
+allocation. A precise observation of only that cell does not inherit an older
+opaque frontier, because the cell did not exist when the older operation ran.
+This exception requires a unique eager allocation source and no lazy occurrence
+of the same cell identity. Repeated allocations inside callables, other
+observed cells, and the barrier's ordinary non-heap effects keep their order.
+
 Purity and binding-effect completeness do not prove heap locality or argument
 nonretention. Native calls consuming array literals remain heap barriers once
 tracked arrays are live. Checked implicit local construction has a separate
