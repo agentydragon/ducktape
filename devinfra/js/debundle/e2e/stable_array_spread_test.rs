@@ -39,11 +39,13 @@ fn modules() -> Vec<LogicalModuleEntry> {
 
 fn spread_input(source: &str, declaration: &str) -> NativeOperationInputContract {
     NativeOperationInputContract {
-        source_match: serde_yaml::from_str(&format!(
-            "match: {:?}\nbindings: [scopes]\n",
-            declaration.trim()
-        ))
-        .expect("valid exact source selector"),
+        selector: NativeOperationInputSelector::SourceMatch(
+            serde_yaml::from_str(&format!(
+                "match: {:?}\nbindings: [scopes]\n",
+                declaration.trim()
+            ))
+            .expect("valid exact source selector"),
+        ),
         operation: NativeOperationKind::ArraySpreadFromPrimitiveArrays,
         audited_source_sha256: Sha256::digest(source.as_bytes())
             .iter()
