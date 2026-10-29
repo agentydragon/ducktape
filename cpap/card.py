@@ -91,7 +91,6 @@ class EZShareClient:
         base = urllib.parse.urlsplit(self._base)
         return urllib.parse.urlunsplit((base.scheme, base.netloc, parsed.path, parsed.query, parsed.fragment))
 
-
     def _get_url_bytes(self, url: str, timeout: int = 30) -> bytes:
         with urllib.request.urlopen(url, timeout=timeout) as r:
             data: bytes = r.read()
@@ -133,7 +132,6 @@ class EZShareClient:
             while chunk := r.read(65536):
                 f.write(chunk)
         tmp.rename(dest)
-
 
 
 def download_relpath(download_url: str) -> str:
