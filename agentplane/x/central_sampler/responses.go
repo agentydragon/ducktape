@@ -215,15 +215,18 @@ type ResponsesJSONSchema struct {
 }
 
 type ResponsesRequest struct {
-	Model          string                    `json:"model"`
-	Instructions   string                    `json:"instructions"`
-	Input          []ResponsesItem           `json:"input"`
-	Stream         bool                      `json:"stream"`
-	Store          bool                      `json:"store"`
-	Include        []string                  `json:"include"`
-	PromptCacheKey string                    `json:"prompt_cache_key"`
-	ClientMetadata ResponsesClientMetadata   `json:"client_metadata"`
-	Reasoning      *ResponsesReasoningConfig `json:"reasoning,omitempty"`
+	Model          string                   `json:"model"`
+	Instructions   string                   `json:"instructions"`
+	Input          []ResponsesItem          `json:"input"`
+	Stream         bool                     `json:"stream"`
+	Store          bool                     `json:"store"`
+	Include        []string                 `json:"include"`
+	PromptCacheKey string                   `json:"prompt_cache_key"`
+	ClientMetadata ResponsesClientMetadata  `json:"client_metadata"`
+	Reasoning      ResponsesReasoningConfig `json:"reasoning"`
+	// Codex rust-v0.162.1 core/src/client.rs build_responses_request: Responses Lite disables
+	// parallel tool calls.
+	ParallelToolCalls bool `json:"parallel_tool_calls"`
 }
 
 type ResponsesClientMetadata struct {
@@ -233,7 +236,10 @@ type ResponsesClientMetadata struct {
 }
 
 type ResponsesReasoningConfig struct {
-	Effort string `json:"effort"`
+	Effort string `json:"effort,omitempty"`
+	// Codex rust-v0.162.1 core/src/client.rs build_reasoning: the Responses Lite header
+	// (provider.go) requires `all_turns`; the provider rejects any other value.
+	Context string `json:"context"`
 }
 
 type ResponsesEvent struct {

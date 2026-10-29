@@ -103,7 +103,8 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 	input = append(input, items...)
 	return ResponsesRequest{
 		Model: model, Instructions: baseInstructions, Input: input, Stream: true, Store: false,
-		Include: []string{"reasoning.encrypted_content"}, PromptCacheKey: conversationID,
+		Reasoning: ResponsesReasoningConfig{Context: "all_turns"},
+		Include:   []string{"reasoning.encrypted_content"}, PromptCacheKey: conversationID,
 		ClientMetadata: ResponsesClientMetadata{SessionID: conversationID, ThreadID: conversationID, TurnID: conversationID},
 	}, nil
 }

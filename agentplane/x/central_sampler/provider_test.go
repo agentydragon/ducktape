@@ -66,6 +66,9 @@ func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
 		`"include":["reasoning.encrypted_content"]`,
 		`"store":false`,
 		`"stream":true`,
+		// The provider rejects Responses Lite requests without these.
+		`"reasoning":{"context":"all_turns"}`,
+		`"parallel_tool_calls":false`,
 		`"encrypted_content":"opaque"`,
 		`"provider_sequence":9007199254740993`,
 	} {

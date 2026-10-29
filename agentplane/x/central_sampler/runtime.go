@@ -703,9 +703,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
-	if session.Effort != "" {
-		body.Reasoning = &ResponsesReasoningConfig{Effort: session.Effort}
-	}
+	body.Reasoning.Effort = session.Effort
 	metadata, err := r.store.ProviderMetadata(ctx, owner)
 	if err != nil {
 		return "", err
