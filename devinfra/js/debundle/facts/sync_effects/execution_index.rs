@@ -2535,9 +2535,17 @@ fn evaluate_receiver_value(
 ) -> ReceiverFlowValue {
     let mut result = ReceiverFlowValue::default();
     match value {
-        ValueExpr::ArrayIteratorPrototype(expression)
-        | ValueExpr::SetIteratorPrototype(expression) => {
-            return evaluate_receiver_value(expression, context, rules);
+        ValueExpr::ArrayIteratorPrototype(_) | ValueExpr::SetIteratorPrototype(_) => {
+            result.fact.roots = intrinsic_roots(
+                value,
+                &BTreeMap::new(),
+                &rules.index.global_object_names,
+                rules.declared,
+                &BTreeMap::new(),
+                &CallableReturnInputs::default(),
+            );
+            result.fact.complete = true;
+            return result;
         }
         ValueExpr::Binding(binding) => {
             if let Some((reference, available_after)) = rules.index.ordinary_input_refs.get(binding)
@@ -6146,6 +6154,177 @@ impl ExecutionIndex {
             }
         }
         None
+    }
+
+    fn known_descriptor_copy_mutation(
+        &self,
+        assigned_keys: &BTreeSet<String>,
+    ) -> Option<SourceUnitOrdinal> {
+        let slots = ["Object"]
+            .into_iter()
+            .map(|key| NativeWriteSlot {
+                receiver: NativeReceiverPath::GlobalObject,
+                key: NativePropertyKey::String(key.to_owned()),
+            })
+            .chain(
+                [
+                    "getOwnPropertyDescriptors",
+                    "defineProperties",
+                    "assign",
+                    "prototype",
+                ]
+                .into_iter()
+                .map(|key| NativeWriteSlot {
+                    receiver: NativeReceiverPath::Constructor(IntrinsicRoot::Object),
+                    key: NativePropertyKey::String(key.to_owned()),
+                }),
+            )
+            .chain(assigned_keys.iter().map(|key| NativeWriteSlot {
+                receiver: NativeReceiverPath::Prototype(IntrinsicRoot::Object),
+                key: NativePropertyKey::String(key.clone()),
+            }));
+        slots
+            .into_iter()
+            .find_map(|slot| match self.source_slot_overlap(&slot) {
+                NativeSlotOverlap::Known(owner) => Some(owner),
+                NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
+            })
+    }
+
+    fn direct_freeze_return_call(&self, binding: &Id, selected_span: Span) -> Option<Call> {
+        if !self.direct_top_level_functions.contains(binding) {
+            return None;
+        }
+        let key = *self.hoisted_bindings.get(binding)?;
+        let declaration = *self.callable_spans.get(&key)?;
+        if !span_contains(selected_span, declaration) || self.async_callables.contains(&key) {
+            return None;
+        }
+        let callable = self.callables.get(&key)?;
+        if callable.generator {
+            return None;
+        }
+        let site = CallSite::from(*self.direct_return_calls.get(binding)?);
+        let call = callable
+            .calls
+            .iter()
+            .find(|call| call.kind == CallKind::Call && CallSite::from(call.span) == site)?;
+        if call.kind != CallKind::Call
+            || call.caller != Some(key)
+            || call.has_spread
+            || CallSite::from(call.span) != site
+            || call.args.len() != 1
+        {
+            return None;
+        }
+        let ValueExpr::Member(receiver, Some(member), true) = &call.callee else {
+            return None;
+        };
+        let ValueExpr::Binding(object) = receiver.as_ref() else {
+            return None;
+        };
+        if object.0.as_ref() != "Object"
+            || member != "freeze"
+            || self.declared_bindings().contains(object)
+        {
+            return None;
+        }
+        let (model, _) = native_call_identity_key(CallKind::Call, &call.callee)?;
+        (model.intrinsic == IntrinsicRoot::Object
+            && matches!(model.inputs, native_calls::CallInputs::FreshDataRecord)
+            && matches!(model.returns, native_calls::CallReturn::Argument(0))
+            && model.heap_effect == native_calls::NativeHeapEffect::Opaque)
+            .then(|| call.clone())
+    }
+
+    fn private_empty_set_field_call(
+        &self,
+        selected_binding: &str,
+        selected_span: Span,
+    ) -> Option<(Id, Span, Call)> {
+        let candidates: Vec<_> = self
+            .class_bindings
+            .iter()
+            .filter(|(key, binding)| {
+                binding.0.as_ref() == selected_binding
+                    && self
+                        .class_spans
+                        .get(key)
+                        .is_some_and(|span| span_contains(selected_span, *span))
+            })
+            .collect();
+        let [(key, binding)] = candidates.as_slice() else {
+            return None;
+        };
+        let key = **key;
+        let binding = *binding;
+        if self.reassigned_bindings.contains(binding) {
+            return None;
+        }
+        let (site, set_binding) = self.private_empty_set_sites.get(&key)?;
+        if self.declared_bindings().contains(set_binding) {
+            return None;
+        }
+        let call = self
+            .callables
+            .values()
+            .flat_map(|callable| &callable.calls)
+            .find(|call| call.span == *site)?;
+        if call.kind != CallKind::New
+            || call.has_spread
+            || !call.args.is_empty()
+            || !matches!(&call.callee, ValueExpr::Binding(binding) if binding == set_binding)
+            || call.owner != *self.class_owners.get(&key)?
+        {
+            return None;
+        }
+        Some((binding.clone(), self.class_spans[&key], call.clone()))
+    }
+
+    fn known_set_protocol_mutation(&self) -> Option<SourceUnitOrdinal> {
+        [
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::GlobalObject,
+                key: NativePropertyKey::String("Set".to_owned()),
+            },
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::Prototype(IntrinsicRoot::Set),
+                key: NativePropertyKey::String("add".to_owned()),
+            },
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::Prototype(IntrinsicRoot::Array),
+                key: NativePropertyKey::SymbolIterator,
+            },
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::ArrayIteratorPrototype,
+                key: NativePropertyKey::String("next".to_owned()),
+            },
+        ]
+        .iter()
+        .find_map(|slot| match self.source_slot_overlap(slot) {
+            NativeSlotOverlap::Known(owner) => Some(owner),
+            NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
+        })
+    }
+
+    fn known_set_spread_protocol_mutation(&self) -> Option<SourceUnitOrdinal> {
+        self.known_set_protocol_mutation().or_else(|| {
+            [
+                NativeWriteSlot {
+                    receiver: NativeReceiverPath::Prototype(IntrinsicRoot::Set),
+                    key: NativePropertyKey::SymbolIterator,
+                },
+                NativeWriteSlot {
+                    receiver: NativeReceiverPath::SetIteratorPrototype,
+                    key: NativePropertyKey::String("next".to_owned()),
+                },
+            ]
+            .iter()
+            .find_map(|slot| match self.source_slot_overlap(slot) {
+                NativeSlotOverlap::Known(owner) => Some(owner),
+                NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
+            })
+        })
     }
 
     fn validate_captured_callable_returns(
