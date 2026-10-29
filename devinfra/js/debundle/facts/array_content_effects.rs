@@ -437,9 +437,11 @@ impl Visit for ArrayContentCollector<'_> {
         node.callee.visit_with(self);
         if let Some(args) = &node.args {
             for arg in args {
-                if certified_set {
-                    self.record_array_expr(&arg.expr, true, false, false);
-                } else {
+                // A certified constructor consumes one immediate fresh array
+                // without retaining it. Its own read cannot observe earlier
+                // heap state. Visit children below to retain spread-source
+                // reads and every nested allocation/effect.
+                if !certified_set {
                     self.record_escaped_expr(&arg.expr);
                     self.record_array_expr(&arg.expr, true, true, true);
                 }

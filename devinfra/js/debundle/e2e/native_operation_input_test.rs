@@ -75,6 +75,95 @@ fn selected_set_input(
 }
 
 #[test]
+fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
+    const DECLARATION: &str =
+        "var seed = new Set(['a']), sibling = new Set(['b']), merged = new Set([...seed, 'c']);";
+    const SOURCE: &str = "import { Box } from './box.js';\nconst prior = ['p'];\nconst memo = new Box(() => 1);\nvar seed = new Set(['a']), sibling = new Set(['b']), merged = new Set([...seed, 'c']);\nexport { prior, memo, seed, sibling, merged };\nconsole.log(prior.length, merged.size);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module(
+                "sets",
+                &[
+                    Member::new("seed"),
+                    Member::new("sibling"),
+                    Member::new("merged"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_chunks(&[(
+            "static/box",
+            "export class Box { #callback; constructor(callback) { this.#callback = callback; } value() { return this.#callback(); } }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/box")
+            .with_pure_new_exports(&["Box"])
+            .with_retained_callback_constructor("Box", 1, &[0])
+            .build()])
+        .with_native_operation_inputs(
+            "static/app",
+            vec![
+                selected_set_input(
+                    SOURCE,
+                    DECLARATION,
+                    "seed",
+                    NativeOperationKind::SetFromPrimitiveArray,
+                ),
+                selected_set_input(
+                    SOURCE,
+                    DECLARATION,
+                    "sibling",
+                    NativeOperationKind::SetFromPrimitiveArray,
+                ),
+                selected_set_input(
+                    SOURCE,
+                    DECLARATION,
+                    "merged",
+                    NativeOperationKind::SetFromSetSpread,
+                ),
+            ],
+        ),
+    );
+    assert_preserved_entry_output(&fixture, "1 2\n");
+    let graph = fixture.dependency_graph();
+    let memo = source_unit_for_binding(&graph, "memo");
+    let seed = source_unit_for_binding(&graph, "seed");
+    for binding in ["seed", "sibling", "merged"] {
+        let set = source_unit_for_binding(&graph, binding);
+        assert!(
+            !graph.edges.iter().any(|edge| {
+                edge.source == set && edge.target == memo && edge.edge_kind == DepKind::Sequenced
+            }),
+            "fresh {binding} construction still depends on an earlier opaque effect: {graph:#?}"
+        );
+    }
+    let merged = source_unit_for_binding(&graph, "merged");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == merged && edge.target == seed && edge.edge_kind == DepKind::EagerUse
+        }),
+        "certified spread lost its source Set allocation dependency: {graph:#?}"
+    );
+    let report = serde_json::to_value(&graph).unwrap();
+    let exports: Vec<_> = report["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| node["statement_kind"] == "export")
+        .collect();
+    assert!(
+        graph.edges.iter().any(|edge| {
+            exports
+                .iter()
+                .any(|node| node["id"].as_str() == Some(edge.source.as_str()))
+                && edge.target == seed
+                && edge.edge_kind == DepKind::Sequenced
+        }),
+        "missing export-to-seed edge; exports={exports:#?}, graph={graph:#?}"
+    );
+}
+
+#[test]
 fn certified_same_output_set_spread_removes_only_its_constructor_barrier() {
     const DECLARATION: &str =
         "var seed = new Set(['a']), sibling = new Set(['b']), merged = new Set([...seed, 'c']);";
