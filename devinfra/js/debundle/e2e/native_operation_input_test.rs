@@ -246,6 +246,31 @@ fn certified_same_output_set_spread_removes_only_its_constructor_barrier() {
     );
 }
 
+/// A repeated `var` whose construction sits at a later declaration site: the
+/// input's template pins that site, so provider validation finds the Set
+/// construction there. (Resolving the binding's first, bare site instead
+/// finds no declaration in the selected statement and rejects the spec.)
+#[test]
+fn repeated_var_input_selects_the_matched_declaration_site() {
+    const DECLARATION: &str = "var seed = new Set(['a']);";
+    const SOURCE: &str =
+        "var seed;\nvar seed = new Set(['a']);\nconsole.log(seed.size);\nexport { seed };\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(SOURCE, vec![logical_module("sets", &[Member::new("seed")])])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs(
+                "static/app",
+                vec![selected_set_input(
+                    SOURCE,
+                    DECLARATION,
+                    "seed",
+                    NativeOperationKind::SetFromPrimitiveArray,
+                )],
+            ),
+    );
+    assert_preserved_entry_output(&fixture, "1\n");
+}
+
 #[test]
 fn set_spread_requires_every_intervening_constructor_and_one_explicit_output() {
     const DECLARATION: &str =

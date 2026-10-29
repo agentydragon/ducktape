@@ -362,8 +362,12 @@ not reset the binding. Other duplicate declaration combinations remain unsupport
 SourceUnit-based relational selectors inspect facts on each statement site; they do
 not union those facts across all redeclarations. Binding selectors canonicalize
 to the first declaration site, so relations composed with them cannot inspect
-later sites' facts. Control-flow statements containing `var` move intact; all
-bindings they declare must be assigned to the same destination.
+later sites' facts. A `source_match` used as a source-unit endpoint
+(§ Native-operation inputs, § Commuting statements) selects the declaration
+site its template matched, so every site is addressable there; a template
+matching several sites of one binding is an ambiguity error. Control-flow
+statements containing `var` move intact; all bindings they declare must be
+assigned to the same destination.
 
 ## Matching
 
@@ -1163,7 +1167,10 @@ An input must give exactly one selector: the existing `source_match`, or
 The latter refers to an already resolved, unique logical member in the same
 provider chunk and must identify one original local declaration. It reuses the
 member's canonical selector result, including relational selectors; it does
-not resolve another source template. Both forms retain their actual selector
+not resolve another source template. A `source_match` names one declared
+binding and selects the declaration site its template matched; for a binding
+declared at several `var` sites that is the matched site, not the binding's
+first (§ Repeated `var` declarations). Both forms retain their actual selector
 provenance, parser-input SHA-256, spec location, selected binding and original
 site in the report. The digest uses the same parser-input provenance as
 `value_inputs`. The operation set accepts `symbol`, `symbol_for`, `promise_resolve`,
@@ -1319,10 +1326,14 @@ Each endpoint (`a`, `b`) is exactly one selector in the `native_operation_inputs
 grammar: `source_match` or
 `resolved_member: { module: <logical module path>, name: <public member name> }`.
 A `source_match` without `bindings` selects one anonymous (non-declaring)
-top-level statement; with one binding it selects that binding's declaration,
-which inside a comma declaration is the one declarator the binding belongs to.
-`resolved_member` reuses the member's canonical selector result in the same
-chunk. Every endpoint resolves through the shared selector engine and must
+top-level statement; with one binding it selects that binding's declarator in
+the statement its template matched — inside a comma declaration the one
+declarator the binding belongs to, and for a binding declared at several `var`
+sites the matched site rather than the binding's first (§ Repeated `var`
+declarations; a template matching several sites is ambiguous). This is how a
+later `var` site becomes an endpoint: `resolved_member` reuses the member's
+canonical selector result in the same chunk, which is the first site. Every
+endpoint resolves through the shared selector engine and must
 identify exactly one post-split source unit of the option's chunk. An endpoint
 that does not resolve, resolves to several source units, or names a member of
 another chunk is a spec error that fails `spec validate` and `run` with a

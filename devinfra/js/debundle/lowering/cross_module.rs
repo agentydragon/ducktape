@@ -44,6 +44,15 @@ use swc_ecma_ast::{Decl, Id, Module, ModuleDecl, ModuleItem, Pat, Stmt, VarDecla
 
 use super::materialize::ResolvedMemberSite;
 
+/// Resolve a one-binding `source_match` through the selector engine and
+/// return the declaring statement the template matched, with the source
+/// binding it declares there. The engine canonicalizes a repeated `var` to
+/// its first declaration site (SPEC.md § Repeated `var` declarations), which
+/// is right for a member claim (assigning the binding claims every site) but
+/// not for a source-unit endpoint: the author's template pins one statement,
+/// and that statement's declarator is the selected unit. The matched site is
+/// read back from the matcher's candidates for the resolved binding; a
+/// template matching several of the binding's sites is rejected.
 fn select_one_declared_binding(
     selector_chunk: &SelectorChunk<'_>,
     request_id: &str,
@@ -70,6 +79,7 @@ fn select_one_declared_binding(
             .any(|name| name == local),
         "{request_id}.source_match binding `{local}` must be declared by its pattern"
     );
+    let parsed_selector = selector.parsed_selector.clone();
     let selector_module = spec_resolution::spec_module(
         request_id.to_owned(),
         vec![spec_resolution::member_from_source_match(
@@ -82,14 +92,35 @@ fn select_one_declared_binding(
     let outcome = resolution
         .outcome(0, EntityIndex::Member(0))
         .with_context(|| format!("{request_id}.source_match produced no selector outcome"))?;
-    match &outcome.outcome {
+    let (representative, binding) = match &outcome.outcome {
         SelectorOutcome::Resolved {
             body_index,
             binding: Some(binding),
             ..
-        } => Ok((*body_index, binding.clone())),
+        } => (*body_index, binding.clone()),
         other => bail!(
             "{request_id}.source_match must select exactly one declared binding; selector result: {other:?}"
+        ),
+    };
+    let mut sites = selector_chunk
+        .matcher()
+        .member_candidates(request_id, &parsed_selector)?
+        .into_iter()
+        .filter(|matched| matched.binding.binding_name == binding)
+        .map(|matched| matched.body_idx)
+        .collect::<BTreeSet<_>>();
+    match sites.len() {
+        1 => Ok((sites.pop_first().expect("one site"), binding)),
+        0 => bail!(
+            "{request_id}.source_match resolved `{binding}` to statement #{representative} but its template matches none of the binding's declaration sites"
+        ),
+        _ => bail!(
+            "{request_id}.source_match matches `{binding}` at several declaration sites (statements {}); a source-unit endpoint must pin one",
+            sites
+                .iter()
+                .map(|site| format!("#{site}"))
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
     }
 }
@@ -1040,55 +1071,8 @@ fn resolve_native_operation_inputs(
             );
             let (body_index, selected_binding, selector_provenance) = match selector {
                 SourceUnitSelector::SourceMatch(source_match) => {
-                    ensure!(
-                        source_match.bindings.len() == 1,
-                        "{request_id}.source_match must select exactly one declared binding"
-                    );
-                    let spec::SourceMatchBinding::Local(local) = &source_match.bindings[0] else {
-                        bail!(
-                            "{request_id}.source_match does not accept detailed name/rename payloads"
-                        );
-                    };
-                    let mut selectors =
-                        source_match_claim_member_selectors(&request_id, &source_match)?;
-                    ensure!(
-                        selectors.len() == 1,
-                        "{request_id}.source_match must produce exactly one selector"
-                    );
-                    let selector = selectors.pop().expect("one selector was checked");
-                    ensure!(
-                        selector
-                            .parsed_selector
-                            .declared_binding_names()
-                            .iter()
-                            .any(|name| name == local),
-                        "{request_id}.source_match binding `{local}` must be declared by its pattern; free-reference selection is unsupported"
-                    );
-                    let selector_module = spec_resolution::spec_module(
-                        format!("native_operation_input_{input_index}"),
-                        vec![spec_resolution::member_from_source_match(
-                            selector.export_name,
-                            selector.parsed_selector,
-                        )],
-                        Vec::new(),
-                    );
-                    let resolution = selector_chunk.resolve(&[selector_module])?;
-                    let outcome =
-                        resolution
-                            .outcome(0, EntityIndex::Member(0))
-                            .with_context(|| {
-                                format!("{request_id}.source_match produced no selector outcome")
-                            })?;
-                    let (body_index, binding) = match &outcome.outcome {
-                        SelectorOutcome::Resolved {
-                            body_index,
-                            binding: Some(binding),
-                            ..
-                        } => (*body_index, binding.clone()),
-                        other => bail!(
-                            "{request_id}.source_match must select exactly one declared binding; selector result: {other:?}"
-                        ),
-                    };
+                    let (body_index, binding) =
+                        select_one_declared_binding(&selector_chunk, &request_id, &source_match)?;
                     (
                         body_index,
                         binding,

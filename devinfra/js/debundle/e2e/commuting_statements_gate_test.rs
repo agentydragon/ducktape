@@ -299,33 +299,50 @@ fn known_binding_write_after_read_rejects_the_pair() {
     );
 }
 
+const SHARED_VAR_SOURCE: &str = "var shared = 1;\nconst snap = shared;\nvar shared = 2;\nconsole.log(snap, shared);\nexport { shared, snap };\n";
+
+fn shared_var_split(pair: CommutingStatementsContract) -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        SHARED_VAR_SOURCE,
+        vec![logical_module(
+            "all",
+            &[Member::new("shared"), Member::new("snap")],
+        )],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_commuting_statements("static/app", vec![pair])
+}
+
 /// Accesses of a binding declared at several `var` sites keep source order
 /// even when pure; the premise cannot reorder a reader against an
-/// initializer. (The second declaration site itself is not addressable by a
-/// binding selector, which resolves `shared` to its first site, so the pair
-/// here is the first initializer and the intervening reader.)
+/// initializer.
 #[test]
 fn shared_var_access_order_is_not_inertable() {
-    const SOURCE: &str = "var shared = 1;\nconst snap = shared;\nvar shared = 2;\nconsole.log(snap, shared);\nexport { shared, snap };\n";
     expect_rejected(
         || {
-            FixtureOpts::new(
-                SOURCE,
-                vec![logical_module(
-                    "all",
-                    &[Member::new("shared"), Member::new("snap")],
-                )],
-            )
-            .with_unassigned_mode(unassigned_mode_inline())
-            .with_commuting_statements(
-                "static/app",
-                vec![commuting_pair(
-                    member_source_unit("all", "snap"),
-                    declared_source_unit("var shared = 1;", "shared"),
-                )],
-            )
+            shared_var_split(commuting_pair(
+                member_source_unit("all", "snap"),
+                declared_source_unit("var shared = 1;", "shared"),
+            ))
         },
         &[ENTRY, CONTRADICTION, "`snap`", "`shared`"],
+    );
+}
+
+/// Each declaration site of a repeated `var` is its own source unit, selected
+/// by the template that matches it; a pair of two sites is rejected because
+/// they co-declare one binding (regression: the second site used to resolve
+/// to the first, making the pair a same-source-unit error).
+#[test]
+fn co_declaration_sites_of_a_repeated_var_reject_the_pair() {
+    expect_rejected(
+        || {
+            shared_var_split(commuting_pair(
+                declared_source_unit("var shared = 1;", "shared"),
+                declared_source_unit("var shared = 2;", "shared"),
+            ))
+        },
+        &[ENTRY, CONTRADICTION, "shared `var` `shared`"],
     );
 }
 
