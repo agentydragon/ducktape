@@ -26,6 +26,12 @@ controller's first unmet barrier and its resource/process identity, available ad
 journal seal identity, acknowledgement cursor, and surfaced lifecycle error. When progress belongs
 to an older generation, it is labeled as last progress and its blocker and error are withheld.
 
+## Tool calls
+
+A lone tool call renders its compact tool summary directly. Only runs of multiple steps have an
+additional group summary. Expanding a tool call reserves room for its arguments and output before
+the next history row.
+
 ## Thread history scrolling
 
 A thread's conversation can grow long, include messages of different heights, and change while

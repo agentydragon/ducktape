@@ -197,7 +197,6 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:disclosure",
-        "//agentplane/proto:event_pb",
         "//util/frontend:markdown",
     ],
 )

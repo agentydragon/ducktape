@@ -1845,6 +1845,29 @@ it("puts a live assistant-text cursor inline after its Markdown body", async () 
   expect(cursor?.parentElement?.textContent?.trimEnd()).toBe(body);
 });
 
+it("shows a lone tool call directly and opens its details with one click", async () => {
+  const [row] = await renderHistory(
+    [
+      testItem(
+        1,
+        ItemKind.TOOL_CALL,
+        { tool_name: "test-read", completion: "tool", tool_succeeded: true },
+        {
+          argumentsRef: reference("single-tool", "arguments"),
+        }
+      ),
+    ],
+    false,
+    { "single-tool:arguments": '{"path":"test-file.txt"}' }
+  );
+  expect(row.querySelector(".agentplane-step-title")?.textContent).toBe("test-read");
+  expect(row.querySelectorAll(".agentplane-disclosure-summary")).toHaveLength(1);
+  const summary = row.querySelector(".agentplane-disclosure-summary")!;
+  await toggle(summary);
+  expect(summary.getAttribute("aria-expanded")).toBe("true");
+  expect(row.textContent).toContain("test-file.txt");
+});
+
 it("shows a lone reasoning step as its own reasoning block, and assistant text without a role label", async () => {
   const [reasoning, answer] = await renderHistory(
     [
