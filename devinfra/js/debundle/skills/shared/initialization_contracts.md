@@ -89,8 +89,10 @@ Full definition: [retaining callbacks in constructed instances](../../SPEC.md#re
 **Choose:** `no_reentry_callback_exports` for a direct imported call with exact
 argument-count/callback-position signatures, or
 `anonymous_statements[].no_reentry_call` when the exact top-level call is
-selected by `match` / `source_match` in the caller's spec. The source assertion
-accepts a direct identifier callee or a static member on an identifier
+selected by `match` / `source_match` in the caller's spec. A source-selected
+call may be bare or the rightmost operand of an `&&` chain; the guard retains
+ordinary effects and reentry checks. The source assertion accepts a direct
+identifier callee or a static member on an identifier
 receiver, and its author audit covers every callable identity that can reach
 the exact call site. For `no_reentry_callback_exports`, callee aliases keep
 conservative timing. Callback inputs must resolve to one stable local ordinary

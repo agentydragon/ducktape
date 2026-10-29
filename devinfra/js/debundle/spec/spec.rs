@@ -1058,9 +1058,9 @@ pub struct AnonymousStatement {
     /// property names, and overall AST structure significant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_match: Option<SourceMatch>,
-    /// Author assertion that this exact top-level bare call statement cannot
-    /// synchronously invoke callbacks or read caller lexical state. Callback
-    /// arguments are still exposed after the call; this does not imply purity.
+    /// Author assertion that the selected top-level call (bare or the rightmost
+    /// operand of `&&`) cannot synchronously invoke callbacks or read caller
+    /// lexical state. Arguments remain exposed after the call; not purity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub no_reentry_call: Option<NoReentryCall>,
     /// Optional YAML-only note. Use this for provenance,
