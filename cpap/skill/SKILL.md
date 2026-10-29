@@ -51,8 +51,8 @@ nights' blobs.
     └── YYYYMMDD/        One directory per calendar date
         ├── *_CSL.edf    Session log (mask on/off events)
         ├── *_EVE.edf    Respiratory events (apneas, hypopneas, flow limitations)
-        ├── *_BRP.edf    Breath-by-breath metrics (pressure, flow, leak per breath)
-        ├── *_PLD.edf    High-resolution waveforms (~25 Hz: pressure, leak, flow)
+        ├── *_BRP.edf    Flow and mask-pressure waveforms (25 Hz)
+        ├── *_PLD.edf    Therapy metrics (0.5 Hz: pressure, leak, respiratory rate, etc.)
         └── *_SA2.edf    SpO2 + pulse rate (if oximeter connected)
 ```
 
