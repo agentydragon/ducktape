@@ -688,6 +688,8 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 		return "cell", nil
 	}
+	// TODO: Codex rust-v0.162.1 keeps notify() outputs and user input in one arrival-ordered pending
+	// queue; this records a step's notify() outputs before its steering input (SPEC.md deviation).
 	drained, err := r.store.DrainNotifications(ctx, owner)
 	if err != nil {
 		return "", err
@@ -695,6 +697,9 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if drained {
 		return "notification", nil
 	}
+	// TODO: Codex's InstantInterrupt also cuts an in-flight provider stream for new input. Steering
+	// input waits here for the sampling request to finish, because a cut stream leaves its intent
+	// uncertain and blocks the Session (SPEC.md deviation); cutting needs a way to settle that intent.
 	steered, err := r.store.DrainSteeringInput(ctx, owner, session.ID)
 	if err != nil {
 		return "", err

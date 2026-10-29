@@ -31,6 +31,11 @@ instructions, setup scripts and History export.
   the sampler, History and the executor binding.
 - **Hosted web search:** maybe, depending on what the provider's hosted search offers over fetching
   from the Sandbox.
+- **Steering, cut in-flight model responses:** Codex's `InstantInterrupt` cuts an in-flight provider
+  stream when user input arrives; the sampler lets the request finish, since a cut stream leaves the
+  sampling intent uncertain. Needs a way to settle a deliberately cancelled stream.
+- **Steering, one pending-input queue:** Codex orders `notify()` outputs and user input by arrival in
+  one queue; the sampler records a step's `notify()` outputs before its steering input.
 - **Per-session cell execution resource limits:** Codex offers the code-mode host's
   `session-cell-execution-resource-limits` capability; the sampler neither offers nor sets them.
 
