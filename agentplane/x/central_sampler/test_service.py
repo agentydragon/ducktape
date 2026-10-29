@@ -699,9 +699,10 @@ async def test_interrupt_discards_queued_notify_output(
                 timeout=10,
             )
             async with await endpoint.next() as exchange:
+                # The cell notifies only once the test releases it, after the next step is held.
                 source = (
                     '// @exec: {"yield_time_ms": 10}\n'
-                    "await new Promise((resolve) => setTimeout(resolve, 100));\n"
+                    'await tools.exec_command({cmd: "while [ ! -e release ]; do sleep 0.05; done", yield_time_ms: 30000});\n'
                     'notify("discarded");\n'
                     "await new Promise(() => {});"
                 )
@@ -710,6 +711,7 @@ async def test_interrupt_discards_queued_notify_output(
                 )
             async with await endpoint.next() as exchange:
                 # Holding this sampling step keeps the notification queued until the interrupt.
+                (tmp_path / "release").touch()
                 async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.01), reraise=True):
                     with attempt:
                         assert await store.queued_notifications(request.session_id) == ["discarded"]
