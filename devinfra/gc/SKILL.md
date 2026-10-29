@@ -15,7 +15,8 @@ deleted; an output base orphans when its workspace worktree is removed):
 
 - **worktrees** — local worktrees whose work is already merged;
 - **branches** — local branches whose work is already in the default branch;
-- **bazel-bases** — orphaned Bazel output bases and bases linked to workspaces under `/tmp`.
+- **bazel-bases** — orphaned Bazel output bases (the default MD5-named ones and Claude Code's
+  per-session ones) and bases linked to workspaces under `/tmp`.
 
 `workspace-gc` with no subcommand runs `all` (every domain). `workspace-gc worktrees` and
 `workspace-gc bazel-bases` are **views** of that same computed result, scoped to one domain.
@@ -64,8 +65,10 @@ git worktree prune --dry-run --verbose   # stale admin records
 Add `--all` to show KEEP rows too. Omit `--sizes` for a quick first pass on a large cache.
 Pass `--no-prs` to skip the GitHub PR cross-check (offline, or to avoid one API call per
 branch on a repo with many branches). The base scanner covers one output-user-root at a time
-(default `$XDG_CACHE_HOME/bazel/_bazel_$USER`); re-run with `--output-user-root PATH` for
-known custom cache locations rather than assuming the default is the only root.
+(default `$XDG_CACHE_HOME/bazel/_bazel_$USER`) plus, always, every Claude Code per-session base
+(`~/.claude/session-env/*/bazel-output-base`, where each session's `bazelrc` points Bazel);
+re-run with `--output-user-root PATH` for known custom cache locations rather than assuming the
+default is the only root.
 
 ## Worktrees
 
@@ -139,10 +142,13 @@ alone (so squash-merges the API would have confirmed fall to REVIEW).
 
 `workspace-gc bazel-bases` classifies each base; interpret it literally:
 
-- `PRUNE`: a default MD5-named base whose recorded workspace is absent or under `/tmp`, with
-  no live server or nested mount. Remove with `workspace-gc bazel-bases --delete`; it
-  revalidates and locks every candidate before deletion. Deleting a `/tmp` output base leaves
-  its workspace intact.
+- `PRUNE`: a default MD5-named base, or a per-session base under `~/.claude/session-env/`,
+  whose recorded workspace is absent or under `/tmp`, with no live server or nested mount. A
+  server is live only when the process at its recorded PID is running Bazel on that very base
+  — a bare PID proves nothing, since a sandboxed server records its namespace-local PID and a
+  host PID is recycled once the server exits. Remove with `workspace-gc bazel-bases --delete`;
+  it revalidates and locks every candidate before deletion. Deleting a `/tmp` output base
+  leaves its workspace intact.
 - `KEEP`: leave it alone. A base whose workspace is a **prunable worktree** outside `/tmp`
   stays KEEP in the `bazel-bases` view (its workspace still exists) but is annotated
   "workspace is a prunable worktree"; run `all --prune` to remove the worktree and then its

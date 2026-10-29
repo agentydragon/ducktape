@@ -208,7 +208,7 @@ def _known_worktree_paths(repo: Path) -> set[Path]:
     return _resolved({wt.path for wt in git_repo.list_worktrees(repo)})
 
 
-def foreign_clone_roots(repo: Path, output_user_root: Path) -> list[Path]:
+def foreign_clone_roots(repo: Path, output_user_root: Path, *, session_bases: Sequence[Path]) -> list[Path]:
     """Roots of foreign clones of `repo`'s project found among Bazel output-base workspaces.
 
     Filesystem-only (no network): re-scans output bases purely to learn candidate workspace
@@ -219,7 +219,7 @@ def foreign_clone_roots(repo: Path, output_user_root: Path) -> list[Path]:
     # TODO: Add an age-based `/tmp` review pass for same-project Git clone roots that are not
     # discoverable through a Bazel output base. Dirty/unique-work and live-process checks must
     # continue to govern removal.
-    bases = output_base_gc.scan_output_user_root(output_user_root)
+    bases = output_base_gc.scan_output_user_root(output_user_root, session_bases=session_bases)
     return foreign_clone_gc.discover_foreign_clones(
         _retained_workspaces(bases), known_paths=_known_worktree_paths(repo), repo=repo
     )
@@ -299,6 +299,7 @@ def scan_workspace(
     main: str,
     default_branch: str,
     pr_states: dict[str, PrInfo],
+    session_bases: Sequence[Path],
     active_path: Path | None = None,
     output_user_root: Path | None = None,
     foreign_clone_roots: Sequence[Path] = (),
@@ -307,6 +308,8 @@ def scan_workspace(
     workers: int = DEFAULT_CLASSIFY_WORKERS,
     progress: ProgressSink = NULL_PROGRESS,
 ) -> WorkspaceScan:
+    """`session_bases` (see `output_base_gc.session_env_output_bases`) are scanned with the
+    root's bases; both are skipped when `output_user_root` is None."""
     main_path = git_repo.main_worktree(repo)
     pg = git_repo.open_repo(main_path)
 
@@ -371,7 +374,11 @@ def scan_workspace(
         bases = [
             _annotate_base(base, prunable_workspaces)
             for base in output_base_gc.scan_output_user_root(
-                output_user_root, proc_root=proc_root, mountinfo_path=mountinfo_path, progress=progress
+                output_user_root,
+                session_bases=session_bases,
+                proc_root=proc_root,
+                mountinfo_path=mountinfo_path,
+                progress=progress,
             )
         ]
         logger.info("Bazel output-base scan complete: %d bases", len(bases))

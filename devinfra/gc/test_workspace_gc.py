@@ -119,7 +119,13 @@ def _scan_numeric_looking_branches(
     for index, branch in enumerate(_NUMERIC_LOOKING_BRANCHES):
         repo.worktree(f"wt{index}", branch)  # an empty branch: its worktree and branch are both prunable
     return workspace_scan.scan_workspace(
-        repo.path, main="main", default_branch="main", pr_states={}, proc_root=proc, mountinfo_path=mountinfo
+        repo.path,
+        main="main",
+        default_branch="main",
+        pr_states={},
+        session_bases=(),
+        proc_root=proc,
+        mountinfo_path=mountinfo,
     )
 
 

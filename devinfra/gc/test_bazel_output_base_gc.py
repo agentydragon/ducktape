@@ -25,8 +25,22 @@ def prunable_base(tmp_path: Path, output_root: Path) -> Path:
     return make_base(output_root, tmp_path / "gone")
 
 
-def _inspect(base: Path, *, proc_root: Path = Path("/proc")) -> gc.Inspection:
-    return gc.inspect_output_base(base, uid=os.getuid(), points=set(), proc_root=proc_root)
+def _inspect(
+    base: Path, *, proc_root: Path = Path("/proc"), layout: gc.BaseLayout = gc.BaseLayout.HASHED
+) -> gc.Inspection:
+    return gc.inspect_output_base(base, uid=os.getuid(), points=set(), layout=layout, proc_root=proc_root)
+
+
+def _record_server(base: Path, *, proc_root: Path, pid: int, argv: list[str]) -> None:
+    """Bazel's server.pid.txt pointing at a fake `/proc/<pid>` whose process runs `argv`."""
+    (base / "server" / "server.pid.txt").write_text(str(pid))
+    (proc_root / str(pid)).mkdir(parents=True)
+    (proc_root / str(pid) / "cmdline").write_bytes(b"".join(os.fsencode(argument) + b"\0" for argument in argv))
+
+
+def _session_env_base(tmp_path: Path, workspace: Path) -> Path:
+    """A base at the per-session location Claude Code uses, named like every other one."""
+    return make_base(tmp_path / "session-env" / "test-session", workspace, name="bazel-output-base")
 
 
 def _reason(inspection: gc.Inspection) -> StrEnum:
@@ -108,13 +122,31 @@ def test_nondefault_output_base_requires_review(tmp_path: Path) -> None:
     assert base.name in _described(inspection)
 
 
-def test_existing_server_pid_retains_base(tmp_path: Path) -> None:
+def test_server_process_on_this_base_retains_it(tmp_path: Path) -> None:
     base = make_base(tmp_path / "output", tmp_path / "gone")
-    (base / "server" / "server.pid.txt").write_text("42")
     proc_root = tmp_path / "proc"
-    (proc_root / "42").mkdir(parents=True)
+    _record_server(base, proc_root=proc_root, pid=42, argv=["java", f"--output_base={base}", "--max_idle_secs=10"])
 
     assert _reason(_inspect(base, proc_root=proc_root)) is gc.RetainedBaseReason.SERVER_LIVE
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["java", "--output_base={other}"], id="another-base's-server"),
+        pytest.param(["bash", "-c", "sleep 1"], id="unrelated-process"),
+        pytest.param([], id="zombie"),
+    ],
+)
+def test_recycled_server_pid_is_not_live(tmp_path: Path, argv: list[str]) -> None:
+    # A sandboxed server records its namespace-local PID, which names some unrelated host
+    # process; a host PID is recycled once the server exits. Neither is this base's server.
+    base = make_base(tmp_path / "output", tmp_path / "gone")
+    other = make_base(tmp_path / "output", tmp_path / "other-gone")
+    proc_root = tmp_path / "proc"
+    _record_server(base, proc_root=proc_root, pid=42, argv=[argument.format(other=other) for argument in argv])
+
+    assert isinstance(_inspect(base, proc_root=proc_root), gc.PrunableBase)
 
 
 def test_missing_server_pid_is_not_live(tmp_path: Path) -> None:
@@ -124,6 +156,63 @@ def test_missing_server_pid_is_not_live(tmp_path: Path) -> None:
     proc_root.mkdir()
 
     assert isinstance(_inspect(base, proc_root=proc_root), gc.PrunableBase)
+
+
+def test_unreadable_server_cmdline_requires_review(tmp_path: Path) -> None:
+    # Injected as a directory (EISDIR) rather than chmod 0, which a root runner reads anyway.
+    base = make_base(tmp_path / "output", tmp_path / "gone")
+    (base / "server" / "server.pid.txt").write_text("42")
+    proc_root = tmp_path / "proc"
+    (proc_root / "42" / "cmdline").mkdir(parents=True)
+
+    inspection = _inspect(base, proc_root=proc_root)
+    assert _reason(inspection) is gc.ReviewBaseReason.UNSAFE_METADATA
+    assert os.strerror(errno.EISDIR) in _described(inspection)
+
+
+def test_session_env_base_classifies_on_its_records_alone(tmp_path: Path) -> None:
+    present = tmp_path / "workspace"
+    present.mkdir()
+    kept = _inspect(_session_env_base(tmp_path / "a", present), layout=gc.BaseLayout.SESSION_ENV)
+    assert _reason(kept) is gc.RetainedBaseReason.WORKSPACE_EXISTS
+
+    prunable = _inspect(_session_env_base(tmp_path / "b", tmp_path / "gone"), layout=gc.BaseLayout.SESSION_ENV)
+    assert isinstance(prunable, gc.PrunableBase)
+    assert prunable.layout is gc.BaseLayout.SESSION_ENV
+
+
+def test_session_env_base_still_needs_agreeing_records(tmp_path: Path) -> None:
+    # The MD5 anchor is waived for this layout, not the agreement check.
+    base = _session_env_base(tmp_path, tmp_path / "gone")
+    (base / "README").write_text("WORKSPACE: /different\n")
+
+    assert _reason(_inspect(base, layout=gc.BaseLayout.SESSION_ENV)) is gc.ReviewBaseReason.UNSAFE_METADATA
+
+
+def test_scan_covers_session_env_bases_and_names_them_by_path(
+    prunable_base: Path, output_root: Path, tmp_path: Path, proc: Path, mountinfo: Path
+) -> None:
+    session_base = _session_env_base(tmp_path, tmp_path / "gone-too")
+
+    inspections = gc.scan_output_user_root(
+        output_root, session_bases=[session_base], proc_root=proc, mountinfo_path=mountinfo
+    )
+
+    assert [item.path for item in inspections] == [prunable_base, session_base]
+    assert all(isinstance(item, gc.PrunableBase) for item in inspections)
+    report = gc.render_report(inspections, include_kept=False, include_sizes=False)
+    assert session_base.parent.name in report  # the session id, not just the shared directory name
+
+
+def test_delete_removes_a_prunable_session_env_base(tmp_path: Path, proc: Path, mountinfo: Path) -> None:
+    base = _session_env_base(tmp_path, tmp_path / "gone")
+    candidate = _inspect(base, layout=gc.BaseLayout.SESSION_ENV)
+    assert isinstance(candidate, gc.PrunableBase)
+
+    results = gc.delete_prunable_bases([candidate], proc_root=proc, mountinfo_path=mountinfo)
+
+    assert results == [gc.DeletedBase(base)]
+    assert list(base.parent.iterdir()) == []
 
 
 @pytest.mark.parametrize("value", ["0", "-1"])
@@ -142,7 +231,7 @@ def test_unstatable_output_base_requires_review(tmp_path: Path) -> None:
 
 def test_output_base_owned_by_another_user_requires_review(prunable_base: Path) -> None:
     expected_uid = os.getuid() + 54321
-    inspection = gc.inspect_output_base(prunable_base, uid=expected_uid, points=set())
+    inspection = gc.inspect_output_base(prunable_base, uid=expected_uid, points=set(), layout=gc.BaseLayout.HASHED)
 
     assert _reason(inspection) is gc.ReviewBaseReason.WRONG_OWNER
     assert str(expected_uid) in _described(inspection)
@@ -170,7 +259,7 @@ def test_workspace_reached_through_a_symlink_requires_review(tmp_path: Path) -> 
 
 def test_nested_mount_requires_review(tmp_path: Path) -> None:
     base = make_base(tmp_path / "output", tmp_path / "gone")
-    inspection = gc.inspect_output_base(base, uid=os.getuid(), points={base / "nested"})
+    inspection = gc.inspect_output_base(base, uid=os.getuid(), points={base / "nested"}, layout=gc.BaseLayout.HASHED)
 
     assert _reason(inspection) is gc.ReviewBaseReason.NESTED_MOUNT
     assert str(base / "nested") in _described(inspection)
@@ -183,7 +272,7 @@ def test_scan_reports_symlink_and_failed_quarantine(tmp_path: Path, proc: Path, 
     quarantine = root / ".bazel-output-base-gc-dead"
     quarantine.mkdir()
 
-    inspections = gc.scan_output_user_root(root, proc_root=proc, mountinfo_path=mountinfo)
+    inspections = gc.scan_output_user_root(root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo)
 
     assert len(inspections) == 2
     assert {_reason(item) for item in inspections} == {
@@ -312,7 +401,7 @@ def test_bazel_lock_conflicts_with_another_process(tmp_path: Path) -> None:
 def test_scan_and_render_report_flag_a_prunable_base(
     prunable_base: Path, output_root: Path, proc: Path, mountinfo: Path
 ) -> None:
-    inspections = gc.scan_output_user_root(output_root, proc_root=proc, mountinfo_path=mountinfo)
+    inspections = gc.scan_output_user_root(output_root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo)
 
     assert prunable_base.exists()
     assert [type(item) for item in inspections] == [gc.PrunableBase]
