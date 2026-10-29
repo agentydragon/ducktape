@@ -26,22 +26,6 @@ class BindMount(BaseModel, frozen=True):
         """Convert to Docker bind spec string: 'host:container:mode'."""
         return f"{self.host_path}:{self.container_path}:{self.mode}"
 
-    @classmethod
-    def parse_bind(cls, spec: str) -> BindMount:
-        """Parse a single bind mount spec string (host:container[:mode])."""
-        parts = spec.split(":")
-        if len(parts) < 2 or len(parts) > 3:
-            raise ValueError(f"Invalid bind mount spec '{spec}'. Use host:container[:mode].")
-        host, container = parts[0], parts[1]
-        mode = parts[2] if len(parts) == 3 else "rw"
-        return cls.model_validate({"host_path": Path(host).resolve(), "container_path": Path(container), "mode": mode})
-
-    @classmethod
-    def parse_binds(cls, values: list[str]) -> list[BindMount]:
-        """Parse bind mount specifications (comma-separated) into BindMount objects."""
-        entries = [entry for value in values for entry in value.split(",") if entry]
-        return [cls.parse_bind(entry) for entry in entries]
-
 
 # -- CwdPolicy: controls how the `cwd` field is exposed in the exec tool schema --
 #

@@ -18,22 +18,6 @@ pub struct SourceLocation {
     pub start_column: Option<usize>,
 }
 
-impl SourceLocation {
-    /// Expand this location's line range to include `other`.
-    pub fn expand_to(&mut self, other: &SourceLocation) {
-        if other.start_line < self.start_line {
-            self.start_line = other.start_line;
-            self.start_column = other.start_column;
-        } else if other.start_line == self.start_line {
-            self.start_column = match (self.start_column, other.start_column) {
-                (Some(a), Some(b)) => Some(a.min(b)),
-                (None, value) | (value, None) => value,
-            };
-        }
-        self.end_line = self.end_line.max(other.end_line);
-    }
-}
-
 /// Accumulates the minimum start-line and maximum end-line across a
 /// collection of `SourceLocation`s. Used to compute the
 /// `source_line_range` field of `AtomicGroupReport` and similar.

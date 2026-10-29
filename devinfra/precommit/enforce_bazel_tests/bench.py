@@ -31,7 +31,6 @@ from util.bazel.workspace import BazelBackend, BazelWorkspace, get_build_workspa
 
 # The file we'll temporarily modify to simulate a change.
 _TARGET_FILE = Path("util/bazel/workspace.py")
-_SENTINEL = "\n# benchmark-sentinel-comment\n"
 _QUERY_TIMEOUT = 300
 
 # Separate output base to avoid lock contention with the parent `bazel run`.

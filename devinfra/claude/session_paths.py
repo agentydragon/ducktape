@@ -70,47 +70,13 @@ class SessionPaths:
         return _short_session_dir(self.session_id)
 
     @property
-    def bazel_bes_proxy_sock(self) -> Path:
-        """UDS socket for the BES interceptor (--bes_backend=unix:...)."""
-        return self._short_dir / "bazel-bes-proxy.sock"
-
-    @property
-    def wrapper_dir(self) -> Path:
-        """Wrapper directory (added to PATH)."""
-        return self.session_dir / "bin"
-
-    @property
-    def wrapper_path(self) -> Path:
-        """Wrapper script path."""
-        return self.wrapper_dir / "bazelisk"
-
-    @property
     def docker_dir(self) -> Path:
         return self.session_dir / "docker"
-
-    @property
-    def container_storage_dir(self) -> Path:
-        """Tmpfs-backed storage root for the active container runtime."""
-        return self.session_dir / "container-storage"
-
-    @property
-    def sandbox_writable_dir(self) -> Path:
-        """Directory writable from within Claude Code's sandbox.
-
-        Claude Code's Bash tool sandbox makes ~/.claude/session-env/ read-only,
-        so runtime writes (e.g. bazel-wrapper log) must go to /tmp/claude/.
-        """
-        return Path("/tmp/claude") / self.session_id
 
     @property
     def bazelrc(self) -> Path:
         """Per-session bazelrc file (rendered by session start hook)."""
         return self.session_dir / "bazelrc"
-
-    @property
-    def bazel_cache_dir(self) -> Path:
-        """Bazel cache directory (tmpfs-backed, via startup --output_user_root)."""
-        return self.session_dir / "bazel-cache"
 
     @property
     def hook_daemon_dir(self) -> Path:

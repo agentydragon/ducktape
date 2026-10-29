@@ -1,6 +1,6 @@
-"""Run Python modules as subprocesses under Bazel's rules_python.
+"""Build Python subprocess environments under Bazel's rules_python.
 
-Provides helpers for spawning Python module subprocesses.
+Provides `python_env` for subprocesses launched with `sys.executable`.
 
 In a Bazel venv (bootstrap_impl=script), subprocesses automatically get
 correct sys.path via the venv's _bazel_site_init — no PYTHONPATH needed.
@@ -12,9 +12,7 @@ from __future__ import annotations
 
 import functools
 import os
-import subprocess
 import sys
-from typing import Any
 
 
 @functools.cache
@@ -86,22 +84,3 @@ def python_env(*, inherit: bool = True) -> dict[str, str]:
     # Nix-installed wheel, creating client/server version skew.
     env["PYTHONSAFEPATH"] = "1"
     return env
-
-
-def run_python_module(
-    module: str, *args: str | os.PathLike[str], inherit_env: bool = True, **kwargs: Any
-) -> subprocess.CompletedProcess[Any]:
-    """Run ``sys.executable -m <module> <args>`` with PYTHONPATH propagated.
-
-    Thin wrapper around :func:`subprocess.run`.  All *kwargs* are forwarded
-    directly (``cwd``, ``timeout``, ``capture_output``, …).
-
-    Args:
-        module: Python module to run (e.g. ``"pre_commit"``, ``"ruff"``).
-        *args: Command-line arguments passed after the module name.
-               Accepts :class:`str` and :class:`os.PathLike`.
-        inherit_env: If True, start from ``os.environ``. If False, minimal env
-                     with only ``PYTHONPATH``.
-    """
-    cmd: list[str | os.PathLike[str]] = [sys.executable, "-m", module, *args]
-    return subprocess.run(cmd, env=python_env(inherit=inherit_env), **kwargs)  # noqa: PLW1510  check forwarded via kwargs

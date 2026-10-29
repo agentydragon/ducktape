@@ -1,36 +1,19 @@
-"""The Agent Sandbox CRDs' vocabulary, as the upstream controller publishes it.
+"""Helpers for reading Agent Sandbox objects as the upstream controller publishes them.
 
-A reader of these objects would otherwise re-derive the API's coordinates and its own way of
-reading a status condition. That is how the sandbox Actions once searched for a Pod by a label the
+A reader of these objects would otherwise re-derive the status-condition shape and the annotation
+linking a Sandbox to its Pod. That is how the sandbox Actions once searched for a Pod by a label the
 controller does not write instead of reading the annotation that actually links the two objects.
 
 What belongs here is only what upstream owns. Each consumer's managed-by labels, naming scheme and
 notion of a usable box differ deliberately and stay with it. `condition` serves a caller that reads
-the API server's dicts directly; one that parses these objects into its own typed models needs only
-the coordinates.
+the API server's dicts directly; consumers that parse these objects into their own typed models use
+the fields they need.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, NamedTuple, cast
-
-
-class Api(NamedTuple):
-    """A CRD's group and version. Unpacks with `*` into the `kubernetes_asyncio` custom-object
-    calls, which take the two positionally, and spells its own `apiVersion` for object bodies."""
-
-    group: str
-    version: str
-
-    @property
-    def api_version(self) -> str:
-        return f"{self.group}/{self.version}"
-
-
-SANDBOX_API = Api("agents.x-k8s.io", "v1beta1")
-# SandboxClaim and SandboxTemplate are a separate group from Sandbox itself.
-EXTENSIONS_API = Api("extensions.agents.x-k8s.io", "v1beta1")
+from typing import Any, cast
 
 
 class OperatingMode(StrEnum):
@@ -40,10 +23,7 @@ class OperatingMode(StrEnum):
     SUSPENDED = "Suspended"
 
 
-SANDBOX_KIND = "Sandbox"
-SANDBOXES_PLURAL = "sandboxes"
 CLAIMS_PLURAL = "sandboxclaims"
-TEMPLATES_PLURAL = "sandboxtemplates"
 
 # Where the controller publishes the name of the Pod backing a Sandbox. The Pod carries no label
 # tying it back, so this annotation is the only link between the two objects.

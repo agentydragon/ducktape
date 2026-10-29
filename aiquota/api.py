@@ -96,10 +96,6 @@ class SnapshotFeed:
     def latest(self) -> QuotaSnapshot | None:
         return self._snapshot
 
-    @property
-    def subscriber_count(self) -> int:
-        return len(self._subscribers)
-
     async def fetch(self, force_refresh: bool = False) -> QuotaSnapshot:
         # Calls that were already waiting when a refresh began share its result,
         # including forced collector calls. A later forced call starts a new

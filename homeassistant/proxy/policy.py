@@ -33,7 +33,6 @@ class PolicyEnforcer:
     """
 
     def __init__(self, ha_url: str, ha_token: str):
-        self._ha_url = ha_url
         self._ha_token = ha_token
         self._entities: dict[str, EntityInfo] | None = None
         self._entities_time: float = 0

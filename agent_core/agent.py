@@ -168,9 +168,6 @@ def _normalize_call_arguments(arguments: str | dict[str, Any] | list[Any] | None
     return pydantic_core.to_json(arguments, fallback=str).decode("utf-8")
 
 
-SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
-
-
 def _tool_choice_from_policy(policy: ToolPolicy) -> ToolChoice:
     """Map a ToolPolicy to Responses API tool_choice value.
 

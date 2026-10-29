@@ -344,14 +344,6 @@ def _roots(store: TanaGraph) -> list[BaseNode]:
 
 
 # ──────────────────────────  Exporters  ────────────────────────── #
-def export_node_as_tanapaste(store: TanaGraph, node: BaseNode) -> str:
-    """Export a single node and its children as TanaPaste format."""
-    lines: list[str] = []
-    lines.append("%%tana%%")
-    lines.extend(RenderContext(store, "tana").render_node(node))
-    return "\n".join(lines).rstrip() + "\n"
-
-
 def _export(store: TanaGraph, style: str) -> str:
     lines: list[str] = []
     if style == "tana":

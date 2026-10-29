@@ -33,15 +33,10 @@ QUIESCED = "Quiesced"
 RUNNING = "Running"
 # True while the Sandbox's workload runs and its runner is connected; its reason says why not.
 READY = "Ready"
-# On a Sandbox's Pod, or its VM, VMI and virt-launcher Pod: the Sandbox's name.
-SANDBOX_LABEL = f"{GROUP}/sandbox"
 # On a Sandbox: the app preset it was made from. Only the app reads it.
 PRESET_LABEL = f"{GROUP}/preset"
 # The reason a Sandbox's `Ready` and `Running` conditions carry while no Pod or VM runs.
 STOPPED = "Stopped"
-# A VM Sandbox's runner runs in its VMI's virt-launcher Pod, which the VMI controls.
-VMI_API_VERSION = "kubevirt.io/v1"
-VMI_KIND = "VirtualMachineInstance"
 
 
 class OperatingMode(StrEnum):

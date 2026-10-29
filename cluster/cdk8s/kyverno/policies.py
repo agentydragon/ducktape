@@ -518,7 +518,6 @@ def cleanup_controller_workloads_chart(app: App) -> Chart:
 
 
 def cleanup_controller_sandboxes_chart(app: App) -> Chart:
-    """Consumers: the janitors reaping `janitor.SANDBOX_KINDS`."""
     chart = _chart(app, "clusterrole-cleanup-controller-sandboxes")
     k8s.KubeClusterRole(
         chart,

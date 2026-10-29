@@ -116,21 +116,6 @@ impl PreparedSource {
             .collect()
     }
 
-    /// Find one top-level item declaring `name` and include up to
-    /// `context_statements` items on either side.
-    ///
-    /// A repeated top-level declaration is rejected as ambiguous because this
-    /// helper is intended to identify a source location, not choose an source_unit.
-    pub fn statement_rows_around_binding(
-        &self,
-        name: &str,
-        context_statements: usize,
-    ) -> Result<Vec<StatementRow>> {
-        self.statement_rows(Some(
-            self.statement_range_around_binding(name, context_statements)?,
-        ))
-    }
-
     /// Find the raw item range around a declaration without rendering it.
     pub fn statement_range_around_binding(
         &self,

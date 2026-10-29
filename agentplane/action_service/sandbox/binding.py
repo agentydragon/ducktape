@@ -10,11 +10,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.crd_group import GROUP
-
-# The sandbox Actions' own namespace, for the labels they stamp on a box.
-PREFIX = f"sandbox-actions.{GROUP}"
-
 
 class PodExecutorBinding(BaseModel):
     """Boxes started and exec'd by this service rather than reached over MCP.

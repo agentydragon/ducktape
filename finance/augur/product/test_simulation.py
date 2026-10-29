@@ -13,13 +13,7 @@ import pytest_bazel
 from finance.augur.model.series import HomeValueKey, LocationId, SecurityKey, SecuritySymbol
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.product.metrics import ProductMetricArrays
-from finance.augur.product.simulation import (
-    execute,
-    project_events,
-    project_product_metrics,
-    simulate_events,
-    simulate_product_metrics,
-)
+from finance.augur.product.simulation import execute, project_events, project_product_metrics, simulate_product_metrics
 from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
@@ -203,7 +197,11 @@ class TestConfigured:
     def test_the_sale_is_reported_as_a_disposition(self, run: Worlds) -> None:
         """Proceeds and basis follow from the scenario, so every engine owes the same ones."""
 
-        rows = simulate_events(run(), AGENT).lot_dispositions.filter(pl.col("month_index") == SALE_MONTH).to_dicts()
+        rows = (
+            project_events(execute(run(), "dense", AGENT))
+            .lot_dispositions.filter(pl.col("month_index") == SALE_MONTH)
+            .to_dicts()
+        )
         assert len(rows) == 1, f"one lot sold once, got {len(rows)} rows"
         sold = rows[0]
         assert sold["agent_id"] == AGENT
@@ -214,7 +212,7 @@ class TestConfigured:
     def test_the_gain_is_assessed_at_the_tax_year_that_closes_after_it(self, run: Worlds) -> None:
         """A realized gain reaches an accrual. Which figure is the statute suites' business."""
 
-        accruals = simulate_events(run(), AGENT).tax_accruals.filter(pl.col("agent_id") == AGENT)
+        accruals = project_events(execute(run(), "dense", AGENT)).tax_accruals.filter(pl.col("agent_id") == AGENT)
         assert accruals.height, "a long-term gain went unassessed"
         assert accruals.filter(pl.col("month_index") > SALE_MONTH).height, "no accrual after the sale"
 
@@ -222,7 +220,7 @@ class TestConfigured:
         """Anti-vacuity for the assertions above: they describe a rollout that ran to the end."""
 
         assert int(product_metrics(run).failed_month[0]) < 0
-        assert simulate_events(run(), AGENT).rollout_failures.height == 0
+        assert project_events(execute(run(), "dense", AGENT)).rollout_failures.height == 0
 
     def test_a_property_sells_for_what_the_series_says_it_is_worth(self, property_run: Worlds) -> None:
         """A money level is money, whichever cube an engine happens to keep it in.
@@ -233,7 +231,7 @@ class TestConfigured:
         every fractional level a real sampled path produces.
         """
 
-        rows = simulate_events(property_run(), AGENT).property_sale_events.to_dicts()
+        rows = project_events(execute(property_run(), "dense", AGENT)).property_sale_events.to_dicts()
         assert len(rows) == 1, f"one property sold once, got {len(rows)} rows"
         assert rows[0]["month_index"] == PROPERTY_SALE_MONTH
         assert rows[0]["gross_proceeds_quanta"] == HOME_VALUE_AT_SALE_QUANTA, (
@@ -253,7 +251,7 @@ class TestConfigured:
         whole scenario was refused.
         """
 
-        rows = simulate_events(fractional_closing_cost_run(), AGENT).property_sale_events.to_dicts()
+        rows = project_events(execute(fractional_closing_cost_run(), "dense", AGENT)).property_sale_events.to_dicts()
         assert len(rows) == 1, f"one property sold once, got {len(rows)} rows"
         assert rows[0]["gross_proceeds_quanta"] == FRACTIONAL_CLOSING_COST_PROCEEDS_QUANTA
 
@@ -274,7 +272,7 @@ def test_completed_capture_projects_same_financial_metrics(capture: Capture) -> 
         with pytest.raises(RuntimeError, match="event projection requires"):
             project_events(completed)
     else:
-        assert project_events(completed) == simulate_events(run(), AGENT)
+        assert project_events(completed) == project_events(execute(run(), "dense", AGENT))
         assert all(result.financial is not None for result in completed)
         for result in completed:
             assert result.financial is not None

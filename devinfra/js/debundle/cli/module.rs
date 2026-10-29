@@ -2,8 +2,8 @@
 //! target YAML module and delete the sources. The companion
 //! `debundle modules delete --force` verb removes a non-empty module.
 //!
-//! Both verbs run the unified realizability gate (see
-//! [`crate::edit_gate::gate_post_edit_assignment`]) against the
+//! Both verbs run the unified realizability gate through
+//! [`crate::edit_gate::Gate::check`] against the
 //! **post-edit** assignment before touching the filesystem. The gate
 //! reconstructs the chunk's `DependencyGraph` from `dependency_graph.json`
 //! (via `DependencyGraph::from_report`), builds the post-edit `ModuleAssignment`

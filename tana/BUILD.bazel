@@ -20,7 +20,9 @@ py_test(
     data = glob(["testdata/**/*"]),
     deps = [
         "//:conftest",
+        "//tana/domain:nodes",
         "//tana/export:convert",
+        "//tana/graph",
         "//tana/graph:loader",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

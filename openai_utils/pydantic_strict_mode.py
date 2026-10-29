@@ -13,12 +13,6 @@ class OpenAIStrictModeValidationError(ValueError):
     """Raised when a model's JSON schema is not OpenAI strict mode compatible."""
 
 
-def validate_model(model_class: type[BaseModel]) -> None:
-    """Validate a Pydantic model without subclassing OpenAIStrictModeBaseModel."""
-    schema = model_class.model_json_schema()
-    validate_openai_strict_mode_schema(schema, model_class.__name__)
-
-
 def validate_openai_strict_mode_schema(schema: dict[str, Any], model_name: str = "Model") -> None:
     """Validate the strict fixed-property schema subset shared by tool inputs and Pydantic models."""
     errors: list[str] = []

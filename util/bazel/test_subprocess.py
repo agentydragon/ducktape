@@ -1,10 +1,12 @@
 """Tests for util.bazel.subprocess module."""
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest_bazel
 
-from util.bazel.subprocess import _in_bazel_venv, python_env, run_python_module
+from util.bazel.subprocess import _in_bazel_venv, python_env
 
 
 def test_python_env_inherit_includes_path():
@@ -37,7 +39,7 @@ def test_python_env_sets_safe_path():
 
 
 def test_subprocess_does_not_import_from_cwd(tmp_path: Path):
-    """Subprocess launched via run_python_module cannot import from CWD.
+    """A Python module launched with python_env cannot import from CWD.
 
     Regression test: without PYTHONSAFEPATH, `python -m module` prepends ''
     (CWD) to sys.path, causing it to shadow installed packages with source
@@ -46,17 +48,17 @@ def test_subprocess_does_not_import_from_cwd(tmp_path: Path):
     """
     # Create a decoy module in a temp dir that would shadow a stdlib module
     (tmp_path / "json.py").write_text("raise RuntimeError('imported from CWD!')\n")
-    result = run_python_module("json.tool", "--help", capture_output=True, text=True, check=False, cwd=tmp_path)
+    result = subprocess.run(
+        [sys.executable, "-m", "json.tool", "--help"],
+        env=python_env(),
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
+    )
     # json.tool --help should succeed (exit 0) using the real stdlib json,
     # not the decoy. Without PYTHONSAFEPATH, it would import the decoy and crash.
     assert result.returncode == 0, f"Subprocess imported from CWD: {result.stderr}"
-
-
-def test_run_python_module_version():
-    result = run_python_module("platform", capture_output=True, text=True, check=False)
-    # python -m platform prints platform info
-    assert result.returncode == 0
-    assert result.stdout.strip()  # Should have output
 
 
 if __name__ == "__main__":

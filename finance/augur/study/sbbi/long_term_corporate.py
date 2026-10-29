@@ -48,8 +48,6 @@ from finance.evidence import sources
 
 logger = logging.getLogger(__name__)
 
-MONTHS_PER_YEAR = 12
-
 BOND_MATURITY_YEARS = 20.0
 """The monograph's own number for 1926-68, and what the 1969- fit independently recovers."""
 

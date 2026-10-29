@@ -68,12 +68,7 @@ from finance.augur.calibration.resolvers import (
     resolve_valuation_by_date,
     trajectories_from_bundle,
 )
-from finance.augur.model.exogenous import (
-    ExogenousSamplingRequest,
-    SampledExogenousBundle,
-    Sampler,
-    anchor_sampled_series_levels,
-)
+from finance.augur.model.exogenous import SampledExogenousBundle, anchor_sampled_series_levels
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle, PrivateEquityFloatChannel
 from finance.augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
 from finance.evidence.markets import Platform
@@ -785,23 +780,6 @@ def mark_fan(
         for month in range(horizon_months + 1)
     ]
     return MarkFan(issuer=issuer, channel=channel, percentiles=list(percentiles), months=months)
-
-
-def sample_private_equity_bundle(
-    model: Sampler, *, issuer: IssuerId, horizon_months: int, rollout_seeds: tuple[int, ...]
-) -> PrivateEquityBundle:
-    """Sample `model`'s private-equity bundle for one issuer over a horizon.
-
-    Factored out of `run_calibration` so a caller can reuse the same sampled bundle
-    for both the market scoring and a `mark_fan` (the bundle is the only thing both
-    need), instead of paying for two independent rollouts.
-    """
-    request = ExogenousSamplingRequest(
-        horizon_months=horizon_months,
-        rollout_seeds=rollout_seeds,
-        required_private_equity_issuers=frozenset({IssuerId(issuer)}),
-    )
-    return model.sample(request).private_equity
 
 
 def _unmodeled_row(market: ExactMarket, live: Market, target: str) -> SurfacedRow:

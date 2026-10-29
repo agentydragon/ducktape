@@ -18,7 +18,6 @@ from openai_utils.model import FunctionToolParam, ResponsesRequest, UserMessage
 from openai_utils.pydantic_strict_mode import (
     OpenAIStrictModeBaseModel,
     OpenAIStrictModeValidationError,
-    validate_model,
     validate_openai_strict_mode_schema,
 )
 from openai_utils.testing.strict_mode_models import (
@@ -134,26 +133,6 @@ def test_ref_with_description_rejected_without_inlining():
     schema = RawModel.model_json_schema()
     with pytest.raises(OpenAIStrictModeValidationError, match=r"\$ref"):
         validate_openai_strict_mode_schema(schema, "RawModel")
-
-
-def test_validate_arbitrary_model():
-    """validate_model() should work on arbitrary Pydantic models."""
-
-    # Valid model (not subclassing OpenAIStrictModeBaseModel)
-    class ValidArbitraryModel(BaseModel):
-        name: str
-        count: int = Field(ge=0, le=100)
-
-        model_config = ConfigDict(extra="forbid")
-
-    validate_model(ValidArbitraryModel)  # Should not raise
-
-    # Invalid model with Path
-    class InvalidArbitraryModel(BaseModel):
-        path: Path
-
-    with pytest.raises(OpenAIStrictModeValidationError, match="format 'path'"):
-        validate_model(InvalidArbitraryModel)
 
 
 def test_oneof_not_permitted():

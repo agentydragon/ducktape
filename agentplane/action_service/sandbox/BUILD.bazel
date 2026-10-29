@@ -11,10 +11,7 @@ py_library(
         "//agentplane:__subpackages__",
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
-    deps = [
-        "//agentplane:crd_group",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 go_library(

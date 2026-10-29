@@ -27,7 +27,6 @@ py_library(
         "//finance/augur/model:exogenous",
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
-        "//finance/augur/model:series_model",
         "@pypi//jaxtyping",
         "@pypi//numpy",
     ],

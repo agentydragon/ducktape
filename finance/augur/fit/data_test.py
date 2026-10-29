@@ -7,7 +7,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.fit import evidence_data
-from finance.augur.fit.data import load_evidence, load_fred_only_evidence
+from finance.augur.fit.data import load_evidence
 from finance.augur.model.conditioning import ObservationUnits
 from finance.augur.model.series import SP500_KEY, HomeValueKey, RentKey
 from finance.evidence import sources
@@ -32,7 +32,7 @@ def test_configured_evidence_source_errors_raise_by_default(
 
 
 def test_explicit_fred_only_evidence_is_synthesized_and_labeled(synthetic_evidence_dir: Path) -> None:
-    historical, evidence = load_fred_only_evidence()
+    historical, evidence = load_evidence(fred_only=True)
 
     # Both sides carry the SAME typed keys — no wire-id round trip between them. This used to
     # assert `tuple(f.wire_id for f in historical.series_names) == evidence.series_names`, which

@@ -4,7 +4,7 @@
 tuple from the public Yahoo-SPY, Zillow, and FRED source data (paths are
 constants in `evidence_data`). Source-data errors propagate by default.
 Callers that intentionally want lower-fidelity FRED-only synthesised evidence
-must opt in with `fred_only=True` or `load_fred_only_evidence(...)`.
+must opt in with `fred_only=True`.
 
 `load_historical(...)` is a thin wrapper for the metric harness, which
 only needs `HistoricalSeries`.
@@ -41,11 +41,6 @@ def load_evidence(*, fred_only: bool = False) -> tuple[HistoricalSeries, Exogeno
         return _evidence_fred_only()
     evidence = load_exogenous_evidence()
     return _historical_from_evidence(evidence), evidence
-
-
-def load_fred_only_evidence() -> tuple[HistoricalSeries, ExogenousEvidence]:
-    """Load explicitly selected FRED-only synthesized exogenous evidence."""
-    return load_evidence(fred_only=True)
 
 
 def load_historical(*, fred_only: bool = False) -> HistoricalSeries:

@@ -6,7 +6,7 @@ MCP-aware convenience methods.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from typing import Any
 
 import pytest
@@ -32,17 +32,8 @@ class MCPResponsesFactory(ResponsesFactory):
 class MCPDecoratorMock(DecoratorMock):
     """DecoratorMock with MCP-aware convenience methods.
 
-    Use this base class instead of DecoratorMock when your mock needs
-    call_roundtrip or mcp_tool_call.
+    Use this base class instead of DecoratorMock when your mock needs MCP tool calls.
     """
-
-    def call_roundtrip[U: BaseModel](
-        self, prefix: str, tool: str | Callable[..., Any], arguments: dict[str, Any] | BaseModel, output_type: type[U]
-    ) -> Generator[FunctionCallItem, ResponsesRequest, U]:
-        """Create tool call and yield roundtrip generator."""
-        tool_name = tool if isinstance(tool, str) else tool.__name__
-        call = self.mcp_tool_call(prefix, tool_name, arguments)
-        return tool_roundtrip(call, output_type)
 
     def mcp_tool_call(
         self, server: str, tool: str, arguments: dict[str, Any] | BaseModel, call_id: str | None = None

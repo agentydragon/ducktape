@@ -340,13 +340,3 @@ def resolve_augur_config_path() -> Path:
     if env := os.environ.get(AUGUR_CONFIG_PATH_ENV_VAR):
         return Path(env)
     return DEFAULT_AUGUR_CONFIG_PATH
-
-
-def dump_augur_config_yaml(config: Config) -> str:
-    """Serialize a Config to a stable YAML string for ConfigMap mounts.
-
-    Uses Pydantic's JSON-mode dump (so Path/Enum fields serialize cleanly) then
-    re-emits as YAML with sorted keys and block style for diff stability."""
-    return yaml.safe_dump(
-        config.model_dump(mode="json", exclude_computed_fields=True), sort_keys=True, default_flow_style=False
-    )

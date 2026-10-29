@@ -92,7 +92,7 @@ impl BindingName {
     }
 }
 
-/// A located member inside a module file. Returned by [`find_matches`]
+/// A located member inside a module file. Returned by [`resolve_unambiguous`]
 /// and is the unit `assign` / `rename` inspect or mutate.
 #[derive(Debug, Clone)]
 pub struct BindingMatch {
@@ -204,11 +204,6 @@ fn source_match_readable(binding: &SourceMatchBinding) -> Option<String> {
         SourceMatchBinding::Local(_) => None,
         SourceMatchBinding::Detailed(detail) => detail.name.clone().filter(|name| !name.is_empty()),
     }
-}
-
-/// Find spec bindings matching a selector-binding, template-local, or readable name.
-pub fn find_matches(modules_root: &Path, sym: &str) -> Result<Vec<BindingMatch>> {
-    Ok(matches_in_docs(&load_module_docs(modules_root)?, sym))
 }
 
 pub(crate) fn matches_in_docs(docs: &ModuleDocs, sym: &str) -> Vec<BindingMatch> {
@@ -775,7 +770,7 @@ fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, 
 ///     `comment:` or `note:`, no remaining `source_matches:`, `annotations:`, or
 ///     `anonymous_statements:`.
 ///   * [`Gate::Run`] runs the unified realizability gate
-///     ([`crate::edit_gate::gate_post_edit_assignment`]) against the
+///     ([`Gate::check`]) against the
 ///     in-memory post-batch spec; cycle or atom-split rejections
 ///     bail before any file is written. [`Gate::Skip`] (`--no-verify`)
 ///     skips validation. The CLI dispatcher requires `--graph` unless

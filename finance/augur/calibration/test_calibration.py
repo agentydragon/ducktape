@@ -20,7 +20,6 @@ from finance.augur.calibration.calibration import (
     _monotone_probabilities,
     build_anchored_level_paths,
     run_calibration,
-    sample_private_equity_bundle,
     wilson_interval,
 )
 from finance.augur.calibration.catalog import (
@@ -47,6 +46,7 @@ from finance.augur.calibration.platform import Direction, Market, PriceClient
 from finance.augur.calibration.quote import BookQuote, PoolQuote
 from finance.augur.calibration.testing import KalshiRungQuote, mock_price_clients
 from finance.augur.model.exogenous import ExogenousSamplingRequest
+from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import SP500_SYMBOL, InflationKey, IssuerId, PrivateEquityEventKindCode, SecurityKey
 from finance.augur.model.testing import ConstantFrameModel, PrivateEquityChannels
 from finance.evidence.markets import Platform
@@ -72,6 +72,14 @@ def model() -> ConstantFrameModel:
             IssuerId(_ISSUER): PrivateEquityChannels(mark_usd_per_unit=50.0, event_kind_code=_event_kind_codes)
         }
     )
+
+
+def _sample_private_equity(model: ConstantFrameModel, rollout_seeds: tuple[int, ...]) -> PrivateEquityBundle:
+    return model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=_HORIZON, rollout_seeds=rollout_seeds, required_private_equity_issuers=frozenset({_ISSUER})
+        )
+    ).private_equity
 
 
 @pytest.fixture
@@ -105,7 +113,7 @@ def price_clients() -> dict[Platform, PriceClient]:
 
 async def _run(model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]):
     seeds = tuple(range(4))
-    bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
+    bundle = _sample_private_equity(model, seeds)
     return await run_calibration(
         catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=price_clients, bundle=bundle
     )
@@ -503,7 +511,7 @@ async def test_date_ladder_family_derives_event_timing_distribution(model: Const
         ],
     )
     seeds = tuple(range(4))
-    bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
+    bundle = _sample_private_equity(model, seeds)
     clients = mock_price_clients({Platform.KALSHI: {"IPO-2026": 0.30, "IPO-2031": 0.70}})
     result = await run_calibration(
         catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=clients, bundle=bundle
@@ -629,7 +637,7 @@ async def test_multi_platform_dispatches_to_correct_client(model: ConstantFrameM
     )
     clients = mock_price_clients({Platform.MANIFOLD: {"M1": 0.75}, Platform.KALSHI: {"KXIPOOPENAI-26SEP01": 0.50}})
     seeds = tuple(range(4))
-    bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
+    bundle = _sample_private_equity(model, seeds)
     result = await run_calibration(
         catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=clients, bundle=bundle
     )

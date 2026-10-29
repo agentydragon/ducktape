@@ -169,16 +169,6 @@ pub struct BindingScopeError {
     actual: ChunkId,
 }
 
-impl BindingScopeError {
-    pub fn expected_chunk(&self) -> ChunkId {
-        self.expected
-    }
-
-    pub fn actual_chunk(&self) -> ChunkId {
-        self.actual
-    }
-}
-
 impl std::fmt::Display for BindingScopeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(

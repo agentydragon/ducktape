@@ -8,8 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentplane.egress.platform_routes import PlatformRoute
 
 CONTAINER_NAME = "egress-sidecar"
-REFUSED_HEADER = "x-agentplane-egress-sidecar"
-PROJECTED_TOKEN_HEADER = "X-Agentplane-Workload-Token"
 READINESS_PATH = "/readyz"
 READINESS_HOST = "0.0.0.0"
 READINESS_PORT = 3129

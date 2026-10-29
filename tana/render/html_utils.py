@@ -18,8 +18,6 @@ class HTMLToMarkdownParser(HTMLParser):
         super().__init__()
         self.output = StringIO()
         self.tag_stack = []
-        # When starting an <em> immediately after **, suppress a single leading space in next data
-        self._suppress_next_leading_space = False
 
     def handle_starttag(self, tag, attrs):
         self.tag_stack.append(tag)
@@ -31,9 +29,6 @@ class HTMLToMarkdownParser(HTMLParser):
         if tag in ("b", "strong"):
             self.output.write("**")
         elif tag in ("i", "em"):
-            # If italic starts right after bold, drop a single leading space from the next data chunk
-            if prev.endswith("**"):
-                self._suppress_next_leading_space = True
             self.output.write("_")
         elif tag == "u":
             self.output.write("__")
@@ -65,7 +60,6 @@ class HTMLToMarkdownParser(HTMLParser):
         # drop that single space to avoid sequences like "** _italic_**".
         if data.startswith(" ") and self.output.getvalue().endswith(("**", "_", "__", "<mark>", "<strike>", "<code>")):
             data = data[1:]
-        self._suppress_next_leading_space = False
         self.output.write(data)
 
     def get_markdown(self) -> str:

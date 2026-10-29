@@ -34,7 +34,6 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/kubevirt/cdi"
 _FILESYSTEM = StorageProfileSpecClaimPropertySetsVolumeMode.FILESYSTEM
-_BLOCK = StorageProfileSpecClaimPropertySetsVolumeMode.BLOCK
 # storage class -> (clone strategy, [(access mode, volume mode)])
 _STORAGE_PROFILES = {
     "piraeus-hdd-local": ("copy", [("ReadWriteOnce", _FILESYSTEM)]),

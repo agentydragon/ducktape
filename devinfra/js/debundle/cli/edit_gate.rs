@@ -17,10 +17,9 @@
 //! Both checks share the same `PostEditSpec` view: a list of surviving
 //! module paths, each with the binding names and anonymous source unit ids
 //! it declares. Each verb projects its planned documents or deletions into a
-//! `PostEditSpec` and then calls
-//! `gate_post_edit_assignment` which is the single entry point
-//! responsible for verdict + diagnostic rendering. The function bails
-//! with a [`GateRejection`] error carrying the same
+//! `PostEditSpec`, then uses [`Gate::check`], [`Gate::check_expected`], or
+//! [`gate_post_edit_assignment_with_expected_source_unit_modules`]. These share
+//! the gate path that returns a [`GateRejection`] error carrying the same
 //! `render_cycle_summary` / `render_atomic_group_conflict_summary`
 //! text the materializer emits when its own gate rejects, so authors
 //! see one consistent diagnostic regardless of whether the rejection
@@ -236,7 +235,7 @@ pub enum GateRejectionReport {
     },
 }
 
-/// Error returned by [`gate_post_edit_assignment`] on rejection. The
+/// Error returned when a post-edit assignment is rejected. The
 /// `Display` text is the terse one-line verdict (the blame report has
 /// already gone to stderr); `report` is the structured payload CLI
 /// dispatchers serialize to stdout under a JSON format.
@@ -807,35 +806,6 @@ pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
         return Ok(ModuleClaims::default());
     }
     read_module_claims(path).with_context(|| format!("reading module {}", path.display()))
-}
-
-/// Reconstruct the `DependencyGraph` from `dependency_graph_path`, build the
-/// `ModuleAssignment` implied by `post_spec`, and run BOTH realizability
-/// gates: the cross-module init-order check (cycles) AND the
-/// atom-split check (every `AtomicGroup`'s members must co-locate).
-/// Returns `Ok(())` when both verdicts are clean. Prints the
-/// `render_cycle_summary` / `render_atomic_group_conflict_summary`
-/// blame report to stderr and returns an `anyhow::Error` when either
-/// rejects, so the CLI exit code is non-zero and the caller bails
-/// before writing.
-pub fn gate_post_edit_assignment(
-    dependency_graph_path: &Path,
-    modules_root: &Path,
-    source_root: Option<&Path>,
-    post_spec: &PostEditSpec,
-) -> Result<()> {
-    gate_post_edit_assignment_with_expected(
-        dependency_graph_path,
-        modules_root,
-        EditSourceLookup {
-            root: source_root,
-            verified: None,
-        },
-        post_spec,
-        &[],
-        None,
-        None,
-    )
 }
 
 /// Run the normal gate and prove the entire resolved post-edit source-unit assignment

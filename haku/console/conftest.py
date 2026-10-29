@@ -158,17 +158,6 @@ async def _resolve_operator_identity(app: Any, external_user_key: str) -> Resolv
     )
 
 
-async def resolve_operator_identity(
-    sessions: async_sessionmaker[AsyncSession], *, issuer: str, subject: str
-) -> ResolvedOperatorIdentity:
-    """Resolve a test OIDC identity using the caller's async sessionmaker."""
-    store = PostgresOperatorIdentityStore(
-        sessions,
-        OperatorIdentityTrust(trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({issuer})),
-    )
-    return await store.resolve_verified_identity(VerifiedExternalIdentity(issuer=issuer, subject=subject))
-
-
 @pytest.fixture(scope="session")
 def postgres_image() -> OciImage:
     """Migrations create `vector` columns, so use the same pgvector capability as production."""

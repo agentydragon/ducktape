@@ -192,9 +192,6 @@ class EZShareClient:
             repeater=data.get("repeater") == "1",
         )
 
-    def reboot(self) -> None:
-        self._get_bytes("/pdclient.cgi?command=reboot")
-
     def login(self, password: str) -> bool:
         data = self._get_bytes(f"/pdclient.cgi?command=Login&password={urllib.parse.quote(password)}")
         return b"<clientLogin>1</clientLogin>" in data
