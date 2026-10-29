@@ -35,9 +35,9 @@ use swc_ecma_ast::{Id, ModuleItem};
 use crate::SourceLocation;
 use crate::analysis_inputs::{
     CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments, DeferredRecordMember,
-    NamespaceWrapperSummary, NativeInputKind, NativeIntegrity, ProofDependencies,
-    ResolvedBindingValueInput, ResolvedNativeOperationInput, ReturnedRecordSummary,
-    SelectedBindingValueInput, SelectedNativeOperationInput,
+    DescriptorCopyFactorySummary, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
+    ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
+    ReturnedRecordSummary, SelectedBindingValueInput, SelectedNativeOperationInput,
 };
 use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, native_set_allocation_roots,
@@ -556,6 +556,10 @@ fn solve_callable_import_projections(
 pub fn resolve_imported_callable_summaries(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
+    descriptor_copy_asserted: &BTreeMap<
+        ModuleKey,
+        BTreeMap<String, Vec<spec::DescriptorCopyFactorySignature>>,
+    >,
     selected_value_inputs: &BTreeMap<ModuleKey, Vec<SelectedBindingValueInput>>,
     selected_native_operation_inputs: &BTreeMap<ModuleKey, Vec<SelectedNativeOperationInput>>,
     explicit_binding_destinations: &BTreeMap<ModuleKey, HashMap<Id, usize>>,
@@ -832,20 +836,110 @@ pub fn resolve_imported_callable_summaries(
     let native_integrity = crate::facts::sync_effects::execution_index::resolve_native_integrity(
         prepared.values().map(|facts| facts.native_writes()),
     );
+    for (module, exports) in descriptor_copy_asserted {
+        for (export, signatures) in exports {
+            if !required.contains(&CallableExportKey {
+                module: module.clone(),
+                export: export.clone(),
+            }) || !modules
+                .get(module)
+                .is_some_and(|facts| facts.exports.contains_key(export))
+            {
+                continue;
+            }
+            if signatures.len() != 1 {
+                bail!(
+                    "descriptor_copy_factory_exports {module}:{export} requires exactly one audited signature"
+                );
+            }
+            for signature in signatures {
+                if signature.argument_count != 1
+                    || signature.object_argument != 0
+                    || signature.eager_own_data_keys.is_empty()
+                    || signature.assigned_data_keys.is_empty()
+                    || signature
+                        .eager_own_data_keys
+                        .iter()
+                        .any(|key| key == "__proto__")
+                    || signature
+                        .assigned_data_keys
+                        .iter()
+                        .any(|key| key == "__proto__")
+                {
+                    bail!(
+                        "descriptor_copy_factory_exports {module}:{export} requires one object argument and nonempty safe key sets"
+                    );
+                }
+                if let Some((write_module, owner)) =
+                    prepared.iter().find_map(|(write_module, facts)| {
+                        facts
+                            .known_descriptor_copy_mutation_owner(&signature.assigned_data_keys)
+                            .map(|owner| (write_module, owner))
+                    })
+                {
+                    bail!(
+                        "descriptor_copy_factory_exports {module}:{export} is contradicted by required Object slot/prototype write in {write_module}, source unit {}",
+                        owner.0
+                    );
+                }
+            }
+        }
+    }
     let inferred: BTreeMap<_, _> = prepared
         .into_iter()
         .map(|(module, prepared)| {
             let views = top_level_item_views(modules[module].body);
+            let required_stable_providers = descriptor_copy_asserted
+                .get(module)
+                .into_iter()
+                .flat_map(|exports| exports.keys())
+                .filter_map(|export| modules[module].exports.get(export.as_str()))
+                .cloned()
+                .collect();
             (
                 module,
                 crate::facts::sync_effects::execution_index::infer_callable_capabilities(
                     &views,
                     prepared,
                     &native_integrity,
+                    &required_stable_providers,
                 ),
             )
         })
         .collect();
+    for (module, exports) in descriptor_copy_asserted {
+        for (export, signatures) in exports {
+            let key = CallableExportKey {
+                module: module.clone(),
+                export: export.clone(),
+            };
+            if !required.contains(&key) {
+                continue;
+            }
+            let Some(local) = modules
+                .get(module)
+                .and_then(|facts| facts.exports.get(export))
+            else {
+                continue;
+            };
+            if !inferred[module].stable_providers.contains(local) {
+                bail!(
+                    "descriptor_copy_factory_exports {module}:{export} requires a stable, unrebound direct function export"
+                );
+            }
+            export_summaries.entry(key).or_default().add(
+                CallableSummary::descriptor_copy_factory(DescriptorCopyFactorySummary {
+                    defining_module: module.clone(),
+                    export: export.clone(),
+                    author_location: format!(
+                        "chunk_export_purity.{module}.descriptor_copy_factory_exports.{export}"
+                    ),
+                    signatures: signatures.clone(),
+                }),
+                ProofDependencies::default(),
+            );
+        }
+    }
     for (module, facts) in modules {
         let Some(capabilities) = inferred.get(module) else {
             continue;
@@ -1320,6 +1414,7 @@ mod tests {
                     crate::reports::schema::InferenceRule::ReturnedRecord,
                 ]),
                 value_input_refs: BTreeSet::from([reported_dependencies]),
+                descriptor_copy_author_refs: Default::default(),
             },
         });
         let trusted_dependencies = value_input_dependencies("provider-values.js", 0);
@@ -1645,6 +1740,7 @@ mod tests {
         let resolved = resolve_imported_callable_summaries(
             &modules,
             &asserted,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),

@@ -105,6 +105,16 @@ pub struct CallbackObjectArguments {
     pub object_arguments: BTreeSet<usize>,
 }
 
+/// Audited provider descriptor-copy behavior. The importer must separately
+/// prove an exact fresh literal at a single-execution call site.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+pub struct DescriptorCopyFactorySummary {
+    pub defining_module: String,
+    pub export: String,
+    pub author_location: String,
+    pub signatures: Vec<spec::DescriptorCopyFactorySignature>,
+}
+
 /// Capabilities of one bare imported callable, keyed by the importer's local
 /// binding name. More than one proof can support the same capability.
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize)]
@@ -116,6 +126,8 @@ pub struct CallableSummary {
     pub namespace_wrapper: Option<NamespaceWrapperSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub callback_object_arguments: Option<CallbackObjectArguments>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub descriptor_copy_factory: Option<DescriptorCopyFactorySummary>,
 }
 
 impl CallableSummary {
@@ -125,6 +137,7 @@ impl CallableSummary {
             returned_record: None,
             namespace_wrapper: None,
             callback_object_arguments: None,
+            descriptor_copy_factory: None,
         }
     }
 
@@ -142,6 +155,13 @@ impl CallableSummary {
         }
     }
 
+    pub fn descriptor_copy_factory(summary: DescriptorCopyFactorySummary) -> Self {
+        Self {
+            descriptor_copy_factory: Some(summary),
+            ..Self::default()
+        }
+    }
+
     pub fn supports_callback_factory(&self) -> bool {
         !self.callback_factory_evidence.is_empty()
     }
@@ -151,6 +171,14 @@ impl CallableSummary {
     }
 
     pub fn merge(&mut self, other: Self) {
+        if let Some(factory) = other.descriptor_copy_factory {
+            assert!(
+                self.descriptor_copy_factory
+                    .as_ref()
+                    .is_none_or(|old| old == &factory)
+            );
+            self.descriptor_copy_factory = Some(factory);
+        }
         if let Some(wrapper) = other.namespace_wrapper {
             assert!(
                 self.namespace_wrapper
@@ -231,6 +259,14 @@ pub struct ValueInputRef {
     pub input_index: usize,
 }
 
+/// Exact authored provider contract consumed by a semantic certificate.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct DescriptorCopyAuthorRef {
+    pub defining_module: String,
+    pub export: String,
+    pub spec_location: String,
+}
+
 /// Additional captured-value assertions required by an inferred proof.
 /// Structural source evidence stays on the proof's existing source identity.
 /// Empty dependencies add no captured-value premise; the analysis's baseline
@@ -241,17 +277,23 @@ pub struct ProofDependencies {
     pub value_inputs: BTreeSet<ValueInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub native_operation_inputs: BTreeSet<NativeOperationInputRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub descriptor_copy_authors: BTreeSet<DescriptorCopyAuthorRef>,
 }
 
 impl ProofDependencies {
     pub fn is_empty(&self) -> bool {
-        self.value_inputs.is_empty() && self.native_operation_inputs.is_empty()
+        self.value_inputs.is_empty()
+            && self.native_operation_inputs.is_empty()
+            && self.descriptor_copy_authors.is_empty()
     }
 
     pub fn extend(&mut self, other: &Self) {
         self.value_inputs.extend(other.value_inputs.iter().cloned());
         self.native_operation_inputs
             .extend(other.native_operation_inputs.iter().cloned());
+        self.descriptor_copy_authors
+            .extend(other.descriptor_copy_authors.iter().cloned());
     }
 }
 

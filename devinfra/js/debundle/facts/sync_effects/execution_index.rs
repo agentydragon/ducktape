@@ -29,7 +29,8 @@ use crate::facts::item_views::{TopLevelItemView, collect_declared_names, var_dec
 use crate::facts::lazy_boundary::visit_eager_member_parts;
 use crate::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
 use crate::facts::semantic_inference::{
-    NativeBindingContext, SemanticFact, SemanticFacts, SemanticKey, SemanticRules,
+    DescriptorCopyCallCandidate as SemanticDescriptorCopyCallCandidate, NativeBindingContext,
+    SemanticFact, SemanticFacts, SemanticKey, SemanticRules,
 };
 use crate::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness, StatementFacts,
@@ -954,6 +955,13 @@ struct IndexedRetainedCallbackCall {
     call: RetainedCallbackCall,
     owner: SourceUnitOrdinal,
     caller: Option<u32>,
+}
+
+#[derive(Debug, Clone)]
+struct DescriptorCopyCallCandidate {
+    source_object: u32,
+    signature: spec::DescriptorCopyFactorySignature,
+    provider_binding: Id,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3587,6 +3595,8 @@ struct ExecutionIndex {
     safe_class_target: Option<Id>,
     plain_data_objects: BTreeSet<u32>,
     own_descriptor_shapes: BTreeMap<u32, OwnPropertyShape>,
+    descriptor_copy_factories: BTreeMap<Id, crate::analysis_inputs::DescriptorCopyFactorySummary>,
+    descriptor_copy_calls: BTreeMap<CallSite, DescriptorCopyCallCandidate>,
     null_proto_data_objects: BTreeSet<u32>,
     exact_object_spread_copies: BTreeSet<u32>,
     map_entry_arrays: BTreeSet<u32>,
@@ -3756,6 +3766,8 @@ impl Default for ExecutionIndex {
             safe_class_target: None,
             plain_data_objects: BTreeSet::new(),
             own_descriptor_shapes: BTreeMap::new(),
+            descriptor_copy_factories: BTreeMap::new(),
+            descriptor_copy_calls: BTreeMap::new(),
             null_proto_data_objects: BTreeSet::new(),
             exact_object_spread_copies: BTreeSet::new(),
             map_entry_arrays: BTreeSet::new(),
@@ -3994,6 +4006,40 @@ impl ExecutionIndex {
                 global_object_names: self.global_object_names.clone(),
             },
             native_call_identity_candidates,
+            descriptor_copy_providers: self.descriptor_copy_factories.clone(),
+            descriptor_copy_calls: self
+                .descriptor_copy_calls
+                .iter()
+                .filter_map(|(site, candidate)| {
+                    let shape = self.own_descriptor_shapes.get(&candidate.source_object)?;
+                    let data_keys = shape
+                        .properties
+                        .iter()
+                        .filter_map(|(key, descriptor)| {
+                            matches!(descriptor, OwnPropertyDescriptorSyntax::Data)
+                                .then_some(key.clone())
+                        })
+                        .collect();
+                    let accessor_keys = shape
+                        .properties
+                        .iter()
+                        .filter_map(|(key, descriptor)| {
+                            matches!(descriptor, OwnPropertyDescriptorSyntax::Accessor { .. })
+                                .then_some(key.clone())
+                        })
+                        .collect();
+                    Some((
+                        site.source_span().lo.0,
+                        SemanticDescriptorCopyCallCandidate {
+                            source_object: candidate.source_object,
+                            provider_binding: candidate.provider_binding.clone(),
+                            signature: candidate.signature.clone(),
+                            data_keys,
+                            accessor_keys,
+                        },
+                    ))
+                })
+                .collect(),
             callables,
             ..self.completed_native_rules()
         }))
@@ -4816,6 +4862,41 @@ impl ExecutionIndex {
         })
     }
 
+    fn known_descriptor_copy_mutation(
+        &self,
+        assigned_keys: &BTreeSet<String>,
+    ) -> Option<SourceUnitOrdinal> {
+        let slots = ["Object"]
+            .into_iter()
+            .map(|key| NativeWriteSlot {
+                receiver: NativeReceiverPath::GlobalObject,
+                key: NativePropertyKey::String(key.to_owned()),
+            })
+            .chain(
+                [
+                    "getOwnPropertyDescriptors",
+                    "defineProperties",
+                    "assign",
+                    "prototype",
+                ]
+                .into_iter()
+                .map(|key| NativeWriteSlot {
+                    receiver: NativeReceiverPath::Constructor(IntrinsicRoot::Object),
+                    key: NativePropertyKey::String(key.to_owned()),
+                }),
+            )
+            .chain(assigned_keys.iter().map(|key| NativeWriteSlot {
+                receiver: NativeReceiverPath::Prototype(IntrinsicRoot::Object),
+                key: NativePropertyKey::String(key.clone()),
+            }));
+        slots
+            .into_iter()
+            .find_map(|slot| match self.source_slot_overlap(&slot) {
+                NativeSlotOverlap::Known(owner) => Some(owner),
+                NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
+            })
+    }
+
     fn direct_freeze_return_call(&self, binding: &Id, selected_span: Span) -> Option<Call> {
         if !self.direct_top_level_functions.contains(binding) {
             return None;
@@ -5191,6 +5272,15 @@ impl ExecutionIndex {
                         index.callback_factory_imports.insert(local.to_id());
                         index
                             .callback_factory_summaries
+                            .insert(local.to_id(), summary.clone());
+                    }
+                    if let Some(summary) = hints
+                        .imported_callables
+                        .get(local.sym.as_ref())
+                        .and_then(|summary| summary.descriptor_copy_factory.as_ref())
+                    {
+                        index
+                            .descriptor_copy_factories
                             .insert(local.to_id(), summary.clone());
                     }
                     if hints
@@ -8019,6 +8109,32 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
+        if self.direct_top_level_var_declaration
+            && self.current.is_none()
+            && self.conditional_depth == 0
+            && !self.past_await
+            && matches!(declarator.name, Pat::Ident(_))
+            && let Some(Expr::Call(call)) = declarator.init.as_deref().map(Expr::unwrap_parens)
+            && call.args.len() == 1
+            && call.args.iter().all(|arg| arg.spread.is_none())
+            && let Callee::Expr(callee) = &call.callee
+            && let Expr::Ident(imported) = callee.unwrap_parens()
+            && let Expr::Object(object) = call.args[0].expr.unwrap_parens()
+            && let Some(summary) = self.descriptor_copy_factories.get(&imported.to_id())
+            && let Some(signature) = summary
+                .signatures
+                .iter()
+                .find(|signature| signature.argument_count == 1 && signature.object_argument == 0)
+        {
+            self.descriptor_copy_calls.insert(
+                call.span.into(),
+                DescriptorCopyCallCandidate {
+                    source_object: object.span.lo.0,
+                    signature: signature.clone(),
+                    provider_binding: imported.to_id(),
+                },
+            );
+        }
         let initializer = declarator
             .init
             .as_ref()
@@ -9182,6 +9298,7 @@ pub(crate) struct InferredCallbackFactory {
 
 pub(crate) struct InferredCallableCapabilities {
     pub map_integrity: bool,
+    pub stable_providers: BTreeSet<String>,
     pub callback_factories: BTreeMap<String, InferredCallbackFactory>,
     pub returned_records: BTreeMap<String, InferredReturnedRecord>,
     pub namespace_wrappers: BTreeMap<String, InferredNamespaceWrapper>,
@@ -9218,6 +9335,13 @@ impl PreparedCallableCapabilities {
 
     pub(crate) fn known_object_freeze_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
         self.index.known_object_freeze_mutation()
+    }
+
+    pub(crate) fn known_descriptor_copy_mutation_owner(
+        &self,
+        assigned_keys: &BTreeSet<String>,
+    ) -> Option<SourceUnitOrdinal> {
+        self.index.known_descriptor_copy_mutation(assigned_keys)
     }
 
     pub(crate) fn known_set_protocol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
@@ -9412,6 +9536,7 @@ pub(crate) fn infer_callable_capabilities(
     body: &[TopLevelItemView<'_>],
     prepared: PreparedCallableCapabilities,
     integrity: &NativeIntegrity,
+    required_stable_providers: &BTreeSet<String>,
 ) -> InferredCallableCapabilities {
     let PreparedCallableCapabilities {
         mut index,
@@ -9422,6 +9547,7 @@ pub(crate) fn infer_callable_capabilities(
     index.native_integrity_value_input_refs = integrity.consumed_value_inputs.clone();
     let mut result = InferredCallableCapabilities {
         map_integrity: false,
+        stable_providers: BTreeSet::new(),
         callback_factories: BTreeMap::new(),
         returned_records: BTreeMap::new(),
         namespace_wrappers: BTreeMap::new(),
@@ -9430,6 +9556,8 @@ pub(crate) fn infer_callable_capabilities(
         exported_locals.contains(id.0.as_ref()) && returned_callback_factory(&index, key)
     };
     let has_candidate = index.hoisted_bindings.iter().any(|(id, key)| {
+        required_stable_providers.contains(id.0.as_ref())
+            ||
         callback_candidate(id, *key)
             || (exported_locals.contains(id.0.as_ref())
                 && (index.returned_record_candidates.contains_key(key)
@@ -9448,6 +9576,22 @@ pub(crate) fn infer_callable_capabilities(
             SetIterableShapes::default(),
             callables,
         ));
+        result.stable_providers = index
+            .hoisted_bindings
+            .iter()
+            .filter(|(binding, _)| required_stable_providers.contains(binding.0.as_ref()))
+            .filter(|(binding, function)| {
+                index.semantic_facts.as_ref().is_some_and(|facts| {
+                    facts
+                        .judgment(&SemanticKey::StableProvider {
+                            binding: (*binding).clone(),
+                            function: **function,
+                        })
+                        .is_some()
+                })
+            })
+            .map(|(binding, _)| binding.0.to_string())
+            .collect();
         result.callback_factories = infer_returned_callback_factories(
             &index,
             &exported_locals,

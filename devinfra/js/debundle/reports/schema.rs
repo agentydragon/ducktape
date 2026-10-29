@@ -481,6 +481,7 @@ pub enum InferenceRule {
     LocalClassConstruction,
     PrimitiveSetIteration,
     StableFunction,
+    StableProvider,
     CallbackFactory,
     ReturnedRecord,
     NamespaceWrapper,
@@ -489,6 +490,8 @@ pub enum InferenceRule {
     OwnPropertyPrefixState,
     OwnPropertyNamesProjection,
     OwnPropertyDescriptorProjection,
+    DescriptorCopyProvider,
+    DescriptorCopyFactory,
 }
 
 /// A purpose-specific certificate actually used by synchronous execution.
@@ -498,6 +501,8 @@ pub struct InferenceUse {
     pub conclusion: InferenceRule,
     pub derivation_rules: BTreeSet<InferenceRule>,
     pub value_input_refs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub descriptor_copy_author_refs: BTreeSet<crate::analysis_inputs::DescriptorCopyAuthorRef>,
 }
 
 /// Completeness of the existing synchronous-effect inference, independent of purity.

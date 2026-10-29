@@ -16,8 +16,17 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone)]
 pub(super) enum OwnPropertyRequest {
     Ordinary,
-    Names { native_call_identity: SemanticKey },
-    Descriptors { native_call_identity: SemanticKey },
+    /// Provider identity and exact Object/prototype slots are an independent
+    /// author premise checked against the whole-program raw write census.
+    AuditedDescriptorCopy {
+        semantic_call: SemanticKey,
+    },
+    Names {
+        native_call_identity: SemanticKey,
+    },
+    Descriptors {
+        native_call_identity: SemanticKey,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +70,7 @@ impl OwnPropertyProof {
             conclusion: self.conclusion,
             derivation_rules: self.derivation_rules.clone(),
             value_input_refs: self.dependencies.value_inputs.clone(),
+            descriptor_copy_author_refs: self.dependencies.descriptor_copy_authors.clone(),
         }
     }
 }
@@ -219,6 +229,21 @@ pub(super) fn infer_own_property_projection(
                 OwnPropertyProjection::Names(OwnPropertyNamesProjection {
                     names: ordered_names,
                 }),
+            )
+        }
+        OwnPropertyRequest::AuditedDescriptorCopy { semantic_call } => {
+            require_native_certificate(
+                semantic_facts,
+                &semantic_call,
+                &mut dependencies,
+                &mut derivation_rules,
+            )?;
+            let projection =
+                descriptor_projection(source_object, &ordered_names, shape, prefix_properties)?;
+            derivation_rules.insert(InferenceRule::DescriptorCopyFactory);
+            (
+                InferenceRule::DescriptorCopyFactory,
+                OwnPropertyProjection::Descriptors(projection),
             )
         }
         OwnPropertyRequest::Descriptors {

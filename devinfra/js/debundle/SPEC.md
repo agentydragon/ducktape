@@ -1254,6 +1254,49 @@ Calls with a named callback, a retained factory result, spread arguments, or
 `new` use conservative callback timing. This contract is independent of purity
 and does not grant the broader `callback_factory_exports` composition rule.
 
+### Descriptor-copy returned wrappers
+
+`descriptor_copy_factory_exports` is a separate author assertion for a direct
+imported factory whose audited provider copies one input object's own property
+descriptors into a fresh ordinary returned object and then assigns named data
+methods. It does not widen `callback_factory_exports` or imply purity:
+
+```yaml
+chunk_export_purity:
+  provider:
+    descriptor_copy_factory_exports:
+      wrap:
+        - argument_count: 1
+          object_argument: 0
+          eager_own_data_keys: [create]
+          assigned_data_keys: [create, call]
+```
+
+The sole signature must select one fresh, static-key ordinary object literal
+passed to an exact direct imported call in a single-execution top-level
+initializer. Every eagerly read key must be own writable data. Copied getters
+are deferred until a later member read; accessors colliding with an assigned
+key are rejected because assignment could invoke a setter or throw. Computed,
+spread, duplicate, `__proto__`, proxy, optional, aliased, nested, or repeated
+call shapes are outside this contract. Argument expressions still run normally.
+The defining export must resolve to a stable, unrebound hoisted function in the
+canonical callable facts; known reassignment and dynamic scope reject it.
+
+The author audits the provider and its helpers: no synchronous invocation of
+input/caller/host callbacks, no publication except through the returned graph,
+no other importer-state access, and a fresh ordinary result that retains the
+input graph. The provider's eagerly read keys and assigned keys must be listed
+completely. The original `Object.getOwnPropertyDescriptors`,
+`Object.defineProperties`, and `Object.assign` slots and the ordinary target
+prototype/setter behavior must hold throughout admitted executions. The shared
+source census rejects known writes to those exact slots or assigned prototype
+keys; unresolved reflection is an explicit author lifetime obligation. Provider
+defaults absent from the modeled copied/assigned keys remain opaque. A later
+unknown read, call, mutation, or escape conservatively exposes retained getter
+and method callbacks. The call keeps all ordinary effects and possible throws.
+The consumed inference use reports provider, call-site shape, and own-property
+projection rules; its typed proof dependencies identify the author contract.
+
 ### Retaining existing or multiple callbacks
 
 `retained_callback_factory_exports` and `retained_callback_factory_members`

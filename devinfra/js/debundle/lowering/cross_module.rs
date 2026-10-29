@@ -556,6 +556,15 @@ pub(super) fn collect_cross_module_imported_purities(
     let callable_summaries = resolve_imported_callable_summaries(
         &modules,
         &asserted_callback_factories,
+        &chunk_export_purity
+            .iter()
+            .map(|(chunk, assertion)| {
+                (
+                    chunk.clone(),
+                    assertion.descriptor_copy_factory_exports.clone(),
+                )
+            })
+            .collect(),
         &value_inputs,
         &native_operation_inputs,
         explicit_binding_destinations,

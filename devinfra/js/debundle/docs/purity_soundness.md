@@ -993,6 +993,17 @@ spreads, arrays, and other expression forms remain conservative.
 Factory calls remain effectful for ordering unless a separate purity contract
 applies. See <design.md> for how this contract scopes callback-flow analysis.
 
+The separate `descriptor_copy_factory_exports` contract covers only a
+single-execution direct imported call with a fresh static object literal. Its
+author premise supplies the provider's descriptor-copy/return-only behavior
+and the lifetime identity of the exact `Object` method slots and ordinary
+target prototype. The shared raw write census rejects known contradictory
+slots; opaque writes remain an author obligation, not a whole-`Object` native
+integrity fact. The checked eager-read and assigned-key syntax prevents input
+getters and copied setters from running during registration. Copied getters
+activate on later reads, and opaque use of the result promotes its retained
+graph. The provider call itself remains ordinarily effectful and throwing.
+
 The separate `retained_callback_factory_exports` and
 `retained_callback_factory_members` contracts additionally admit stable named
 local callbacks and explicitly listed callback positions at exact arities.

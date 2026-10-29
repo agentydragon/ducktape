@@ -251,6 +251,11 @@ pub struct ChunkExportPurity {
     /// multiple retained callback arguments. See `RetainedCallbackSignature`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub retained_callback_factory_exports: BTreeMap<String, Vec<RetainedCallbackSignature>>,
+    /// Audited direct imports which copy one fresh literal's own descriptors
+    /// into a fresh returned wrapper, then install the listed data methods.
+    /// This is a return-only callback timing assertion, never purity.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub descriptor_copy_factory_exports: BTreeMap<String, Vec<DescriptorCopyFactorySignature>>,
     /// The same stronger contract on direct static namespace member calls.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub retained_callback_factory_members:
@@ -286,6 +291,17 @@ pub struct ChunkExportPurity {
     /// or replace audited factories except through supplied caller inputs.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub namespace_independent_members: BTreeMap<String, BTreeSet<String>>,
+}
+
+/// Exact provider operations that can otherwise observe an input accessor at
+/// registration or run a setter while installing returned methods.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DescriptorCopyFactorySignature {
+    pub argument_count: usize,
+    pub object_argument: usize,
+    pub eager_own_data_keys: BTreeSet<String>,
+    pub assigned_data_keys: BTreeSet<String>,
 }
 
 /// One exact callback-bearing call shape. Non-callback positions must be

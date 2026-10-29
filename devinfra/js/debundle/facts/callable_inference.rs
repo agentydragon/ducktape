@@ -54,6 +54,10 @@ impl CallableInferenceInputs {
                     binding: binding.clone(),
                     function,
                 });
+                keys.push(SemanticKey::StableProvider {
+                    binding: binding.clone(),
+                    function,
+                });
                 if self.callback_factories.contains(&function) {
                     keys.push(SemanticKey::CallbackFactory {
                         binding: binding.clone(),
@@ -92,6 +96,18 @@ impl CallableInferenceInputs {
                 .iter()
                 .eq([ValueOrigin::Function(*function)])
                 .then_some(SemanticFact::Function(*function)),
+            SemanticKey::StableProvider { binding, function } => {
+                let source = self.functions.get(binding)?;
+                if !source.hoisted || source.rebound {
+                    return None;
+                }
+                let identity = context.require(SemanticKey::StableFunction {
+                    binding: binding.clone(),
+                    function: *function,
+                })?;
+                matches!(identity, SemanticFact::Function(found) if *found == *function)
+                    .then_some(SemanticFact::Function(*function))
+            }
             SemanticKey::CallbackFactory { binding, function } => {
                 let identity = context.require(SemanticKey::StableFunction {
                     binding: binding.clone(),

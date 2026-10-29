@@ -1338,6 +1338,15 @@ spread arguments, or construction does not use this contract. The imported
 binding identity follows the ordinary export/import resolver, including local
 renames; this callback-flow fact does not imply purity.
 
+`descriptor_copy_factory_exports` has its own author premise and source-checked
+call certificate. The shared object-shape collector proves a fresh static
+literal and exact own descriptors; the imported callable summary supplies
+provider identity and the audited descriptor-copy behavior. The interpreter
+retains copied getters in the returned object and promotes them on reads,
+while preserving the registration call's ordinary ordering and throws. This
+contract does not make accessor-bearing arguments eligible for the older
+callback-factory rules.
+
 The separate `retained_callback_factory_exports` and
 `retained_callback_factory_members` assertions admit explicitly enumerated
 arities and callback positions, including stable local named callbacks. The

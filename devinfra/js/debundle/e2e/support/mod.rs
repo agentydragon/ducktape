@@ -32,7 +32,7 @@ use serde_json::Value;
 /// Re-exported so test files can reference the spec enums behind
 /// `Member::with_purity` / `Member::with_effect` without a direct `spec` dep.
 pub use spec::{
-    CapturedValueContract, CapturedValueKind, ExecutionRuntime, HostNoReentry,
+    CapturedValueContract, CapturedValueKind, ChunkExportPurity, ExecutionRuntime, HostNoReentry,
     HostNoReentryOperation, HostNoReentryRuntime, InitializerPurity, MemberEffect, MemberPurity,
     NativeCallIdentityInputContract, NativeCallIdentityKind, NativeOperationInputContract,
     NativeOperationKind, ValueInputContract, VendorLevel, VendorMark,

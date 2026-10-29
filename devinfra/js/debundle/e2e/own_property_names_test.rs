@@ -62,6 +62,7 @@ console.log(names[0], names[1], names[2], names[3], names[4], names[5], names[6]
                 InferenceRule::OwnPropertyNamesProjection,
             ]),
             value_input_refs: BTreeSet::new(),
+            descriptor_copy_author_refs: Default::default(),
         }
     );
 }

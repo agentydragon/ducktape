@@ -7,12 +7,15 @@
 use super::callable_inference::{CallableInferenceInputs, ReturnedRecordFacts};
 use super::local_class_construction::LocalClassConstructionShapes;
 use super::set_iterables::SetIterableShapes;
-use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
+use crate::analysis_inputs::{
+    DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeIntrinsic, ProofDependencies,
+};
 use crate::inference::{
     CertificateContext, FactContext, GuardedContext, IterativeFacts, IterativeInference,
     IterativeRules, Judgment,
 };
 use crate::reports::schema::{InferenceRule, InferenceUse};
+use spec::DescriptorCopyFactorySignature;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_common::Span;
@@ -33,6 +36,10 @@ pub(crate) enum SemanticKey {
         binding: Id,
         function: u32,
     },
+    StableProvider {
+        binding: Id,
+        function: u32,
+    },
     CallbackFactory {
         binding: Id,
         function: u32,
@@ -45,6 +52,8 @@ pub(crate) enum SemanticKey {
         binding: Id,
         function: u32,
     },
+    DescriptorCopyProvider(Id),
+    DescriptorCopyCall(u32),
 }
 
 impl SemanticKey {
@@ -56,9 +65,12 @@ impl SemanticKey {
             Self::LocalClass(_) => InferenceRule::LocalClassConstruction,
             Self::PrimitiveSetIteration(_) => InferenceRule::PrimitiveSetIteration,
             Self::StableFunction { .. } => InferenceRule::StableFunction,
+            Self::StableProvider { .. } => InferenceRule::StableProvider,
             Self::CallbackFactory { .. } => InferenceRule::CallbackFactory,
             Self::ReturnedRecord { .. } => InferenceRule::ReturnedRecord,
             Self::NamespaceWrapper { .. } => InferenceRule::NamespaceWrapper,
+            Self::DescriptorCopyProvider(_) => InferenceRule::DescriptorCopyProvider,
+            Self::DescriptorCopyCall(_) => InferenceRule::DescriptorCopyFactory,
         }
     }
 }
@@ -82,6 +94,17 @@ pub(crate) struct NativeBindingContext {
     pub(crate) global_object_names: BTreeSet<&'static str>,
 }
 
+/// Source-only candidate. The rule checks the authored provider, exact keys,
+/// and the completed census before this becomes a certificate.
+#[derive(Debug, Clone)]
+pub(crate) struct DescriptorCopyCallCandidate {
+    pub(crate) source_object: u32,
+    pub(crate) provider_binding: Id,
+    pub(crate) signature: DescriptorCopyFactorySignature,
+    pub(crate) data_keys: BTreeSet<String>,
+    pub(crate) accessor_keys: BTreeSet<String>,
+}
+
 /// Immutable inputs from the canonical structural analysis and completed native
 /// census. A new source, policy or author-input context needs a new instance.
 #[derive(Debug, Default)]
@@ -99,6 +122,8 @@ pub(crate) struct SemanticRules {
     /// Exact syntactic native-call candidates found by the canonical call index.
     pub(crate) native_call_identity_candidates: BTreeSet<SemanticKey>,
     pub(crate) callables: CallableInferenceInputs,
+    pub(crate) descriptor_copy_providers: BTreeMap<Id, DescriptorCopyFactorySummary>,
+    pub(crate) descriptor_copy_calls: BTreeMap<u32, DescriptorCopyCallCandidate>,
 }
 
 impl SemanticRules {
@@ -166,7 +191,54 @@ impl SemanticRules {
                 context.require(SemanticKey::NativeIntegrity(NativeIntrinsic::Set))?;
                 context.require(SemanticKey::NativeIntegrity(NativeIntrinsic::Array))?;
             }
+            SemanticKey::DescriptorCopyProvider(binding) => {
+                if !self.native_census_complete || self.dynamic_scope {
+                    return None;
+                }
+                let provider = self.descriptor_copy_providers.get(binding)?;
+                if provider.signatures.len() != 1 {
+                    return None;
+                }
+                // Exact-slot contradiction checks consume the completed raw
+                // census, including any authored captured-value refinements.
+                context.assume(&self.native_dependencies);
+                context.assume(&ProofDependencies {
+                    descriptor_copy_authors: BTreeSet::from([DescriptorCopyAuthorRef {
+                        defining_module: provider.defining_module.clone(),
+                        export: provider.export.clone(),
+                        spec_location: provider.author_location.clone(),
+                    }]),
+                    ..Default::default()
+                });
+            }
+            SemanticKey::DescriptorCopyCall(span) => {
+                let candidate = self.descriptor_copy_calls.get(span)?;
+                let provider = self
+                    .descriptor_copy_providers
+                    .get(&candidate.provider_binding)?;
+                if !provider.signatures.contains(&candidate.signature)
+                    || candidate.signature.argument_count != 1
+                    || candidate.signature.object_argument != 0
+                    || candidate.source_object == 0
+                    || !candidate
+                        .signature
+                        .eager_own_data_keys
+                        .iter()
+                        .all(|key| candidate.data_keys.contains(key))
+                    || candidate
+                        .signature
+                        .assigned_data_keys
+                        .iter()
+                        .any(|key| candidate.accessor_keys.contains(key))
+                {
+                    return None;
+                }
+                context.require(SemanticKey::DescriptorCopyProvider(
+                    candidate.provider_binding.clone(),
+                ))?;
+            }
             SemanticKey::StableFunction { .. }
+            | SemanticKey::StableProvider { .. }
             | SemanticKey::CallbackFactory { .. }
             | SemanticKey::ReturnedRecord { .. }
             | SemanticKey::NamespaceWrapper { .. } => {
@@ -245,6 +317,20 @@ impl SemanticFacts {
             .chain(rules.callables.keys())
             .chain(
                 rules
+                    .descriptor_copy_providers
+                    .keys()
+                    .cloned()
+                    .map(SemanticKey::DescriptorCopyProvider),
+            )
+            .chain(
+                rules
+                    .descriptor_copy_calls
+                    .keys()
+                    .copied()
+                    .map(SemanticKey::DescriptorCopyCall),
+            )
+            .chain(
+                rules
                     .collection_bindings
                     .keys()
                     .cloned()
@@ -312,6 +398,7 @@ impl SemanticFacts {
             conclusion: key.rule(),
             derivation_rules,
             value_input_refs: dependencies.value_inputs.clone(),
+            descriptor_copy_author_refs: dependencies.descriptor_copy_authors.clone(),
         })
     }
 }

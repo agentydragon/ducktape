@@ -972,6 +972,30 @@ impl ChunkExportPurityBuilder {
         self
     }
 
+    pub fn with_descriptor_copy_factory(
+        mut self,
+        export: &str,
+        eager_own_data_keys: &[&str],
+        assigned_data_keys: &[&str],
+    ) -> Self {
+        self.purity.descriptor_copy_factory_exports.insert(
+            export.to_string(),
+            vec![spec::DescriptorCopyFactorySignature {
+                argument_count: 1,
+                object_argument: 0,
+                eager_own_data_keys: eager_own_data_keys
+                    .iter()
+                    .map(|key| (*key).to_string())
+                    .collect(),
+                assigned_data_keys: assigned_data_keys
+                    .iter()
+                    .map(|key| (*key).to_string())
+                    .collect(),
+            }],
+        );
+        self
+    }
+
     pub fn with_callback_factory_members(mut self, export: &str, members: &[&str]) -> Self {
         self.purity.callback_factory_members.insert(
             export.to_string(),

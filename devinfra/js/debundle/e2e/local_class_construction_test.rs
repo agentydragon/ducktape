@@ -612,6 +612,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
                 InferenceRule::PrimitiveSetIteration,
             ]),
             value_input_refs: captured_input_refs(),
+            descriptor_copy_author_refs: Default::default(),
         }
     );
     let unique_execution = unique
@@ -644,6 +645,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
                 InferenceRule::LocalClassConstruction,
             ]),
             value_input_refs: captured_input_refs(),
+            descriptor_copy_author_refs: Default::default(),
         }
     );
     assert_eq!(
@@ -663,6 +665,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
             conclusion: InferenceRule::LocalClassConstruction,
             derivation_rules: BTreeSet::from([InferenceRule::LocalClassConstruction]),
             value_input_refs: BTreeSet::new(),
+            descriptor_copy_author_refs: Default::default(),
         }
     );
     assert!(plain.heap_native_integrity_uses.is_empty());

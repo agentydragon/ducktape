@@ -305,6 +305,7 @@ pub(super) struct ExecutionState {
     applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
     dense_arrays: OrdMap<u32, DenseArray>,
     ordinary_spread_copies: BTreeSet<u32>,
+    descriptor_copy_results: BTreeSet<u32>,
     array_iteration_depth: usize,
     array_iteration_protected_objects: BTreeSet<u32>,
     array_iteration_unsupported: bool,
@@ -4573,6 +4574,87 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 && self.inputs.index.native_integrity_is_proven(IntrinsicRoot::Map))
     }
 
+    /// A single-execution imported call may carry a fresh ordinary descriptor
+    /// graph. The author certifies the provider's native slots and return-only
+    /// retention; the source index proves the exact input and key collisions.
+    fn descriptor_copy_projection(
+        &self,
+        callee: &ValueExpr,
+        args: &[Values],
+        site: CallSite,
+    ) -> Option<OwnPropertyProof> {
+        let ValueExpr::Binding(binding) = callee else {
+            return None;
+        };
+        let certificate = self.inputs.index.descriptor_copy_calls.get(&site)?;
+        if &certificate.provider_binding != binding {
+            return None;
+        }
+        let [source] = args else { return None };
+        let [AbstractValue::Origin(ValueOrigin::Object(actual))] =
+            source.iter().collect::<Vec<_>>().as_slice()
+        else {
+            return None;
+        };
+        if actual != &certificate.source_object {
+            return None;
+        }
+        let proof = self.own_property_projection(
+            source,
+            OwnPropertyRequest::AuditedDescriptorCopy {
+                semantic_call: SemanticKey::DescriptorCopyCall(site.source_span().lo.0),
+            },
+        )?;
+        self.queries.assume(&proof.dependencies);
+        self.state
+            .inference_uses
+            .borrow_mut()
+            .insert(proof.inference_use());
+        Some(proof)
+    }
+
+    fn install_descriptor_copy_result(
+        &mut self,
+        proof: OwnPropertyProof,
+        args: &[Values],
+        site: CallSite,
+    ) -> Values {
+        let result = site.allocation_id();
+        let Some(map) = self.capture_own_descriptor_map(site, Some(proof)) else {
+            return Values::from([AbstractValue::Unavailable]);
+        };
+        let target = Values::from([AbstractValue::Origin(ValueOrigin::Object(result))]);
+        self.apply_own_descriptor_map_transfer(&[target.clone(), Values::from([map])]);
+        let Some(certificate) = self.inputs.index.descriptor_copy_calls.get(&site) else {
+            unreachable!()
+        };
+        let keys = certificate.signature.assigned_data_keys.clone();
+        let mut captured = args[0].clone();
+        captured.extend(self.callback_values(&args[0]));
+        let method = Values::from([self.deferred_callbacks(captured)]);
+        let properties = self
+            .state
+            .prefix_object_properties
+            .entry(result)
+            .or_default();
+        for key in keys {
+            properties.insert(Some(key.clone()), method.clone());
+        }
+        if let Some(accessors) = self.state.applied_accessors.get_mut(&result) {
+            for key in &certificate.signature.assigned_data_keys {
+                accessors.remove(key);
+            }
+        }
+        self.state.descriptor_copy_results.insert(result);
+        self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        // Provider code and native operations may still throw after argument
+        // evaluation. Keep normal-return identity and abrupt completion apart.
+        Values::from([
+            AbstractValue::Origin(ValueOrigin::Object(result)),
+            AbstractValue::Unavailable,
+        ])
+    }
+
     /// Instantiates a provider's checked wrapper timing proof for this exact
     /// caller-owned ordinary object. The raw source getter remains deferred in
     /// the returned capability; only the wrapper's eager phase is certified.
@@ -4960,6 +5042,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         AbstractValue::Unknown,
                         AbstractValue::Unavailable,
                     ]);
+                }
+                if let Some(proof) = self.descriptor_copy_projection(callee, &args, *span) {
+                    return self.install_descriptor_copy_result(proof, &args, *span);
                 }
                 if let Some(returns) =
                     self.resolve_native_call(CallKind::Call, callee, *span, expressions, &args)
@@ -5680,6 +5765,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.state.tainted_objects.contains(object)
                         || ((!self.inputs.index.plain_data_objects.contains(object)
                             && !self.state.ordinary_spread_copies.contains(object)
+                            && !self.state.descriptor_copy_results.contains(object)
                             && !self.state.dense_arrays.contains_key(object))
                             || !self.state.prefix_object_properties.get(object).is_some_and(
                                 |properties| {
@@ -5716,6 +5802,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 _ => false,
             }) || !accessor_getters.is_empty();
             if unsupported_local {
+                if values.iter().any(|value| {
+                    matches!(value,
+                    AbstractValue::Origin(ValueOrigin::Object(object))
+                    if self.state.descriptor_copy_results.contains(object))
+                }) {
+                    self.promote_raw_callbacks(&values, outcome);
+                }
                 self.taint_objects(&values);
                 let selected = self.evaluate(&call.callee, env, captures);
                 self.promote_raw_callbacks(&selected, outcome);
@@ -5889,6 +5982,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return;
         }
+        if call.kind == CallKind::Call
+            && !call.has_spread
+            && self
+                .descriptor_copy_projection(&call.callee, &args, call.span.into())
+                .is_some()
+        {
+            return;
+        }
         if !call.has_spread
             && let Some(returns) = self.resolve_native_call(
                 call.kind,
@@ -6011,6 +6112,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         let mut opaque_args = args.clone();
+        if let ValueExpr::Member(receiver, _, _) = &call.callee {
+            let receiver_values = self.evaluate(receiver, env, captures);
+            if receiver_values.iter().any(|value| {
+                matches!(value,
+                AbstractValue::Origin(ValueOrigin::Object(object))
+                if self.state.descriptor_copy_results.contains(object))
+            }) {
+                opaque_args.push(receiver_values);
+            }
+        }
         if let Some(proof) = self.inputs.index.array_iterations.get(&call.span.into()) {
             let source = self.evaluate(&proof.source.clone(), env, captures);
             self.promote_raw_callbacks(&source, outcome);
@@ -6804,6 +6915,7 @@ pub(crate) fn annotate_synchronous_calls(
         applied_accessors: OrdMap::new(),
         dense_arrays: OrdMap::new(),
         ordinary_spread_copies: BTreeSet::new(),
+        descriptor_copy_results: BTreeSet::new(),
         array_iteration_depth: 0,
         array_iteration_protected_objects: BTreeSet::new(),
         array_iteration_unsupported: false,
