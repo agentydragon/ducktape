@@ -2,6 +2,11 @@ common --enable_bzlmod
 common --experimental_isolated_extension_usages
 # Disable Aspect telemetry (aspect_tools_telemetry) so builds don't POST to telemetry.aspect.build
 common --repo_env=DO_NOT_TRACK=1
+# rules_python's toolchain repository rule puts the hermetic interpreter's __pycache__ at
+# RULES_PYTHON_PYCACHE_DIR, else under XDG_CACHE_HOME, else under TMP, and records the variable it read as a
+# repository input. Nix devshells give every shell a fresh TMP, so without this pin each shell misses
+# --repo_contents_cache and extracts another copy of the toolchain.
+common --repo_env=RULES_PYTHON_PYCACHE_DIR=/tmp/rules_python_pycache
 
 # Suppress -Wmaybe-uninitialized from protobuf's upb C decoder. Keep this on
 # the one translation unit that emits it, in both target and host builds.
