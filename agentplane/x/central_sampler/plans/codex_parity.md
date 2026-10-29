@@ -19,6 +19,8 @@ instructions, setup scripts and History export.
 - **Actions as tools:** expose Action Service Actions (including MCP-backed ones) as nested tools,
   deferred behind tool search like Codex's MCP tools. Needs design first: what happens when the set
   of available Actions changes mid-Session, and how agents learn of additions and removals.
+- **Session fork:** branch a Session's conversation into a new Session. Needs its own design across
+  the sampler, History and the executor binding.
 - **Hosted web search:** maybe, depending on what the provider's hosted search offers over fetching
   from the Sandbox.
 
@@ -27,6 +29,8 @@ instructions, setup scripts and History export.
 - Realtime/voice.
 - Browser use, computer use and dictation.
 - `update_plan`: only as an Agentplane-wide feature, not a sampler-only tool.
+- Context-awareness tools, if wanted: Codex's `get_context_remaining`, `new_context_window`, and
+  token-budget and current-time reminders in context.
 
 ## Not porting
 
@@ -34,6 +38,7 @@ instructions, setup scripts and History export.
   Service own these boundaries.
 - Codex local persistence (rollout files, thread store, state DB): PostgreSQL and History replace it.
 - Turn diffs, desktop in-app panes and fast mode.
+- Codex plugins, apps and connectors, unless specifically wanted later.
 - Image generation: a different API; if wanted, an Agentplane Action instead.
 - Shell plumbing (shell snapshots, zsh fork, login-shell PATH, PowerShell), worktree management and
   external-agent migration.
