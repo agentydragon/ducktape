@@ -42,15 +42,16 @@ pub use atomic_groups::{
 };
 pub use facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryWriteWitness,
-    ChunkFactAnalysis, EffectCell, PositionBucketed, StatementEffectSummary, StatementFacts,
-    StatementKind, StructuralChunkAnalysis, StructuralStatementFacts, analyze_chunk,
-    analyze_chunk_structural, analyze_chunk_with_policy, analyze_vendor_prune_chunk,
+    ChunkFactAnalysis, DataflowOpacityCause, EffectCell, PositionBucketed, StatementEffectSummary,
+    StatementFacts, StatementKind, StructuralChunkAnalysis, StructuralStatementFacts,
+    analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy, analyze_vendor_prune_chunk,
     local_namespace_iife_target,
 };
 pub use graph::{
-    ChunkConstrainingEdgeSet, DepKind, DependencyEdge, DependencyEdgeId, DependencyGraph,
-    DependencyGraphBuildError, DependencyGraphOptions, DuplicateTopLevelDeclaration, EdgeReason,
-    EdgeRole, ModuleQuotient, SourceUnit, SourceUnitClass, SourceUnitId,
+    BindingTimelineOrder, CellConflict, CellEffectClass, ChunkConstrainingEdgeSet, DepKind,
+    DependencyEdge, DependencyEdgeId, DependencyGraph, DependencyGraphBuildError,
+    DependencyGraphOptions, DuplicateTopLevelDeclaration, EdgeReason, EdgeRole, EffectCellReport,
+    HeapBarrierCause, ModuleQuotient, SequencedCause, SourceUnit, SourceUnitClass, SourceUnitId,
     UnresolvedDependencyEdgeEndpoint, build_dependency_graph_with, build_module_quotient,
     chunk_constraining_module_edges, position_lookup,
 };

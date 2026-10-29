@@ -1,8 +1,13 @@
+use std::collections::BTreeSet;
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
+use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
 use crate::ModuleId;
+use crate::facts::{DataflowOpacityCause, EffectCell};
 
 use super::dependency_graph::SourceUnitId;
 
@@ -95,6 +100,272 @@ pub struct EdgeReason {
     pub statement_ordinal: SourceUnitOrdinal,
     pub binding: Option<Id>,
     pub(crate) role: EdgeRole,
+    /// Present on every `Sequenced` edge built from facts: the emission
+    /// rule that produced it and how it classified both endpoints.
+    /// Boxed so the far more numerous binding edges stay small.
+    sequenced_cause: Option<Box<SequencedCause>>,
+}
+
+/// Why a `Sequenced` edge `(from, to)` exists: the emission rule in
+/// `build_dependency_graph_with` that fired and the effect
+/// classification of the two source units it compared. Cycle reports
+/// surface it so a spec author can see why the engine refuses to
+/// commute the pair (`gate::CycleEdge::explanation`).
+///
+/// `from` is the later source unit; the edge reads "`from` must observe
+/// `to`'s work as complete". Where several rules would emit the same
+/// `(from, to)` pair, the first emitted cause is retained.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "rule", rename_all = "snake_case")]
+pub enum SequencedCause {
+    /// Strict S-chain (`dataflow_aware_s_chain: false`): `from` is the
+    /// impure top-level statement immediately after `to` in source
+    /// order. Both endpoints are `Purity::NotPure`; the reasons live on
+    /// the source-unit nodes.
+    StrictChain,
+    /// Consecutive at-init accesses (initializer, eager read or eager
+    /// rebind) of a binding declared at several `var` sites. The cell is
+    /// hoisted, so the accesses keep source order even when every access
+    /// is pure.
+    SharedVarAccess { binding: Atom },
+    /// At-init binding timeline (`promote_at_init_calls`): `to` and
+    /// `from` are a writer and an observer (or two writers) of `binding`
+    /// that must keep source order.
+    BindingTimeline {
+        binding: Atom,
+        order: BindingTimelineOrder,
+    },
+    /// A synchronous callee invoked by `to` observed `binding` before
+    /// `from`, the statement declaring it, ran; the pair keeps source
+    /// order so the TDZ / initial-`undefined` observation is preserved.
+    UninitializedObservation { binding: Atom },
+    /// Cell timeline (dataflow-aware S-chain and array/Set content
+    /// order): `conflicts` names every reason the timeline made `from`
+    /// depend on `to`, given how each endpoint was classified.
+    CellOrder {
+        from: CellEffectClass,
+        to: CellEffectClass,
+        conflicts: BTreeSet<CellConflict>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BindingTimelineOrder {
+    /// `to` and `from` both write the binding; later writer last.
+    WriterAfterWriter,
+    /// `from` observes the binding after `to`, its nearest preceding writer.
+    ReaderAfterWriter,
+    /// `from` writes the binding after `to`, a preceding observer, read it.
+    WriterAfterReader,
+}
+
+/// How the cell timeline classified one source unit's effects.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CellEffectClass {
+    /// Exact `(reads, writes)` cell summary (`StatementEffectSummary`).
+    Summarized,
+    /// Not dataflow-summarizable (`causes` is the statement's
+    /// `dataflow_opacity`): treated as touching every cell, so it
+    /// depends on every prior impure source unit and is the barrier
+    /// every later summarized source unit depends on.
+    OpaqueBarrier {
+        causes: BTreeSet<DataflowOpacityCause>,
+    },
+    /// Allocates array/Set cells; seeds their content timelines without
+    /// depending on earlier heap effects.
+    HeapAllocation,
+    /// Opaque array/Set content operation: depends on the live content
+    /// frontier and becomes the frontier for later observations.
+    /// `causes` are the disjuncts of `emit_heap_content_order`'s
+    /// opacity test that held.
+    HeapFrontier { causes: BTreeSet<HeapBarrierCause> },
+}
+
+/// One disjunct of the heap-content opacity test in
+/// `emit_heap_content_order` (docs/design.md "Emission modes").
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HeapBarrierCause {
+    /// The array-content collector recorded an opaque at-init effect:
+    /// member write, mutating method call, escaped array, key
+    /// enumeration, optional call or tagged template.
+    ArrayContentEffects,
+    /// Impure and not dataflow-summarizable (unproven call/`new`,
+    /// member write through a binding, dynamic-dispatch shape).
+    NonSummarizableImpure,
+    /// Synchronous execution analysis reported incomplete effects
+    /// (`synchronous_execution.complete = false`).
+    IncompleteSynchronousExecution,
+    /// An at-init callee is not a never-rebound direct chunk function,
+    /// so its body's heap effects cannot be promoted.
+    UnresolvedCallee,
+    /// A resolved at-init callee's body is itself heap-opaque.
+    CalleeHeapEffects,
+}
+
+/// One dependence the cell timeline found between `from` (later) and
+/// `to` (earlier). Read/write vocabulary follows docs/design.md
+/// "Emission modes".
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CellConflict {
+    /// `from` reads `cell`; `to` was its last writer.
+    ReadAfterWrite { cell: EffectCellReport },
+    /// `from` writes `cell`; `to` was its last writer.
+    WriteAfterWrite { cell: EffectCellReport },
+    /// `from` writes `cell`; `to` read it since its last write.
+    WriteAfterRead { cell: EffectCellReport },
+    /// `from` reads or writes `cell`; `to` allocated it.
+    UseAfterAllocation { cell: EffectCellReport },
+    /// `to` is the opaque barrier in force when `from` runs.
+    AfterBarrier,
+    /// `from` is an opaque barrier; `to` is a prior impure source unit.
+    BarrierAfterPrior,
+    /// `from` is an opaque heap operation; `to` allocated, wrote or read
+    /// `cell` on the live content frontier.
+    FrontierAfterCell { cell: EffectCellReport },
+}
+
+/// Serializable projection of [`EffectCell`]: binding cells carry the
+/// name only (the hygiene context is dropped, as everywhere on the
+/// wire; see docs/wire_format.md).
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EffectCellReport {
+    Binding { binding: Atom },
+    GlobalProp { key: String },
+    ArrayContents { origin: u32 },
+    SetContents { origin: u32 },
+}
+
+impl From<&EffectCell> for EffectCellReport {
+    fn from(cell: &EffectCell) -> Self {
+        match cell {
+            EffectCell::Binding(id) => Self::Binding {
+                binding: id.0.clone(),
+            },
+            EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
+            EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
+            EffectCell::SetContents(origin) => Self::SetContents { origin: *origin },
+        }
+    }
+}
+
+impl fmt::Display for EffectCellReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Binding { binding } => write!(f, "binding `{binding}`"),
+            Self::GlobalProp { key } => write!(f, "global property `{key}`"),
+            Self::ArrayContents { origin } => write!(f, "array contents #{origin}"),
+            Self::SetContents { origin } => write!(f, "Set contents #{origin}"),
+        }
+    }
+}
+
+impl fmt::Display for CellEffectClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Summarized => f.write_str("summarized cells"),
+            Self::OpaqueBarrier { causes } => {
+                f.write_str("opaque barrier (")?;
+                for (i, cause) in causes.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    f.write_str(match cause {
+                        DataflowOpacityCause::MemberWriteOrAlias => "member write or alias",
+                        DataflowOpacityCause::DynamicCellWrites => "dynamic cell writes",
+                        DataflowOpacityCause::GlobalObjectAliasEscape => {
+                            "global-object alias escape"
+                        }
+                        DataflowOpacityCause::OpaqueAtInitCall => "unproven at-init call",
+                    })?;
+                }
+                f.write_str(")")
+            }
+            Self::HeapAllocation => f.write_str("heap allocation"),
+            Self::HeapFrontier { causes } => {
+                f.write_str("opaque heap barrier (")?;
+                for (i, cause) in causes.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    f.write_str(cause.label())?;
+                }
+                f.write_str(")")
+            }
+        }
+    }
+}
+
+impl HeapBarrierCause {
+    fn label(self) -> &'static str {
+        match self {
+            Self::ArrayContentEffects => "array content effects",
+            Self::NonSummarizableImpure => "impure and not summarizable",
+            Self::IncompleteSynchronousExecution => "incomplete synchronous execution",
+            Self::UnresolvedCallee => "unresolved at-init callee",
+            Self::CalleeHeapEffects => "heap-opaque callee body",
+        }
+    }
+}
+
+impl fmt::Display for CellConflict {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ReadAfterWrite { cell } => write!(f, "reads {cell} last written by target"),
+            Self::WriteAfterWrite { cell } => write!(f, "writes {cell} last written by target"),
+            Self::WriteAfterRead { cell } => write!(f, "writes {cell} read by target"),
+            Self::UseAfterAllocation { cell } => write!(f, "uses {cell} allocated by target"),
+            Self::AfterBarrier => f.write_str("target is the opaque barrier in force"),
+            Self::BarrierAfterPrior => f.write_str("source is an opaque barrier after target"),
+            Self::FrontierAfterCell { cell } => write!(f, "heap barrier after target's {cell}"),
+        }
+    }
+}
+
+impl fmt::Display for SequencedCause {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::StrictChain => {
+                f.write_str("strict S-chain: source is the next impure statement after target")
+            }
+            Self::SharedVarAccess { binding } => {
+                write!(
+                    f,
+                    "consecutive at-init accesses of shared `var` `{binding}`"
+                )
+            }
+            Self::BindingTimeline { binding, order } => {
+                let order = match order {
+                    BindingTimelineOrder::WriterAfterWriter => "writes after target wrote",
+                    BindingTimelineOrder::ReaderAfterWriter => "observes after target wrote",
+                    BindingTimelineOrder::WriterAfterReader => "writes after target observed",
+                };
+                write!(f, "at-init timeline of `{binding}`: source {order}")
+            }
+            Self::UninitializedObservation { binding } => write!(
+                f,
+                "target's synchronous callee observed `{binding}` before source declared it"
+            ),
+            Self::CellOrder {
+                from,
+                to,
+                conflicts,
+            } => {
+                write!(f, "cell order: source is {from}, target is {to}; ")?;
+                for (i, conflict) in conflicts.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str("; ")?;
+                    }
+                    write!(f, "{conflict}")?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 impl EdgeReason {
@@ -104,6 +375,7 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
         }
     }
     pub(crate) fn lazy_use(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -112,6 +384,7 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
         }
     }
     pub(crate) fn hoisted_use(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -120,6 +393,7 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
         }
     }
     pub(crate) fn eager_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -128,6 +402,7 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
         }
     }
     pub(crate) fn lazy_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -136,6 +411,7 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
         }
     }
     pub(crate) fn deferred_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -144,6 +420,7 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
         }
     }
     pub(crate) fn co_declaration(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -152,6 +429,7 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
         }
     }
     pub(crate) fn co_location(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -160,14 +438,16 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
         }
     }
-    pub(crate) fn sequenced(so: SourceUnitOrdinal) -> Self {
+    pub(crate) fn sequenced(so: SourceUnitOrdinal, cause: SequencedCause) -> Self {
         Self {
             kind: DepKind::Sequenced,
             statement_ordinal: so,
             binding: None,
             role: EdgeRole::Direct,
+            sequenced_cause: Some(Box::new(cause)),
         }
     }
     pub(crate) fn local_effect(so: SourceUnitOrdinal, b: Id) -> Self {
@@ -176,6 +456,7 @@ impl EdgeReason {
             statement_ordinal: so,
             binding: Some(b),
             role: EdgeRole::Direct,
+            sequenced_cause: None,
         }
     }
 
@@ -203,7 +484,21 @@ impl EdgeReason {
             statement_ordinal,
             binding: None,
             role,
+            sequenced_cause: None,
         }
+    }
+
+    /// Reattach the retained cause of a `Sequenced` edge read back from
+    /// `dependency_graph.json` (`DependencyEdgeReport::sequenced_cause`).
+    pub fn with_sequenced_cause(mut self, cause: Option<SequencedCause>) -> Self {
+        self.sequenced_cause = cause.map(Box::new);
+        self
+    }
+
+    /// Retained emission cause of a `Sequenced` edge; `None` for every
+    /// other kind and for synthetic edges whose report lacked it.
+    pub fn sequenced_cause(&self) -> Option<&SequencedCause> {
+        self.sequenced_cause.as_deref()
     }
 
     /// The role this reason was emitted with. See [`EdgeRole`].

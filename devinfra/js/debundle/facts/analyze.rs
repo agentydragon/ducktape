@@ -208,7 +208,7 @@ where
                 global_writes: collector.global_writes,
                 global_reads: collector.global_reads,
                 cell_writes_summarizable: collector.cell_writes_summarizable,
-                dataflow_summarizable: collector.dataflow_summarizable,
+                dataflow_opacity: collector.dataflow_opacity,
             }
         })
         .collect();
@@ -853,7 +853,7 @@ fn assemble_statement_facts(
         global_writes,
         global_reads,
         cell_writes_summarizable,
-        dataflow_summarizable,
+        mut dataflow_opacity,
         argument_value_escapes: _,
     } = structural;
     let local_effects = collect_local_effects(item, shadowed, hints, graph, local_effect_context);
@@ -884,9 +884,11 @@ fn assemble_statement_facts(
     // global-prop reads, and binding-cell ordering is enforced by
     // binding edges + rebind co-location rather than the S-chain.
     let trusted_summary = hints.assumptions.trusted_dataflow_summaries && cell_writes_summarizable;
-    let dataflow_summarizable = trusted_summary
-        || dataflow_summarizable
-            && !has_opaque_at_init_call(item, shadowed, hints, native_facts, graph);
+    if trusted_summary {
+        dataflow_opacity.clear();
+    } else if has_opaque_at_init_call(item, shadowed, hints, native_facts, graph) {
+        dataflow_opacity.insert(DataflowOpacityCause::OpaqueAtInitCall);
+    }
     // Ordinary eager reads (including `pureWrap(B)`) always remain in
     // `reads.eager`. For classifier/callee-pure statements, clearing the
     // unresolved-call fallback also asserts that opaque calls cannot
@@ -956,7 +958,7 @@ fn assemble_statement_facts(
         global_writes,
         global_reads,
         cell_writes_summarizable,
-        dataflow_summarizable,
+        dataflow_opacity,
         heap_contents: super::HeapContentEffects::default(),
         heap_native_integrity_uses: Vec::new(),
         purity,

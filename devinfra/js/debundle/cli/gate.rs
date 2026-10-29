@@ -29,10 +29,12 @@ use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use ::gate::{BlockingSccEntry, CycleEdge};
+use ::gate::{
+    AtInitReadPosition, BlockingSccEntry, CutEdgeExplanation, CycleEdge, render_explanations,
+};
 use analysis::{
     CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DepKind, DependencyGraphReport,
-    EdgeRoleReport, ModuleKey, Purity, SequencedSourceUnitCause,
+    EdgeRoleReport, ModuleKey, Purity, SequencedSourceUnitCause, SourceUnitReport,
 };
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
@@ -1021,29 +1023,25 @@ fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
         // `render_cycle_summary`'s stderr block. Anonymous endpoints
         // fall back to `<anon stmt #ord>` / `<side-effect>` so every
         // row has a stable label.
-        let mut groups: BTreeMap<BlamePairKey, BlamePairAgg> = BTreeMap::new();
+        let mut groups: BTreeMap<BlamePairKey, Vec<&CycleEdge>> = BTreeMap::new();
         for edge in &report.evidence {
-            let key = BlamePairKey::of(edge);
-            let agg = groups.entry(key).or_insert(BlamePairAgg {
-                kind: edge.kind,
-                count: 0,
-            });
-            agg.count += 1;
+            groups.entry(BlamePairKey::of(edge)).or_default().push(edge);
         }
-        let mut ranked: Vec<(BlamePairKey, BlamePairAgg)> = groups.into_iter().collect();
-        ranked.sort_by(|a, b| b.1.count.cmp(&a.1.count).then(a.0.cmp(&b.0)));
+        let mut ranked: Vec<(BlamePairKey, Vec<&CycleEdge>)> = groups.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(&b.0)));
 
-        out.push_str("  evidence (grouped by binding pair):\n");
-        for (key, agg) in &ranked {
+        out.push_str("  evidence (grouped by binding pair, then why each edge constrains):\n");
+        for (key, edges) in &ranked {
             out.push_str(&format!(
                 "    {n:>4}x  {fb} ({fm})  --{k}-->  {tb} ({tm})\n",
-                n = agg.count,
+                n = edges.len(),
                 fb = key.from_label,
                 fm = key.from,
-                k = agg.kind.diagnostic_label(),
+                k = edges[0].kind.diagnostic_label(),
                 tb = key.to_label,
                 tm = key.to,
             ));
+            render_explanations(edges, out);
         }
     }
 }
@@ -1089,9 +1087,19 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
         tm = edge.to,
         ord = edge.statement_ordinal.0,
     ));
-    if let Some(cause) = &edge.sequenced_source_unit
-        && let Purity::NotPure { reasons } = &cause.purity
-    {
+    if let Some(explanation) = &edge.explanation {
+        out.push_str(&format!("      why: {explanation}\n"));
+    }
+    let target_cause = match &edge.explanation {
+        Some(CutEdgeExplanation::Sequenced {
+            target_source_unit, ..
+        }) => target_source_unit.as_deref(),
+        _ => None,
+    };
+    for cause in edge.sequenced_source_unit.iter().chain(target_cause) {
+        let Purity::NotPure { reasons } = &cause.purity else {
+            continue;
+        };
         for reason in reasons {
             let binding = if cause.binding_names.is_empty() {
                 cause.source_unit_id.clone()
@@ -1118,13 +1126,14 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
                 })
                 .unwrap_or_else(|| "<location unavailable>".to_string());
             out.push_str(&format!(
-                "      impure initializer `{binding}` at {location}: {}{}\n",
+                "      impure initializer `{binding}` at {location}: {}{}{}\n",
                 reason.rule.as_str(),
                 reason
                     .detail
                     .as_deref()
                     .map(|detail| format!(" ({detail})"))
-                    .unwrap_or_default()
+                    .unwrap_or_default(),
+                incomplete_execution_suffix(cause),
             ));
             if let Some(guidance) = &reason.author_guidance {
                 out.push_str(&format!("        {guidance}\n"));
@@ -1200,7 +1209,7 @@ fn recompute_evidence(
         let Some(&(source, from_mod)) = source_units.get(edge.source.as_str()) else {
             continue;
         };
-        let Some(&(_, to_mod)) = source_units.get(edge.target.as_str()) else {
+        let Some(&(target, to_mod)) = source_units.get(edge.target.as_str()) else {
             continue;
         };
         if from_mod == to_mod {
@@ -1231,6 +1240,37 @@ fn recompute_evidence(
             .get(&edge.statement_ordinal)
             .cloned()
             .or_else(|| source.declared_bindings.first().map(|b| b.binding.clone()));
+        let explanation = match edge.edge_kind {
+            DepKind::EagerUse => {
+                let position = match &edge.role {
+                    None => AtInitReadPosition::Direct,
+                    Some(EdgeRoleReport::PromotedAtInit { callee_source_unit })
+                        if callee_source_unit == &edge.source =>
+                    {
+                        AtInitReadPosition::UnresolvedAtInitCall
+                    }
+                    Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) => {
+                        AtInitReadPosition::PromotedAtInit {
+                            callee_source_unit: callee_source_unit.clone(),
+                            callee_binding: source_units
+                                .get(callee_source_unit.as_str())
+                                .and_then(|(callee, _)| callee.declared_bindings.first())
+                                .map(|binding| binding.binding.clone()),
+                        }
+                    }
+                };
+                Some(CutEdgeExplanation::AtInitRead { position })
+            }
+            DepKind::Sequenced => {
+                edge.sequenced_cause
+                    .clone()
+                    .map(|cause| CutEdgeExplanation::Sequenced {
+                        cause,
+                        target_source_unit: impure_source_unit_cause(target).map(Box::new),
+                    })
+            }
+            _ => None,
+        };
         out.push(CycleEdge {
             from: from_mod.clone(),
             to: to_mod.clone(),
@@ -1238,22 +1278,42 @@ fn recompute_evidence(
             binding: edge.binding.clone(),
             from_binding,
             kind: edge.edge_kind,
-            sequenced_source_unit: (edge.edge_kind == DepKind::Sequenced
-                && matches!(&source.purity, Purity::NotPure { .. }))
-            .then(|| SequencedSourceUnitCause {
-                source_unit_id: source.id.clone(),
-                binding_names: source
-                    .declared_bindings
-                    .iter()
-                    .map(|binding| binding.binding.clone())
-                    .collect(),
-                source_location: source.source_location.clone(),
-                purity: source.purity.clone(),
-            }),
+            sequenced_source_unit: (edge.edge_kind == DepKind::Sequenced)
+                .then(|| impure_source_unit_cause(source))
+                .flatten(),
+            explanation,
         });
     }
     CycleEdge::sort_for_report(&mut out);
     Ok(out)
+}
+
+/// Marks a statement whose sequencing edges are the conservative flood
+/// of an incomplete synchronous execution.
+fn incomplete_execution_suffix(cause: &SequencedSourceUnitCause) -> &'static str {
+    match cause.synchronous_execution_complete {
+        Some(false) => "; synchronous execution incomplete",
+        _ => "",
+    }
+}
+
+/// Report-side twin of `analysis::reports::schema::impure_source_unit_cause`
+/// over a `dependency_graph.json` node.
+fn impure_source_unit_cause(node: &SourceUnitReport) -> Option<SequencedSourceUnitCause> {
+    matches!(&node.purity, Purity::NotPure { .. }).then(|| SequencedSourceUnitCause {
+        source_unit_id: node.id.clone(),
+        binding_names: node
+            .declared_bindings
+            .iter()
+            .map(|binding| binding.binding.clone())
+            .collect(),
+        source_location: node.source_location.clone(),
+        purity: node.purity.clone(),
+        synchronous_execution_complete: node
+            .synchronous_execution
+            .as_ref()
+            .map(|execution| execution.complete),
+    })
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -1281,10 +1341,4 @@ impl BlamePairKey {
             to_label,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct BlamePairAgg {
-    kind: DepKind,
-    count: usize,
 }

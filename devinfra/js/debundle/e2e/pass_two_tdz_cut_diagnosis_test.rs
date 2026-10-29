@@ -81,13 +81,22 @@ fn pass_two_rejection_cycles_json_has_nonempty_cut() {
         !cut.is_empty(),
         "Pass-2 rejection must carry a non-empty cut (the violated at-init reads): {entry}",
     );
-    // The cut names the violated constraining edge with both bindings.
-    assert!(
-        cut.iter().any(|edge| {
+    // The cut names the violated constraining edge with both bindings
+    // and explains it as a direct at-init read (`seed_value` is read in
+    // `cross_value`'s own initializer, not through a promoted call).
+    let edge = cut
+        .iter()
+        .find(|edge| {
             edge["binding"].as_str() == Some("seed_value")
                 && edge["from_binding"].as_str() == Some("cross_value")
                 && edge["kind"].as_str() == Some("eager_use")
-        }),
-        "cut must name the violated at-init read cross_value -> seed_value: {cut:?}",
+        })
+        .unwrap_or_else(|| {
+            panic!("cut must name the violated at-init read cross_value -> seed_value: {cut:?}")
+        });
+    assert_eq!(
+        edge["explanation"],
+        serde_json::json!({ "kind": "at_init_read", "position": { "kind": "direct" } }),
+        "{edge}"
     );
 }

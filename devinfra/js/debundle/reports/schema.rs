@@ -694,6 +694,11 @@ pub struct DependencyEdgeReport {
     /// serializing to keep direct edges compact).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub role: Option<EdgeRoleReport>,
+    /// Retained emission cause of a `Sequenced` edge
+    /// (`EdgeReason::sequenced_cause`); absent on every other kind and
+    /// on graphs written before the cause was retained.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sequenced_cause: Option<crate::graph::SequencedCause>,
 }
 
 /// Wire-format projection of [`crate::EdgeRole`]. The typed variant
@@ -779,6 +784,12 @@ pub struct SequencedSourceUnitCause {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
     pub purity: Purity,
+    /// `synchronous_execution.complete` of the source unit; `None` when
+    /// synchronous analysis did not run. `false` marks the statements
+    /// whose sequencing edges are a conservative flood rather than a
+    /// known ordering fact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synchronous_execution_complete: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -869,15 +880,29 @@ pub fn sequenced_edge_cause(
     if edge.reason.kind != DepKind::Sequenced {
         return None;
     }
-    let node = dependency_graph.node(edge.from)?;
+    impure_source_unit_cause(dependency_graph, edge.from)
+}
+
+/// The impure-initializer evidence of one source unit; `None` when the
+/// source unit is classified pure (a pure endpoint of a sequencing edge,
+/// e.g. an array allocation or a pure content reader).
+pub fn impure_source_unit_cause(
+    dependency_graph: &crate::DependencyGraph,
+    source_unit: crate::SourceUnitId,
+) -> Option<SequencedSourceUnitCause> {
+    let node = dependency_graph.node(source_unit)?;
     let Purity::NotPure { .. } = &node.purity else {
         return None;
     };
     Some(SequencedSourceUnitCause {
-        source_unit_id: crate::reports::source_unit_key(edge.from),
+        source_unit_id: crate::reports::source_unit_key(source_unit),
         binding_names: node.declared.iter().map(|id| id.0.clone()).collect(),
         source_location: node.source_location.clone(),
         purity: node.purity.clone(),
+        synchronous_execution_complete: node
+            .synchronous_execution
+            .as_ref()
+            .map(|execution| execution.complete),
     })
 }
 

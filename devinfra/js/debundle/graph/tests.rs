@@ -173,6 +173,7 @@ mod from_report_tests {
                 statement_ordinal: SourceUnitOrdinal(1),
                 constrains_init_order: true,
                 role,
+                sequenced_cause: None,
             }],
             quotient: ModuleQuotientReport {
                 nodes: Vec::new(),

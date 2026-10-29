@@ -1,5 +1,6 @@
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::fmt;
 
 use petgraph::algo::greedy_feedback_arc_set;
 use petgraph::graph::DiGraph;
@@ -12,7 +13,10 @@ use analysis::module_assignment::ModuleAssignment;
 use spec::ModulePath;
 use swc_atoms::Atom;
 
-use analysis::{DepKind, DependencyGraph, ModuleId, Purity, SequencedSourceUnitCause};
+use analysis::{
+    DepKind, DependencyEdge, DependencyGraph, EdgeRole, ModuleId, Purity, SequencedCause,
+    SequencedSourceUnitCause,
+};
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
@@ -154,8 +158,123 @@ pub struct CycleEdge {
     /// (`eager_use` and `sequenced`) vs.
     /// inert-but-graph-present (`lazy_use` and `hoisted_use`).
     pub kind: DepKind,
+    /// Impure-initializer evidence of the source side of a `sequenced`
+    /// edge (`None` when the source is classified pure).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sequenced_source_unit: Option<SequencedSourceUnitCause>,
+    /// Why the gate treats this edge as constraining: the at-init read
+    /// position for `eager_use`, or the retained emission cause and the
+    /// target side's impure-initializer evidence for `sequenced`. `None`
+    /// for the other kinds (their `kind` and `binding` already say why)
+    /// and for `sequenced` edges of a graph written before the cause was
+    /// retained.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explanation: Option<CutEdgeExplanation>,
+}
+
+/// Per-kind reasoning behind a constraining [`CycleEdge`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CutEdgeExplanation {
+    /// `eager_use`: `binding` is read while the source statement
+    /// evaluates, from `position`.
+    AtInitRead { position: AtInitReadPosition },
+    /// `sequenced`: the emission rule that produced the edge and how it
+    /// classified both endpoints, plus the target side's impure
+    /// initializer (`None` when the target is classified pure, e.g. an
+    /// array allocation or a pure content reader).
+    Sequenced {
+        cause: SequencedCause,
+        /// Boxed: the purity evidence dwarfs the other variant.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_source_unit: Option<Box<SequencedSourceUnitCause>>,
+    },
+}
+
+/// Where an at-init read sits relative to the statement that issues it.
+/// Derived from the edge's [`EdgeRole`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AtInitReadPosition {
+    /// The statement's own eager position (`reads.eager`).
+    Direct,
+    /// Lifted from the first-order body of `callee_source_unit`, a
+    /// chunk function the statement calls at init
+    /// (`promote_at_init_calls`).
+    PromotedAtInit {
+        callee_source_unit: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        callee_binding: Option<Atom>,
+    },
+    /// Reached through the conservative read closure of an at-init call
+    /// promotion cannot resolve (member call, IIFE, alias); the role
+    /// names the caller itself as callee.
+    UnresolvedAtInitCall,
+}
+
+impl fmt::Display for CutEdgeExplanation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AtInitRead { position } => match position {
+                AtInitReadPosition::Direct => f.write_str("direct at-init read"),
+                AtInitReadPosition::PromotedAtInit {
+                    callee_source_unit,
+                    callee_binding,
+                } => {
+                    let callee = callee_binding
+                        .as_ref()
+                        .map_or_else(|| callee_source_unit.clone(), |b| format!("`{b}`"));
+                    write!(
+                        f,
+                        "at-init read promoted from the body of {callee}, called at init"
+                    )
+                }
+                AtInitReadPosition::UnresolvedAtInitCall => f.write_str(
+                    "at-init read in the conservative closure of an unresolved at-init call",
+                ),
+            },
+            Self::Sequenced { cause, .. } => fmt::Display::fmt(cause, f),
+        }
+    }
+}
+
+/// Explain why `edge` constrains, from provenance retained on the
+/// dependency graph. See [`CycleEdge::explanation`].
+fn explain_edge(
+    dependency_graph: &DependencyGraph,
+    edge: &DependencyEdge,
+) -> Option<CutEdgeExplanation> {
+    match edge.reason.kind {
+        DepKind::EagerUse => {
+            let position = match edge.reason.role() {
+                EdgeRole::Direct => AtInitReadPosition::Direct,
+                EdgeRole::PromotedAtInit { callee_source_unit }
+                    if callee_source_unit == edge.from =>
+                {
+                    AtInitReadPosition::UnresolvedAtInitCall
+                }
+                EdgeRole::PromotedAtInit { callee_source_unit } => {
+                    AtInitReadPosition::PromotedAtInit {
+                        callee_source_unit: analysis::reports::source_unit_key(callee_source_unit),
+                        callee_binding: dependency_graph
+                            .node(callee_source_unit)
+                            .and_then(|node| node.declared.iter().next())
+                            .map(|id| id.0.clone()),
+                    }
+                }
+            };
+            Some(CutEdgeExplanation::AtInitRead { position })
+        }
+        DepKind::Sequenced => Some(CutEdgeExplanation::Sequenced {
+            cause: edge.reason.sequenced_cause()?.clone(),
+            target_source_unit: analysis::reports::schema::impure_source_unit_cause(
+                dependency_graph,
+                edge.to,
+            )
+            .map(Box::new),
+        }),
+        _ => None,
+    }
 }
 
 impl CycleEdge {
@@ -214,17 +333,15 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
 
         // Group cut edges by binding-pair blame key. Each group is
         // one (reader, target) atom split the spec author can fix.
-        let mut groups: HashMap<BindingPairKey<'_>, BindingPairAgg> = HashMap::new();
+        let mut groups: HashMap<BindingPairKey<'_>, Vec<&CycleEdge>> = HashMap::new();
         for edge in &cycle.cut {
-            let key = BindingPairKey::of(edge);
-            let agg = groups.entry(key).or_insert_with(|| BindingPairAgg {
-                kind: edge.kind,
-                count: 0,
-            });
-            agg.count += 1;
+            groups
+                .entry(BindingPairKey::of(edge))
+                .or_default()
+                .push(edge);
         }
-        let mut ranked: Vec<(BindingPairKey<'_>, BindingPairAgg)> = groups.into_iter().collect();
-        ranked.sort_by(|a, b| b.1.count.cmp(&a.1.count).then(a.0.cmp(&b.0)));
+        let mut ranked: Vec<(BindingPairKey<'_>, Vec<&CycleEdge>)> = groups.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(&b.0)));
 
         // Every blocking SCC carries a non-empty cut by construction:
         // Pass-1 runs FAS over a strongly connected constraining
@@ -236,18 +353,19 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
         );
 
         out.push_str(
-            "  Binding pairs forcing the cycle (count: source binding (module) → kind → target binding (module)):\n",
+            "  Binding pairs forcing the cycle (count: source binding (module) → kind → target binding (module), then why each edge constrains):\n",
         );
-        for (key, agg) in ranked.iter().take(TOP_K) {
+        for (key, edges) in ranked.iter().take(TOP_K) {
             out.push_str(&format!(
                 "    {n:>4}x  {from_b} ({from_m})  --{kind}-->  {to_b} ({to_m})\n",
-                n = agg.count,
+                n = edges.len(),
                 from_b = key.from_label,
                 from_m = key.from,
-                kind = agg.kind.diagnostic_label(),
+                kind = edges[0].kind.diagnostic_label(),
                 to_b = key.to_label,
                 to_m = key.to,
             ));
+            render_explanations(edges, &mut out);
         }
         if ranked.len() > TOP_K {
             out.push_str(&format!(
@@ -321,10 +439,24 @@ impl<'a> BindingPairKey<'a> {
     }
 }
 
-#[derive(Debug)]
-struct BindingPairAgg {
-    kind: DepKind,
-    count: usize,
+/// Distinct explanations behind one binding-pair row, indented under
+/// it. Shared by the bail summary and `gate describe`'s evidence block.
+pub fn render_explanations(edges: &[&CycleEdge], out: &mut String) {
+    const WHY_K: usize = 3;
+    let distinct: BTreeSet<String> = edges
+        .iter()
+        .filter_map(|edge| edge.explanation.as_ref())
+        .map(ToString::to_string)
+        .collect();
+    for why in distinct.iter().take(WHY_K) {
+        out.push_str(&format!("           - {why}\n"));
+    }
+    if distinct.len() > WHY_K {
+        out.push_str(&format!(
+            "           - … +{} more distinct reason(s)\n",
+            distinct.len() - WHY_K,
+        ));
+    }
 }
 
 fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
@@ -492,6 +624,7 @@ fn cycle_edges_for(
                     dependency_graph,
                     edge,
                 ),
+                explanation: explain_edge(dependency_graph, edge),
             }
         })
         .collect();
@@ -595,7 +728,13 @@ pub fn render_atomic_group_conflict_summary(
 fn sequenced_causes_from_cycle(cycle: &CycleReport) -> Vec<SequencedSourceUnitCause> {
     let mut causes = BTreeMap::new();
     for edge in &cycle.cut {
-        if let Some(cause) = &edge.sequenced_source_unit {
+        let target = match &edge.explanation {
+            Some(CutEdgeExplanation::Sequenced {
+                target_source_unit, ..
+            }) => target_source_unit.as_deref(),
+            _ => None,
+        };
+        for cause in edge.sequenced_source_unit.iter().chain(target) {
             causes.insert(cause.source_unit_id.clone(), cause.clone());
         }
     }
@@ -645,7 +784,15 @@ pub(crate) fn render_sequenced_source_unit_causes(
                 .as_deref()
                 .map(|detail| format!(" ({detail})"))
                 .unwrap_or_default();
-            out.push_str(&format!("    `{names}` at {location}: {rule}{detail}\n"));
+            // A statement whose synchronous execution is incomplete
+            // chains conservatively; say so next to its purity reason.
+            let incomplete = match cause.synchronous_execution_complete {
+                Some(false) => "; synchronous execution incomplete",
+                _ => "",
+            };
+            out.push_str(&format!(
+                "    `{names}` at {location}: {rule}{detail}{incomplete}\n"
+            ));
             if let Some(guidance) = &reason.author_guidance {
                 out.push_str(&format!("      {guidance}\n"));
             }

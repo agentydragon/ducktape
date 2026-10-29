@@ -143,17 +143,15 @@ pub struct StatementFacts {
     /// side effects are covered by its own island-reachability
     /// analysis.
     pub cell_writes_summarizable: bool,
-    /// `false` whenever `cell_writes_summarizable` is `false`, and
-    /// additionally for shapes that defeat the dataflow-aware
-    /// S-chain's stronger "which cells does this statement TOUCH"
-    /// question: opaque (not classifier-Pure) at-init calls/news
-    /// (I/O is not a cell; callee bodies may touch globals), member
-    /// writes through bindings (aliasing), and statements tainted by
-    /// a global-object alias escape. Downstream passes must treat
-    /// the statement as touching every cell. See `README.md` →
+    /// Every reason the dataflow-aware S-chain's stronger "which cells
+    /// does this statement TOUCH" question cannot be answered; non-empty
+    /// whenever `cell_writes_summarizable` is `false`. Downstream passes
+    /// treat a statement with any cause as touching every cell
+    /// ([`StatementFacts::dataflow_summarizable`]) and the graph retains
+    /// the causes on the edges that fallback emits. See `README.md` →
     /// "Conditionally-correct optimizations" for the soundness
     /// precondition.
-    pub dataflow_summarizable: bool,
+    pub dataflow_opacity: BTreeSet<DataflowOpacityCause>,
     /// Heap-content effects on uniquely identified array allocations. These
     /// are distinct from binding effects: mutating an array changes its
     /// contents, not the binding that names it.
@@ -439,7 +437,39 @@ pub struct StructuralStatementFacts {
     pub global_writes: BTreeSet<String>,
     pub global_reads: BTreeSet<String>,
     pub cell_writes_summarizable: bool,
-    pub dataflow_summarizable: bool,
+    pub dataflow_opacity: BTreeSet<DataflowOpacityCause>,
+}
+
+/// One shape that defeats the dataflow-aware S-chain's cell tracking for
+/// a statement ([`StatementFacts::dataflow_opacity`]). The first three
+/// are policy-independent source shapes; `OpaqueAtInitCall` consults the
+/// purity classifier, so a declared-pure hint can lift it.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DataflowOpacityCause {
+    /// A member write through a tracked binding or an alias shape: the
+    /// written heap cell cannot be attributed.
+    MemberWriteOrAlias,
+    /// `with`, direct or indirect `eval`, `Function(...)`, a dynamic-key
+    /// global access, or `defineProperty`/`Proxy` on the global object:
+    /// the statement may write arbitrary cells (also clears
+    /// `cell_writes_summarizable`).
+    DynamicCellWrites,
+    /// The statement reads a binding a bare global-object alias flowed
+    /// into (`facts/global_object.rs`), so its summary misses global
+    /// property cells.
+    GlobalObjectAliasEscape,
+    /// An at-init call or `new` the purity classifier does not prove
+    /// `Pure`: I/O is not a cell and callee bodies may touch globals.
+    OpaqueAtInitCall,
+}
+
+impl StatementFacts {
+    /// Whether the dataflow-aware S-chain may use this statement's exact
+    /// cell summary instead of the strict every-prior-impure fallback.
+    pub fn dataflow_summarizable(&self) -> bool {
+        self.dataflow_opacity.is_empty()
+    }
 }
 
 impl StructuralStatementFacts {

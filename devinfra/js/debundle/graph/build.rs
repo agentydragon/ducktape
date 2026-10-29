@@ -17,7 +17,11 @@ use crate::{StatementFacts, StatementKind};
 pub use spec::DependencyGraphOptions;
 
 use super::dependency_graph::{DependencyGraph, SourceUnit, SourceUnitId};
-use super::edge::{DependencyEdge, DependencyEdgeId, EdgeReason, EdgeRole};
+use super::edge::{
+    BindingTimelineOrder, CellConflict, CellEffectClass, DependencyEdge, DependencyEdgeId,
+    EdgeReason, EdgeRole, EffectCellReport, HeapBarrierCause, SequencedCause,
+};
+use crate::facts::DataflowOpacityCause;
 
 /// Multiple declarations of one binding are supported only when every site
 /// declares `var`. Other duplicate declaration shapes remain rejected.
@@ -406,13 +410,18 @@ pub fn build_dependency_graph_with(
             source_units.insert(*from);
         }
     }
-    for source_units in accesses.values() {
+    for (binding, source_units) in &accesses {
         let source_units: Vec<_> = source_units.iter().copied().collect();
         for pair in source_units.windows(2) {
             raw_edges.push((
                 pair[1],
                 pair[0],
-                EdgeReason::sequenced(SourceUnitOrdinal(pair[1].0)),
+                EdgeReason::sequenced(
+                    SourceUnitOrdinal(pair[1].0),
+                    SequencedCause::SharedVarAccess {
+                        binding: binding.0.clone(),
+                    },
+                ),
             ));
         }
     }
@@ -526,29 +535,42 @@ fn emit_heap_content_order(
             &stmt.heap_contents.reads.eager,
             &stmt.heap_contents.writes.eager,
         );
-        let mut opaque = stmt.heap_contents.opaque.eager
-            || (!stmt.dataflow_summarizable && !stmt.purity.is_pure())
-            // The shared synchronous interpreter owns call-target and
-            // protocol precision. If it cannot completely summarize this
-            // source unit, an otherwise-pure expression may still observe
-            // mutable array contents through coercion, a getter, or a
-            // callable that the array collector does not resolve. Keep one
-            // heap-frontier barrier instead of duplicating that resolver.
-            || stmt
-                .synchronous_calls
-                .as_ref()
-                .is_some_and(|calls| !calls.complete);
+        // Every disjunct that holds is retained as a `HeapBarrierCause`
+        // on the edges the barrier emits.
+        let mut opaque_causes = BTreeSet::new();
+        if stmt.heap_contents.opaque.eager {
+            opaque_causes.insert(HeapBarrierCause::ArrayContentEffects);
+        }
+        if !stmt.dataflow_summarizable() && !stmt.purity.is_pure() {
+            opaque_causes.insert(HeapBarrierCause::NonSummarizableImpure);
+        }
+        // The shared synchronous interpreter owns call-target and
+        // protocol precision. If it cannot completely summarize this
+        // source unit, an otherwise-pure expression may still observe
+        // mutable array contents through coercion, a getter, or a
+        // callable that the array collector does not resolve. Keep one
+        // heap-frontier barrier instead of duplicating that resolver.
+        if stmt
+            .synchronous_calls
+            .as_ref()
+            .is_some_and(|calls| !calls.complete)
+        {
+            opaque_causes.insert(HeapBarrierCause::IncompleteSynchronousExecution);
+        }
         // Function declarations are inert; only a recognized synchronous
         // at-init call inherits their first-order effects.
         for callee in &stmt.heap_contents.calls.eager {
             if let Some(target) = resolved_callee(callee) {
                 allocations.extend(lazy_effects[target.0].allocations.iter().cloned());
                 union_effects(&mut effects, &lazy_effects[target.0].effects);
-                opaque |= lazy_effects[target.0].opaque;
+                if lazy_effects[target.0].opaque {
+                    opaque_causes.insert(HeapBarrierCause::CalleeHeapEffects);
+                }
             } else {
-                opaque = true;
+                opaque_causes.insert(HeapBarrierCause::UnresolvedCallee);
             }
         }
+        let opaque = !opaque_causes.is_empty();
         has_live_heap_contents |=
             !allocations.is_empty() || !effects.reads.is_empty() || !effects.writes.is_empty();
         if !allocations.is_empty() {
@@ -570,7 +592,9 @@ fn emit_heap_content_order(
                 stmt.ordinal,
                 effects,
                 if opaque {
-                    CellOrderBarrier::HeapFrontier
+                    CellOrderBarrier::HeapFrontier {
+                        causes: opaque_causes,
+                    }
                 } else {
                     CellOrderBarrier::None
                 },
@@ -719,26 +743,48 @@ impl IterativeRules for HeapContentRules {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 enum CellOrderBarrier {
     None,
     /// A fresh allocation seeds later heap observations without depending on
     /// prior heap effects or resetting an existing source-origin timeline.
     HeapAllocation,
     /// Preserve the S-chain behavior: an unsummarized impure statement
-    /// depends on every preceding impure source unit.
-    AllPriorEvents,
+    /// depends on every preceding impure source unit. `causes` is
+    /// retained on every edge the fallback emits.
+    AllPriorEvents {
+        causes: BTreeSet<DataflowOpacityCause>,
+    },
     /// Unknown heap effects depend on the current heap-cell frontier and
-    /// become the barrier for later heap observations.
-    HeapFrontier,
+    /// become the barrier for later heap observations. `causes` is
+    /// retained on every edge the barrier emits.
+    HeapFrontier {
+        causes: BTreeSet<HeapBarrierCause>,
+    },
 }
 
 impl CellOrderBarrier {
-    fn from_summarizable(summarizable: bool) -> Self {
-        if summarizable {
+    fn from_opacity(causes: &BTreeSet<DataflowOpacityCause>) -> Self {
+        if causes.is_empty() {
             Self::None
         } else {
-            Self::AllPriorEvents
+            Self::AllPriorEvents {
+                causes: causes.clone(),
+            }
+        }
+    }
+
+    /// The endpoint classification retained on emitted edges.
+    fn effect_class(&self) -> CellEffectClass {
+        match self {
+            Self::None => CellEffectClass::Summarized,
+            Self::HeapAllocation => CellEffectClass::HeapAllocation,
+            Self::AllPriorEvents { causes } => CellEffectClass::OpaqueBarrier {
+                causes: causes.clone(),
+            },
+            Self::HeapFrontier { causes } => CellEffectClass::HeapFrontier {
+                causes: causes.clone(),
+            },
         }
     }
 }
@@ -780,7 +826,11 @@ fn emit_s_chain(
             if let Some(to) = prev
                 && from != to
             {
-                raw_edges.push((from, to, EdgeReason::sequenced(stmt.ordinal)));
+                raw_edges.push((
+                    from,
+                    to,
+                    EdgeReason::sequenced(stmt.ordinal, SequencedCause::StrictChain),
+                ));
             }
             prev = Some(from);
         }
@@ -815,7 +865,7 @@ fn emit_s_chain(
                     SourceUnitId(stmt.ordinal.0),
                     stmt.ordinal,
                     stmt.effects(),
-                    CellOrderBarrier::from_summarizable(stmt.dataflow_summarizable),
+                    CellOrderBarrier::from_opacity(&stmt.dataflow_opacity),
                 )
             }),
         raw_edges,
@@ -847,7 +897,21 @@ fn emit_cell_order_events(
     let mut opaque_barrier: Option<SourceUnitId> = None;
     let mut pending_allocations: BTreeMap<EffectCell, BTreeSet<SourceUnitId>> = BTreeMap::new();
     let mut born_after_barrier = BTreeSet::new();
+    // Classification of every source unit seen so far, for the `to` side
+    // of retained causes. A source unit's content event (summarized or
+    // barrier) supersedes its earlier allocation event.
+    let mut class_of: BTreeMap<SourceUnitId, CellEffectClass> = BTreeMap::new();
+    // Every reason `from` must follow each target, keyed by target.
+    let mut targets: BTreeMap<SourceUnitId, BTreeSet<CellConflict>> = BTreeMap::new();
+    fn depend(
+        targets: &mut BTreeMap<SourceUnitId, BTreeSet<CellConflict>>,
+        to: SourceUnitId,
+        conflict: CellConflict,
+    ) {
+        targets.entry(to).or_default().insert(conflict);
+    }
     for (from, ordinal, effects, barrier_mode) in events {
+        let from_class = barrier_mode.effect_class();
         if barrier_mode == CellOrderBarrier::HeapAllocation {
             for cell in effects.writes {
                 if opaque_barrier.is_some()
@@ -857,21 +921,51 @@ fn emit_cell_order_events(
                 }
                 pending_allocations.entry(cell).or_default().insert(from);
             }
+            class_of.entry(from).or_insert(from_class);
             continue;
         }
-        let mut targets: BTreeSet<SourceUnitId> = BTreeSet::new();
-        if barrier_mode != CellOrderBarrier::AllPriorEvents {
-            for cell in effects.reads.iter().chain(effects.writes.iter()) {
+        let all_prior = matches!(barrier_mode, CellOrderBarrier::AllPriorEvents { .. });
+        if !all_prior {
+            for (cell, is_write) in effects
+                .reads
+                .iter()
+                .map(|cell| (cell, false))
+                .chain(effects.writes.iter().map(|cell| (cell, true)))
+            {
+                let report = EffectCellReport::from(cell);
                 if let Some(allocations) = pending_allocations.get(cell) {
-                    targets.extend(allocations.iter().copied());
+                    for &to in allocations {
+                        depend(
+                            &mut targets,
+                            to,
+                            CellConflict::UseAfterAllocation {
+                                cell: report.clone(),
+                            },
+                        );
+                    }
                 }
                 if let Some(&to) = last_writer.get(cell) {
-                    targets.insert(to);
+                    let conflict = if is_write {
+                        CellConflict::WriteAfterWrite {
+                            cell: report.clone(),
+                        }
+                    } else {
+                        CellConflict::ReadAfterWrite {
+                            cell: report.clone(),
+                        }
+                    };
+                    depend(&mut targets, to, conflict);
                 }
-            }
-            for cell in &effects.writes {
-                if let Some(readers) = readers_since_last_write.get(cell) {
-                    targets.extend(readers.iter().copied());
+                if is_write && let Some(readers) = readers_since_last_write.get(cell) {
+                    for &to in readers {
+                        depend(
+                            &mut targets,
+                            to,
+                            CellConflict::WriteAfterRead {
+                                cell: report.clone(),
+                            },
+                        );
+                    }
                 }
             }
             // Unknown effects are barriers for subsequent summarized events.
@@ -883,40 +977,71 @@ fn emit_cell_order_events(
                         .chain(&effects.writes)
                         .any(|cell| !born_after_barrier.contains(cell)))
             {
-                targets.insert(barrier);
+                depend(&mut targets, barrier, CellConflict::AfterBarrier);
             }
         }
-        if barrier_mode == CellOrderBarrier::AllPriorEvents {
+        if all_prior {
             // The S-chain's historical fallback: depend on every prior event
             // and become a barrier for later summarized events.
-            targets.extend(prior_source_units.iter().copied());
+            for &to in &prior_source_units {
+                depend(&mut targets, to, CellConflict::BarrierAfterPrior);
+            }
             opaque_barrier = Some(from);
             born_after_barrier.clear();
-        } else if barrier_mode == CellOrderBarrier::HeapFrontier {
+        } else if matches!(barrier_mode, CellOrderBarrier::HeapFrontier { .. }) {
             // An opaque heap operation only needs the live cell frontier.
             // Every earlier read/write is either on that frontier or already
             // constrained before a frontier event. Reset the per-cell state
             // so later observations depend on the opaque operation itself.
-            targets.extend(
-                pending_allocations
-                    .values()
-                    .flat_map(|allocations| allocations.iter().copied()),
-            );
+            for (cell, allocations) in &pending_allocations {
+                for &to in allocations {
+                    depend(
+                        &mut targets,
+                        to,
+                        CellConflict::FrontierAfterCell { cell: cell.into() },
+                    );
+                }
+            }
             pending_allocations.clear();
-            targets.extend(last_writer.values().copied());
-            targets.extend(
-                readers_since_last_write
-                    .values()
-                    .flat_map(|readers| readers.iter().copied()),
-            );
+            for (cell, &to) in &last_writer {
+                depend(
+                    &mut targets,
+                    to,
+                    CellConflict::FrontierAfterCell { cell: cell.into() },
+                );
+            }
+            for (cell, readers) in &readers_since_last_write {
+                for &to in readers {
+                    depend(
+                        &mut targets,
+                        to,
+                        CellConflict::FrontierAfterCell { cell: cell.into() },
+                    );
+                }
+            }
             opaque_barrier = Some(from);
             born_after_barrier.clear();
             last_writer.clear();
             readers_since_last_write.clear();
         }
-        for to in targets {
+        for (to, conflicts) in std::mem::take(&mut targets) {
             if from != to && sequence_pairs.insert((from, to)) {
-                raw_edges.push((from, to, EdgeReason::sequenced(ordinal)));
+                let to_class = class_of
+                    .get(&to)
+                    .cloned()
+                    .expect("every cell-timeline target is an earlier event");
+                raw_edges.push((
+                    from,
+                    to,
+                    EdgeReason::sequenced(
+                        ordinal,
+                        SequencedCause::CellOrder {
+                            from: from_class.clone(),
+                            to: to_class,
+                            conflicts,
+                        },
+                    ),
+                ));
             }
         }
         if barrier_mode == CellOrderBarrier::None {
@@ -931,6 +1056,7 @@ fn emit_cell_order_events(
                     .insert(from);
             }
         }
+        class_of.insert(from, from_class);
         prior_source_units.push(from);
     }
 }
@@ -1103,6 +1229,10 @@ fn promote_at_init_calls(
         if readers.is_empty() {
             continue;
         }
+        let timeline = |order: BindingTimelineOrder| SequencedCause::BindingTimeline {
+            binding: binding.0.clone(),
+            order,
+        };
         let writer_events: Vec<_> = writers.iter().copied().collect();
         for pair in writer_events.windows(2) {
             let earlier = pair[0];
@@ -1112,7 +1242,10 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     later,
                     earlier,
-                    EdgeReason::sequenced(SourceUnitOrdinal(later.0)),
+                    EdgeReason::sequenced(
+                        SourceUnitOrdinal(later.0),
+                        timeline(BindingTimelineOrder::WriterAfterWriter),
+                    ),
                 ));
             }
         }
@@ -1125,7 +1258,10 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     reader,
                     previous_writer,
-                    EdgeReason::sequenced(SourceUnitOrdinal(reader.0)),
+                    EdgeReason::sequenced(
+                        SourceUnitOrdinal(reader.0),
+                        timeline(BindingTimelineOrder::ReaderAfterWriter),
+                    ),
                 ));
             }
             if let Some(&next_writer) = writers
@@ -1140,7 +1276,10 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     next_writer,
                     reader,
-                    EdgeReason::sequenced(SourceUnitOrdinal(next_writer.0)),
+                    EdgeReason::sequenced(
+                        SourceUnitOrdinal(next_writer.0),
+                        timeline(BindingTimelineOrder::WriterAfterReader),
+                    ),
                 ));
             }
         }
@@ -1391,7 +1530,12 @@ fn promote_at_init_calls(
                     raw_edges.push((
                         target_source_unit,
                         caller,
-                        EdgeReason::sequenced(SourceUnitOrdinal(target_source_unit.0)),
+                        EdgeReason::sequenced(
+                            SourceUnitOrdinal(target_source_unit.0),
+                            SequencedCause::UninitializedObservation {
+                                binding: target_binding.0.clone(),
+                            },
+                        ),
                     ));
                 }
             }
@@ -1631,6 +1775,12 @@ mod array_heap_frontier_tests {
         );
     }
 
+    fn heap_frontier() -> CellOrderBarrier {
+        CellOrderBarrier::HeapFrontier {
+            causes: BTreeSet::from([HeapBarrierCause::ArrayContentEffects]),
+        }
+    }
+
     fn heap_event(
         ordinal: usize,
         reads: &[u32],
@@ -1664,9 +1814,9 @@ mod array_heap_frontier_tests {
     #[test]
     fn fresh_allocation_is_pending_without_reading_prior_opaque_effects() {
         let events = [
-            heap_event(0, &[], &[], CellOrderBarrier::HeapFrontier),
+            heap_event(0, &[], &[], heap_frontier()),
             heap_event(1, &[], &[10], CellOrderBarrier::HeapAllocation),
-            heap_event(2, &[], &[], CellOrderBarrier::HeapFrontier),
+            heap_event(2, &[], &[], heap_frontier()),
         ];
         let mut edges = Vec::new();
         let mut pairs = BTreeSet::new();
@@ -1699,9 +1849,9 @@ mod array_heap_frontier_tests {
     fn allocation_does_not_exempt_same_statement_opaque_execution() {
         let events = [
             heap_event(0, &[], &[10], CellOrderBarrier::HeapAllocation),
-            heap_event(1, &[], &[], CellOrderBarrier::HeapFrontier),
+            heap_event(1, &[], &[], heap_frontier()),
             heap_event(2, &[], &[20], CellOrderBarrier::HeapAllocation),
-            heap_event(2, &[], &[], CellOrderBarrier::HeapFrontier),
+            heap_event(2, &[], &[], heap_frontier()),
             heap_event(3, &[10], &[], CellOrderBarrier::None),
         ];
         let mut edges = Vec::new();
@@ -1736,7 +1886,7 @@ mod array_heap_frontier_tests {
                 SourceUnitId(source_unit),
                 SourceUnitOrdinal(source_unit),
                 crate::StatementEffectSummary::default(),
-                CellOrderBarrier::HeapFrontier,
+                heap_frontier(),
             ));
         }
         let last_barrier = ARRAY_COUNT + BARRIER_COUNT - 1;

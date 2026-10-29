@@ -17,11 +17,11 @@ Every JSON file carries binding identities as `Atom`s (interned
 strings), **not** as SWC `Id = (Atom, SyntaxContext)`. The
 `SyntaxContext` half is dropped at serialization.
 
-| File                          | Field carrying binding identity                                                                                                  |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `dependency_graph.json`       | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`                                                     |
-| `cycles.json`                 | `cut[].binding: Option<Atom>`, `cut[].from_binding: Option<Atom>` (evidence is recomputed on demand by `debundle gate describe`) |
-| `atomic_group_conflicts.json` | `claims[].binding_names: Vec<Atom>`                                                                                              |
+| File                          | Field carrying binding identity                                                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `dependency_graph.json`       | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`, `edges[].sequenced_cause` binding/cell names                                               |
+| `cycles.json`                 | `cut[].binding: Option<Atom>`, `cut[].from_binding: Option<Atom>`, `cut[].explanation` binding/cell names (evidence is recomputed on demand by `debundle gate describe`) |
+| `atomic_group_conflicts.json` | `claims[].binding_names: Vec<Atom>`                                                                                                                                      |
 
 `Atom` serializes as a plain JSON string via `swc_atoms`'s own
 `Serialize` impl. That impl writes the **string content** — interned

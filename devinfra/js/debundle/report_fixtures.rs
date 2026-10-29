@@ -169,6 +169,7 @@ pub fn dependency_edge(
         statement_ordinal: SourceUnitOrdinal(0),
         constrains_init_order: constrains,
         role: None,
+        sequenced_cause: None,
     }
 }
 

@@ -467,6 +467,11 @@ debundle_e2e_test(
     deps = ["@crates//:serde_json"],
 )
 
+debundle_e2e_test(
+    name = "cut_edge_explanation_test",
+    deps = ["@crates//:serde_json"],
+)
+
 debundle_e2e_test(name = "cross_ref_lowering_test")
 
 debundle_e2e_test(
