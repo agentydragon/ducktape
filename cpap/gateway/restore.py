@@ -145,7 +145,7 @@ def _login(opener: urllib.request.OpenerDirector, base: str, password: str, expe
     query = urllib.parse.urlencode({"client": "1", "password": password}, quote_via=urllib.parse.quote)
     login_xml = _parse_xml(_get(opener, f"{base}/publicdir/sendurl?{query}"))
     login_result = login_xml.findtext("./ezaction/clientLogin")
-    if login_result == "0":
+    if login_result == "-1":
         return False
     login_mac = (login_xml.findtext("./ezaction/mac") or "").strip()
     if login_result != "1" or not _valid_mac(login_mac) or _normalize_mac(login_mac) != expected_mac:

@@ -72,10 +72,11 @@ class _CardHandler(BaseHTTPRequestHandler):
         elif parsed.path == "/publicdir/sendurl":
             login_mac = server.state.login_mac or server.state.mac
             attempted_password = query.get("password", [""])[0]
+            # LZ1801EDPG:1.0.0 returns -1 for an incorrect administrator password.
             success = (
                 "1"
                 if server.state.login_success and attempted_password == server.state.accepted_admin_password
-                else "0"
+                else "-1"
             )
             self._respond(
                 200,
