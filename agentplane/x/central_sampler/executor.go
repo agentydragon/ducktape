@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"math/rand/v2"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -141,12 +142,14 @@ func gatewayHandshakeReceive(ctx context.Context, stream grpc.BidiStreamingClien
 }
 
 type Executor struct {
-	store        *Store
-	owner        Owner
-	socket       executorSocket
-	cwd          string
-	codexPath    string
-	environment  map[string]string
+	store       *Store
+	owner       Owner
+	socket      executorSocket
+	cwd         string
+	codexPath   string
+	environment map[string]string
+	// shell is the executor-reported default shell; nil when the exec-server reports none.
+	shell        *execShell
 	rpcMu        sync.Mutex
 	dispatchMu   sync.Mutex
 	stopping     bool
@@ -237,13 +240,12 @@ func ConnectExecutor(ctx context.Context, store *Store, owner Owner, session *Se
 		return nil, nil, err
 	}
 	if !session.WorkspacePrepared {
-		workdir := "/"
-		input, err := json.Marshal(execCommandInput{Cmd: "mkdir -p -- " + shellQuote(request.GetSpec().GetCwd()), Workdir: &workdir})
+		input, err := json.Marshal(map[string]string{"cmd": "mkdir -p -- " + shellQuote(request.GetSpec().GetCwd()), "workdir": "/"})
 		if err != nil {
 			_ = closeTransport()
 			return nil, nil, err
 		}
-		result, err := executor.Invoke(setupCtx, "exec_command", input)
+		result, err := executor.execCommand(setupCtx, input)
 		if err != nil {
 			_ = closeTransport()
 			return nil, nil, err
@@ -295,6 +297,9 @@ func (e *Executor) initialize(ctx context.Context) error {
 	sessionID := result.SessionID
 	if sessionID == "" {
 		return errors.New("exec-server initialized without a session ID")
+	}
+	if result.EnvironmentInfo != nil {
+		e.shell = &result.EnvironmentInfo.Shell
 	}
 	if err := e.store.SetExecutorSession(ctx, e.owner, sessionID); err != nil {
 		return err
@@ -355,7 +360,12 @@ func (e *Executor) rpc(ctx context.Context, method string, params any) (json.Raw
 			return nil, fmt.Errorf("unexpected exec-server response ID for %s", method)
 		}
 		if reply.Error != nil {
-			return nil, fmt.Errorf("exec-server rejected %s (%d): %s", method, reply.Error.Code, reply.Error.Message)
+			// An error reply is a definite outcome: the request had no effect.
+			rejection := map[string]any{"rejected": map[string]any{"code": reply.Error.Code, "message": reply.Error.Message}}
+			if err := e.store.FinishNested(ctx, e.owner, intent, rejection); err != nil {
+				return nil, err
+			}
+			return nil, &executorRejectedError{method: method, code: reply.Error.Code, message: reply.Error.Message}
 		}
 		var evidence map[string]any
 		if err := decodeProtocolObject(reply.Result, &evidence); err != nil {
@@ -368,66 +378,122 @@ func (e *Executor) rpc(ctx context.Context, method string, params any) (json.Raw
 	}
 }
 
-func (e *Executor) Invoke(ctx context.Context, name string, arguments json.RawMessage) (*processToolResult, error) {
-	var argv []string
-	var cwd string
-	var tty bool
-	var yieldMS int
-	if name == "exec_command" {
-		var args execCommandInput
-		if err := decodeToolInput(arguments, &args); err != nil {
-			return nil, err
-		}
-		if args.Cmd == "" {
-			return nil, errors.New("exec_command requires a command string")
-		}
-		argv = []string{"/bin/sh", "-c", args.Cmd}
-		cwd = e.cwd
-		if args.Workdir != nil {
-			cwd = *args.Workdir
-			if !filepath.IsAbs(cwd) {
-				return nil, errors.New("workdir must be an absolute path")
-			}
-		}
-		tty = args.TTY
-		var err error
-		yieldMS, err = toolYieldTime(args.YieldTimeMS, 60000)
-		if err != nil {
-			return nil, err
-		}
-	} else if name == "apply_patch" {
-		var patch string
-		if err := json.Unmarshal(arguments, &patch); err != nil || bytes.Equal(bytes.TrimSpace(arguments), []byte("null")) {
-			return nil, errors.New("apply_patch takes a patch string")
-		}
-		argv, cwd, yieldMS = []string{e.codexPath, "--codex-run-as-apply-patch", patch}, e.cwd, 60000
-	} else if name == "write_stdin" {
+// Invoke runs one nested tool call from JavaScript. A *toolError is reported to the cell as a
+// rejected call; any other error leaves the remote outcome uncertain.
+func (e *Executor) Invoke(ctx context.Context, name string, arguments json.RawMessage) (any, error) {
+	switch name {
+	case "exec_command":
+		return e.execCommand(ctx, arguments)
+	case "write_stdin":
 		return e.writeStdin(ctx, arguments)
-	} else {
+	case "apply_patch":
+		return e.applyPatch(ctx, arguments)
+	default:
 		return nil, fmt.Errorf("unsupported nested tool %q", name)
 	}
-	processID := uuid.NewString()
-	lock := e.processLock(processID)
-	lock.Lock()
-	defer lock.Unlock()
-	e.dispatchMu.Lock()
-	if e.stopping {
-		e.dispatchMu.Unlock()
-		return nil, errors.New("process dispatch stopped by interrupt")
-	}
-	if err := e.store.RegisterProcess(ctx, e.owner, processID, tty); err != nil {
-		e.dispatchMu.Unlock()
-		return nil, err
-	}
-	_, err := executorRPC[executorStarted](ctx, e, "process/start", executorStart{ProcessID: processID, Argv: argv, Cwd: fileURI(cwd), Env: e.environment, TTY: tty, PipeStdin: !tty})
-	e.dispatchMu.Unlock()
+}
+
+// Codex rust-v0.162.1 core/src/tools/handlers/unified_exec/exec_command.rs handle_call and
+// core/src/unified_exec/process_manager.rs exec_command_inner.
+func (e *Executor) execCommand(ctx context.Context, arguments json.RawMessage) (*unifiedExecResult, error) {
+	plan, err := planExecCommand(arguments, e.cwd, e.shell)
 	if err != nil {
 		return nil, err
 	}
-	if err := e.store.ProcessResult(ctx, e.owner, processID, nil, "running", nil, false); err != nil {
+	environment := maps.Clone(e.environment)
+	maps.Copy(environment, unifiedExecEnvironment)
+	processID, sessionID, unlock, err := e.startProcess(ctx, plan.argv, plan.cwd, environment, plan.tty)
+	if err != nil {
+		var rejected *executorRejectedError
+		if errors.As(err, &rejected) {
+			return nil, &toolError{fmt.Sprintf("exec_command failed: CreateProcess { message: %q }", rejected.message)}
+		}
 		return nil, err
 	}
-	return e.readProcess(ctx, processID, yieldMS)
+	defer unlock()
+	observation, err := e.readProcess(ctx, processID, plan.yieldMS)
+	if err != nil {
+		return nil, err
+	}
+	return observation.unifiedExecResult(&sessionID, plan.maxOutputTokens, newChunkID()), nil
+}
+
+// applyPatchResult is what a nested apply_patch call resolves to in JavaScript.
+type applyPatchResult struct {
+	Output    string `json:"output"`
+	ExitCode  *int   `json:"exit_code"`
+	SessionID *int   `json:"session_id,omitempty"`
+}
+
+func (e *Executor) applyPatch(ctx context.Context, arguments json.RawMessage) (*applyPatchResult, error) {
+	var patch string
+	if err := json.Unmarshal(arguments, &patch); err != nil || bytes.Equal(bytes.TrimSpace(arguments), []byte("null")) {
+		return nil, &toolError{"apply_patch takes a patch string"}
+	}
+	processID, sessionID, unlock, err := e.startProcess(ctx, []string{e.codexPath, "--codex-run-as-apply-patch", patch}, e.cwd, e.environment, false)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	observation, err := e.readProcess(ctx, processID, 60000)
+	if err != nil {
+		return nil, err
+	}
+	result := &applyPatchResult{Output: lossyUTF8(observation.output.withOmissionMarker()), ExitCode: observation.exitCode}
+	if !observation.exited {
+		result.SessionID = &sessionID
+	}
+	return result, nil
+}
+
+// startProcess registers a model-visible process under a fresh unified exec session number and
+// launches it. The returned unlock releases the process lock held from registration on.
+// Codex rust-v0.162.1 core/src/unified_exec/process_manager.rs allocate_process_id: random in
+// [1000, 100000), unused by unreleased processes; the exec-server process ID embeds it.
+func (e *Executor) startProcess(ctx context.Context, argv []string, cwd string, environment map[string]string, tty bool) (string, int, func(), error) {
+	e.dispatchMu.Lock()
+	defer e.dispatchMu.Unlock()
+	if e.stopping {
+		return "", 0, nil, errors.New("process dispatch stopped by interrupt")
+	}
+	var processID string
+	var sessionID int
+	var lock *sync.Mutex
+	for {
+		sessionID = 1_000 + rand.IntN(99_000)
+		processID = fmt.Sprintf("%d-%s", sessionID, uuid.NewString())
+		lock = e.processLock(processID)
+		lock.Lock()
+		err := e.store.RegisterModelProcess(ctx, e.owner, processID, sessionID, tty)
+		if err == nil {
+			break
+		}
+		lock.Unlock()
+		if !errors.Is(err, ErrConflict) {
+			return "", 0, nil, err
+		}
+	}
+	_, err := executorRPC[executorStarted](ctx, e, "process/start", executorStart{ProcessID: processID, Argv: argv, Cwd: fileURI(cwd), Env: environment, TTY: tty})
+	if err != nil {
+		var rejected *executorRejectedError
+		if errors.As(err, &rejected) {
+			// No process exists; release its session number.
+			err = errors.Join(err, e.store.ProcessResult(ctx, e.owner, processID, nil, "exited", nil, true))
+		}
+		lock.Unlock()
+		return "", 0, nil, err
+	}
+	if err := e.store.ProcessResult(ctx, e.owner, processID, nil, "running", nil, false); err != nil {
+		lock.Unlock()
+		return "", 0, nil, err
+	}
+	return processID, sessionID, lock.Unlock, nil
+}
+
+// newChunkID is six random hex digits.
+// Codex rust-v0.162.1 core/src/unified_exec/mod.rs generate_chunk_id.
+func newChunkID() string {
+	return fmt.Sprintf("%06x", rand.IntN(1<<24))
 }
 
 func (e *Executor) Setup(ctx context.Context, script string, output func(string, []byte) error) (int, error) {
@@ -476,68 +542,93 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 	}
 }
 
-func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*processToolResult, error) {
-	var args writeStdinInput
-	if err := decodeToolInput(arguments, &args); err != nil {
-		return nil, err
-	}
-	if args.SessionID == "" {
-		return nil, errors.New("write_stdin requires session_id")
-	}
-	processID, chars, eof := args.SessionID, args.Chars, args.EOF
-	yieldMS, err := toolYieldTime(args.YieldTimeMS, 1000)
+// Codex rust-v0.162.1 core/src/tools/handlers/unified_exec/write_stdin.rs handle_call and
+// core/src/unified_exec/process_manager.rs write_stdin_inner.
+func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*unifiedExecResult, error) {
+	plan, err := planWriteStdin(arguments)
 	if err != nil {
 		return nil, err
 	}
-	lock := e.processLock(processID)
+	process, err := e.store.ProcessByModelSession(ctx, e.owner, plan.sessionID)
+	if errors.Is(err, ErrMissing) {
+		return nil, &toolError{fmt.Sprintf("write_stdin failed: Unknown process id %d", plan.sessionID)}
+	}
+	if err != nil {
+		return nil, err
+	}
+	lock := e.processLock(process.ID)
 	lock.Lock()
 	defer lock.Unlock()
+	// Revalidate under the lock: the number may have been released and reused meanwhile.
+	process, err = e.store.ProcessByModelSession(ctx, e.owner, plan.sessionID)
+	if errors.Is(err, ErrMissing) {
+		return nil, &toolError{fmt.Sprintf("write_stdin failed: Unknown process id %d", plan.sessionID)}
+	}
+	if err != nil {
+		return nil, err
+	}
+	if process.Status != "running" && process.Status != "exited_unread" {
+		return nil, fmt.Errorf("session %d is %s; its remote outcome is unknown", plan.sessionID, process.Status)
+	}
+	if plan.chars != "" {
+		if !process.TTY {
+			if plan.chars != interruptInput {
+				return nil, &toolError{"write_stdin failed: " + stdinClosedMessage}
+			}
+			if process.Status == "running" {
+				if err := e.dispatchInput(ctx, func() error {
+					_, err := executorRPC[executorEmpty](ctx, e, "process/signal", executorSignal{ProcessID: process.ID, Signal: "interrupt"})
+					return err
+				}); err != nil {
+					return nil, err
+				}
+			}
+		} else if process.Status == "running" {
+			// A write to an exited terminal is moot; the poll below reports the exit.
+			if err := e.dispatchInput(ctx, func() error {
+				result, err := executorRPC[executorWriteResult](ctx, e, "process/write", executorWrite{ProcessID: process.ID, Chunk: []byte(plan.chars), WriteID: uuid.NewString()})
+				if err != nil {
+					return err
+				}
+				if result.Status != "accepted" {
+					return &toolError{"write_stdin failed: " + writeToStdinFailedMessage}
+				}
+				return nil
+			}); err != nil {
+				return nil, err
+			}
+			// Give the process a brief window to react, as upstream does, before polling.
+			select {
+			case <-time.After(100 * time.Millisecond):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	}
+	observation, err := e.readProcess(ctx, process.ID, plan.yieldMS)
+	if err != nil {
+		return nil, err
+	}
+	return observation.unifiedExecResult(process.ModelSessionID, plan.maxOutputTokens, newChunkID()), nil
+}
+
+func (e *Executor) dispatchInput(ctx context.Context, send func() error) error {
+	e.dispatchMu.Lock()
+	defer e.dispatchMu.Unlock()
+	if e.stopping {
+		return errors.New("stdin dispatch stopped by interrupt")
+	}
+	return send()
+}
+
+// readProcess collects output until the process exits or the yield deadline passes. The caller
+// holds the process lock.
+func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS int) (*processObservation, error) {
 	process, err := e.store.Process(ctx, e.owner, processID)
 	if err != nil {
 		return nil, err
 	}
-	if process.Status != "running" && !(process.Status == "exited_unread" && chars == "" && !eof) {
-		return nil, fmt.Errorf("session %s is %s; stdin was not sent", processID, process.Status)
-	}
-	if eof && (!process.TTY || chars != "") {
-		return nil, errors.New("EOF requires a TTY and empty chars")
-	}
-	if chars != "" || eof {
-		e.dispatchMu.Lock()
-		if e.stopping {
-			e.dispatchMu.Unlock()
-			return nil, errors.New("stdin dispatch stopped by interrupt")
-		}
-		err = e.sendInput(ctx, processID, chars, eof)
-		e.dispatchMu.Unlock()
-		if err != nil {
-			return nil, err
-		}
-	}
-	return e.readProcess(ctx, processID, yieldMS)
-}
-
-func (e *Executor) sendInput(ctx context.Context, processID, chars string, eof bool) error {
-	if chars == "\x03" {
-		_, err := executorRPC[executorEmpty](ctx, e, "process/signal", executorSignal{ProcessID: processID, Signal: "interrupt"})
-		return err
-	}
-	payload := chars
-	if eof {
-		payload = "\x04"
-	}
-	result, err := executorRPC[executorWriteResult](ctx, e, "process/write", executorWrite{ProcessID: processID, Chunk: []byte(payload), WriteID: uuid.NewString()})
-	if err != nil {
-		return err
-	}
-	if result.Status != "accepted" {
-		return fmt.Errorf("stdin not accepted: %v", result.Status)
-	}
-	return nil
-}
-
-func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS int) (*processToolResult, error) {
-	process, err := e.store.Process(ctx, e.owner, processID)
+	output, err := restoreHeadTailBuffer(unifiedExecOutputMaxBytes, process.BufferedOutput, process.OmittedBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -546,51 +637,40 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 		if err := e.store.ProcessResult(ctx, e.owner, processID, after, "exited", process.ExitCode, true); err != nil {
 			return nil, err
 		}
-		return processOutput(process.BufferedOutput, process.ExitCode, nil), nil
+		return &processObservation{output: output, exitCode: process.ExitCode, exited: true}, nil
 	}
-	deadline := time.Now().Add(time.Duration(yieldMS) * time.Millisecond)
-	output := append([]byte(nil), process.BufferedOutput...)
+	start := time.Now()
+	deadline := start.Add(time.Duration(yieldMS) * time.Millisecond)
 	for {
-		remaining := time.Until(deadline)
-		if remaining < 0 {
-			remaining = 0
-		}
-		waitMS := int(remaining / time.Millisecond)
-		if waitMS > 1000 {
-			waitMS = 1000
-		}
+		waitMS := min(max(int(time.Until(deadline)/time.Millisecond), 0), 1000)
 		pageCtx, cancel := context.WithTimeout(ctx, time.Duration(waitMS+eRPCSlackMS)*time.Millisecond)
 		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, "process/read", executorRead{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: waitMS})
 		cancel()
 		if rpcErr != nil {
 			return nil, rpcErr
 		}
-		chunks := result.Chunks
-		output = append(output, result.output()...)
-		afterValue := result.NextSeq
-		if afterValue > 0 {
-			seq := uint64(afterValue - 1)
+		for _, chunk := range result.Chunks {
+			output.push(chunk.Chunk)
+		}
+		if result.NextSeq > 0 {
+			seq := result.NextSeq - 1
 			after = &seq
 		}
 		if result.uncertain() {
 			_ = e.store.ProcessResult(ctx, e.owner, processID, after, "unknown", nil, false)
 			return nil, fmt.Errorf("remote process outcome unknown: %v", result.Failure)
 		}
-		if len(output) > maxProcessOutputBytes {
-			return nil, errors.New("process output exceeded 1 MiB; outcome remains unknown")
-		}
-		if result.Exited && len(chunks) == 0 {
-			exitCode := result.ExitCode
-			if err := e.store.ProcessResult(ctx, e.owner, processID, after, "exited", exitCode, true); err != nil {
+		if result.Exited && len(result.Chunks) == 0 {
+			if err := e.store.ProcessResult(ctx, e.owner, processID, after, "exited", result.ExitCode, true); err != nil {
 				return nil, err
 			}
-			return processOutput(output, exitCode, nil), nil
+			return &processObservation{output: output, exitCode: result.ExitCode, exited: true, wallTime: time.Since(start).Seconds()}, nil
 		}
 		if !result.Exited && !time.Now().Before(deadline) {
 			if err := e.store.ProcessResult(ctx, e.owner, processID, after, "running", nil, true); err != nil {
 				return nil, err
 			}
-			return processOutput(output, nil, &processID), nil
+			return &processObservation{output: output, wallTime: time.Since(start).Seconds()}, nil
 		}
 	}
 }
@@ -677,8 +757,10 @@ func (e *Executor) InterruptAll(ctx context.Context) (map[string]any, error) {
 			lock.Lock()
 			result, readErr := e.readProcess(ctx, process.ID, 3000)
 			lock.Unlock()
-			if readErr == nil && result.SessionID == nil {
-				outcomes[process.ID] = map[string]any{"exit_observed": true, "result": result}
+			if readErr == nil && result.exited {
+				outcomes[process.ID] = map[string]any{"exit_observed": true, "result": map[string]any{
+					"output": lossyUTF8(result.output.withOmissionMarker()), "exit_code": result.exitCode,
+				}}
 				if err := e.store.FinishNested(ctx, e.owner, intent, outcomes[process.ID].(map[string]any)); err != nil {
 					return outcomes, err
 				}

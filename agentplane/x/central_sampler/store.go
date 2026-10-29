@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	OutboxChannel         = "central_sampler_outbox"
-	maxProcessOutputBytes = 1024 * 1024
+	OutboxChannel  = "central_sampler_outbox"
+	processColumns = `id,conversation_id::text,generation,after_seq,status,tty,exit_code,buffered_output,model_session_id,omitted_bytes`
 )
 
 type rowScanner interface {
@@ -1251,6 +1251,23 @@ func (s *Store) RegisterProcess(ctx context.Context, owner Owner, processID stri
 	})
 }
 
+// RegisterModelProcess records a model-visible process under a unified exec session number. It
+// returns ErrConflict while another unreleased process of the conversation holds that number; the
+// number is released when its process is recorded as exited.
+func (s *Store) RegisterModelProcess(ctx context.Context, owner Owner, processID string, sessionID int, tty bool) error {
+	if processID == "" {
+		return ErrInvalid
+	}
+	return s.transaction(ctx, func(tx *sql.Tx) error {
+		if _, err := lockOwner(ctx, tx, owner); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO sampler_process(id,conversation_id,generation,after_seq,status,tty,exit_code,buffered_output,model_session_id)
+			VALUES($1,$2,$3,NULL,'starting',$4,NULL,''::bytea,$5)`, processID, owner.ConversationID, owner.Generation, tty, sessionID)
+		return s.pgError(err)
+	})
+}
+
 func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID string) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
@@ -1963,8 +1980,26 @@ func (s *Store) Process(ctx context.Context, owner Owner, processID string) (*Re
 			return err
 		}
 		var err error
-		process, err = scanProcess(tx.QueryRowContext(ctx, `SELECT id,conversation_id::text,generation,after_seq,status,tty,exit_code,buffered_output
+		process, err = scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
 			FROM sampler_process WHERE id=$1 AND conversation_id=$2`, processID, owner.ConversationID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrMissing
+		}
+		return err
+	})
+	return process, err
+}
+
+// ProcessByModelSession resolves an unreleased model-facing session number.
+func (s *Store) ProcessByModelSession(ctx context.Context, owner Owner, sessionID int) (*RemoteProcess, error) {
+	var process *RemoteProcess
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		if _, err := lockOwner(ctx, tx, owner); err != nil {
+			return err
+		}
+		var err error
+		process, err = scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
+			FROM sampler_process WHERE conversation_id=$1 AND model_session_id=$2 AND status <> 'exited'`, owner.ConversationID, sessionID))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrMissing
 		}
@@ -1977,11 +2012,16 @@ func scanProcess(row rowScanner) (*RemoteProcess, error) {
 	var process RemoteProcess
 	var afterSequence sql.NullInt64
 	var exitCode sql.NullInt64
+	var modelSessionID sql.NullInt64
 	var output []byte
 	err := row.Scan(&process.ID, &process.ConversationID, &process.Generation, &afterSequence, &process.Status,
-		&process.TTY, &exitCode, &output)
+		&process.TTY, &exitCode, &output, &modelSessionID, &process.OmittedBytes)
 	if err != nil {
 		return nil, err
+	}
+	if modelSessionID.Valid {
+		value := int(modelSessionID.Int64)
+		process.ModelSessionID = &value
 	}
 	if afterSequence.Valid {
 		value := uint64(afterSequence.Int64)
@@ -2004,7 +2044,7 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 		if err != nil {
 			return err
 		}
-		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT id,conversation_id::text,generation,after_seq,status,tty,exit_code,buffered_output
+		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
 			FROM sampler_process WHERE id=$1 AND conversation_id=$2 FOR UPDATE`, processID, owner.ConversationID))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrMissing
@@ -2024,14 +2064,12 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 		if exitCode != nil {
 			code = *exitCode
 		}
-		var output any
+		output, omitted := process.BufferedOutput, process.OmittedBytes
 		if consumeOutput {
-			output = []byte{}
-		} else {
-			output = process.BufferedOutput
+			output, omitted = []byte{}, 0
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET after_seq=$3,status=$4,exit_code=$5,buffered_output=$6 WHERE id=$1 AND conversation_id=$2`,
-			processID, owner.ConversationID, sequence, status, code, output); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET after_seq=$3,status=$4,exit_code=$5,buffered_output=$6,omitted_bytes=$7 WHERE id=$1 AND conversation_id=$2`,
+			processID, owner.ConversationID, sequence, status, code, output, omitted); err != nil {
 			return err
 		}
 		process.AfterSequence, process.Status, process.ExitCode = afterSequence, status, exitCode
@@ -2053,7 +2091,7 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 		if err != nil {
 			return err
 		}
-		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT id,conversation_id::text,generation,after_seq,status,tty,exit_code,buffered_output
+		process, err := scanProcess(tx.QueryRowContext(ctx, `SELECT `+processColumns+`
 			FROM sampler_process WHERE id=$1 AND conversation_id=$2 FOR UPDATE`, processID, owner.ConversationID))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrMissing
@@ -2064,10 +2102,13 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 		if process.Generation != owner.Generation {
 			return &LostOwnershipError{Reason: "process belongs to another owner generation"}
 		}
-		if len(process.BufferedOutput)+len(output) > maxProcessOutputBytes {
-			return ErrPrecondition
+		// Unread output keeps its head and tail, as upstream's pending buffer does.
+		buffer, err := restoreHeadTailBuffer(unifiedExecOutputMaxBytes, process.BufferedOutput, process.OmittedBytes)
+		if err != nil {
+			return err
 		}
-		buffered := append(append([]byte(nil), process.BufferedOutput...), output...)
+		buffer.push(output)
+		buffered := buffer.retained()
 		status := process.Status
 		var code any
 		if exitCode != nil {
@@ -2076,15 +2117,15 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 		if exited {
 			status = "exited_unread"
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET after_seq=$3,status=$4,exit_code=$5,buffered_output=$6 WHERE id=$1 AND conversation_id=$2`,
-			processID, owner.ConversationID, afterSequence, status, code, buffered); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET after_seq=$3,status=$4,exit_code=$5,buffered_output=$6,omitted_bytes=$7 WHERE id=$1 AND conversation_id=$2`,
+			processID, owner.ConversationID, afterSequence, status, code, buffered, buffer.omitted); err != nil {
 			return err
 		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)
 		if err != nil {
 			return err
 		}
-		payload := map[string]any{"after_seq": afterSequence, "exit_code": exitCode, "unread_bytes": len(buffered)}
+		payload := map[string]any{"after_seq": afterSequence, "exit_code": exitCode, "unread_bytes": buffer.totalBytes()}
 		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, "process", status, payload)
 	})
 }
@@ -2117,7 +2158,7 @@ func (s *Store) ExecutionState(ctx context.Context, owner Owner) (*ExecutionStat
 		if _, err := lockOwner(ctx, tx, owner); err != nil {
 			return err
 		}
-		processRows, err := tx.QueryContext(ctx, `SELECT id,conversation_id::text,generation,after_seq,status,tty,exit_code,buffered_output
+		processRows, err := tx.QueryContext(ctx, `SELECT `+processColumns+`
 			FROM sampler_process WHERE conversation_id=$1 AND status <> 'exited'`, owner.ConversationID)
 		if err != nil {
 			return err

@@ -132,7 +132,7 @@ func codeModeSample(definition ResponsesCodeToolDefinition) (string, error) {
 			return "", err
 		}
 	}
-	if len(definition.OutputSchema) != 0 {
+	if definition.OutputSchema != nil {
 		var err error
 		if output, err = schemaValue(definition.OutputSchema); err != nil {
 			return "", err

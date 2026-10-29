@@ -29,6 +29,17 @@ type executorRPCError struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 }
 
+// executorRejectedError is an exec-server JSON-RPC error reply: the request had no effect.
+type executorRejectedError struct {
+	method  string
+	code    int
+	message string
+}
+
+func (e *executorRejectedError) Error() string {
+	return fmt.Sprintf("exec-server rejected %s (%d): %s", e.method, e.code, e.message)
+}
+
 type executorInitialize struct {
 	ClientName      string  `json:"clientName"`
 	ResumeSessionID *string `json:"resumeSessionId"`
@@ -36,7 +47,11 @@ type executorInitialize struct {
 
 type (
 	executorInitialized struct {
-		SessionID string `json:"sessionId"`
+		SessionID       string                   `json:"sessionId"`
+		EnvironmentInfo *executorEnvironmentInfo `json:"environmentInfo"`
+	}
+	executorEnvironmentInfo struct {
+		Shell execShell `json:"shell"`
 	}
 	executorEmpty   struct{}
 	executorStarted struct {

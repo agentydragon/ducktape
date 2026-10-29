@@ -135,7 +135,12 @@ type RemoteProcess struct {
 	Status         string
 	TTY            bool
 	ExitCode       *int
+	// BufferedOutput is the retained head and tail of unread output; OmittedBytes were dropped
+	// between them.
 	BufferedOutput []byte
+	OmittedBytes   int
+	// ModelSessionID is the unified exec session number the model uses; absent for setup.
+	ModelSessionID *int
 }
 
 // LiveCell is a JavaScript cell whose result has not yet been durably recorded.

@@ -81,16 +81,17 @@ class Store:
             intents.append(IntentSnapshot(id=row[0], request=request, result=_json(row.result)))
         return intents
 
-    async def process(self, process_id: str) -> ProcessSnapshot | None:
+    async def process(self, session_id: int) -> ProcessSnapshot | None:
+        """The process the model knows by unified exec `session_id` (unique in this fixture)."""
         async with self.engine.connect() as connection:
             row = (
                 await connection.execute(
                     text(
                         "SELECT p.id, p.conversation_id::text, p.status, p.buffered_output, c.owner::text "
                         "FROM sampler_process p JOIN sampler_conversation c ON c.id=p.conversation_id "
-                        "WHERE p.id=:process_id"
+                        "WHERE p.model_session_id=:session_id"
                     ),
-                    {"process_id": process_id},
+                    {"session_id": session_id},
                 )
             ).one_or_none()
         if row is None:

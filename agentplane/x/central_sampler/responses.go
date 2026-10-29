@@ -190,12 +190,12 @@ type ResponsesToolFormat struct {
 }
 
 type ResponsesCodeToolDefinition struct {
-	Name         string                 `json:"name"`
-	ToolName     ResponsesToolName      `json:"tool_name"`
-	Description  string                 `json:"description"`
-	Kind         string                 `json:"kind"`
-	InputSchema  *ResponsesObjectSchema `json:"input_schema"`
-	OutputSchema json.RawMessage        `json:"output_schema"`
+	Name         string               `json:"name"`
+	ToolName     ResponsesToolName    `json:"tool_name"`
+	Description  string               `json:"description"`
+	Kind         string               `json:"kind"`
+	InputSchema  *ResponsesJSONSchema `json:"input_schema"`
+	OutputSchema *ResponsesJSONSchema `json:"output_schema"`
 }
 
 type ResponsesToolName struct {
@@ -203,15 +203,15 @@ type ResponsesToolName struct {
 	Namespace *string `json:"namespace"`
 }
 
-type ResponsesObjectSchema struct {
-	Type                 string                             `json:"type"`
-	Properties           map[string]ResponsesPropertySchema `json:"properties"`
-	Required             []string                           `json:"required"`
-	AdditionalProperties bool                               `json:"additionalProperties"`
-}
-
-type ResponsesPropertySchema struct {
-	Type string `json:"type"`
+// Codex rust-v0.162.1 tools/src/json_schema/types.rs JsonSchema: absent keywords are omitted.
+type ResponsesJSONSchema struct {
+	Type                 string                         `json:"type,omitempty"`
+	Description          string                         `json:"description,omitempty"`
+	Enum                 []string                       `json:"enum,omitempty"`
+	Items                *ResponsesJSONSchema           `json:"items,omitempty"`
+	Properties           map[string]ResponsesJSONSchema `json:"properties,omitempty"`
+	Required             []string                       `json:"required,omitempty"`
+	AdditionalProperties *bool                          `json:"additionalProperties,omitempty"`
 }
 
 type ResponsesRequest struct {

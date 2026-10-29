@@ -3,6 +3,7 @@ package centralsampler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 )
 
@@ -10,18 +11,26 @@ func TestExecutorRejectsMalformedInputBeforeDispatch(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		tool string
-		args map[string]any
+		args string
 	}{
-		{"negative exec yield", "exec_command", map[string]any{"cmd": "touch /tmp/should-not-run", "yield_time_ms": json.Number("-1")}},
-		{"fractional stdin yield", "write_stdin", map[string]any{"session_id": "test-process", "yield_time_ms": json.Number("1.5")}},
-		{"non-string chars", "write_stdin", map[string]any{"session_id": "test-process", "chars": true}},
-		{"non-boolean EOF", "write_stdin", map[string]any{"session_id": "test-process", "eof": "true"}},
+		{"negative exec yield", "exec_command", `{"cmd":"touch /tmp/should-not-run","yield_time_ms":-1}`},
+		{"missing cmd", "exec_command", `{"workdir":"/tmp"}`},
+		{"non-object exec input", "exec_command", `"touch /tmp/should-not-run"`},
+		{"escalation under approval policy never", "exec_command", `{"cmd":"touch /tmp/should-not-run","sandbox_permissions":"require_escalated"}`},
+		{"justification without override", "exec_command", `{"cmd":"touch /tmp/should-not-run","justification":"please"}`},
+		{"shell the executor does not report", "exec_command", `{"cmd":"touch /tmp/should-not-run","shell":"zsh"}`},
+		{"string session_id", "write_stdin", `{"session_id":"test-process"}`},
+		{"fractional stdin yield", "write_stdin", `{"session_id":1000,"yield_time_ms":1.5}`},
+		{"non-string chars", "write_stdin", `{"session_id":1000,"chars":true}`},
+		{"missing session_id", "write_stdin", `{"chars":"x"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// No store or transport: invalid inputs must fail before accessing either.
-			executor := &Executor{}
-			if _, err := executor.Invoke(context.Background(), tc.tool, json.RawMessage(mustJSON(tc.args))); err == nil {
-				t.Fatal("malformed input accepted")
+			// No store or transport: invalid inputs must fail before accessing either, and are
+			// reported to the calling JavaScript rather than failing the Session.
+			executor := &Executor{shell: &execShell{Name: "bash", Path: "/bin/bash"}}
+			_, err := executor.Invoke(context.Background(), tc.tool, json.RawMessage(tc.args))
+			if !errors.As(err, new(*toolError)) {
+				t.Fatalf("malformed input error=%v, want a tool error", err)
 			}
 		})
 	}

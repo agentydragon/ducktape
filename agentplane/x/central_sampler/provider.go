@@ -44,30 +44,12 @@ func (r ProviderResponse) Audit() map[string]any {
 // consider exposing them here.
 func toolDefinitions() []ResponsesCodeToolDefinition {
 	return []ResponsesCodeToolDefinition{
-		{
-			Name: "exec_command", ToolName: ResponsesToolName{Name: "exec_command"},
-			Description: "Run /bin/sh -c; returns output, exit_code, and session_id while running. Poll with write_stdin.",
-			Kind:        "function", InputSchema: &ResponsesObjectSchema{
-				Type: "object", Properties: map[string]ResponsesPropertySchema{
-					"cmd": {Type: "string"}, "workdir": {Type: "string"}, "tty": {Type: "boolean"}, "yield_time_ms": {Type: "integer"},
-				}, Required: []string{"cmd"}, AdditionalProperties: false,
-			},
-			OutputSchema: json.RawMessage("null"),
-		},
-		{
-			Name: "write_stdin", ToolName: ResponsesToolName{Name: "write_stdin"},
-			Description: "Write stdin or poll with empty chars. A sole Ctrl-C signals interrupt. eof requires tty=true and empty chars.",
-			Kind:        "function", InputSchema: &ResponsesObjectSchema{
-				Type: "object", Properties: map[string]ResponsesPropertySchema{
-					"session_id": {Type: "string"}, "chars": {Type: "string"}, "eof": {Type: "boolean"}, "yield_time_ms": {Type: "integer"},
-				}, Required: []string{"session_id"}, AdditionalProperties: false,
-			},
-			OutputSchema: json.RawMessage("null"),
-		},
+		execCommandToolDefinition(),
+		writeStdinToolDefinition(),
 		{
 			Name: "apply_patch", ToolName: ResponsesToolName{Name: "apply_patch"},
 			Description: "Apply a Codex *** Begin Patch / *** End Patch patch through upstream apply-patch.",
-			Kind:        "freeform", InputSchema: nil, OutputSchema: json.RawMessage("null"),
+			Kind:        "freeform",
 		},
 	}
 }
@@ -99,8 +81,11 @@ func RequestBody(model, conversationID string, items []ResponsesItem, instructio
 		}
 		processes := make([]ResponsesActiveProcess, 0, len(executionState.Processes))
 		for _, process := range executionState.Processes {
+			if process.ModelSessionID == nil {
+				continue
+			}
 			processes = append(processes, ResponsesActiveProcess{
-				SessionID: process.ID, Status: process.Status, TTY: process.TTY, ExitCode: process.ExitCode,
+				SessionID: *process.ModelSessionID, Status: process.Status, TTY: process.TTY, ExitCode: process.ExitCode,
 			})
 		}
 		state, err := json.Marshal(ResponsesExecutionState{Cells: cells, Processes: processes})
@@ -132,7 +117,7 @@ type ResponsesActiveCell struct {
 }
 
 type ResponsesActiveProcess struct {
-	SessionID string `json:"session_id"`
+	SessionID int    `json:"session_id"`
 	Status    string `json:"status"`
 	TTY       bool   `json:"tty"`
 	ExitCode  *int   `json:"exit_code"`

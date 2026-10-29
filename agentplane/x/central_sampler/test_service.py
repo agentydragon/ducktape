@@ -124,7 +124,9 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                             CustomToolCall(
                                 "start",
                                 "exec",
-                                'text(await tools.exec_command({cmd: "read line; printf received:%s \\"$line\\"", yield_time_ms: 1}));',
+                                # Only a TTY process keeps stdin open.
+                                'text(await tools.exec_command({cmd: "read line; printf received:%s \\"$line\\"", '
+                                "tty: true, yield_time_ms: 1}));",
                             )
                         ],
                         model="test-model",
@@ -364,7 +366,7 @@ async def test_interrupt_admission_survives_unavailable_executor(
                             CustomToolCall(
                                 "remote-process",
                                 "exec",
-                                'text(await tools.exec_command({cmd: "read line", yield_time_ms: 1}));',
+                                'text(await tools.exec_command({cmd: "read line", tty: true, yield_time_ms: 1}));',
                             )
                         ],
                         model="test-model",
@@ -527,7 +529,7 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
                 timeout=10,
             )
             async with await endpoint.next() as exchange:
-                assert process_id in json.dumps(exchange.request.body)
+                assert str(process_id) in json.dumps(exchange.request.body)
                 await exchange.send(
                     *response_stream(
                         [
@@ -542,7 +544,9 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
                 )
             async with await endpoint.next() as exchange:
                 outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
-                assert json.loads(outputs[-1]["output"][1]["text"]) == {"output": "retained-output", "exit_code": 0}
+                result = json.loads(outputs[-1]["output"][1]["text"])
+                assert (result["output"], result["exit_code"]) == ("retained-output", 0)
+                assert "session_id" not in result
                 await exchange.send(*response_stream([Message("Retained output read.")], model="test-model").events)
             assert (await completed(stub, "read-retained")).status == event_pb2.TURN_STATUS_COMPLETED
             process = await store.process(process_id)

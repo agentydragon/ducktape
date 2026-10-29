@@ -165,7 +165,7 @@ func TestStoreLargeEvidenceIsFragmentedAndReconstructed(t *testing.T) {
 	}
 }
 
-func TestStoreUnreadProcessOutputLimitDoesNotAdvanceCursorOnOverflow(t *testing.T) {
+func TestStoreUnreadProcessOutputKeepsHeadAndTail(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
@@ -175,19 +175,48 @@ func TestStoreUnreadProcessOutputLimitDoesNotAdvanceCursorOnOverflow(t *testing.
 	if err := store.RegisterProcess(t.Context(), owner, "process-output", false); err != nil {
 		t.Fatal(err)
 	}
-	large := bytes.Repeat([]byte("x"), maxProcessOutputBytes)
-	if err := store.RetainProcessOutput(t.Context(), owner, "process-output", 7, large, false, nil); err != nil {
+	head := bytes.Repeat([]byte("h"), unifiedExecOutputMaxBytes)
+	if err := store.RetainProcessOutput(t.Context(), owner, "process-output", 7, head, false, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RetainProcessOutput(t.Context(), owner, "process-output", 8, []byte("y"), false, nil); !errors.Is(err, ErrPrecondition) {
-		t.Fatalf("unread output exceeded its bound: %v", err)
+	if err := store.RetainProcessOutput(t.Context(), owner, "process-output", 8, []byte("tail"), false, nil); err != nil {
+		t.Fatal(err)
 	}
 	process, err := store.Process(t.Context(), owner, "process-output")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if process.AfterSequence == nil || *process.AfterSequence != 7 || len(process.BufferedOutput) != maxProcessOutputBytes {
-		t.Fatalf("overflow advanced or dropped output: cursor=%v bytes=%d", process.AfterSequence, len(process.BufferedOutput))
+	if process.AfterSequence == nil || *process.AfterSequence != 8 || len(process.BufferedOutput) != unifiedExecOutputMaxBytes ||
+		process.OmittedBytes != 4 || !bytes.HasSuffix(process.BufferedOutput, []byte("tail")) || process.BufferedOutput[0] != 'h' {
+		t.Fatalf("unread output: cursor=%v bytes=%d omitted=%d", process.AfterSequence, len(process.BufferedOutput), process.OmittedBytes)
+	}
+}
+
+func TestStoreReleasesModelSessionNumberOnExit(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterModelProcess(t.Context(), owner, "1234-first", 1234, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterModelProcess(t.Context(), owner, "1234-second", 1234, false); !errors.Is(err, ErrConflict) {
+		t.Fatalf("a live session number was reissued: %v", err)
+	}
+	process, err := store.ProcessByModelSession(t.Context(), owner, 1234)
+	if err != nil || process.ID != "1234-first" {
+		t.Fatalf("session 1234 resolved to %+v err=%v", process, err)
+	}
+	if err := store.ProcessResult(t.Context(), owner, "1234-first", nil, "exited", ptrInt(0), true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ProcessByModelSession(t.Context(), owner, 1234); !errors.Is(err, ErrMissing) {
+		t.Fatalf("exited session still resolves: %v", err)
+	}
+	if err := store.RegisterModelProcess(t.Context(), owner, "1234-second", 1234, false); err != nil {
+		t.Fatalf("released session number was not reusable: %v", err)
 	}
 }
 
@@ -240,7 +269,7 @@ func TestRetainedTerminalOutputCanBeConsumedAfterTakeover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RegisterProcess(t.Context(), owner, "retained", false); err != nil {
+	if err := store.RegisterModelProcess(t.Context(), owner, "retained", 4242, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.RetainProcessOutput(t.Context(), owner, "retained", 7, []byte("retained-output"), true, ptrInt(0)); err != nil {
@@ -257,8 +286,9 @@ func TestRetainedTerminalOutputCanBeConsumedAfterTakeover(t *testing.T) {
 		t.Fatalf("successor changed old remote process state: %v", err)
 	}
 	executor := &Executor{store: store, owner: successor, processLocks: map[string]*sync.Mutex{}}
-	result, err := executor.Invoke(t.Context(), "write_stdin", json.RawMessage(`{"session_id":"retained"}`))
-	if err != nil || result.Output != "retained-output" || result.ExitCode == nil || *result.ExitCode != 0 {
+	invoked, err := executor.Invoke(t.Context(), "write_stdin", json.RawMessage(`{"session_id":4242}`))
+	result, _ := invoked.(*unifiedExecResult)
+	if err != nil || result == nil || result.Output != "retained-output" || result.ExitCode == nil || *result.ExitCode != 0 || result.SessionID != nil {
 		t.Fatalf("retained process result=%v err=%v", result, err)
 	}
 	process, err := store.Process(t.Context(), successor, "retained")

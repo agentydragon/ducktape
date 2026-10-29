@@ -69,6 +69,16 @@ accepts only a live cell this Session recorded (rejected before dispatch rather 
 missing cell), unknown or `null` tool arguments are rejected, and audio truncation estimates
 tokens from data URL size rather than decoded duration.
 
+Nested `exec_command` and `write_stdin` match Codex 0.162.1 unified exec for one remote environment
+under approval policy `never`: upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,
+`exit_code`, numeric `session_id`, `original_token_count`, `output`), yield bounds, `max_output_tokens`
+truncation and the unified exec environment overlay. Commands run in the executor-reported shell, as
+a login shell unless `login: false`; a requested `shell` must match it, and an executor that reports
+none falls back to `/bin/sh`. Processes have no stdin pipe without `tty`; there a sole Ctrl-C
+interrupts. Session numbers are random in upstream's range and unique among a conversation's
+processes until their exit is reported. Argument and session errors reject the nested call in
+JavaScript instead of failing the Session, as do exec-server rejections, which have no effect.
+
 TODO: Evaluate a stronger kernel-enforced isolation boundary for cells or Sessions if aggregate
 container limits prove insufficient.
 
@@ -97,10 +107,10 @@ a later turn failure may still leave `GetCommand` as `FAILED` or `UNKNOWN`. The 
 without changing that confirmed input outcome, while queued commands follow the existing failure policy.
 
 Idle owners independently read process output and reconcile exit in bounded pages. Observed exit
-releases driver/host capacity without a model poll. At most 1 MiB of unread output per handle remains
-in PostgreSQL and can be consumed by an empty `write_stdin`, including after the old executor
-session expires. Unknown outcomes or unread-output overflow block continuation without advancing
-the retained read cursor. Truly running processes and live JS cells retain a runtime slot.
+releases driver/host capacity without a model poll. Unread output per handle remains in PostgreSQL as
+upstream's 1 MiB head and tail with an omission count, and can be consumed by an empty `write_stdin`,
+including after the old executor session expires. Unknown outcomes block continuation without
+advancing the retained read cursor. Truly running processes and live JS cells retain a runtime slot.
 
 When a Session is blocked, `GetSession.blocked_reason` names the unresolved intent or live handle and
 points operators to the linked boundary evidence. V1 never replays uncertain provider or executor

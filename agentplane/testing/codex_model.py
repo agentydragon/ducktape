@@ -74,7 +74,9 @@ def _item(item: Item, *, code_mode: bool) -> responses_sse.Item:
             return responses_sse.Reasoning(text, next(_encrypted))
         case ShellCall(call_id, command) if code_mode:
             # Code mode offers no shell tool of its own: a script runs the nested one and emits its output.
-            script = f"const result = await tools.exec_command({json.dumps({'cmd': command})});\ntext(result.output);"
+            # The longest yield keeps scripted commands (some sleep 10s) within one call, past the 10s default.
+            arguments = json.dumps({"cmd": command, "yield_time_ms": 30000})
+            script = f"const result = await tools.exec_command({arguments});\ntext(result.output);"
             return responses_sse.CustomToolCall(call_id, "exec", script)
         case ShellCall(call_id, command):
             return responses_sse.FunctionCall(call_id, "exec_command", {"cmd": command})

@@ -202,6 +202,21 @@ func (r *CodeMode) delegate(id int64, frame *codeFrame, journaled <-chan error) 
 		return
 	}
 	result, err := r.executor.Invoke(ctx, invocation.ToolName.Name, invocation.Input)
+	var rejected *toolError
+	if errors.As(err, &rejected) {
+		// Upstream rejects the nested call's promise with the tool's model-facing message.
+		if err := r.store.FinishNested(ctx, r.owner, intent, map[string]any{"error": rejected.message}); err != nil {
+			if ctx.Err() == nil {
+				r.fail(err)
+			}
+			return
+		}
+		response := codeDelegateResponse{Type: "delegate/response", ID: id, Result: codeDelegateResult{Status: "error", Message: rejected.message}}
+		if err := r.send(ctx, id, response); err != nil && ctx.Err() == nil {
+			r.fail(err)
+		}
+		return
+	}
 	if err != nil {
 		if ctx.Err() == nil {
 			r.fail(err)

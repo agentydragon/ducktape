@@ -233,7 +233,14 @@ async def _central_sampler_scenario(tmp_path: Path, scripted: ScriptedUpstream, 
                         responses_sse.CustomToolCall(
                             "long-lived-executor-cell",
                             "exec",
-                            '// @exec: {"yield_time_ms": 1}\nawait tools.exec_command({"cmd":"sleep 120"});',
+                            # exec_command yields after at most 30s; keep polling so the cell
+                            # stays live for the whole command.
+                            '// @exec: {"yield_time_ms": 1}\n'
+                            'let result = await tools.exec_command({"cmd":"sleep 120"});\n'
+                            "while (result.session_id !== undefined) {\n"
+                            "  result = await tools.write_stdin("
+                            '{"session_id": result.session_id, "yield_time_ms": 300000});\n'
+                            "}",
                         ),
                     ],
                     model=MODEL,
