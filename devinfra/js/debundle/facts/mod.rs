@@ -85,21 +85,23 @@ pub(crate) use set_iterables::{
     SetIterableProof, SetIterableShapes, primitive_literal_property_keys,
 };
 pub(crate) use source_unit_read_closure::SourceUnitReadClosure;
-pub(crate) use statement_facts::{
-    ArrayContentEffects, ConstructorFacts, LocalRecordFactoryPurityCertificate,
-};
 pub use statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection,
     CallbackFactoryCallArgumentWitness, CallbackFactoryUseFact, CallbackFactoryWriteWitness,
     ReturnedRecordUseFact,
 };
-pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, ValueOrigin};
+pub(crate) use statement_facts::{
+    ConstructorFacts, HeapContentEffects, LocalRecordFactoryPurityCertificate,
+};
+pub(crate) use value_flow::{
+    CandidateObjectIndex, ChunkValueFlow, ValueOrigin, native_set_allocation_roots,
+};
 
 // Public API: importable at `facts::<item>` exactly as before the split.
 pub use analyze::{
     ExportReentryPolicy, analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy,
     analyze_vendor_prune_chunk, collect_chunk_source_facts, complete_chunk_structural,
-    module_has_top_level_await,
+    complete_chunk_structural_with_native_allocations, module_has_top_level_await,
 };
 pub use item_views::{TopLevelItemView, top_level_item_views};
 pub use local_effects::local_namespace_iife_target;

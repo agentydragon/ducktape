@@ -259,6 +259,7 @@ mod tests {
                 defining_chunk: chunk.to_string(),
                 input_index: index,
             }]),
+            ..Default::default()
         }
     }
 
@@ -281,6 +282,7 @@ mod tests {
                         input_index: 1,
                     },
                 ]),
+                ..Default::default()
             })
         );
     }

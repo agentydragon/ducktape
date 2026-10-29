@@ -968,7 +968,8 @@ chunk_analysis_options:
 ```
 
 The selector and digest use the same canonical source-match and parser-input
-provenance as `value_inputs`. The current operation set accepts only `symbol`.
+provenance as `value_inputs`. The operation set accepts `symbol` and
+`set_from_primitive_array`.
 The selector must identify one direct top-level simple binding initializer
 whose entire initializer is an ordinary, nonoptional direct `Symbol(...)` call
 with zero or one syntactically primitive argument and no spread. Shadowed
@@ -994,6 +995,24 @@ the shared census and report. No whole-lifetime purity, no-reentry or receiver
 guarantee follows. Callee and argument evaluation, throws, other writes,
 callbacks, publication, CommonJS behavior and all other calls keep their
 ordinary analysis.
+
+`set_from_primitive_array` selects one direct top-level simple binding whose
+entire initializer is `new Set([/* primitive literals */])`. The array must be
+dense and have no spread; the constructor must be the unshadowed direct `Set`
+identifier. The premise asserts that the global `Set` data binding, the
+original `Set.prototype.add`, the ordinary Array iterator method and that
+iterator's `next` protocol retain their native identities for this construction
+in every allowed initialization schedule. The source census rejects positively
+identified writes to those required slots, including aliases, reflective
+writes, restoration and other analyzed chunks. Opaque receiver/key witnesses
+remain reported and are covered only by the explicit author premise. The
+selected call gains a fresh native Set identity in canonical value flow and a
+Set-content allocation cell in the shared heap ordering graph. Other `new Set`
+sites remain unknown. The existing constructor-purity rule can consume this
+exact site's certified native protocol when the primitive array and surrounding
+expression checks pass. This premise certifies construction only: later Set
+mutators, accessors and iteration still need their own proof and keep their
+ordinary effect barriers.
 
 ## Ordinary own-property inspection
 

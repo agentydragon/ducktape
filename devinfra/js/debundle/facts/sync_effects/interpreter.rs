@@ -310,6 +310,7 @@ pub(super) struct ExecutionState {
     array_iteration_unsupported: bool,
     array_intrinsic_mutated: bool,
     tainted_objects: BTreeSet<u32>,
+    tainted_native_sets: BTreeSet<u32>,
     tainted_functions: BTreeSet<u32>,
     tainted_classes: BTreeSet<u32>,
     escaped_class_capabilities: BTreeSet<u32>,
@@ -630,6 +631,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             guard,
             &crate::analysis_inputs::ProofDependencies {
                 value_inputs: self.inputs.index.native_integrity_value_input_refs.clone(),
+                ..Default::default()
             },
         );
     }
@@ -644,7 +646,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .proof_dependencies
             .borrow_mut()
             .extend(dependencies);
-        if !dependencies.is_empty() {
+        if !dependencies.value_inputs.is_empty() {
             self.state.native_integrity_uses.borrow_mut().insert(
                 crate::reports::schema::NativeIntegrityUse {
                     guard,
@@ -2935,7 +2937,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         mut visit: impl FnMut(&AbstractValue),
     ) {
         match value {
-            AbstractValue::Origin(ValueOrigin::Object(object)) => {
+            AbstractValue::Origin(ValueOrigin::Object(object) | ValueOrigin::NativeSet(object)) => {
                 if include_object_properties
                     && let Some(properties) = self.state.prefix_object_properties.get(object)
                 {
@@ -3529,6 +3531,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 AbstractValue::Origin(ValueOrigin::Object(object))
                     if !self.state.tainted_objects.insert(*object) =>
+                {
+                    expand_stored_references = false;
+                }
+                AbstractValue::Origin(ValueOrigin::NativeSet(site))
+                    if !self.state.tainted_native_sets.insert(*site) =>
                 {
                     expand_stored_references = false;
                 }
@@ -5058,6 +5065,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 for values in &mut successful_args {
                     args_may_throw |= values.remove(&AbstractValue::Unavailable);
                 }
+                if self
+                    .inputs
+                    .set_iterable_proof
+                    .author_input_for_constructor(span.source_span())
+                    .is_some()
+                {
+                    return Values::from([
+                        AbstractValue::Origin(ValueOrigin::NativeSet(span.allocation_id())),
+                        AbstractValue::Unavailable,
+                    ]);
+                }
                 if let Some(returns) =
                     self.resolve_native_call(CallKind::New, callee, *span, args, &successful_args)
                 {
@@ -5188,6 +5206,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .iter()
                 .flat_map(|option| self.evaluate(option, env, captures))
                 .collect(),
+            ValueExpr::ArrayIteratorPrototype(expression) => {
+                self.evaluate(expression, env, captures)
+            }
             ValueExpr::Unknown => unknown(),
         }
     }
@@ -5659,6 +5680,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 },
                             ))
                 }
+                // A fresh Set identity is not an own-data record. Its size is
+                // an inherited accessor and its methods need a separate
+                // native-identity and own-override proof.
+                AbstractValue::Origin(ValueOrigin::NativeSet(_)) => true,
                 AbstractValue::Instance(key, _) => {
                     self.state.tainted_classes.contains(key)
                         || !property.as_ref().is_some_and(|property| {
@@ -5767,6 +5792,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Only a fresh primitive literal or a checked const alias to one is
         // safe to omit from callback effects. A pure object/function element
         // can be retained by the Set and invoked by a later opaque consumer.
+        if call.kind == CallKind::New
+            && call.caller.is_none()
+            && let Some(evidence) = self
+                .inputs
+                .set_iterable_proof
+                .author_input_for_constructor(call.span)
+                .cloned()
+        {
+            let dependencies = self
+                .inputs
+                .set_iterable_proof
+                .dependencies_for_constructor(call.span)
+                .expect("author Set input retains its typed dependency");
+            self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, dependencies);
+            self.state.native_operation_input_uses.borrow_mut().insert(
+                (call.span.lo.0, call.span.hi.0),
+                crate::reports::schema::NativeOperationInputUse {
+                    evidence,
+                    source_location: None,
+                    span: call.span,
+                },
+            );
+            return;
+        }
         if call.kind == CallKind::New
             && call.caller.is_none()
             && let Some(proof) = self
@@ -6274,7 +6323,15 @@ pub(crate) fn prepare_synchronous_call_index(
     );
     index.semantic_facts = Some(Arc::clone(&facts));
     index.local_class_construction_proof = LocalClassConstructionProof::new(Arc::clone(&facts));
-    let set_iterable_proof = SetIterableProof::new(facts);
+    let author_set_inputs = index
+        .native_operation_input_evidence
+        .iter()
+        .filter(|(_, evidence)| {
+            evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray
+        })
+        .map(|(site, evidence)| (site.allocation_id(), evidence.clone()))
+        .collect();
+    let set_iterable_proof = SetIterableProof::new(facts, author_set_inputs);
     index.local_constructors.retain(|key, constructor| {
         !constructor.checked_default_fields
             || index.local_class_construction_proof.contains_class(*key)
@@ -6694,6 +6751,7 @@ pub(crate) fn annotate_synchronous_calls(
         array_iteration_unsupported: false,
         array_intrinsic_mutated: false,
         tainted_objects: BTreeSet::new(),
+        tainted_native_sets: BTreeSet::new(),
         tainted_functions: BTreeSet::new(),
         tainted_classes: BTreeSet::new(),
         escaped_class_capabilities: BTreeSet::new(),

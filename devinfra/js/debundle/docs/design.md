@@ -655,7 +655,14 @@ globalThis`) marks the bindings it flows into (transitively,
   array effects are not represented precisely. A barrier depends on the
   current array-content frontier and later array observations depend on that
   barrier; the frontier resets there, so unknown operations do not materialize
-  edges against every array cell. These facts constrain scheduling only: they
+  edges against every array cell. A selected `set_from_primitive_array`
+  operation adds a typed fresh Set origin to the same value-flow solve and a
+  `SetContents(origin)` allocation to this heap timeline. Alias and container
+  reachability use the shared flow facts. Construction identity does not
+  establish later method or iterator identity, so unsupported Set
+  observations retain opaque barriers. Recursive callable heap summaries
+  use the shared incremental inference solver for both Array and Set cells.
+  These facts constrain scheduling only: they
   do not reclassify calls as pure or establish a
   no-reentry/descriptor-integrity premise. In particular,
   `trusted_dataflow_summaries` does not make an array member write safe to

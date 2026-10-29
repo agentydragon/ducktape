@@ -480,6 +480,7 @@ pub struct NativeOperationInputContract {
 #[serde(rename_all = "snake_case")]
 pub enum NativeOperationKind {
     Symbol,
+    SetFromPrimitiveArray,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]

@@ -315,8 +315,9 @@ argument, shadowing, aliased method mutation, and getter controls;
 ### Source-selected native-operation inputs
 
 `chunk_analysis_options.<chunk>.native_operation_inputs` is a source-selected
-author premise for one exact direct native initializer. The current schema
-admits only `operation: symbol`. The canonical selector engine identifies one
+author premise for one exact direct native initializer. The schema admits
+`operation: symbol` and `operation: set_from_primitive_array`. For `symbol`,
+the canonical selector engine identifies one
 direct top-level simple binding initialized by an ordinary, nonoptional,
 uncomputed `Symbol(...)` call with zero or one syntactically primitive
 argument and no spread; the parser-input SHA-256 binds that selection to the
@@ -350,6 +351,21 @@ invocation, publication, CommonJS behavior and ordering remain on the normal
 conservative paths. The premise grants no whole-lifetime purity, general
 receiver guarantee or native integrity outside analyzed code; the external A11
 identity obligation still applies.
+
+For `set_from_primitive_array`, the selected initializer is one direct
+unshadowed `new Set([primitive literals])` with a dense, nonspread array.
+The premise covers the original global Set constructor, Set adder, Array
+iterator and Array iterator `next` identities needed to construct that Set.
+The source-only typed slot census rejects known writes to the required slots
+across the analyzed program, including aliases, reflection and restoration;
+opaque witness paths remain visible and are the author's audit obligation.
+Only this exact site seeds a fresh native Set origin in the shared value-flow
+solve. The shared heap graph records its Set-content allocation and tracks
+reachable content effects. The existing constructor-purity rule may use the
+author-backed native protocol dependency for the selected fresh primitive
+array. Later Set method identity, own iterator shape and
+Set-spread protocol are separate obligations, so this input does not remove
+their barriers.
 
 ## Native `Proxy` construction
 

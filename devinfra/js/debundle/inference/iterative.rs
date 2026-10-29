@@ -341,6 +341,7 @@ mod tests {
                     defining_chunk: "captured".into(),
                     input_index: 0,
                 }]),
+                ..Default::default()
             });
             context.propose(TransferKey::Intermediate, value);
             let value = context.take_final(TransferKey::Intermediate).unwrap();
@@ -382,6 +383,7 @@ mod tests {
                 defining_chunk: "captured".into(),
                 input_index: 0,
             }]),
+            ..Default::default()
         };
         let mut facts = BTreeMap::new();
         {
@@ -511,6 +513,7 @@ mod tests {
                             defining_chunk: "captured".into(),
                             input_index: 0,
                         }]),
+                        ..Default::default()
                     });
                     context.propose(2, BTreeSet::from([20]));
                 }

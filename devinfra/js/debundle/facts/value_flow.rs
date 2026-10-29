@@ -32,7 +32,21 @@ pub(crate) enum ValueOrigin {
     Function(u32),
     Class(u32),
     Object(u32),
+    /// A fresh native Set identity, without plain-object or iterable shape.
+    NativeSet(u32),
     Unknown,
+}
+
+pub(crate) fn native_set_allocation_roots(
+    inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
+) -> BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef> {
+    inputs
+        .iter()
+        .filter(|input| {
+            input.evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray
+        })
+        .map(|input| (input.call_span.lo.0, input.evidence.reference.clone()))
+        .collect()
 }
 
 pub(crate) struct CallTargets {
@@ -679,6 +693,9 @@ pub(crate) struct ChunkValueFlow {
     /// Callable identity to its chunk-top declaration binding, if any.
     canonical: BTreeMap<ValueOrigin, Id>,
     pub(crate) callable_source_unit: BTreeMap<ValueOrigin, SourceUnitOrdinal>,
+    /// Exact native Set allocation sites, each backed by a validated author
+    /// operation input. Other constructor results remain unknown.
+    native_set_allocations: BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
 }
 
 impl ChunkValueFlow {
@@ -734,12 +751,14 @@ impl ChunkValueFlow {
             }
         }
         for (object, properties) in &self.properties {
+            let container = if self.native_set_allocations.contains_key(object) {
+                ValueOrigin::NativeSet(*object)
+            } else {
+                ValueOrigin::Object(*object)
+            };
             for values in properties.values() {
                 for value in values {
-                    reverse
-                        .entry(value)
-                        .or_default()
-                        .insert(ValueOrigin::Object(*object));
+                    reverse.entry(value).or_default().insert(container);
                 }
             }
         }
@@ -823,6 +842,24 @@ impl ChunkValueFlow {
         candidates: &BTreeSet<ValueOrigin>,
     ) -> Self {
         FlowProgram::collect(body, candidates).solve().0
+    }
+
+    pub(crate) fn analyze_with_native_set_allocations(
+        body: &[TopLevelItemView<'_>],
+        candidates: &BTreeSet<ValueOrigin>,
+        allocations: &BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
+    ) -> Self {
+        let mut candidates = candidates.clone();
+        candidates.extend(allocations.keys().copied().map(ValueOrigin::NativeSet));
+        FlowProgram::collect_with_native_set_allocations(body, &candidates, allocations)
+            .solve()
+            .0
+    }
+
+    pub(crate) fn native_set_allocations(
+        &self,
+    ) -> &BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef> {
+        &self.native_set_allocations
     }
 
     #[cfg(test)]
@@ -963,11 +1000,18 @@ impl ChunkValueFlow {
             Expr::Class(class) => self.singleton_value(ValueOrigin::Class(class.class.span.lo.0)),
             Expr::Object(object) => self.singleton_value(ValueOrigin::Object(object.span.lo.0)),
             Expr::Array(array) => self.singleton_value(ValueOrigin::Object(array.span.lo.0)),
+            Expr::New(construction)
+                if self
+                    .native_set_allocations
+                    .contains_key(&construction.span.lo.0) =>
+            {
+                self.singleton_value(ValueOrigin::NativeSet(construction.span.lo.0))
+            }
             Expr::Member(member) => {
                 let prop = static_prop(&member.prop);
                 let mut out = self.empty_values();
                 for origin in self.values_of_expr(&member.obj) {
-                    if let ValueOrigin::Object(object) = origin {
+                    if let ValueOrigin::Object(object) | ValueOrigin::NativeSet(object) = origin {
                         if let Some(prop) = &prop {
                             if let Some(values) = self
                                 .properties
@@ -1204,7 +1248,7 @@ fn append_value_expr(
                 let mut objects = values.child();
                 append_value_expr(object, &mut objects, declared_ids, read_values);
                 for origin in objects.finish() {
-                    if let ValueOrigin::Object(object) = origin {
+                    if let ValueOrigin::Object(object) | ValueOrigin::NativeSet(object) = origin {
                         if let Some(property) = property {
                             // Unknown is durable even when a later write adds a value.
                             let key = FlowKey::Property(object, property.clone());
@@ -1459,10 +1503,19 @@ struct FlowProgram {
     candidate_objects: Vec<ValueOrigin>,
     canonical: BTreeMap<ValueOrigin, Id>,
     callable_source_unit: BTreeMap<ValueOrigin, SourceUnitOrdinal>,
+    native_set_allocations: BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
 }
 
 impl FlowProgram {
     fn collect(body: &[TopLevelItemView<'_>], candidate_objects: &BTreeSet<ValueOrigin>) -> Self {
+        Self::collect_with_native_set_allocations(body, candidate_objects, &BTreeMap::new())
+    }
+
+    fn collect_with_native_set_allocations(
+        body: &[TopLevelItemView<'_>],
+        candidate_objects: &BTreeSet<ValueOrigin>,
+        native_set_allocations: &BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
+    ) -> Self {
         let mut collector = FlowProgramCollector {
             declared_ids: BTreeSet::new(),
             events: Vec::new(),
@@ -1471,12 +1524,19 @@ impl FlowProgram {
             current_function: None,
             canonical: BTreeMap::new(),
             callable_source_unit: BTreeMap::new(),
+            native_set_allocations: native_set_allocations.clone(),
         };
         for (ordinal, item) in body.iter().enumerate() {
             collector.source_unit = SourceUnitOrdinal(ordinal);
             item.as_module_item().visit_with(&mut collector);
         }
         collector.origins.extend(candidate_objects.iter().copied());
+        collector.origins.extend(
+            native_set_allocations
+                .keys()
+                .copied()
+                .map(ValueOrigin::NativeSet),
+        );
         Self {
             declared_ids: collector.declared_ids,
             events: collector.events,
@@ -1484,6 +1544,7 @@ impl FlowProgram {
             candidate_objects: candidate_objects.iter().copied().collect(),
             canonical: collector.canonical,
             callable_source_unit: collector.callable_source_unit,
+            native_set_allocations: native_set_allocations.clone(),
         }
     }
 
@@ -1495,6 +1556,7 @@ impl FlowProgram {
             candidate_objects,
             canonical,
             callable_source_unit,
+            native_set_allocations,
         } = self;
         let producer_count = events.len();
         #[cfg(test)]
@@ -1506,6 +1568,7 @@ impl FlowProgram {
             declared_ids: declared_ids.clone(),
             origin_table: origin_table.clone(),
             candidate_facts_enabled: !candidate_objects.is_empty(),
+            native_set_allocations: native_set_allocations.keys().copied().collect(),
             #[cfg(test)]
             argument_evaluations: argument_evaluations.clone(),
             #[cfg(test)]
@@ -1532,6 +1595,7 @@ impl FlowProgram {
             declared_ids,
             canonical,
             callable_source_unit,
+            native_set_allocations,
             ..ChunkValueFlow::default()
         };
         for (key, fact) in facts {
@@ -1582,6 +1646,7 @@ struct FlowProgramCollector {
     current_function: Option<u32>,
     canonical: BTreeMap<ValueOrigin, Id>,
     callable_source_unit: BTreeMap<ValueOrigin, SourceUnitOrdinal>,
+    native_set_allocations: BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
 }
 
 impl Visit for FlowProgramCollector {
@@ -1622,7 +1687,16 @@ impl Visit for FlowProgramCollector {
             }
             self.events.push(FlowEvent::Variable {
                 id: binding.id.to_id(),
-                init: FlowValueExpr::from_ast(init),
+                init: match init {
+                    Expr::New(construction)
+                        if self
+                            .native_set_allocations
+                            .contains_key(&construction.span.lo.0) =>
+                    {
+                        FlowValueExpr::Value(ValueOrigin::NativeSet(construction.span.lo.0))
+                    }
+                    other => FlowValueExpr::from_ast(other),
+                },
             });
         }
         node.visit_children_with(self);
@@ -1823,6 +1897,7 @@ struct FlowRules {
     declared_ids: BTreeSet<Id>,
     origin_table: Arc<OriginTable>,
     candidate_facts_enabled: bool,
+    native_set_allocations: BTreeSet<u32>,
     #[cfg(test)]
     argument_evaluations: Rc<Cell<usize>>,
     #[cfg(test)]
@@ -1946,7 +2021,9 @@ impl IterativeRules for FlowRules {
                 }
                 let parent = self.origin_table.origin(*origin);
                 let values_key = match parent {
-                    ValueOrigin::Object(object) => FlowKey::Properties(object),
+                    ValueOrigin::Object(object) | ValueOrigin::NativeSet(object) => {
+                        FlowKey::Properties(object)
+                    }
                     ValueOrigin::Function(function) => FlowKey::Return(function),
                     ValueOrigin::Class(_) | ValueOrigin::Unknown => return,
                 };
@@ -1988,7 +2065,9 @@ impl IterativeRules for FlowRules {
                         let values = self.values_of_expr_tracking(right, context, None);
                         let objects = self.values_of_expr_tracking(object, context, None);
                         for origin in objects {
-                            if let ValueOrigin::Object(object) = origin {
+                            if let ValueOrigin::Object(object) | ValueOrigin::NativeSet(object) =
+                                origin
+                            {
                                 Self::propose_property(
                                     context,
                                     object,
@@ -2118,8 +2197,13 @@ impl IterativeRules for FlowRules {
                 vec![FlowRule::CandidateBinding(binding.clone())]
             }
             (FlowKey::Properties(object), FlowFact::Values(values)) if !values.is_empty() => {
+                let origin = if self.native_set_allocations.contains(object) {
+                    ValueOrigin::NativeSet(*object)
+                } else {
+                    ValueOrigin::Object(*object)
+                };
                 vec![FlowRule::CandidateReachability(
-                    self.origin_table.id(ValueOrigin::Object(*object)),
+                    self.origin_table.id(origin),
                 )]
             }
             (FlowKey::Return(function), FlowFact::Values(values)) if !values.is_empty() => {

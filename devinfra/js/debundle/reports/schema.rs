@@ -288,6 +288,7 @@ pub enum NativeReceiverPath {
     Constructor(crate::analysis_inputs::NativeIntrinsic),
     Prototype(crate::analysis_inputs::NativeIntrinsic),
     Descendant(crate::analysis_inputs::NativeIntrinsic),
+    ArrayIteratorPrototype,
     Unknown,
 }
 

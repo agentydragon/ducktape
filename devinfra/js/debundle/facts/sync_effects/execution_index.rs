@@ -1429,6 +1429,7 @@ enum NativeReceiverRoot {
     Intrinsic(IntrinsicRoot),
     IntrinsicPrototype(IntrinsicRoot),
     IntrinsicDescendant(IntrinsicRoot),
+    ArrayIteratorPrototype,
     OrdinaryDirect {
         reference: ValueInputRef,
         available_after: SourceUnitOrdinal,
@@ -1449,6 +1450,31 @@ struct BindingDeclarationWrite {
     initializer: Option<ValueExpr>,
     direct_top_level: bool,
     simple_identifier: bool,
+    /// Retained from the canonical declaration visitor so native-input
+    /// validation need not re-traverse the initializer AST.
+    set_from_primitive_array_shape: bool,
+}
+
+fn set_from_primitive_array_shape(expression: &Expr) -> bool {
+    let Expr::New(construction) = expression else {
+        return false;
+    };
+    let Expr::Ident(constructor) = construction.callee.as_ref() else {
+        return false;
+    };
+    let Some([argument]) = construction.args.as_deref() else {
+        return false;
+    };
+    let Expr::Array(array) = argument.expr.as_ref() else {
+        return false;
+    };
+    constructor.sym == "Set"
+        && argument.spread.is_none()
+        && array.elems.iter().all(|element| {
+            element
+                .as_ref()
+                .is_some_and(|element| element.spread.is_none() && primitive_literal(&element.expr))
+        })
 }
 
 fn span_contains(outer: Span, inner: Span) -> bool {
@@ -1484,6 +1510,7 @@ fn is_statically_primitive_value(value: &ValueExpr) -> bool {
         | ValueExpr::Member(..)
         | ValueExpr::Call(..)
         | ValueExpr::New(..)
+        | ValueExpr::ArrayIteratorPrototype(..)
         | ValueExpr::Unknown => false,
     }
 }
@@ -1568,6 +1595,10 @@ fn project_receiver_roots(
                 prior_roots.insert(*root);
                 effective_roots.insert(*root);
             }
+            NativeReceiverRoot::ArrayIteratorPrototype => {
+                prior_roots.insert(IntrinsicRoot::UnknownGlobalValue);
+                effective_roots.insert(IntrinsicRoot::UnknownGlobalValue);
+            }
             NativeReceiverRoot::OrdinaryDirect {
                 reference,
                 available_after,
@@ -1643,6 +1674,9 @@ fn native_write_slots(
                 NativeReceiverRoot::IntrinsicDescendant(root) => {
                     NativeReceiverPath::Descendant(*root)
                 }
+                NativeReceiverRoot::ArrayIteratorPrototype => {
+                    NativeReceiverPath::ArrayIteratorPrototype
+                }
             };
             keys.iter().cloned().map(move |key| NativeWriteSlot {
                 receiver: receiver.clone(),
@@ -1713,6 +1747,7 @@ fn intrinsic_roots(
     value: &ValueExpr,
     roots: &BTreeMap<Id, NativeReceiverRoots>,
     globals: &BTreeSet<&str>,
+    declared: &BTreeSet<Id>,
     ordinary_inputs: &BTreeMap<Id, (ValueInputRef, SourceUnitOrdinal)>,
     callable_return_inputs: &BTreeMap<Id, BTreeSet<(ValueInputRef, SourceUnitOrdinal)>>,
 ) -> NativeReceiverRoots {
@@ -1724,6 +1759,15 @@ fn intrinsic_roots(
                 reference: reference.clone(),
                 available_after: *available_after,
             }])
+        }
+        ValueExpr::ArrayIteratorPrototype(_) => {
+            BTreeSet::from([NativeReceiverRoot::ArrayIteratorPrototype])
+        }
+        // The spelling of a local binding is not an intrinsic identity.
+        // Retain source-only aliases, but never manufacture a native root for
+        // a shadowed constructor or global-object name.
+        ValueExpr::Binding(id) if declared.contains(id) => {
+            roots.get(id).cloned().unwrap_or_default()
         }
         ValueExpr::Binding(id) if id.0.as_ref() == "Error" => {
             BTreeSet::from([intrinsic(IntrinsicRoot::Error)])
@@ -1777,6 +1821,7 @@ fn intrinsic_roots(
                     option,
                     roots,
                     globals,
+                    declared,
                     ordinary_inputs,
                     callable_return_inputs,
                 );
@@ -1791,7 +1836,8 @@ fn intrinsic_roots(
                     } => Some((reference.clone(), *available_after)),
                     NativeReceiverRoot::Intrinsic(_)
                     | NativeReceiverRoot::IntrinsicPrototype(_)
-                    | NativeReceiverRoot::IntrinsicDescendant(_) => None,
+                    | NativeReceiverRoot::IntrinsicDescendant(_)
+                    | NativeReceiverRoot::ArrayIteratorPrototype => None,
                 }));
                 if option_roots.is_empty()
                     && !matches!(
@@ -1819,6 +1865,7 @@ fn intrinsic_roots(
                 base,
                 roots,
                 globals,
+                declared,
                 ordinary_inputs,
                 callable_return_inputs,
             );
@@ -1878,6 +1925,9 @@ fn intrinsic_roots(
                             out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
                         }
                     }
+                    NativeReceiverRoot::ArrayIteratorPrototype => {
+                        out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
+                    }
                 }
             }
             out
@@ -1890,6 +1940,7 @@ fn intrinsic_roots(
                     value,
                     roots,
                     globals,
+                    declared,
                     ordinary_inputs,
                     callable_return_inputs,
                 );
@@ -1904,7 +1955,8 @@ fn intrinsic_roots(
                     } => Some((reference.clone(), *available_after)),
                     NativeReceiverRoot::Intrinsic(_)
                     | NativeReceiverRoot::IntrinsicPrototype(_)
-                    | NativeReceiverRoot::IntrinsicDescendant(_) => None,
+                    | NativeReceiverRoot::IntrinsicDescendant(_)
+                    | NativeReceiverRoot::ArrayIteratorPrototype => None,
                 }));
                 input_roots.extend(value_roots);
             }
@@ -1916,6 +1968,7 @@ fn intrinsic_roots(
                         receiver,
                         roots,
                         globals,
+                        declared,
                         ordinary_inputs,
                         callable_return_inputs,
                     )
@@ -1993,6 +2046,7 @@ fn read_intrinsic_aliases(
 struct RawIntrinsicAliasRules<'a> {
     assignments: &'a [&'a (Id, ValueExpr)],
     globals: &'a BTreeSet<&'static str>,
+    declared: &'a BTreeSet<Id>,
 }
 
 impl IterativeRules for RawIntrinsicAliasRules<'_> {
@@ -2007,6 +2061,7 @@ impl IterativeRules for RawIntrinsicAliasRules<'_> {
             value,
             &aliases,
             self.globals,
+            self.declared,
             &BTreeMap::new(),
             &BTreeMap::new(),
         );
@@ -2025,10 +2080,12 @@ impl IterativeRules for RawIntrinsicAliasRules<'_> {
 fn close_raw_intrinsic_aliases(
     assignments: &[&(Id, ValueExpr)],
     globals: &BTreeSet<&'static str>,
+    declared: &BTreeSet<Id>,
 ) -> BTreeMap<Id, NativeReceiverRoots> {
     IterativeInference::new(RawIntrinsicAliasRules {
         assignments,
         globals,
+        declared,
     })
     .solve(0..assignments.len())
     .into_values()
@@ -2127,7 +2184,8 @@ mod iterative_alias_closure_tests {
         ];
         let assignment_refs = assignments.iter().collect::<Vec<_>>();
 
-        let aliases = close_raw_intrinsic_aliases(&assignment_refs, &BTreeSet::new());
+        let aliases =
+            close_raw_intrinsic_aliases(&assignment_refs, &BTreeSet::new(), &BTreeSet::new());
 
         assert_eq!(
             aliases.get(&first),
@@ -2142,6 +2200,21 @@ mod iterative_alias_closure_tests {
             )]))
         );
         assert!(!aliases.contains_key(&array));
+    }
+
+    #[test]
+    fn raw_intrinsic_aliases_do_not_turn_shadowed_names_into_native_roots() {
+        let local_set = id("Set");
+        let alias = id("alias");
+        let assignments = [(alias.clone(), ValueExpr::Binding(local_set.clone()))];
+        let assignment_refs = assignments.iter().collect::<Vec<_>>();
+
+        let aliases = close_raw_intrinsic_aliases(
+            &assignment_refs,
+            &BTreeSet::new(),
+            &BTreeSet::from([local_set]),
+        );
+        assert!(!aliases.contains_key(&alias));
     }
 
     #[test]
@@ -2184,6 +2257,7 @@ mod iterative_alias_closure_tests {
 struct PostAuthorIntrinsicAliasRules<'a> {
     assignments: &'a [&'a (Id, ValueExpr)],
     index: &'a ExecutionIndex,
+    declared: &'a BTreeSet<Id>,
     ordinary_inputs: &'a BTreeMap<Id, (ValueInputRef, SourceUnitOrdinal)>,
     callable_return_inputs: &'a BTreeMap<Id, BTreeSet<(ValueInputRef, SourceUnitOrdinal)>>,
 }
@@ -2203,6 +2277,7 @@ impl IterativeRules for PostAuthorIntrinsicAliasRules<'_> {
             value,
             &aliases,
             &self.index.global_object_names,
+            self.declared,
             self.ordinary_inputs,
             self.callable_return_inputs,
         );
@@ -2224,7 +2299,8 @@ impl IterativeRules for PostAuthorIntrinsicAliasRules<'_> {
                 } => Some((reference.clone(), *available_after)),
                 NativeReceiverRoot::Intrinsic(_)
                 | NativeReceiverRoot::IntrinsicPrototype(_)
-                | NativeReceiverRoot::IntrinsicDescendant(_) => None,
+                | NativeReceiverRoot::IntrinsicDescendant(_)
+                | NativeReceiverRoot::ArrayIteratorPrototype => None,
             })
             .collect();
         if let Some(copy_owner) = stable_copy_owner {
@@ -2281,6 +2357,7 @@ fn close_post_author_intrinsic_aliases(
     index: &ExecutionIndex,
     assignments: &[&(Id, ValueExpr)],
     raw_aliases: &BTreeMap<Id, NativeReceiverRoots>,
+    declared: &BTreeSet<Id>,
     callable_return_inputs: &BTreeMap<Id, BTreeSet<(ValueInputRef, SourceUnitOrdinal)>>,
 ) -> BTreeMap<Id, NativeReceiverRoots> {
     if index.resolved_value_inputs.is_empty() {
@@ -2290,6 +2367,7 @@ fn close_post_author_intrinsic_aliases(
     let mut inference = IterativeInference::new(PostAuthorIntrinsicAliasRules {
         assignments,
         index,
+        declared,
         ordinary_inputs: &index.ordinary_input_refs,
         callable_return_inputs,
     });
@@ -3744,6 +3822,16 @@ impl Default for ExecutionIndex {
 }
 
 impl ExecutionIndex {
+    fn declared_bindings(&self) -> BTreeSet<Id> {
+        self.property_key_declarations
+            .iter()
+            .chain(self.hoisted_bindings.keys())
+            .chain(self.imported_bindings.iter())
+            .chain(self.class_ids.iter())
+            .cloned()
+            .collect()
+    }
+
     /// Build one immutable context from the canonical source index and the
     /// completed native-write census. Callable candidates are input facts;
     /// their returned-record constructors participate in the same native
@@ -3755,6 +3843,7 @@ impl ExecutionIndex {
             dynamic_scope: !self.dynamic_scope_owners.is_empty(),
             native_dependencies: crate::analysis_inputs::ProofDependencies {
                 value_inputs: self.native_integrity_value_input_refs.clone(),
+                ..Default::default()
             },
             ..SemanticRules::default()
         }
@@ -3857,6 +3946,7 @@ impl ExecutionIndex {
         selected: &[SelectedBindingValueInput],
         resolved: &[ResolvedBindingValueInput],
         raw_aliases: &BTreeMap<Id, NativeReceiverRoots>,
+        declared: &BTreeSet<Id>,
     ) {
         for input in selected {
             let request = &input.evidence.spec_location;
@@ -3926,6 +4016,7 @@ impl ExecutionIndex {
                     initializer,
                     raw_aliases,
                     &self.global_object_names,
+                    declared,
                     &BTreeMap::new(),
                     &BTreeMap::new(),
                 );
@@ -3937,7 +4028,8 @@ impl ExecutionIndex {
                         | NativeReceiverRoot::IntrinsicPrototype(root)
                         | NativeReceiverRoot::IntrinsicDescendant(root) => Some(*root),
                         NativeReceiverRoot::OrdinaryDirect { .. }
-                        | NativeReceiverRoot::OrdinaryDescendant { .. } => None,
+                        | NativeReceiverRoot::OrdinaryDescendant { .. }
+                        | NativeReceiverRoot::ArrayIteratorPrototype => None,
                     })
                     .collect();
                 if !contradictions.is_empty() {
@@ -3959,6 +4051,7 @@ impl ExecutionIndex {
                 initializer,
                 raw_aliases,
                 &self.global_object_names,
+                declared,
                 &BTreeMap::new(),
                 &BTreeMap::new(),
             );
@@ -4071,6 +4164,7 @@ impl ExecutionIndex {
                 initializer,
                 raw_aliases,
                 &self.global_object_names,
+                declared,
                 &BTreeMap::new(),
                 &BTreeMap::new(),
             );
@@ -4135,7 +4229,6 @@ impl ExecutionIndex {
         &mut self,
         selected: &[SelectedNativeOperationInput],
         resolved: &[ResolvedNativeOperationInput],
-        flow: Option<&ChunkValueFlow>,
     ) {
         if selected.is_empty() && resolved.is_empty() {
             return;
@@ -4155,19 +4248,94 @@ impl ExecutionIndex {
             }
             return;
         }
-        let Some(flow) = flow else {
-            self.native_operation_input_errors.push(
-                "native_operation_inputs require canonical binding facts, but no value-flow index is available".to_owned(),
-            );
-            return;
-        };
-
         let known_symbol_mutation = self
             .known_global_symbol_mutation()
             .map(|chunk_owner| format!("source unit {chunk_owner}"));
 
         for input in selected {
             let request = &input.evidence.spec_location;
+            if input.evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray {
+                if let Some(owner) = self.known_set_protocol_mutation() {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} is contradicted by a positively identified required native slot write in source unit {}",
+                        owner.0
+                    ));
+                    continue;
+                }
+                let candidates: Vec<_> = self
+                    .binding_declaration_writes
+                    .iter()
+                    .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
+                    .flat_map(|(binding, writes)| {
+                        writes.iter().filter_map(move |write| {
+                            (write.simple_identifier
+                                && write.direct_top_level
+                                && span_contains(input.selected_statement_span, write.binding_span))
+                            .then_some((binding.clone(), write.clone()))
+                        })
+                    })
+                    .collect();
+                let [(binding, declaration)] = candidates.as_slice() else {
+                    self.native_operation_input_errors.push(format!(
+                        "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
+                        input.selected_binding,
+                        candidates.len()
+                    ));
+                    continue;
+                };
+                let Some(ValueExpr::New(callee, _, call_site)) = declaration.initializer.as_ref()
+                else {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} must select a direct new Set([primitive literals]) initializer"
+                    ));
+                    continue;
+                };
+                let ValueExpr::Binding(constructor) = callee.as_ref() else {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} must select a direct uncomputed Set identifier"
+                    ));
+                    continue;
+                };
+                if !declaration.set_from_primitive_array_shape
+                    || constructor.0.as_ref() != "Set"
+                    || self.property_key_declarations.contains(constructor)
+                    || self.imported_bindings.contains(constructor)
+                {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} requires a direct unshadowed new Set([primitive literals]) operation with one dense nonspread array literal"
+                    ));
+                    continue;
+                }
+                let Some(call) = self.top_calls[declaration.owner.0]
+                    .iter()
+                    .find(|call| CallSite::from(call.span) == *call_site)
+                else {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} no longer resolves to a direct top-level constructor site"
+                    ));
+                    continue;
+                };
+                if call.kind != CallKind::New || call.has_spread || call.caller.is_some() {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} must select an ordinary direct nonspread constructor site"
+                    ));
+                    continue;
+                }
+                let mut evidence = input.evidence.clone();
+                evidence.selected_binding = input.selected_binding.clone();
+                self.native_operation_input_evidence
+                    .insert(*call_site, evidence.clone());
+                self.resolved_native_operation_inputs
+                    .push(ResolvedNativeOperationInput {
+                        evidence,
+                        binding: binding.clone(),
+                        declaration_span: declaration.binding_span,
+                        initializer_span: declaration.initializer_span.unwrap_or(call.span),
+                        call_span: call.span,
+                        initializer_ordinal: declaration.owner,
+                    });
+                continue;
+            }
             if known_symbol_mutation.is_some() {
                 self.native_operation_input_errors.push(format!(
                     "{request} is contradicted by a positively identified global Symbol replacement or accessor installation ({})",
@@ -4225,7 +4393,9 @@ impl ExecutionIndex {
                 ));
                 continue;
             }
-            if flow.is_declared(symbol) {
+            if self.property_key_declarations.contains(symbol)
+                || self.imported_bindings.contains(symbol)
+            {
                 self.native_operation_input_errors.push(format!(
                     "{request} selects a shadowed Symbol binding; only the original unshadowed global Symbol binding is supported"
                 ));
@@ -4284,6 +4454,54 @@ impl ExecutionIndex {
 
         for input in resolved {
             let request = &input.evidence.spec_location;
+            if input.evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray {
+                if let Some(owner) = self.known_set_protocol_mutation() {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} is contradicted by a positively identified required native slot write in source unit {}",
+                        owner.0
+                    ));
+                    continue;
+                }
+                let Some([declaration]) = self
+                    .binding_declaration_writes
+                    .get(&input.binding)
+                    .map(Vec::as_slice)
+                else {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} no longer resolves to one canonical binding declaration"
+                    ));
+                    continue;
+                };
+                let Some(ValueExpr::New(callee, _, call_site)) = declaration.initializer.as_ref()
+                else {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} no longer selects a direct Set constructor initializer"
+                    ));
+                    continue;
+                };
+                let is_same = declaration.direct_top_level
+                    && declaration.simple_identifier
+                    && declaration.set_from_primitive_array_shape
+                    && declaration.binding_span == input.declaration_span
+                    && declaration.initializer_span == Some(input.initializer_span)
+                    && declaration.owner == input.initializer_ordinal
+                    && input.binding.0.as_ref() == input.evidence.selected_binding
+                    && *call_site == CallSite::from(input.call_span)
+                    && matches!(callee.as_ref(), ValueExpr::Binding(constructor)
+                        if constructor.0.as_ref() == "Set"
+                            && !self.property_key_declarations.contains(constructor)
+                            && !self.imported_bindings.contains(constructor));
+                if !is_same {
+                    self.native_operation_input_errors.push(format!(
+                        "{request} no longer identifies the same direct unshadowed primitive-array Set initializer"
+                    ));
+                    continue;
+                }
+                self.native_operation_input_evidence
+                    .insert(*call_site, input.evidence.clone());
+                self.resolved_native_operation_inputs.push(input.clone());
+                continue;
+            }
             if known_symbol_mutation.is_some() {
                 self.native_operation_input_errors.push(format!(
                     "{request} is contradicted by a positively identified global Symbol replacement or accessor installation ({})",
@@ -4316,7 +4534,9 @@ impl ExecutionIndex {
                 && input.binding.0.as_ref() == input.evidence.selected_binding
                 && *call_site == CallSite::from(input.call_span)
                 && matches!(callee.as_ref(), ValueExpr::Binding(symbol)
-                    if symbol.0.as_ref() == "Symbol" && !flow.is_declared(symbol))
+                    if symbol.0.as_ref() == "Symbol"
+                        && !self.property_key_declarations.contains(symbol)
+                        && !self.imported_bindings.contains(symbol))
                 && self.primitive_native_symbol_calls.contains(call_site)
                 && self.ordinary_top_call_sites.contains(call_site)
                 && args.len() <= 1;
@@ -4371,6 +4591,32 @@ impl ExecutionIndex {
             NativeSlotOverlap::Known(owner) => Some(owner),
             NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
         }
+    }
+
+    fn known_set_protocol_mutation(&self) -> Option<SourceUnitOrdinal> {
+        [
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::GlobalObject,
+                key: NativePropertyKey::String("Set".to_owned()),
+            },
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::Prototype(IntrinsicRoot::Set),
+                key: NativePropertyKey::String("add".to_owned()),
+            },
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::Prototype(IntrinsicRoot::Array),
+                key: NativePropertyKey::SymbolIterator,
+            },
+            NativeWriteSlot {
+                receiver: NativeReceiverPath::ArrayIteratorPrototype,
+                key: NativePropertyKey::String("next".to_owned()),
+            },
+        ]
+        .iter()
+        .find_map(|slot| match self.source_slot_overlap(slot) {
+            NativeSlotOverlap::Known(owner) => Some(owner),
+            NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
+        })
     }
 
     /// Map exact local callable return summaries through hoisted declarations
@@ -4791,18 +5037,24 @@ impl ExecutionIndex {
         // Track aliases to native and explicitly captured ordinary values in
         // one receiver domain. The first pass is source-only and is used to
         // reject recognized contradictions before any author input is seeded.
-        let raw_intrinsic_aliases =
-            close_raw_intrinsic_aliases(&namespace_assignments, &index.global_object_names);
+        let declared = index.declared_bindings();
+        let raw_intrinsic_aliases = close_raw_intrinsic_aliases(
+            &namespace_assignments,
+            &index.global_object_names,
+            &declared,
+        );
         index.validate_value_inputs(
             &hints.selected_value_inputs,
             &hints.assumptions.captured_value_inputs,
             &raw_intrinsic_aliases,
+            &declared,
         );
         let callable_return_inputs = index.callable_return_value_inputs(flow);
         let intrinsic_aliases = close_post_author_intrinsic_aliases(
             &index,
             &namespace_assignments,
             &raw_intrinsic_aliases,
+            &declared,
             &callable_return_inputs,
         );
         let mut mutated_intrinsics = IntrinsicRoots::new();
@@ -4898,14 +5150,6 @@ impl ExecutionIndex {
         }
         index.native_write_census.unconditional = mutated_intrinsics;
         index.native_write_census.witnesses = Arc::new(unconditional_witnesses);
-        let declared: BTreeSet<_> = index
-            .property_key_declarations
-            .iter()
-            .chain(index.hoisted_bindings.keys())
-            .chain(index.imported_bindings.iter())
-            .chain(index.class_ids.iter())
-            .cloned()
-            .collect();
         for write in &index.intrinsic_writes {
             // Slot evidence is source-only: author-conditioned receiver
             // refinements may narrow family roots, but cannot certify that
@@ -4914,6 +5158,7 @@ impl ExecutionIndex {
                 &write.receiver,
                 &raw_intrinsic_aliases,
                 &index.global_object_names,
+                &declared,
                 &BTreeMap::new(),
                 &BTreeMap::new(),
             );
@@ -4941,6 +5186,7 @@ impl ExecutionIndex {
                 &write.receiver,
                 &intrinsic_aliases,
                 &index.global_object_names,
+                &declared,
                 &index.ordinary_input_refs,
                 &callable_return_inputs,
             );
@@ -5023,6 +5269,17 @@ impl ExecutionIndex {
                     .chain(&additional_key_evidence)
                     .flat_map(|evidence| &evidence.dependencies)
                     .copied()
+                    .chain(
+                        source_roots
+                            .contains(&NativeReceiverRoot::ArrayIteratorPrototype)
+                            .then_some([
+                                IntrinsicRoot::Object,
+                                IntrinsicRoot::Array,
+                                IntrinsicRoot::Symbol,
+                            ])
+                            .into_iter()
+                            .flatten(),
+                    )
                     .collect(),
                 invalidated_key_dependencies: BTreeSet::new(),
                 value_input_refs: projection.value_input_refs,
@@ -5759,7 +6016,6 @@ impl ExecutionIndex {
         index.validate_native_operation_inputs(
             &hints.selected_native_operation_inputs,
             &hints.assumptions.native_operation_inputs,
-            flow,
         );
         index
     }
@@ -7464,6 +7720,10 @@ impl Visit for ExecutionIndex {
                     initializer: initializer.clone(),
                     direct_top_level,
                     simple_identifier: true,
+                    set_from_primitive_array_shape: declarator
+                        .init
+                        .as_deref()
+                        .is_some_and(set_from_primitive_array_shape),
                 });
             self.property_key_assignments
                 .entry(binding.id.to_id())
@@ -7491,6 +7751,7 @@ impl Visit for ExecutionIndex {
                         initializer: initializer.clone(),
                         direct_top_level,
                         simple_identifier: false,
+                        set_from_primitive_array_shape: false,
                     });
                 // A for-of declaration has no initializer: its key fact was
                 // supplied by the loop protocol, rather than an unknown RHS.
@@ -8625,6 +8886,10 @@ impl PreparedCallableCapabilities {
         self.index.known_global_symbol_mutation()
     }
 
+    pub(crate) fn known_set_protocol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
+        self.index.known_set_protocol_mutation()
+    }
+
     pub(crate) fn locate_value_inputs(
         &mut self,
         source: Option<&(String, js_ast::SourceLineIndex)>,
@@ -8786,8 +9051,7 @@ pub(crate) fn prepare_callable_capabilities(
     selected_value_inputs: Vec<SelectedBindingValueInput>,
     selected_native_operation_inputs: Vec<SelectedNativeOperationInput>,
 ) -> PreparedCallableCapabilities {
-    let flow = (!selected_value_inputs.is_empty() || !selected_native_operation_inputs.is_empty())
-        .then(|| ChunkValueFlow::analyze(body));
+    let flow = (!selected_value_inputs.is_empty()).then(|| ChunkValueFlow::analyze(body));
     PreparedCallableCapabilities {
         index: ExecutionIndex::collect(
             body,

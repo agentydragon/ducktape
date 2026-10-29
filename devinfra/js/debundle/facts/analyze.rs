@@ -201,6 +201,13 @@ where
 pub fn complete_chunk_structural(
     source: StructuralChunkSourceFacts<'_>,
 ) -> StructuralChunkAnalysis<'_> {
+    complete_chunk_structural_with_native_allocations(source, &[])
+}
+
+pub fn complete_chunk_structural_with_native_allocations<'a>(
+    source: StructuralChunkSourceFacts<'a>,
+    native_operation_inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
+) -> StructuralChunkAnalysis<'a> {
     let StructuralChunkSourceFacts {
         body,
         imported_bindings,
@@ -210,7 +217,13 @@ pub fn complete_chunk_structural(
     } = source;
     let mut candidate_roots = crate::purity::plain_data_candidate_roots(&body);
     candidate_roots.extend(super::array_content_effects::array_candidate_roots(&body));
-    let value_flow = ChunkValueFlow::analyze_with_candidates(&body, &candidate_roots);
+    let native_set_allocations =
+        super::value_flow::native_set_allocation_roots(native_operation_inputs);
+    let value_flow = ChunkValueFlow::analyze_with_native_set_allocations(
+        &body,
+        &candidate_roots,
+        &native_set_allocations,
+    );
     let plain_data_bindings =
         crate::purity::collect_plain_data_bindings(&body, &shadowed, &value_flow);
     let dynamic_scope = DynamicScopeFact::analyze(&body);
@@ -399,7 +412,7 @@ where
         .collect();
     value_flow.augment_calls(&body, &mut facts);
     let local_class_heap_proof = prepared_sync_index.local_class_heap_proof();
-    super::array_content_effects::annotate_array_content_effects(
+    super::array_content_effects::annotate_heap_content_effects(
         &body,
         &value_flow,
         &local_class_heap_proof,
@@ -729,7 +742,7 @@ fn assemble_statement_facts(
         global_reads,
         cell_writes_summarizable,
         dataflow_summarizable,
-        array_contents: super::ArrayContentEffects::default(),
+        heap_contents: super::HeapContentEffects::default(),
         heap_native_integrity_uses: Vec::new(),
         purity,
         kind,

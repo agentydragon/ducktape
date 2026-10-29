@@ -155,7 +155,7 @@ pub struct StatementFacts {
     /// Heap-content effects on uniquely identified array allocations. These
     /// are distinct from binding effects: mutating an array changes its
     /// contents, not the binding that names it.
-    pub(crate) array_contents: ArrayContentEffects,
+    pub(crate) heap_contents: HeapContentEffects,
     /// Author-conditioned native premises consumed by certified local-class
     /// heap construction at this source unit.
     pub heap_native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
@@ -299,8 +299,8 @@ impl StatementFacts {
         for key in &self.global_reads {
             reads.insert(EffectCell::GlobalProp(key.clone()));
         }
-        writes.extend(self.array_contents.writes.eager.iter().cloned());
-        reads.extend(self.array_contents.reads.eager.iter().cloned());
+        writes.extend(self.heap_contents.writes.eager.iter().cloned());
+        reads.extend(self.heap_contents.reads.eager.iter().cloned());
         StatementEffectSummary { writes, reads }
     }
 }
@@ -320,6 +320,8 @@ pub enum EffectCell {
     /// Heap contents of one array allocation, keyed by its canonical object
     /// origin from chunk value flow.
     ArrayContents(u32),
+    /// Mutable contents of one author-certified fresh native Set.
+    SetContents(u32),
 }
 
 /// The (writes, reads) cell view of one statement, derived by
@@ -337,7 +339,7 @@ pub struct StatementEffectSummary {
 /// deferred. Opaque effects become heap-frontier barriers in the graph builder,
 /// rather than being copied onto every canonical array identity.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ArrayContentEffects {
+pub(crate) struct HeapContentEffects {
     /// Canonical local call targets whose heap summaries still need promotion.
     /// Certified construction sites are excluded before sites are unioned.
     pub calls: PositionBucketed<BTreeSet<Id>>,

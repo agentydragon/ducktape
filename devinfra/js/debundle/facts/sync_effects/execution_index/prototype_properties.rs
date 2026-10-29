@@ -30,6 +30,7 @@ fn prototype_intrinsic_roots(
         value,
         aliases,
         &index.global_object_names,
+        &index.declared_bindings(),
         &BTreeMap::new(),
         &BTreeMap::new(),
     )
@@ -39,7 +40,8 @@ fn prototype_intrinsic_roots(
         | NativeReceiverRoot::IntrinsicPrototype(root)
         | NativeReceiverRoot::IntrinsicDescendant(root) => Some(root),
         NativeReceiverRoot::OrdinaryDirect { .. }
-        | NativeReceiverRoot::OrdinaryDescendant { .. } => None,
+        | NativeReceiverRoot::OrdinaryDescendant { .. }
+        | NativeReceiverRoot::ArrayIteratorPrototype => None,
     })
     .collect()
 }
@@ -162,6 +164,9 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
             }
         }
         ValueExpr::Member(base, ..) => contained_root_bindings(base, index, bindings),
+        ValueExpr::ArrayIteratorPrototype(expression) => {
+            contained_root_bindings(expression, index, bindings);
+        }
         ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
             contained_root_bindings(callee, index, bindings);
             for argument in args {

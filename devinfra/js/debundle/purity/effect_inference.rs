@@ -521,6 +521,7 @@ mod tests {
                 defining_chunk: "provider.js".to_string(),
                 input_index: 4,
             }]),
+            ..Default::default()
         };
         let caller_body = PurityBodyTransfer {
             events: BTreeMap::from([(

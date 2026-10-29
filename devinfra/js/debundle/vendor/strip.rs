@@ -515,7 +515,9 @@ fn sweep_unreachable_top_level(
             return false;
         }
         an.observable_writes.iter().all(|cell| match cell {
-            EffectCell::GlobalProp(_) | EffectCell::ArrayContents(_) => false,
+            EffectCell::GlobalProp(_)
+            | EffectCell::ArrayContents(_)
+            | EffectCell::SetContents(_) => false,
             EffectCell::Binding(id) => {
                 replacement_import_locals.contains(id) || !live_reads.contains(id)
             }

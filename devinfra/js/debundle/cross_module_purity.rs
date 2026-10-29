@@ -40,7 +40,8 @@ use crate::analysis_inputs::{
     SelectedNativeOperationInput,
 };
 use crate::facts::{
-    ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
+    ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, native_set_allocation_roots,
+    top_level_item_views,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{
@@ -94,7 +95,11 @@ impl<'a> ModulePurityFacts<'a> {
         let views = top_level_item_views(self.body);
         let shadowed = compute_shadowed_globals(&views);
         let candidate_roots = crate::purity::plain_data_candidate_roots(&views);
-        let value_flow = ChunkValueFlow::analyze_with_candidates(&views, &candidate_roots);
+        let value_flow = ChunkValueFlow::analyze_with_native_set_allocations(
+            &views,
+            &candidate_roots,
+            &native_set_allocation_roots(&inputs.assumptions.native_operation_inputs),
+        );
         let plain_data_bindings = collect_plain_data_bindings(&views, &shadowed, &value_flow);
         let plain_array_bindings = collect_plain_array_bindings(&views, &shadowed);
         let dynamic_scope = crate::facts::DynamicScopeFact::analyze(&views);
@@ -645,7 +650,10 @@ pub fn resolve_imported_callable_summaries(
         prepared_module.locate_native_writes(module, facts.source.as_ref());
         prepared.insert(module, prepared_module);
     }
-    if !selected_native_operation_inputs.is_empty()
+    if selected_native_operation_inputs
+        .values()
+        .flatten()
+        .any(|input| input.evidence.operation == spec::NativeOperationKind::Symbol)
         && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
             facts
                 .known_global_symbol_mutation_owner()
@@ -655,11 +663,34 @@ pub fn resolve_imported_callable_summaries(
         let request = selected_native_operation_inputs
             .values()
             .flatten()
-            .next()
+            .find(|input| input.evidence.operation == spec::NativeOperationKind::Symbol)
             .map(|input| input.evidence.spec_location.as_str())
             .unwrap_or("native_operation_inputs");
         bail!(
             "{request} is contradicted by a positively identified global Symbol replacement or accessor installation in provider {module}, source unit {}",
+            owner.0
+        );
+    }
+    if selected_native_operation_inputs
+        .values()
+        .flatten()
+        .any(|input| input.evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray)
+        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
+            facts
+                .known_set_protocol_mutation_owner()
+                .map(|owner| (module, owner))
+        })
+    {
+        let request = selected_native_operation_inputs
+            .values()
+            .flatten()
+            .find(|input| {
+                input.evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray
+            })
+            .map(|input| input.evidence.spec_location.as_str())
+            .unwrap_or("native_operation_inputs");
+        bail!(
+            "{request} is contradicted by a positively identified required Set construction protocol slot write in provider {module}, source unit {}",
             owner.0
         );
     }
@@ -1168,6 +1199,7 @@ mod tests {
                 defining_chunk: provider.to_string(),
                 input_index,
             }]),
+            ..Default::default()
         }
     }
 

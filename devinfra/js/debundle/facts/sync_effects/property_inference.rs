@@ -353,6 +353,7 @@ mod tests {
             native_census_complete: true,
             native_dependencies: ProofDependencies {
                 value_inputs: BTreeSet::from([value_input.clone()]),
+                ..Default::default()
             },
             native_call_identity_candidates: BTreeSet::from([native_call_identity.clone()]),
             ..SemanticRules::default()

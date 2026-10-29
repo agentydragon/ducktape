@@ -5,7 +5,7 @@
 //! their own surrounding purity/effect checks.
 
 use super::*;
-use crate::analysis_inputs::ProofDependencies;
+use crate::analysis_inputs::{NativeOperationInputEvidence, ProofDependencies};
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use std::sync::Arc;
@@ -105,16 +105,46 @@ impl IterativeRules for AliasInvalidationRules {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SetIterableProof {
     facts: Arc<SemanticFacts>,
+    author_inputs: BTreeMap<u32, NativeOperationInputEvidence>,
+    author_dependencies: BTreeMap<u32, ProofDependencies>,
 }
 
 impl SetIterableProof {
-    pub(super) fn new(facts: Arc<SemanticFacts>) -> Self {
-        Self { facts }
+    pub(super) fn new(
+        facts: Arc<SemanticFacts>,
+        author_inputs: BTreeMap<u32, NativeOperationInputEvidence>,
+    ) -> Self {
+        let author_dependencies = author_inputs
+            .iter()
+            .map(|(site, evidence)| {
+                (
+                    *site,
+                    ProofDependencies {
+                        native_operation_inputs: BTreeSet::from([evidence.reference.clone()]),
+                        ..ProofDependencies::default()
+                    },
+                )
+            })
+            .collect();
+        Self {
+            facts,
+            author_inputs,
+            author_dependencies,
+        }
     }
 
     pub(crate) fn dependencies_for_constructor(&self, span: Span) -> Option<&ProofDependencies> {
-        self.facts
-            .dependencies(&SemanticKey::PrimitiveSetIteration(span.lo.0))
+        self.author_dependencies.get(&span.lo.0).or_else(|| {
+            self.facts
+                .dependencies(&SemanticKey::PrimitiveSetIteration(span.lo.0))
+        })
+    }
+
+    pub(crate) fn author_input_for_constructor(
+        &self,
+        span: Span,
+    ) -> Option<&NativeOperationInputEvidence> {
+        self.author_inputs.get(&span.lo.0)
     }
 
     pub(crate) fn inference_use_for_constructor(

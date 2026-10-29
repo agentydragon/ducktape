@@ -589,7 +589,14 @@ pub(super) fn finish_logical_chunk(
     // Chunk analysis: hint-sensitive facts, dependency graph, and structural
     // atomic groups. See `chunk_analysis/mod.rs` for the current implementation.
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
-    let structural_analysis = analysis::facts::complete_chunk_structural(structural_analysis);
+    let structural_analysis = analysis::facts::complete_chunk_structural_with_native_allocations(
+        structural_analysis,
+        cross_module_purities
+            .native_operation_inputs
+            .get(chunk_id)
+            .map(Vec::as_slice)
+            .unwrap_or_default(),
+    );
     let chunk_analysis = compute_chunk_analysis(
         chunk_id,
         &runtime_ast.module,

@@ -1,13 +1,13 @@
-//! Identity-based array-content effects for dependency ordering.
+//! Identity-based heap-content effects for dependency ordering.
 //!
 //! This pass deliberately does not classify calls as pure. It records only
-//! which array allocation a top-level operation may observe or mutate, using
+//! which array or certified native Set allocation an operation may observe or mutate, using
 //! the shared chunk value-flow identities. Unresolved calls and exports remain
 //! conservative barriers in the graph emitter.
 
 use super::*;
 
-pub(crate) fn annotate_array_content_effects(
+pub(crate) fn annotate_heap_content_effects(
     body: &[TopLevelItemView<'_>],
     value_flow: &ChunkValueFlow,
     local_class_heap_proof: &LocalClassHeapProof,
@@ -17,7 +17,14 @@ pub(crate) fn annotate_array_content_effects(
     for item in body {
         item.as_module_item().visit_with(&mut origins);
     }
-    let candidates = array_candidate_roots_from_origins(&origins.0);
+    let mut candidates = array_candidate_roots_from_origins(&origins.0);
+    candidates.extend(
+        value_flow
+            .native_set_allocations()
+            .keys()
+            .copied()
+            .map(ValueOrigin::NativeSet),
+    );
     let reachability = value_flow.candidate_object_index(&candidates);
     for (item, fact) in body.iter().zip(facts) {
         let mut collector = ArrayContentCollector {
@@ -25,18 +32,18 @@ pub(crate) fn annotate_array_content_effects(
             local_class_heap_proof,
             array_reachability: &reachability,
             array_origins: &origins.0,
-            effects: ArrayContentEffects::default(),
+            effects: HeapContentEffects::default(),
             heap_native_integrity_uses: BTreeSet::new(),
             lazy_depth: 0,
             past_await: false,
             may_skip_await_depth: 0,
         };
         item.as_module_item().visit_with(&mut collector);
-        fact.array_contents = collector.effects;
+        fact.heap_contents = collector.effects;
         fact.heap_native_integrity_uses =
             collector.heap_native_integrity_uses.into_iter().collect();
         if fact.kind == StatementKind::Export {
-            record_opaque(&mut fact.array_contents.opaque, 0, false);
+            record_opaque(&mut fact.heap_contents.opaque, 0, false);
         }
     }
 }
@@ -68,7 +75,7 @@ struct ArrayContentCollector<'a> {
     local_class_heap_proof: &'a LocalClassHeapProof,
     array_reachability: &'a CandidateObjectIndex<'a>,
     array_origins: &'a BTreeSet<u32>,
-    effects: ArrayContentEffects,
+    effects: HeapContentEffects,
     heap_native_integrity_uses: BTreeSet<crate::reports::schema::NativeIntegrityUse>,
     lazy_depth: u32,
     past_await: bool,
@@ -126,6 +133,51 @@ impl ArrayContentCollector<'_> {
         (arrays, ambiguous)
     }
 
+    fn record_set_expr(&mut self, expr: &Expr, read: bool, write: bool, opaque: bool) {
+        let values = self.value_flow.values_of_expr(expr);
+        let mut sets = BTreeSet::new();
+        let mut unknown = false;
+        let mut count = 0;
+        for value in values {
+            match value {
+                ValueOrigin::NativeSet(site) => {
+                    sets.insert(site);
+                    count += 1;
+                }
+                ValueOrigin::Unknown => unknown = true,
+                _ => count += 1,
+            }
+        }
+        let ambiguous = unknown || count > 1;
+        let has_known_set = !sets.is_empty();
+        let (depth, past_await) = self.position();
+        for site in sets {
+            if read {
+                record_set(
+                    &mut self.effects.reads,
+                    EffectCell::SetContents(site),
+                    depth,
+                    past_await,
+                );
+            }
+            if write {
+                record_set(
+                    &mut self.effects.writes,
+                    EffectCell::SetContents(site),
+                    depth,
+                    past_await,
+                );
+            }
+        }
+        // An unknown receiver may alias any certified Set, while an unrelated
+        // receiver must not create a Set frontier merely for being a member.
+        if (has_known_set && (opaque || ambiguous))
+            || (unknown && !self.value_flow.native_set_allocations().is_empty())
+        {
+            record_opaque(&mut self.effects.opaque, depth, past_await);
+        }
+    }
+
     fn record_array_expr(&mut self, expr: &Expr, read: bool, write: bool, opaque: bool) {
         let (arrays, ambiguous) = self.array_ids(expr);
         if arrays.is_empty() {
@@ -141,13 +193,23 @@ impl ArrayContentCollector<'_> {
     fn record_escaped_expr(&mut self, expr: &Expr) {
         let values = self.value_flow.values_of_expr(expr);
         let mut arrays = BTreeSet::new();
-        self.array_reachability.for_values(&values, |origin| {
-            if let ValueOrigin::Object(object) = origin {
-                arrays.insert(object);
-            }
-        });
+        self.array_reachability
+            .for_values(&values, |origin| match origin {
+                ValueOrigin::Object(object) if self.array_origins.contains(&object) => {
+                    arrays.insert(EffectCell::ArrayContents(object));
+                }
+                ValueOrigin::NativeSet(site) => {
+                    arrays.insert(EffectCell::SetContents(site));
+                }
+                _ => {}
+            });
         if !arrays.is_empty() {
-            self.record(&arrays, true, true, true);
+            let (depth, past_await) = self.position();
+            for cell in arrays {
+                record_set(&mut self.effects.reads, cell.clone(), depth, past_await);
+                record_set(&mut self.effects.writes, cell, depth, past_await);
+            }
+            record_opaque(&mut self.effects.opaque, depth, past_await);
         }
     }
 
@@ -180,12 +242,14 @@ impl ArrayContentCollector<'_> {
     }
 
     fn record_member_read(&mut self, member: &MemberExpr) {
+        self.record_set_expr(&member.obj, true, false, true);
         if let Some(opaque) = self.member_content_kind(member) {
             self.record_array_expr(&member.obj, true, false, opaque);
         }
     }
 
     fn record_member_write(&mut self, member: &MemberExpr, read: bool) {
+        self.record_set_expr(&member.obj, read, true, true);
         if self.member_content_kind(member).is_some() {
             // A static key identifies which array's contents are involved,
             // but it does not prove an own writable data property. The write
@@ -287,6 +351,7 @@ impl Visit for ArrayContentCollector<'_> {
         }
         match &node.callee {
             Callee::Expr(callee) if let Expr::Member(member) = callee.unwrap_parens() => {
+                self.record_set_expr(&member.obj, true, true, true);
                 self.record_array_expr(&member.obj, true, true, true);
                 self.visit_member_children(member);
                 self.record_opaque_call();
@@ -332,7 +397,23 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_new_expr(&mut self, node: &NewExpr) {
-        if let Some(dependencies) = self
+        let certified_set = self
+            .value_flow
+            .native_set_allocations()
+            .contains_key(&node.span.lo.0);
+        if certified_set {
+            let (depth, past_await) = self.position();
+            record_set(
+                &mut self.effects.allocations,
+                EffectCell::SetContents(node.span.lo.0),
+                depth,
+                past_await,
+            );
+        }
+        if certified_set {
+            // The exact author premise covers the constructor and the dense
+            // primitive array's iterator/next protocol at this site.
+        } else if let Some(dependencies) = self
             .local_class_heap_proof
             .dependencies_for_construction(node.span)
         {
@@ -353,14 +434,19 @@ impl Visit for ArrayContentCollector<'_> {
         node.callee.visit_with(self);
         if let Some(args) = &node.args {
             for arg in args {
-                self.record_escaped_expr(&arg.expr);
-                self.record_array_expr(&arg.expr, true, true, true);
+                if certified_set {
+                    self.record_array_expr(&arg.expr, true, false, false);
+                } else {
+                    self.record_escaped_expr(&arg.expr);
+                    self.record_array_expr(&arg.expr, true, true, true);
+                }
                 arg.visit_with(self);
             }
         }
     }
 
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        self.record_set_expr(&node.right, true, false, true);
         self.record_array_expr(&node.right, true, false, true);
         node.visit_children_with(self);
     }
@@ -374,6 +460,7 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_spread_element(&mut self, node: &SpreadElement) {
+        self.record_set_expr(&node.expr, true, false, true);
         self.record_array_expr(&node.expr, true, false, true);
         node.expr.visit_with(self);
     }

@@ -239,15 +239,19 @@ pub struct ValueInputRef {
 pub struct ProofDependencies {
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub value_inputs: BTreeSet<ValueInputRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub native_operation_inputs: BTreeSet<NativeOperationInputRef>,
 }
 
 impl ProofDependencies {
     pub fn is_empty(&self) -> bool {
-        self.value_inputs.is_empty()
+        self.value_inputs.is_empty() && self.native_operation_inputs.is_empty()
     }
 
     pub fn extend(&mut self, other: &Self) {
         self.value_inputs.extend(other.value_inputs.iter().cloned());
+        self.native_operation_inputs
+            .extend(other.native_operation_inputs.iter().cloned());
     }
 }
 

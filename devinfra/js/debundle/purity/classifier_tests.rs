@@ -70,6 +70,7 @@ fn value_input_dependencies(provider: &str, input_index: usize) -> ProofDependen
             defining_chunk: provider.to_string(),
             input_index,
         }]),
+        ..Default::default()
     }
 }
 

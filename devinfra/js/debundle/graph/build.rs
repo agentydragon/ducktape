@@ -7,6 +7,7 @@ use petgraph::graphmap::DiGraphMap;
 use swc_ecma_ast::Id;
 
 use crate::facts::{EffectCell, SourceUnitReadClosure};
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::{StatementFacts, StatementKind};
 
 // `DependencyGraphOptions` lives in `spec/spec.rs` — both the spec YAML surface
@@ -373,7 +374,7 @@ pub fn build_dependency_graph_with(
     }
 
     emit_s_chain(facts, options, &mut raw_edges);
-    emit_array_content_order(
+    emit_heap_content_order(
         facts,
         &binding_source_unit,
         &shared_vars,
@@ -407,7 +408,7 @@ pub fn build_dependency_graph_with(
 /// Preserve source-order observations of mutable array contents. Binding-cell
 /// ordering cannot do this: an array initializer writes the object binding,
 /// while a later `push` or indexed write changes the object behind it.
-fn emit_array_content_order(
+fn emit_heap_content_order(
     facts: &[StatementFacts],
     binding_source_unit: &HashMap<Id, SourceUnitId>,
     shared_vars: &BTreeSet<Id>,
@@ -432,61 +433,51 @@ fn emit_array_content_order(
     // A hoisted or escaped callable can allocate before its lexical statement.
     // Keep those origins live from the start; eager-only arrays become live
     // when their allocation or first precise content effect is encountered.
-    let mut has_live_array_contents = facts
+    let mut has_live_heap_contents = facts
         .iter()
-        .any(|stmt| !stmt.array_contents.allocations.lazy.is_empty());
-    let mut lazy_effects: Vec<_> = facts
+        .any(|stmt| !stmt.heap_contents.allocations.lazy.is_empty());
+    let local_lazy_effects: Vec<_> = facts
         .iter()
-        .map(|stmt| ArrayContentSummary {
-            allocations: stmt.array_contents.allocations.first_order_lazy.clone(),
-            effects: array_content_cells(
-                &stmt.array_contents.reads.first_order_lazy,
-                &stmt.array_contents.writes.first_order_lazy,
+        .map(|stmt| HeapContentSummary {
+            allocations: stmt.heap_contents.allocations.first_order_lazy.clone(),
+            effects: heap_content_cells(
+                &stmt.heap_contents.reads.first_order_lazy,
+                &stmt.heap_contents.writes.first_order_lazy,
             ),
-            opaque: stmt.array_contents.opaque.first_order_lazy,
+            opaque: stmt.heap_contents.opaque.first_order_lazy,
         })
         .collect();
-    // Calls in function bodies inherit their callee's first-order heap effects.
-    // The monotone closure handles recursion and mutually recursive helpers.
-    loop {
-        let mut changed = false;
-        for stmt in facts {
-            let source = stmt.ordinal.0;
-            for callee in &stmt.array_contents.calls.first_order_lazy {
-                let Some(target) = resolved_callee(callee) else {
-                    if !lazy_effects[source].opaque {
-                        lazy_effects[source].opaque = true;
-                        changed = true;
-                    }
-                    continue;
-                };
-                let target_effects = lazy_effects[target.0].clone();
-                let allocation_count = lazy_effects[source].allocations.len();
-                lazy_effects[source]
-                    .allocations
-                    .extend(target_effects.allocations);
-                changed |= lazy_effects[source].allocations.len() != allocation_count;
-                changed |=
-                    union_effects(&mut lazy_effects[source].effects, &target_effects.effects);
-                if target_effects.opaque && !lazy_effects[source].opaque {
-                    lazy_effects[source].opaque = true;
-                    changed = true;
-                }
+    // The shared incremental solver owns recursive and mutually recursive
+    // callable promotion. Unresolved targets are terminal opaque roots.
+    let mut successors = vec![Vec::new(); facts.len()];
+    let mut lazy_effects = local_lazy_effects;
+    for stmt in facts {
+        for callee in &stmt.heap_contents.calls.first_order_lazy {
+            if let Some(target) = resolved_callee(callee) {
+                successors[stmt.ordinal.0].push(target.0);
+            } else {
+                lazy_effects[stmt.ordinal.0].opaque = true;
             }
         }
-        if !changed {
-            break;
-        }
     }
+    let mut inference = IterativeInference::new(HeapContentRules { successors });
+    for (source, effects) in lazy_effects.into_iter().enumerate() {
+        inference.seed(source, effects);
+    }
+    let lazy_effects: Vec<_> = inference
+        .solve(0..facts.len())
+        .into_values()
+        .into_values()
+        .collect();
 
     let mut events = Vec::new();
     for stmt in facts {
-        let mut allocations = stmt.array_contents.allocations.eager.clone();
-        let mut effects = array_content_cells(
-            &stmt.array_contents.reads.eager,
-            &stmt.array_contents.writes.eager,
+        let mut allocations = stmt.heap_contents.allocations.eager.clone();
+        let mut effects = heap_content_cells(
+            &stmt.heap_contents.reads.eager,
+            &stmt.heap_contents.writes.eager,
         );
-        let mut opaque = stmt.array_contents.opaque.eager
+        let mut opaque = stmt.heap_contents.opaque.eager
             || (!stmt.dataflow_summarizable && !stmt.purity.is_pure())
             // The shared synchronous interpreter owns call-target and
             // protocol precision. If it cannot completely summarize this
@@ -500,7 +491,7 @@ fn emit_array_content_order(
                 .is_some_and(|calls| !calls.complete);
         // Function declarations are inert; only a recognized synchronous
         // at-init call inherits their first-order effects.
-        for callee in &stmt.array_contents.calls.eager {
+        for callee in &stmt.heap_contents.calls.eager {
             if let Some(target) = resolved_callee(callee) {
                 allocations.extend(lazy_effects[target.0].allocations.iter().cloned());
                 union_effects(&mut effects, &lazy_effects[target.0].effects);
@@ -509,7 +500,7 @@ fn emit_array_content_order(
                 opaque = true;
             }
         }
-        has_live_array_contents |=
+        has_live_heap_contents |=
             !allocations.is_empty() || !effects.reads.is_empty() || !effects.writes.is_empty();
         if !allocations.is_empty() {
             events.push((
@@ -522,7 +513,7 @@ fn emit_array_content_order(
                 CellOrderBarrier::HeapAllocation,
             ));
         }
-        if has_live_array_contents
+        if has_live_heap_contents
             && (!effects.reads.is_empty() || !effects.writes.is_empty() || opaque)
         {
             events.push((
@@ -545,19 +536,29 @@ fn emit_array_content_order(
     emit_cell_order_events(events, raw_edges, &mut sequence_pairs);
 }
 
-fn array_content_cells(
+fn heap_content_cells(
     reads: &BTreeSet<EffectCell>,
     writes: &BTreeSet<EffectCell>,
 ) -> crate::StatementEffectSummary {
     crate::StatementEffectSummary {
         reads: reads
             .iter()
-            .filter(|cell| matches!(cell, EffectCell::ArrayContents(_)))
+            .filter(|cell| {
+                matches!(
+                    cell,
+                    EffectCell::ArrayContents(_) | EffectCell::SetContents(_)
+                )
+            })
             .cloned()
             .collect(),
         writes: writes
             .iter()
-            .filter(|cell| matches!(cell, EffectCell::ArrayContents(_)))
+            .filter(|cell| {
+                matches!(
+                    cell,
+                    EffectCell::ArrayContents(_) | EffectCell::SetContents(_)
+                )
+            })
             .cloned()
             .collect(),
     }
@@ -593,10 +594,44 @@ fn union_effects(
 }
 
 #[derive(Clone, Default)]
-struct ArrayContentSummary {
+struct HeapContentSummary {
     allocations: BTreeSet<EffectCell>,
     effects: crate::StatementEffectSummary,
     opaque: bool,
+}
+
+struct HeapContentRules {
+    successors: Vec<Vec<usize>>,
+}
+
+impl IterativeRules for HeapContentRules {
+    type Key = usize;
+    type Fact = HeapContentSummary;
+    type Rule = usize;
+
+    fn evaluate(&self, source: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
+        let mut inherited = HeapContentSummary::default();
+        for target in &self.successors[*source] {
+            if let Some(effects) = context.read(*target) {
+                inherited
+                    .allocations
+                    .extend(effects.allocations.iter().cloned());
+                union_effects(&mut inherited.effects, &effects.effects);
+                inherited.opaque |= effects.opaque;
+            }
+        }
+        context.propose(*source, inherited);
+    }
+
+    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        let old_allocations = current.allocations.len();
+        current.allocations.extend(contribution.allocations);
+        let mut changed = current.allocations.len() != old_allocations;
+        changed |= union_effects(&mut current.effects, &contribution.effects);
+        changed |= contribution.opaque && !current.opaque;
+        current.opaque |= contribution.opaque;
+        changed
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
