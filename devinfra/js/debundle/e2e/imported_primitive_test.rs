@@ -77,6 +77,107 @@ fn direct_literal_const_import_does_not_promote_unrelated_callbacks() {
 }
 
 #[test]
+fn local_copies_preserve_imported_primitive_callback_timing() {
+    let source = "import { limit as bytes } from './peer.js';\n\
+                  let later = 0;\nconst callback = () => later;\n\
+                  globalThis.saved = callback;\n\
+                  var first = bytes, second = first;\n\
+                  const computed = 4 * second + 256;\n\
+                  later = 42;\nconsole.log(computed, callback());\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "compute",
+                    &[
+                        Member::new("callback"),
+                        Member::new("first"),
+                        Member::new("second"),
+                        Member::new("computed"),
+                    ],
+                    &["globalThis.saved = callback;"],
+                ),
+                logical_module_with_anon("later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", "export var limit = 2;\n")]),
+    );
+    assert_preserved_entry_output(&fixture, "264 42\n");
+    let graph = fixture.dependency_graph();
+    let computed = source_unit_for_binding(&graph, "computed");
+    let node = graph.nodes.iter().find(|node| node.id == computed).unwrap();
+    assert!(node.synchronous_execution.as_ref().unwrap().complete);
+    assert!(
+        !node.purity.is_pure(),
+        "a primitive result is not a purity proof"
+    );
+}
+
+#[test]
+fn replacing_a_primitive_copy_with_an_object_preserves_coercion_callbacks() {
+    let source = "import { limit as bytes } from './peer.js';\n\
+                  let later = 0;\nconst callback = () => later;\n\
+                  globalThis.saved = callback;\nlet copied = bytes;\n\
+                  copied = { valueOf() { return globalThis.saved(); } };\n\
+                  const computed = 4 * copied + 256;\n\
+                  later = 42;\nconsole.log(computed, callback());\n";
+    let statements = [
+        "globalThis.saved = callback;",
+        "copied = { valueOf() { return globalThis.saved(); } };",
+    ];
+    let members = [
+        Member::new("callback"),
+        Member::new("copied"),
+        Member::new("computed"),
+    ];
+    let peers = [("static/peer", "export const limit = 2;\n")];
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon("compute", &members, &statements),
+                logical_module_with_anon("later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_extra_chunks(&peers),
+        &["compute", "later"],
+        &["eager_use"],
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "together",
+                &members
+                    .into_iter()
+                    .chain([Member::new("later")])
+                    .collect::<Vec<_>>(),
+                &[statements.as_slice(), &["later = 42;"]].concat(),
+            )],
+        )
+        .with_extra_chunks(&peers),
+    );
+    assert_preserved_entry_output(&fixture, "256 42\n");
+}
+
+#[test]
+fn primitive_copies_keep_mixed_numeric_throws() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { limit } from './peer.js';\n\
+             var copied = limit;\nconst computed = 4 * copied;\nconsole.log(computed);\n",
+            vec![logical_module(
+                "compute",
+                &[Member::new("copied"), Member::new("computed")],
+            )],
+        )
+        .with_extra_chunks(&[("static/peer", "export const limit = 2n;\n")]),
+    );
+    assert_preserved_entry_error(&fixture, "TypeError");
+}
+
+#[test]
 fn imported_template_and_numeric_values_survive_copy_and_reexport_chains() {
     let source = "import { prefix, forwardedPrefix, limit } from './bridge.js';\n\
                   let later = 0;\nconst callback = () => later;\n\

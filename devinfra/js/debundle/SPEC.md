@@ -736,6 +736,12 @@ retained lazy closure are included as well, covering an accessor that returns
 another conversion callable. This is callback-effect analysis; it does not
 classify the enclosing operator as pure.
 
+Source-proved stable primitive imports enter that same retained value flow, so
+copying one through local bindings preserves its callback-free conversion fact.
+Reassignment to an object or an unknown alternative restores conservative
+conversion analysis. This does not fold the imported value, prove the operator
+cannot throw, or remove binding-read and import-order constraints.
+
 Native call models share one checked projection for call timing and successful
 return values. A direct `Math.round`, `floor`, `ceil`, `trunc`, `abs`, or `sign`
 call with one proven primitive argument has no synchronous callback effect and

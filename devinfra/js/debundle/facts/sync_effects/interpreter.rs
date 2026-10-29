@@ -4653,6 +4653,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 {
                     return Values::from([AbstractValue::InlineCallbackFactory]);
                 }
+                if self.inputs.index.imported_bindings.contains(id)
+                    && self.inputs.imported_primitives.contains(id.0.as_ref())
+                {
+                    // Preserve the source-proved primitive result through the
+                    // ordinary value transfers, including local copies. Reads
+                    // and import ordering remain separate statement facts.
+                    return Values::from([AbstractValue::NonCallable]);
+                }
                 if self.inputs.top_bindings.contains(id) {
                     if let Some(prefix_values) = self.state.prefix_values.get(id) {
                         let mut values = prefix_values.clone();
@@ -5720,14 +5728,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return;
         }
         if call.kind == CallKind::ImplicitCoercion {
-            // The binding read and its TDZ/import ordering facts remain in the
-            // statement. This proof removes only a possible protocol callback.
-            if matches!(call.args.first(), Some(ValueExpr::Binding(id))
-                if self.inputs.index.imported_bindings.contains(id)
-                    && self.inputs.imported_primitives.contains(id.0.as_ref()))
-            {
-                return;
-            }
             let values = call
                 .args
                 .first()
