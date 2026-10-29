@@ -18,9 +18,9 @@ import (
 )
 
 // Config contains the per-process Gateway role wiring. Public callers use TokenReview;
-// runner connections use certificate identities and incarnation-fenced metadata.
+// runner connections use explicitly configured transport security and incarnation-fenced metadata.
 type Config struct {
-	RunnerTLS                runner_transport.Config
+	RunnerSecurity           runner_transport.Security
 	Namespace                string
 	CallerAccounts           []auth.Account
 	SandboxControllerAccount *auth.Account
@@ -91,6 +91,9 @@ func New(
 	coordination coordinationclient.CoordinationV1Interface,
 	discovery discoveryclient.DiscoveryV1Interface,
 ) (*Gateway, error) {
+	if err := config.RunnerSecurity.Validate(); err != nil {
+		return nil, fmt.Errorf("runner security: %w", err)
+	}
 	if config.Namespace == "" || len(config.CallerAccounts) == 0 || callerAuth == nil {
 		return nil, fmt.Errorf("Gateway namespace, caller policy and token resolvers are required")
 	}

@@ -168,7 +168,7 @@ func TestIngressLoopPublishesSealedAcknowledgementToQuiesce(t *testing.T) {
 
 func newBareRunner(t *testing.T) *Runner {
 	t.Helper()
-	runner, err := New(Config{StateDir: t.TempDir()})
+	runner, err := New(Config{StateDir: t.TempDir(), Control: insecureControl()})
 	if err != nil {
 		t.Fatal(err)
 	}

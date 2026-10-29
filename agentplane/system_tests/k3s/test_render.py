@@ -20,6 +20,7 @@ from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendere
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
+from cluster.cdk8s.agentplane import runner_gateway
 from util.bazel.runfiles import get_required_path
 from util.settings_contract import env_name
 
@@ -183,6 +184,14 @@ def test_direct_fixture_uses_gateway_and_goose_queue_migration() -> None:
     gateway_config = yaml.safe_load(
         _resource(docs, "ConfigMap", f"{fixture_chart.RUNNER_GATEWAY}-settings")["data"]["settings.yaml"]
     )
+    assert gateway_config["runner_security"] == {
+        "mode": "mtls",
+        "tls": {
+            "cert_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.crt",
+            "key_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.key",
+            "ca_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/ca.crt",
+        },
+    }
     assert f"{NAMESPACE}/app" in gateway_config["wake_callers"]
     assert not pod.get("imagePullSecrets")
 
@@ -381,10 +390,13 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     config = json.loads(config_map["data"]["runner.json"])
     assert config["control"] == {
         "listen_address": "0.0.0.0:9090",
-        "tls": {
-            "cert_file": "/run/agentplane/runner-tls/tls.crt",
-            "key_file": "/run/agentplane/runner-tls/tls.key",
-            "ca_file": "/run/agentplane/runner-trust/ca-certificates.crt",
+        "security": {
+            "mode": "mtls",
+            "tls": {
+                "cert_file": "/run/agentplane/runner-tls/tls.crt",
+                "key_file": "/run/agentplane/runner-tls/tls.key",
+                "ca_file": "/run/agentplane/runner-trust/ca-certificates.crt",
+            },
         },
     }
 

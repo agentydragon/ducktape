@@ -41,10 +41,10 @@ from agentplane.runner.configuration import (
     Endpoint,
     Harness,
     RunnerControl,
-    RunnerTransportTLS,
     VMEnvironment,
     VMExecutor,
 )
+from agentplane.runner_transport.configuration import MTLS, TLS
 from cluster.cdk8s.agentplane import launcher_relay, llm_ingress, platform_routes, sandbox_pod, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE_KEY as RUNNER_TRUST_BUNDLE_KEY
@@ -111,10 +111,13 @@ class RunnerVmTemplate(Construct):
             initialization_cwd="/state/workspaces",
             control=RunnerControl(
                 listen_address=f"0.0.0.0:{_RUNNER_PORT}",
-                tls=RunnerTransportTLS(
-                    cert_file=f"{_RUNNER_TLS_PATH}/tls.crt",
-                    key_file=f"{_RUNNER_TLS_PATH}/tls.key",
-                    ca_file=f"{_RUNNER_TRUST_PATH}/{RUNNER_TRUST_BUNDLE_KEY}",
+                security=MTLS(
+                    mode="mtls",
+                    tls=TLS(
+                        cert_file=f"{_RUNNER_TLS_PATH}/tls.crt",
+                        key_file=f"{_RUNNER_TLS_PATH}/tls.key",
+                        ca_file=f"{_RUNNER_TRUST_PATH}/{RUNNER_TRUST_BUNDLE_KEY}",
+                    ),
                 ),
             ),
             ingress=Endpoint(

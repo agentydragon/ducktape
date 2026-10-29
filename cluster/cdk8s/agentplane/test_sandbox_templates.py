@@ -218,10 +218,13 @@ def test_runner_template_renders_mtls_server_listener() -> None:
     assert runner["ports"] == [{"name": "runner-control", "containerPort": 9090}]
     assert config["control"] == {
         "listen_address": "0.0.0.0:9090",
-        "tls": {
-            "cert_file": "/run/agentplane/runner-tls/tls.crt",
-            "key_file": "/run/agentplane/runner-tls/tls.key",
-            "ca_file": "/run/agentplane/runner-tls/ca.crt",
+        "security": {
+            "mode": "mtls",
+            "tls": {
+                "cert_file": "/run/agentplane/runner-tls/tls.crt",
+                "key_file": "/run/agentplane/runner-tls/tls.key",
+                "ca_file": "/run/agentplane/runner-tls/ca.crt",
+            },
         },
     }
 

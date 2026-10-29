@@ -32,6 +32,7 @@ from constructs import Construct
 
 from agentplane.crd_group import GROUP
 from agentplane.runner_gateway.settings import Settings
+from agentplane.runner_transport.configuration import MTLS, TLS
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
@@ -174,7 +175,9 @@ class RunnerGateway(Construct):
         content = {
             "dispatcher_callers": dispatcher_accounts,
             "gateway_callers": gateway_accounts,
-            "runner_tls": {"cert_file": _RUNNER_TLS_CERT, "key_file": _RUNNER_TLS_KEY, "ca_file": _RUNNER_TLS_CA},
+            "runner_security": MTLS(
+                mode="mtls", tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)
+            ).model_dump(mode="json"),
             **({"wake_callers": wake_accounts} if wake_accounts else {}),
         }
         settings = SettingsFile(

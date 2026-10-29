@@ -26,6 +26,7 @@ from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
+from agentplane.runner_transport.configuration import MTLS
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
@@ -134,7 +135,10 @@ async def runner(
     evidence."""
     control = RunnerControl(
         listen_address="127.0.0.1:9090",
-        tls=gateway_service.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
+        security=MTLS(
+            mode="mtls",
+            tls=gateway_service.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
+        ),
     )
     ingress = Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(sandbox.owner))
     launched = replace(config, launch=replace(config.launch, sandbox=sandbox.identity))

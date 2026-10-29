@@ -36,9 +36,9 @@ from agentplane.runner.configuration import (
     Harness,
     PodEnvironment,
     RunnerControl,
-    RunnerTransportTLS,
 )
 from agentplane.runner.platform_instructions import render_platform_instructions
+from agentplane.runner_transport.configuration import MTLS, TLS
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
     actions,
@@ -417,17 +417,22 @@ class RunnerTemplate(Construct):
         )
         ingress = platform_routes.ingress(self.env.namespace)
         llm_url = llm_ingress.proxied_url(self.env.namespace)
-        tls = RunnerTransportTLS(
-            cert_file=f"{_RUNNER_TLS_PATH}/tls.crt",
-            key_file=f"{_RUNNER_TLS_PATH}/tls.key",
-            ca_file=f"{_RUNNER_TLS_PATH}/ca.crt",
-        )
         config = Configuration(
             version=2,
             session_reconcile_concurrency=self.session_reconcile_concurrency,
             state_dir=_STATE_DIR,
             initialization_cwd=_STATE_DIR,
-            control=RunnerControl(listen_address=f"0.0.0.0:{RUNNER_SERVICE_PORT}", tls=tls),
+            control=RunnerControl(
+                listen_address=f"0.0.0.0:{RUNNER_SERVICE_PORT}",
+                security=MTLS(
+                    mode="mtls",
+                    tls=TLS(
+                        cert_file=f"{_RUNNER_TLS_PATH}/tls.crt",
+                        key_file=f"{_RUNNER_TLS_PATH}/tls.key",
+                        ca_file=f"{_RUNNER_TLS_PATH}/ca.crt",
+                    ),
+                ),
+            ),
             ingress=Endpoint(target=ingress.local_target, bearer=platform_routes.ROUTE_BEARER),
             platform_instructions=platform_instructions(self.env, egress_api_service=self.egress_api_service),
             harness_environment=configuration.EnvironmentVariables(

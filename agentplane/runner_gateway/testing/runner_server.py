@@ -13,7 +13,7 @@ from cryptography import x509
 
 from agentplane.proto import runner_state_pb2
 from agentplane.runner import runner_service_pb2
-from agentplane.runner.configuration import RunnerTransportTLS
+from agentplane.runner_transport.configuration import TLS
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -70,7 +70,7 @@ class _WatchStateInterceptor(grpc.aio.ServerInterceptor):
 
 @asynccontextmanager
 async def runner_server(
-    listen_address: str, tls: RunnerTransportTLS, add_services: Callable[[grpc.aio.Server], None]
+    listen_address: str, tls: TLS, add_services: Callable[[grpc.aio.Server], None]
 ) -> AsyncIterator[grpc.aio.Server]:
     """Serve the scripted Runner RPCs on `listen_address` until the context exits.
 

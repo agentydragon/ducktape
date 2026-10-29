@@ -1,20 +1,28 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 go_library(
     name = "runner_transport",
-    srcs = ["credentials.go"],
+    srcs = [
+        "credentials.go",
+        "security.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_transport",
     deps = [
         "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//peer",
     ],
 )
 
 go_test(
     name = "runner_transport_test",
-    srcs = ["credentials_test.go"],
+    srcs = [
+        "credentials_test.go",
+        "security_test.go",
+    ],
     embed = [":runner_transport"],
     race = "on",
     deps = [
@@ -22,4 +30,14 @@ go_test(
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//peer",
     ],
+)
+
+py_library(
+    name = "configuration",
+    srcs = ["configuration.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = ["@pypi//pydantic"],
 )

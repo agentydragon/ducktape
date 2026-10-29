@@ -46,9 +46,9 @@ type directExecFrame struct {
 	done  chan error
 }
 
-// forwardServer opens the Runner as a Gateway-dialed, mTLS-authenticated gRPC server.
+// forwardServer opens the Runner with its explicitly configured transport security.
 func (r *Runner) forwardServer() (net.Listener, *grpc.Server, error) {
-	credentials, err := r.config.Control.TLS.ServerCredentials(runnertransport.GatewayURI)
+	credentials, err := r.config.Control.Security.ServerCredentials(runnertransport.GatewayURI)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -127,7 +127,7 @@ func (r *Runner) finishDirectWatch(watch *directWatch) {
 }
 
 func (r *Runner) authorizeDirectCall(ctx context.Context) (*directWatch, error) {
-	if err := authorizeGatewayPeer(ctx); err != nil {
+	if err := r.authorizeGatewayPeer(ctx); err != nil {
 		return nil, err
 	}
 	values, ok := metadata.FromIncomingContext(ctx)
@@ -163,13 +163,9 @@ func (r *Runner) authorizeDirectCall(ctx context.Context) (*directWatch, error) 
 	return watch, nil
 }
 
-func authorizeGatewayPeer(ctx context.Context) error {
-	identity, err := runnertransport.PeerIdentity(ctx)
-	if err != nil {
-		return status.Error(codes.Unauthenticated, "Runner control peer certificate is invalid")
-	}
-	if identity != runnertransport.GatewayURI {
-		return status.Error(codes.PermissionDenied, "Runner control peer is not the Runner Gateway")
+func (r *Runner) authorizeGatewayPeer(ctx context.Context) error {
+	if err := r.config.Control.Security.AuthorizePeer(ctx, runnertransport.GatewayURI); err != nil {
+		return status.Error(codes.Unauthenticated, "Runner control peer is not authenticated as the Runner Gateway")
 	}
 	return nil
 }
@@ -185,7 +181,7 @@ func (r *Runner) WatchState(
 	request *runnerservicepb.WatchStateRequest,
 	server grpc.ServerStreamingServer[runnerservicepb.WatchStateResponse],
 ) error {
-	if err := authorizeGatewayPeer(server.Context()); err != nil {
+	if err := r.authorizeGatewayPeer(server.Context()); err != nil {
 		return err
 	}
 	watch, err := r.directWatchContext(request, server.Context())
@@ -205,7 +201,7 @@ func (r *Runner) WatchState(
 	ticker := time.NewTicker(forwardHeartbeatInterval)
 	defer ticker.Stop()
 	for {
-		if err := authorizeGatewayPeer(watch.ctx); err != nil {
+		if err := r.authorizeGatewayPeer(watch.ctx); err != nil {
 			return err
 		}
 		changed := r.changesSince()

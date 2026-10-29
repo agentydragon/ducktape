@@ -190,6 +190,7 @@ py_test(
         "//agentplane/mcp_edge:settings",
         "//agentplane/runner_gateway:settings",
         "//agentplane/system_tests:conftest",
+        "//cluster/cdk8s/agentplane:runner_gateway",
         "//util:settings_contract",
         "//util/bazel:runfiles",
         "@pypi//bcrypt",

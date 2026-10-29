@@ -16,9 +16,9 @@ func configurationFixture(t *testing.T) (map[string]any, string, string) {
 	value := map[string]any{
 		"environment": map[string]any{"kind": "pod", "supervision": "subprocess"},
 		"version":     2, "state_dir": filepath.Join(directory, "state"), "initialization_cwd": directory,
-		"control": map[string]any{"listen_address": "127.0.0.1:8090", "tls": map[string]string{
+		"control": map[string]any{"listen_address": "127.0.0.1:8090", "security": map[string]any{"mode": "mtls", "tls": map[string]string{
 			"cert_file": "/run/test/tls.crt", "key_file": "/run/test/tls.key", "ca_file": "/run/test/ca.crt",
-		}},
+		}}},
 		"ingress":               map[string]string{"target": "history.test:8081", "bearer": "ingress-placeholder"},
 		"platform_instructions": "Test guidance.",
 		"runner_environment":    map[string]any{"values": map[string]string{"TOOL_ROUTE": "http://tools.test"}},
@@ -30,6 +30,33 @@ func configurationFixture(t *testing.T) (map[string]any, string, string) {
 
 func configurationVMEnvironment() map[string]any {
 	return map[string]any{"kind": "vm", "agent_uid": 107, "agent_gid": 107, "block_devices": []string{"/dev/test-workspace"}, "resources": validGuestResources()}
+}
+
+func TestConfigurationRequiresExplicitControlSecurity(t *testing.T) {
+	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
+	for _, test := range []struct {
+		name     string
+		security map[string]any
+		valid    bool
+	}{
+		{name: "explicit insecure", security: map[string]any{"mode": "insecure"}, valid: true},
+		{name: "missing mode", security: map[string]any{}},
+		{name: "unknown mode", security: map[string]any{"mode": "automatic"}},
+		{name: "mtls without credentials", security: map[string]any{"mode": "mtls"}},
+		{name: "insecure with credentials", security: map[string]any{"mode": "insecure", "tls": map[string]string{
+			"cert_file": "/run/test/tls.crt", "key_file": "/run/test/tls.key", "ca_file": "/run/test/ca.crt",
+		}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value, path, launch := configurationFixture(t)
+			value["control"].(map[string]any)["security"] = test.security
+			writeJSONFixture(t, path, value)
+			_, _, _, err := loadConfiguration(path, launch)
+			if (err == nil) != test.valid {
+				t.Fatalf("loadConfiguration error = %v, valid = %t", err, test.valid)
+			}
+		})
+	}
 }
 
 func configurationVMExecutor(environment map[string]any) {

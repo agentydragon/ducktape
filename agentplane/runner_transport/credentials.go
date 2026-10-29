@@ -1,5 +1,5 @@
-// Package runner_transport provides the mTLS credentials shared by the Runner
-// and Runner Gateway connection.
+// Package runner_transport provides explicit transport security for connections
+// between the Runner and Runner Gateway.
 package runner_transport
 
 import (

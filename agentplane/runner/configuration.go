@@ -254,9 +254,8 @@ func loadConfiguration(path, launchPath string) (Config, Endpoint, map[string]st
 }
 
 func validateRunnerControl(control RunnerControlConfiguration) error {
-	if control.TLS.CertFile == "" || control.TLS.KeyFile == "" || control.TLS.CAFile == "" ||
-		!filepath.IsAbs(control.TLS.CertFile) || !filepath.IsAbs(control.TLS.KeyFile) || !filepath.IsAbs(control.TLS.CAFile) {
-		return errors.New("control TLS cert_file, key_file, and ca_file must be absolute paths")
+	if err := control.Security.Validate(); err != nil {
+		return fmt.Errorf("control.security: %w", err)
 	}
 	host, port, err := net.SplitHostPort(control.ListenAddress)
 	number, numberErr := strconv.Atoi(port)

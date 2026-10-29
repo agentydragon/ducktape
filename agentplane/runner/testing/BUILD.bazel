@@ -111,7 +111,7 @@ py_library(
         "//agentplane/runner:configuration",
         "//agentplane/runner:runner_service_pb2",
         "//agentplane/runner:runner_service_pb2_grpc",
-        "//agentplane/testing:tls",
+        "//agentplane/runner_transport:configuration",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],

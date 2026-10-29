@@ -60,10 +60,10 @@ type Endpoint struct {
 	Bearer string `json:"bearer"`
 }
 
-// RunnerControlConfiguration exposes the Runner as a Gateway-dialed mTLS gRPC server.
+// RunnerControlConfiguration exposes the Runner as a Gateway-dialed gRPC server.
 type RunnerControlConfiguration struct {
-	ListenAddress string                 `json:"listen_address"`
-	TLS           runnertransport.Config `json:"tls"`
+	ListenAddress string                   `json:"listen_address"`
+	Security      runnertransport.Security `json:"security"`
 }
 
 type Config struct {
@@ -82,10 +82,13 @@ type Config struct {
 }
 
 func validateControlIdentity(config Config) error {
-	if config.Control.TLS.CertFile == "" {
-		return nil // Unit tests may construct a Runner without the executable's file configuration.
+	if err := config.Control.Security.Validate(); err != nil {
+		return fmt.Errorf("Runner control security: %w", err)
 	}
-	identity, err := config.Control.TLS.LocalIdentity(x509.ExtKeyUsageServerAuth)
+	if config.Control.Security.Mode == runnertransport.Insecure {
+		return nil
+	}
+	identity, err := config.Control.Security.TLS.LocalIdentity(x509.ExtKeyUsageServerAuth)
 	if err != nil {
 		return fmt.Errorf("Runner control certificate: %w", err)
 	}

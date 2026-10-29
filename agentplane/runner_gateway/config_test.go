@@ -14,7 +14,7 @@ const databaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL=postgres://user:
 
 const requiredFile = `dispatcher_callers: [agentplane/app, agentplane/notifications]
 gateway_callers: [agentplane/runner-gateway]
-runner_tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}
+runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}}
 `
 
 // required is the environment of a deployment that sets every setting without a default.
@@ -115,6 +115,27 @@ func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
 		if strings.Contains(err.Error(), "never-print-this") {
 			t.Fatalf("error carries the database URL: %v", err)
 		}
+	}
+}
+
+func TestRunnerSecurityMustBeExplicitAndConsistent(t *testing.T) {
+	for _, test := range []struct {
+		name, security string
+		valid          bool
+	}{
+		{name: "insecure", security: "{mode: insecure}", valid: true},
+		{name: "missing mode", security: "{}"},
+		{name: "unknown mode", security: "{mode: automatic}"},
+		{name: "missing mtls credentials", security: "{mode: mtls}"},
+		{name: "insecure with credentials", security: "{mode: insecure, tls: {cert_file: /a, key_file: /b, ca_file: /c}}"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			contents := "dispatcher_callers: [agentplane/app]\ngateway_callers: [agentplane/runner-gateway]\nrunner_security: " + test.security + "\n"
+			_, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+writeSettings(t, contents)))
+			if (err == nil) != test.valid {
+				t.Fatalf("loadConfig error = %v, valid = %t", err, test.valid)
+			}
+		})
 	}
 }
 

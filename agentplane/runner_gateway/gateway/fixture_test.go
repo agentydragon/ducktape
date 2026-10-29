@@ -145,7 +145,7 @@ func (f *sandboxFixture) newGateway(t *testing.T, holderName, holderIP string, e
 	t.Helper()
 	gateway, err := New(Config{
 		Namespace:                f.namespace,
-		RunnerTLS:                f.gatewayTLS,
+		RunnerSecurity:           runner_transport.Security{Mode: runner_transport.MutualTLS, TLS: &f.gatewayTLS},
 		CallerAccounts:           []auth.Account{appAccount},
 		ExecutorCallers:          executorCallers,
 		SandboxControllerAccount: &controllerAccount,

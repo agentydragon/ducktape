@@ -135,12 +135,17 @@ func listenAndServe(ctx context.Context, c config) error {
 
 // serve uses supplied listeners; a nil HTTP listener disables the facade.
 func serve(ctx context.Context, c config, listener, httpListener net.Listener) error {
-	identity, err := c.RunnerTLS.LocalIdentity(x509.ExtKeyUsageClientAuth)
-	if err != nil {
+	if err := c.RunnerSecurity.Validate(); err != nil {
 		return err
 	}
-	if identity != runner_transport.GatewayURI {
-		return errors.New("Gateway runner certificate has the wrong identity")
+	if c.RunnerSecurity.Mode == runner_transport.MutualTLS {
+		identity, err := c.RunnerSecurity.TLS.LocalIdentity(x509.ExtKeyUsageClientAuth)
+		if err != nil {
+			return err
+		}
+		if identity != runner_transport.GatewayURI {
+			return errors.New("Gateway runner certificate has the wrong identity")
+		}
 	}
 	config, err := kubernetesConfig(c)
 	if err != nil {
@@ -189,8 +194,8 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 		return err
 	}
 	g, err := gateway.New(gateway.Config{
-		RunnerTLS: c.RunnerTLS,
-		Namespace: c.Namespace, CallerAccounts: c.GatewayCallers, ExecutorCallers: c.ExecutorCallers,
+		RunnerSecurity: c.RunnerSecurity,
+		Namespace:      c.Namespace, CallerAccounts: c.GatewayCallers, ExecutorCallers: c.ExecutorCallers,
 		SandboxControllerAccount: c.ControllerAccount,
 		HolderName:               c.PodName, HolderIP: c.PodIP, ProxyPort: int32(c.ProxyPort),
 	}, gatewayAuth, objects, kube.CoreV1(), kube.CoordinationV1(), kube.DiscoveryV1())

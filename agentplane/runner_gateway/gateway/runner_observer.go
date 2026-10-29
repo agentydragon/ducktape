@@ -11,7 +11,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"google.golang.org/grpc"
@@ -112,7 +111,7 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 	timing := g.config.ControlTiming
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	creds, err := g.config.RunnerTLS.ClientCredentials(destination.peerURI)
+	creds, err := g.config.RunnerSecurity.ClientCredentials(destination.peerURI)
 	if err != nil {
 		return err
 	}
@@ -171,7 +170,7 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 				return received.err
 			}
 			response := received.response
-			if identity, err := runner_transport.PeerIdentity(watch.Context()); err != nil || identity != destination.peerURI {
+			if err := g.config.RunnerSecurity.AuthorizePeer(watch.Context(), destination.peerURI); err != nil {
 				return status.Error(codes.Unauthenticated, "runner certificate is no longer valid")
 			}
 			if response.GetRunnerBootId() == "" || response.GetSandboxUid() != destination.identity.UID || response.GetIncarnationUid() != destination.podUID || response.GetConnectionEpoch() != epoch || response.GetFacts() == nil {
@@ -185,10 +184,7 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 				return status.Error(codes.InvalidArgument, "runner sent invalid facts")
 			}
 			validateCtx, release := context.WithTimeout(ctx, timing.LivenessTimeout)
-			_, currentUID, err := g.certificatePeer(validateCtx, destination.peerURI)
-			if err == nil && currentUID != destination.podUID {
-				err = status.Error(codes.PermissionDenied, "runner incarnation changed")
-			}
+			err = g.validateRunnerDestination(validateCtx, destination)
 			if err == nil && connection == nil {
 				err = g.records.recordBootID(validateCtx, destination.identity, epoch, response.RunnerBootId)
 			}

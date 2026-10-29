@@ -150,10 +150,13 @@ def test_vm_template_renders_mtls_server_listener() -> None:
 
     assert runner["control"] == {
         "listen_address": "0.0.0.0:9090",
-        "tls": {
-            "cert_file": "/run/agentplane/runner-tls/tls.crt",
-            "key_file": "/run/agentplane/runner-tls/tls.key",
-            "ca_file": "/run/agentplane/runner-trust/ca-certificates.crt",
+        "security": {
+            "mode": "mtls",
+            "tls": {
+                "cert_file": "/run/agentplane/runner-tls/tls.crt",
+                "key_file": "/run/agentplane/runner-tls/tls.key",
+                "ca_file": "/run/agentplane/runner-trust/ca-certificates.crt",
+            },
         },
     }
     interface = template["vm"]["template"]["spec"]["domain"]["devices"]["interfaces"][0]

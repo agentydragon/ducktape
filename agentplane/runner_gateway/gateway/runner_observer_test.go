@@ -3,7 +3,6 @@ package gateway
 import (
 	"bytes"
 	"context"
-	"crypto/x509"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -56,8 +55,23 @@ func (r *observedRunner) GetStatus(ctx context.Context, _ *runnerpb.GetStatusReq
 }
 
 func TestRunnerObserverPublishesFactsAndFencesRPCs(t *testing.T) {
+	for _, mode := range []runner_transport.SecurityMode{runner_transport.MutualTLS, runner_transport.Insecure} {
+		t.Run(string(mode), func(t *testing.T) {
+			testRunnerObserver(t, mode)
+		})
+	}
+}
+
+func testRunnerObserver(t *testing.T, mode runner_transport.SecurityMode) {
+	t.Helper()
 	f := newSandboxFixture(t)
 	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
+	g.config.RunnerSecurity = runner_transport.Security{Mode: mode}
+	runnerSecurity := runner_transport.Security{Mode: mode}
+	if mode == runner_transport.MutualTLS {
+		g.config.RunnerSecurity.TLS = &f.gatewayTLS
+		runnerSecurity.TLS = &f.runnerTLS
+	}
 	destination, err := g.runnerDestination(t.Context(), f.sandbox)
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +80,7 @@ func TestRunnerObserverPublishesFactsAndFencesRPCs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	creds, err := f.runnerTLS.ServerCredentials(runner_transport.GatewayURI)
+	creds, err := runnerSecurity.ServerCredentials(runner_transport.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,11 +214,11 @@ func (*echoForwardExecutor) Connect(stream grpc.BidiStreamingServer[executorpb.E
 func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
 	f := newSandboxFixture(t)
 	g := f.newGateway(t, "test-gateway", "192.0.2.31")
-	uri, err := f.runnerTLS.LocalIdentity(x509.ExtKeyUsageServerAuth)
+	destination, err := g.runnerDestination(t.Context(), f.sandbox)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := g.certificatePeer(t.Context(), uri); err != nil {
+	if err := g.validateRunnerDestination(t.Context(), destination); err != nil {
 		t.Fatal(err)
 	}
 	pod := f.pod.DeepCopy()
@@ -212,14 +226,15 @@ func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
 	if _, err := api.Clientset.CoreV1().Pods(f.namespace).Update(t.Context(), pod, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := g.certificatePeer(t.Context(), uri); status.Code(err) != codes.PermissionDenied {
+	if err := g.validateRunnerDestination(t.Context(), destination); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("old certificate followed replacement: %v", err)
 	}
 	newURI, err := runner_transport.RunnerURI(f.namespace, string(f.sandbox.UID), "test-replacement-credential")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := g.certificatePeer(t.Context(), newURI); err != nil {
+	destination.peerURI = newURI
+	if err := g.validateRunnerDestination(t.Context(), destination); err != nil {
 		t.Fatalf("current credential was rejected: %v", err)
 	}
 }

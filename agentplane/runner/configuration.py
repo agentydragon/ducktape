@@ -7,6 +7,8 @@ from urllib.parse import urlsplit
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from agentplane.runner_transport.configuration import Security
+
 CONFIG_DIRECTORY = "/run/agentplane/config"
 CONFIG_FILE = f"{CONFIG_DIRECTORY}/runner.json"
 LAUNCH_FILE = "/run/agentplane/sandbox/launch.json"
@@ -20,21 +22,6 @@ class Endpoint(BaseModel):
 
     target: str = Field(min_length=1, description="Service host:port.")
     bearer: str = Field(min_length=1, description="Bearer presented to the platform route.")
-
-
-class RunnerTransportTLS(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    cert_file: str = Field(min_length=1)
-    key_file: str = Field(min_length=1)
-    ca_file: str = Field(min_length=1)
-
-    @field_validator("cert_file", "key_file", "ca_file")
-    @classmethod
-    def absolute_file(cls, value: str) -> str:
-        if not Path(value).is_absolute():
-            raise ValueError("Runner control TLS paths must be absolute")
-        return value
 
 
 def _valid_host_port(value: str, field: str) -> str:
@@ -61,7 +48,7 @@ class RunnerControl(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     listen_address: str = Field(min_length=1, description="Runner gRPC listener host:port.")
-    tls: RunnerTransportTLS
+    security: Security
 
     @field_validator("listen_address")
     @classmethod

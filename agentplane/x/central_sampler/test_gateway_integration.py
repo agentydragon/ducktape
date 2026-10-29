@@ -21,6 +21,7 @@ from agentplane.runner.testing.gateway import serve_gateway
 from agentplane.runner.testing.process import RunningRunner
 from agentplane.runner_gateway.executor_client import connect
 from agentplane.runner_gateway.testing.gateway_process import run_gateway
+from agentplane.runner_transport.configuration import MTLS
 from agentplane.sandboxes.testing.kubernetes import sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
@@ -93,7 +94,10 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
             config = replace(config, launch=replace(config.launch, sandbox=sandbox.identity))
             control = configuration.RunnerControl(
                 listen_address="127.0.0.1:9090",
-                tls=gateway.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
+                security=MTLS(
+                    mode="mtls",
+                    tls=gateway.issue_runner_tls(sandbox.runner_identity_uri, tmp_path / "runner-transport"),
+                ),
             )
             ingress = configuration.Endpoint(
                 target=history.ingress_target, bearer=await history.writer_token(sandbox.owner)

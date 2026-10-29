@@ -13,10 +13,12 @@ data:
       - agentplane-staging/app
       - agentplane-staging/notifications
       - agentplane-staging/runner-gateway
-    runner_tls:
-      cert_file: /run/agentplane/runner-tls/tls.crt
-      key_file: /run/agentplane/runner-tls/tls.key
-      ca_file: /run/agentplane/runner-tls/ca.crt
+    runner_security:
+      mode: mtls
+      tls:
+        cert_file: /run/agentplane/runner-tls/tls.crt
+        key_file: /run/agentplane/runner-tls/tls.key
+        ca_file: /run/agentplane/runner-tls/ca.crt
     wake_callers:
       - agentplane-staging/actions
       - agentplane-staging/app

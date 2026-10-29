@@ -6,11 +6,18 @@ Sandbox-fenced Runner proxy. The Gateway dials each Runner's native gRPC server 
 ExecutorGateway with the existing
 caller authorization. The Sandbox Controller owns `Sandbox.status`.
 
-The Gateway and Runners use certificates from cert-manager and roots distributed by trust-manager.
-`runner_tls` names the Gateway's client `cert_file`, `key_file` and `ca_file`. The Gateway identity
+Cluster and k3s Gateways and Runners use certificates from cert-manager and roots distributed by
+trust-manager. Required `runner_security.mode: mtls` uses a `tls` block naming the Gateway's client
+`cert_file`, `key_file` and `ca_file`. The Gateway identity
 is `spiffe://agentplane/runner-gateway`; runner identities bind the Sandbox UID and its current
 controller-assigned credential ID. Mutual TLS plus Sandbox, incarnation, Runner boot and Lease
 epoch metadata fences every direct Runner RPC.
+
+Local tests may explicitly select `runner_security: {mode: insecure}`, with the Runner's
+`control.security` set to the same value. This disables transport encryption and peer authentication;
+it preserves workload ownership validation, fencing and public Gateway caller authorization. The
+mode has no default; insecure rejects a `tls` block and invalid mTLS never falls back. The Sandbox
+Controller still provisions certificates, so cluster and k3s stacks retain real certificate controllers.
 
 The Dispatcher role retains its PostgreSQL queue, command IDs, per-Sandbox delivery Leases
 and database ownership generations. The connection role keeps separate connection Leases and

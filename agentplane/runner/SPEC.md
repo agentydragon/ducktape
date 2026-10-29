@@ -13,8 +13,11 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 Every Pod and VM starts `agentplane-runner --config PATH --launch-file PATH`. The executable name
 has no effect on configuration. Both flags are required; the shared version-2 JSON configuration
 rejects unknown fields, unsupported versions and contradictory policy before state ownership.
-Runner serves control from the mTLS listener at `control.listen_address`; its server certificate URI
-must name the Sandbox namespace and UID in the separate controller-owned launch file. Templates own
+Runner serves control at `control.listen_address` with an explicit `control.security.mode`.
+`mtls` requires `security.tls`; its server certificate URI must name the Sandbox namespace and UID
+in the separate controller-owned launch file. `insecure` is plaintext without peer authentication
+and rejects TLS configuration. Missing/unknown modes and bad mTLS credentials never fall back.
+Cluster and k3s templates select mTLS; standalone behavior tests may explicitly select insecure. Templates own
 paths, endpoints, providers, explicit
 environment allowlists, platform instructions, isolation settings, and the configurable Session
 reconciliation worker count (default 16). That worker count does not cap Session admission. The
@@ -168,9 +171,11 @@ budget remains authoritative across all of its native services.
 
 ## Runner control
 
-- Runner listens on `control.listen_address` and the Gateway dials its mTLS `Runner` and `RunnerExec`
-  services. The Runner certificate URI binds the Sandbox namespace, Sandbox UID and credential ID;
+- Runner listens on `control.listen_address` and the Gateway dials its `Runner` and `RunnerExec`
+  services with matching explicit security settings. Cluster and k3s deployments use mTLS. The Runner certificate URI binds the Sandbox namespace, Sandbox UID and credential ID;
   the Gateway presents `spiffe://agentplane/runner-gateway`. Runner control has no bearer credential.
+  Explicit insecure mode skips certificate authentication while retaining all Sandbox, incarnation,
+  boot-ID, observer ownership and epoch checks. Fencing metadata supplies no proof of peer identity.
   History ingress remains a separate outbound bearer-authenticated connection.
 - The control listener exposes the standard gRPC health API and reports local startup as `SERVING`
   before state observation begins. The Gateway's `WatchState` request supplies the Sandbox UID, current Pod

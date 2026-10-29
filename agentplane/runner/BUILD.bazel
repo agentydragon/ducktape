@@ -480,6 +480,7 @@ py_test(
         "//agentplane/runner/testing:gateway",
         "//agentplane/runner/testing:launches",
         "//agentplane/runner/testing:process_fixtures",
+        "//agentplane/runner_transport:configuration",
         "//third_party/containers:debian_slim",
         "//util:oci",
         "//util/bazel:runfiles",
@@ -697,7 +698,10 @@ go_test(
 py_library(
     name = "configuration",
     srcs = ["configuration.py"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//agentplane/runner_transport:configuration",
+        "@pypi//pydantic",
+    ],
 )
 
 py_test(

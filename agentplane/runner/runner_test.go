@@ -21,6 +21,7 @@ import (
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
+	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -791,10 +792,17 @@ func assertStillClosing(t *testing.T, closed <-chan error, stage string) {
 	}
 }
 
+func insecureControl() RunnerControlConfiguration {
+	return RunnerControlConfiguration{
+		ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.Insecure},
+	}
+}
+
 func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string, binary string) Config {
 	t.Helper()
 	return Config{
 		StateDir:      filepath.Join(t.TempDir(), "state"),
+		Control:       insecureControl(),
 		Launch:        SandboxLaunch{Sandbox: SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap},
 		WorkspaceRoot: workspace, InitializationCwd: workspace,
 		Claude:     &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test-token"},
@@ -864,6 +872,7 @@ func TestScriptRunPreservesEnvironmentStreamsAndExitStatus(t *testing.T) {
 	t.Setenv("SCRIPT_RUNNER_CONFIG", "ambient")
 	r, err := New(Config{
 		StateDir:           t.TempDir(),
+		Control:            insecureControl(),
 		HarnessEnvironment: map[string]string{"SCRIPT_RUNNER_CONFIG": "configured"},
 	})
 	if err != nil {

@@ -12,6 +12,7 @@ from typing import Annotated, ClassVar
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.runner_transport.configuration import Security
 from util.yaml_file_settings import YamlFileSettings
 
 type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
@@ -21,14 +22,6 @@ class CentralSamplerTarget(BaseModel):
     model_config = ConfigDict(extra="forbid")
     target: str = Field(min_length=1)
     token_file: Path
-
-
-class RunnerTLS(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    cert_file: str = Field(min_length=1)
-    key_file: str = Field(min_length=1)
-    ca_file: str = Field(min_length=1)
 
 
 class Settings(YamlFileSettings):
@@ -66,7 +59,7 @@ class Settings(YamlFileSettings):
     )
     dispatcher_audience: str = Field(min_length=1, description="Dispatcher caller TokenReview audience.")
     gateway_audience: str = Field(min_length=1, description="Gateway caller TokenReview audience.")
-    runner_tls: RunnerTLS
+    runner_security: Security
     dispatcher_callers: Set[ServiceAccountName] = Field(
         min_length=1, description="ServiceAccounts admitted as Dispatcher callers, as namespace/name."
     )

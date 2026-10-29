@@ -61,9 +61,13 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 		}
 		credentialID = vmi.Labels[sandboxapi.RunnerCredentialLabel]
 	}
-	uri, err := runner_transport.RunnerURI(sandbox.Namespace, string(sandbox.UID), credentialID)
-	if err != nil {
-		return runnerDestination{}, err
+	var uri string
+	if g.config.RunnerSecurity.Mode == runner_transport.MutualTLS {
+		var err error
+		uri, err = runner_transport.RunnerURI(sandbox.Namespace, string(sandbox.UID), credentialID)
+		if err != nil {
+			return runnerDestination{}, err
+		}
 	}
 	return runnerDestination{
 		identity: view.identity, podUID: ref.UID, peerURI: uri,
@@ -71,27 +75,24 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 	}, nil
 }
 
-func (g *Gateway) certificatePeer(ctx context.Context, peerURI string) (sandboxreader.Identity, string, error) {
-	namespace, sandboxUID, _, err := runner_transport.ParseRunnerURI(peerURI)
-	if err != nil || namespace != g.config.Namespace {
-		return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "certificate does not identify an admitted runner")
+// validateRunnerDestination rechecks the live workload independently of transport authentication.
+func (g *Gateway) validateRunnerDestination(ctx context.Context, expected runnerDestination) error {
+	if expected.identity.Namespace != g.config.Namespace {
+		return status.Error(codes.PermissionDenied, "runner is outside the Gateway namespace")
 	}
-	var sandboxes sandboxapi.SandboxList
-	if err := g.objects.List(ctx, &sandboxes, client.InNamespace(namespace)); err != nil {
-		return sandboxreader.Identity{}, "", unavailable(err)
+	var sandbox sandboxapi.Sandbox
+	if err := g.objects.Get(ctx, client.ObjectKey{Namespace: expected.identity.Namespace, Name: expected.identity.Name}, &sandbox); err != nil {
+		return unavailable(err)
 	}
-	for i := range sandboxes.Items {
-		if string(sandboxes.Items[i].UID) != sandboxUID {
-			continue
-		}
-		destination, err := g.runnerDestination(ctx, &sandboxes.Items[i])
-		if err != nil {
-			return sandboxreader.Identity{}, "", err
-		}
-		if destination.peerURI != peerURI {
-			return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "runner certificate is stale")
-		}
-		return destination.identity, destination.podUID, nil
+	if string(sandbox.UID) != expected.identity.UID {
+		return status.Error(codes.PermissionDenied, "runner Sandbox was replaced")
 	}
-	return sandboxreader.Identity{}, "", status.Error(codes.PermissionDenied, "runner Sandbox no longer exists")
+	current, err := g.runnerDestination(ctx, &sandbox)
+	if err != nil {
+		return err
+	}
+	if current.identity != expected.identity || current.podUID != expected.podUID || current.peerURI != expected.peerURI {
+		return status.Error(codes.PermissionDenied, "runner incarnation or credential changed")
+	}
+	return nil
 }

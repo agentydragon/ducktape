@@ -20,9 +20,9 @@ from sqlalchemy.engine import make_url
 
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
-from agentplane.runner.configuration import RunnerTransportTLS
 from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.runner_gateway.settings import RunnerTLS, Settings
+from agentplane.runner_gateway.settings import Settings
+from agentplane.runner_transport.configuration import MTLS, TLS
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
@@ -75,11 +75,11 @@ class GatewayProcess:
     runner_ca: CertificateAuthority
     runner_ca_file: Path
 
-    def issue_runner_tls(self, uri: str, directory: Path) -> RunnerTransportTLS:
+    def issue_runner_tls(self, uri: str, directory: Path) -> TLS:
         """Issue a Runner peer certificate trusted by this Gateway process."""
         directory.mkdir(parents=True, exist_ok=True)
         cert_file, key_file = issue_workload_leaf(self.runner_ca, uri, directory)
-        return RunnerTransportTLS(cert_file=str(cert_file), key_file=str(key_file), ca_file=str(self.runner_ca_file))
+        return TLS(cert_file=str(cert_file), key_file=str(key_file), ca_file=str(self.runner_ca_file))
 
     def gateway_client(
         self, token_file: Path, *, request_timeout_s: float = 20, lifecycle_timeout_s: float = 310
@@ -239,7 +239,10 @@ async def run_gateway(
             gateway_cert, gateway_key = issue_workload_leaf(
                 runner_ca, "spiffe://agentplane/runner-gateway", settings_directory
             )
-            runner_tls = RunnerTLS(cert_file=str(gateway_cert), key_file=str(gateway_key), ca_file=str(runner_ca_file))
+            runner_security = MTLS(
+                mode="mtls",
+                tls=TLS(cert_file=str(gateway_cert), key_file=str(gateway_key), ca_file=str(runner_ca_file)),
+            )
             effective_settings = Settings(
                 sandbox_namespace=namespace,
                 dispatcher_database_url=database_url,
@@ -253,7 +256,7 @@ async def run_gateway(
                 runner_control_target_template=f"{grpc_listener.host}:{grpc_listener.port}",
                 dispatcher_audience=dispatcher_audience,
                 gateway_audience=gateway_audience,
-                runner_tls=runner_tls,
+                runner_security=runner_security,
                 dispatcher_callers={f"{account.namespace}/{account.name}" for account in dispatcher_callers},
                 gateway_callers={f"{account.namespace}/{account.name}" for account in gateway_callers},
                 executor_callers={f"{account.namespace}/{account.name}" for account in executor_callers},

@@ -147,6 +147,7 @@ py_test(
         "//agentplane/runner/testing:process",
         "//agentplane/runner_gateway:executor_client",
         "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/runner_transport:configuration",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:electric_role",
         "//agentplane/testing:kubernetes_apiserver",

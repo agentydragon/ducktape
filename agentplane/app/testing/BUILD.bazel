@@ -319,6 +319,7 @@ py_library(
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/runner_transport:configuration",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:kubernetes_apiserver",
         "//util/testing:postgres",

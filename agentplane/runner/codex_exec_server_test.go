@@ -509,6 +509,7 @@ func newExecutorLifecycleRunnerWithURL(t *testing.T, url string, start func(cont
 
 	config := Config{
 		StateDir: t.TempDir(),
+		Control:  insecureControl(),
 		Codex:    &harness.LaunchConfig{Binary: "/bin/false"},
 		CodexExecServer: &codexexecserver.Config{
 			URL: url, ContainerSocket: socket,

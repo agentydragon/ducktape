@@ -4,23 +4,17 @@ import asyncio
 import fcntl
 import json
 import os
-import shutil
 import time
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 
-from agentplane.runner.configuration import (
-    Configuration,
-    Endpoint,
-    EnvironmentVariables,
-    PodEnvironment,
-    RunnerTransportTLS,
-)
+from agentplane.runner.configuration import Configuration, Endpoint, EnvironmentVariables, PodEnvironment
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.process_fixtures import wait_for_exit
+from agentplane.runner_transport.configuration import Insecure
 from third_party.containers import debian_slim
 from util.bazel.runfiles import get_required_path
 from util.oci import load_oci_image
@@ -107,30 +101,13 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
     fixture = get_required_path(
         "_main/agentplane/runner/supervision/runner_pid1_fixture_/runner_pid1_fixture"
     ).resolve()
-    host_control = gateway.endpoint_for_sandbox("proof", "pid1-proof-uid")
-    host_tls_dir = tmp_path / "control-tls"
-    host_tls_dir.mkdir()
-    source_paths = {
-        "workload-cert.pem": Path(host_control.tls.cert_file),
-        "workload-key.pem": Path(host_control.tls.key_file),
-        "ca-cert.pem": Path(host_control.tls.ca_file),
-    }
-    for name, source in source_paths.items():
-        shutil.copyfile(source, host_tls_dir / name)
-    control = host_control.model_copy(
-        update={
-            "tls": RunnerTransportTLS(
-                cert_file="/proof/control-tls/workload-cert.pem",
-                key_file="/proof/control-tls/workload-key.pem",
-                ca_file="/proof/control-tls/ca-cert.pem",
-            )
-        }
-    )
+    host_control = gateway.endpoint
+    assert isinstance(host_control.security, Insecure)
     config = Configuration(
         version=2,
         state_dir="/proof/state",
         initialization_cwd="/proof/state",
-        control=control,
+        control=host_control,
         ingress=Endpoint(target="127.0.0.1:8081", bearer="unused-ingress-token"),
         platform_instructions="PID1 proof",
         harness_environment=EnvironmentVariables(values={"PATH": "/bin:/usr/bin"}),

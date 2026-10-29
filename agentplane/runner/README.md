@@ -1,7 +1,7 @@
 # Agentplane runner
 
 A statically linked Go executable that runs the native harnesses of its sessions, a Claude Code process per session
-and one shared Codex app-server for its Codex sessions. It serves the Runner protocol from an explicitly configured mTLS listener and pushes journals to History ingress. Pod Codex tools can run in `agentplane-runner executor` mode in a separate companion container. The contract is in <SPEC.md>; the wire definition is
+and one shared Codex app-server for its Codex sessions. It serves the Runner protocol from an explicitly configured gRPC listener (mTLS in cluster deployments; optional insecure transport for local tests) and pushes journals to History ingress. Pod Codex tools can run in `agentplane-runner executor` mode in a separate companion container. The contract is in <SPEC.md>; the wire definition is
 [`agentplane/proto/runner.proto`](../proto/runner.proto).
 
 The deployment renders `platform_instructions.j2` with concrete service URLs; the runner appends
@@ -51,7 +51,7 @@ last acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays hi
 - `codexappserver/`: the one shared Codex process, its COSI lifecycle resources and controller,
   startup, protocol routing, reader drain, and process exit. `Session` supplies callbacks that
   commit routed frame batches and exit observations to its journal.
-- `forward.go`: the mTLS gRPC listener, epoch-fenced state watch, authenticated direct
+- `forward.go`: the gRPC listener with explicit transport security, epoch-fenced state watch, direct
   Runner RPCs, standard gRPC health service, and bounded executor stream relay.
 - `transport.go`: Runner-wide orchestration and the independent per-Session ingress connection,
   authentication and discovery worker scheduling. It keeps ingress available while Runner shutdown

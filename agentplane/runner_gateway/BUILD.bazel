@@ -239,6 +239,7 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
+        "//agentplane/runner_transport:configuration",
         "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -272,4 +273,17 @@ go_proto_library(
     proto = ":executor_gateway_proto",
     visibility = ["//agentplane:__subpackages__"],
     deps = ["//agentplane/proto:sandboxes_go_proto"],
+)
+
+py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
+    deps = [
+        ":conftest",
+        ":settings",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

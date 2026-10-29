@@ -22,17 +22,31 @@ import (
 )
 
 func TestForwardRunnerServesHealthAndFencesStateAndDirectCalls(t *testing.T) {
-	ca := runnertransporttesting.NewCA(t)
-	runnerURI, err := runnertransport.RunnerURI("test", "sandbox-uid", "credential-id")
-	if err != nil {
-		t.Fatal(err)
+	for _, mode := range []runnertransport.SecurityMode{runnertransport.MutualTLS, runnertransport.Insecure} {
+		t.Run(string(mode), func(t *testing.T) {
+			testRunnerHealthAndFencing(t, mode)
+		})
 	}
-	runnerTLS := ca.Issue(t, runnerURI)
-	gatewayTLS := ca.Issue(t, runnertransport.GatewayURI)
+}
+
+func testRunnerHealthAndFencing(t *testing.T, mode runnertransport.SecurityMode) {
+	t.Helper()
+	runnerSecurity := runnertransport.Security{Mode: mode}
+	gatewaySecurity := runnertransport.Security{Mode: mode}
+	var runnerURI string
+	if mode == runnertransport.MutualTLS {
+		ca := runnertransporttesting.NewCA(t)
+		var err error
+		runnerURI, err = runnertransport.RunnerURI("test", "sandbox-uid", "credential-id")
+		if err != nil {
+			t.Fatal(err)
+		}
+		runnerTLS := ca.Issue(t, runnerURI)
+		gatewayTLS := ca.Issue(t, runnertransport.GatewayURI)
+		runnerSecurity.TLS, gatewaySecurity.TLS = &runnerTLS, &gatewayTLS
+	}
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
-	config.Control = RunnerControlConfiguration{
-		ListenAddress: "127.0.0.1:0", TLS: runnerTLS,
-	}
+	config.Control = RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnerSecurity}
 	r := newLifecycleRunner(t, config)
 	listener, server, err := r.forwardServer()
 	if err != nil {
@@ -43,7 +57,7 @@ func TestForwardRunnerServesHealthAndFencesStateAndDirectCalls(t *testing.T) {
 		server.Stop()
 		_ = listener.Close()
 	})
-	credentials, err := gatewayTLS.ClientCredentials(runnerURI)
+	credentials, err := gatewaySecurity.ClientCredentials(runnerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,6 +98,12 @@ func TestForwardRunnerServesHealthAndFencesStateAndDirectCalls(t *testing.T) {
 		)
 	}
 	statusClient := runnerservicepb.NewRunnerClient(conn)
+	if _, err := statusClient.GetStatus(ctx, &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("GetStatus without fencing metadata = %v, want Unauthenticated", err)
+	}
+	if _, err := statusClient.GetStatus(callContext("pod-uid-1", "old-runner-boot", 1), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Aborted {
+		t.Fatalf("GetStatus for old runner boot = %v, want Aborted", err)
+	}
 	if _, err := statusClient.GetStatus(callContext("pod-uid-1", first.GetRunnerBootId(), 1), &runnerpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("current-epoch GetStatus: %v", err)
 	}
@@ -115,11 +135,12 @@ func TestRunnerRejectsControlCertificateForAnotherSandbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	wrongTLS := ca.Issue(t, wrongURI)
 	config := Config{
 		StateDir: t.TempDir(),
 		Launch:   SandboxLaunch{Sandbox: SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}},
 		Control: RunnerControlConfiguration{
-			ListenAddress: "127.0.0.1:8090", TLS: ca.Issue(t, wrongURI),
+			ListenAddress: "127.0.0.1:8090", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &wrongTLS},
 		},
 	}
 	if _, err := New(config); err == nil {
@@ -138,7 +159,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	runnerTLS := ca.Issue(t, runnerURI)
 	gatewayTLS := ca.Issue(t, runnertransport.GatewayURI)
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.Control = RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", TLS: runnerTLS}
+	config.Control = RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &runnerTLS}}
 	r := newLifecycleRunner(t, config)
 	listener, server, err := r.forwardServer()
 	if err != nil {
@@ -272,7 +293,7 @@ func TestForwardRunnerBoundsDirectExecutorStreams(t *testing.T) {
 	runnerTLS := ca.Issue(t, runnerURI)
 	gatewayTLS := ca.Issue(t, runnertransport.GatewayURI)
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
-	config.Control = RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", TLS: runnerTLS}
+	config.Control = RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &runnerTLS}}
 	r := newLifecycleRunner(t, config)
 	listener, server, err := r.forwardServer()
 	if err != nil {

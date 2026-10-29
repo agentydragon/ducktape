@@ -5,8 +5,10 @@ health. The Gateway derives its address from the current workload's Pod IP and t
 KubeVirt forwards that port into the guest. Only Gateway workloads may reach it. History Event
 ingress remains a separate outbound platform route.
 
-Runner configuration requires `control.listen_address` and `control.tls`, whose fields are
-`cert_file`, `key_file` and `ca_file`. Partial or contradictory configuration fails startup.
+Runner configuration requires `control.listen_address` and `control.security.mode`; the Gateway
+requires the matching `runner_security.mode`. Each explicitly selects `mtls` or `insecure`. `mtls`
+requires a `tls` block with absolute `cert_file`, `key_file` and `ca_file` paths. `insecure` rejects a
+TLS block. Missing/unknown modes and partial or contradictory configuration fail startup.
 The service definitions are `runner/runner_service.proto` and `runner/runner_exec.proto`;
 `proto/runner_state.proto` defines the facts published by `Runner.WatchState`.
 
@@ -15,7 +17,7 @@ The service definitions are `runner/runner_service.proto` and `runner/runner_exe
 One Gateway replica claims the runner Lease, then calls `Runner.WatchState` with the Sandbox UID,
 incarnation Pod UID and claimed epoch. For a VM, the incarnation UID is the virt-launcher Pod's.
 The runner adopts that incarnation before publishing its boot ID and facts, then sends snapshots
-on changes and periodically. The Gateway publishes authenticated facts and the boot ID to the Lease
+on changes and periodically. The Gateway publishes validated facts and the boot ID to the Lease
 and exposes the existing `<sandbox>-control` proxy route. A claim without an observed boot ID is
 not a connected runner. Other replicas wait for the owner's Lease to expire before taking over.
 
@@ -231,9 +233,15 @@ becomes ready after its native conversation preparation/reconciliation, without 
 
 ## Authentication and incarnation binding
 
-The Gateway dials the runner's private TLS listener using mTLS. The runner accepts the Gateway
+Cluster and k3s Gateways dial the runner's private TLS listener using mTLS. The runner accepts the Gateway
 certificate identity; a bearer cannot replace a certificate.
 Public Gateway callers still use their existing workload bearers and per-method authorization.
+
+Standalone behavior tests can explicitly select insecure transport at both endpoints. It supplies
+plaintext without peer authentication; it never fabricates a certificate identity. Live Sandbox/Pod/VM
+ownership and incarnation validation, boot-ID/epoch fencing and command admission remain enforced.
+The Sandbox Controller always provisions credentials; k3s keeps real cert-manager/trust-manager and
+mTLS in every stack. Bad mTLS credentials never trigger an insecure retry.
 
 The Gateway's certificate has URI SAN `spiffe://agentplane/runner-gateway`. Each runner certificate
 has exactly one URI SAN, `spiffe://agentplane/runner/<namespace>/<sandbox-uid>/<credential-id>`.

@@ -72,13 +72,15 @@ Dispatcher database Secret. [`stack.py`](stack.py) starts k3s, streams
 the Bazel-built OCI image layouts into containerd, applies the rendered stack and reports Deployment
 readiness. It uses the pinned K3s binary from Bazel runfiles, so no action downloads K3s at runtime.
 
-Every stack installs real cert-manager and trust-manager from pinned upstream manifests/charts and
+Every stack explicitly uses mTLS for runner control and installs real cert-manager and trust-manager from pinned upstream manifests/charts and
 Bazel-pulled OCI layouts. Startup probes admission through both webhooks before applying the fixture.
 A self-signed bootstrap ClusterIssuer issues the test root CA; the production runner Certificate/Issuer
 constructs issue the intermediate CA and Gateway leaf. Sandbox Controller creates each runner's
 Certificate. trust-manager distributes the root through a Bundle into the workload namespace;
 startup waits for certificate readiness and Bundle synchronization. Controller logs and PKI resource
-status are retained under `certificates/` in undeclared test outputs.
+status are retained under `certificates/` in undeclared test outputs. Optional insecure transport is
+limited to standalone behavior fixtures; k3s has no insecure provisioning profile.
+`k3s-timeline.jsonl` records controller readiness and certificate/trust readiness for startup-cost analysis.
 
 Node readiness and the appearance of the bundled DNS/storage Deployments share a 180-second
 bootstrap deadline. API probes have bounded subprocess timeouts and stop when k3s exits;

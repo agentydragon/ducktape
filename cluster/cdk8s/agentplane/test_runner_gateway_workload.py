@@ -83,10 +83,13 @@ def test_gateway_preserves_services_and_fences_listener_ingress() -> None:
     assert settings["http_listen_address"] == f"0.0.0.0:{http.pod_port}"
     assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
     assert settings["gateway_audience"] == runner_gateway.TOKEN_AUDIENCE
-    assert settings["runner_tls"] == {
-        "cert_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.crt",
-        "key_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.key",
-        "ca_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/ca.crt",
+    assert settings["runner_security"] == {
+        "mode": "mtls",
+        "tls": {
+            "cert_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.crt",
+            "key_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.key",
+            "ca_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/ca.crt",
+        },
     }
     assert set(settings["dispatcher_callers"]) == {
         f"{staging.ENV.namespace}/{app.NAME}",

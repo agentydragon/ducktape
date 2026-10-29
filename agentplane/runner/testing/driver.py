@@ -1,4 +1,4 @@
-"""Drive a Runner through its mTLS control listener and read Events from History ingress."""
+"""Drive a Runner through its configured control listener and read Events from History ingress."""
 
 from __future__ import annotations
 
