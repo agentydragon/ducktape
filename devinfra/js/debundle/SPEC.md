@@ -573,6 +573,12 @@ reports include it on rejection, while accepted dry runs remain silent. The
 typed wire schema and blocker fields are described in
 <docs/wire_format.md#export-reentry-diagnostics>.
 
+The static import closure admits a source with no AST items, including a
+comments-only file: it cannot execute statements or reenter an importer.
+Sources containing statements without a runtime ESM declaration retain the
+`non_esm_chunk` blocker. This source fact does not waive any other closure or
+runtime requirement.
+
 ## Partial vendor-swap ownership
 
 The vendor strip pass assigns top-level items to swapped packages through

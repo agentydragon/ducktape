@@ -205,7 +205,9 @@ impl VendorResolutionPlan {
             return false;
         }
         self.bundled_partial_swaps.get(&chunk).is_none_or(|swap| {
-            swap.bundle_runtime.module_kind == artifact::reports::ChunkModuleKind::Esm
+            swap.bundle_runtime
+                .module_kind
+                .supports_static_esm_closure()
                 && !swap.bundle_runtime.has_top_level_await
                 && swap.bundle_runtime.static_requests.is_empty()
         })

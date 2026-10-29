@@ -556,7 +556,7 @@ fn collect_closure_blockers(
         let chunk = artifact.chunk(source)?;
         let runtime = &chunk.analysis.runtime_facts;
         let source_name = artifact.chunk_table.name(source).to_string();
-        if runtime.module_kind != artifact::reports::ChunkModuleKind::Esm {
+        if !runtime.module_kind.supports_static_esm_closure() {
             blockers.push(ExportReentryClosureBlocker::NonEsmChunk {
                 source_chunk: source_name.clone(),
             });

@@ -375,7 +375,9 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         });
 
     let mut runtime_facts = ChunkRuntimeFacts {
-        module_kind: if parsed.module.body.iter().any(
+        module_kind: if parsed.module.body.is_empty() {
+            ChunkModuleKind::EmptySource
+        } else if parsed.module.body.iter().any(
             |item| matches!(item, ModuleItem::ModuleDecl(decl) if module_decl_is_runtime_esm(decl)),
         ) {
             ChunkModuleKind::Esm

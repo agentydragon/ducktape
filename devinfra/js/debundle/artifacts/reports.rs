@@ -211,6 +211,15 @@ pub enum ChunkModuleKind {
     #[default]
     Unknown,
     Esm,
+    /// No AST items. When statically imported, it cannot run code or reenter
+    /// an importer, even though there is no ESM declaration in its source.
+    EmptySource,
+}
+
+impl ChunkModuleKind {
+    pub fn supports_static_esm_closure(self) -> bool {
+        matches!(self, Self::Esm | Self::EmptySource)
+    }
 }
 
 #[derive(Debug, Clone)]

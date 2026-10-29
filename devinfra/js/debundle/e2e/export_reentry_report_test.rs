@@ -38,6 +38,38 @@ fn supported_case_reports_no_static_importer_reentry() {
 }
 
 #[test]
+fn static_import_of_empty_source_does_not_block_export_reentry_proof() {
+    for (source, expected_policy) in [
+        (
+            "// no executable statements\n",
+            "no_static_importer_reentry",
+        ),
+        ("globalThis.count = 1;\n", "conservative"),
+    ] {
+        let extra_chunks = [("static/dependency", source)];
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                "import './dependency.js';\nexport const value = 1;\n",
+                vec![logical_module("values", &[Member::new("value")])],
+            )
+            .with_chunk_id(CHUNK_ID)
+            .with_extra_chunks(&extra_chunks),
+        );
+        let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+        assert_eq!(report["policy"], expected_policy);
+        assert_eq!(
+            has_reason(
+                &report,
+                "closure_blockers",
+                "non_esm_chunk",
+                Some("static/dependency"),
+            ),
+            expected_policy == "conservative",
+        );
+    }
+}
+
+#[test]
 fn reports_independent_global_and_static_closure_blockers() {
     let vendor_marks = [(
         "static/vendor.js",
