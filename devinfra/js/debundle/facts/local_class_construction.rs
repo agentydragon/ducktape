@@ -13,11 +13,52 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct LocalClassConstructionShapes {
-    pub(super) classes: BTreeMap<u32, BTreeSet<Id>>,
+    pub(super) classes: BTreeMap<u32, BTreeSet<(Id, u32)>>,
     pub(super) constructions: BTreeMap<u32, u32>,
 }
 
 impl LocalClassConstructionShapes {
+    /// Structural exact-site candidate for the authored private-field native
+    /// identity. The execution index separately checks binding stability,
+    /// shadowing and source-known native-slot writes before accepting it.
+    pub(crate) fn private_empty_set_site(class: &Class) -> Option<(Span, Id)> {
+        if class
+            .body
+            .iter()
+            .any(|member| matches!(member, ClassMember::Constructor(_)))
+        {
+            return None;
+        }
+        let mut native_fields = BTreeSet::new();
+        if !safe_implicit_class(class, &BTreeSet::new(), &mut native_fields) {
+            return None;
+        }
+        let sites: Vec<_> = class
+            .body
+            .iter()
+            .filter_map(|member| {
+                let ClassMember::PrivateProp(field) = member else {
+                    return None;
+                };
+                let Expr::New(construction) = field.value.as_deref()?.unwrap_parens() else {
+                    return None;
+                };
+                let Expr::Ident(callee) = construction.callee.unwrap_parens() else {
+                    return None;
+                };
+                (callee.sym.as_ref() == "Set"
+                    && construction.args.as_ref().is_none_or(Vec::is_empty))
+                .then(|| (construction.span, callee.to_id()))
+            })
+            .collect();
+        let [(span, binding)] = sites.as_slice() else {
+            return None;
+        };
+        native_fields
+            .contains(&(binding.clone(), span.lo.0))
+            .then(|| (*span, binding.clone()))
+    }
+
     pub(crate) fn analyze(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
@@ -152,7 +193,7 @@ impl LocalClassHeapProof {
 fn safe_implicit_class(
     class: &Class,
     shadowed: &BTreeSet<&'static str>,
-    native_fields: &mut BTreeSet<Id>,
+    native_fields: &mut BTreeSet<(Id, u32)>,
 ) -> bool {
     if class.super_class.is_some() || !class.decorators.is_empty() {
         return false;
@@ -201,7 +242,7 @@ fn safe_implicit_class(
 fn safe_field_value(
     value: &Expr,
     shadowed: &BTreeSet<&'static str>,
-    native_fields: &mut BTreeSet<Id>,
+    native_fields: &mut BTreeSet<(Id, u32)>,
 ) -> bool {
     match value.unwrap_parens() {
         Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
@@ -240,7 +281,7 @@ fn safe_field_value(
                 && !shadowed.contains(callee.sym.as_ref())
                 && construction.args.as_ref().is_none_or(Vec::is_empty);
             if safe {
-                native_fields.insert(callee.to_id());
+                native_fields.insert((callee.to_id(), construction.span.lo.0));
             }
             safe
         }

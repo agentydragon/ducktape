@@ -20,6 +20,207 @@ fn input(source: &str, binding: &str, declaration: &str) -> NativeCallIdentityIn
     }
 }
 
+fn empty_set_field_input(source: &str, declaration: &str) -> NativeCallIdentityInputContract {
+    NativeCallIdentityInputContract {
+        source_match: serde_yaml::from_str(&format!(
+            "match: {:?}\nbindings: [Registry]\n",
+            declaration
+        ))
+        .expect("valid class selector"),
+        callee: NativeCallIdentityKind::SetEmptyPrivateField,
+        audited_source_sha256: Sha256::digest(source.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+        note: Some("Original Set binding is audited for every field initialization.".into()),
+    }
+}
+
+const EMPTY_SET_CLASS: &str = "class Registry {\n  #items = new Set;\n  #armed = false;\n  #onExit = () => this.clear();\n  add(item) { this.#items.add(item); }\n  clear() { this.#items.clear(); }\n  get size() { return this.#items.size; }\n}";
+const EMPTY_SET_SOURCE: &str = "const startupTarget = globalThis.plugin || {};\nstartupTarget.Set = 1;\nconst saved = () => later;\nglobalThis.saved = saved;\nclass Registry {\n  #items = new Set;\n  #armed = false;\n  #onExit = () => this.clear();\n  add(item) { this.#items.add(item); }\n  clear() { this.#items.clear(); }\n  get size() { return this.#items.size; }\n}\nconst registry = new Registry();\nclass Client { run() { return registry.size; } }\nconst client = new Client();\nprocess.env.NEUTRAL = '1';\nconst later = 42;\nconsole.log(registry.size, client.run(), later, globalThis.saved());\nexport { registry, client, later };\n";
+
+fn empty_set_modules() -> Vec<LogicalModuleEntry> {
+    vec![
+        logical_module(
+            "registry/state",
+            &[
+                Member::new("Registry").with_purity(MemberPurity::PureNew),
+                Member::new("registry"),
+            ],
+        ),
+        logical_module(
+            "client/api",
+            &[
+                Member::new("Client").with_purity(MemberPurity::PureNew),
+                Member::new("client"),
+            ],
+        ),
+        logical_module("value/later", &[Member::new("later")]),
+    ]
+}
+
+#[test]
+fn exact_empty_set_private_field_breaks_false_constructor_reentry_cycle() {
+    let unproved = run_rejection_fixture(FixtureOpts::new(EMPTY_SET_SOURCE, empty_set_modules()));
+    assert!(!unproved.atomic_group_conflicts().is_empty());
+    let fixture = run_fixture(
+        FixtureOpts::new(EMPTY_SET_SOURCE, empty_set_modules()).with_native_call_identity_inputs(
+            "static/app",
+            vec![empty_set_field_input(EMPTY_SET_SOURCE, EMPTY_SET_CLASS)],
+        ),
+    );
+    assert_preserved_entry_output(&fixture, "0 0 42 42\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let registry = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|bindings| {
+                    bindings
+                        .iter()
+                        .any(|binding| binding["binding"] == "registry")
+                })
+        })
+        .unwrap();
+    assert_eq!(registry["purity"]["kind"], "pure");
+    assert_eq!(registry["synchronous_execution"]["complete"], true);
+    assert!(
+        registry["synchronous_execution"]["native_operation_input_uses"]
+            .as_array()
+            .is_some_and(|uses| uses
+                .iter()
+                .any(|used| { used["evidence"]["operation"] == "set_empty_private_field" }))
+    );
+    assert!(
+        graph["native_integrity_witnesses"]
+            .as_array()
+            .is_some_and(|witnesses| witnesses.iter().any(|witness| {
+                witness["target_slots"]
+                    .as_array()
+                    .is_some_and(|slots| slots.iter().any(|slot| slot["key"]["string"] == "Set"))
+            }))
+    );
+}
+
+#[test]
+fn selected_empty_set_field_does_not_certify_another_set_constructor() {
+    let source = EMPTY_SET_SOURCE.replace(
+        "const registry = new Registry();",
+        "const other = new Set;\nconst registry = new Registry();",
+    );
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(&source, empty_set_modules()).with_native_call_identity_inputs(
+            "static/app",
+            vec![empty_set_field_input(&source, EMPTY_SET_CLASS)],
+        ),
+    );
+    let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
+    let other = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|bindings| {
+                    bindings.iter().any(|binding| binding["binding"] == "other")
+                })
+        })
+        .unwrap();
+    assert_eq!(other["synchronous_execution"]["complete"], false);
+    assert!(
+        other["synchronous_execution"]["native_operation_input_uses"]
+            .as_array()
+            .is_none_or(Vec::is_empty)
+    );
+}
+
+#[test]
+fn empty_set_field_rejects_known_global_set_replacement() {
+    for write in [
+        "globalThis.Set = function Replacement() {};",
+        "const globalAlias = globalThis; globalAlias.Set = function Replacement() {};",
+        "Object.defineProperty(globalThis, 'Set', { value: function Replacement() {} });",
+        "const originalSet = Set; delete globalThis.Set; globalThis.Set = originalSet;",
+    ] {
+        let source = format!("{write}\n{EMPTY_SET_SOURCE}");
+        expect_rejection_containing_all(
+            FixtureOpts::new(&source, empty_set_modules()).with_native_call_identity_inputs(
+                "static/app",
+                vec![empty_set_field_input(&source, EMPTY_SET_CLASS)],
+            ),
+            &["global Set slot write"],
+        );
+    }
+}
+
+#[test]
+fn empty_set_field_rejects_cross_chunk_global_set_write() {
+    let source = format!("import './mutation.js';\n{EMPTY_SET_SOURCE}");
+    let mutation = "const originalSet = Set;\nglobalThis.Set = function Replacement() {};\nglobalThis.Set = originalSet;\nexport {};\n";
+    expect_rejection_containing_all(
+        FixtureOpts::new(&source, empty_set_modules())
+            .with_extra_chunks(&[("static/mutation", mutation)])
+            .with_native_call_identity_inputs(
+                "static/app",
+                vec![empty_set_field_input(&source, EMPTY_SET_CLASS)],
+            ),
+        &["global Set slot write", "static/mutation"],
+    );
+}
+
+#[test]
+fn empty_set_field_rejects_unsupported_class_or_field_shape() {
+    for class in [
+        EMPTY_SET_CLASS.replace("class Registry {", "class Registry extends Object {"),
+        EMPTY_SET_CLASS.replace("new Set;", "new Set([1]);"),
+        EMPTY_SET_CLASS.replace("new Set;", "new Set(...[]);"),
+        EMPTY_SET_CLASS.replace(
+            "#items = new Set;",
+            "#items = new Set;\n  #other = new Set;",
+        ),
+        EMPTY_SET_CLASS.replace("#items = new Set;", "constructor() {}\n  #items = new Set;"),
+    ] {
+        let source = EMPTY_SET_SOURCE.replace(EMPTY_SET_CLASS, &class);
+        expect_rejection_containing_all(
+            FixtureOpts::new(&source, empty_set_modules()).with_native_call_identity_inputs(
+                "static/app",
+                vec![empty_set_field_input(&source, &class)],
+            ),
+            &["requires one stable non-derived implicit-constructor class"],
+        );
+    }
+}
+
+#[test]
+fn empty_set_field_rejects_shadowing_rebinding_and_dynamic_scope() {
+    for source in [
+        format!("const Set = class LocalSet {{}};\n{EMPTY_SET_SOURCE}"),
+        format!("Set = function Replacement() {{}};\n{EMPTY_SET_SOURCE}"),
+        EMPTY_SET_SOURCE.replace(
+            "const registry = new Registry();",
+            "Registry = class Replacement {};\nconst registry = new Registry();",
+        ),
+        format!("function contaminate() {{ eval('0'); }}\n{EMPTY_SET_SOURCE}"),
+    ] {
+        let expected = if source.contains("eval('0')") {
+            "dynamic-scope contamination"
+        } else {
+            "requires one stable non-derived implicit-constructor class"
+        };
+        expect_rejection_containing_all(
+            FixtureOpts::new(&source, empty_set_modules()).with_native_call_identity_inputs(
+                "static/app",
+                vec![empty_set_field_input(&source, EMPTY_SET_CLASS)],
+            ),
+            &[expected],
+        );
+    }
+}
+
 const FUNCTION: &str =
     "function makeRecord(name, header) {\n  return Object.freeze({ name, header });\n}";
 const SOURCE: &str = "function makeRecord(name, header) {\n  return Object.freeze({ name, header });\n}\nconst startupTarget = globalThis.plugin || {};\nstartupTarget.freeze = 1;\nconst peek = () => later;\nglobalThis.peek = peek;\nconst early = makeRecord('first', 'ready');\nconst later = 'later';\nconsole.log(early.name, later);\nexport { early, later };\n";

@@ -953,7 +953,8 @@ audit, code outside the analyzed prefix, or host behavior.
 ## Exact-site native-call identity inputs
 
 `chunk_analysis_options.<defining chunk>.native_call_identity_inputs` supplies
-an author-audited native **callee identity** at one exact call site:
+an author-audited native **callee identity** at one exact call or constructor
+site:
 
 ```yaml
 chunk_analysis_options:
@@ -971,8 +972,7 @@ whose sole body statement directly returns an ordinary, nonoptional,
 uncomputed `Object.freeze(arg)` call with one nonspread argument. Async or
 generator functions, shadowed/imported `Object`, and other call/body shapes
 are rejected. The canonical call index identifies the exact call span; another
-`Object.freeze` call does not gain the premise. Only `callee: object_freeze` is
-currently supported.
+`Object.freeze` call does not gain the premise.
 
 The author asserts that the ordinary global `Object` binding and its original
 own data `freeze` member retain their native identities at **every** synchronous
@@ -995,6 +995,28 @@ heap barriers; this proof does not establish a value-flow origin for the
 The existing fresh-record proof separately governs native return identity,
 purity and callback timing; no whole-family `Object` integrity, general call
 purity or exception-free result follows.
+
+`callee: set_empty_private_field` instead selects a stable, direct top-level
+class declaration with a non-derived implicit constructor and exactly one
+private instance field initialized by direct, unshadowed, zero-argument
+`new Set` (with or without empty parentheses). The selected class and field
+must have the existing checked local-class shape: no decorators, computed
+keys, explicit constructor, unsupported field expressions, class rebinding or
+dynamic-scope contamination. The canonical class/call index records the
+private field's exact constructor span. The author asserts that the original
+global `Set` data binding is the callee for **every** execution of that field
+site in every permitted emitted schedule. Positively identified global `Set`
+replacement, accessor installation, deletion or restoration anywhere in the
+analyzed program, including other chunks and aliases, contradicts the input.
+Opaque writes remain visible witnesses under the author obligation.
+
+This premise certifies only the selected zero-argument native construction's
+fresh allocation and lack of synchronous user callbacks. The shared
+empty-collection and local-class proofs carry the exact input reference into
+purity, synchronous timing and heap ordering. It does not certify `Set.add`,
+iteration, private-field methods, another `new Set` site, or whole-family Set
+integrity. Other field initializers, callee/argument evaluation, throws and
+later method calls retain their ordinary rules.
 
 ## Native-operation inputs
 

@@ -8,7 +8,8 @@ use super::callable_inference::{CallableInferenceInputs, ReturnedRecordFacts};
 use super::local_class_construction::LocalClassConstructionShapes;
 use super::set_iterables::SetIterableShapes;
 use crate::analysis_inputs::{
-    DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeIntrinsic, ProofDependencies,
+    DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeInputKind, NativeIntrinsic,
+    NativeOperationInputEvidence, ProofDependencies,
 };
 use crate::inference::{
     CertificateContext, FactContext, GuardedContext, IterativeFacts, IterativeInference,
@@ -30,6 +31,10 @@ pub(crate) enum SemanticKey {
         global_this_qualified: bool,
     },
     EmptyCollection(Id),
+    EmptyCollectionSite {
+        binding: Id,
+        site: u32,
+    },
     LocalClass(u32),
     PrimitiveSetIteration(u32),
     StableFunction {
@@ -61,7 +66,9 @@ impl SemanticKey {
         match self {
             Self::NativeIntegrity(_) => InferenceRule::NativeIntegrity,
             Self::NativeCallIdentity { .. } => InferenceRule::NativeCallIdentity,
-            Self::EmptyCollection(_) => InferenceRule::EmptyCollectionConstruction,
+            Self::EmptyCollection(_) | Self::EmptyCollectionSite { .. } => {
+                InferenceRule::EmptyCollectionConstruction
+            }
             Self::LocalClass(_) => InferenceRule::LocalClassConstruction,
             Self::PrimitiveSetIteration(_) => InferenceRule::PrimitiveSetIteration,
             Self::StableFunction { .. } => InferenceRule::StableFunction,
@@ -113,6 +120,8 @@ pub(crate) struct SemanticRules {
     pub(crate) sets: SetIterableShapes,
     /// Fresh-allocation candidates; `NativeCallIdentity` proves their binding.
     pub(crate) collection_bindings: BTreeMap<Id, NativeIntrinsic>,
+    /// Exact author-certified zero-argument Set sites in private class fields.
+    pub(crate) author_empty_set_fields: BTreeMap<u32, NativeOperationInputEvidence>,
     /// A census is complete only after all analyzed chunks contribute writes.
     pub(crate) native_census_complete: bool,
     pub(crate) mutated_intrinsics: BTreeSet<NativeIntrinsic>,
@@ -179,9 +188,30 @@ impl SemanticRules {
                     global_this_qualified: false,
                 })?;
             }
+            SemanticKey::EmptyCollectionSite { binding, site } => {
+                if let Some(evidence) = self.author_empty_set_fields.get(site) {
+                    if binding.0.as_ref() != "Set"
+                        || evidence.operation
+                            != NativeInputKind::CallIdentity(
+                                spec::NativeCallIdentityKind::SetEmptyPrivateField,
+                            )
+                    {
+                        return None;
+                    }
+                    context.assume(&ProofDependencies {
+                        native_operation_inputs: BTreeSet::from([evidence.reference.clone()]),
+                        ..ProofDependencies::default()
+                    });
+                    return Some(SemanticFact::Certificate);
+                }
+                context.require(SemanticKey::EmptyCollection(binding.clone()))?;
+            }
             SemanticKey::LocalClass(class) => {
-                for field in self.classes.classes.get(class)? {
-                    context.require(SemanticKey::EmptyCollection(field.clone()))?;
+                for (binding, site) in self.classes.classes.get(class)? {
+                    context.require(SemanticKey::EmptyCollectionSite {
+                        binding: binding.clone(),
+                        site: *site,
+                    })?;
                 }
             }
             SemanticKey::PrimitiveSetIteration(span) => {
@@ -335,6 +365,15 @@ impl SemanticFacts {
                     .keys()
                     .cloned()
                     .map(SemanticKey::EmptyCollection),
+            )
+            .chain(
+                rules
+                    .classes
+                    .classes
+                    .values()
+                    .flatten()
+                    .cloned()
+                    .map(|(binding, site)| SemanticKey::EmptyCollectionSite { binding, site }),
             )
             .chain(
                 rules

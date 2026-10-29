@@ -106,15 +106,21 @@ retained-signature, and namespace-member author contracts remain distinct.
 `native_operation_inputs` and `native_call_identity_inputs` are distinct
 author premises resolved through the same canonical selector and call index.
 The first certifies selected initializer operations; the second certifies only
-the original callee at a selected direct call in a top-level function body.
+the original callee at a selected direct call in a top-level function body or
+at the zero-argument Set constructor in a checked private class field.
 Both retain exact-site evidence separately from inferred native integrity.
-The call-identity input currently admits `Object.freeze`: the shared typed
+The `Object.freeze` call-identity input uses the shared typed
 slot census rejects known global `Object` or constructor `freeze` writes across
 the analyzed program, while opaque and sibling write witnesses remain visible
 under the explicit author assertion. The interpreter consumes this evidence
 only at the selected call span; its existing argument-shape, return, heap,
 throw and purity checks are unchanged. Neither input promotes a family-wide
 native-integrity fact.
+The `set_empty_private_field` input uses the same source selector, exact call
+span and known-write census, but requires only the global `Set` binding slot.
+Its input-dependent shared empty-collection certificate feeds the existing
+local-class construction proof; it does not certify Set methods or grant
+native integrity to other Set sites.
 The per-chunk `modules.json` report projects these imported summaries for
 diagnosis, including the defining source path when available.
 

@@ -719,6 +719,35 @@ pub fn resolve_imported_callable_summaries(
             owner.0
         );
     }
+    if selected_native_operation_inputs
+        .values()
+        .flatten()
+        .any(|input| {
+            input.evidence.operation
+                == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::SetEmptyPrivateField)
+        })
+        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
+            facts
+                .known_global_set_mutation_owner()
+                .map(|owner| (module, owner))
+        })
+    {
+        let request = selected_native_operation_inputs
+            .values()
+            .flatten()
+            .find(|input| {
+                input.evidence.operation
+                    == NativeInputKind::CallIdentity(
+                        spec::NativeCallIdentityKind::SetEmptyPrivateField,
+                    )
+            })
+            .map(|input| input.evidence.spec_location.as_str())
+            .unwrap_or("native_call_identity_inputs");
+        bail!(
+            "{request} is contradicted by a positively identified global Set slot write in provider {module}, source unit {}",
+            owner.0
+        );
+    }
     let mut stable_set_spreads = BTreeMap::new();
     let empty_destinations = HashMap::new();
     for (module, inputs) in &resolved_native_operation_inputs {

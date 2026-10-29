@@ -3670,15 +3670,40 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .local_class_construction_proof
             .inference_use_for_class(key)
         {
+            let dependencies = self
+                .inputs
+                .index
+                .local_class_construction_proof
+                .dependencies_for_class(key)
+                .expect("a class certificate retains its typed dependencies");
             self.record_inference_use(
                 NativeIntegrityGuard::LocalClassConstruction,
                 proof,
-                self.inputs
-                    .index
-                    .local_class_construction_proof
-                    .dependencies_for_class(key)
-                    .expect("a class certificate retains its typed dependencies"),
+                dependencies,
             );
+            if let Some((span, _)) = self.inputs.index.private_empty_set_sites.get(&key)
+                && let Some(evidence) = self
+                    .inputs
+                    .index
+                    .native_operation_input_evidence
+                    .get(&CallSite::from(*span))
+                && evidence.operation
+                    == NativeInputKind::CallIdentity(
+                        spec::NativeCallIdentityKind::SetEmptyPrivateField,
+                    )
+                && dependencies
+                    .native_operation_inputs
+                    .contains(&evidence.reference)
+            {
+                self.state.native_operation_input_uses.borrow_mut().insert(
+                    (span.lo.0, span.hi.0),
+                    crate::reports::schema::NativeOperationInputUse {
+                        evidence: evidence.clone(),
+                        source_location: None,
+                        span: *span,
+                    },
+                );
+            }
         }
         let outcome = constructor.key.map_or_else(
             || Outcome {
