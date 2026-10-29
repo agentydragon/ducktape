@@ -192,6 +192,8 @@ py_library(
         ":config",
         ":state",
         ":store",
+        "//util:json_schema",
+        "@pypi//pydantic",
     ],
 )
 

@@ -150,9 +150,9 @@ py_test(
 
 py_library(
     name = "json_schema",
-    testonly = True,
     srcs = ["json_schema.py"],
     visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -458,4 +458,17 @@ py_wheel(
     version = "0.1.0",
     visibility = ["//visibility:public"],
     deps = [":network_monitor_pkg"],
+)
+
+py_test(
+    name = "test_json_schema",
+    srcs = ["test_json_schema.py"],
+    deps = [
+        ":json_schema",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//referencing",
+    ],
 )

@@ -15,6 +15,7 @@ py_library(
     srcs = ["export_schema.py"],
     deps = [
         ":models",
+        "//util:json_schema",
         "@pypi//pydantic",
     ],
 )

@@ -14,6 +14,8 @@ import tempfile
 from decimal import Decimal
 from pathlib import Path
 
+from pydantic import TypeAdapter
+
 from finance.augur.api.config import (
     AgentDefinition,
     CalibrationCatalogConfig,
@@ -29,6 +31,7 @@ from finance.augur.model.series import LocationId
 from finance.augur.sim.ids import AgentId, JurisdictionId, PropertyId
 from finance.augur.x.models.independent import IndependentProviderConfig
 from finance.budget.wire import BudgetSummaryCsvRequest
+from util.json_schema import register_models
 
 _SCHEMA_LOCATION_ID = LocationId("schema_location")
 
@@ -93,11 +96,11 @@ def main() -> None:
             _schema_export_config(properties_path, calibration_catalog_path), price_clients=static_price_clients({})
         ).openapi()
         # The CSV route stays out of path docs; its existing request model still drives frontend types.
-        csv_request_schema = BudgetSummaryCsvRequest.model_json_schema(ref_template="#/components/schemas/{model}")
-        schemas = document["components"]["schemas"]
-        for name, schema in csv_request_schema.pop("$defs", {}).items():
-            schemas.setdefault(name, schema)
-        schemas["BudgetSummaryCsvRequest"] = csv_request_schema
+        register_models(
+            document["components"]["schemas"],
+            [("BudgetSummaryCsvRequest", "validation", TypeAdapter(BudgetSummaryCsvRequest))],
+            ref_template="#/components/schemas/{model}",
+        )
         print(json.dumps(document, indent=2))
 
 

@@ -462,6 +462,8 @@ py_library(
         "//finance/augur/sim:ids",
         "//finance/augur/x/models:independent",
         "//finance/budget:wire",
+        "//util:json_schema",
+        "@pypi//pydantic",
     ],
 )
 

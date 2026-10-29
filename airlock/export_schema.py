@@ -15,6 +15,7 @@ from airlock.models import (
     ExpiredOAuthStatus,
     OAuthProviderStatus,
 )
+from util.json_schema import register_models
 
 _MODELS_TO_EXPORT: list[type[Any]] = [
     ConnectedOAuthStatus,
@@ -27,23 +28,17 @@ _MODELS_TO_EXPORT: list[type[Any]] = [
 
 def main() -> None:
     all_defs: dict[str, Any] = {}
-
-    for model_class in _MODELS_TO_EXPORT:
-        type_name = model_class.__name__
-        schema = TypeAdapter(model_class).json_schema(mode="serialization")
-        if "$defs" in schema:
-            all_defs.update(schema["$defs"])
-        all_defs[type_name] = {k: v for k, v in schema.items() if k != "$defs"}
-
+    register_models(
+        all_defs,
+        [(model_class.__name__, "serialization", TypeAdapter(model_class)) for model_class in _MODELS_TO_EXPORT],
+        ref_template="#/$defs/{model}",
+    )
     unified_schema: dict[str, Any] = {
         "type": "object",
         "title": "AirlockTypes",
-        "properties": {
-            name: {"$ref": f"#/$defs/{name}"} for name in all_defs if name in [m.__name__ for m in _MODELS_TO_EXPORT]
-        },
+        "properties": {m.__name__: {"$ref": f"#/$defs/{m.__name__}"} for m in _MODELS_TO_EXPORT},
         "$defs": all_defs,
     }
-
     json.dump(unified_schema, sys.stdout, indent=2)
 
 
