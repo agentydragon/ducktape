@@ -1046,7 +1046,7 @@ fn native_operation_call_name(operation: NativeInputKind) -> &'static str {
             "direct Symbol(...) call (unsupported Symbol call shape)"
         }
         NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor) => {
-            "direct Symbol.for(...) call (unsupported Symbol.for call shape)"
+            "direct Symbol.for(...) call (unsupported Symbol call shape)"
         }
         NativeInputKind::Operation(spec::NativeOperationKind::PromiseResolve) => {
             "direct Promise.resolve() call (unsupported Promise.resolve call shape)"
