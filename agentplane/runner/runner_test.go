@@ -21,6 +21,7 @@ import (
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	"github.com/agentydragon/ducktape/agentplane/runner/session"
+	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
 	runnertransport "github.com/agentydragon/ducktape/agentplane/runner_transport"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -31,6 +32,7 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
+	executorpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/executor_gatewaypb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -503,16 +505,34 @@ func TestCloseReportsTeardownOperationPublicationFailureAndRetainsOwner(t *testi
 }
 
 func TestExecutorRelaysBlockAutosuspendUntilClosed(t *testing.T) {
-	proxy := modelConfigServer(t)
-	r := newLifecycleRunner(t, lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false"))
-	r.mu.Lock()
-	r.executorRelays["test-relay"] = &executorRelay{}
-	r.mu.Unlock()
-	defer func() {
-		r.mu.Lock()
-		delete(r.executorRelays, "test-relay")
-		r.mu.Unlock()
-	}()
+	started := make(chan struct{})
+	r := newExecutorLifecycleRunner(t, func(ctx context.Context) (*supervision.Instance, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), codexExecServerTestTimeout)
+	defer cancel()
+	frames := make(chan *executorpb.ExecutorFrame, 1)
+	send := func(frame *executorpb.ExecutorFrame) error {
+		frames <- frame
+		return nil
+	}
+	connection, err := r.executorRelay.Open(ctx, 1, send, send)
+	if err != nil {
+		t.Fatalf("open executor stream: %v", err)
+	}
+	defer connection.Close()
+	if err := connection.Route(&executorpb.ExecutorFrame{
+		Frame: &executorpb.ExecutorFrame_Open{Open: &executorpb.ExecutorOpen{SessionId: "session-1"}},
+	}); err != nil {
+		t.Fatalf("open executor relay: %v", err)
+	}
+	select {
+	case <-started:
+	case <-ctx.Done():
+		t.Fatal("executor readiness did not block as expected")
+	}
 
 	facts, err := r.facts()
 	if err != nil {
@@ -524,9 +544,7 @@ func TestExecutorRelaysBlockAutosuspendUntilClosed(t *testing.T) {
 	if _, err := sandboxlease.FromProto(facts); err != nil {
 		t.Fatalf("executor blocker cannot reach the connection Lease: %v", err)
 	}
-	r.mu.Lock()
-	delete(r.executorRelays, "test-relay")
-	r.mu.Unlock()
+	connection.Close()
 
 	facts, err = r.facts()
 	if err != nil {

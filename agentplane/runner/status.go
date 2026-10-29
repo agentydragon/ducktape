@@ -212,7 +212,7 @@ func (r *Runner) facts() (*runnerstatepb.RunnerFacts, error) {
 	if admissions > 0 {
 		blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendAdmission})
 	}
-	if len(r.executorRelays) > 0 {
+	if r.executorRelay.Active() {
 		blockers = append(blockers, &sandboxpb.AutosuspendBlocker{Reason: autosuspendExecutorRelay})
 	}
 	busy := len(blockers) > 0

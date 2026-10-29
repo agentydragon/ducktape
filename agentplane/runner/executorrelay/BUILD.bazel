@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "executorrelay",
+    srcs = [
+        "connect.go",
+        "manager.go",
+        "relay.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner/executorrelay",
+    deps = [
+        "//agentplane/grpc/streaming",
+        "//agentplane/runner:runner_exec_go_proto",
+        "//agentplane/runner/codexexecserver",
+        "//agentplane/runner/control",
+        "//agentplane/runner/lifecycle",
+        "//agentplane/runner/supervision",
+        "//agentplane/runner_gateway:executor_gateway_go_proto",
+        "@com_github_coder_websocket//:websocket",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "executorrelay_test",
+    srcs = ["connect_test.go"],
+    embed = [":executorrelay"],
+    race = "on",
+    deps = [
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)

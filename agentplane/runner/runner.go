@@ -5,13 +5,15 @@ import (
 	"errors"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
+	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/bootstrap"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/runner/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/runner/control"
+	"github.com/agentydragon/ducktape/agentplane/runner/executorrelay"
 	runnerlifecycle "github.com/agentydragon/ducktape/agentplane/runner/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner/retained"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
@@ -29,37 +31,31 @@ import (
 
 type Runner struct {
 	runnerservicepb.UnimplementedRunnerServer
-	config                      Config
-	ctx                         context.Context
-	cancel                      context.CancelFunc
-	owner                       *retained.Owner
-	supervisor                  *supervision.Supervisor
-	scripts                     *scripts.Runner
-	workspaceSupervisor         *supervision.Supervisor
-	store                       *retained.Store
-	bootID                      string
-	mu                          sync.Mutex
-	directMu                    sync.RWMutex
-	directWatch                 *directWatch
-	directHighestEpoch          uint64
-	directHighestSandboxUID     string
-	directHighestIncarnationUID string
-	directExecStreams           int
-	directExecSequence          atomic.Uint64
-	sessions                    *session.Manager
-	createMu                    sync.Mutex
-	bootstrapHost               *bootstrap.Host
-	codexAppServer              *codexappserver.Host
-	codexExecServer             *codexexecserver.Host
-	executorRelays              map[string]*executorRelay
-	changes                     chan struct{}
-	fatal                       chan error
-	idleSince                   *timestamppb.Timestamp
-	lifecycle                   *lifecycle
-	closeOnce                   sync.Once
-	closeDone                   chan struct{}
-	closeErr                    error
-	closing                     bool
+	config              Config
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	owner               *retained.Owner
+	supervisor          *supervision.Supervisor
+	scripts             *scripts.Runner
+	workspaceSupervisor *supervision.Supervisor
+	store               *retained.Store
+	bootID              string
+	mu                  sync.Mutex
+	control             *control.Server
+	executorRelay       *executorrelay.Manager
+	sessions            *session.Manager
+	createMu            sync.Mutex
+	bootstrapHost       *bootstrap.Host
+	codexAppServer      *codexappserver.Host
+	codexExecServer     *codexexecserver.Host
+	changes             chan struct{}
+	fatal               chan error
+	idleSince           *timestamppb.Timestamp
+	lifecycle           *lifecycle
+	closeOnce           sync.Once
+	closeDone           chan struct{}
+	closeErr            error
+	closing             bool
 }
 
 func New(config Config) (*Runner, error) {
@@ -144,7 +140,7 @@ func newRunner(config Config, adapters *codexexecserver.Adapters, lifecycleState
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &Runner{config: config, owner: owner, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, executorRelays: map[string]*executorRelay{}, changes: make(chan struct{}), fatal: make(chan error, 1)}
+	r := &Runner{config: config, owner: owner, supervisor: supervisor, workspaceSupervisor: workspaceSupervisor, store: store, bootID: uuid.NewString(), ctx: ctx, cancel: cancel, changes: make(chan struct{}), fatal: make(chan error, 1)}
 	r.scripts, err = scripts.New(scripts.Config{
 		HarnessEnvironment: config.HarnessEnvironment,
 		LaunchProcess: func(ctx context.Context, owner string, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
@@ -168,8 +164,46 @@ func newRunner(config Config, adapters *codexexecserver.Adapters, lifecycleState
 		_ = owner.Close()
 		return nil, err
 	}
+	r.configureServing()
 	go lifecycle.run()
 	return r, nil
+}
+
+func (r *Runner) configureServing() {
+	r.control = control.New(control.Config{
+		SandboxUID:    r.config.Launch.Sandbox.UID,
+		BootID:        r.bootID,
+		ListenAddress: r.config.Control.ListenAddress,
+		Security:      r.config.Control.Security,
+		IsClosing:     r.isClosing,
+		AdoptIncarnation: func(ctx context.Context, incarnation string) error {
+			return rpcError(r.adoptIncarnation(ctx, incarnation))
+		},
+		Facts: func() (*runnerstatepb.RunnerFacts, error) {
+			facts, err := r.facts()
+			return facts, rpcError(err)
+		},
+		Changes: r.changesSince,
+	}, r)
+	r.executorRelay = executorrelay.New(executorrelay.Config{
+		Context:   r.ctx,
+		Authority: r.control,
+		Executor:  r.codexExecServer,
+		State:     r.lifecycle.state,
+		Admit: func(admit func() error) error {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if r.closing || !r.lifecycle.accepting() {
+				return status.Error(codes.FailedPrecondition, "Runner is quiescing")
+			}
+			return admit()
+		},
+		OnChange: r.changed,
+		WaitFor:  r.lifecycle.waitFor,
+		IsRunning: func() bool {
+			return r.lifecycle.desiredState().Mode == runnerlifecycle.Running
+		},
+	})
 }
 
 func (r *Runner) configureSessions() error {

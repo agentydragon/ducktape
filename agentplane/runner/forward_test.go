@@ -3,7 +3,6 @@ package runner
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,11 +11,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
-	runnerstatepb "github.com/agentydragon/ducktape/agentplane/proto/runner_statepb"
+	"github.com/agentydragon/ducktape/agentplane/runner/control"
 	runner_execpb "github.com/agentydragon/ducktape/agentplane/runner/runner_execpb"
 	runnerservicepb "github.com/agentydragon/ducktape/agentplane/runner/runner_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/runner/supervision"
@@ -29,93 +27,7 @@ import (
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
-
-type watchStateTestStream struct {
-	ctx       context.Context
-	responses chan *runnerservicepb.WatchStateResponse
-}
-
-func (s *watchStateTestStream) Send(response *runnerservicepb.WatchStateResponse) error {
-	select {
-	case s.responses <- proto.Clone(response).(*runnerservicepb.WatchStateResponse):
-		return nil
-	case <-s.ctx.Done():
-		return s.ctx.Err()
-	}
-}
-
-func TestWatchStatePublishesChangesAndPeriodicHeartbeat(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		ctx, cancel := context.WithCancel(t.Context())
-		defer cancel()
-		r := &Runner{
-			config:  Config{Control: RunnerControlConfiguration{Security: runnertransport.Security{Mode: runnertransport.Insecure}}},
-			changes: make(chan struct{}),
-		}
-		facts := &runnerstatepb.RunnerFacts{}
-		stream := &watchStateTestStream{
-			ctx:       ctx,
-			responses: make(chan *runnerservicepb.WatchStateResponse, 8),
-		}
-		done := make(chan error, 1)
-		go func() {
-			done <- r.forwardWatchState(ctx, func() (*runnerservicepb.WatchStateResponse, error) {
-				return &runnerservicepb.WatchStateResponse{
-					SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", RunnerBootId: "runner-boot-id",
-					ConnectionEpoch: 1, Facts: proto.Clone(facts).(*runnerstatepb.RunnerFacts),
-				}, nil
-			}, stream.Send)
-		}()
-
-		initial := <-stream.responses
-		if initial.GetFacts() == nil || initial.GetIncarnationUid() != "pod-uid" {
-			t.Fatalf("initial WatchState response = %v", initial)
-		}
-		synctest.Wait()
-
-		// Internal notifications can be duplicated or unrelated to WatchState facts.
-		r.changed()
-		r.changed()
-		synctest.Wait()
-		select {
-		case response := <-stream.responses:
-			t.Fatalf("unchanged facts produced another WatchState response: %v", response)
-		default:
-		}
-
-		facts.SetupsRunning = true
-		r.changed()
-		synctest.Wait()
-		changed := <-stream.responses
-		if proto.Equal(initial, changed) {
-			t.Fatalf("changed facts produced the same response: %v", changed)
-		}
-
-		r.changed()
-		r.changed()
-		synctest.Wait()
-		select {
-		case response := <-stream.responses:
-			t.Fatalf("unchanged facts after a change produced another response: %v", response)
-		default:
-		}
-
-		heartbeatTimer := time.NewTimer(forwardHeartbeatInterval)
-		<-heartbeatTimer.C
-		synctest.Wait()
-		heartbeat := <-stream.responses
-		if !proto.Equal(changed, heartbeat) {
-			t.Fatalf("periodic heartbeat = %v, want unchanged response %v", heartbeat, changed)
-		}
-
-		cancel()
-		if err := <-done; status.Code(err) != codes.Canceled {
-			t.Fatalf("WatchState cancellation error = %v, want Canceled", err)
-		}
-	})
-}
 
 func TestForwardRunnerServesHealthAndFencesStateAndDirectCalls(t *testing.T) {
 	for _, mode := range []runnertransport.SecurityMode{runnertransport.MutualTLS, runnertransport.Insecure} {
@@ -144,7 +56,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode runnertransport.SecurityMode)
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
 	config.Control = RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnerSecurity}
 	r := newLifecycleRunner(t, config)
-	listener, server, err := r.forwardServer()
+	listener, server, err := r.control.Listen(r.executorRelay)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,10 +99,10 @@ func testRunnerHealthAndFencing(t *testing.T, mode runnertransport.SecurityMode)
 	callContext := func(incarnation, bootID string, epoch uint64) context.Context {
 		return metadata.AppendToOutgoingContext(
 			ctx,
-			controlSandboxMetadata, "sandbox-uid",
-			controlIncarnationMetadata, incarnation,
-			controlBootMetadata, bootID,
-			controlEpochMetadata, uint64String(epoch),
+			control.SandboxMetadata, "sandbox-uid",
+			control.IncarnationMetadata, incarnation,
+			control.BootMetadata, bootID,
+			control.EpochMetadata, uint64String(epoch),
 		)
 	}
 	statusClient := runnerservicepb.NewRunnerClient(conn)
@@ -262,7 +174,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
 	config.Control = RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &runnerTLS}}
 	r := newLifecycleRunner(t, config)
-	listener, server, err := r.forwardServer()
+	listener, server, err := r.control.Listen(r.executorRelay)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,10 +231,10 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	callContext := func(parent context.Context, epoch uint64, bootID string) context.Context {
 		return metadata.AppendToOutgoingContext(
 			parent,
-			controlSandboxMetadata, "sandbox-uid",
-			controlIncarnationMetadata, "pod-uid",
-			controlBootMetadata, bootID,
-			controlEpochMetadata, uint64String(epoch),
+			control.SandboxMetadata, "sandbox-uid",
+			control.IncarnationMetadata, "pod-uid",
+			control.BootMetadata, bootID,
+			control.EpochMetadata, uint64String(epoch),
 		)
 	}
 	if _, err := client.OpenSession(callContext(ctx, 1, first.GetRunnerBootId()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
@@ -347,20 +259,16 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	cancelWatch()
 	deadline := time.Now().Add(time.Second)
 	for {
-		r.directMu.RLock()
-		current := r.directWatch
-		inactive := current == nil || current.ctx.Err() != nil
-		r.directMu.RUnlock()
-		if inactive {
+		_, err := client.GetStatus(callContext(ctx, 1, first.GetRunnerBootId()), &runnerpb.GetStatusRequest{})
+		if status.Code(err) == codes.Unavailable {
 			break
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("canceled WatchState remained active")
+		if err != nil {
+			t.Fatalf("GetStatus while waiting for canceled WatchState = %v", err)
 		}
-		time.Sleep(time.Millisecond)
-	}
-	if _, err := client.GetStatus(callContext(ctx, 1, first.GetRunnerBootId()), &runnerpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
-		t.Fatalf("call after WatchState cancellation = %v, want Unavailable", err)
+		if time.Now().After(deadline) {
+			t.Fatal("GetStatus remained available after WatchState cancellation")
+		}
 	}
 	watch, err = client.WatchState(ctx, &runnerservicepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid", ConnectionEpoch: 2,
@@ -396,7 +304,7 @@ func TestForwardRunnerBoundsDirectExecutorStreams(t *testing.T) {
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
 	config.Control = RunnerControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnertransport.Security{Mode: runnertransport.MutualTLS, TLS: &runnerTLS}}
 	r := newLifecycleRunner(t, config)
-	listener, server, err := r.forwardServer()
+	listener, server, err := r.control.Listen(r.executorRelay)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,10 +336,10 @@ func TestForwardRunnerBoundsDirectExecutorStreams(t *testing.T) {
 	}
 	callContext := metadata.AppendToOutgoingContext(
 		ctx,
-		controlSandboxMetadata, "sandbox-uid",
-		controlIncarnationMetadata, "pod-uid",
-		controlBootMetadata, first.GetRunnerBootId(),
-		controlEpochMetadata, "1",
+		control.SandboxMetadata, "sandbox-uid",
+		control.IncarnationMetadata, "pod-uid",
+		control.BootMetadata, first.GetRunnerBootId(),
+		control.EpochMetadata, "1",
 	)
 	executorClient := runner_execpb.NewRunnerExecClient(conn)
 	refused, err := executorClient.Connect(callContext)
@@ -451,13 +359,14 @@ func TestForwardRunnerBoundsDirectExecutorStreams(t *testing.T) {
 		t.Fatalf("rejected executor stream ended with %v, want EOF", err)
 	}
 
-	closeStreams := make([]func() error, 0, maxExecutorStreamsPerRunner)
+	const maxExecutorStreams = 8
+	closeStreams := make([]func() error, 0, maxExecutorStreams)
 	defer func() {
 		for _, closeStream := range closeStreams {
 			_ = closeStream()
 		}
 	}()
-	for i := 0; i < maxExecutorStreamsPerRunner; i++ {
+	for i := 0; i < maxExecutorStreams; i++ {
 		stream, err := executorClient.Connect(callContext)
 		if err != nil {
 			t.Fatalf("open direct executor stream %d: %v", i, err)
@@ -529,8 +438,7 @@ func TestForwardRunnerBackpressuresExecutorOutputBurst(t *testing.T) {
 	r := newExecutorLifecycleRunnerWithURL(t, "ws"+strings.TrimPrefix(execServer.URL, "http"), func(context.Context) (*supervision.Instance, error) {
 		return newTestExecutorInstance(&atomic.Int32{}), nil
 	}, nil)
-	r.config.Launch.Sandbox.UID = "sandbox-uid"
-	listener, server, err := r.forwardServer()
+	listener, server, err := r.control.Listen(r.executorRelay)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -562,8 +470,8 @@ func TestForwardRunnerBackpressuresExecutorOutputBurst(t *testing.T) {
 	}
 	callContext := metadata.AppendToOutgoingContext(
 		ctx,
-		controlSandboxMetadata, "sandbox-uid", controlIncarnationMetadata, "pod-uid",
-		controlBootMetadata, first.GetRunnerBootId(), controlEpochMetadata, "1",
+		control.SandboxMetadata, "sandbox-uid", control.IncarnationMetadata, "pod-uid",
+		control.BootMetadata, first.GetRunnerBootId(), control.EpochMetadata, "1",
 	)
 	stream, err := runner_execpb.NewRunnerExecClient(conn).Connect(callContext)
 	if err != nil {
@@ -615,35 +523,6 @@ func TestForwardRunnerBackpressuresExecutorOutputBurst(t *testing.T) {
 		server.Stop()
 		t.Fatal("Runner stream did not drain after cancellation during a blocked output burst")
 	}
-}
-
-func TestEnqueueDirectExecutorFrameBackpressuresAndCancels(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		ctx, cancel := context.WithCancel(t.Context())
-		defer cancel()
-		queue := make(chan directExecFrame, executorQueueDepth)
-		for range executorQueueDepth {
-			queue <- directExecFrame{}
-		}
-		result := make(chan error, 1)
-		go func() { result <- enqueueDirectExecutorFrame(ctx, queue, directExecFrame{}) }()
-		synctest.Wait()
-		select {
-		case err := <-result:
-			t.Fatalf("enqueue with a full active stream returned %v", err)
-		default:
-		}
-		<-queue
-		if err := <-result; err != nil {
-			t.Fatalf("enqueue after capacity returned = %v", err)
-		}
-		go func() { result <- enqueueDirectExecutorFrame(ctx, queue, directExecFrame{}) }()
-		synctest.Wait()
-		cancel()
-		if err := <-result; !errors.Is(err, context.Canceled) {
-			t.Fatalf("enqueue after stream cancellation = %v, want context.Canceled", err)
-		}
-	})
 }
 
 func uint64String(value uint64) string {

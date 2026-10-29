@@ -51,8 +51,11 @@ last acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays hi
 - `codexappserver/`: the one shared Codex process, its COSI lifecycle resources and controller,
   startup, protocol routing, reader drain, and process exit. `Session` supplies callbacks that
   commit routed frame batches and exit observations to its journal.
-- `forward.go`: the gRPC listener with explicit transport security, epoch-fenced state watch, direct
-  Runner RPCs, standard gRPC health service, and bounded executor stream relay.
+- `control/`: the gRPC listener, explicit transport security, state observer epochs, RPC fencing,
+  state watch and standard gRPC health service. Runner supplies domain RPCs and facts.
+- `executorrelay/`: executor stream admission limits, relay registry, bounded forwarding queues,
+  WebSocket channels and cancellation/join ownership. Runner supplies its admission barrier and
+  executor readiness; aggregate shutdown drains relays before fencing the exec-server.
 - `transport.go`: Runner-wide orchestration and the independent per-Session ingress connection,
   authentication and discovery worker scheduling. It keeps ingress available while Runner shutdown
   flushes final acknowledgements. Runner retains one
