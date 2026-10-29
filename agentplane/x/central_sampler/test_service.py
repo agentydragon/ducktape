@@ -372,6 +372,7 @@ async def test_reasoning_summaries_are_requested_and_reach_history(
             assert (await completed(stub, "think", request.session_id)).status == event_pb2.TURN_STATUS_COMPLETED
         events = [entry.event for entry in await store.events(request.session_id, 0, limit=10000)]
     assert reasoning["summary"] == "auto"
+    assert reasoning["context"] == "all_turns"
     reasoning_items = {
         event.item_started.item_id
         for event in events
