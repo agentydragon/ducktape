@@ -114,6 +114,11 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     # rather than placing this USB 2.0 camera behind the full-speed hub.
     usb3 = false
   }
+  # TP-Link UB500 Bluetooth adapter, independent of its physical USB port.
+  usb {
+    host = "2357:0604"
+    usb3 = false
+  }
   hotplug = "network,disk,cpu,usb" # note: memory hotplug requires NUMA
 
   # virtio-gl (VirGL): guest GL runs on atlas's iGPU, so Mutter composites
