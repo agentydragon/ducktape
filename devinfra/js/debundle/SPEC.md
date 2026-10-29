@@ -985,10 +985,16 @@ or key writes remain visible witnesses covered by the author premise; a write
 to an apparently unrelated property can still invoke a setter or Proxy trap.
 
 The input only supplies the callee identity needed by the existing native-call
-model. `Object.freeze` still requires its existing fresh plain-data record
-argument proof; argument evaluation, heap effects, throws, purity and callback
-timing retain their ordinary analysis. No whole-family `Object` integrity,
-general call purity or exception-free result follows.
+model. When the selected call's sole argument is a fresh plain-data object
+literal, freezing that record has no opaque heap-content effect on existing
+arrays or Sets. The heap collector still visits the callee and every argument
+child, including property-value calls and their reads, writes, throws, and
+escapes. Later consumers of the returned result retain ordinary conservative
+heap barriers; this proof does not establish a value-flow origin for the
+`Object.freeze` return. Other argument shapes keep the opaque heap barrier.
+The existing fresh-record proof separately governs native return identity,
+purity and callback timing; no whole-family `Object` integrity, general call
+purity or exception-free result follows.
 
 ## Native-operation inputs
 

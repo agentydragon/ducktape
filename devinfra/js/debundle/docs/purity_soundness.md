@@ -332,7 +332,14 @@ This input only resolves native callee identity. The existing `FreshDataRecord`
 guard must separately establish an ordinary fresh plain-data argument before
 the native `Object.freeze` return and no-reentry model can be used. It does not
 assert call purity, suppress argument effects or throws, or establish
-whole-family native integrity. Unselected calls use the ordinary guards.
+whole-family native integrity. For the selected call with a fresh plain-data
+object literal argument, the native freeze body cannot observe an earlier
+array or Set, so its synthetic opaque heap-content barrier is omitted. The
+collector still visits callee and argument children, including nested calls.
+The returned result has no precise ordinary-object value-flow origin from this
+proof, so later escapes and mutations through it retain conservative heap
+barriers. Accessor, Proxy, and other unproved arguments keep their ordinary
+heap barrier. Unselected calls use the ordinary guards.
 
 ### Source-selected native-operation inputs
 

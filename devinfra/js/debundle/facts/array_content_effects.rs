@@ -12,6 +12,7 @@ pub(crate) fn annotate_heap_content_effects(
     value_flow: &ChunkValueFlow,
     local_class_heap_proof: &LocalClassHeapProof,
     set_iterable_proof: &SetIterableProof,
+    fresh_freeze_proof: &sync_effects::execution_index::interpreter::FreshRecordFreezeHeapProof,
     facts: &mut [StatementFacts],
 ) {
     let mut origins = ArrayOriginCollector::default();
@@ -32,6 +33,7 @@ pub(crate) fn annotate_heap_content_effects(
             value_flow,
             local_class_heap_proof,
             set_iterable_proof,
+            fresh_freeze_proof,
             array_reachability: &reachability,
             array_origins: &origins.0,
             effects: HeapContentEffects::default(),
@@ -76,6 +78,7 @@ struct ArrayContentCollector<'a> {
     value_flow: &'a ChunkValueFlow,
     local_class_heap_proof: &'a LocalClassHeapProof,
     set_iterable_proof: &'a SetIterableProof,
+    fresh_freeze_proof: &'a sync_effects::execution_index::interpreter::FreshRecordFreezeHeapProof,
     array_reachability: &'a CandidateObjectIndex<'a>,
     array_origins: &'a BTreeSet<u32>,
     effects: HeapContentEffects,
@@ -349,6 +352,20 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
+        if self.fresh_freeze_proof.contains(node)
+            && let Callee::Expr(callee) = &node.callee
+            && let Expr::Member(member) = callee.unwrap_parens()
+        {
+            // The selected original Object.freeze observes only this new
+            // accessor-free record. Its callee slots are author-certified;
+            // visit the callee's children and property values to retain every
+            // nested call, allocation, read, and write in their evaluation.
+            self.visit_member_children(member);
+            for arg in &node.args {
+                arg.visit_with(self);
+            }
+            return;
+        }
         if let Callee::Expr(callee) = &node.callee {
             self.record_call_target(callee);
         }

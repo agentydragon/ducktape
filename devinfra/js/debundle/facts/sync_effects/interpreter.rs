@@ -6292,6 +6292,18 @@ pub(crate) struct PreparedSynchronousCallIndex {
     set_iterable_proof: SetIterableProof,
 }
 
+/// Exact native calls whose own heap action cannot observe an existing array
+/// or Set. Argument evaluation remains the collector's responsibility.
+pub(crate) struct FreshRecordFreezeHeapProof {
+    sites: BTreeSet<(u32, u32)>,
+}
+
+impl FreshRecordFreezeHeapProof {
+    pub(crate) fn contains(&self, call: &CallExpr) -> bool {
+        self.sites.contains(&(call.span.lo.0, call.span.hi.0))
+    }
+}
+
 impl PreparedSynchronousCallIndex {
     pub(crate) fn locate_native_integrity_witnesses(
         &mut self,
@@ -6310,6 +6322,29 @@ impl PreparedSynchronousCallIndex {
 
     pub(crate) fn local_class_heap_proof(&self) -> crate::facts::LocalClassHeapProof {
         self.index.local_class_construction_proof.heap_proof()
+    }
+
+    pub(crate) fn fresh_record_freeze_heap_proof(&self) -> FreshRecordFreezeHeapProof {
+        let sites = self
+            .index
+            .resolved_native_operation_inputs
+            .iter()
+            .filter(|input| {
+                input.evidence.operation
+                    == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
+            })
+            .filter_map(|input| {
+                let call = self
+                    .index
+                    .direct_freeze_return_call(&input.binding, input.selected_statement_span)?;
+                let [ValueExpr::ObjectLiteral(object, _)] = call.args.as_slice() else {
+                    return None;
+                };
+                (call.span == input.call_span && self.index.plain_data_objects.contains(object))
+                    .then_some((call.span.lo.0, call.span.hi.0))
+            })
+            .collect();
+        FreshRecordFreezeHeapProof { sites }
     }
 }
 

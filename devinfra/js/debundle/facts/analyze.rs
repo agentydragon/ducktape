@@ -413,11 +413,13 @@ where
         .collect();
     value_flow.augment_calls(&body, &mut facts);
     let local_class_heap_proof = prepared_sync_index.local_class_heap_proof();
+    let fresh_freeze_heap_proof = prepared_sync_index.fresh_record_freeze_heap_proof();
     super::array_content_effects::annotate_heap_content_effects(
         &body,
         &value_flow,
         &local_class_heap_proof,
         &set_iterable_proof,
+        &fresh_freeze_heap_proof,
         &mut facts,
     );
     if matches!(synchronous_calls, SynchronousCallAnalysis::Include) {

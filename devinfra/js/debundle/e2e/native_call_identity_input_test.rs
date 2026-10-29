@@ -80,6 +80,160 @@ fn exact_freeze_site_restores_complete_synchronous_call_under_opaque_write() {
 }
 
 #[test]
+fn certified_fresh_record_freeze_does_not_observe_an_unrelated_live_array() {
+    let function = "function makeRecord(name) { return Object.freeze({ name }); }";
+    let source = format!(
+        "{function}\nconst startupTarget = globalThis.plugin || {{}};\nstartupTarget.freeze = 1;\nconst values = [];\nconst frozen = makeRecord('ready');\nconst later = values.length;\nconsole.log(frozen.name, later);\nexport {{ frozen, later }};\n"
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("heap/a", &[Member::new("values"), Member::new("later")]),
+                logical_module("records/b", &[Member::new("frozen")]),
+            ],
+        )
+        .with_native_call_identity_inputs(
+            "static/app",
+            vec![input(&source, "makeRecord", function)],
+        ),
+    );
+    assert_preserved_entry_output(&fixture, "ready 0\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert!(graph["nodes"].as_array().unwrap().iter().any(|node| {
+        node["declared_bindings"]
+            .as_array()
+            .is_some_and(|bindings| {
+                bindings
+                    .iter()
+                    .any(|binding| binding["binding"] == "frozen")
+            })
+            && node["synchronous_execution"]["native_operation_input_uses"]
+                .as_array()
+                .is_some_and(|uses| {
+                    uses.iter()
+                        .any(|used| used["evidence"]["operation"] == "object_freeze")
+                })
+    }));
+}
+
+#[test]
+fn freeze_heap_proof_requires_a_fresh_plain_data_record() {
+    for (function, argument) in [
+        (
+            "function makeRecord() { return Object.freeze({ get name() { return 'ready'; } }); }",
+            "",
+        ),
+        (
+            "function makeRecord(value) { return Object.freeze(value); }",
+            "new Proxy({ name: 'ready' }, {})",
+        ),
+    ] {
+        let source = format!(
+            "{function}\nconst startupTarget = globalThis.plugin || {{}};\nstartupTarget.freeze = 1;\nconst values = [];\nconst frozen = makeRecord({argument});\nconst later = values.length;\nconsole.log(frozen.name, later);\nexport {{ frozen, later }};\n"
+        );
+        let rejected = run_rejection_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("heap/a", &[Member::new("values"), Member::new("later")]),
+                    logical_module("records/b", &[Member::new("frozen")]),
+                ],
+            )
+            .with_native_call_identity_inputs(
+                "static/app",
+                vec![input(&source, "makeRecord", function)],
+            ),
+        );
+        assert!(
+            rejected.stderr.contains("module-quotient SCC"),
+            "{}",
+            rejected.stderr
+        );
+    }
+}
+
+#[test]
+fn freeze_heap_proof_retains_nested_array_mutation() {
+    let function =
+        "function makeRecord() { return Object.freeze({ name: values.push('ready') }); }";
+    let source = format!(
+        "{function}\nconst startupTarget = globalThis.plugin || {{}};\nstartupTarget.freeze = 1;\nconst values = [];\nconst frozen = makeRecord();\nconst later = values.length;\nconsole.log(frozen.name, later);\nexport {{ frozen, later }};\n"
+    );
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module(
+                    "heap/a",
+                    &[
+                        Member::new("values"),
+                        Member::new("later").with_purity(MemberPurity::Pure),
+                    ],
+                ),
+                logical_module("records/b", &[Member::new("frozen")]),
+            ],
+        )
+        .with_native_call_identity_inputs(
+            "static/app",
+            vec![input(&source, "makeRecord", function)],
+        ),
+    );
+    assert!(
+        rejected.stderr.contains("module-quotient SCC"),
+        "{}",
+        rejected.stderr
+    );
+    assert!(
+        rejected
+            .stderr
+            .contains("frozen (records/b)  --side-effect-->  <side-effect> (heap/a)"),
+        "{}",
+        rejected.stderr
+    );
+}
+
+#[test]
+fn returned_record_with_live_array_descendant_stays_ordered_conservatively() {
+    let function = "function makeRecord() { return Object.freeze({ values }); }";
+    let source = format!(
+        "{function}\nconst startupTarget = globalThis.plugin || {{}};\nstartupTarget.freeze = 1;\nconst values = [];\nconst frozen = makeRecord();\nconst exposed = frozen.values;\nconst pushed = exposed.push('ready');\nconst later = values.length;\nconsole.log(later);\nexport {{ frozen, exposed, pushed, later }};\n"
+    );
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("heap/a", &[Member::new("values"), Member::new("later")]),
+                logical_module(
+                    "records/b",
+                    &[
+                        Member::new("frozen"),
+                        Member::new("exposed"),
+                        Member::new("pushed"),
+                    ],
+                ),
+            ],
+        )
+        .with_native_call_identity_inputs(
+            "static/app",
+            vec![input(&source, "makeRecord", function)],
+        ),
+    );
+    assert!(
+        rejected.stderr.contains("module-quotient SCC"),
+        "{}",
+        rejected.stderr
+    );
+    assert!(
+        rejected
+            .stderr
+            .contains("later (heap/a)  --side-effect-->  <side-effect> (records/b)"),
+        "{}",
+        rejected.stderr
+    );
+}
+
+#[test]
 fn exact_freeze_site_rejects_known_required_slot_writes() {
     for write in [
         "Object.freeze = function(value) { return value; };",
