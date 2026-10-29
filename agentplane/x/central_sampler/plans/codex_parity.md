@@ -19,6 +19,8 @@ instructions, setup scripts and History export.
 - **Actions as tools:** expose Action Service Actions (including MCP-backed ones) as nested tools,
   deferred behind tool search like Codex's MCP tools. Needs design first: what happens when the set
   of available Actions changes mid-Session, and how agents learn of additions and removals.
+- **Skills (medium priority):** Codex `SKILL.md` discovery and injection. Needs design first: where
+  skills live and how their files reach the execution environment.
 - **Session fork:** branch a Session's conversation into a new Session. Needs its own design across
   the sampler, History and the executor binding.
 - **Hosted web search:** maybe, depending on what the provider's hosted search offers over fetching
