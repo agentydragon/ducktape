@@ -409,6 +409,39 @@ pub struct NativePrototypePropertyCheck {
     pub blocking_mutation_count: usize,
 }
 
+/// Diagnostic effects activated before a modeled native premise. This does
+/// not certify the premise or impose an emitted-module ordering constraint.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeProgramPointKind {
+    Evaluate,
+    Invoke,
+    Call,
+    OwnProperty,
+    Heap,
+    Callbacks,
+    Model,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NativeProgramPointStep {
+    pub kind: NativeProgramPointKind,
+    pub ordinal: usize,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NativePrefixObservation {
+    pub guard: NativeIntegrityGuard,
+    /// Runtime fact path within the source unit; the array position orders
+    /// repeated guards at the same transfer point.
+    pub program_point_path: Vec<NativeProgramPointStep>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub property: Option<String>,
+    pub prior_affected_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    pub prior_blocking_prototype_mutations: usize,
+    pub uncertain_execution: bool,
+}
+
 /// A successful native guard whose conclusion depends on one or more
 /// author-conditioned receiver refinements in the whole-program census.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -458,6 +491,8 @@ pub struct SynchronousExecutionReport {
     pub native_integrity_checks: Vec<NativeIntegrityCheck>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_prototype_property_checks: Vec<NativePrototypePropertyCheck>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_prefix_observations: Vec<NativePrefixObservation>,
     /// Successful native guards that consumed author-conditioned census facts.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_integrity_uses: Vec<NativeIntegrityUse>,

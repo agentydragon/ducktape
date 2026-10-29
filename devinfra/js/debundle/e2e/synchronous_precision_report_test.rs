@@ -260,6 +260,129 @@ fn unrelated_object_write_does_not_supply_native_mutation_evidence() {
     );
 }
 
+fn array_prefix_fixture(write: &str) -> Fixture {
+    let source = format!(
+        "function mutate() {{ Array.flag = 1; }}\n\
+         {write}\n\
+         const arrayResult = [1, 2].map(value => value + 1);\n\
+         console.log(arrayResult.join(','));"
+    );
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    assert_entry_output(&fixture, "2,3\n");
+    fixture
+}
+
+fn prototype_prefix_fixture(write: &str) -> Fixture {
+    let source = format!(
+        "function mutate() {{ Object.prototype.prefixProbe = 1; }}\n\
+         {write}\n\
+         class Box {{ constructor(config) {{ this.prefixProbe = config.prefixProbe; }} }}\n\
+         const result = new Box({{ prefixProbe: 3 }});\n\
+         console.log(result.prefixProbe);"
+    );
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    assert_entry_output(&fixture, "3\n");
+    fixture
+}
+
+fn prefix_observation(execution: &Value, guard: &str, property: Option<&str>) -> Value {
+    execution["native_prefix_observations"]
+        .as_array()
+        .expect("evaluated native prefix observations")
+        .iter()
+        .find(|observation| {
+            observation["guard"] == guard
+                && property.map_or(observation.get("property").is_none(), |property| {
+                    observation["property"] == property
+                })
+        })
+        .unwrap_or_else(|| panic!("missing {guard} {property:?} in {execution}"))
+        .clone()
+}
+
+#[test]
+fn unused_deferred_native_writer_is_absent_from_prefix_observations() {
+    let fixture = array_prefix_fixture("");
+    let array = execution(&fixture, "arrayResult");
+    let observed = prefix_observation(&array, "array_intrinsics", None);
+    assert_eq!(
+        observed["prior_affected_roots"],
+        serde_json::json!([]),
+        "{array}"
+    );
+    assert_eq!(observed["uncertain_execution"], false);
+    // The existing whole-program guard still rejects the Array premise.
+    assert!(
+        array["native_integrity_checks"].as_array().is_some(),
+        "{array}"
+    );
+    let fixture = prototype_prefix_fixture("");
+    let result = execution(&fixture, "result");
+    let observed = prefix_observation(&result, "ordinary_object_prototype", Some("prefixProbe"));
+    assert_eq!(
+        observed["prior_blocking_prototype_mutations"], 0,
+        "{result}"
+    );
+    assert!(
+        result["native_prototype_property_checks"]
+            .as_array()
+            .is_some()
+    );
+}
+
+#[test]
+fn foreign_dynamic_scope_starts_active_despite_a_local_deferred_write() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import './mutation.js';\nfunction local() { globalThis.slot.value = 1; }\nclass Box { constructor(config) { this.prefixProbe = config.prefixProbe; } }\nconst result = new Box({ prefixProbe: 3 });\nconsole.log(result.prefixProbe);",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/mutation",
+            "export function uncertain() { eval('0'); }",
+        )]),
+    );
+    assert_entry_output(&fixture, "3\n");
+    let result = execution(&fixture, "result");
+    let observed = prefix_observation(&result, "ordinary_object_prototype", Some("prefixProbe"));
+    assert!(
+        observed["prior_affected_roots"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("global_object")),
+        "{result}"
+    );
+}
+
+#[test]
+fn invoked_and_direct_native_writes_are_present_before_later_guards() {
+    for write in ["mutate();", "Array.flag = 1;"] {
+        let fixture = array_prefix_fixture(write);
+        let array = execution(&fixture, "arrayResult");
+        let observed = prefix_observation(&array, "array_intrinsics", None);
+        assert!(
+            observed["prior_affected_roots"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("array")),
+            "{write}: {array}"
+        );
+    }
+    for write in ["mutate();", "Object.prototype.prefixProbe = 1;"] {
+        let fixture = prototype_prefix_fixture(write);
+        let result = execution(&fixture, "result");
+        let observed =
+            prefix_observation(&result, "ordinary_object_prototype", Some("prefixProbe"));
+        assert!(
+            observed["prior_blocking_prototype_mutations"]
+                .as_u64()
+                .unwrap()
+                >= 1,
+            "{write}: {result}"
+        );
+    }
+}
+
 #[test]
 fn array_guard_references_a_direct_native_write_without_unknown_alias_widening() {
     let fixture = run_fixture(

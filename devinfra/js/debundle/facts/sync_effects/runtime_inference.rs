@@ -11,6 +11,7 @@ use super::runtime_models::{self, ModelOperation, ModelResult};
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::statement_facts::SynchronousCalls;
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
+use crate::reports::schema::{NativeProgramPointKind, NativeProgramPointStep};
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
 
@@ -47,18 +48,7 @@ enum RuntimeFact {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct ProgramPoint {
     owner: SourceUnitOrdinal,
-    path: Vec<(OperationKind, usize)>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum OperationKind {
-    Evaluate,
-    Invoke,
-    Call,
-    OwnProperty,
-    Heap,
-    Callbacks,
-    Model,
+    path: Vec<(NativeProgramPointKind, usize)>,
 }
 
 pub(super) enum RuntimeOperation {
@@ -115,6 +105,16 @@ pub(super) struct RuntimeQueries<'source, 'query> {
 }
 
 impl RuntimeQueries<'_, '_> {
+    pub(super) fn point_path(&self) -> Vec<NativeProgramPointStep> {
+        self.point
+            .path
+            .iter()
+            .map(|(kind, ordinal)| NativeProgramPointStep {
+                kind: *kind,
+                ordinal: *ordinal,
+            })
+            .collect()
+    }
     pub(super) fn invocation_memo(&self, point: &ProgramPoint) -> Outcome {
         let mut context = self.context.borrow_mut();
         let Some(RuntimeFact::InvocationMemo(outcome)) =
@@ -146,7 +146,7 @@ impl RuntimeQueries<'_, '_> {
         self.context.borrow_mut().assume(dependencies);
     }
 
-    fn child_point(&self, kind: OperationKind) -> ProgramPoint {
+    fn child_point(&self, kind: NativeProgramPointKind) -> ProgramPoint {
         let ordinal = self.next_child.get();
         self.next_child.set(ordinal + 1);
         let mut point = self.point.clone();
@@ -155,7 +155,7 @@ impl RuntimeQueries<'_, '_> {
     }
 
     pub(super) fn project_own_property(&self, query: OwnPropertyQuery) -> Option<OwnPropertyProof> {
-        let point = self.child_point(OperationKind::OwnProperty);
+        let point = self.child_point(NativeProgramPointKind::OwnProperty);
         let mut context = self.context.borrow_mut();
         context.propose(
             RuntimeKey::OwnPropertyRequest(point.clone()),
@@ -176,12 +176,12 @@ impl RuntimeQueries<'_, '_> {
         operation: RuntimeOperation,
     ) -> RuntimeResult {
         let kind = match &operation {
-            RuntimeOperation::Heap(_) => OperationKind::Heap,
-            RuntimeOperation::Evaluate { .. } => OperationKind::Evaluate,
-            RuntimeOperation::Invoke { .. } => OperationKind::Invoke,
-            RuntimeOperation::Call { .. } => OperationKind::Call,
-            RuntimeOperation::Callbacks(_) => OperationKind::Callbacks,
-            RuntimeOperation::Model(_) => OperationKind::Model,
+            RuntimeOperation::Heap(_) => NativeProgramPointKind::Heap,
+            RuntimeOperation::Evaluate { .. } => NativeProgramPointKind::Evaluate,
+            RuntimeOperation::Invoke { .. } => NativeProgramPointKind::Invoke,
+            RuntimeOperation::Call { .. } => NativeProgramPointKind::Call,
+            RuntimeOperation::Callbacks(_) => NativeProgramPointKind::Callbacks,
+            RuntimeOperation::Model(_) => NativeProgramPointKind::Model,
         };
         let point = self.child_point(kind);
         let mut context = self.context.borrow_mut();

@@ -10,7 +10,7 @@ use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_inference::{ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue};
 use super::{
     Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, IntrinsicRoot, LocalConstructor,
-    RetainedCallbackCall,
+    NativePointEffects, RetainedCallbackCall,
 };
 use crate::analysis_inputs::{AnalysisInputs, ProofDependencies};
 use crate::facts::ExportReentryPolicy;
@@ -38,7 +38,7 @@ use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     CallbackFactoryUseKind, ExecutionOperation, ExecutionPrecisionLoss,
     ExecutionPrecisionLossReason, NativeIntegrityCheck, NativeIntegrityGuard,
-    NativePrototypePropertyCheck,
+    NativePrefixObservation, NativePrototypePropertyCheck,
 };
 use imbl::OrdMap;
 use source_identity::SourceUnitOrdinal;
@@ -258,6 +258,10 @@ impl ExecutionInputs<'_> {
 pub(super) struct ExecutionState {
     native_integrity_checks: RefCell<BTreeSet<NativeIntegrityCheck>>,
     native_prototype_property_checks: RefCell<BTreeMap<String, NativePrototypePropertyCheck>>,
+    native_prefix_observations: RefCell<Vec<NativePrefixObservation>>,
+    native_point_effects: NativePointEffects,
+    activated_native_effects: BTreeSet<(SourceUnitOrdinal, Option<u32>)>,
+    uncertain_native_execution: bool,
     author_host_contract_uses: Vec<crate::reports::schema::HostNoReentryUse>,
     native_integrity_uses: RefCell<BTreeSet<crate::reports::schema::NativeIntegrityUse>>,
     proof_dependencies: RefCell<ProofDependencies>,
@@ -495,6 +499,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn native_guard_intact(&self, guard: NativeIntegrityGuard, roots: &[IntrinsicRoot]) -> bool {
+        self.observe_native_prefix(guard, None);
         let Some(facts) = self.inputs.index.semantic_facts.as_ref() else {
             return false;
         };
@@ -572,6 +577,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// Absence is stronger than getter-freedom: an inherited data value may
     /// contain callbacks missing from an argument-only instance graph.
     fn object_prototype_property_absent(&self, property: &str) -> bool {
+        self.observe_native_prefix(
+            NativeIntegrityGuard::OrdinaryObjectPrototype,
+            Some(property),
+        );
         if Self::standard_object_prototype_property(property) {
             return false;
         }
@@ -2626,6 +2635,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn mark_reachability_incomplete(&mut self) {
+        self.widen_native_effects();
         if !self.state.reachability.incomplete {
             self.state.reachability.incomplete = true;
             self.state.reachability.revision = self.state.reachability.revision.wrapping_add(1);
@@ -2635,6 +2645,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn note_unknown_execution(&mut self, owner: SourceUnitOrdinal) {
+        self.widen_native_effects();
         // Exports expose live capabilities only to code that can reenter the
         // module. Builtin iteration without such reentry remains precise.
         if self.inputs.export_reentry_enabled {
@@ -3874,6 +3885,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             DUMMY_SP,
         );
         outcome.unknown_call = true;
+        self.widen_native_effects();
         self.promote_deferred_callbacks(&callbacks, &mut outcome);
         // Class/superclass capability checks can invoke code and populate the
         // shared accumulator reentrantly. Preserve those contributions before
@@ -4295,6 +4307,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let rebinds_before = outcome.effects.rebinds.len();
         outcome.lose_precision(reason.clone(), owner, DUMMY_SP);
         outcome.unknown_call = true;
+        self.widen_native_effects();
         outcome.executed_owners.insert(owner);
 
         // The recursive summary is no longer being expanded. Preserve reads
@@ -4517,6 +4530,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             outcome,
         );
         outcome.unknown_call = true;
+        self.widen_native_effects();
         outcome.lose_precision(
             ExecutionPrecisionLossReason::UnknownCallTarget,
             self.state
@@ -5143,6 +5157,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .as_ref()
             .map_or(&empty_context, |captured| captured.values.as_ref());
         self.record_executed_owner(callable_owner);
+        // Memoized outcomes still represent an invocation at this point.
+        self.activate_native_effects(callable_owner, Some(key));
         if callable_opaque {
             self.note_unknown_execution(callable_owner);
         }
@@ -5972,6 +5988,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     }
                     outcome.unsupported(ExecutionOperation::ObjectAssign, call.owner, call.span);
                     outcome.unknown_call = true;
+                    self.widen_native_effects();
                 }
                 AbstractValue::Origin(ValueOrigin::Class(key)) if call.kind == CallKind::New => {
                     if let Some((nested, _)) = (!call.has_spread)
@@ -6531,6 +6548,10 @@ pub(crate) fn annotate_synchronous_calls(
     let state = ExecutionState {
         native_integrity_checks: RefCell::default(),
         native_prototype_property_checks: RefCell::default(),
+        native_prefix_observations: RefCell::default(),
+        native_point_effects: index.initial_native_point_effects.clone(),
+        activated_native_effects: BTreeSet::new(),
+        uncertain_native_execution: false,
         author_host_contract_uses: Vec::new(),
         native_integrity_uses: RefCell::default(),
         proof_dependencies: RefCell::default(),
@@ -6595,6 +6616,49 @@ pub(crate) fn annotate_synchronous_calls(
 }
 
 impl Executor<'_, '_> {
+    fn widen_native_effects(&mut self) {
+        if !self.state.uncertain_native_execution {
+            self.state.native_point_effects = self.inputs.index.all_native_point_effects.clone();
+            self.state.uncertain_native_execution = true;
+        }
+    }
+
+    fn activate_native_effects(&mut self, owner: SourceUnitOrdinal, callable: Option<u32>) {
+        if self.state.uncertain_native_execution
+            || !self
+                .state
+                .activated_native_effects
+                .insert((owner, callable))
+        {
+            return;
+        }
+        if let Some(effects) = self
+            .inputs
+            .index
+            .native_point_effects
+            .get(&(owner, callable))
+        {
+            self.state.native_point_effects.extend(effects);
+        }
+    }
+
+    fn observe_native_prefix(&self, guard: NativeIntegrityGuard, property: Option<&str>) {
+        let prior_blocking_prototype_mutations = self
+            .state
+            .native_point_effects
+            .blocking_prototype_mutations(property);
+        self.state
+            .native_prefix_observations
+            .borrow_mut()
+            .push(NativePrefixObservation {
+                guard,
+                program_point_path: self.queries.point_path(),
+                property: property.map(str::to_owned),
+                prior_affected_roots: self.state.native_point_effects.roots.clone(),
+                prior_blocking_prototype_mutations,
+                uncertain_execution: self.state.uncertain_native_execution,
+            });
+    }
     pub(super) fn execute_owner(&mut self, owner: SourceUnitOrdinal) -> SynchronousCalls {
         let inputs = self.inputs;
         let index = inputs.index;
@@ -6609,10 +6673,12 @@ impl Executor<'_, '_> {
             .native_prototype_property_checks
             .borrow_mut()
             .clear();
+        self.state.native_prefix_observations.borrow_mut().clear();
         self.state.native_integrity_uses.borrow_mut().clear();
         *self.state.proof_dependencies.borrow_mut() = ProofDependencies::default();
         self.state.inference_uses.borrow_mut().clear();
         self.state.current_top_owner = Some(fact.ordinal);
+        self.activate_native_effects(fact.ordinal, None);
         self.state.proof_uses.clear();
         // Cache keys include this owner; previous statement snapshots cannot
         // be reused and should not consume this statement's bounded budget.
@@ -6912,6 +6978,8 @@ impl Executor<'_, '_> {
             std::mem::take(self.state.native_prototype_property_checks.get_mut())
                 .into_values()
                 .collect();
+        outcome.effects.native_prefix_observations =
+            std::mem::take(self.state.native_prefix_observations.get_mut());
         outcome.effects.native_prototype_mutations = index.native_prototype_mutations.clone();
         outcome.effects.native_integrity_uses =
             std::mem::take(self.state.native_integrity_uses.get_mut())

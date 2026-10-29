@@ -421,6 +421,19 @@ source witnesses, bounding rows with the same total/emitted/truncated metadata a
 its other sections. Diagnostics do not
 change the census, guard verdicts, or dependency edges.
 
+`synchronous_execution.native_prefix_observations` separately records the
+conservative native-root and Object-prototype-property effects active at each
+modeled guard's runtime fact path. Declaring a callable does not activate its
+body; invoking it activates all indexed body writes before its first modeled
+operation. Unknown execution widens to every potential effect, and imported
+effects start active. These observations are diagnostic only: a clean source
+prefix does not certify an emitted module layout, which may reorder a later
+native mutation before the guarded read. The whole-program guard remains in
+force until the graph preserves those read/write orders. The report describes
+modeled evaluations, not an exhaustive runtime call trace: invocation memo hits
+do not replay observations. A later guard relaxation must include native effect
+state in invocation memo validity as well as preserve emitted read/write order.
+
 ### Saved-graph input contract
 
 `debundle run` embeds a `GraphProvenance` inventory in each saved graph. It

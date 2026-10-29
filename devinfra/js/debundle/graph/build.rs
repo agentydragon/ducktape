@@ -113,6 +113,7 @@ pub fn build_dependency_graph_with(
                     native_prototype_property_checks: calls
                         .native_prototype_property_checks
                         .clone(),
+                    native_prefix_observations: calls.native_prefix_observations.clone(),
                     native_integrity_uses: calls.native_integrity_uses.clone(),
                     inference_uses: calls.inference_uses.clone(),
                     precision_losses: calls.precision_losses.clone(),

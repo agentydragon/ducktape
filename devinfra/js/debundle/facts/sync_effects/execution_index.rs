@@ -39,14 +39,14 @@ use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::ChunkCodeGraph;
 use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePrototypeMutation,
-    NativeReceiverCertificate, NativeReceiverOrigin, SourceLocation,
+    NativePrototypeMutationKind, NativeReceiverCertificate, NativeReceiverOrigin, SourceLocation,
 };
 use source_identity::SourceUnitOrdinal;
 use spec::{BuiltinGlobalRoot, HostNoReentryOperation, HostNoReentryRuntime};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use swc_common::{Span, Spanned};
+use swc_common::{DUMMY_SP, Span, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -2317,6 +2317,7 @@ fn property_key_evidence<'a>(
 #[derive(Debug)]
 struct IntrinsicWriteTarget {
     owner: SourceUnitOrdinal,
+    activation_callable: Option<u32>,
     /// Only direct member operations retain the activation whose receiver read
     /// precedes the key/RHS. Destructuring and reflective calls stay opaque.
     receiver_callable: Option<u32>,
@@ -2327,10 +2328,64 @@ struct IntrinsicWriteTarget {
     key: Option<PropertyKeyExpr>,
 }
 
+/// Conservative effects activated before a top-level item or callable body.
+/// This deliberately has no within-body ordering: all of a body's writes
+/// precede its first modeled native guard.
+#[derive(Clone, Default)]
+struct NativePointEffects {
+    roots: IntrinsicRoots,
+    prototype_site_count: usize,
+    prototype_any_key: usize,
+    prototype_known_keys: BTreeMap<String, usize>,
+}
+
+impl NativePointEffects {
+    fn extend(&mut self, other: &Self) {
+        self.roots.extend(&other.roots);
+        self.prototype_site_count += other.prototype_site_count;
+        self.prototype_any_key += other.prototype_any_key;
+        for (property, count) in &other.prototype_known_keys {
+            *self
+                .prototype_known_keys
+                .entry(property.clone())
+                .or_default() += count;
+        }
+    }
+
+    fn add_prototype_mutation(&mut self, mutation: &NativePrototypeMutation) {
+        self.prototype_site_count += 1;
+        if let Some(properties) = &mutation.properties {
+            for property in properties {
+                *self
+                    .prototype_known_keys
+                    .entry(property.clone())
+                    .or_default() += 1;
+            }
+        } else {
+            self.prototype_any_key += 1;
+        }
+    }
+
+    fn blocking_prototype_mutations(&self, property: Option<&str>) -> usize {
+        match property {
+            Some(property) => {
+                self.prototype_any_key
+                    + self
+                        .prototype_known_keys
+                        .get(property)
+                        .copied()
+                        .unwrap_or(0)
+            }
+            None => self.prototype_site_count,
+        }
+    }
+}
+
 fn intrinsic_write_target(
     member: &MemberExpr,
     owner: SourceUnitOrdinal,
     receiver_callable: Option<u32>,
+    activation_callable: Option<u32>,
     operation: NativeMutationOperation,
 ) -> IntrinsicWriteTarget {
     let key = match &member.prop {
@@ -2340,6 +2395,7 @@ fn intrinsic_write_target(
     };
     IntrinsicWriteTarget {
         owner,
+        activation_callable,
         receiver_callable: receiver_callable
             .filter(|_| matches!(member.obj.unwrap_parens(), Expr::Ident(_))),
         constructor_this: receiver_callable
@@ -3217,12 +3273,16 @@ struct ExecutionIndex {
     native_integrity_witnesses: Arc<Vec<NativeMutationWitness>>,
     native_prototype_mutations: Arc<Vec<NativePrototypeMutation>>,
     native_receiver_certificates: Arc<Vec<NativeReceiverCertificate>>,
+    source_chunk_id: Option<String>,
+    native_point_effects: BTreeMap<(SourceUnitOrdinal, Option<u32>), NativePointEffects>,
+    initial_native_point_effects: NativePointEffects,
+    all_native_point_effects: NativePointEffects,
     reassigned_map: bool,
     namespace_privacy: NamespacePrivacy,
     fresh_error_claims: Vec<FreshErrorWriteClaim>,
     intrinsic_writes: Vec<IntrinsicWriteTarget>,
     prototype_calls: Vec<Call>,
-    prototype_field_writes: Vec<(SourceUnitOrdinal, Span, PropertyKeyExpr)>,
+    prototype_field_writes: Vec<(SourceUnitOrdinal, Option<u32>, Span, PropertyKeyExpr)>,
     prototype_callable_reads: BTreeMap<u32, BTreeSet<Id>>,
     prototype_capture_stack: Vec<u32>,
     property_key_assignments: BTreeMap<Id, Vec<PropertyKeyExpr>>,
@@ -3367,6 +3427,10 @@ impl Default for ExecutionIndex {
             native_integrity_witnesses: Arc::default(),
             native_prototype_mutations: Arc::default(),
             native_receiver_certificates: Arc::default(),
+            source_chunk_id: None,
+            native_point_effects: BTreeMap::new(),
+            initial_native_point_effects: NativePointEffects::default(),
+            all_native_point_effects: NativePointEffects::default(),
             reassigned_map: false,
             namespace_privacy: NamespacePrivacy::default(),
             fresh_error_claims: Vec::new(),
@@ -3941,6 +4005,7 @@ impl ExecutionIndex {
         let global_guards_requested = !hints.assumptions.deferred_global_publications.is_empty()
             || !hints.assumptions.non_reentrant_global_membership.is_empty();
         let mut index = Self {
+            source_chunk_id: hints.current_chunk_id.clone(),
             global_guards_requested,
             local_class_construction_shapes: construction_proof.clone(),
             top_calls: vec![Vec::new(); body.len()],
@@ -4539,6 +4604,7 @@ impl ExecutionIndex {
             integrity.mutated
         };
         index.mutated_intrinsic_roots = mutated_intrinsics.clone();
+        index.populate_native_point_effects(&external);
         let mut claim_counts = BTreeMap::<FreshErrorWriteSite, usize>::new();
         if !index.fresh_error_claims.is_empty()
             && !index.audited_factory_members.is_empty()
@@ -5176,6 +5242,161 @@ impl ExecutionIndex {
         index
     }
 
+    fn populate_native_point_effects(&mut self, external: &NativeWriteCensus) {
+        // The structural visitor is the single source for activation. A
+        // source-unit ordinal alone cannot distinguish a function declaration
+        // from a synchronous invocation of its body.
+        let mut activations =
+            BTreeMap::<(SourceUnitOrdinal, u32, u32), BTreeSet<Option<u32>>>::new();
+        let mut site = |owner: SourceUnitOrdinal, callable: Option<u32>, span: Span| {
+            if span != DUMMY_SP {
+                activations
+                    .entry((owner, span.lo.0, span.hi.0))
+                    .or_default()
+                    .insert(callable);
+            }
+        };
+        for write in &self.intrinsic_writes {
+            site(write.owner, write.activation_callable, write.span);
+        }
+        for call in &self.prototype_calls {
+            site(call.owner, call.caller, call.span);
+        }
+        for (owner, callable, span, _) in &self.prototype_field_writes {
+            site(*owner, *callable, *span);
+        }
+        let activation = |owner: SourceUnitOrdinal, span: Span| {
+            if span == DUMMY_SP {
+                return None;
+            }
+            activations
+                .get(&(owner, span.lo.0, span.hi.0))
+                .and_then(|candidates| {
+                    (candidates.len() == 1).then(|| *candidates.iter().next().unwrap())
+                })
+        };
+        let mut initial = NativePointEffects::default();
+        let is_foreign = |chunk_id: &str| self.source_chunk_id.as_deref() != Some(chunk_id);
+        for mutation in external
+            .prototype_mutations
+            .iter()
+            .filter(|mutation| is_foreign(&mutation.chunk_id))
+        {
+            initial.add_prototype_mutation(mutation);
+        }
+        for witness in external
+            .witnesses
+            .iter()
+            .filter(|witness| is_foreign(&witness.chunk_id))
+        {
+            if witness.unreachable_branch.is_none() {
+                initial.roots.extend(&witness.affected_roots);
+            }
+        }
+        // The supplied census covers this chunk too. Only roots lacking a
+        // source witness in that completed census are necessarily active at
+        // entry. A foreign witness stays active even when a local write has
+        // the same root.
+        let witnessed_roots: IntrinsicRoots = external
+            .witnesses
+            .iter()
+            .filter(|witness| witness.unreachable_branch.is_none())
+            .flat_map(|witness| witness.affected_roots.iter().copied())
+            .collect();
+        initial
+            .roots
+            .extend(external.unconditional.difference(&witnessed_roots).copied());
+        let local_witnessed_roots: IntrinsicRoots = self
+            .native_write_census
+            .witnesses
+            .iter()
+            .filter(|witness| witness.unreachable_branch.is_none())
+            .flat_map(|witness| witness.affected_roots.iter().copied())
+            .chain(
+                self.native_write_census
+                    .conditional
+                    .iter()
+                    .filter(|write| write.witness.unreachable_branch.is_none())
+                    .flat_map(|write| write.fallback.iter().copied()),
+            )
+            .collect();
+        initial.roots.extend(
+            self.native_write_census
+                .unconditional
+                .difference(&local_witnessed_roots)
+                .copied(),
+        );
+        // Dynamic scope is the only unconditional root without a source
+        // witness. Keep it active even if another write has the same family.
+        if self
+            .native_write_census
+            .prototype_mutations
+            .iter()
+            .chain(external.prototype_mutations.iter())
+            .any(|mutation| mutation.kind == NativePrototypeMutationKind::DynamicScope)
+        {
+            initial.roots.insert(IntrinsicRoot::GlobalObject);
+        }
+        let mut by_activation = BTreeMap::<_, NativePointEffects>::new();
+        for witness in self.native_write_census.witnesses.iter() {
+            if witness.unreachable_branch.is_some() || witness.affected_roots.is_empty() {
+                continue;
+            }
+            if let Some(callable) = activation(witness.statement_ordinal, witness.span) {
+                by_activation
+                    .entry((witness.statement_ordinal, callable))
+                    .or_default()
+                    .roots
+                    .extend(&witness.affected_roots);
+            } else {
+                initial.roots.extend(&witness.affected_roots);
+            }
+        }
+        for write in &self.native_write_census.conditional {
+            if write.witness.unreachable_branch.is_some() {
+                continue;
+            }
+            if let Some(callable) = activation(write.witness.statement_ordinal, write.witness.span)
+            {
+                by_activation
+                    .entry((write.witness.statement_ordinal, callable))
+                    .or_default()
+                    .roots
+                    .extend(&write.fallback);
+            } else {
+                initial.roots.extend(&write.fallback);
+            }
+        }
+        for mutation in self.native_write_census.prototype_mutations.iter() {
+            let mut mutation = mutation.clone();
+            if !mutation
+                .key_dependencies
+                .is_disjoint(&self.mutated_intrinsic_roots)
+                || (!mutation.key_dependencies.is_empty()
+                    && self
+                        .mutated_intrinsic_roots
+                        .contains(&IntrinsicRoot::GlobalObject))
+            {
+                mutation.properties = None;
+            }
+            if let Some(callable) = activation(mutation.statement_ordinal, mutation.span) {
+                by_activation
+                    .entry((mutation.statement_ordinal, callable))
+                    .or_default()
+                    .add_prototype_mutation(&mutation);
+            } else {
+                initial.add_prototype_mutation(&mutation);
+            }
+        }
+        let mut all = initial.clone();
+        for effects in by_activation.values() {
+            all.extend(effects);
+        }
+        self.native_point_effects = by_activation;
+        self.initial_native_point_effects = initial;
+        self.all_native_point_effects = all;
+    }
+
     fn native_integrity_is_proven(&self, root: IntrinsicRoot) -> bool {
         self.semantic_facts
             .as_ref()
@@ -5723,7 +5944,7 @@ impl Visit for ExecutionIndex {
                             .unwrap_or(PropertyKeyExpr::Unknown),
                     };
                     self.prototype_field_writes
-                        .push((self.owner, prop.span, key));
+                        .push((self.owner, self.current, prop.span, key));
                 }
             }
         }
@@ -6821,6 +7042,7 @@ impl Visit for ExecutionIndex {
                             member,
                             self.owner,
                             None,
+                            self.current,
                             NativeMutationOperation::PropertyAssignment,
                         ));
                         ValueExpr::from_expr(&member.obj)
@@ -6966,6 +7188,7 @@ impl Visit for ExecutionIndex {
             self.intrinsic_writes.push(intrinsic_write_target(
                 member,
                 self.owner,
+                self.current,
                 self.current,
                 NativeMutationOperation::PropertyAssignment,
             ));
@@ -7139,6 +7362,7 @@ impl Visit for ExecutionIndex {
         {
             self.intrinsic_writes.push(IntrinsicWriteTarget {
                 owner: self.owner,
+                activation_callable: self.current,
                 receiver_callable: None,
                 constructor_this: None,
                 span: expression.span,
@@ -7159,6 +7383,7 @@ impl Visit for ExecutionIndex {
             self.intrinsic_writes.push(intrinsic_write_target(
                 member,
                 self.owner,
+                self.current,
                 self.current,
                 NativeMutationOperation::Update,
             ));
@@ -7190,6 +7415,7 @@ impl Visit for ExecutionIndex {
             self.intrinsic_writes.push(intrinsic_write_target(
                 member,
                 self.owner,
+                self.current,
                 self.current,
                 NativeMutationOperation::Delete,
             ));
@@ -7320,6 +7546,7 @@ impl Visit for ExecutionIndex {
             ) {
                 IntrinsicWriteTarget {
                     owner: self.owner,
+                    activation_callable: self.current,
                     receiver_callable: None,
                     constructor_this: None,
                     span: call.span,
@@ -7336,6 +7563,7 @@ impl Visit for ExecutionIndex {
             } else {
                 IntrinsicWriteTarget {
                     owner: self.owner,
+                    activation_callable: self.current,
                     receiver_callable: None,
                     constructor_this: None,
                     span: call.span,
@@ -7817,6 +8045,7 @@ impl PreparedCallableCapabilities {
         chunk_id: &str,
         source: Option<&(String, js_ast::SourceLineIndex)>,
     ) {
+        self.index.source_chunk_id = Some(chunk_id.to_owned());
         let source_location = |span| {
             source.and_then(|(path, index)| {
                 let (start_line, end_line, start_column) =

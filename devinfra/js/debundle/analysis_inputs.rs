@@ -388,6 +388,9 @@ pub struct AnalysisAssumptions {
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisInputs {
     pub native_integrity: Option<NativeIntegrity>,
+    /// Identity of this chunk within a supplied whole-program native census.
+    /// Used only to separate local activation from already-present mutations.
+    pub current_chunk_id: Option<String>,
     pub assumptions: AnalysisAssumptions,
     /// Source-match results awaiting canonical binding/write-index validation
     /// in the whole-program prepared analysis.

@@ -303,7 +303,7 @@ impl ExecutionIndex {
                 .flatten();
             mutations.push(mutation(write.owner, write.span, kind, key));
         }
-        for (owner, span, key) in &self.prototype_field_writes {
+        for (owner, _, span, key) in &self.prototype_field_writes {
             mutations.push(mutation(
                 *owner,
                 *span,

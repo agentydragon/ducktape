@@ -433,6 +433,7 @@ pub(super) fn finish_logical_chunk(
         let mut inputs = AnalysisInputs {
             assumptions: declared_assumptions,
             native_integrity: cross_module_purities.native_integrity.clone(),
+            current_chunk_id: Some(chunk_id.to_string()),
             ..AnalysisInputs::default()
         };
         inputs.assumptions.captured_value_inputs = cross_module_purities
