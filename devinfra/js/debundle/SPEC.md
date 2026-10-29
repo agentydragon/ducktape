@@ -553,9 +553,11 @@ module purity, or loader behavior.
 the request graph, including calls nested in functions. These are conditional
 source edges: the query does not establish that the host loader has its original
 identity, that a call executes during module initialization, or that it returns
-a cached namespace. The query does not add alias calls, dynamic arguments,
-global `require`, or CommonJS exports as resolved edges. Their typed source
-sites remain in the optional `--interop-census`, which counts every chunk and
+a cached namespace. The query does not add calls through aliases, dynamic
+arguments, global `require`, or CommonJS exports as resolved edges. Direct
+loader-value references, dynamic direct calls, global loader uses, and
+CommonJS export uses remain as typed sites in the optional `--interop-census`;
+calls through an alias are not traced. The census counts every chunk and
 bounds detailed sites with `--max-interop-sites`. An absent path in the union
 graph excludes only paths through resolved ordinary static requests and these
 direct literal candidates; it does not clear any export-reentry blocker.
