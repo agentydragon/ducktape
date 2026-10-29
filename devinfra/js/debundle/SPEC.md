@@ -1078,17 +1078,22 @@ member's canonical selector result, including relational selectors; it does
 not resolve another source template. Both forms retain their actual selector
 provenance, parser-input SHA-256, spec location, selected binding and original
 site in the report. The digest uses the same parser-input provenance as
-`value_inputs`. The operation set accepts `symbol`,
+`value_inputs`. The operation set accepts `symbol`, `symbol_for`,
 `set_from_primitive_array`, `set_from_set_spread`, and `object_own_data_function_read`.
+The `symbol_for` operation selects `Symbol.for(...)` and asserts both original
+global `Symbol` identity and original direct `for` data-property identity.
 The selector must identify one direct top-level simple binding initializer
-whose entire initializer is an ordinary, nonoptional direct `Symbol(...)` call
-with zero or one syntactically primitive argument and no spread. Shadowed
+whose entire initializer is an ordinary, nonoptional direct `Symbol(...)` or
+`Symbol.for(...)` call matching the selected operation, with zero or one
+syntactically primitive argument and no spread. Shadowed
 `Symbol`, computed or optional calls, other expression shapes and known
-in-source writes to the global `Symbol` binding/property are rejected. The
+in-source writes to the global `Symbol` binding/property are rejected. A
+`symbol_for` input also rejects known writes to the `Symbol.for` property. The
 known-write check covers the analyzed initialization region, including
 deferred bodies, so replacement followed by restoration cannot be reordered
 around the selected call. It queries the shared native write census for the
-source-known global-object `Symbol` slot. The census also reports typed
+source-known global-object `Symbol` slot and, for `symbol_for`, the constructor's
+`for` slot. The census also reports typed
 constructor, prototype, descendant, and unknown receiver paths with string,
 `Symbol.iterator`, other-symbol, and unknown keys. These details retain the
 existing family-wide guard effects; an opaque path or key is a witness rather
@@ -1096,11 +1101,12 @@ than a source-known contradiction of the input.
 
 This is explicit author input, not an inferred source fact or a point-in-time
 snapshot. The author asserts that the direct callee remains the original native
-`Symbol` data binding throughout every synchronous initialization schedule
-allowed by emission. A11's external native-identity obligation still applies.
+`Symbol` data binding and, for `symbol_for`, the original `for` data property
+throughout every synchronous initialization schedule allowed by emission.
+A11's external native-identity obligation still applies.
 The input is consumed only at the exact selected call span; other `Symbol`
-calls retain their ordinary native-integrity checks. Opaque possible receiver
-writes may be covered by this author premise, but their witnesses remain in
+and `Symbol.for` calls retain their ordinary native-integrity checks. Opaque
+possible receiver writes may be covered by this author premise, but their witnesses remain in
 the shared census and report. No whole-lifetime purity, no-reentry or receiver
 guarantee follows. Callee and argument evaluation, throws, other writes,
 callbacks, publication, CommonJS behavior and all other calls keep their

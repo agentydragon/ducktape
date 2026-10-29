@@ -669,8 +669,12 @@ pub fn resolve_imported_callable_summaries(
         .values()
         .flatten()
         .any(|input| {
-            input.evidence.operation
-                == NativeInputKind::Operation(spec::NativeOperationKind::Symbol)
+            matches!(
+                input.evidence.operation,
+                NativeInputKind::Operation(
+                    spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor
+                )
+            )
         })
         && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
             facts
@@ -682,8 +686,12 @@ pub fn resolve_imported_callable_summaries(
             .values()
             .flatten()
             .find(|input| {
-                input.evidence.operation
-                    == NativeInputKind::Operation(spec::NativeOperationKind::Symbol)
+                matches!(
+                    input.evidence.operation,
+                    NativeInputKind::Operation(
+                        spec::NativeOperationKind::Symbol | spec::NativeOperationKind::SymbolFor
+                    )
+                )
             })
             .map(|input| input.evidence.spec_location.as_str())
             .unwrap_or("native_operation_inputs");
@@ -745,6 +753,25 @@ pub fn resolve_imported_callable_summaries(
             .unwrap_or("native_call_identity_inputs");
         bail!(
             "{request} is contradicted by a positively identified global Set slot write in provider {module}, source unit {}",
+            owner.0
+        );
+    }
+    if let Some(input) = selected_native_operation_inputs
+        .values()
+        .flatten()
+        .find(|input| {
+            input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor)
+        })
+        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
+            facts
+                .known_symbol_for_mutation_owner()
+                .map(|owner| (module, owner))
+        })
+    {
+        bail!(
+            "{} is contradicted by a positively identified Symbol.for replacement or accessor installation in provider {module}, source unit {}",
+            input.evidence.spec_location,
             owner.0
         );
     }

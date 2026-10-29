@@ -41,6 +41,12 @@ fn marker_input(source: &str) -> NativeOperationInputContract {
     input_for(source, declaration)
 }
 
+fn symbol_for_input(source: &str) -> NativeOperationInputContract {
+    let mut input = marker_input(source);
+    input.operation = NativeOperationKind::SymbolFor;
+    input
+}
+
 fn primitive_set_input(source: &str) -> NativeOperationInputContract {
     let declaration = source
         .lines()
@@ -861,6 +867,125 @@ fn selected_symbol_call_removes_only_its_synthetic_reentry_barrier() {
                 .iter()
                 .any(|slot| { slot["receiver"] == "unknown" && slot["key"] == "unknown" })),
         "the opaque reflective write must retain its unknown slot witness: {graph}"
+    );
+}
+
+#[test]
+fn selected_symbol_for_call_removes_only_its_synthetic_reentry_barrier() {
+    let source = SOURCE.replace("Symbol('marker')", "Symbol.for('marker')");
+    let opts = FixtureOpts::new(
+        &source,
+        vec![
+            logical_module_with_anon(
+                "marker",
+                &[Member::new("marker")],
+                &["globalThis.saved = () => factory();"],
+            ),
+            logical_module("factory", &[Member::new("factory")]),
+            logical_module("later", &[Member::new("LaterError")]),
+        ],
+    )
+    .with_extra_chunks(REFLECT_CHUNKS)
+    .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
+    .with_native_operation_inputs("static/app", vec![symbol_for_input(&source)]);
+    let fixture = run_fixture(opts);
+    assert_preserved_entry_output(&fixture, "marker LaterError safe\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let uses = native_input_uses(&graph);
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0]["evidence"]["operation"], "symbol_for");
+    assert_eq!(uses[0]["evidence"]["selected_binding"], "marker");
+    unknown_receiver_witness(&graph);
+}
+
+#[test]
+fn selected_symbol_for_rejects_other_callees_and_nonprimitive_conversion() {
+    for (source, expected) in [
+        (
+            "const marker = Symbol.for('key');\nconst Symbol = { for: () => 'wrong' };\nexport { marker };\n",
+            "shadowed Symbol",
+        ),
+        (
+            "const marker = Symbol['for']('key');\nexport { marker };\n",
+            "Symbol.for dot call",
+        ),
+        (
+            "const marker = Symbol?.for('key');\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+        (
+            "const call = Symbol.for;\nconst marker = call('key');\nexport { marker };\n",
+            "Symbol.for dot call",
+        ),
+        (
+            "const marker = Symbol.for(...['key']);\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+        (
+            "const marker = Symbol.for(Symbol());\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+        (
+            "const marker = Symbol.for({ toString() { return 'key'; } });\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+    ] {
+        expect_rejection_containing_all(
+            rejected_opts(source, "marker", symbol_for_input(source)),
+            &[expected],
+        );
+    }
+}
+
+#[test]
+fn known_symbol_for_replacement_in_another_chunk_contradicts_the_input() {
+    for mutation in [
+        "const original = Symbol.for; Symbol.for = () => 'wrong'; Symbol.for = original;",
+        "Object.defineProperty(Symbol, 'for', { get() { return () => 'wrong'; } });",
+    ] {
+        let source =
+            "import './mutation.js';\nconst marker = Symbol.for('key');\nexport { marker };\n";
+        expect_rejection_containing_all(
+            FixtureOpts::new(
+                source,
+                vec![logical_module("marker", &[Member::new("marker")])],
+            )
+            .with_extra_chunks(&[("static/mutation", mutation)])
+            .with_native_operation_inputs("static/app", vec![symbol_for_input(source)]),
+            &["Symbol.for replacement", "static/mutation"],
+        );
+    }
+}
+
+#[test]
+fn primitive_argument_throw_is_preserved_by_selected_symbol_for() {
+    let source = "console.log('before');\nconst marker = Symbol.for(1n + 1);\nconsole.log('after');\nexport { marker };\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs("static/app", vec![symbol_for_input(source)]),
+    );
+    assert_preserved_entry_error(&fixture, "TypeError");
+    assert_eq!(
+        native_input_uses(&serde_json::to_value(fixture.dependency_graph()).unwrap()).len(),
+        1
+    );
+}
+
+#[test]
+fn sibling_global_symbol_replacement_contradicts_symbol_for_input() {
+    let source = "import './mutation.js';\nconst marker = Symbol.for('key');\nexport { marker };\n";
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("marker", &[Member::new("marker")])],
+        )
+        .with_extra_chunks(&[(
+            "static/mutation",
+            "globalThis.Symbol = { for: () => 'changed' };\n",
+        )])
+        .with_native_operation_inputs("static/app", vec![symbol_for_input(source)]),
+        &["global Symbol replacement", "static/mutation"],
     );
 }
 

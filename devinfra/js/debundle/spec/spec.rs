@@ -584,6 +584,7 @@ pub enum NativeCallIdentityKind {
 #[serde(rename_all = "snake_case")]
 pub enum NativeOperationKind {
     Symbol,
+    SymbolFor,
     SetFromPrimitiveArray,
     SetFromSetSpread,
     /// One static own-data function property read on the original Object constructor.

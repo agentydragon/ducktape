@@ -1015,6 +1015,28 @@ fn native_call_identity_key(
     ))
 }
 
+/// The selected operation must name the exact original global and, for the
+/// registry operation, its direct data property. The global shadowing check
+/// remains with the caller's canonical value-flow facts.
+fn selected_symbol_binding(callee: &ValueExpr, operation: NativeInputKind) -> Option<&Id> {
+    match (operation, callee) {
+        (
+            NativeInputKind::Operation(spec::NativeOperationKind::Symbol),
+            ValueExpr::Binding(binding),
+        ) => Some(binding),
+        (
+            NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor),
+            ValueExpr::Member(receiver, Some(property), true),
+        ) if property == "for" => {
+            let ValueExpr::Binding(binding) = receiver.as_ref() else {
+                return None;
+            };
+            Some(binding)
+        }
+        _ => None,
+    }
+}
+
 fn shallow_data_pattern(pattern: &Pat) -> bool {
     fn leaf(pattern: &Pat) -> bool {
         matches!(pattern, Pat::Ident(_))
@@ -4423,9 +4445,8 @@ impl ExecutionIndex {
             }
             return;
         }
-        let known_symbol_mutation = self
-            .known_global_symbol_mutation()
-            .map(|chunk_owner| format!("source unit {chunk_owner}"));
+        let known_symbol_mutation = self.known_global_symbol_mutation();
+        let known_symbol_for_mutation = self.known_symbol_for_mutation();
 
         for input in selected {
             let request = &input.evidence.spec_location;
@@ -4640,10 +4661,18 @@ impl ExecutionIndex {
                     });
                 continue;
             }
-            if known_symbol_mutation.is_some() {
+            if let Some(chunk_owner) = known_symbol_mutation {
                 self.native_operation_input_errors.push(format!(
-                    "{request} is contradicted by a positively identified global Symbol replacement or accessor installation ({})",
-                    known_symbol_mutation.as_deref().unwrap_or_default()
+                    "{request} is contradicted by a positively identified global Symbol replacement or accessor installation (source unit {chunk_owner})"
+                ));
+                continue;
+            }
+            if input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor)
+                && let Some(chunk_owner) = known_symbol_for_mutation
+            {
+                self.native_operation_input_errors.push(format!(
+                    "{request} is contradicted by a positively identified Symbol.for replacement or accessor installation (source unit {chunk_owner})"
                 ));
                 continue;
             }
@@ -4683,16 +4712,13 @@ impl ExecutionIndex {
                 ));
                 continue;
             };
-            let ValueExpr::Binding(symbol) = callee.as_ref() else {
+            let Some(symbol) = selected_symbol_binding(callee, input.evidence.operation) else {
                 self.native_operation_input_errors.push(format!(
-                    "{request} must select a direct uncomputed Symbol identifier call"
+                    "{request} must select a direct uncomputed Symbol identifier call or Symbol.for dot call"
                 ));
                 continue;
             };
-            if input.evidence.operation
-                != NativeInputKind::Operation(spec::NativeOperationKind::Symbol)
-                || symbol.0.as_ref() != "Symbol"
-            {
+            if symbol.0.as_ref() != "Symbol" {
                 self.native_operation_input_errors.push(format!(
                     "{request} operation does not match the selected direct Symbol initializer"
                 ));
@@ -4906,10 +4932,18 @@ impl ExecutionIndex {
                 self.resolved_native_operation_inputs.push(input.clone());
                 continue;
             }
-            if known_symbol_mutation.is_some() {
+            if let Some(chunk_owner) = known_symbol_mutation {
                 self.native_operation_input_errors.push(format!(
-                    "{request} is contradicted by a positively identified global Symbol replacement or accessor installation ({})",
-                    known_symbol_mutation.as_deref().unwrap_or_default()
+                    "{request} is contradicted by a positively identified global Symbol replacement or accessor installation (source unit {chunk_owner})"
+                ));
+                continue;
+            }
+            if input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor)
+                && let Some(chunk_owner) = known_symbol_for_mutation
+            {
+                self.native_operation_input_errors.push(format!(
+                    "{request} is contradicted by a positively identified Symbol.for replacement or accessor installation (source unit {chunk_owner})"
                 ));
                 continue;
             }
@@ -4937,10 +4971,13 @@ impl ExecutionIndex {
                 && declaration.owner == input.initializer_ordinal
                 && input.binding.0.as_ref() == input.evidence.selected_binding
                 && *call_site == CallSite::from(input.call_span)
-                && matches!(callee.as_ref(), ValueExpr::Binding(symbol)
-                    if symbol.0.as_ref() == "Symbol"
-                        && !self.property_key_declarations.contains(symbol)
-                        && !self.imported_bindings.contains(symbol))
+                && selected_symbol_binding(callee, input.evidence.operation).is_some_and(
+                    |symbol| {
+                        symbol.0.as_ref() == "Symbol"
+                            && !self.property_key_declarations.contains(symbol)
+                            && !self.imported_bindings.contains(symbol)
+                    },
+                )
                 && self.primitive_native_symbol_calls.contains(call_site)
                 && self.ordinary_top_call_sites.contains(call_site)
                 && args.len() <= 1;
@@ -5111,6 +5148,16 @@ impl ExecutionIndex {
             key: NativePropertyKey::String("Symbol".to_owned()),
         });
         match overlap {
+            NativeSlotOverlap::Known(owner) => Some(owner),
+            NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
+        }
+    }
+
+    fn known_symbol_for_mutation(&self) -> Option<SourceUnitOrdinal> {
+        match self.source_slot_overlap(&NativeWriteSlot {
+            receiver: NativeReceiverPath::Constructor(IntrinsicRoot::Symbol),
+            key: NativePropertyKey::String("for".to_owned()),
+        }) {
             NativeSlotOverlap::Known(owner) => Some(owner),
             NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
         }
@@ -9091,7 +9138,10 @@ impl Visit for ExecutionIndex {
                 .iter()
                 .all(|argument| argument.spread.is_none() && primitive_constant(&argument.expr))
             && matches!(&call.callee, Callee::Expr(callee)
-                if matches!(callee.unwrap_parens(), Expr::Ident(identifier) if identifier.sym == "Symbol"))
+                if matches!(callee.unwrap_parens(), Expr::Ident(identifier) if identifier.sym == "Symbol")
+                    || matches!(callee.unwrap_parens(), Expr::Member(member)
+                        if matches!(member.obj.unwrap_parens(), Expr::Ident(identifier) if identifier.sym == "Symbol")
+                            && matches!(&member.prop, MemberProp::Ident(identifier) if identifier.sym == "for")))
         {
             self.primitive_native_symbol_calls
                 .insert(CallSite::from(call.span));
@@ -9679,6 +9729,10 @@ impl PreparedCallableCapabilities {
 
     pub(crate) fn known_global_symbol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
         self.index.known_global_symbol_mutation()
+    }
+
+    pub(crate) fn known_symbol_for_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
+        self.index.known_symbol_for_mutation()
     }
 
     pub(crate) fn known_global_set_mutation_owner(&self) -> Option<SourceUnitOrdinal> {

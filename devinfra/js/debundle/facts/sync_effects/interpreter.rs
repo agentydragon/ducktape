@@ -882,8 +882,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if kind == CallKind::Call
             && let Some(evidence) = self.inputs.index.native_operation_input_evidence.get(&site)
             && ((model.intrinsic == IntrinsicRoot::Symbol
-                && evidence.operation
-                    == NativeInputKind::Operation(spec::NativeOperationKind::Symbol))
+                && super::selected_symbol_binding(callee, evidence.operation).is_some())
                 || (model.intrinsic == IntrinsicRoot::Object
                     && evidence.operation
                         == NativeInputKind::CallIdentity(
