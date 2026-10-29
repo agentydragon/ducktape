@@ -481,6 +481,7 @@ pub struct NativeOperationInputContract {
 pub enum NativeOperationKind {
     Symbol,
     SetFromPrimitiveArray,
+    SetFromSetSpread,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]

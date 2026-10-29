@@ -398,6 +398,11 @@ pub fn materialize_logical_modules(
             (chunk_id.to_string(), bindings.clone())
         })
         .collect();
+    let explicit_binding_destinations: BTreeMap<_, _> = claimed
+        .iter()
+        .map(|chunk| chunk.explicit_binding_destinations())
+        .map(|(chunk, destinations)| (chunk.to_owned(), destinations))
+        .collect();
     let cross_module_purities = cross_module::collect_cross_module_imported_purities(
         &artifact,
         &artifact_indexes,
@@ -405,6 +410,7 @@ pub fn materialize_logical_modules(
             chunk_export_purity,
             chunk_analysis_options,
             graph_provenance: options.graph_provenance.as_ref(),
+            explicit_binding_destinations: &explicit_binding_destinations,
         },
         &declared_pure_new,
         &full_swap_chunk_ids,

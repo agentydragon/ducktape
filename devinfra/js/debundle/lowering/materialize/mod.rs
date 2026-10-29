@@ -347,6 +347,13 @@ pub(super) fn claim_prepared_chunk<'a>(
 }
 
 impl ClaimedLogicalChunk<'_> {
+    pub(super) fn explicit_binding_destinations(&self) -> (&str, HashMap<Id, usize>) {
+        (
+            self.prepared.context.chunk_id,
+            self.prepared.builder.owned_binding_destinations(),
+        )
+    }
+
     pub(super) fn declared_pure_new(&self) -> (&str, &BTreeSet<String>) {
         (
             self.prepared.context.chunk_id,
@@ -443,6 +450,11 @@ pub(super) fn finish_logical_chunk(
             .unwrap_or_default();
         inputs.assumptions.native_operation_inputs = cross_module_purities
             .native_operation_inputs
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
+        inputs.stable_set_spreads = cross_module_purities
+            .stable_set_spreads
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
@@ -596,6 +608,10 @@ pub(super) fn finish_logical_chunk(
             .get(chunk_id)
             .map(Vec::as_slice)
             .unwrap_or_default(),
+        cross_module_purities
+            .stable_set_spreads
+            .get(chunk_id)
+            .unwrap_or(&BTreeMap::new()),
     );
     let chunk_analysis = compute_chunk_analysis(
         chunk_id,
@@ -701,6 +717,17 @@ pub(super) fn finish_logical_chunk(
         module_plans.len(),
         &whole_statement_assignment,
     )?;
+    if let Some(spreads) = cross_module_purities.stable_set_spreads.get(chunk_id) {
+        for stable in spreads.values() {
+            anyhow::ensure!(
+                stable
+                    .interval_bindings
+                    .iter()
+                    .all(|binding| placement.bindings().get(binding) == Some(&stable.destination)),
+                "chunk {chunk_id}: certified Set spread interval changed output destination before emission"
+            );
+        }
+    }
 
     let lowered = lower_chunk(LowerChunkInputs {
         context: LowerChunkContext {

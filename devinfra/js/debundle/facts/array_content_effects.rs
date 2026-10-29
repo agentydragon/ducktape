@@ -11,6 +11,7 @@ pub(crate) fn annotate_heap_content_effects(
     body: &[TopLevelItemView<'_>],
     value_flow: &ChunkValueFlow,
     local_class_heap_proof: &LocalClassHeapProof,
+    set_iterable_proof: &SetIterableProof,
     facts: &mut [StatementFacts],
 ) {
     let mut origins = ArrayOriginCollector::default();
@@ -30,6 +31,7 @@ pub(crate) fn annotate_heap_content_effects(
         let mut collector = ArrayContentCollector {
             value_flow,
             local_class_heap_proof,
+            set_iterable_proof,
             array_reachability: &reachability,
             array_origins: &origins.0,
             effects: HeapContentEffects::default(),
@@ -73,6 +75,7 @@ impl Visit for ArrayOriginCollector {
 struct ArrayContentCollector<'a> {
     value_flow: &'a ChunkValueFlow,
     local_class_heap_proof: &'a LocalClassHeapProof,
+    set_iterable_proof: &'a SetIterableProof,
     array_reachability: &'a CandidateObjectIndex<'a>,
     array_origins: &'a BTreeSet<u32>,
     effects: HeapContentEffects,
@@ -460,8 +463,12 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_spread_element(&mut self, node: &SpreadElement) {
-        self.record_set_expr(&node.expr, true, false, true);
-        self.record_array_expr(&node.expr, true, false, true);
+        let certified = self
+            .set_iterable_proof
+            .stable_spread_dependencies(node.expr.span())
+            .is_some();
+        self.record_set_expr(&node.expr, true, false, !certified);
+        self.record_array_expr(&node.expr, true, false, !certified);
         node.expr.visit_with(self);
     }
 

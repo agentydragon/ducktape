@@ -5,10 +5,103 @@
 //! their own surrounding purity/effect checks.
 
 use super::*;
-use crate::analysis_inputs::{NativeOperationInputEvidence, ProofDependencies};
+use crate::analysis_inputs::{
+    NativeOperationInputEvidence, ProofDependencies, ResolvedNativeOperationInput,
+    StableSetIterableUse,
+};
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
+use anyhow::{Result, bail};
+use std::collections::HashMap;
 use std::sync::Arc;
+
+/// Certify the one-way source/schedule premise before value-flow inference.
+/// The input constructor and every intervening source unit are independently
+/// selected primitive-Set operations in the same original declaration and
+/// explicit output. No graph result or flow identity is consulted here.
+pub fn certify_stable_set_spreads(
+    inputs: &[ResolvedNativeOperationInput],
+    explicit_destinations: &HashMap<Id, usize>,
+) -> Result<BTreeMap<u32, StableSetIterableUse>> {
+    let by_ordinal: BTreeMap<_, _> = inputs
+        .iter()
+        .filter(|input| {
+            input.evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray
+        })
+        .map(|input| (input.initializer_ordinal.0, input))
+        .collect();
+    let mut stable = BTreeMap::new();
+    for spread in inputs
+        .iter()
+        .filter(|input| input.evidence.operation == spec::NativeOperationKind::SetFromSetSpread)
+    {
+        let Some(source) = spread.spread_source.as_ref() else {
+            bail!(
+                "{} has no exact Set spread source",
+                spread.evidence.spec_location
+            );
+        };
+        let Some(destination) = explicit_destinations.get(&spread.binding) else {
+            bail!(
+                "{} has no explicit output destination",
+                spread.evidence.spec_location
+            );
+        };
+        let seed = by_ordinal.values().find(|input| {
+            input.binding == *source
+                && input.initializer_ordinal < spread.initializer_ordinal
+                && input.selected_statement_span == spread.selected_statement_span
+                && explicit_destinations.get(&input.binding) == Some(destination)
+        });
+        let Some(seed) = seed else {
+            bail!(
+                "{} requires an earlier certified fresh primitive Set in the same original declaration and output",
+                spread.evidence.spec_location
+            );
+        };
+        let mut dependencies = ProofDependencies::default();
+        let mut interval_bindings = Vec::new();
+        dependencies
+            .native_operation_inputs
+            .insert(spread.evidence.reference.clone());
+        for ordinal in seed.initializer_ordinal.0..spread.initializer_ordinal.0 {
+            let Some(input) = by_ordinal.get(&ordinal) else {
+                bail!(
+                    "{} has an uncertified intervening source unit",
+                    spread.evidence.spec_location
+                );
+            };
+            if input.selected_statement_span != spread.selected_statement_span
+                || explicit_destinations.get(&input.binding) != Some(destination)
+            {
+                bail!(
+                    "{} has an intervening Set constructor outside its original declaration or output",
+                    spread.evidence.spec_location
+                );
+            }
+            dependencies
+                .native_operation_inputs
+                .insert(input.evidence.reference.clone());
+            interval_bindings.push(input.binding.clone());
+        }
+        interval_bindings.push(spread.binding.clone());
+        stable.insert(
+            spread.call_span.lo.0,
+            StableSetIterableUse {
+                source_span: spread
+                    .spread_source_span
+                    .expect("validated spread has operand span"),
+                spread_token_span: spread
+                    .spread_token_span
+                    .expect("validated spread has token span"),
+                destination: *destination,
+                interval_bindings,
+                dependencies,
+            },
+        );
+    }
+    Ok(stable)
+}
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SetIterableShapes {
@@ -107,22 +200,27 @@ pub(crate) struct SetIterableProof {
     facts: Arc<SemanticFacts>,
     author_inputs: BTreeMap<u32, NativeOperationInputEvidence>,
     author_dependencies: BTreeMap<u32, ProofDependencies>,
+    stable_spreads: BTreeMap<u32, ProofDependencies>,
 }
 
 impl SetIterableProof {
     pub(super) fn new(
         facts: Arc<SemanticFacts>,
         author_inputs: BTreeMap<u32, NativeOperationInputEvidence>,
+        stable_spreads: &BTreeMap<u32, StableSetIterableUse>,
     ) -> Self {
         let author_dependencies = author_inputs
             .iter()
             .map(|(site, evidence)| {
                 (
                     *site,
-                    ProofDependencies {
-                        native_operation_inputs: BTreeSet::from([evidence.reference.clone()]),
-                        ..ProofDependencies::default()
-                    },
+                    stable_spreads.get(site).map_or_else(
+                        || ProofDependencies {
+                            native_operation_inputs: BTreeSet::from([evidence.reference.clone()]),
+                            ..ProofDependencies::default()
+                        },
+                        |stable| stable.dependencies.clone(),
+                    ),
                 )
             })
             .collect();
@@ -130,7 +228,19 @@ impl SetIterableProof {
             facts,
             author_inputs,
             author_dependencies,
+            stable_spreads: stable_spreads
+                .values()
+                .flat_map(|stable| {
+                    [stable.source_span.lo.0, stable.spread_token_span.lo.0]
+                        .into_iter()
+                        .map(|site| (site, stable.dependencies.clone()))
+                })
+                .collect(),
         }
+    }
+
+    pub(crate) fn stable_spread_dependencies(&self, span: Span) -> Option<&ProofDependencies> {
+        self.stable_spreads.get(&span.lo.0)
     }
 
     pub(crate) fn dependencies_for_constructor(&self, span: Span) -> Option<&ProofDependencies> {

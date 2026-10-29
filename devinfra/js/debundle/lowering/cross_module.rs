@@ -4,7 +4,7 @@
 //! `AnalysisInputs::imported_purities` so the per-chunk classifier can see
 //! through calls to imported functions instead of bailing `unknown_call`.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -36,7 +36,7 @@ use selector_resolve::{Chunk as SelectorChunk, EntityIndex};
 use source_match::source_match_claim_member_selectors;
 use spec::{ChunkExportPurity, DependencyGraphOptions};
 use swc_common::Spanned;
-use swc_ecma_ast::{Decl, Module, ModuleDecl, ModuleItem, Pat};
+use swc_ecma_ast::{Decl, Id, Module, ModuleDecl, ModuleItem, Pat};
 
 /// Binding names introduced by an exported declaration (`export function`/
 /// `export const`/`export class`), whose export name equals the local name.
@@ -93,6 +93,8 @@ pub(super) struct CrossModulePurities {
     pub(super) value_inputs: BTreeMap<String, Vec<ResolvedBindingValueInput>>,
     /// Source-resolved native operation premises for the provider initializer.
     pub(super) native_operation_inputs: BTreeMap<String, Vec<ResolvedNativeOperationInput>>,
+    pub(super) stable_set_spreads:
+        BTreeMap<String, BTreeMap<u32, analysis::analysis_inputs::StableSetIterableUse>>,
     pub(super) inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
     pub(super) callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     pub(super) retained_callback_factories:
@@ -189,6 +191,7 @@ pub(super) struct CrossModuleAnalysisOptions<'a> {
     pub(super) chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
     pub(super) chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
     pub(super) graph_provenance: Option<&'a GraphProvenance>,
+    pub(super) explicit_binding_destinations: &'a BTreeMap<String, HashMap<Id, usize>>,
 }
 
 pub(super) fn collect_cross_module_imported_purities(
@@ -204,6 +207,7 @@ pub(super) fn collect_cross_module_imported_purities(
         chunk_export_purity,
         chunk_analysis_options,
         graph_provenance,
+        explicit_binding_destinations,
     } = options;
     // Pass 1: re-parse entries stored as raw source so every chunk's body is
     // analyzable. Parse failures only warn — the pass is an analysis
@@ -554,6 +558,7 @@ pub(super) fn collect_cross_module_imported_purities(
         &asserted_callback_factories,
         &value_inputs,
         &native_operation_inputs,
+        explicit_binding_destinations,
     )?;
     Ok(CrossModulePurities {
         no_reentry_callback_exports: resolve_asserted_no_reentry_callbacks(
@@ -625,6 +630,7 @@ pub(super) fn collect_cross_module_imported_purities(
         native_integrity: callable_summaries.native_integrity,
         value_inputs: callable_summaries.value_inputs,
         native_operation_inputs: callable_summaries.native_operation_inputs,
+        stable_set_spreads: callable_summaries.stable_set_spreads,
         inline_callback_factories: resolve_asserted_inline_callback_factories(
             &modules,
             &asserted_inline_callback_factories,

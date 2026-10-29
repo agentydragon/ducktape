@@ -662,6 +662,13 @@ globalThis`) marks the bindings it flows into (transitively,
   establish later method or iterator identity, so unsupported Set
   observations retain opaque barriers. Recursive callable heap summaries
   use the shared incremental inference solver for both Array and Set cells.
+  A separately certified `set_from_set_spread` operation contributes another
+  typed fresh Set origin only when its spread reads a selected fresh Set across
+  a source-order interval of independently certified inert constructors in
+  one explicit output. That exact spread records a `SetContents` read; later
+  aliases and mutations still use the shared cell frontier. This source and
+  output certificate precedes value-flow inference and does not depend on the
+  emitted graph's schedule conclusion.
   These facts constrain scheduling only: they
   do not reclassify calls as pure or establish a
   no-reentry/descriptor-integrity premise. In particular,

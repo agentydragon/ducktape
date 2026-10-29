@@ -968,8 +968,8 @@ chunk_analysis_options:
 ```
 
 The selector and digest use the same canonical source-match and parser-input
-provenance as `value_inputs`. The operation set accepts `symbol` and
-`set_from_primitive_array`.
+provenance as `value_inputs`. The operation set accepts `symbol`,
+`set_from_primitive_array`, and `set_from_set_spread`.
 The selector must identify one direct top-level simple binding initializer
 whose entire initializer is an ordinary, nonoptional direct `Symbol(...)` call
 with zero or one syntactically primitive argument and no spread. Shadowed
@@ -1013,6 +1013,26 @@ exact site's certified native protocol when the primitive array and surrounding
 expression checks pass. This premise certifies construction only: later Set
 mutators, accessors and iteration still need their own proof and keep their
 ordinary effect barriers.
+
+`set_from_set_spread` selects a direct unshadowed
+`new Set([...source, /* primitive literals */])` initializer, with one
+identifier spread first and no holes or other spreads. It separately asserts
+the native Set construction protocol above and the Set iterator method and
+iterator `next` identities at that exact operation. The spread is admitted
+only when `source` was initialized by a selected `set_from_primitive_array`
+operation earlier in the **same original top-level declaration**, every
+intervening declarator is independently selected as
+`set_from_primitive_array`, and all those bindings plus the spread binding
+have the same explicit output destination. The source interval therefore has
+no callback, alias write, own iterator override, or interposed module body;
+the emitted module retains the declarators' original order. This condition is
+checked from selected source spans, split-view ordinals and explicit
+assignment before value-flow solving. The selected spread then contributes a
+fresh Set origin to that one shared solve, a precise Set-content read to the
+heap ordering graph, and proof dependencies on all required selected native
+operations. A different output, uncertified intervening source unit, or
+unselected seed rejects the input. Calls and mutations outside the interval
+retain ordinary ordering; this premise does not certify later Set operations.
 
 ## Ordinary own-property inspection
 

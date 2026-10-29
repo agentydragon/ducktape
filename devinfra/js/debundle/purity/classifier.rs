@@ -402,6 +402,9 @@ pub(crate) fn classify_fresh_array_spread_source(
                     graph,
                 )?),
         ),
+        Expr::Ident(identifier) => graph
+            .stable_set_spread_dependencies(identifier.span)
+            .map(|dependencies| Purity::pure().with_dependencies(dependencies)),
         _ => None,
     }
 }

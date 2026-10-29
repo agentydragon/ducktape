@@ -5206,7 +5206,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .iter()
                 .flat_map(|option| self.evaluate(option, env, captures))
                 .collect(),
-            ValueExpr::ArrayIteratorPrototype(expression) => {
+            ValueExpr::ArrayIteratorPrototype(expression)
+            | ValueExpr::SetIteratorPrototype(expression) => {
                 self.evaluate(expression, env, captures)
             }
             ValueExpr::Unknown => unknown(),
@@ -5733,6 +5734,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         if call.kind == CallKind::ArraySpread {
             let values = self.evaluate(&call.args[0], env, captures);
+            if let Some(dependencies) = self
+                .inputs
+                .set_iterable_proof
+                .stable_spread_dependencies(call.span)
+            {
+                self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, dependencies);
+                return;
+            }
             if self.dense_source(&values).is_some() {
                 return;
             }
@@ -6326,12 +6335,15 @@ pub(crate) fn prepare_synchronous_call_index(
     let author_set_inputs = index
         .native_operation_input_evidence
         .iter()
-        .filter(|(_, evidence)| {
+        .filter(|(site, evidence)| {
             evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray
+                || (evidence.operation == spec::NativeOperationKind::SetFromSetSpread
+                    && hints.stable_set_spreads.contains_key(&site.allocation_id()))
         })
         .map(|(site, evidence)| (site.allocation_id(), evidence.clone()))
         .collect();
-    let set_iterable_proof = SetIterableProof::new(facts, author_set_inputs);
+    let set_iterable_proof =
+        SetIterableProof::new(facts, author_set_inputs, &hints.stable_set_spreads);
     index.local_constructors.retain(|key, constructor| {
         !constructor.checked_default_fields
             || index.local_class_construction_proof.contains_class(*key)

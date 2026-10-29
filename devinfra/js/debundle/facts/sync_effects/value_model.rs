@@ -322,6 +322,9 @@ pub(super) enum ValueExpr {
     /// Source spelling of `Object.getPrototypeOf([][Symbol.iterator]())`.
     /// Native identity remains conditional on Object, Array, and Symbol.
     ArrayIteratorPrototype(Box<Self>),
+    /// Source spelling of `Object.getPrototypeOf(new Set()[Symbol.iterator]())`.
+    /// Its path is conditional on the Set constructor and iterator protocol.
+    SetIteratorPrototype(Box<Self>),
     /// An operator result is primitive on successful evaluation. This is a
     /// value-kind fact, not a purity claim: keep operands so calls and
     /// unavailable reads inside them still flow through the evaluator.
@@ -392,6 +395,50 @@ fn array_iterator_prototype_expression(call: &CallExpr) -> bool {
         return false;
     };
     if !array.elems.is_empty() {
+        return false;
+    }
+    matches!(&iterator_member.prop, MemberProp::Computed(key)
+        if matches!(key.expr.unwrap_parens(), Expr::Member(symbol)
+            if matches!(symbol.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Symbol")
+                && matches!(&symbol.prop, MemberProp::Ident(id) if id.sym == "iterator")))
+}
+
+fn set_iterator_prototype_expression(call: &CallExpr) -> bool {
+    let Callee::Expr(outer_callee) = &call.callee else {
+        return false;
+    };
+    let Expr::Member(outer_member) = outer_callee.unwrap_parens() else {
+        return false;
+    };
+    if !matches!(outer_member.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Object")
+        || !matches!(&outer_member.prop, MemberProp::Ident(id) if id.sym == "getPrototypeOf")
+    {
+        return false;
+    }
+    let [argument] = call.args.as_slice() else {
+        return false;
+    };
+    if argument.spread.is_some() {
+        return false;
+    }
+    let Expr::Call(iterator_call) = argument.expr.unwrap_parens() else {
+        return false;
+    };
+    if !iterator_call.args.is_empty() {
+        return false;
+    }
+    let Callee::Expr(iterator_callee) = &iterator_call.callee else {
+        return false;
+    };
+    let Expr::Member(iterator_member) = iterator_callee.unwrap_parens() else {
+        return false;
+    };
+    let Expr::New(set) = iterator_member.obj.unwrap_parens() else {
+        return false;
+    };
+    if !matches!(set.callee.unwrap_parens(), Expr::Ident(id) if id.sym == "Set")
+        || !set.args.as_deref().is_none_or(|args| args.is_empty())
+    {
         return false;
     }
     matches!(&iterator_member.prop, MemberProp::Computed(key)
@@ -508,6 +555,19 @@ impl ValueExpr {
                     call.span.into(),
                 )))
             }
+            Expr::Call(call) if set_iterator_prototype_expression(call) => {
+                let Callee::Expr(callee) = &call.callee else {
+                    unreachable!("recognized iterator-prototype expression is an ordinary call")
+                };
+                Self::SetIteratorPrototype(Box::new(Self::Call(
+                    Box::new(Self::from_expr(callee)),
+                    call.args
+                        .iter()
+                        .map(|argument| Self::from_expr(&argument.expr))
+                        .collect(),
+                    call.span.into(),
+                )))
+            }
             Expr::Call(call) if call.args.iter().all(|arg| arg.spread.is_none()) => {
                 match &call.callee {
                     Callee::Expr(callee) => Self::Call(
@@ -578,7 +638,9 @@ impl ValueExpr {
             Self::Binding(id) => {
                 result.insert(id.clone());
             }
-            Self::ArrayIteratorPrototype(expression) => expression.bindings(result),
+            Self::ArrayIteratorPrototype(expression) | Self::SetIteratorPrototype(expression) => {
+                expression.bindings(result)
+            }
             Self::Member(object, _, _) => object.bindings(result),
             Self::Call(callee, args, _) | Self::New(callee, args, _) => {
                 callee.bindings(result);
@@ -612,7 +674,9 @@ impl ValueExpr {
     pub(super) fn carries_namespace(&self, id: &Id, aliases: &BTreeSet<Id>) -> bool {
         match self {
             Self::Binding(binding) => binding == id || aliases.contains(binding),
-            Self::ArrayIteratorPrototype(expression) => expression.carries_namespace(id, aliases),
+            Self::ArrayIteratorPrototype(expression) | Self::SetIteratorPrototype(expression) => {
+                expression.carries_namespace(id, aliases)
+            }
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
@@ -729,13 +793,15 @@ impl ValueExpr {
     ) -> bool {
         match self {
             Self::Unknown => true,
-            Self::ArrayIteratorPrototype(expression) => expression.may_publish_namespace_inner(
-                id,
-                aliases,
-                facts,
-                visiting_bindings,
-                visiting_classes,
-            ),
+            Self::ArrayIteratorPrototype(expression) | Self::SetIteratorPrototype(expression) => {
+                expression.may_publish_namespace_inner(
+                    id,
+                    aliases,
+                    facts,
+                    visiting_bindings,
+                    visiting_classes,
+                )
+            }
             Self::Primitive(_) => false,
             Self::ObjectLiteral(_, properties) => properties.iter().any(|(_, value)| {
                 value.may_publish_namespace_inner(
@@ -880,13 +946,14 @@ impl ValueExpr {
             Self::Binding(binding) => {
                 binding == id || aliases.contains(binding) || receiver_alias(binding)
             }
-            Self::ArrayIteratorPrototype(expression) => expression
-                .may_be_namespace_mutation_receiver_with_alias_query(
+            Self::ArrayIteratorPrototype(expression) | Self::SetIteratorPrototype(expression) => {
+                expression.may_be_namespace_mutation_receiver_with_alias_query(
                     id,
                     aliases,
                     receiver_alias,
                     facts,
-                ),
+                )
+            }
             Self::Primitive(_) => false,
             Self::ObjectLiteral(_, properties) => properties
                 .iter()

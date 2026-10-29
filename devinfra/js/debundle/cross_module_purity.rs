@@ -24,13 +24,13 @@
 //! export, an unresolved re-export) simply gets no entry, so the call stays
 //! `unknown_call` exactly as before. Pinned assertions remain trusted axioms.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use js_ast::SourceLineIndex;
 use swc_common::{BytePos, Span};
-use swc_ecma_ast::ModuleItem;
+use swc_ecma_ast::{Id, ModuleItem};
 
 use crate::SourceLocation;
 use crate::analysis_inputs::{
@@ -98,7 +98,10 @@ impl<'a> ModulePurityFacts<'a> {
         let value_flow = ChunkValueFlow::analyze_with_native_set_allocations(
             &views,
             &candidate_roots,
-            &native_set_allocation_roots(&inputs.assumptions.native_operation_inputs),
+            &native_set_allocation_roots(
+                &inputs.assumptions.native_operation_inputs,
+                &inputs.stable_set_spreads,
+            ),
         );
         let plain_data_bindings = collect_plain_data_bindings(&views, &shadowed, &value_flow);
         let plain_array_bindings = collect_plain_array_bindings(&views, &shadowed);
@@ -281,6 +284,11 @@ pub fn resolve_imported_purities(
         // mutation census, which would otherwise reintroduce unknown aliases.
         let inputs = crate::analysis_inputs::AnalysisInputs {
             native_integrity: callable_summaries.native_integrity.clone(),
+            stable_set_spreads: callable_summaries
+                .stable_set_spreads
+                .get(key)
+                .cloned()
+                .unwrap_or_default(),
             assumptions: crate::analysis_inputs::AnalysisAssumptions {
                 captured_value_inputs: callable_summaries
                     .value_inputs
@@ -390,6 +398,8 @@ pub struct ResolvedCallableSummaries {
     pub native_integrity: Option<NativeIntegrity>,
     pub value_inputs: BTreeMap<ModuleKey, Vec<ResolvedBindingValueInput>>,
     pub native_operation_inputs: BTreeMap<ModuleKey, Vec<ResolvedNativeOperationInput>>,
+    pub stable_set_spreads:
+        BTreeMap<ModuleKey, BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -548,6 +558,7 @@ pub fn resolve_imported_callable_summaries(
     asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
     selected_value_inputs: &BTreeMap<ModuleKey, Vec<SelectedBindingValueInput>>,
     selected_native_operation_inputs: &BTreeMap<ModuleKey, Vec<SelectedNativeOperationInput>>,
+    explicit_binding_destinations: &BTreeMap<ModuleKey, HashMap<Id, usize>>,
 ) -> Result<ResolvedCallableSummaries> {
     let required: BTreeSet<_> = modules
         .values()
@@ -671,6 +682,17 @@ pub fn resolve_imported_callable_summaries(
             owner.0
         );
     }
+    let mut stable_set_spreads = BTreeMap::new();
+    let empty_destinations = HashMap::new();
+    for (module, inputs) in &resolved_native_operation_inputs {
+        let destinations = explicit_binding_destinations
+            .get(module)
+            .unwrap_or(&empty_destinations);
+        let uses = crate::facts::certify_stable_set_spreads(inputs, destinations)?;
+        if !uses.is_empty() {
+            stable_set_spreads.insert(module.clone(), uses);
+        }
+    }
     if selected_native_operation_inputs
         .values()
         .flatten()
@@ -691,6 +713,27 @@ pub fn resolve_imported_callable_summaries(
             .unwrap_or("native_operation_inputs");
         bail!(
             "{request} is contradicted by a positively identified required Set construction protocol slot write in provider {module}, source unit {}",
+            owner.0
+        );
+    }
+    if selected_native_operation_inputs
+        .values()
+        .flatten()
+        .any(|input| input.evidence.operation == spec::NativeOperationKind::SetFromSetSpread)
+        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
+            facts
+                .known_set_spread_protocol_mutation_owner()
+                .map(|owner| (module, owner))
+        })
+    {
+        let request = selected_native_operation_inputs
+            .values()
+            .flatten()
+            .find(|input| input.evidence.operation == spec::NativeOperationKind::SetFromSetSpread)
+            .map(|input| input.evidence.spec_location.as_str())
+            .unwrap_or("native_operation_inputs");
+        bail!(
+            "{request} is contradicted by a positively identified required Set spread protocol slot write in provider {module}, source unit {}",
             owner.0
         );
     }
@@ -896,6 +939,7 @@ pub fn resolve_imported_callable_summaries(
         native_integrity: Some(native_integrity),
         value_inputs: resolved_value_inputs,
         native_operation_inputs: resolved_native_operation_inputs,
+        stable_set_spreads,
     })
 }
 
@@ -1558,6 +1602,7 @@ mod tests {
         let resolved = resolve_imported_callable_summaries(
             &modules,
             &asserted,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
         )

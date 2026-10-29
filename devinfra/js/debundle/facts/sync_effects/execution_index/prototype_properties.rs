@@ -42,7 +42,8 @@ fn prototype_intrinsic_roots(
         | NativeReceiverRoot::IntrinsicDescendant(root) => Some(root),
         NativeReceiverRoot::OrdinaryDirect { .. }
         | NativeReceiverRoot::OrdinaryDescendant { .. }
-        | NativeReceiverRoot::ArrayIteratorPrototype => None,
+        | NativeReceiverRoot::ArrayIteratorPrototype
+        | NativeReceiverRoot::SetIteratorPrototype => None,
     })
     .collect()
 }
@@ -107,6 +108,10 @@ fn contained_roots(
                 roots.insert(IntrinsicRoot::Object);
             }
         }
+        ValueExpr::ArrayIteratorPrototype(expression)
+        | ValueExpr::SetIteratorPrototype(expression) => {
+            roots.extend(contained_roots(expression, aliases, index, declared));
+        }
         ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
             roots.extend(contained_roots(callee, aliases, index, declared));
             for argument in args {
@@ -168,7 +173,8 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
             }
         }
         ValueExpr::Member(base, ..) => contained_root_bindings(base, index, bindings),
-        ValueExpr::ArrayIteratorPrototype(expression) => {
+        ValueExpr::ArrayIteratorPrototype(expression)
+        | ValueExpr::SetIteratorPrototype(expression) => {
             contained_root_bindings(expression, index, bindings);
         }
         ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {

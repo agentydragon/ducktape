@@ -201,12 +201,13 @@ where
 pub fn complete_chunk_structural(
     source: StructuralChunkSourceFacts<'_>,
 ) -> StructuralChunkAnalysis<'_> {
-    complete_chunk_structural_with_native_allocations(source, &[])
+    complete_chunk_structural_with_native_allocations(source, &[], &BTreeMap::new())
 }
 
 pub fn complete_chunk_structural_with_native_allocations<'a>(
     source: StructuralChunkSourceFacts<'a>,
     native_operation_inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
+    stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
 ) -> StructuralChunkAnalysis<'a> {
     let StructuralChunkSourceFacts {
         body,
@@ -218,7 +219,7 @@ pub fn complete_chunk_structural_with_native_allocations<'a>(
     let mut candidate_roots = crate::purity::plain_data_candidate_roots(&body);
     candidate_roots.extend(super::array_content_effects::array_candidate_roots(&body));
     let native_set_allocations =
-        super::value_flow::native_set_allocation_roots(native_operation_inputs);
+        super::value_flow::native_set_allocation_roots(native_operation_inputs, stable_spreads);
     let value_flow = ChunkValueFlow::analyze_with_native_set_allocations(
         &body,
         &candidate_roots,
@@ -416,6 +417,7 @@ where
         &body,
         &value_flow,
         &local_class_heap_proof,
+        &set_iterable_proof,
         &mut facts,
     );
     if matches!(synchronous_calls, SynchronousCallAnalysis::Include) {

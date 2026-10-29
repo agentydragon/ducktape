@@ -337,10 +337,30 @@ pub struct SelectedNativeOperationInput {
 pub struct ResolvedNativeOperationInput {
     pub evidence: NativeOperationInputEvidence,
     pub binding: Id,
+    /// Original top-level statement selected by source_match, before the
+    /// analysis view splits a multi-declarator declaration into source units.
+    pub selected_statement_span: Span,
     pub declaration_span: Span,
     pub initializer_span: Span,
     pub call_span: Span,
     pub initializer_ordinal: SourceUnitOrdinal,
+    /// Exact operand of an admitted Set spread, if this is a spread operation.
+    pub spread_source: Option<Id>,
+    pub spread_source_span: Option<Span>,
+    pub spread_token_span: Option<Span>,
+}
+
+/// Source- and explicit-output-certified Set spread. This is independent,
+/// one-way evidence for the shared value-flow solve, not a result inferred from
+/// that solve or from the eventual dependency graph.
+#[derive(Debug, Clone)]
+pub struct StableSetIterableUse {
+    pub source_span: Span,
+    pub spread_token_span: Span,
+    /// Explicit plan owner validated again against final emission placement.
+    pub destination: usize,
+    pub interval_bindings: Vec<Id>,
+    pub dependencies: ProofDependencies,
 }
 
 /// Resolved whole-program native integrity, derived from source facts and any
@@ -444,6 +464,10 @@ pub struct AnalysisAssumptions {
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisInputs {
     pub native_integrity: Option<NativeIntegrity>,
+    /// Source- and explicit-placement-certified spread uses, keyed by the
+    /// exact constructor call start. Their dependencies retain the author
+    /// native-operation inputs used to derive each certificate.
+    pub stable_set_spreads: BTreeMap<u32, StableSetIterableUse>,
     /// Identity of this chunk within a supplied whole-program native census.
     /// Used only to separate local activation from already-present mutations.
     pub current_chunk_id: Option<String>,

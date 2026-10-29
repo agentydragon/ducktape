@@ -316,7 +316,8 @@ argument, shadowing, aliased method mutation, and getter controls;
 
 `chunk_analysis_options.<chunk>.native_operation_inputs` is a source-selected
 author premise for one exact direct native initializer. The schema admits
-`operation: symbol` and `operation: set_from_primitive_array`. For `symbol`,
+`operation: symbol`, `operation: set_from_primitive_array`, and
+`operation: set_from_set_spread`. For `symbol`,
 the canonical selector engine identifies one
 direct top-level simple binding initialized by an ordinary, nonoptional,
 uncomputed `Symbol(...)` call with zero or one syntactically primitive
@@ -366,6 +367,26 @@ author-backed native protocol dependency for the selected fresh primitive
 array. Later Set method identity, own iterator shape and
 Set-spread protocol are separate obligations, so this input does not remove
 their barriers.
+
+For `set_from_set_spread`, the direct Set argument is a dense array literal
+whose first element is one spread of an identifier and whose remaining
+elements are primitive literals. The author independently asserts original
+Set construction and Set iterator/next identities at this exact call. The
+source-only certificate additionally requires the source identifier to name
+an earlier selected fresh primitive Set in one original top-level declaration;
+every intervening split-view source unit must itself be an independently
+selected primitive Set constructor. All bindings in that interval must have
+the same explicit destination, so lowering's source-order declarator split
+preserves the interval in one emitted module. This certificate is established
+before and without seeded value-flow facts; it contributes the spread's fresh
+Set identity to the single shared flow solve. Purity, synchronous callback
+analysis, and the Set-content graph consume the same exact-site dependencies.
+Unknown receiver/key native-write witnesses remain visible, and source-known
+writes to required slots in any analyzed chunk reject the input. An own
+iterator override, alias mutation, callback, separate output, or other
+unproved source unit in the interval rejects the source certificate. Later
+Set methods and escaped observations remain on their ordinary conservative
+paths.
 
 ## Native `Proxy` construction
 

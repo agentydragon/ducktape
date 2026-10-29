@@ -81,6 +81,7 @@ pub(crate) use local_class_construction::{
 };
 pub(crate) use local_effect_targets::*;
 pub(crate) use purity_classification::*;
+pub use set_iterables::certify_stable_set_spreads;
 pub(crate) use set_iterables::{
     SetIterableProof, SetIterableShapes, primitive_literal_property_keys,
 };

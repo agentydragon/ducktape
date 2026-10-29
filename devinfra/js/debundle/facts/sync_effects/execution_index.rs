@@ -1430,6 +1430,7 @@ enum NativeReceiverRoot {
     IntrinsicPrototype(IntrinsicRoot),
     IntrinsicDescendant(IntrinsicRoot),
     ArrayIteratorPrototype,
+    SetIteratorPrototype,
     OrdinaryDirect {
         reference: ValueInputRef,
         available_after: SourceUnitOrdinal,
@@ -1453,6 +1454,9 @@ struct BindingDeclarationWrite {
     /// Retained from the canonical declaration visitor so native-input
     /// validation need not re-traverse the initializer AST.
     set_from_primitive_array_shape: bool,
+    /// Source binding of a direct `new Set([...source, primitive literals])`.
+    /// The interval and output schedule are certified separately.
+    set_from_set_spread_source: Option<(Id, Span, Span)>,
 }
 
 fn set_from_primitive_array_shape(expression: &Expr) -> bool {
@@ -1475,6 +1479,42 @@ fn set_from_primitive_array_shape(expression: &Expr) -> bool {
                 .as_ref()
                 .is_some_and(|element| element.spread.is_none() && primitive_literal(&element.expr))
         })
+}
+
+fn set_from_set_spread_source(expression: &Expr) -> Option<(Id, Span, Span)> {
+    let Expr::New(construction) = expression else {
+        return None;
+    };
+    let Expr::Ident(constructor) = construction.callee.as_ref() else {
+        return None;
+    };
+    let [argument] = construction.args.as_deref()? else {
+        return None;
+    };
+    let Expr::Array(array) = argument.expr.as_ref() else {
+        return None;
+    };
+    let [Some(first), rest @ ..] = array.elems.as_slice() else {
+        return None;
+    };
+    let Expr::Ident(source) = first.expr.as_ref() else {
+        return None;
+    };
+    (constructor.sym == "Set"
+        && argument.spread.is_none()
+        && first.spread.is_some()
+        && rest.iter().all(|element| {
+            element
+                .as_ref()
+                .is_some_and(|element| element.spread.is_none() && primitive_literal(&element.expr))
+        }))
+    .then(|| {
+        (
+            source.to_id(),
+            source.span,
+            first.spread.expect("checked spread"),
+        )
+    })
 }
 
 fn span_contains(outer: Span, inner: Span) -> bool {
@@ -1511,6 +1551,7 @@ fn is_statically_primitive_value(value: &ValueExpr) -> bool {
         | ValueExpr::Call(..)
         | ValueExpr::New(..)
         | ValueExpr::ArrayIteratorPrototype(..)
+        | ValueExpr::SetIteratorPrototype(..)
         | ValueExpr::Unknown => false,
     }
 }
@@ -1595,7 +1636,8 @@ fn project_receiver_roots(
                 prior_roots.insert(*root);
                 effective_roots.insert(*root);
             }
-            NativeReceiverRoot::ArrayIteratorPrototype => {
+            NativeReceiverRoot::ArrayIteratorPrototype
+            | NativeReceiverRoot::SetIteratorPrototype => {
                 prior_roots.insert(IntrinsicRoot::UnknownGlobalValue);
                 effective_roots.insert(IntrinsicRoot::UnknownGlobalValue);
             }
@@ -1676,6 +1718,9 @@ fn native_write_slots(
                 }
                 NativeReceiverRoot::ArrayIteratorPrototype => {
                     NativeReceiverPath::ArrayIteratorPrototype
+                }
+                NativeReceiverRoot::SetIteratorPrototype => {
+                    NativeReceiverPath::SetIteratorPrototype
                 }
             };
             keys.iter().cloned().map(move |key| NativeWriteSlot {
@@ -1763,6 +1808,9 @@ fn intrinsic_roots(
         ValueExpr::ArrayIteratorPrototype(_) => {
             BTreeSet::from([NativeReceiverRoot::ArrayIteratorPrototype])
         }
+        ValueExpr::SetIteratorPrototype(_) => {
+            BTreeSet::from([NativeReceiverRoot::SetIteratorPrototype])
+        }
         // The spelling of a local binding is not an intrinsic identity.
         // Retain source-only aliases, but never manufacture a native root for
         // a shadowed constructor or global-object name.
@@ -1837,7 +1885,8 @@ fn intrinsic_roots(
                     NativeReceiverRoot::Intrinsic(_)
                     | NativeReceiverRoot::IntrinsicPrototype(_)
                     | NativeReceiverRoot::IntrinsicDescendant(_)
-                    | NativeReceiverRoot::ArrayIteratorPrototype => None,
+                    | NativeReceiverRoot::ArrayIteratorPrototype
+                    | NativeReceiverRoot::SetIteratorPrototype => None,
                 }));
                 if option_roots.is_empty()
                     && !matches!(
@@ -1925,7 +1974,8 @@ fn intrinsic_roots(
                             out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
                         }
                     }
-                    NativeReceiverRoot::ArrayIteratorPrototype => {
+                    NativeReceiverRoot::ArrayIteratorPrototype
+                    | NativeReceiverRoot::SetIteratorPrototype => {
                         out.insert(intrinsic(IntrinsicRoot::UnknownGlobalValue));
                     }
                 }
@@ -1956,7 +2006,8 @@ fn intrinsic_roots(
                     NativeReceiverRoot::Intrinsic(_)
                     | NativeReceiverRoot::IntrinsicPrototype(_)
                     | NativeReceiverRoot::IntrinsicDescendant(_)
-                    | NativeReceiverRoot::ArrayIteratorPrototype => None,
+                    | NativeReceiverRoot::ArrayIteratorPrototype
+                    | NativeReceiverRoot::SetIteratorPrototype => None,
                 }));
                 input_roots.extend(value_roots);
             }
@@ -2300,7 +2351,8 @@ impl IterativeRules for PostAuthorIntrinsicAliasRules<'_> {
                 NativeReceiverRoot::Intrinsic(_)
                 | NativeReceiverRoot::IntrinsicPrototype(_)
                 | NativeReceiverRoot::IntrinsicDescendant(_)
-                | NativeReceiverRoot::ArrayIteratorPrototype => None,
+                | NativeReceiverRoot::ArrayIteratorPrototype
+                | NativeReceiverRoot::SetIteratorPrototype => None,
             })
             .collect();
         if let Some(copy_owner) = stable_copy_owner {
@@ -4029,7 +4081,8 @@ impl ExecutionIndex {
                         | NativeReceiverRoot::IntrinsicDescendant(root) => Some(*root),
                         NativeReceiverRoot::OrdinaryDirect { .. }
                         | NativeReceiverRoot::OrdinaryDescendant { .. }
-                        | NativeReceiverRoot::ArrayIteratorPrototype => None,
+                        | NativeReceiverRoot::ArrayIteratorPrototype
+                        | NativeReceiverRoot::SetIteratorPrototype => None,
                     })
                     .collect();
                 if !contradictions.is_empty() {
@@ -4254,8 +4307,19 @@ impl ExecutionIndex {
 
         for input in selected {
             let request = &input.evidence.spec_location;
-            if input.evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray {
-                if let Some(owner) = self.known_set_protocol_mutation() {
+            if matches!(
+                input.evidence.operation,
+                spec::NativeOperationKind::SetFromPrimitiveArray
+                    | spec::NativeOperationKind::SetFromSetSpread
+            ) {
+                let spread =
+                    input.evidence.operation == spec::NativeOperationKind::SetFromSetSpread;
+                let known_mutation = if spread {
+                    self.known_set_spread_protocol_mutation()
+                } else {
+                    self.known_set_protocol_mutation()
+                };
+                if let Some(owner) = known_mutation {
                     self.native_operation_input_errors.push(format!(
                         "{request} is contradicted by a positively identified required native slot write in source unit {}",
                         owner.0
@@ -4286,7 +4350,7 @@ impl ExecutionIndex {
                 let Some(ValueExpr::New(callee, _, call_site)) = declaration.initializer.as_ref()
                 else {
                     self.native_operation_input_errors.push(format!(
-                        "{request} must select a direct new Set([primitive literals]) initializer"
+                        "{request} must select a direct supported Set constructor initializer"
                     ));
                     continue;
                 };
@@ -4296,14 +4360,21 @@ impl ExecutionIndex {
                     ));
                     continue;
                 };
-                if !declaration.set_from_primitive_array_shape
-                    || constructor.0.as_ref() != "Set"
+                if !(if spread {
+                    declaration.set_from_set_spread_source.is_some()
+                } else {
+                    declaration.set_from_primitive_array_shape
+                }) || constructor.0.as_ref() != "Set"
                     || self.property_key_declarations.contains(constructor)
                     || self.imported_bindings.contains(constructor)
                 {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} requires a direct unshadowed new Set([primitive literals]) operation with one dense nonspread array literal"
-                    ));
+                    let shape = if spread {
+                        "a direct unshadowed new Set([...source, primitive literals]) operation with one dense nonspread array literal"
+                    } else {
+                        "a direct unshadowed new Set([primitive literals]) operation with one dense nonspread array literal"
+                    };
+                    self.native_operation_input_errors
+                        .push(format!("{request} requires {shape}"));
                     continue;
                 }
                 let Some(call) = self.top_calls[declaration.owner.0]
@@ -4329,10 +4400,23 @@ impl ExecutionIndex {
                     .push(ResolvedNativeOperationInput {
                         evidence,
                         binding: binding.clone(),
+                        selected_statement_span: input.selected_statement_span,
                         declaration_span: declaration.binding_span,
                         initializer_span: declaration.initializer_span.unwrap_or(call.span),
                         call_span: call.span,
                         initializer_ordinal: declaration.owner,
+                        spread_source: declaration
+                            .set_from_set_spread_source
+                            .as_ref()
+                            .map(|(binding, _, _)| binding.clone()),
+                        spread_source_span: declaration
+                            .set_from_set_spread_source
+                            .as_ref()
+                            .map(|(_, span, _)| *span),
+                        spread_token_span: declaration
+                            .set_from_set_spread_source
+                            .as_ref()
+                            .map(|(_, _, span)| *span),
                     });
                 continue;
             }
@@ -4445,17 +4529,32 @@ impl ExecutionIndex {
                 .push(ResolvedNativeOperationInput {
                     evidence,
                     binding,
+                    selected_statement_span: input.selected_statement_span,
                     declaration_span: declaration.binding_span,
                     initializer_span: declaration.initializer_span.unwrap_or(call.span),
                     call_span: call.span,
                     initializer_ordinal: declaration.owner,
+                    spread_source: None,
+                    spread_source_span: None,
+                    spread_token_span: None,
                 });
         }
 
         for input in resolved {
             let request = &input.evidence.spec_location;
-            if input.evidence.operation == spec::NativeOperationKind::SetFromPrimitiveArray {
-                if let Some(owner) = self.known_set_protocol_mutation() {
+            if matches!(
+                input.evidence.operation,
+                spec::NativeOperationKind::SetFromPrimitiveArray
+                    | spec::NativeOperationKind::SetFromSetSpread
+            ) {
+                let spread =
+                    input.evidence.operation == spec::NativeOperationKind::SetFromSetSpread;
+                let known_mutation = if spread {
+                    self.known_set_spread_protocol_mutation()
+                } else {
+                    self.known_set_protocol_mutation()
+                };
+                if let Some(owner) = known_mutation {
                     self.native_operation_input_errors.push(format!(
                         "{request} is contradicted by a positively identified required native slot write in source unit {}",
                         owner.0
@@ -4481,7 +4580,21 @@ impl ExecutionIndex {
                 };
                 let is_same = declaration.direct_top_level
                     && declaration.simple_identifier
-                    && declaration.set_from_primitive_array_shape
+                    && (if spread {
+                        declaration.set_from_set_spread_source.as_ref().is_some_and(
+                            |(binding, source_span, token_span)| {
+                                input.spread_source.as_ref() == Some(binding)
+                                    && input.spread_source_span == Some(*source_span)
+                                    && input.spread_token_span == Some(*token_span)
+                            },
+                        )
+                    } else {
+                        declaration.set_from_primitive_array_shape
+                            && input.spread_source.is_none()
+                            && input.spread_source_span.is_none()
+                            && input.spread_token_span.is_none()
+                    })
+                    && span_contains(input.selected_statement_span, declaration.binding_span)
                     && declaration.binding_span == input.declaration_span
                     && declaration.initializer_span == Some(input.initializer_span)
                     && declaration.owner == input.initializer_ordinal
@@ -4493,7 +4606,7 @@ impl ExecutionIndex {
                             && !self.imported_bindings.contains(constructor));
                 if !is_same {
                     self.native_operation_input_errors.push(format!(
-                        "{request} no longer identifies the same direct unshadowed primitive-array Set initializer"
+                        "{request} no longer identifies the same direct unshadowed Set initializer"
                     ));
                     continue;
                 }
@@ -4616,6 +4729,26 @@ impl ExecutionIndex {
         .find_map(|slot| match self.source_slot_overlap(slot) {
             NativeSlotOverlap::Known(owner) => Some(owner),
             NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
+        })
+    }
+
+    fn known_set_spread_protocol_mutation(&self) -> Option<SourceUnitOrdinal> {
+        self.known_set_protocol_mutation().or_else(|| {
+            [
+                NativeWriteSlot {
+                    receiver: NativeReceiverPath::Prototype(IntrinsicRoot::Set),
+                    key: NativePropertyKey::SymbolIterator,
+                },
+                NativeWriteSlot {
+                    receiver: NativeReceiverPath::SetIteratorPrototype,
+                    key: NativePropertyKey::String("next".to_owned()),
+                },
+            ]
+            .iter()
+            .find_map(|slot| match self.source_slot_overlap(slot) {
+                NativeSlotOverlap::Known(owner) => Some(owner),
+                NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
+            })
         })
     }
 
@@ -5275,6 +5408,17 @@ impl ExecutionIndex {
                             .then_some([
                                 IntrinsicRoot::Object,
                                 IntrinsicRoot::Array,
+                                IntrinsicRoot::Symbol,
+                            ])
+                            .into_iter()
+                            .flatten(),
+                    )
+                    .chain(
+                        source_roots
+                            .contains(&NativeReceiverRoot::SetIteratorPrototype)
+                            .then_some([
+                                IntrinsicRoot::Object,
+                                IntrinsicRoot::Set,
                                 IntrinsicRoot::Symbol,
                             ])
                             .into_iter()
@@ -7724,6 +7868,10 @@ impl Visit for ExecutionIndex {
                         .init
                         .as_deref()
                         .is_some_and(set_from_primitive_array_shape),
+                    set_from_set_spread_source: declarator
+                        .init
+                        .as_deref()
+                        .and_then(set_from_set_spread_source),
                 });
             self.property_key_assignments
                 .entry(binding.id.to_id())
@@ -7752,6 +7900,7 @@ impl Visit for ExecutionIndex {
                         direct_top_level,
                         simple_identifier: false,
                         set_from_primitive_array_shape: false,
+                        set_from_set_spread_source: None,
                     });
                 // A for-of declaration has no initializer: its key fact was
                 // supplied by the loop protocol, rather than an unknown RHS.
@@ -8888,6 +9037,10 @@ impl PreparedCallableCapabilities {
 
     pub(crate) fn known_set_protocol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
         self.index.known_set_protocol_mutation()
+    }
+
+    pub(crate) fn known_set_spread_protocol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
+        self.index.known_set_spread_protocol_mutation()
     }
 
     pub(crate) fn locate_value_inputs(
