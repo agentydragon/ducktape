@@ -23,6 +23,15 @@ all). The card bridge listens only while `connected`, so a sync against an absen
 card is refused at once. In a wedged state the timer alternately reloads `mt7921u`
 and re-authorizes the USB adapter every five minutes.
 
+If the card's known WiFi MAC appears as the factory-default `ez Share` network,
+the health check reports `card-reset` and temporarily associates with that BSSID.
+It verifies the card's HTTP-reported identity before restoring the configured
+SSID and the WiFi/administrator passwords from the secret disk, preserves the
+card's channel, and reconnects normally. The bridge stays stopped during recovery;
+failed attempts retry every five checks. A different card advertising `ez Share`
+does not trigger recovery. MAC checks prevent accidental recovery of another
+card; they cannot authenticate hardware against deliberate MAC spoofing.
+
 On the first run after this migration, the fresh repo is re-seeded with the card's
 full history (~17+ min over the card's WiFi; the old PVC-era data was discarded).
 
