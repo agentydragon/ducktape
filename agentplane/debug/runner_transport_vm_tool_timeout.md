@@ -1,4 +1,4 @@
-# VM forward tool-result timeout
+# VM sampler tool-result failures
 
 During the runner-transport PR's integration with the sampler-Pod fixture, the forward VM
 case timed out at the second `Endpoint.next()`, after setup and the first model response.
@@ -8,8 +8,10 @@ Both Pod modes and the reverse VM case passed.
   Hosted CI [1c07a35c](https://app.buildbuddy.io/invocation/1c07a35c-0c75-5909-9286-0a063089d005)
   returned the same VMI, Pod and session artifact IDs; these are one shared execution,
   not independent reproductions.
-- The available logs do not establish a cause. Sampler EOF was logged during teardown,
-  and the failure occurred outside the existing session-diagnostics capture boundary.
+- The failing forward Pod logged `central sampler execution stopped` with `EOF` at
+  00:32:31.991 UTC, before VM shutdown began at 00:32:44.299. The log does not identify
+  which connection produced the EOF, and the failure occurred outside the existing
+  session-diagnostics capture boundary.
 - Fresh diagnostic run [4c09d43d](https://app.buildbuddy.io/invocation/4c09d43d-b17f-4af3-8c5d-adbdba6c597c)
   passed both VM cases, with different workload IDs and zero failures or skips.
   No runtime behavior, assertions or timeouts changed.
@@ -45,3 +47,9 @@ The fixture now captures sampler Pod state, container logs, and its EmptyDir ses
 Session diagnostics use the Session ID in their filenames so later cases cannot replace them.
 This is diagnostic retention only; it does not change the timeout, assertions, or blocked-state
 behavior.
+
+Two fresh noncached runs with the diagnostic retention change
+([2240c2ff](https://app.buildbuddy.io/invocation/2240c2ff-0814-49b1-8e08-76e60fe18fa6))
+passed both VM modes: four passing cases across separate actions. Their artifacts retain
+separate state and logs for all four sampler Pods. No runtime behavior, assertions or timeouts
+changed; these passes do not explain the earlier execution failure.
