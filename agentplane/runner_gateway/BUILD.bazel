@@ -202,6 +202,7 @@ go_library(
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_client_go//kubernetes",
+        "@io_k8s_client_go//kubernetes/scheme",
         "@io_k8s_client_go//rest",
         "@io_k8s_client_go//tools/clientcmd",
         "@io_k8s_sigs_controller_runtime//pkg/cache",
