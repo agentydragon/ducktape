@@ -103,6 +103,11 @@ struct StaticImportsReport {
     request_issues_truncated: bool,
 }
 
+struct RequestGraph {
+    edges: Vec<Vec<(ChunkId, RequestEdge)>>,
+    issues: Vec<Vec<RequestIssue>>,
+}
+
 pub(super) fn run(args: StaticImportsArgs) -> Result<()> {
     let format = args.format;
     let from_name = args.from;
@@ -128,7 +133,7 @@ pub(super) fn run(args: StaticImportsArgs) -> Result<()> {
                 .with_context(|| format!("unknown --target chunk {name:?}"))
         })
         .collect::<Result<Vec<_>>>()?;
-    let (edges, issues) = collect_requests(artifact, source.indexes())?;
+    let RequestGraph { edges, issues } = collect_requests(artifact, source.indexes())?;
     let mut relevant = reachable(from, &edges);
     let reports = targets
         .into_iter()
@@ -225,7 +230,7 @@ pub(super) fn run(args: StaticImportsArgs) -> Result<()> {
 fn collect_requests(
     artifact: &ChunkBundle,
     indexes: &artifact::ArtifactIndexes,
-) -> Result<(Vec<Vec<(ChunkId, RequestEdge)>>, Vec<Vec<RequestIssue>>)> {
+) -> Result<RequestGraph> {
     let mut edges = vec![Vec::new(); artifact.chunk_table.len()];
     let mut issues = (0..artifact.chunk_table.len())
         .map(|_| Vec::new())
@@ -294,7 +299,7 @@ fn collect_requests(
             ));
         }
     }
-    Ok((edges, issues))
+    Ok(RequestGraph { edges, issues })
 }
 
 fn reachable(start: ChunkId, edges: &[Vec<(ChunkId, RequestEdge)>]) -> BTreeSet<ChunkId> {
