@@ -259,10 +259,8 @@ go_library(
     ],
     embedsrcs = [
         "codex/base_instructions.txt",
-        "codex/deferred_nested_tools_guidance.txt",
         "codex/exec_description.txt",
         "codex/legacy_image_helper.txt",
-        "codex/mcp_typescript_preamble.txt",
         "codex/wait_description.txt",
         "schema/0001_sampler_state.sql",
         "schema/0002_sampler_notification.sql",

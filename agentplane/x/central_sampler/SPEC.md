@@ -62,7 +62,9 @@ later output. Boundary evidence records each output as `recorded` or `discarded`
 The model sees Codex's Code Mode Only surface at the pinned version: freeform `exec` (Lark grammar,
 optional `// @exec:` pragma with `yield_time_ms` and `max_output_tokens`) described by Codex's
 template with a TypeScript declaration per nested tool, and function `wait` with Codex's schema
-and defaults. Results carry Codex's status header and token-budget truncation. Deviations: `wait`
+and defaults. Results carry Codex's status header and token-budget truncation. Deviations: the
+`exec` description omits Codex's deferred-tool guidance and shared MCP TypeScript types until the
+sampler has MCP/Action tools and tool search or deferred tools; `wait`
 accepts only a live cell this Session recorded (rejected before dispatch rather than reported as a
 missing cell), unknown or `null` tool arguments are rejected, and audio truncation estimates
 tokens from data URL size rather than decoded duration.

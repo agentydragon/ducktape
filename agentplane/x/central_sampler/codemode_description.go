@@ -12,8 +12,7 @@ import (
 
 // The codex/*.txt files are verbatim copies of Codex rust-v0.162.1
 // code-mode-protocol/src/description.rs constants (one trailing newline added):
-// EXEC_DESCRIPTION_TEMPLATE, WAIT_DESCRIPTION_TEMPLATE, LEGACY_IMAGE_HELPER_DESCRIPTION,
-// DEFERRED_NESTED_TOOLS_GUIDANCE and MCP_TYPESCRIPT_PREAMBLE.
+// EXEC_DESCRIPTION_TEMPLATE, WAIT_DESCRIPTION_TEMPLATE and LEGACY_IMAGE_HELPER_DESCRIPTION.
 var (
 	//go:embed codex/exec_description.txt
 	execDescriptionTemplate string
@@ -21,10 +20,6 @@ var (
 	waitDescriptionTemplate string
 	//go:embed codex/legacy_image_helper.txt
 	legacyImageHelperDescription string
-	//go:embed codex/deferred_nested_tools_guidance.txt
-	deferredNestedToolsGuidance string
-	//go:embed codex/mcp_typescript_preamble.txt
-	mcpTypeScriptPreamble string
 )
 
 // Codex rust-v0.162.1 core/src/tools/code_mode/execute_spec.rs CODE_MODE_FREEFORM_GRAMMAR.
@@ -59,19 +54,17 @@ func templateText(text string) string { return strings.TrimSuffix(text, "\n") }
 // execToolDescription renders Codex rust-v0.162.1 code-mode-protocol/src/description.rs
 // build_exec_tool_description as core/src/tools/spec_plan.rs calls it for this sampler: Code
 // Mode Only (exec and wait are the only model tools), the default
-// `unified_image_budget = false` (legacy image helper), catalog deferred-tool discovery and no
-// model message overrides. Codex emits the deferred-tool guidance and MCP preamble even when no
-// deferred or MCP tools exist, so they stay.
+// `unified_image_budget = false` (legacy image helper) and no model message overrides.
 func execToolDescription(definitions []ResponsesCodeToolDefinition) (string, error) {
 	description := strings.NewReplacer(
 		"{{ default_exec_yield_time_ms }}", strconv.Itoa(defaultExecYieldTimeMS),
 		"{{ image_helper }}", templateText(legacyImageHelperDescription),
 	).Replace(templateText(execDescriptionTemplate))
-	sections := []string{
-		description,
-		templateText(deferredNestedToolsGuidance),
-		"Shared MCP Types:\n```ts\n" + templateText(mcpTypeScriptPreamble) + "\n```",
-	}
+	// TODO: Codex also renders DEFERRED_NESTED_TOOLS_GUIDANCE (plus TOOL_SEARCH_GUIDANCE with
+	// ranked search) and the "Shared MCP Types" MCP_TYPESCRIPT_PREAMBLE section here, even with no
+	// such tools. Add them back as upstream renders them once MCP/Action tools and tool
+	// search/deferred tools exist in the sampler.
+	sections := []string{description}
 	// Codex rust-v0.162.1 core/src/tools/spec_plan.rs compare_code_mode_tools without namespaces.
 	sorted := slices.Clone(definitions)
 	slices.SortFunc(sorted, func(left, right ResponsesCodeToolDefinition) int {
